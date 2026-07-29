@@ -39,3 +39,12 @@ Somente regras comprovadas no codigo.
 ## Simulacoes
 
 - Campanhas, Super Admin, chatbot, automacoes, monitoramento e varias configuracoes exibem comportamento de MVP sem integracao real.
+
+## Sprint 01 - Regras Multi-Tenant
+
+- Todo acesso a entidades novas do backend deve carregar `tenantId` a partir da membership autenticada.
+- O cliente pode informar `tenantSlug` no login para escolher uma membership existente, mas nao pode escolher `tenantId` arbitrario.
+- `/api/tenant-records/:id` retorna 404 quando o registro existe em outro tenant, evitando enumeracao.
+- Roles persistidas no backend: `SUPER_ADMIN`, `ADMIN`, `SUPERVISOR`, `OPERATOR`.
+- Permissoes retornadas em `/api/me` sao derivadas de role e tenant no servidor.
+- Provisionamento automatico de usuarios demo por service role fica desabilitado por padrao.

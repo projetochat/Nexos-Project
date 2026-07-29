@@ -31,13 +31,13 @@ PLANEJADO:
 
 ## Tecnologias atuais
 
-| Area | Tecnologia |
-| --- | --- |
-| Frontend | React 19, TanStack Start, TanStack Router, Vite 8, TypeScript |
-| Dados MVP | Supabase JS, TanStack Query, Zustand |
-| UI | Tailwind CSS v4, Radix/shadcn, lucide-react, Recharts, Sonner |
-| Mocks | Zustand store, `@faker-js/faker`, arrays hardcoded |
-| Package manager | Bun, identificado por `bun.lock` |
+| Area            | Tecnologia                                                    |
+| --------------- | ------------------------------------------------------------- |
+| Frontend        | React 19, TanStack Start, TanStack Router, Vite 8, TypeScript |
+| Dados MVP       | Supabase JS, TanStack Query, Zustand                          |
+| UI              | Tailwind CSS v4, Radix/shadcn, lucide-react, Recharts, Sonner |
+| Mocks           | Zustand store, `@faker-js/faker`, arrays hardcoded            |
+| Package manager | Bun, identificado por `bun.lock`                              |
 
 ## Estrutura basica
 
@@ -54,16 +54,16 @@ supabase/migrations/  schema Supabase atual do MVP
 
 ## Scripts
 
-| Script | Comando real |
-| --- | --- |
-| Dev | `bun run dev` |
-| Build | `bun run build` |
-| Build dev | `bun run build:dev` |
-| Preview | `bun run preview` |
-| Lint | `bun run lint` |
-| Format | `bun run format` |
+| Script    | Comando real                     |
+| --------- | -------------------------------- |
+| Dev       | `bun run dev`                    |
+| Build     | `bun run build`                  |
+| Build dev | `bun run build:dev`              |
+| Preview   | `bun run preview`                |
+| Lint      | `bun run lint`                   |
+| Format    | `bun run format`                 |
 | Typecheck | Nao disponivel no `package.json` |
-| Tests | Nao disponivel no `package.json` |
+| Tests     | Nao disponivel no `package.json` |
 
 ## Validacao local da Sprint 00
 
@@ -153,3 +153,32 @@ bun run build
 8. Abrir `/admin` apenas com usuario compatível; observar que dados sao simulados.
 
 Na Sprint 00 desta maquina, install/lint/build/dev server nao puderam ser executados porque `bun` nao estava instalado.
+
+## Atualizacao Sprint 01
+
+IMPLEMENTADO:
+
+- Git inicializado com baseline Lovable e branch `sprint/01-foundation`.
+- Bun 1.3.14 instalado e usado como unico package manager.
+- Backend NestJS em `backend/`, mantido como strangler fig ao lado do frontend existente.
+- PostgreSQL local via `docker-compose.yml`.
+- Prisma schema, migration inicial e seed multi-tenant.
+- API minima: `GET /api/health`, `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/me`, `GET /api/tenant-records/:id`.
+- Testes backend e teste de sanitizacao XSS.
+
+Scripts adicionais:
+
+| Script                                          | Uso                                   |
+| ----------------------------------------------- | ------------------------------------- |
+| `bun run backend:build`                         | Compila o backend NestJS              |
+| `bun run backend:test`                          | Executa testes e2e da API             |
+| `bun run backend:prisma:generate`               | Gera Prisma Client                    |
+| `bun run backend:prisma:migrate -- --name init` | Aplica migrations locais              |
+| `bun run backend:prisma:seed`                   | Popula tenants e usuarios demo        |
+| `bun run test:security`                         | Valida sanitizacao XSS do editor rico |
+
+Credenciais demo locais do seed:
+
+- `admin@nexo.app` / `demo1234` no tenant `acme`
+- `atendente@nexo.app` / `demo1234` no tenant `acme`
+- `outsider@nexo.app` / `demo1234` no tenant `orbit`

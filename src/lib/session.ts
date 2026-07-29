@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { supabase } from "@/integrations/supabase/client";
+import { clearNexosApiSession } from "@/lib/nexos-api";
 
 /* ============================================================
    Nexo · Session
@@ -108,12 +109,21 @@ export async function signIn(email: string, password: string): Promise<void> {
   await hydrateSession();
   // marca agente como online
   const uid = useSession.getState().user?.id;
-  if (uid) await supabase.from("agents").update({ status: "online", last_seen: new Date().toISOString() }).eq("id", uid);
+  if (uid)
+    await supabase
+      .from("agents")
+      .update({ status: "online", last_seen: new Date().toISOString() })
+      .eq("id", uid);
 }
 
 export async function signOut(): Promise<void> {
   const uid = useSession.getState().user?.id;
-  if (uid) await supabase.from("agents").update({ status: "offline", last_seen: new Date().toISOString() }).eq("id", uid);
+  if (uid)
+    await supabase
+      .from("agents")
+      .update({ status: "offline", last_seen: new Date().toISOString() })
+      .eq("id", uid);
   await supabase.auth.signOut();
+  clearNexosApiSession();
   useSession.setState({ user: null, impersonating: null });
 }

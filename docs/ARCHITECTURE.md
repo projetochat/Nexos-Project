@@ -47,14 +47,14 @@ Acao do usuario
 
 ## Diferencas MVP x arquitetura futura
 
-| Area | MVP atual | Futuro aprovado |
-| --- | --- | --- |
-| Backend | Supabase direto + uma server function | NestJS |
-| Banco | Supabase/Postgres migrations | PostgreSQL + Prisma |
-| Realtime | Supabase Realtime + barramento local | Socket.io |
-| Filas | Nao implementado; algumas simulacoes | Redis + BullMQ |
-| Midia | Data URL em tabela/HTML | Cloudflare R2 |
-| Multi-tenancy | UI/mock, sem `tenant_id` operacional | Multi-tenancy real |
+| Area          | MVP atual                             | Futuro aprovado     |
+| ------------- | ------------------------------------- | ------------------- |
+| Backend       | Supabase direto + uma server function | NestJS              |
+| Banco         | Supabase/Postgres migrations          | PostgreSQL + Prisma |
+| Realtime      | Supabase Realtime + barramento local  | Socket.io           |
+| Filas         | Nao implementado; algumas simulacoes  | Redis + BullMQ      |
+| Midia         | Data URL em tabela/HTML               | Cloudflare R2       |
+| Multi-tenancy | UI/mock, sem `tenant_id` operacional  | Multi-tenancy real  |
 
 ## Riscos arquiteturais
 
@@ -62,3 +62,26 @@ Acao do usuario
 - Rotas protegidas por shell client-side, nao por guard universal.
 - Super Admin visualmente pronto, mas sem backend multi-tenant real.
 - Permissoes granulares usadas como controle de UI sem garantia completa no backend atual.
+
+## Sprint 01 - Strangler Fig
+
+A Sprint 01 iniciou a migracao incremental sem remover Supabase do MVP. O frontend continua como fonte de UX e ainda pode usar Supabase nas telas existentes. O novo backend NestJS fica isolado em `backend/` e entrega apenas o primeiro contrato funcional multi-tenant.
+
+```text
+React/TanStack frontend
+  -> fluxo legado Supabase onde ainda nao migrado
+  -> Nexos API NestJS para auth/contexto/rotas novas
+
+Nexos API NestJS
+  -> Prisma
+  -> PostgreSQL local
+```
+
+Fronteiras novas:
+
+- `backend/src/auth`: login, refresh, JWT access token e guard.
+- `backend/src/users`: `/api/me` com contexto de usuario, tenant e permissoes.
+- `backend/src/tenant-records`: rota protegida para provar isolamento por `tenantId`.
+- `backend/src/health`: healthcheck com consulta real ao PostgreSQL.
+
+Redis/BullMQ, Socket.io, Evolution/Meta e R2 permanecem planejados, nao implementados nesta sprint.

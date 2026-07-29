@@ -55,9 +55,18 @@ Estas diretrizes refletem o estado atual do projeto.
 
 ## Testes
 
-Nao foram encontrados testes automatizados. Para futuras contribuicoes, priorizar:
+Sprint 01 adicionou testes automatizados para o backend e sanitizacao XSS. Para futuras contribuicoes, priorizar:
 
 - regras de filas e conversas;
 - permissoes/RLS;
 - auth e redirects;
 - formularios criticos como chamados, perfis e instancias.
+
+## Backend Sprint 01
+
+- Manter backend em `backend/` enquanto o strangler fig estiver ativo.
+- Usar Prisma migrations para mudancas no banco novo.
+- Gerar Prisma Client com `bun run backend:prisma:generate` antes de build/test quando necessario.
+- Nunca confiar em `tenantId` vindo livremente do cliente; derivar de JWT/membership.
+- Novos endpoints protegidos devem usar guard JWT e filtros por tenant no servidor.
+- Secrets ficam em `.env`; exemplos sem segredo ficam em `.env.example`.

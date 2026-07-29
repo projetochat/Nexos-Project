@@ -29,17 +29,42 @@ Nao ha endpoints REST customizados implementados em `src/routes/api`. O MVP usa:
 
 ## Requisitos de dados ainda sem contrato de API
 
-| Funcionalidade | Necessidade futura |
-| --- | --- |
-| Auth/usuarios | autenticar, listar, criar, atualizar, atribuir roles/perfis |
-| Conversas | listar, assumir, transferir, encerrar, reabrir, marcar leitura |
-| Mensagens | enviar texto/audio/imagem, listar historico, status de leitura |
-| Contatos/clientes | CRUD, vinculos, tags, busca e paginacao |
-| Departamentos/filas | CRUD, configuracao e roteamento |
-| Instancias/canais | CRUD, conectar canal, QR/status, mensagens automaticas |
-| Chamados | criar, editar, listar e anexar midia |
-| Relatorios | agregacoes por periodo, agente, departamento, cliente, instancia e tag |
-| Campanhas | CRUD, segmentacao, disparo, metricas e retry |
-| Super Admin | tenants, planos, assinaturas, financeiro, logs e auditoria |
+| Funcionalidade      | Necessidade futura                                                     |
+| ------------------- | ---------------------------------------------------------------------- |
+| Auth/usuarios       | autenticar, listar, criar, atualizar, atribuir roles/perfis            |
+| Conversas           | listar, assumir, transferir, encerrar, reabrir, marcar leitura         |
+| Mensagens           | enviar texto/audio/imagem, listar historico, status de leitura         |
+| Contatos/clientes   | CRUD, vinculos, tags, busca e paginacao                                |
+| Departamentos/filas | CRUD, configuracao e roteamento                                        |
+| Instancias/canais   | CRUD, conectar canal, QR/status, mensagens automaticas                 |
+| Chamados            | criar, editar, listar e anexar midia                                   |
+| Relatorios          | agregacoes por periodo, agente, departamento, cliente, instancia e tag |
+| Campanhas           | CRUD, segmentacao, disparo, metricas e retry                           |
+| Super Admin         | tenants, planos, assinaturas, financeiro, logs e auditoria             |
 
-Nao foram definidos URL, metodo HTTP, DTO, controller ou schema definitivo nesta Sprint.
+Na Sprint 00 nao foram definidos URL, metodo HTTP, DTO, controller ou schema definitivo.
+
+## Sprint 01 - API NestJS
+
+Base local: `http://localhost:3001/api`.
+
+| Metodo | Endpoint              | Auth       | Descricao                                                                   |
+| ------ | --------------------- | ---------- | --------------------------------------------------------------------------- |
+| `GET`  | `/health`             | Publico    | Verifica API e PostgreSQL com `SELECT 1`                                    |
+| `POST` | `/auth/login`         | Publico    | Autentica por email, senha e `tenantSlug`                                   |
+| `POST` | `/auth/refresh`       | Publico    | Emite novo access token a partir de refresh token                           |
+| `POST` | `/auth/logout`        | Publico    | Logout stateless; cliente descarta tokens                                   |
+| `GET`  | `/me`                 | Bearer JWT | Retorna usuario, tenant e permissoes derivadas                              |
+| `GET`  | `/tenant-records/:id` | Bearer JWT | Retorna apenas registros do tenant autenticado; outros tenants retornam 404 |
+
+Exemplo de login:
+
+```json
+{
+  "email": "admin@nexo.app",
+  "password": "demo1234",
+  "tenantSlug": "acme"
+}
+```
+
+O token JWT inclui `sub`, `tenantId`, `membershipId`, `role` e `typ`. O tenant efetivo e selecionado a partir da membership persistida, nao confiado como escopo livre do cliente.

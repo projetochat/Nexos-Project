@@ -1,12 +1,37 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Plus, Ticket as TicketIcon, Bold, Italic, Underline as UnderlineIcon, ImageIcon, Search } from "lucide-react";
+import {
+  Plus,
+  Ticket as TicketIcon,
+  Bold,
+  Italic,
+  Underline as UnderlineIcon,
+  ImageIcon,
+  Search,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { SectionHeader, Card, Button, Field, Input, Select, Badge, EmptyState } from "@/components/ui-kit";
+import {
+  SectionHeader,
+  Card,
+  Button,
+  Field,
+  Input,
+  Select,
+  Badge,
+  EmptyState,
+} from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
-import { CUSTOMERS, CATALOG, CONTACTS, type Customer, type Contact, type Department } from "@/lib/mvp";
+import {
+  CUSTOMERS,
+  CATALOG,
+  CONTACTS,
+  type Customer,
+  type Contact,
+  type Department,
+} from "@/lib/mvp";
 import { useSession } from "@/lib/session";
+import { sanitizeRichTextHtml } from "@/lib/sanitize-html";
 import { supabase } from "@/integrations/supabase/client";
 
 function fmtAbertura(ts: number) {
@@ -28,7 +53,13 @@ export const Route = createFileRoute("/chamados")({
 type TipoChamado = "Suporte" | "DEV";
 type StatusChamado = "Novo" | "Iniciado" | "Pendente" | "Solucionado" | "Finalizado";
 
-const STATUS_OPTIONS: StatusChamado[] = ["Novo", "Iniciado", "Pendente", "Solucionado", "Finalizado"];
+const STATUS_OPTIONS: StatusChamado[] = [
+  "Novo",
+  "Iniciado",
+  "Pendente",
+  "Solucionado",
+  "Finalizado",
+];
 
 type Chamado = {
   id: number;
@@ -232,9 +263,21 @@ function ChamadosPage() {
                 <tbody>
                   {filtered.map((t) => (
                     <tr key={t.id} className="border-b border-border/60 hover:bg-surface-1">
-                      <td className="py-2 pr-3 font-mono text-xs">#{String(t.id).padStart(6, "0")}</td>
+                      <td className="py-2 pr-3 font-mono text-xs">
+                        #{String(t.id).padStart(6, "0")}
+                      </td>
                       <td className="py-2 pr-3">
-                        <Badge tone={t.status === "Finalizado" || t.status === "Solucionado" ? "success" : t.status === "Pendente" ? "warning" : t.status === "Iniciado" ? "info" : "default"}>
+                        <Badge
+                          tone={
+                            t.status === "Finalizado" || t.status === "Solucionado"
+                              ? "success"
+                              : t.status === "Pendente"
+                                ? "warning"
+                                : t.status === "Iniciado"
+                                  ? "info"
+                                  : "default"
+                          }
+                        >
                           {t.status ?? "Novo"}
                         </Badge>
                       </td>
@@ -245,7 +288,9 @@ function ChamadosPage() {
                       <td className="py-2 pr-3">{t.clienteNome}</td>
                       <td className="py-2 pr-3">{t.solicitanteNome}</td>
                       <td className="py-2 pr-3">{t.departamentoNome}</td>
-                      <td className="py-2 pr-3 text-xs text-muted-foreground">{fmtAbertura(t.abertoEm)}</td>
+                      <td className="py-2 pr-3 text-xs text-muted-foreground">
+                        {fmtAbertura(t.abertoEm)}
+                      </td>
                       <td className="py-2 pr-3 text-xs">{t.usuarioAbertura}</td>
                       <td className="py-2 pr-3 text-right">
                         <Button variant="ghost" size="sm" onClick={() => openEdit(t)}>
@@ -320,7 +365,8 @@ function NovoChamadoModal({
     setSolicitanteId(editing?.solicitanteId ?? "");
     setDepartamentoId(editing?.departamentoId ?? "");
     setAbertoEm(editing?.abertoEm ?? Date.now());
-    if (editorRef.current) editorRef.current.innerHTML = editing?.descricaoHtml ?? "";
+    if (editorRef.current)
+      editorRef.current.innerHTML = sanitizeRichTextHtml(editing?.descricaoHtml ?? "");
     (async () => {
       try {
         const [cs, ct, dp] = await Promise.all([
@@ -336,7 +382,7 @@ function NovoChamadoModal({
   }, [open, editing]);
 
   const filteredCustomers = customers.filter((c) =>
-    CLIENTE_OPTIONS.some((n) => c.nome.toUpperCase().includes(n))
+    CLIENTE_OPTIONS.some((n) => c.nome.toUpperCase().includes(n)),
   );
   const clienteSource = filteredCustomers.length > 0 ? filteredCustomers : customers;
 
@@ -366,7 +412,7 @@ function NovoChamadoModal({
     if (!clienteId) return toast.error("Selecione o cliente.");
     if (!solicitanteId) return toast.error("Selecione o solicitante.");
     if (!departamentoId) return toast.error("Selecione o departamento.");
-    const html = editorRef.current?.innerHTML.trim() ?? "";
+    const html = sanitizeRichTextHtml(editorRef.current?.innerHTML.trim() ?? "");
     if (!html || html === "<br>") return toast.error("Descreva o chamado.");
     const cliente = clienteSource.find((c) => c.id === clienteId);
     const sol = contacts.find((c) => c.id === solicitanteId);
@@ -388,7 +434,6 @@ function NovoChamadoModal({
     if (editing) onUpdate(editing.id, payload);
     else onCreate(payload);
   };
-
 
   return (
     <Modal
@@ -466,7 +511,12 @@ function NovoChamadoModal({
         </div>
         <div className="md:col-span-2">
           <Field label="Título do chamado *">
-            <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Resumo curto do chamado" maxLength={160} />
+            <Input
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              placeholder="Resumo curto do chamado"
+              maxLength={160}
+            />
           </Field>
         </div>
         <div className="md:col-span-2">
@@ -475,9 +525,15 @@ function NovoChamadoModal({
           </span>
           <div className="rounded-lg border border-border bg-surface-1">
             <div className="flex flex-wrap items-center gap-1 border-b border-border p-1.5">
-              <ToolbarBtn onClick={() => exec("bold")} label="Negrito"><Bold className="h-3.5 w-3.5" /></ToolbarBtn>
-              <ToolbarBtn onClick={() => exec("italic")} label="Itálico"><Italic className="h-3.5 w-3.5" /></ToolbarBtn>
-              <ToolbarBtn onClick={() => exec("underline")} label="Sublinhado"><UnderlineIcon className="h-3.5 w-3.5" /></ToolbarBtn>
+              <ToolbarBtn onClick={() => exec("bold")} label="Negrito">
+                <Bold className="h-3.5 w-3.5" />
+              </ToolbarBtn>
+              <ToolbarBtn onClick={() => exec("italic")} label="Itálico">
+                <Italic className="h-3.5 w-3.5" />
+              </ToolbarBtn>
+              <ToolbarBtn onClick={() => exec("underline")} label="Sublinhado">
+                <UnderlineIcon className="h-3.5 w-3.5" />
+              </ToolbarBtn>
               <div className="mx-1 h-4 w-px bg-border" />
               <ToolbarBtn onClick={() => fileRef.current?.click()} label="Inserir imagem">
                 <ImageIcon className="h-3.5 w-3.5" />

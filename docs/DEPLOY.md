@@ -59,7 +59,38 @@ PLANEJADO para Sprints posteriores:
 - Adaptadores Evolution API e Meta Cloud API.
 - Docker Compose em VPS como deploy inicial.
 
-NAO IMPLEMENTADO nesta Sprint: nenhum arquivo Docker, Compose, NestJS, Prisma, Redis, BullMQ ou Socket.io foi criado.
+Sprint 01 implementou Docker Compose, NestJS e Prisma. Redis, BullMQ, Socket.io, R2, Evolution API e Meta Cloud API continuam nao implementados.
+
+## Operacao Local Sprint 01
+
+Subir banco:
+
+```bash
+docker compose up -d postgres
+```
+
+Preparar Prisma:
+
+```bash
+bun run backend:prisma:generate
+bun run backend:prisma:migrate -- --name init
+bun run backend:prisma:seed
+```
+
+Rodar API:
+
+```bash
+bun run backend:dev
+```
+
+Variaveis novas:
+
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `JWT_REFRESH_SECRET`
+- `FRONTEND_ORIGIN`
+- `VITE_NEXOS_API_URL`
+- `ALLOW_DEMO_USER_PROVISIONING=false` por padrao
 
 ## Observacoes operacionais
 

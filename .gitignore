@@ -29,6 +29,9 @@ temp/
 # Local container data
 infra/postgres-data/
 
+# Generated backend clients
+backend/src/generated/prisma/
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars

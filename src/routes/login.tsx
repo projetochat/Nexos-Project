@@ -1,12 +1,18 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { ShieldCheck, Headphones, Sun, Moon, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { LogoMark, Button, Input, Field } from "@/components/ui-kit";
-import { DEMO_ACCOUNTS, useSession, signIn, ROLE_META, currentRoleHome, type Role } from "@/lib/session";
+import {
+  DEMO_ACCOUNTS,
+  useSession,
+  signIn,
+  ROLE_META,
+  currentRoleHome,
+  type Role,
+} from "@/lib/session";
+import { loginWithNexosApi } from "@/lib/nexos-api";
 import { useTheme } from "@/components/theme-provider";
-import { ensureDemoUsers } from "@/lib/demo.functions";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Entrar · Nexo" }] }),
@@ -29,7 +35,6 @@ function LoginPage() {
   const navigate = useNavigate();
   const user = useSession((s) => s.user);
   const { resolved, toggle } = useTheme();
-  const ensureDemos = useServerFn(ensureDemoUsers);
 
   const [selectedRole, setSelectedRole] = React.useState<DemoRole>("admin");
   const [email, setEmail] = React.useState(DEMO_ACCOUNTS[0].email);
@@ -41,7 +46,9 @@ function LoginPage() {
   }, [user, navigate]);
 
   React.useEffect(() => {
-    const acc = DEMO_ACCOUNTS.find((a) => (a.role === "admin" ? "admin" : "operator") === selectedRole);
+    const acc = DEMO_ACCOUNTS.find(
+      (a) => (a.role === "admin" ? "admin" : "operator") === selectedRole,
+    );
     if (acc) {
       setEmail(acc.email);
       setPassword(acc.password);
@@ -52,17 +59,15 @@ function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      // Garante que as contas demo existam no primeiro login.
-      const isDemo = DEMO_ACCOUNTS.some((a) => a.email === email);
-      if (isDemo) {
-        try {
-          await ensureDemos();
-        } catch (err) {
-          console.warn("ensureDemoUsers", err);
-        }
+      let u = null;
+      try {
+        u = await loginWithNexosApi(email, password);
+        useSession.getState().loginAs(u);
+      } catch (apiError) {
+        console.warn("nexos api login fallback", apiError);
+        await signIn(email, password);
+        u = useSession.getState().user;
       }
-      await signIn(email, password);
-      const u = useSession.getState().user;
       const role: Role = u?.role ?? "operator";
       toast.success(`Bem-vindo(a), ${u?.nome ?? ""}`);
       navigate({ to: currentRoleHome(role) as never });
@@ -121,18 +126,24 @@ function LoginPage() {
                 >
                   <div
                     className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                      active ? "bg-primary text-primary-foreground" : "bg-surface-2 text-muted-foreground"
+                      active
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-surface-2 text-muted-foreground"
                     }`}
                   >
                     <Icon className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium">{label}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">{ROLE_DESCRIPTIONS[r]}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {ROLE_DESCRIPTIONS[r]}
+                    </div>
                   </div>
                   <ArrowRight
                     className={`h-4 w-4 shrink-0 transition ${
-                      active ? "text-primary" : "text-muted-foreground opacity-0 group-hover:opacity-100"
+                      active
+                        ? "text-primary"
+                        : "text-muted-foreground opacity-0 group-hover:opacity-100"
                     }`}
                   />
                 </button>
@@ -155,7 +166,7 @@ function LoginPage() {
               Entrar como {selectedRole === "admin" ? "Administrador" : "Atendente"}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Credenciais demo preenchidas. As contas são criadas automaticamente no primeiro acesso.
+              Credenciais demo preenchidas para o ambiente local preparado pela sprint.
             </p>
 
             <form onSubmit={handleLogin} className="mt-6 space-y-4">

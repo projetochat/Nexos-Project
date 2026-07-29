@@ -45,3 +45,21 @@ Categorias:
 - `api/index.ts`: camada mock legado.
 - `demo.functions.ts`: server function para usuarios demo.
 - `integrations/supabase/*`: clientes e middlewares Supabase.
+
+## Sprint 01 - Novos Utilitarios Frontend
+
+- `src/lib/nexos-api.ts`: cliente minimo da Nexos API para login backend, armazenamento local de tokens e limpeza no logout.
+- `src/lib/sanitize-html.ts`: sanitizacao allowlist para HTML rico de chamados.
+- `src/lib/sanitize-html.test.ts`: testes contra payloads XSS basicos e imagens data URL permitidas.
+
+O login nao importa mais `ensureDemoUsers`; a server function permanece apenas como legado protegido por flag.
+
+## Sprint 01 - Backend
+
+O backend fica em `backend/src`:
+
+- `auth`: DTOs, service, controller, JWT guard e helpers de role.
+- `health`: healthcheck publico.
+- `users`: endpoint `/api/me`.
+- `tenant-records`: rota protegida de prova de isolamento.
+- `prisma`: modulo global e service Prisma.

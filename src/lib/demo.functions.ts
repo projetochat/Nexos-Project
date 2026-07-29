@@ -2,6 +2,10 @@ import { createServerFn } from "@tanstack/react-start";
 
 /* Server fn idempotente: cria as duas contas demo se ainda não existirem. */
 export const ensureDemoUsers = createServerFn({ method: "POST" }).handler(async () => {
+  if (process.env.ALLOW_DEMO_USER_PROVISIONING !== "true") {
+    throw new Error("Provisionamento demo desabilitado.");
+  }
+
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const demos = [
     { email: "admin@nexo.app", password: "demo1234", nome: "Ana Ribeiro", role: "admin" },

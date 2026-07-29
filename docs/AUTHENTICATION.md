@@ -49,3 +49,21 @@ PLANEJADO:
 DECISAO ARQUITETURAL PENDENTE:
 
 - Estrategia definitiva de auth futura: manter Supabase Auth, migrar para auth propria, ou usar provedor externo integrado ao NestJS.
+
+## Sprint 01 - Auth Backend
+
+Implementado auth propria minima no NestJS para provar o contrato multi-tenant:
+
+- Login em `POST /api/auth/login` com email, senha e `tenantSlug`.
+- Senhas armazenadas com `bcryptjs`.
+- Access token JWT com expiracao curta de 15 minutos.
+- Refresh token JWT com expiracao de 7 dias.
+- Logout stateless em `POST /api/auth/logout`; o cliente remove tokens locais.
+- Guard `JwtAuthGuard` valida token access e injeta `userId`, `tenantId`, `membershipId` e `role`.
+- `/api/me` recalcula contexto a partir da membership persistida.
+
+Hardening:
+
+- `ensureDemoUsers` deixou de ser chamado pela tela de login.
+- `ensureDemoUsers` agora exige `ALLOW_DEMO_USER_PROVISIONING=true`.
+- Login frontend tenta a Nexos API e cai para o login Supabase legado apenas se a API local estiver indisponivel ou recusar a tentativa.

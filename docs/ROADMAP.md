@@ -18,14 +18,25 @@
 - Definir eventos Socket.io e jobs BullMQ.
 - Criar testes e CI/CD.
 
-## Sprint 01 sugerida
+## Sprint 01 executada
 
-P0: desenho do primeiro vertical slice real.
+Entregue:
 
-Escopo recomendado:
-
+- Foundation backend NestJS + Prisma + PostgreSQL.
 - Auth/tenant minimo.
-- API de conversas e mensagens.
-- Persistencia PostgreSQL/Prisma inicial.
-- Eventos realtime minimos.
-- Contrato de dados ainda sem endpoints definitivos ate decisao arquitetural.
+- `/api/me` e rota protegida por tenant.
+- Testes e2e da API.
+- Hardening XSS de chamados.
+- Hardening de `ensureDemoUsers`.
+
+Nao entregue nesta sprint:
+
+- API real de conversas e mensagens.
+- Eventos realtime Socket.io.
+- Jobs Redis/BullMQ.
+- R2 para midia.
+- Adaptadores Evolution/Meta.
+
+## Proxima sprint sugerida
+
+P0: migrar um fluxo operacional real para a Nexos API, preferencialmente conversas/mensagens ou chamados com anexos externos, mantendo Supabase legado ate o recorte estar validado.
