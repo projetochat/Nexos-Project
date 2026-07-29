@@ -1,0 +1,378 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================
+   NEXO — DESIGN SYSTEM
+   Plataforma SaaS de atendimento empresarial via WhatsApp
+   Dark-first. Minimalista. Premium.
+   ============================================================ */
+
+@theme inline {
+  /* Radius */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  /* Core surfaces */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  /* Brand */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  /* Semantics */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  /* Structural */
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Elevations / surfaces */
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+
+  /* Typography */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* ---------- DARK (default) ---------- */
+:root,
+.dark {
+  --radius: 0.75rem;
+
+  /* Deep near-black with a cool blue tint (não é preto puro) */
+  --background: oklch(0.16 0.015 265);
+  --foreground: oklch(0.97 0.005 260);
+
+  /* Elevation ladder */
+  --surface-1: oklch(0.19 0.017 265);
+  --surface-2: oklch(0.22 0.019 265);
+  --surface-3: oklch(0.26 0.022 265);
+
+  --card: oklch(0.19 0.017 265);
+  --card-foreground: oklch(0.97 0.005 260);
+  --popover: oklch(0.22 0.019 265);
+  --popover-foreground: oklch(0.97 0.005 260);
+
+  /* Primary: índigo elétrico */
+  --primary: oklch(0.66 0.19 268);
+  --primary-foreground: oklch(0.98 0.005 260);
+
+  /* Secondary: superfície interativa neutra */
+  --secondary: oklch(0.26 0.022 265);
+  --secondary-foreground: oklch(0.97 0.005 260);
+
+  /* Accent: ciano vibrante */
+  --accent: oklch(0.78 0.14 210);
+  --accent-foreground: oklch(0.16 0.015 265);
+
+  --muted: oklch(0.24 0.02 265);
+  --muted-foreground: oklch(0.68 0.02 260);
+
+  /* Semantics */
+  --success: oklch(0.72 0.14 180);       /* teal (não verde WhatsApp) */
+  --success-foreground: oklch(0.15 0.02 200);
+  --warning: oklch(0.78 0.16 75);        /* âmbar */
+  --warning-foreground: oklch(0.2 0.03 60);
+  --info: oklch(0.7 0.14 240);           /* azul info */
+  --info-foreground: oklch(0.15 0.02 240);
+  --destructive: oklch(0.68 0.22 15);    /* rose/red */
+  --destructive-foreground: oklch(0.98 0.005 260);
+
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.66 0.19 268 / 60%);
+
+  /* Brand gradient + glows */
+  --gradient-brand: linear-gradient(135deg, oklch(0.62 0.22 275), oklch(0.72 0.16 220));
+  --gradient-subtle: linear-gradient(180deg, oklch(0.22 0.02 265 / 60%), oklch(0.16 0.015 265 / 0%));
+  --shadow-glow: 0 0 0 1px oklch(0.66 0.19 268 / 25%), 0 8px 32px -8px oklch(0.66 0.19 268 / 35%);
+  --shadow-elevated: 0 1px 0 0 oklch(1 0 0 / 4%) inset, 0 12px 40px -12px oklch(0 0 0 / 60%);
+  --shadow-card: 0 1px 0 0 oklch(1 0 0 / 4%) inset, 0 1px 2px oklch(0 0 0 / 40%);
+}
+
+/* ---------- LIGHT ---------- */
+.light {
+  --background: oklch(0.99 0.003 260);
+  --foreground: oklch(0.18 0.02 265);
+
+  --surface-1: oklch(0.98 0.004 260);
+  --surface-2: oklch(0.96 0.006 260);
+  --surface-3: oklch(0.93 0.008 260);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.02 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 265);
+
+  --primary: oklch(0.52 0.2 270);
+  --primary-foreground: oklch(0.99 0.003 260);
+
+  --secondary: oklch(0.96 0.006 260);
+  --secondary-foreground: oklch(0.22 0.02 265);
+
+  --accent: oklch(0.6 0.14 215);
+  --accent-foreground: oklch(0.99 0.003 260);
+
+  --muted: oklch(0.95 0.006 260);
+  --muted-foreground: oklch(0.48 0.02 260);
+
+  --success: oklch(0.6 0.13 180);
+  --success-foreground: oklch(0.99 0.003 260);
+  --warning: oklch(0.72 0.17 70);
+  --warning-foreground: oklch(0.2 0.03 60);
+  --info: oklch(0.58 0.15 245);
+  --info-foreground: oklch(0.99 0.003 260);
+  --destructive: oklch(0.58 0.22 20);
+  --destructive-foreground: oklch(0.99 0.003 260);
+
+  --border: oklch(0.18 0.02 265 / 10%);
+  --input: oklch(0.18 0.02 265 / 12%);
+  --ring: oklch(0.52 0.2 270 / 45%);
+
+  --gradient-brand: linear-gradient(135deg, oklch(0.52 0.22 275), oklch(0.62 0.16 220));
+  --gradient-subtle: linear-gradient(180deg, oklch(0.96 0.006 260), oklch(0.99 0.003 260 / 0%));
+  --shadow-glow: 0 0 0 1px oklch(0.52 0.2 270 / 20%), 0 8px 32px -8px oklch(0.52 0.2 270 / 25%);
+  --shadow-elevated: 0 12px 40px -12px oklch(0.18 0.02 265 / 20%);
+  --shadow-card: 0 1px 2px oklch(0.18 0.02 265 / 8%);
+}
+
+/* ---------- Utilities exposed via tokens ---------- */
+@utility bg-gradient-brand {
+  background-image: var(--gradient-brand);
+}
+@utility bg-gradient-subtle {
+  background-image: var(--gradient-subtle);
+}
+@utility shadow-glow {
+  box-shadow: var(--shadow-glow);
+}
+@utility shadow-elevated {
+  box-shadow: var(--shadow-elevated);
+}
+@utility shadow-card {
+  box-shadow: var(--shadow-card);
+}
+@utility text-gradient-brand {
+  background-image: var(--gradient-brand);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+/* ---------- Keyframes ---------- */
+@keyframes nexo-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes nexo-fade-in-soft {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes nexo-scale-in {
+  from { opacity: 0; transform: scale(.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes nexo-slide-in-right {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes nexo-shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+@keyframes nexo-pulse-ring {
+  0% { box-shadow: 0 0 0 0 oklch(0.72 0.14 180 / 55%); }
+  70% { box-shadow: 0 0 0 6px oklch(0.72 0.14 180 / 0%); }
+  100% { box-shadow: 0 0 0 0 oklch(0.72 0.14 180 / 0%); }
+}
+@keyframes nexo-progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+@keyframes nexo-spin { to { transform: rotate(360deg); } }
+
+@utility animate-fade-in { animation: nexo-fade-in .35s cubic-bezier(.2,.7,.2,1) both; }
+@utility animate-fade-in-soft { animation: nexo-fade-in-soft .25s ease-out both; }
+@utility animate-scale-in { animation: nexo-scale-in .2s cubic-bezier(.2,.7,.2,1) both; }
+@utility animate-slide-in-right { animation: nexo-slide-in-right .3s cubic-bezier(.2,.7,.2,1) both; }
+@utility animate-pulse-ring { animation: nexo-pulse-ring 1.8s cubic-bezier(.66,0,.34,1) infinite; }
+@utility animate-spin-slow { animation: nexo-spin 1s linear infinite; }
+
+@utility stagger-children {
+  & > * { animation: nexo-fade-in .4s cubic-bezier(.2,.7,.2,1) both; }
+  & > *:nth-child(1) { animation-delay: .02s; }
+  & > *:nth-child(2) { animation-delay: .06s; }
+  & > *:nth-child(3) { animation-delay: .1s; }
+  & > *:nth-child(4) { animation-delay: .14s; }
+  & > *:nth-child(5) { animation-delay: .18s; }
+  & > *:nth-child(6) { animation-delay: .22s; }
+  & > *:nth-child(7) { animation-delay: .26s; }
+  & > *:nth-child(8) { animation-delay: .3s; }
+}
+
+@utility skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-surface-2);
+  &::after {
+    content: "";
+    position: absolute; inset: 0;
+    background-image: linear-gradient(
+      90deg,
+      transparent 0,
+      oklch(1 0 0 / 6%) 40%,
+      oklch(1 0 0 / 10%) 50%,
+      oklch(1 0 0 / 6%) 60%,
+      transparent 100%
+    );
+    background-size: 400px 100%;
+    animation: nexo-shimmer 1.4s linear infinite;
+  }
+}
+
+@utility hover-lift {
+  transition: transform .18s cubic-bezier(.2,.7,.2,1), box-shadow .18s;
+  &:hover { transform: translateY(-1px); box-shadow: var(--shadow-elevated); }
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01", "ss03";
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    letter-spacing: -0.005em;
+  }
+
+  h1 { font-size: 2.25rem; line-height: 1.1; font-weight: 600; letter-spacing: -0.03em; }
+  h2 { font-size: 1.75rem; line-height: 1.2; font-weight: 600; letter-spacing: -0.025em; }
+  h3 { font-size: 1.375rem; line-height: 1.3; font-weight: 600; letter-spacing: -0.02em; }
+  h4 { font-size: 1.125rem; line-height: 1.4; font-weight: 600; letter-spacing: -0.015em; }
+
+  ::selection { background: oklch(0.66 0.19 268 / 30%); }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--color-ring);
+    border-radius: 6px;
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(1 0 0 / 8%);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: oklch(1 0 0 / 16%); background-clip: padding-box; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important;
+    }
+  }
+}
+
+/* ============================================================
+   SIDEBAR — floating scrollbar (admin)
+   Não ocupa espaço no layout (renderizada sobre o padding direito).
+   ============================================================ */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--foreground) 22%, transparent) transparent;
+  transition: scrollbar-color 200ms ease;
+}
+.sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+  background: transparent;
+}
+.sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, var(--foreground) 22%, transparent);
+  border-radius: 9999px;
+  transition: background-color 200ms ease;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, var(--foreground) 40%, transparent);
+}
+
+/* Variante "revelar no hover" — usada quando a sidebar está recolhida.
+   Trilho reservado (overflow-y: scroll) mantém a largura fixa do painel;
+   o polegar fica invisível até o hover, portanto a barra é flutuante
+   e não altera a divisão do sistema. */
+.sidebar-scroll-hover {
+  overflow-y: scroll;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 200ms ease;
+}
+.sidebar-scroll-hover::-webkit-scrollbar { width: 6px; background: transparent; }
+.sidebar-scroll-hover::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+  transition: background-color 200ms ease;
+}
+.sidebar-scroll-hover:hover {
+  scrollbar-color: color-mix(in oklab, var(--foreground) 30%, transparent) transparent;
+}
+.sidebar-scroll-hover:hover::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, var(--foreground) 30%, transparent);
+}
+
+/* ============================================================
+   SIDEBAR — tipografia responsiva (admin)
+   Em notebooks (viewports < 1536px) reduz o tamanho da fonte
+   dos itens da sidebar; em monitores (≥ 1536px) mantém o padrão.
+   ============================================================ */
+@media (max-width: 1535px) {
+  .sidebar-admin-compact,
+  .sidebar-admin-compact a,
+  .sidebar-admin-compact button,
+  .sidebar-admin-compact span {
+    font-size: 12px;
+    line-height: 1.15rem;
+  }
+  .sidebar-admin-compact svg {
+    width: 15px;
+    height: 15px;
+  }
+}
+

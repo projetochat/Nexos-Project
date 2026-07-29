@@ -1,0 +1,1 @@
+ALTER TABLE public.quick_replies ADD COLUMN IF NOT EXISTS close_on_send boolean NOT NULL DEFAULT false;

@@ -1,0 +1,1 @@
+ALTER TABLE public.instancias ADD COLUMN IF NOT EXISTS tipo text NOT NULL DEFAULT 'whatsapp';

@@ -1,0 +1,1 @@
+ALTER TABLE public.access_profiles ADD COLUMN IF NOT EXISTS mostrar_nome_atendente boolean NOT NULL DEFAULT true;
