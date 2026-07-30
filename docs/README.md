@@ -9,7 +9,7 @@ IMPLEMENTADO:
 - Frontend React/TanStack Start/Vite com rotas file-based.
 - UI administrativa, operacional, atendimento, configuracoes e Super Admin.
 - Supabase Auth/PostgREST/Realtime em partes do MVP.
-- Mocks e hardcodes ainda usados por telas administrativas, campanhas, filas e rotas legadas.
+- Mocks e hardcodes ainda usados por campanhas, filas e rotas legadas.
 - Persistencia local para tema, sessao, sidebar, preferencias de filas e onboardings.
 
 SIMULADO NO MVP:
@@ -17,21 +17,25 @@ SIMULADO NO MVP:
 - Super Admin SaaS/multi-tenant.
 - Monitoramento de Evolution API, Meta Cloud API, Socket.io e Cloudflare R2.
 - Campanhas, filas administrativas e parte de empresas/atendentes/departamentos/etiquetas.
-- QR de instancia e integracoes de canais.
+- Meta Cloud API, campanhas e integracoes de canais alem de Evolution.
 
 PLANEJADO:
 
 - Backend Node.js + NestJS + TypeScript.
 - PostgreSQL + Prisma.
 - Redis + BullMQ.
-- Evolution API + Meta Cloud API por camada adaptadora.
+- Meta Cloud API por camada adaptadora.
 - Socket.io.
+- Cloudflare R2.
+- Docker Compose em VPS.
 
 ## Sprint 06
 
-Sprint 06 adicionou o Universal Messaging Adapter no backend. O envio textual da Inbox segue visualmente igual, mas agora passa por provider port, registry e Development Provider. Evolution API, Meta Cloud API, filas, realtime e storage continuam fora de escopo.
-- Cloudflare R2.
-- Docker Compose em VPS.
+Sprint 06 adicionou o Universal Messaging Adapter no backend. O envio textual da Inbox segue visualmente igual, mas agora passa por provider port, registry e Development Provider.
+
+## Sprint 07
+
+Sprint 07 adicionou Evolution API como provider real: lifecycle de connections, QR Code, outbound textual, webhook inbound/status e tela `/instancias` via Nexos API. Meta Cloud API, filas do Nexos, realtime proprio e storage continuam fora de escopo.
 
 ## Tecnologias atuais
 

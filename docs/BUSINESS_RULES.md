@@ -61,6 +61,7 @@ Somente regras comprovadas no codigo.
 - `PlatformRole.ADMIN` nao equivale a `tenant_admin`.
 - Toda autorizacao de users, departments e roles ocorre no backend via permission guard.
 - Frontend pode esconder acoes por UX, mas nao substitui autorizacao server-side.
+
 ## Sprint 06 - Messaging Adapter
 
 - Provider resolution nunca vem do payload publico de envio. O provider e resolvido pela Conversation/Connection tenant-scoped.
@@ -73,3 +74,14 @@ Somente regras comprovadas no codigo.
 - Inbound duplicado por `tenantId + connectionId + externalMessageId` retorna o Message existente.
 - Status e monotonicamente protegido: READ nao volta para SENT/DELIVERED; FAILED e terminal salvo repeticao de FAILED.
 - Media permanece como boundary de capability. Storage real e URLs assinadas continuam fora de escopo.
+
+## Sprint 07 - Evolution Provider
+
+- Evolution API e apenas provider adapter; o core continua provider-neutral.
+- `instanceName` externo fica em `MessagingConnection.externalReference`, sem secrets.
+- Criacao, QR, status e logout de instancias exigem escopo do tenant e permissao de connections.
+- Outbound nao usa provider fallback. Conversa sem `connectionId` configurado nao envia.
+- Webhook Evolution exige JWT proprio assinado por `EVOLUTION_WEBHOOK_SECRET`.
+- Eventos `fromMe` recebidos no webhook inbound sao ignorados para evitar duplicacao do outbound local.
+- Eventos desconhecidos ou payloads incompletos sao descartados sem vazar erro de provider para o dominio.
+- QR Code e status de conexao sao dados operacionais temporarios; mensagens continuam no modelo canonico.

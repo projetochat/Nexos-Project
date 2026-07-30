@@ -166,6 +166,18 @@ export type ConversationCounts = {
   leads: number;
 };
 
+export type ApiMessagingConnection = {
+  id: string;
+  tenantId: string;
+  name: string;
+  providerType: "development" | "evolution" | "meta_cloud";
+  status: "disconnected" | "connecting" | "connected" | "error";
+  externalReference: string | null;
+  createdAt: string;
+  updatedAt: string;
+  qrCodeBase64?: string | null;
+};
+
 type ListParams = {
   q?: string;
   page?: number;
@@ -419,6 +431,24 @@ export const messageApi = {
       `/conversations/${conversationId}/messages/read`,
       { method: "PATCH" },
     ),
+};
+
+export const connectionsApi = {
+  list: () => apiRequest<ApiMessagingConnection[]>("/messaging/connections"),
+  createEvolution: (data: { name: string; instanceName?: string }) =>
+    apiRequest<ApiMessagingConnection>("/messaging/connections/evolution", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  status: (id: string) => apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/status`),
+  qr: (id: string) =>
+    apiRequest<{ connectionId: string; qrCodeBase64: string | null; status: string }>(
+      `/messaging/connections/${id}/qr`,
+    ),
+  logout: (id: string) =>
+    apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/logout`, {
+      method: "PATCH",
+    }),
 };
 
 export function clearNexosApiSession() {

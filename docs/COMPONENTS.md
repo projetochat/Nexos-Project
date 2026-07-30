@@ -84,6 +84,7 @@ Backend:
 - `roles`: controller, DTOs e modulo.
 - `users/dto`: DTOs de create/update user.
 - `tenant-records` removido por ser artefato de teste da Sprint 01.
+
 ## Sprint 06 - Frontend components
 
 Nao houve redesign da Inbox. Componentes existentes continuam consumindo `messageApi.sendText`; o tipo de status do cliente foi ampliado para aceitar `sending`, `sent`, `failed`, `delivered` e `read`, preservando compatibilidade visual.

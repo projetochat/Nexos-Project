@@ -149,13 +149,13 @@ Base local validada: `http://localhost:3001/api`.
 
 Todas as rotas abaixo usam `Authorization: Bearer <accessToken>`, derivam `tenantId` da membership autenticada e aplicam escopo operacional server-side.
 
-| Metodo  | Endpoint                        | Permission             | Descricao                                                                 |
-| ------- | ------------------------------- | ---------------------- | ------------------------------------------------------------------------- |
-| `GET`   | `/conversations`                | `conversations.read`   | Lista conversas com paginacao, filtros, busca, sort e contadores por aba  |
-| `GET`   | `/conversations/:id`            | `conversations.read`   | Consulta conversa visivel ao usuario                                      |
-| `POST`  | `/conversations`                | `conversations.assign` | Cria conversa para contato do tenant; pode atribuir ao usuario atual      |
-| `PATCH` | `/conversations/:id/assignee`   | `conversations.assign` | Atribui, assume ou desatribui conversa                                    |
-| `PATCH` | `/conversations/:id/department` | `conversations.manage` | Transfere conversa para departamento ativo e permitido                    |
+| Metodo  | Endpoint                        | Permission             | Descricao                                                                       |
+| ------- | ------------------------------- | ---------------------- | ------------------------------------------------------------------------------- |
+| `GET`   | `/conversations`                | `conversations.read`   | Lista conversas com paginacao, filtros, busca, sort e contadores por aba        |
+| `GET`   | `/conversations/:id`            | `conversations.read`   | Consulta conversa visivel ao usuario                                            |
+| `POST`  | `/conversations`                | `conversations.assign` | Cria conversa para contato do tenant; pode atribuir ao usuario atual            |
+| `PATCH` | `/conversations/:id/assignee`   | `conversations.assign` | Atribui, assume ou desatribui conversa                                          |
+| `PATCH` | `/conversations/:id/department` | `conversations.manage` | Transfere conversa para departamento ativo e permitido                          |
 | `PATCH` | `/conversations/:id/status`     | `conversations.manage` | Altera status explicitamente: `aberta`, `em_andamento`, `aguardando`, `fechada` |
 
 Filtros de `/conversations`:
@@ -187,10 +187,10 @@ Base local validada: `http://localhost:3001/api`.
 
 Todas as rotas abaixo usam `Authorization: Bearer <accessToken>`, derivam `tenantId` da membership autenticada e reaproveitam o escopo operacional de `Conversation`.
 
-| Metodo  | Endpoint                                      | Permission           | Descricao                                                         |
-| ------- | --------------------------------------------- | -------------------- | ----------------------------------------------------------------- |
-| `GET`   | `/conversations/:conversationId/messages`     | `conversations.read` | Lista historico com `limit` e `cursor` para paginacao backwards   |
-| `POST`  | `/conversations/:conversationId/messages`     | `messages.send`      | Persiste mensagem `TEXT` outbound do atendente responsavel        |
+| Metodo  | Endpoint                                       | Permission           | Descricao                                                           |
+| ------- | ---------------------------------------------- | -------------------- | ------------------------------------------------------------------- |
+| `GET`   | `/conversations/:conversationId/messages`      | `conversations.read` | Lista historico com `limit` e `cursor` para paginacao backwards     |
+| `POST`  | `/conversations/:conversationId/messages`      | `messages.send`      | Persiste mensagem `TEXT` outbound do atendente responsavel          |
 | `PATCH` | `/conversations/:conversationId/messages/read` | `conversations.read` | Marca mensagens inbound como lidas e zera `unreadCount` da conversa |
 
 Contrato de envio:
@@ -213,6 +213,7 @@ Efeitos transacionais:
 - Criar mensagem atualiza `Conversation.lastMessagePreview` e `Conversation.lastMessageAt`.
 - Marcar leitura atualiza `Message.readAt` para inbound pendentes e `Conversation.unreadCount = 0`.
 - Acoes estruturais de conversa geram eventos `SYSTEM` internos para inicio, atribuicao, transferencia, fila, stand by e encerramento.
+
 ## Sprint 06 - Messaging Adapter
 
 Nenhum endpoint publico provider-specific foi adicionado.
@@ -227,3 +228,32 @@ O endpoint existente `POST /conversations/:conversationId/messages` continua rec
 ```
 
 O frontend nao escolhe `provider`. A resolucao ocorre no backend pela Conversation/Connection tenant-scoped. Contratos internos de outbound, inbound e status ficam na camada de arquitetura, nao na API publica.
+
+## Sprint 07 - Evolution API Provider
+
+Base local: `http://localhost:3001/api`.
+
+Rotas autenticadas:
+
+| Metodo  | Endpoint                                  | Permission            | Descricao                                      |
+| ------- | ----------------------------------------- | --------------------- | ---------------------------------------------- |
+| `GET`   | `/messaging/connections`                  | `connections.read`    | Lista connections do tenant                    |
+| `GET`   | `/messaging/connections/:id`              | `connections.read`    | Consulta connection tenant-scoped              |
+| `GET`   | `/messaging/connections/health/evolution` | `connections.read`    | Verifica configuracao/saude do provider        |
+| `POST`  | `/messaging/connections/evolution`        | `connections.manage`  | Cria instancia Evolution e registra connection |
+| `GET`   | `/messaging/connections/:id/status`       | `connections.read`    | Consulta status real da instancia Evolution    |
+| `GET`   | `/messaging/connections/:id/qr`           | `connections.manage`  | Solicita QR Code de conexao                    |
+| `PATCH` | `/messaging/connections/:id/logout`       | `connections.manage`  | Desconecta instancia Evolution                 |
+| `POST`  | `/webhooks/evolution`                     | JWT Evolution webhook | Recebe eventos provider-specific               |
+
+Payload de criacao:
+
+```json
+{
+  "name": "WhatsApp Comercial"
+}
+```
+
+O endpoint de webhook nao usa JWT de usuario. Ele exige `Authorization: Bearer <token>` assinado com `EVOLUTION_WEBHOOK_SECRET` e claims `app=evolution` e `action=webhook`.
+
+O endpoint existente `POST /conversations/:conversationId/messages` agora envia texto real via Evolution quando a conversa possui `connectionId` apontando para uma connection `EVOLUTION` conectada. Sem connection configurada, o envio falha com erro de negocio em vez de escolher provider automaticamente.

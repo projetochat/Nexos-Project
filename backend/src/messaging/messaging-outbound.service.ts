@@ -39,6 +39,8 @@ type PreparedOutbound =
       connection: {
         id: string;
         providerType: MessagingProviderType;
+        status: MessagingConnectionStatus;
+        externalReference: string | null;
       };
     };
 
@@ -96,6 +98,19 @@ export class MessagingOutboundService {
     if (!prepared.dispatch) return this.serialize(prepared.message);
 
     const connection = prepared.connection;
+    if (connection.status !== MessagingConnectionStatus.CONNECTED) {
+      const updated = await this.prisma.message.update({
+        where: { id: prepared.message.id },
+        data: {
+          status: MessageStatus.FAILED,
+          providerErrorCode: MessagingErrorCode.PROVIDER_UNAVAILABLE,
+          providerErrorMessage: "Messaging connection is not connected.",
+        },
+        include: messageInclude,
+      });
+      return this.serialize(updated);
+    }
+
     const provider = this.providers.resolve(connection.providerType);
     this.providers.assertSupports(provider, MessageType.TEXT);
 
@@ -105,6 +120,7 @@ export class MessagingOutboundService {
         conversationId,
         messageId: prepared.message.id,
         connectionId: connection.id,
+        providerConnectionRef: connection.externalReference,
         providerType: connection.providerType,
         recipient: {
           phone: conversation.contact.phone,
@@ -234,22 +250,7 @@ export class MessagingOutboundService {
       return connection;
     }
 
-    const connection = await tx.messagingConnection.findFirst({
-      where: {
-        tenantId,
-        providerType: MessagingProviderType.DEVELOPMENT,
-        status: MessagingConnectionStatus.CONNECTED,
-      },
-      orderBy: { createdAt: "asc" },
-    });
-    if (!connection) {
-      throw new BadRequestException("Nenhuma connection de mensageria configurada.");
-    }
-    await tx.conversation.update({
-      where: { tenantId_id: { tenantId, id: conversation.id } },
-      data: { connectionId: connection.id },
-    });
-    return connection;
+    throw new BadRequestException("Conversa sem connection de mensageria configurada.");
   }
 
   private async visibilityWhere(

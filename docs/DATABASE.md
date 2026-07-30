@@ -214,6 +214,7 @@ Decisoes:
 - Mensagens `SYSTEM` sao criadas por acoes internas do backend; nao existe rota publica generica para sistema.
 - `IMAGE` e `AUDIO` ficam apenas como fronteira explicita de schema. Sem R2, provider ou data URL fake nesta sprint.
 - O seed foi estabilizado para nao reduzir o contador de protocolos em execucoes repetidas.
+
 ## Sprint 06 - Messaging Adapter
 
 ### MessagingConnection
@@ -236,7 +237,7 @@ Constraints:
 
 ### Conversation -> Connection
 
-`conversations.connectionId` e opcional para preservar dados legados. A coluna antiga `contacts.instance` permanece temporariamente como filtro/metadata legado do frontend. Conversas sem connection podem ser vinculadas a uma development connection tenant-scoped quando houver envio outbound em ambiente nao produtivo.
+`conversations.connectionId` e opcional para preservar dados legados. A coluna antiga `contacts.instance` permanece temporariamente como filtro/metadata legado do frontend. A partir da Sprint 07, envio outbound nao escolhe connection automaticamente: a conversa precisa estar vinculada a uma connection tenant-scoped.
 
 ### Message provider-neutral fields
 
@@ -253,3 +254,22 @@ Constraints:
 Idempotencia inbound usa `@@unique([tenantId, connectionId, externalMessageId])`. O outbound preserva `clientMessageId` por `tenantId + conversationId + clientMessageId`.
 
 Nenhum payload bruto de provider deve ser armazenado nesses campos.
+
+## Sprint 07 - Evolution Provider
+
+Nenhuma tabela provider-specific foi criada. Evolution usa `messaging_connections`:
+
+- `providerType = EVOLUTION`
+- `externalReference = instanceName` criado no provider
+- `status` sincronizado para `DISCONNECTED`, `CONNECTING`, `CONNECTED` ou `ERROR`
+
+A migration `20260730100700_connections_permissions` adiciona permissoes:
+
+- `connections.read`
+- `connections.manage`
+
+Permissoes padrao:
+
+- `tenant_admin`: leitura e gestao
+- `supervisor`: leitura e gestao
+- `agent`: leitura

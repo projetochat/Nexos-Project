@@ -421,6 +421,10 @@ async function seedConversations(tenantId: string, departments: { id: string; na
   const support = departments[0];
   const sales = departments[1] ?? support;
   const finance = departments[2] ?? support;
+  const connection = await prisma.messagingConnection.findFirstOrThrow({
+    where: { tenantId, providerType: MessagingProviderType.DEVELOPMENT },
+    orderBy: { createdAt: "asc" },
+  });
   const now = Date.now();
 
   const minimumCounter = isOrbit ? 3 : 5;
@@ -446,6 +450,7 @@ async function seedConversations(tenantId: string, departments: { id: string; na
         : "Preciso acompanhar meu pedido.",
       lastMessageAt: new Date(now - 5 * 60_000),
       authorMembershipId: agent?.id ?? admin.id,
+      connectionId: connection.id,
     }),
     seedConversation({
       id: palette.standby,
@@ -459,6 +464,7 @@ async function seedConversations(tenantId: string, departments: { id: string; na
       lastMessagePreview: "Cliente em espera para retorno.",
       lastMessageAt: new Date(now - 40 * 60_000),
       authorMembershipId: supervisor?.id ?? admin.id,
+      connectionId: connection.id,
     }),
     seedConversation({
       id: palette.queue,
@@ -472,6 +478,7 @@ async function seedConversations(tenantId: string, departments: { id: string; na
       lastMessagePreview: "Novo atendimento aguardando na fila.",
       lastMessageAt: new Date(now - 70 * 60_000),
       authorMembershipId: admin.id,
+      connectionId: connection.id,
     }),
     seedConversation({
       id: palette.lead,
@@ -485,6 +492,7 @@ async function seedConversations(tenantId: string, departments: { id: string; na
       lastMessagePreview: "Lead recebido pelo canal digital.",
       lastMessageAt: new Date(now - 95 * 60_000),
       authorMembershipId: admin.id,
+      connectionId: connection.id,
     }),
   ]);
 
@@ -506,6 +514,7 @@ async function seedConversations(tenantId: string, departments: { id: string; na
         lastMessageAt: new Date(now - 24 * 60 * 60_000),
         closedAt: new Date(now - 23 * 60 * 60_000),
         authorMembershipId: admin.id,
+        connectionId: connection.id,
       }),
       seedConversation({
         id: financeId,
@@ -519,6 +528,7 @@ async function seedConversations(tenantId: string, departments: { id: string; na
         lastMessagePreview: "Demanda financeira restrita ao departamento.",
         lastMessageAt: new Date(now - 15 * 60_000),
         authorMembershipId: admin.id,
+        connectionId: connection.id,
       }),
     ]);
   }
@@ -536,6 +546,7 @@ async function seedConversation(input: {
   lastMessagePreview: string;
   lastMessageAt: Date;
   authorMembershipId: string;
+  connectionId: string;
   closedAt?: Date;
 }) {
   await prisma.conversation.upsert({
@@ -545,6 +556,7 @@ async function seedConversation(input: {
       contactId: input.contactId,
       departmentId: input.departmentId,
       assignedMembershipId: input.assignedMembershipId,
+      connectionId: input.connectionId,
       status: input.status,
       protocol: input.protocol,
       unreadCount: input.unreadCount,
@@ -559,6 +571,7 @@ async function seedConversation(input: {
       contactId: input.contactId,
       departmentId: input.departmentId,
       assignedMembershipId: input.assignedMembershipId,
+      connectionId: input.connectionId,
       status: input.status,
       protocol: input.protocol,
       unreadCount: input.unreadCount,
@@ -578,6 +591,7 @@ async function seedConversationMessages(input: {
   lastMessagePreview: string;
   lastMessageAt: Date;
   authorMembershipId: string;
+  connectionId: string;
   closedAt?: Date;
 }) {
   await prisma.message.deleteMany({
@@ -589,6 +603,7 @@ async function seedConversationMessages(input: {
     {
       tenantId: input.tenantId,
       conversationId: input.id,
+      connectionId: input.connectionId,
       direction: MessageDirection.SYSTEM,
       type: MessageType.SYSTEM,
       authorMembershipId: input.authorMembershipId,
@@ -603,6 +618,7 @@ async function seedConversationMessages(input: {
     rows.push({
       tenantId: input.tenantId,
       conversationId: input.id,
+      connectionId: input.connectionId,
       direction: MessageDirection.INBOUND,
       type: MessageType.TEXT,
       authorMembershipId: null,
@@ -614,6 +630,7 @@ async function seedConversationMessages(input: {
   rows.push({
     tenantId: input.tenantId,
     conversationId: input.id,
+    connectionId: input.connectionId,
     direction: input.unreadCount > 0 ? MessageDirection.INBOUND : MessageDirection.OUTBOUND,
     type: MessageType.TEXT,
     authorMembershipId: input.unreadCount > 0 ? null : input.authorMembershipId,

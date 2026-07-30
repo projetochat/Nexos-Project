@@ -5,6 +5,7 @@ import { ConversationsModule } from "./conversations/conversations.module";
 import { CrmModule } from "./crm/crm.module";
 import { DepartmentsModule } from "./departments/departments.module";
 import { HealthModule } from "./health/health.module";
+import { MessagingModule } from "./messaging/messaging.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { RolesModule } from "./roles/roles.module";
 import { UsersModule } from "./users/users.module";
@@ -18,6 +19,7 @@ import { UsersModule } from "./users/users.module";
     DepartmentsModule,
     RolesModule,
     CrmModule,
+    MessagingModule,
     ConversationsModule,
     HealthModule,
   ],

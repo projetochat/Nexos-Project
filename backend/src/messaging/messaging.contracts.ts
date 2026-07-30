@@ -50,6 +50,7 @@ export type SendMessageCommand = {
   conversationId: string;
   messageId: string;
   connectionId: string;
+  providerConnectionRef?: string | null;
   providerType: MessagingProviderType;
   recipient: CanonicalRecipient;
   content: CanonicalMessageContent;

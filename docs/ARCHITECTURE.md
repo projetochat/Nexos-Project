@@ -107,6 +107,44 @@ Provider webhook -> Provider Adapter -> InboundMessageEvent canonico -> Messagin
 
 Eventos inbound sao idempotentes por tenantId + connectionId + externalMessageId. Eventos de status sao processados por contrato canonico e protegidos contra regressao invalida, como READ voltando para SENT.
 
+## Sprint 07 - Evolution API Provider
+
+Evolution API foi implementada como adapter real sobre o contrato da Sprint 06:
+
+```text
+Messages API
+  -> Messaging Core
+  -> MessagingProviderRegistry
+  -> EvolutionMessagingProvider
+  -> EvolutionClient
+  -> Evolution API v2.3.1
+```
+
+O provider traduz comandos canonicos para `sendText`, usa `externalReference` da connection como `instanceName` e retorna apenas resultado provider-neutral. Payload bruto da Evolution nao entra no core.
+
+Lifecycle de connection:
+
+```text
+/messaging/connections/evolution -> create instance
+/messaging/connections/:id/qr    -> connect/QR
+/messaging/connections/:id/status -> connectionState
+/messaging/connections/:id/logout -> logout
+```
+
+Webhook:
+
+```text
+Evolution webhook
+  -> /webhooks/evolution
+  -> JWT webhook validation
+  -> EvolutionWebhookTranslator
+  -> MessagingInboundService / MessagingStatusService / MessagingConnectionsService
+```
+
+Eventos suportados: `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `SEND_MESSAGE_UPDATE`, `QRCODE_UPDATED` e `CONNECTION_UPDATE`. Inbound duplicado continua idempotente por tenant, connection e external message id.
+
+Redis/PostgreSQL adicionados no Compose pertencem a infraestrutura interna da Evolution API. Nexos ainda nao implementa Redis/BullMQ, filas, Socket.io, R2, campanhas, bots, IA ou billing.
+
 ## Sprint 01.1 - Regression Gate
 
 O frontend Lovable/TanStack segue como contrato funcional e visual. A Sprint 01.1 nao mudou design, rotas ou navegacao; ela estabilizou o pipeline local para as proximas sprints.

@@ -1,15 +1,23 @@
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import helmet from "helmet";
 import { AppModule } from "../src/app.module";
-import { ConversationStatus, MessageDirection, MessageType } from "../src/generated/prisma";
+import {
+  ConversationStatus,
+  MessageDirection,
+  MessageType,
+  MessagingConnectionStatus,
+  MessagingProviderType,
+} from "../src/generated/prisma";
 import { PrismaService } from "../src/prisma/prisma.service";
 
 describe("Nexos API organization and RBAC", () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let jwt: JwtService;
 
   beforeAll(async () => {
     process.env.DATABASE_URL =
@@ -18,6 +26,8 @@ describe("Nexos API organization and RBAC", () => {
     process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test-access-secret-minimum-32-chars";
     process.env.JWT_REFRESH_SECRET =
       process.env.JWT_REFRESH_SECRET ?? "test-refresh-secret-minimum-32-chars";
+    process.env.EVOLUTION_WEBHOOK_SECRET =
+      process.env.EVOLUTION_WEBHOOK_SECRET ?? "test-evolution-webhook-secret";
 
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true }), AppModule],
@@ -30,6 +40,7 @@ describe("Nexos API organization and RBAC", () => {
     );
     app.setGlobalPrefix("api");
     prisma = app.get(PrismaService);
+    jwt = app.get(JwtService);
     await app.init();
   });
 
@@ -699,11 +710,15 @@ describe("Nexos API organization and RBAC", () => {
     const contact = await prisma.contact.findFirstOrThrow({
       where: { tenantId: tenant.id, archivedAt: null },
     });
+    const connection = await prisma.messagingConnection.findFirstOrThrow({
+      where: { tenantId: tenant.id, providerType: MessagingProviderType.DEVELOPMENT },
+    });
     const activeConversation = (
       await prisma.conversation.create({
         data: {
           tenantId: tenant.id,
           contactId: contact.id,
+          connectionId: connection.id,
           departmentId: department.id,
           assignedMembershipId: agentMembership.id,
           status: ConversationStatus.EM_ANDAMENTO,
@@ -889,6 +904,142 @@ describe("Nexos API organization and RBAC", () => {
     expect(unread).toBe(0);
   });
 
+  it("processes Evolution inbound webhook idempotently", async () => {
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const connection = await prisma.messagingConnection.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Evolution E2E",
+        providerType: MessagingProviderType.EVOLUTION,
+        status: MessagingConnectionStatus.CONNECTED,
+        externalReference: `e2e-acme-${Date.now()}`,
+      },
+    });
+    const token = webhookToken();
+    const payload = {
+      event: "messages.upsert",
+      instance: connection.externalReference,
+      data: {
+        key: {
+          remoteJid: "551198887777@s.whatsapp.net",
+          fromMe: false,
+          id: "EXT-DUP-1",
+        },
+        message: { conversation: "Webhook inbound duplicate" },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+        pushName: "Webhook Cliente",
+      },
+    };
+
+    await request(app.getHttpServer())
+      .post("/api/webhooks/evolution")
+      .set("Authorization", `Bearer ${token}`)
+      .send(payload)
+      .expect(200);
+    await request(app.getHttpServer())
+      .post("/api/webhooks/evolution")
+      .set("Authorization", `Bearer ${token}`)
+      .send(payload)
+      .expect(200);
+
+    await expect(
+      prisma.message.count({
+        where: {
+          tenantId: tenant.id,
+          connectionId: connection.id,
+          externalMessageId: "EXT-DUP-1",
+        },
+      }),
+    ).resolves.toBe(1);
+  });
+
+  it("keeps equal external message IDs isolated across tenants", async () => {
+    const [acme, orbit] = await Promise.all([
+      prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } }),
+      prisma.tenant.findUniqueOrThrow({ where: { slug: "orbit" } }),
+    ]);
+    const suffix = Date.now();
+    const [acmeConnection, orbitConnection] = await Promise.all([
+      prisma.messagingConnection.create({
+        data: {
+          tenantId: acme.id,
+          name: "Evolution Acme Cross",
+          providerType: MessagingProviderType.EVOLUTION,
+          status: MessagingConnectionStatus.CONNECTED,
+          externalReference: `e2e-acme-cross-${suffix}`,
+        },
+      }),
+      prisma.messagingConnection.create({
+        data: {
+          tenantId: orbit.id,
+          name: "Evolution Orbit Cross",
+          providerType: MessagingProviderType.EVOLUTION,
+          status: MessagingConnectionStatus.CONNECTED,
+          externalReference: `e2e-orbit-cross-${suffix}`,
+        },
+      }),
+    ]);
+    const token = webhookToken();
+    const externalMessageId = `EXT-CROSS-${suffix}`;
+
+    for (const [connection, phone] of [
+      [acmeConnection, "551198881111"],
+      [orbitConnection, "553198882222"],
+    ] as const) {
+      await request(app.getHttpServer())
+        .post("/api/webhooks/evolution")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          event: "messages.upsert",
+          instance: connection.externalReference,
+          data: {
+            key: {
+              remoteJid: `${phone}@s.whatsapp.net`,
+              fromMe: false,
+              id: externalMessageId,
+            },
+            message: { conversation: "Mesmo external id" },
+            messageTimestamp: Math.floor(Date.now() / 1000),
+            pushName: "Cross Tenant",
+          },
+        })
+        .expect(200);
+    }
+
+    await expect(prisma.message.count({ where: { externalMessageId } })).resolves.toBe(2);
+  });
+
+  it("rejects unauthenticated Evolution webhooks", async () => {
+    await request(app.getHttpServer())
+      .post("/api/webhooks/evolution")
+      .send({ event: "labels.edit", instance: "unknown", data: {} })
+      .expect(401);
+  });
+
+  it("lists messaging connections by tenant and blocks cross-tenant detail access", async () => {
+    const acmeToken = await login("admin@nexo.app", "demo1234", "acme");
+    const orbit = await prisma.tenant.findUniqueOrThrow({ where: { slug: "orbit" } });
+    const orbitConnection = await prisma.messagingConnection.findFirstOrThrow({
+      where: { tenantId: orbit.id },
+    });
+
+    await request(app.getHttpServer())
+      .get("/api/messaging/connections")
+      .set("Authorization", `Bearer ${acmeToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(Array.isArray(body)).toBe(true);
+        expect(
+          body.every((connection: { tenantId: string }) => connection.tenantId !== orbit.id),
+        ).toBe(true);
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/messaging/connections/${orbitConnection.id}`)
+      .set("Authorization", `Bearer ${acmeToken}`)
+      .expect(404);
+  });
+
   it("rejects invalid credentials", async () => {
     await request(app.getHttpServer())
       .post("/api/auth/login")
@@ -902,5 +1053,12 @@ describe("Nexos API organization and RBAC", () => {
       .send({ email, password, tenantSlug })
       .expect(201);
     return response.body.accessToken as string;
+  }
+
+  function webhookToken() {
+    return jwt.sign(
+      { app: "evolution", action: "webhook" },
+      { secret: process.env.EVOLUTION_WEBHOOK_SECRET, expiresIn: "10m" },
+    );
   }
 });

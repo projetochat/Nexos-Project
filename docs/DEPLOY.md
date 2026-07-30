@@ -45,7 +45,8 @@ Nao foram encontrados arquivos de pipeline como GitHub Actions, GitLab CI ou sim
 
 - Supabase/Lovable Cloud para Auth, Postgres e Realtime.
 - Google Fonts no HTML root.
-- Nao ha integracao real implementada com Evolution API, Meta Cloud API, N8N, Redis, BullMQ, R2 ou provedor de IA.
+- Evolution API esta disponivel como provider real opcional via Docker Compose local.
+- Nao ha integracao real implementada com Meta Cloud API, N8N, Redis/BullMQ do Nexos, R2 ou provedor de IA.
 
 ## Deploy futuro aprovado
 
@@ -59,11 +60,35 @@ PLANEJADO para Sprints posteriores:
 - Adaptadores Evolution API e Meta Cloud API.
 - Docker Compose em VPS como deploy inicial.
 
-Sprint 01 implementou Docker Compose, NestJS e Prisma. Redis, BullMQ, Socket.io, R2, Evolution API e Meta Cloud API continuam nao implementados.
+Sprint 01 implementou Docker Compose, NestJS e Prisma. Sprint 07 adicionou Evolution API como provider. Redis/BullMQ do Nexos, Socket.io, R2 e Meta Cloud API continuam nao implementados.
 
 ## Sprint 06
 
 Executar migrations Prisma antes de subir a nova versao para criar `messaging_connections` e campos provider-neutral de `messages`. Development Provider e bloqueado em `NODE_ENV=production`; ambientes produtivos devem configurar providers reais em sprint futura antes de permitir outbound externo.
+
+## Sprint 07
+
+Evolution API local:
+
+```powershell
+docker compose up -d postgres evolution-postgres evolution-redis evolution-api
+```
+
+Variaveis:
+
+- `EVOLUTION_BASE_URL=http://localhost:8080`
+- `EVOLUTION_API_KEY`
+- `EVOLUTION_TIMEOUT_MS=10000`
+- `EVOLUTION_WEBHOOK_PUBLIC_URL=http://host.docker.internal:3001/api/webhooks/evolution`
+- `EVOLUTION_WEBHOOK_SECRET`
+- `EVOLUTION_SERVER_URL=http://localhost:8080`
+- `EVOLUTION_POSTGRES_USERNAME`
+- `EVOLUTION_POSTGRES_PASSWORD`
+- `EVOLUTION_POSTGRES_DATABASE`
+
+Usar valores fortes para `EVOLUTION_API_KEY` e `EVOLUTION_WEBHOOK_SECRET` fora de desenvolvimento. A imagem Evolution esta fixada em `evoapicloud/evolution-api:v2.3.1`; nao usar `latest` em deploy reproduzivel.
+
+O Redis e PostgreSQL extras do Compose sao internos da Evolution API. Eles nao habilitam filas BullMQ, cache ou realtime do Nexos.
 
 ## Operacao Local Sprint 01
 

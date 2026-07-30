@@ -89,6 +89,7 @@ Sprint 01 adicionou testes automatizados para o backend e sanitizacao XSS. Para 
 - Roles de tenant devem ser consultadas por `[tenantId, roleId]`.
 - Associations de departamento devem preservar consistencia por tenant.
 - Permission keys novas devem entrar no catalogo controlado em `backend/src/auth/permissions.constants.ts`.
+
 ## Sprint 06 - Messaging adapter guidelines
 
 - Novos providers devem implementar `MessagingProvider`.
@@ -97,3 +98,12 @@ Sprint 01 adicionou testes automatizados para o backend e sanitizacao XSS. Para 
 - Nao persistir payload bruto, tokens, headers ou secrets de provider.
 - Capabilities devem ser validadas antes de chamar provider.
 - Status externos devem passar pelo processor canonico e respeitar progressao monotona.
+
+## Sprint 07 - Evolution provider guidelines
+
+- Evolution-specific code deve ficar em `backend/src/messaging/evolution`.
+- O core deve receber apenas contratos canonicos (`SendMessageCommand`, `InboundMessageEvent`, `MessageStatusEvent`).
+- Nao adicionar SDK externo sem necessidade; o client HTTP isolado e suficiente para o contrato atual.
+- Todo webhook novo deve validar autenticidade antes de tocar dados de tenant.
+- Novos eventos Evolution devem ser traduzidos ou ignorados no translator, nunca tratados inline em controllers.
+- Nao registrar secrets, QR payloads completos ou headers sensiveis em logs persistentes.

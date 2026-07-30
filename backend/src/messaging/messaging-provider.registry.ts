@@ -7,13 +7,18 @@ import {
   MessagingProviderError,
 } from "./messaging.contracts";
 import { DevelopmentMessagingProvider } from "./development-messaging.provider";
+import { EvolutionMessagingProvider } from "./evolution/evolution-messaging.provider";
 
 @Injectable()
 export class MessagingProviderRegistry {
   private readonly providers = new Map<MessagingProviderType, MessagingProvider>();
 
-  constructor(developmentProvider: DevelopmentMessagingProvider) {
+  constructor(
+    developmentProvider: DevelopmentMessagingProvider,
+    evolutionProvider: EvolutionMessagingProvider,
+  ) {
     this.register(developmentProvider);
+    this.register(evolutionProvider);
   }
 
   resolve(providerType: MessagingProviderType) {

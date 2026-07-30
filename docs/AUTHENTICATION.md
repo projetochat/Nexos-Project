@@ -149,13 +149,13 @@ Novas permission keys:
 - `conversations.assign`
 - `conversations.manage`
 
-| Operacao Conversations                 | Platform Admin | Tenant Admin | Supervisor | Agent |
-| -------------------------------------- | -------------: | -----------: | ---------: | ----: |
-| Listar/detalhar conversas visiveis     | Nao automatico |          Sim |        Sim |   Sim |
-| Assumir ou atribuir conversa           | Nao automatico |          Sim |        Sim |   Sim |
-| Desatribuir conversa                   | Nao automatico |          Sim |        Sim |   Sim |
-| Transferir departamento permitido      | Nao automatico |          Sim |        Sim |   Sim |
-| Alterar status explicitamente          | Nao automatico |          Sim |        Sim |   Sim |
+| Operacao Conversations             | Platform Admin | Tenant Admin | Supervisor | Agent |
+| ---------------------------------- | -------------: | -----------: | ---------: | ----: |
+| Listar/detalhar conversas visiveis | Nao automatico |          Sim |        Sim |   Sim |
+| Assumir ou atribuir conversa       | Nao automatico |          Sim |        Sim |   Sim |
+| Desatribuir conversa               | Nao automatico |          Sim |        Sim |   Sim |
+| Transferir departamento permitido  | Nao automatico |          Sim |        Sim |   Sim |
+| Alterar status explicitamente      | Nao automatico |          Sim |        Sim |   Sim |
 
 Mesmo com permission concedida, o backend aplica escopo operacional:
 
@@ -171,11 +171,11 @@ Nova permission key:
 
 - `messages.send`
 
-| Operacao Messages                    | Platform Admin | Tenant Admin | Supervisor | Agent |
-| ------------------------------------ | -------------: | -----------: | ---------: | ----: |
-| Listar historico visivel             | Nao automatico |          Sim |        Sim |   Sim |
-| Marcar inbound como lido             | Nao automatico |          Sim |        Sim |   Sim |
-| Enviar texto na conversa atribuida   | Nao automatico |          Sim |        Sim |   Sim |
+| Operacao Messages                     | Platform Admin | Tenant Admin | Supervisor | Agent |
+| ------------------------------------- | -------------: | -----------: | ---------: | ----: |
+| Listar historico visivel              | Nao automatico |          Sim |        Sim |   Sim |
+| Marcar inbound como lido              | Nao automatico |          Sim |        Sim |   Sim |
+| Enviar texto na conversa atribuida    | Nao automatico |          Sim |        Sim |   Sim |
 | Criar mensagem de sistema diretamente | Nao automatico |          Nao |        Nao |   Nao |
 
 Mesmo com `messages.send`, o backend bloqueia envio quando:
@@ -204,6 +204,16 @@ AINDA LEGADO:
 - `src/start.ts` ainda anexa sessao Supabase para server functions legadas.
 - `src/lib/mvp.ts`, inbox, chamados, instancias, simulador, historico e filtros de relatorio ainda usam Supabase para fluxos operacionais nao migrados.
 - `ensureDemoUsers` permanece protegido por `ALLOW_DEMO_USER_PROVISIONING=true` e nao e chamado pelo login.
+
 ## Sprint 06 - Messaging
 
 O envio de mensagens continua protegido por JWT, tenant membership, RBAC `messages.send`, visibilidade de conversa e escopo de departamento. A connection de mensageria e sempre resolvida no backend por tenant; o frontend nao pode escolher provider nem trocar connection no envio normal.
+
+## Sprint 07 - Connections e Webhook Evolution
+
+Connections usam RBAC proprio:
+
+- `connections.read`: listar, consultar e ver saude/status.
+- `connections.manage`: criar instancia Evolution, solicitar QR e desconectar.
+
+O webhook `/api/webhooks/evolution` e publico para usuarios Nexos, mas autenticado por JWT assinado com `EVOLUTION_WEBHOOK_SECRET`. Tokens de usuario nao sao aceitos nessa rota; o token precisa carregar `app=evolution` e `action=webhook`.

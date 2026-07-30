@@ -82,6 +82,7 @@
 
 - Criada documentacao tecnica inicial no padrao oficial de `docs/`.
 - Documentos numerados antigos foram substituidos por apontadores para evitar duplicidade.
+
 ## Sprint 06 - Universal Messaging Adapter
 
 - Criado modelo `MessagingConnection` tenant-scoped.
@@ -92,3 +93,13 @@
 - Adicionados campos provider-neutral em Message e idempotencia inbound por connection/externalMessageId.
 - Adicionados testes de contrato, registry e status progression.
 - Atualizado verify para fallback local quando Bun nao esta no PATH.
+
+## Sprint 07 - Evolution API Provider
+
+- Adicionado `EvolutionClient`, `EvolutionMessagingProvider` e translator de webhooks.
+- Criadas APIs tenant-scoped de connections, QR Code, status e logout.
+- Criado webhook seguro `/api/webhooks/evolution` com JWT de provider.
+- Migrada tela `/instancias` para Nexos API.
+- Adicionado Docker Compose da Evolution API v2.3.1 com Postgres/Redis internos.
+- Adicionadas permissoes `connections.read` e `connections.manage`.
+- Fechadas lacunas de teste de inbound duplicado e external IDs iguais em tenants diferentes.

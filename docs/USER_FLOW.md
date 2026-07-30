@@ -15,7 +15,7 @@
 | `/mensagens-rapidas`     | Quick replies          | AppShell               | Supabase via `QUICK_REPLIES`              |
 | `/relatorios`            | Relatorios             | AppShell               | Supabase via `REPORTS`                    |
 | `/chamados`              | Chamados               | AppShell               | Supabase + HTML local                     |
-| `/instancias`            | Instancias             | AppShell               | Supabase                                  |
+| `/instancias`            | Instancias             | AppShell               | Nexos API                                 |
 | `/perfis`                | Perfis de acesso       | AppShell               | Supabase                                  |
 | `/atendentes`            | Atendentes             | AppShell               | Mock store + Supabase perfis              |
 | `/departamentos`         | Departamentos          | AppShell               | Mock store + Supabase escopos             |
@@ -100,6 +100,13 @@ Rotas atualizadas na matriz:
 - `/departamentos`: Nexos API.
 - `/configuracoes/usuarios`: Nexos API.
 - `/configuracoes/permissoes`: Nexos API.
+
 ## Sprint 06 - Inbox
 
 Para o usuario, o envio textual da Inbox permanece igual. Internamente, a API persiste a mensagem, resolve a connection do tenant, chama o Development Provider e marca a mensagem como `sent` ou `failed`. Nenhum detalhe tecnico do provider deve aparecer na UX normal.
+
+## Sprint 07 - Instancias Evolution
+
+Administradores e supervisores podem abrir `/instancias`, criar uma connection Evolution, solicitar QR Code, atualizar status e desconectar. Atendentes podem consultar connections para contexto operacional.
+
+Na Inbox, o envio textual permanece no mesmo composer. Quando a conversa esta ligada a uma connection Evolution conectada, o backend envia pela Evolution API; quando nao ha connection configurada, o backend retorna erro explicito.
