@@ -204,3 +204,6 @@ AINDA LEGADO:
 - `src/start.ts` ainda anexa sessao Supabase para server functions legadas.
 - `src/lib/mvp.ts`, inbox, chamados, instancias, simulador, historico e filtros de relatorio ainda usam Supabase para fluxos operacionais nao migrados.
 - `ensureDemoUsers` permanece protegido por `ALLOW_DEMO_USER_PROVISIONING=true` e nao e chamado pelo login.
+## Sprint 06 - Messaging
+
+O envio de mensagens continua protegido por JWT, tenant membership, RBAC `messages.send`, visibilidade de conversa e escopo de departamento. A connection de mensageria e sempre resolvida no backend por tenant; o frontend nao pode escolher provider nem trocar connection no envio normal.

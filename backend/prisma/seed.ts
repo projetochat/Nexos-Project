@@ -4,6 +4,8 @@ import {
   ConversationStatus,
   MessageDirection,
   MessageType,
+  MessagingConnectionStatus,
+  MessagingProviderType,
   Prisma,
   PrismaClient,
   PlatformRole,
@@ -99,9 +101,36 @@ async function main() {
 
   await Promise.all([seedCrm(acme.id, acmeDepartments), seedCrm(orbit.id, orbitDepartments)]);
   await Promise.all([
+    seedMessagingConnection(acme.id, "FLOWID"),
+    seedMessagingConnection(orbit.id, "ORBIT"),
+  ]);
+  await Promise.all([
     seedConversations(acme.id, acmeDepartments),
     seedConversations(orbit.id, orbitDepartments),
   ]);
+}
+
+async function seedMessagingConnection(tenantId: string, externalReference: string) {
+  return prisma.messagingConnection.upsert({
+    where: {
+      tenantId_providerType_externalReference: {
+        tenantId,
+        providerType: MessagingProviderType.DEVELOPMENT,
+        externalReference,
+      },
+    },
+    update: {
+      name: `Development ${externalReference}`,
+      status: MessagingConnectionStatus.CONNECTED,
+    },
+    create: {
+      tenantId,
+      name: `Development ${externalReference}`,
+      providerType: MessagingProviderType.DEVELOPMENT,
+      status: MessagingConnectionStatus.CONNECTED,
+      externalReference,
+    },
+  });
 }
 
 async function seedPermissionCatalog() {

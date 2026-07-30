@@ -61,6 +61,10 @@ PLANEJADO para Sprints posteriores:
 
 Sprint 01 implementou Docker Compose, NestJS e Prisma. Redis, BullMQ, Socket.io, R2, Evolution API e Meta Cloud API continuam nao implementados.
 
+## Sprint 06
+
+Executar migrations Prisma antes de subir a nova versao para criar `messaging_connections` e campos provider-neutral de `messages`. Development Provider e bloqueado em `NODE_ENV=production`; ambientes produtivos devem configurar providers reais em sprint futura antes de permitir outbound externo.
+
 ## Operacao Local Sprint 01
 
 Subir banco:

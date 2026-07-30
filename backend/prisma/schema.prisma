@@ -53,6 +53,24 @@ enum MessageType {
 
 enum MessageStatus {
   CREATED
+  SENDING
+  SENT
+  FAILED
+  DELIVERED
+  READ
+}
+
+enum MessagingProviderType {
+  DEVELOPMENT
+  EVOLUTION
+  META_CLOUD
+}
+
+enum MessagingConnectionStatus {
+  DISCONNECTED
+  CONNECTING
+  CONNECTED
+  ERROR
 }
 
 model Tenant {
@@ -69,6 +87,7 @@ model Tenant {
   tags                        Tag[]
   conversations               Conversation[]
   messages                    Message[]
+  messagingConnections        MessagingConnection[]
   conversationProtocolCounter ConversationProtocolCounter?
 
   @@map("tenants")
@@ -289,6 +308,7 @@ model Conversation {
   contactId            String
   departmentId         String?
   assignedMembershipId String?
+  connectionId          String?
   status               ConversationStatus @default(ABERTA)
   protocol             String?
   isGroup              Boolean            @default(false)
@@ -303,6 +323,7 @@ model Conversation {
   contact              Contact            @relation(fields: [contactId], references: [id], onDelete: Restrict)
   department           Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   assignedMembership   TenantMembership?  @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+  connection           MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
   messages             Message[]
 
   @@unique([tenantId, id])
@@ -310,6 +331,7 @@ model Conversation {
   @@index([tenantId, status, archivedAt])
   @@index([tenantId, departmentId])
   @@index([tenantId, assignedMembershipId])
+  @@index([tenantId, connectionId])
   @@index([tenantId, contactId])
   @@index([tenantId, lastMessageAt])
   @@map("conversations")
@@ -319,22 +341,53 @@ model Message {
   id                 String            @id @default(uuid())
   tenantId           String
   conversationId     String
+  connectionId       String?
   direction          MessageDirection
   type               MessageType       @default(TEXT)
   status             MessageStatus     @default(CREATED)
   authorMembershipId String?
   content            String?
   clientMessageId    String?
+  providerMessageId  String?
+  providerStatus     String?
+  providerErrorCode  String?
+  providerErrorMessage String?
+  providerAcceptedAt DateTime?
+  externalMessageId  String?
   readAt             DateTime?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
   tenant             Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   conversation       Conversation      @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+  connection         MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
   authorMembership   TenantMembership? @relation(fields: [authorMembershipId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, conversationId, clientMessageId])
+  @@unique([tenantId, connectionId, externalMessageId])
   @@index([tenantId])
+  @@index([tenantId, connectionId])
+  @@index([tenantId, providerMessageId])
   @@index([tenantId, conversationId, createdAt, id])
   @@index([conversationId])
   @@map("messages")
+}
+
+model MessagingConnection {
+  id                String                    @id @default(uuid())
+  tenantId          String
+  name              String
+  providerType      MessagingProviderType
+  status            MessagingConnectionStatus @default(DISCONNECTED)
+  externalReference String?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  tenant            Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversations     Conversation[]
+  messages          Message[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, providerType, externalReference])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("messaging_connections")
 }

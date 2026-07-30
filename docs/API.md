@@ -213,3 +213,17 @@ Efeitos transacionais:
 - Criar mensagem atualiza `Conversation.lastMessagePreview` e `Conversation.lastMessageAt`.
 - Marcar leitura atualiza `Message.readAt` para inbound pendentes e `Conversation.unreadCount = 0`.
 - Acoes estruturais de conversa geram eventos `SYSTEM` internos para inicio, atribuicao, transferencia, fila, stand by e encerramento.
+## Sprint 06 - Messaging Adapter
+
+Nenhum endpoint publico provider-specific foi adicionado.
+
+O endpoint existente `POST /conversations/:conversationId/messages` continua recebendo somente payload canonico do produto:
+
+```json
+{
+  "content": "texto",
+  "clientMessageId": "uuid-opcional"
+}
+```
+
+O frontend nao escolhe `provider`. A resolucao ocorre no backend pela Conversation/Connection tenant-scoped. Contratos internos de outbound, inbound e status ficam na camada de arquitetura, nao na API publica.

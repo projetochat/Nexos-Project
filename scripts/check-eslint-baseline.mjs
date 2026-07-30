@@ -10,8 +10,11 @@ const outputPath = resolve(root, outputFile);
 
 mkdirSync(dirname(outputPath), { recursive: true });
 
-const bunx = process.platform === "win32" ? "bunx.exe" : "bunx";
-const eslint = spawnSync(bunx, ["eslint", ".", "--format", "json", "--output-file", outputFile], {
+const eslintBin = command("bunx", resolve(root, "node_modules/.bin/eslint"));
+const eslintArgs = eslintBin.viaBunx
+  ? ["eslint", ".", "--format", "json", "--output-file", outputFile]
+  : [".", "--format", "json", "--output-file", outputFile];
+const eslint = spawnSync(eslintBin.path, eslintArgs, {
   cwd: root,
   stdio: "inherit",
 });
@@ -93,4 +96,14 @@ function compareFiles({ regressions, baselineFiles, currentFiles }) {
 
 function toProjectPath(absolutePath) {
   return relative(root, absolutePath).split("\\").join("/");
+}
+
+function command(name, fallback) {
+  const candidate = process.platform === "win32" ? `${name}.exe` : name;
+  const result = spawnSync(candidate, ["--version"], { stdio: "ignore" });
+  if (result.status === 0) return { path: candidate, viaBunx: name === "bunx" };
+  return {
+    path: process.platform === "win32" ? `${fallback}.exe` : fallback,
+    viaBunx: false,
+  };
 }

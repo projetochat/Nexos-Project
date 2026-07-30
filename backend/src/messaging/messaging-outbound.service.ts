@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { AuthenticatedUser } from "../auth/auth.types";
@@ -9,13 +10,16 @@ import {
   ConversationStatus,
   MembershipStatus,
   MessageDirection,
+  MessageStatus,
   MessageType,
+  MessagingConnectionStatus,
+  MessagingProviderType,
   Prisma,
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
-import { ListMessagesQueryDto } from "./dto/list-messages-query.dto";
-import { SendMessageDto } from "./dto/send-message.dto";
-import { MessagingOutboundService } from "../messaging/messaging-outbound.service";
+import { SendMessageDto } from "../conversations/dto/send-message.dto";
+import { MessagingProviderRegistry } from "./messaging-provider.registry";
+import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 
 const messageInclude = {
   authorMembership: {
@@ -27,130 +31,131 @@ const messageInclude = {
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type MessageWithRelations = Prisma.MessageGetPayload<{ include: typeof messageInclude }>;
+type PreparedOutbound =
+  | { dispatch: false; message: MessageWithRelations }
+  | {
+      dispatch: true;
+      message: MessageWithRelations;
+      connection: {
+        id: string;
+        providerType: MessagingProviderType;
+      };
+    };
 
 @Injectable()
-export class MessagesService {
+export class MessagingOutboundService {
+  private readonly logger = new Logger(MessagingOutboundService.name);
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly outbound: MessagingOutboundService,
+    private readonly providers: MessagingProviderRegistry,
   ) {}
 
-  async list(conversationId: string, query: ListMessagesQueryDto, current: AuthenticatedUser) {
-    await this.findVisibleConversation(this.prisma, conversationId, current);
-    const limit = Math.min(Math.max(Number(query.limit ?? 50), 1), 100);
-    const cursor = query.cursor
-      ? await this.prisma.message.findFirst({
-          where: { id: query.cursor, tenantId: current.tenantId, conversationId },
-          select: { id: true, createdAt: true },
-        })
-      : null;
-    if (query.cursor && !cursor) throw new BadRequestException("Cursor de mensagens invalido.");
-
-    const items = await this.prisma.message.findMany({
-      where: {
-        tenantId: current.tenantId,
-        conversationId,
-        ...(cursor
-          ? {
-              OR: [
-                { createdAt: { lt: cursor.createdAt } },
-                { createdAt: cursor.createdAt, id: { lt: cursor.id } },
-              ],
-            }
-          : {}),
-      },
-      include: messageInclude,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: limit + 1,
-    });
-
-    const hasMore = items.length > limit;
-    const page = items.slice(0, limit);
-    return {
-      items: page.reverse().map((message) => this.serialize(message)),
-      nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
-    };
-  }
-
   async sendText(conversationId: string, dto: SendMessageDto, current: AuthenticatedUser) {
-    return this.outbound.sendText(conversationId, dto, current);
-  }
+    const content = cleanMessageContent(dto.content);
+    const conversation = await this.findVisibleConversation(this.prisma, conversationId, current, {
+      contact: true,
+      connection: true,
+    });
+    this.assertCanSend(conversation, current);
 
-  async markRead(conversationId: string, current: AuthenticatedUser) {
-    await this.findVisibleConversation(this.prisma, conversationId, current);
-    const readAt = new Date();
-    await this.prisma.$transaction([
-      this.prisma.message.updateMany({
-        where: {
+    const prepared: PreparedOutbound = await this.prisma.$transaction(async (tx) => {
+      if (dto.clientMessageId) {
+        const existing = await tx.message.findFirst({
+          where: {
+            tenantId: current.tenantId,
+            conversationId,
+            clientMessageId: dto.clientMessageId,
+          },
+          include: messageInclude,
+        });
+        if (existing) return { message: existing, dispatch: false };
+      }
+
+      const connection = await this.resolveConnection(tx, current.tenantId, conversation);
+      const now = new Date();
+      const message = await tx.message.create({
+        data: {
           tenantId: current.tenantId,
           conversationId,
-          direction: MessageDirection.INBOUND,
-          readAt: null,
+          connectionId: connection.id,
+          direction: MessageDirection.OUTBOUND,
+          type: MessageType.TEXT,
+          status: MessageStatus.SENDING,
+          authorMembershipId: current.membershipId,
+          content,
+          clientMessageId: dto.clientMessageId?.trim() || null,
+          createdAt: now,
         },
-        data: { readAt },
-      }),
-      this.prisma.conversation.update({
-        where: { tenantId_id: { tenantId: current.tenantId, id: conversationId } },
-        data: { unreadCount: 0 },
-      }),
-    ]);
-    return { unreadCount: 0, readAt };
-  }
+        include: messageInclude,
+      });
+      await this.updateConversationFromMessage(tx, conversationId, current.tenantId, content, now);
+      return { message, connection, dispatch: true };
+    });
 
-  async createInitialOutboundMessage(
-    tx: Prisma.TransactionClient,
-    conversationId: string,
-    current: AuthenticatedUser,
-    content: string,
-    createdAt = new Date(),
-  ) {
-    const clean = cleanMessageContent(content);
-    await tx.message.create({
-      data: {
+    if (!prepared.dispatch) return this.serialize(prepared.message);
+
+    const connection = prepared.connection;
+    const provider = this.providers.resolve(connection.providerType);
+    this.providers.assertSupports(provider, MessageType.TEXT);
+
+    try {
+      const result = await provider.send({
         tenantId: current.tenantId,
         conversationId,
-        direction: MessageDirection.OUTBOUND,
-        type: MessageType.TEXT,
-        authorMembershipId: current.membershipId,
-        content: clean,
-        createdAt,
-      },
-    });
-    await this.updateConversationFromMessage(
-      tx,
-      conversationId,
-      current.tenantId,
-      clean,
-      createdAt,
-    );
-  }
+        messageId: prepared.message.id,
+        connectionId: connection.id,
+        providerType: connection.providerType,
+        recipient: {
+          phone: conversation.contact.phone,
+          normalizedPhone: conversation.contact.normalizedPhone,
+          displayName: conversation.contact.name,
+        },
+        content: { type: MessageType.TEXT, text: content },
+        clientMessageId: dto.clientMessageId,
+      });
 
-  async createSystemMessage(
-    tx: Prisma.TransactionClient,
-    conversationId: string,
-    current: AuthenticatedUser,
-    content: string,
-    createdAt = new Date(),
-  ) {
-    const clean = cleanSystemContent(content);
-    await tx.message.create({
-      data: {
-        tenantId: current.tenantId,
+      const updated = await this.prisma.message.update({
+        where: { id: prepared.message.id },
+        data: {
+          status: result.accepted ? MessageStatus.SENT : MessageStatus.FAILED,
+          providerMessageId: result.providerMessageId ?? null,
+          providerStatus: result.providerStatus ?? null,
+          providerAcceptedAt: result.providerTimestamp ?? null,
+          providerErrorCode: null,
+          providerErrorMessage: null,
+        },
+        include: messageInclude,
+      });
+      this.logger.log({
+        event: "messaging.outbound.sent",
+        messageId: updated.id,
         conversationId,
-        direction: MessageDirection.SYSTEM,
-        type: MessageType.SYSTEM,
-        authorMembershipId: current.membershipId,
-        content: clean,
-        createdAt,
-      },
-    });
-    await this.updateConversationFromMessage(
-      tx,
-      conversationId,
-      current.tenantId,
-      clean,
-      createdAt,
-    );
+        connectionId: connection.id,
+        providerType: connection.providerType,
+      });
+      return this.serialize(updated);
+    } catch (error) {
+      const canonical = canonicalProviderError(error);
+      const updated = await this.prisma.message.update({
+        where: { id: prepared.message.id },
+        data: {
+          status: MessageStatus.FAILED,
+          providerErrorCode: canonical.code,
+          providerErrorMessage: canonical.message,
+        },
+        include: messageInclude,
+      });
+      this.logger.warn({
+        event: "messaging.outbound.failed",
+        messageId: updated.id,
+        conversationId,
+        connectionId: connection.id,
+        providerType: connection.providerType,
+        errorCode: canonical.code,
+      });
+      return this.serialize(updated);
+    }
   }
 
   async findVisibleConversation(
@@ -212,6 +217,39 @@ export class MessagesService {
       select: { departmentId: true },
     });
     return memberships.map((item) => item.departmentId);
+  }
+
+  private async resolveConnection(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    conversation: { id: string; connectionId: string | null },
+  ) {
+    if (conversation.connectionId) {
+      const connection = await tx.messagingConnection.findFirst({
+        where: { id: conversation.connectionId, tenantId },
+      });
+      if (!connection) {
+        throw new BadRequestException("Connection da conversa nao pertence a este tenant.");
+      }
+      return connection;
+    }
+
+    const connection = await tx.messagingConnection.findFirst({
+      where: {
+        tenantId,
+        providerType: MessagingProviderType.DEVELOPMENT,
+        status: MessagingConnectionStatus.CONNECTED,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    if (!connection) {
+      throw new BadRequestException("Nenhuma connection de mensageria configurada.");
+    }
+    await tx.conversation.update({
+      where: { tenantId_id: { tenantId, id: conversation.id } },
+      data: { connectionId: connection.id },
+    });
+    return connection;
   }
 
   private async visibilityWhere(
@@ -292,14 +330,6 @@ function cleanMessageContent(value: string) {
   return content;
 }
 
-function cleanSystemContent(value: string) {
-  const content = value.trim();
-  if (!content) throw new BadRequestException("Mensagem de sistema vazia.");
-  if (content.length > 4000)
-    throw new BadRequestException("Mensagem de sistema excede 4000 caracteres.");
-  return content;
-}
-
 function truncatePreview(content: string) {
   return content.length > 500 ? `${content.slice(0, 497)}...` : content;
 }
@@ -321,4 +351,13 @@ function serializeType(type: MessageType) {
     SYSTEM: "system",
   } as const;
   return map[type];
+}
+
+function canonicalProviderError(error: unknown) {
+  if (error instanceof MessagingProviderError) return error;
+  return new MessagingProviderError(
+    MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+    "Messaging provider failed before accepting the message.",
+    true,
+  );
 }

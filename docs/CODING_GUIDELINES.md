@@ -89,3 +89,11 @@ Sprint 01 adicionou testes automatizados para o backend e sanitizacao XSS. Para 
 - Roles de tenant devem ser consultadas por `[tenantId, roleId]`.
 - Associations de departamento devem preservar consistencia por tenant.
 - Permission keys novas devem entrar no catalogo controlado em `backend/src/auth/permissions.constants.ts`.
+## Sprint 06 - Messaging adapter guidelines
+
+- Novos providers devem implementar `MessagingProvider`.
+- Nao criar `sendEvolutionMessage`, `sendMetaPayload` ou payload provider-specific no core.
+- Traduzir erros externos para `MessagingErrorCode`.
+- Nao persistir payload bruto, tokens, headers ou secrets de provider.
+- Capabilities devem ser validadas antes de chamar provider.
+- Status externos devem passar pelo processor canonico e respeitar progressao monotona.

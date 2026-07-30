@@ -26,6 +26,10 @@ PLANEJADO:
 - Redis + BullMQ.
 - Evolution API + Meta Cloud API por camada adaptadora.
 - Socket.io.
+
+## Sprint 06
+
+Sprint 06 adicionou o Universal Messaging Adapter no backend. O envio textual da Inbox segue visualmente igual, mas agora passa por provider port, registry e Development Provider. Evolution API, Meta Cloud API, filas, realtime e storage continuam fora de escopo.
 - Cloudflare R2.
 - Docker Compose em VPS.
 

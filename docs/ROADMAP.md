@@ -37,6 +37,10 @@ Nao entregue nesta sprint:
 - R2 para midia.
 - Adaptadores Evolution/Meta.
 
+## Sprint 06 concluida
+
+Universal Messaging Adapter implementado como fronteira provider-neutral. Sprint 07 deve implementar Evolution API exclusivamente como adapter sobre o contrato criado nesta sprint: lifecycle de connection, QR Code, outbound real, webhook inbound e status delivery/read.
+
 ## Proxima sprint sugerida
 
 P0: migrar um fluxo operacional real para a Nexos API, preferencialmente conversas/mensagens ou chamados com anexos externos, mantendo Supabase legado ate o recorte estar validado.

@@ -100,3 +100,6 @@ Rotas atualizadas na matriz:
 - `/departamentos`: Nexos API.
 - `/configuracoes/usuarios`: Nexos API.
 - `/configuracoes/permissoes`: Nexos API.
+## Sprint 06 - Inbox
+
+Para o usuario, o envio textual da Inbox permanece igual. Internamente, a API persiste a mensagem, resolve a connection do tenant, chama o Development Provider e marca a mensagem como `sent` ou `failed`. Nenhum detalhe tecnico do provider deve aparecer na UX normal.

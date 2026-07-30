@@ -149,7 +149,7 @@ export type ApiMessage = {
   updated_at: string;
   read_at: string | null;
   type: "text" | "image" | "audio" | "system";
-  status: "created";
+  status: "created" | "sending" | "sent" | "failed" | "delivered" | "read";
   media_data: null;
   duration_ms: null;
 };

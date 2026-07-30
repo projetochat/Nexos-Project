@@ -214,3 +214,42 @@ Decisoes:
 - Mensagens `SYSTEM` sao criadas por acoes internas do backend; nao existe rota publica generica para sistema.
 - `IMAGE` e `AUDIO` ficam apenas como fronteira explicita de schema. Sem R2, provider ou data URL fake nesta sprint.
 - O seed foi estabilizado para nao reduzir o contador de protocolos em execucoes repetidas.
+## Sprint 06 - Messaging Adapter
+
+### MessagingConnection
+
+`messaging_connections` representa uma connection canonica de mensageria pertencente a um Tenant.
+
+Campos principais:
+
+- `id`, `tenantId`, `name`
+- `providerType`: `DEVELOPMENT`, `EVOLUTION`, `META_CLOUD`
+- `status`: `DISCONNECTED`, `CONNECTING`, `CONNECTED`, `ERROR`
+- `externalReference`: referencia neutra para migracao/configuracao, sem credenciais
+- `createdAt`, `updatedAt`
+
+Constraints:
+
+- `@@unique([tenantId, id])`
+- `@@unique([tenantId, providerType, externalReference])`
+- FKs sempre tenant-scoped.
+
+### Conversation -> Connection
+
+`conversations.connectionId` e opcional para preservar dados legados. A coluna antiga `contacts.instance` permanece temporariamente como filtro/metadata legado do frontend. Conversas sem connection podem ser vinculadas a uma development connection tenant-scoped quando houver envio outbound em ambiente nao produtivo.
+
+### Message provider-neutral fields
+
+`messages` ganhou campos genericos:
+
+- `connectionId`
+- `providerMessageId`
+- `providerStatus`
+- `providerErrorCode`
+- `providerErrorMessage`
+- `providerAcceptedAt`
+- `externalMessageId`
+
+Idempotencia inbound usa `@@unique([tenantId, connectionId, externalMessageId])`. O outbound preserva `clientMessageId` por `tenantId + conversationId + clientMessageId`.
+
+Nenhum payload bruto de provider deve ser armazenado nesses campos.

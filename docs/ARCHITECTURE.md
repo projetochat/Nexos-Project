@@ -86,6 +86,27 @@ Fronteiras novas:
 
 Redis/BullMQ, Socket.io, Evolution/Meta e R2 permanecem planejados, nao implementados nesta sprint.
 
+## Sprint 06 - Universal Messaging Adapter
+
+O envio textual da Inbox agora passa por uma fronteira provider-neutral:
+
+Frontend -> Messages API -> Messaging Core -> MessagingProvider port -> MessagingProviderRegistry -> DevelopmentMessagingProvider.
+
+O dominio central continua dono de Conversation, Message e Contact. Payloads de Evolution, Meta, QR Code, webhooks reais, tokens e detalhes de instancia externa nao entram no dominio.
+
+Fluxo outbound adotado:
+
+1. Validar tenant, RBAC, escopo de departamento e assignee.
+2. Persistir Message OUTBOUND como SENDING com connectionId.
+3. Chamar o provider por contrato canonico.
+4. Atualizar Message para SENT ou FAILED com dados sanitizados e provider-neutral.
+
+Fluxo inbound preparado para Sprint 07:
+
+Provider webhook -> Provider Adapter -> InboundMessageEvent canonico -> MessagingInboundService -> Contact/Conversation/Message.
+
+Eventos inbound sao idempotentes por tenantId + connectionId + externalMessageId. Eventos de status sao processados por contrato canonico e protegidos contra regressao invalida, como READ voltando para SENT.
+
 ## Sprint 01.1 - Regression Gate
 
 O frontend Lovable/TanStack segue como contrato funcional e visual. A Sprint 01.1 nao mudou design, rotas ou navegacao; ela estabilizou o pipeline local para as proximas sprints.

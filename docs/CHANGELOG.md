@@ -82,3 +82,13 @@
 
 - Criada documentacao tecnica inicial no padrao oficial de `docs/`.
 - Documentos numerados antigos foram substituidos por apontadores para evitar duplicidade.
+## Sprint 06 - Universal Messaging Adapter
+
+- Criado modelo `MessagingConnection` tenant-scoped.
+- Adicionados contratos canonicos de outbound, inbound, result, errors e status.
+- Adicionados `MessagingProviderRegistry` e `DevelopmentMessagingProvider`.
+- Refatorado envio textual para persistir SENDING, chamar provider e atualizar SENT/FAILED.
+- Preparados processors canonicos de inbound e status sem webhooks reais.
+- Adicionados campos provider-neutral em Message e idempotencia inbound por connection/externalMessageId.
+- Adicionados testes de contrato, registry e status progression.
+- Atualizado verify para fallback local quando Bun nao esta no PATH.

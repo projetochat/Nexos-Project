@@ -61,3 +61,15 @@ Somente regras comprovadas no codigo.
 - `PlatformRole.ADMIN` nao equivale a `tenant_admin`.
 - Toda autorizacao de users, departments e roles ocorre no backend via permission guard.
 - Frontend pode esconder acoes por UX, mas nao substitui autorizacao server-side.
+## Sprint 06 - Messaging Adapter
+
+- Provider resolution nunca vem do payload publico de envio. O provider e resolvido pela Conversation/Connection tenant-scoped.
+- O core de Message e Conversation nao conhece payloads Evolution, Meta, QR Code ou webhook externo.
+- Development provider so aceita TEXT, retorna `accepted_by_development_provider` e nao simula DELIVERED/READ.
+- Development provider e bloqueado quando `NODE_ENV=production`.
+- Falha de provider nao apaga Message. A intencao fica persistida como FAILED com erro canonico sanitizado.
+- Inbound reutiliza Contact por telefone normalizado antes de criar novo contato.
+- Inbound cria ou reutiliza Conversation aberta por tenant, connection e contato.
+- Inbound duplicado por `tenantId + connectionId + externalMessageId` retorna o Message existente.
+- Status e monotonicamente protegido: READ nao volta para SENT/DELIVERED; FAILED e terminal salvo repeticao de FAILED.
+- Media permanece como boundary de capability. Storage real e URLs assinadas continuam fora de escopo.
