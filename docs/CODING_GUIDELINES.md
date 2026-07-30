@@ -70,3 +70,12 @@ Sprint 01 adicionou testes automatizados para o backend e sanitizacao XSS. Para 
 - Nunca confiar em `tenantId` vindo livremente do cliente; derivar de JWT/membership.
 - Novos endpoints protegidos devem usar guard JWT e filtros por tenant no servidor.
 - Secrets ficam em `.env`; exemplos sem segredo ficam em `.env.example`.
+
+## Lint Baseline Sprint 01.1
+
+- `bun run lint` executa `scripts/check-eslint-baseline.mjs`.
+- A divida legada esta registrada em `scripts/eslint-baseline.json`.
+- Codigo novo/modificado nao pode introduzir nova divida: qualquer aumento por arquivo/regra falha o gate.
+- `bun run lint:raw` mostra o ESLint completo e continua retornando erro enquanto houver divida legada.
+- Prisma Client gerado (`backend/src/generated/prisma/**`) fica fora do ESLint por ser artefato gerado.
+- A reducao gradual da divida deve acontecer em sprints dedicadas ou junto de mudancas pequenas e rastreaveis.

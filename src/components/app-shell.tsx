@@ -1,4 +1,4 @@
-import * as React from "react";
+﻿import * as React from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import {
   LayoutDashboard,
@@ -207,7 +207,9 @@ function useSidebarState() {
         document.documentElement.dataset.sidebarCollapsed = "1";
         setCollapsed(true);
       }
-    } catch {}
+    } catch {
+      // localStorage may be unavailable in restricted browser contexts.
+    }
   }, []);
   // Auto-recolher ao entrar em /inbox (apenas atendentes)
   React.useEffect(() => {
@@ -223,7 +225,9 @@ function useSidebarState() {
     document.documentElement.dataset.sidebarCollapsed = next ? "1" : "0";
     try {
       localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0");
-    } catch {}
+    } catch {
+      // Keep the in-memory state even when persistence is unavailable.
+    }
   }, []);
   const toggle = React.useCallback(() => {
     setCollapsed((v) => {

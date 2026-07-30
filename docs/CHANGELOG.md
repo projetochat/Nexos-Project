@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-29 - Sprint 01.1 frontend baseline
+
+- Estabilizado build frontend TanStack/Lovable no Windows.
+- Documentada causa raiz do manifest TanStack e do EPERM observado na Sprint 01.
+- Criado `bun run verify` como gate unificado.
+- Criada politica de lint baseline com `scripts/eslint-baseline.json`.
+- Excluido Prisma Client gerado do escopo do ESLint.
+- Corrigidos erros funcionais pequenos de lint sem alterar UX.
+- Documentada decisao: NestJS Auth definitivo, Supabase Auth legado temporario.
+- Executado smoke HTTP das rotas principais.
+
 ## 2026-07-29 - Sprint 01 foundation
 
 - Inicializado Git e criado branch `sprint/01-foundation`.

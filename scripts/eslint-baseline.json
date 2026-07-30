@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "generatedFrom": "Sprint 01.1 final ESLint legacy baseline after excluding generated Prisma client",
+  "totals": {
+    "errors": 4648,
+    "warnings": 13
+  },
+  "rules": {
+    "prettier/prettier": 4606,
+    "react-refresh/only-export-components": 12,
+    "@typescript-eslint/no-explicit-any": 27,
+    "react-hooks/rules-of-hooks": 15,
+    "react-hooks/exhaustive-deps": 1
+  },
+  "files": {
+    "src/components/admin-shell.tsx": {
+      "prettier/prettier": 322
+    },
+    "src/components/app-shell.tsx": {
+      "prettier/prettier": 835,
+      "react-refresh/only-export-components": 2
+    },
+    "src/components/feedback.tsx": {
+      "prettier/prettier": 3
+    },
+    "src/components/instancia-tipos.tsx": {
+      "prettier/prettier": 3,
+      "react-refresh/only-export-components": 2
+    },
+    "src/components/modal.tsx": {
+      "prettier/prettier": 2,
+      "react-refresh/only-export-components": 1
+    },
+    "src/components/operator-shell.tsx": {
+      "prettier/prettier": 4
+    },
+    "src/components/report-filters.tsx": {
+      "prettier/prettier": 10
+    },
+    "src/components/theme-provider.tsx": {
+      "react-refresh/only-export-components": 1
+    },
+    "src/components/ui-kit.tsx": {
+      "prettier/prettier": 17
+    },
+    "src/components/ui/badge.tsx": {
+      "react-refresh/only-export-components": 1
+    },
+    "src/components/ui/button.tsx": {
+      "react-refresh/only-export-components": 1
+    },
+    "src/components/ui/form.tsx": {
+      "react-refresh/only-export-components": 1
+    },
+    "src/components/ui/navigation-menu.tsx": {
+      "react-refresh/only-export-components": 1
+    },
+    "src/components/ui/sidebar.tsx": {
+      "react-refresh/only-export-components": 1
+    },
+    "src/components/ui/toggle.tsx": {
+      "react-refresh/only-export-components": 1
+    },
+    "src/integrations/supabase/auth-attacher.ts": {
+      "prettier/prettier": 7
+    },
+    "src/integrations/supabase/auth-middleware.ts": {
+      "prettier/prettier": 39
+    },
+    "src/integrations/supabase/client.server.ts": {
+      "prettier/prettier": 11
+    },
+    "src/integrations/supabase/client.ts": {
+      "prettier/prettier": 15
+    },
+    "src/integrations/supabase/types.ts": {
+      "prettier/prettier": 644
+    },
+    "src/lib/api/index.ts": {
+      "prettier/prettier": 9
+    },
+    "src/lib/format.ts": {
+      "prettier/prettier": 3
+    },
+    "src/lib/mock/saas.ts": {
+      "prettier/prettier": 25
+    },
+    "src/lib/mock/seed.ts": {
+      "prettier/prettier": 7
+    },
+    "src/lib/mock/store.ts": {
+      "prettier/prettier": 11
+    },
+    "src/lib/mock/types.ts": {
+      "prettier/prettier": 1
+    },
+    "src/lib/mvp.ts": {
+      "prettier/prettier": 61,
+      "@typescript-eslint/no-explicit-any": 2
+    },
+    "src/lib/perms.ts": {
+      "prettier/prettier": 1
+    },
+    "src/lib/queue-prefs.ts": {
+      "prettier/prettier": 1
+    },
+    "src/routes/__root.tsx": {
+      "prettier/prettier": 2
+    },
+    "src/routes/admin.assinaturas.tsx": {
+      "react-hooks/rules-of-hooks": 1,
+      "prettier/prettier": 2
+    },
+    "src/routes/admin.auditoria.tsx": {
+      "react-hooks/rules-of-hooks": 1,
+      "prettier/prettier": 3
+    },
+    "src/routes/admin.configuracoes.tsx": {
+      "prettier/prettier": 17
+    },
+    "src/routes/admin.empresas.tsx": {
+      "prettier/prettier": 11
+    },
+    "src/routes/admin.financeiro.tsx": {
+      "prettier/prettier": 15
+    },
+    "src/routes/admin.index.tsx": {
+      "prettier/prettier": 32
+    },
+    "src/routes/admin.logs.tsx": {
+      "react-hooks/rules-of-hooks": 2,
+      "prettier/prettier": 5
+    },
+    "src/routes/admin.monitoramento.tsx": {
+      "prettier/prettier": 9
+    },
+    "src/routes/admin.planos.tsx": {
+      "prettier/prettier": 8
+    },
+    "src/routes/admin.suporte.tsx": {
+      "prettier/prettier": 7
+    },
+    "src/routes/agente-ia.tsx": {
+      "prettier/prettier": 5
+    },
+    "src/routes/ajuda.tsx": {
+      "prettier/prettier": 1
+    },
+    "src/routes/atendentes.tsx": {
+      "prettier/prettier": 42,
+      "@typescript-eslint/no-explicit-any": 4
+    },
+    "src/routes/atendimento.clientes.tsx": {
+      "react-hooks/rules-of-hooks": 2,
+      "prettier/prettier": 5
+    },
+    "src/routes/atendimento.favoritos.tsx": {
+      "react-hooks/rules-of-hooks": 2,
+      "prettier/prettier": 4
+    },
+    "src/routes/atendimento.historico.tsx": {
+      "react-hooks/rules-of-hooks": 3,
+      "prettier/prettier": 4
+    },
+    "src/routes/atendimento.index.tsx": {
+      "prettier/prettier": 1
+    },
+    "src/routes/atendimento.perfil.tsx": {
+      "react-hooks/rules-of-hooks": 1,
+      "prettier/prettier": 12
+    },
+    "src/routes/automacoes.tsx": {
+      "prettier/prettier": 9
+    },
+    "src/routes/campanhas.tsx": {
+      "prettier/prettier": 39
+    },
+    "src/routes/chamados.tsx": {
+      "@typescript-eslint/no-explicit-any": 1
+    },
+    "src/routes/chatbot.tsx": {
+      "prettier/prettier": 10
+    },
+    "src/routes/clientes.tsx": {
+      "prettier/prettier": 62
+    },
+    "src/routes/configuracoes.geral.tsx": {
+      "prettier/prettier": 5
+    },
+    "src/routes/configuracoes.integracoes.tsx": {
+      "prettier/prettier": 5
+    },
+    "src/routes/configuracoes.mensagens.tsx": {
+      "prettier/prettier": 2
+    },
+    "src/routes/configuracoes.permissoes.tsx": {
+      "prettier/prettier": 5
+    },
+    "src/routes/configuracoes.seguranca.tsx": {
+      "prettier/prettier": 8
+    },
+    "src/routes/configuracoes.tsx": {
+      "prettier/prettier": 1
+    },
+    "src/routes/configuracoes.usuarios.tsx": {
+      "prettier/prettier": 3
+    },
+    "src/routes/contatos.tsx": {
+      "prettier/prettier": 92
+    },
+    "src/routes/departamentos.tsx": {
+      "@typescript-eslint/no-explicit-any": 3,
+      "prettier/prettier": 28
+    },
+    "src/routes/empresas.tsx": {
+      "prettier/prettier": 24
+    },
+    "src/routes/etiquetas.tsx": {
+      "prettier/prettier": 23
+    },
+    "src/routes/filas.tsx": {
+      "react-hooks/rules-of-hooks": 3,
+      "prettier/prettier": 7
+    },
+    "src/routes/historico.tsx": {
+      "prettier/prettier": 26
+    },
+    "src/routes/inbox.$conversationId.tsx": {
+      "prettier/prettier": 1382
+    },
+    "src/routes/inbox.index.tsx": {
+      "prettier/prettier": 72
+    },
+    "src/routes/index.tsx": {
+      "react-hooks/exhaustive-deps": 1,
+      "prettier/prettier": 18
+    },
+    "src/routes/instancias.tsx": {
+      "prettier/prettier": 43,
+      "@typescript-eslint/no-explicit-any": 3
+    },
+    "src/routes/mensagens-rapidas.tsx": {
+      "prettier/prettier": 19
+    },
+    "src/routes/perfil.tsx": {
+      "prettier/prettier": 5
+    },
+    "src/routes/perfis.tsx": {
+      "prettier/prettier": 481,
+      "@typescript-eslint/no-explicit-any": 14
+    },
+    "src/routes/relatorios.tsx": {
+      "prettier/prettier": 9
+    },
+    "src/routes/simulador.tsx": {
+      "prettier/prettier": 12
+    }
+  }
+}

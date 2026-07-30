@@ -17,8 +17,11 @@
     "backend:prisma:seed": "bun run --cwd backend prisma:seed",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
-    "lint": "eslint .",
+    "lint": "node scripts/check-eslint-baseline.mjs",
+    "lint:raw": "eslint .",
     "test:security": "vitest run src/lib/sanitize-html.test.ts --environment jsdom",
+    "typecheck": "tsc --noEmit",
+    "verify": "node scripts/verify.mjs",
     "format": "prettier --write ."
   },
   "dependencies": {

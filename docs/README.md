@@ -182,3 +182,33 @@ Credenciais demo locais do seed:
 - `admin@nexo.app` / `demo1234` no tenant `acme`
 - `atendente@nexo.app` / `demo1234` no tenant `acme`
 - `outsider@nexo.app` / `demo1234` no tenant `orbit`
+
+## Atualizacao Sprint 01.1
+
+A Sprint 01.1 estabilizou o gate local do projeto sem alterar UX.
+
+Validacao completa:
+
+```powershell
+cd "C:\Users\Rabel\Downloads\Nexos Project"
+$env:BUN_INSTALL="$env:USERPROFILE\.bun"
+$env:PATH="$env:BUN_INSTALL\bin;$env:PATH"
+
+bun install --frozen-lockfile
+docker compose up -d postgres
+bun run backend:prisma:generate
+bun run backend:prisma:migrate -- --name init
+bun run backend:prisma:seed
+bun run verify
+```
+
+`bun run verify` executa:
+
+- frontend typecheck;
+- lint baseline;
+- frontend build;
+- backend build;
+- backend tests, incluindo isolamento de tenant;
+- security/XSS tests.
+
+O lint usa baseline legado: erros antigos ficam registrados em `scripts/eslint-baseline.json`, mas novas mensagens por arquivo/regra fazem o gate falhar.

@@ -29,6 +29,6 @@ export function sanitizeRichTextHtml(html: string): string {
     ALLOW_DATA_ATTR: false,
     FORBID_ATTR: ["onerror", "onload", "onclick", "style"],
     ALLOWED_URI_REGEXP:
-      /^(?:(?:https?|mailto|tel):|data:image\/(?:png|jpeg|jpg|gif|webp);base64,|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+      /^(?:(?:https?|mailto|tel):|data:image\/(?:png|jpeg|jpg|gif|webp);base64,|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
   });
 }

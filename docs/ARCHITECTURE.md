@@ -85,3 +85,14 @@ Fronteiras novas:
 - `backend/src/health`: healthcheck com consulta real ao PostgreSQL.
 
 Redis/BullMQ, Socket.io, Evolution/Meta e R2 permanecem planejados, nao implementados nesta sprint.
+
+## Sprint 01.1 - Regression Gate
+
+O frontend Lovable/TanStack segue como contrato funcional e visual. A Sprint 01.1 nao mudou design, rotas ou navegacao; ela estabilizou o pipeline local para as proximas sprints.
+
+Decisoes:
+
+- NestJS Auth e a autoridade definitiva de identidade da plataforma.
+- Supabase Auth permanece como legado temporario do MVP ate os fluxos operacionais serem migrados.
+- `routeTree.gen.ts` deve manter o footer gerado pelo TanStack Start com o registro de `@tanstack/react-start`; sem esse footer, o manifest recebe `routeTreeRoutes` indefinido.
+- O gate de regressao oficial e `bun run verify`.

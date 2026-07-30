@@ -1,4 +1,4 @@
-import * as React from "react";
+﻿import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2, ShieldCheck, Copy, Search } from "lucide-react";
@@ -316,7 +316,8 @@ function PerfilForm({ open, onClose, onSubmit, initial }: { open: boolean; onClo
   const toggleList = (list: "instancias" | "departamentos", id: string) => {
     setForm((f) => {
       const cur = new Set(f[list] ?? []);
-      cur.has(id) ? cur.delete(id) : cur.add(id);
+      if (cur.has(id)) cur.delete(id);
+      else cur.add(id);
       return { ...f, [list]: Array.from(cur) };
     });
   };

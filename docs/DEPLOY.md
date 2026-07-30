@@ -97,3 +97,14 @@ Variaveis novas:
 - `src/server.ts` substitui alguns erros 500 JSON por pagina HTML de erro.
 - `routeTree.gen.ts` e gerado automaticamente.
 - `client.server.ts` avisa que `supabaseAdmin` deve ser usado apenas server-side e preferencialmente importado dentro de handlers.
+
+## Build Windows - Sprint 01.1
+
+Validado em Windows `10.0.26200.0`, PowerShell `5.1.26100.8972`, Node `v24.14.0` e Bun `1.3.14`.
+
+Observacoes:
+
+- `routeTree.gen.ts` e fonte gerada versionada e necessaria para o build TanStack Start.
+- O footer de `@tanstack/react-start` no route tree e necessario para o manifest.
+- `bun run build` foi executado duas vezes em sequencia com sucesso.
+- A limpeza de artefatos gerados pode ser feita localmente quando necessario, mas nao e requisito do build validado.

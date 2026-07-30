@@ -67,3 +67,25 @@ Hardening:
 - `ensureDemoUsers` deixou de ser chamado pela tela de login.
 - `ensureDemoUsers` agora exige `ALLOW_DEMO_USER_PROVISIONING=true`.
 - Login frontend tenta a Nexos API e cai para o login Supabase legado apenas se a API local estiver indisponivel ou recusar a tentativa.
+
+## Sprint 01.1 - Decisao Definitiva
+
+DEFINITIVO:
+
+- NestJS Auth e a autoridade de identidade da plataforma.
+- Novas funcionalidades devem autenticar e autorizar pelo backend NestJS, com tenant derivado de membership.
+
+TEMPORARIO:
+
+- Supabase Auth permanece como fallback de migracao para fluxos MVP ainda nao migrados.
+- O fallback atual e `Nexos API -> Supabase`. Ele existe para preservar o produto enquanto telas dependem de Supabase Auth/RLS.
+
+Criterio de remocao do fallback:
+
+- todos os fluxos protegidos dependerem de `/api/auth/login`, `/api/me` e guardas backend;
+- dados operacionais criticos terem tenant server-side no NestJS;
+- smoke e verify passarem sem login Supabase.
+
+Risco de permanencia:
+
+- dois modelos de sessao coexistem e podem divergir em roles/permissoes.

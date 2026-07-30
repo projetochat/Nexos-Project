@@ -377,7 +377,11 @@ function NovoChamadoModal({
         setCustomers(cs);
         setContacts(ct);
         setDepartments(dp);
-      } catch {}
+      } catch {
+        setCustomers([]);
+        setContacts([]);
+        setDepartments([]);
+      }
     })();
   }, [open, editing]);
 

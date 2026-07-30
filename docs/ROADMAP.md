@@ -40,3 +40,15 @@ Nao entregue nesta sprint:
 ## Proxima sprint sugerida
 
 P0: migrar um fluxo operacional real para a Nexos API, preferencialmente conversas/mensagens ou chamados com anexos externos, mantendo Supabase legado ate o recorte estar validado.
+
+## Sprint 01.1 concluida
+
+Entregue:
+
+- frontend build reproduzivel;
+- lint baseline com bloqueio de regressao;
+- `bun run verify`;
+- documentacao da decisao de auth;
+- smoke HTTP das principais rotas.
+
+Com o gate aprovado, a Sprint 02 pode iniciar com foco em Organizacao + Users + Departments + RBAC, sem implementar essa etapa dentro da Sprint 01.1.

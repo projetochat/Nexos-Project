@@ -1,4 +1,4 @@
-import * as React from "react";
+﻿import * as React from "react";
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -79,6 +79,7 @@ function ConversationPage() {
   const standbyLabel = queuePrefs.find((p) => p.id === "standby")?.label ?? "Stand By";
 
   const [closing, setClosing] = React.useState(false);
+  const [gerando, setGerando] = React.useState(false);
 
   if (!conv) {
     return (
@@ -141,7 +142,6 @@ function ConversationPage() {
     } catch (e) { toast.error((e as Error).message); }
   };
 
-  const [gerando, setGerando] = React.useState(false);
   const handleGerarChamado = async () => {
     if (!user || !conv.contact) return;
     if (!conv.protocolo) {

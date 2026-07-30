@@ -1,4 +1,4 @@
-import * as React from "react";
+﻿import * as React from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard,
@@ -90,14 +90,18 @@ function useSidebar() {
   React.useEffect(() => {
     try {
       if (localStorage.getItem(SIDEBAR_KEY) === "1") setCollapsed(true);
-    } catch {}
+    } catch {
+      // localStorage may be unavailable in restricted browser contexts.
+    }
   }, []);
   const toggle = React.useCallback(() => {
     setCollapsed((v) => {
       const next = !v;
       try {
         localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0");
-      } catch {}
+      } catch {
+        // Keep the in-memory state even when persistence is unavailable.
+      }
       return next;
     });
   }, []);
