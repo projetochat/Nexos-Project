@@ -24,29 +24,48 @@ enum PlatformRole {
   ADMIN
 }
 
+enum ContactCompanyRole {
+  COLABORADOR
+  SUPERVISOR
+  GERENTE
+  DIRETORIA
+}
+
+enum ConversationStatus {
+  ABERTA
+  EM_ANDAMENTO
+  AGUARDANDO
+  FECHADA
+}
+
 model Tenant {
-  id          String             @id @default(uuid())
-  name        String
-  slug        String             @unique
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  users       TenantMembership[]
-  departments Department[]
-  roles       Role[]
+  id                          String                       @id @default(uuid())
+  name                        String
+  slug                        String                       @unique
+  createdAt                   DateTime                     @default(now())
+  updatedAt                   DateTime                     @updatedAt
+  users                       TenantMembership[]
+  departments                 Department[]
+  roles                       Role[]
+  customers                   Customer[]
+  contacts                    Contact[]
+  tags                        Tag[]
+  conversations               Conversation[]
+  conversationProtocolCounter ConversationProtocolCounter?
 
   @@map("tenants")
 }
 
 model User {
-  id           String             @id @default(uuid())
-  email        String             @unique
-  name         String
-  passwordHash String
-  status       UserStatus         @default(ACTIVE)
-  platformRole PlatformRole       @default(USER)
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  memberships  TenantMembership[]
+  id                    String             @id @default(uuid())
+  email                 String             @unique
+  name                  String
+  passwordHash          String
+  status                UserStatus         @default(ACTIVE)
+  platformRole          PlatformRole       @default(USER)
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  memberships           TenantMembership[]
 
   @@index([status])
   @@index([platformRole])
@@ -54,17 +73,18 @@ model User {
 }
 
 model TenantMembership {
-  id          String                 @id @default(uuid())
-  tenantId    String
-  userId      String
-  roleId      String
-  status      MembershipStatus       @default(ACTIVE)
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
-  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role        Role                   @relation(fields: [tenantId, roleId], references: [tenantId, id])
-  departments DepartmentMembership[]
+  id            String                 @id @default(uuid())
+  tenantId      String
+  userId        String
+  roleId        String
+  status        MembershipStatus       @default(ACTIVE)
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          Role                   @relation(fields: [tenantId, roleId], references: [tenantId, id])
+  departments   DepartmentMembership[]
+  conversations Conversation[]
 
   @@unique([tenantId, userId])
   @@unique([tenantId, id])
@@ -75,16 +95,18 @@ model TenantMembership {
 }
 
 model Department {
-  id          String                 @id @default(uuid())
-  tenantId    String
-  name        String
-  description String?
-  color       String                 @default("#6366f1")
-  active      Boolean                @default(true)
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
-  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  members     DepartmentMembership[]
+  id            String                 @id @default(uuid())
+  tenantId      String
+  name          String
+  description   String?
+  color         String                 @default("#6366f1")
+  active        Boolean                @default(true)
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members       DepartmentMembership[]
+  contacts      Contact[]
+  conversations Conversation[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, id])
@@ -147,4 +169,128 @@ model RolePermission {
   @@id([roleId, permissionId])
   @@index([permissionId])
   @@map("role_permissions")
+}
+
+model Customer {
+  id                     String         @id @default(uuid())
+  tenantId               String
+  name                   String
+  email                  String?
+  phone                  String?
+  notes                  String?
+  responsibleContactName String?
+  color                  String         @default("#6366f1")
+  archivedAt             DateTime?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  tenant                 Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts               Contact[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, name])
+  @@index([tenantId, archivedAt])
+  @@map("customers")
+}
+
+model Contact {
+  id              String              @id @default(uuid())
+  tenantId        String
+  customerId      String?
+  departmentId    String?
+  name            String
+  phone           String
+  normalizedPhone String
+  email           String?
+  avatarUrl       String?
+  departmentName  String?
+  companyRole     ContactCompanyRole?
+  instance        String?
+  archivedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer        Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  department      Department?         @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  tags            ContactTag[]
+  conversations   Conversation[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, normalizedPhone])
+  @@index([tenantId, name])
+  @@index([tenantId, customerId])
+  @@index([tenantId, departmentId])
+  @@index([tenantId, departmentName])
+  @@index([tenantId, instance])
+  @@index([tenantId, archivedAt])
+  @@map("contacts")
+}
+
+model Tag {
+  id        String       @id @default(uuid())
+  tenantId  String
+  name      String
+  color     String       @default("#6366f1")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts  ContactTag[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("tags")
+}
+
+model ContactTag {
+  tenantId  String
+  contactId String
+  tagId     String
+  createdAt DateTime @default(now())
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@index([tenantId])
+  @@index([tagId])
+  @@map("contact_tags")
+}
+
+model ConversationProtocolCounter {
+  tenantId   String   @id
+  lastNumber Int      @default(0)
+  updatedAt  DateTime @updatedAt
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("conversation_protocol_counters")
+}
+
+model Conversation {
+  id                   String             @id @default(uuid())
+  tenantId             String
+  contactId            String
+  departmentId         String?
+  assignedMembershipId String?
+  status               ConversationStatus @default(ABERTA)
+  protocol             String?
+  isGroup              Boolean            @default(false)
+  unreadCount          Int                @default(0)
+  lastMessagePreview   String?
+  lastMessageAt        DateTime?
+  archivedAt           DateTime?
+  closedAt             DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact              Contact            @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  department           Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  assignedMembership   TenantMembership?  @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, protocol])
+  @@index([tenantId, status, archivedAt])
+  @@index([tenantId, departmentId])
+  @@index([tenantId, assignedMembershipId])
+  @@index([tenantId, contactId])
+  @@index([tenantId, lastMessageAt])
+  @@map("conversations")
 }

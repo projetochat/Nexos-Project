@@ -4,8 +4,8 @@
   "type": "commonjs",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/main.js",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-prisma-client.mjs",
+    "start": "node dist/src/main.js",
     "test": "vitest run",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",

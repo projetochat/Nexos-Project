@@ -110,3 +110,69 @@ Platform Admin:
 
 - `User.platformRole = ADMIN`
 - Nao substitui `Role.key = tenant_admin`.
+
+## Sprint 03 - CRM Prisma
+
+Migration:
+
+- `backend/prisma/migrations/20260730000200_contacts_crm/migration.sql`
+
+Entidades finais do recorte:
+
+- `Customer`: cliente tenant-owned, com `name`, `email`, `phone`, `notes`, `responsibleContactName`, `color` e `archivedAt`.
+- `Contact`: contato tenant-owned, com `name`, `phone`, `normalizedPhone`, `email`, `customerId`, `departmentId`, `departmentName`, `companyRole`, `instance`, `avatarUrl` e `archivedAt`.
+- `Tag`: etiqueta tenant-owned.
+- `ContactTag`: relacao N:N entre contato e etiqueta.
+
+Constraints e indices:
+
+- `Customer` unico por `[tenantId, id]`; indices por nome e arquivamento.
+- `Contact` unico por `[tenantId, id]` e `[tenantId, normalizedPhone]`.
+- `Tag` unico por `[tenantId, name]`.
+- `ContactTag` unico por `[contactId, tagId]`.
+- FKs de `Contact.customerId`, `Contact.departmentId`, `ContactTag.contactId` e `ContactTag.tagId`.
+
+Decisoes:
+
+- `Customer` e `Contact` sao dominios distintos: cliente representa a empresa/pessoa juridica atendida; contato representa a pessoa que conversa pelo WhatsApp.
+- Contatos podem ficar sem cliente para preservar o fluxo de vinculacao posterior em `/clientes`.
+- Delete funcional arquiva (`archivedAt`) e listas padrao ocultam arquivados.
+- Departamento no CRM preserva `departmentName` para compatibilidade com o formulario existente e aceita `departmentId` opcional para evolucao com a camada organizacional.
+- O schema Supabase legado permanece apenas para fluxos ainda nao migrados.
+
+## Sprint 04 - Conversations Prisma
+
+Migration:
+
+- `backend/prisma/migrations/20260730000300_conversations/migration.sql`
+
+Entidades finais do recorte:
+
+- `Conversation`: conversa tenant-owned vinculada a `Contact`, opcionalmente a `Department` e a `TenantMembership` atribuida.
+- `ConversationProtocolCounter`: contador por tenant para emissao de protocolos sequenciais.
+
+Enum:
+
+- `ConversationStatus`: `ABERTA`, `EM_ANDAMENTO`, `AGUARDANDO`, `FECHADA`.
+
+Campos principais de `Conversation`:
+
+- `tenantId`, `contactId`, `departmentId`, `assignedMembershipId`.
+- `status`, `protocol`, `isGroup`.
+- `unreadCount`, `lastMessagePreview`, `lastMessageAt`.
+- `archivedAt`, `closedAt`, `createdAt`, `updatedAt`.
+
+Constraints e indices:
+
+- `Conversation` unico por `[tenantId, id]`.
+- `Conversation.protocol` unico por `[tenantId, protocol]`; Postgres permite multiplos `NULL`, preservando leads sem protocolo.
+- Indices por tenant/status/arquivamento, departamento, assignee, contato e ultima mensagem.
+- FKs para tenant, contato, departamento e membership atribuida.
+
+Decisoes:
+
+- Isolamento de tenant e validado no backend para toda criacao e mutacao.
+- Escopo operacional de departamento e aplicado no backend: admin ve tudo; supervisor e agent veem departamentos permitidos ou conversas atribuidas a eles.
+- Transferencia de departamento valida tenant e escopo do operador; se o assignee nao pertence ao novo departamento, a conversa e desatribuida.
+- `Message` nao foi modelado nesta sprint; campos `unreadCount`, `lastMessagePreview` e `lastMessageAt` sustentam a lista ate a migracao de mensagens na Sprint 05.
+- Nao ha hard delete de conversa.

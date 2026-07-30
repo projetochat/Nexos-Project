@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { AuthModule } from "./auth/auth.module";
+import { ConversationsModule } from "./conversations/conversations.module";
+import { CrmModule } from "./crm/crm.module";
 import { DepartmentsModule } from "./departments/departments.module";
 import { HealthModule } from "./health/health.module";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -15,6 +17,8 @@ import { UsersModule } from "./users/users.module";
     UsersModule,
     DepartmentsModule,
     RolesModule,
+    CrmModule,
+    ConversationsModule,
     HealthModule,
   ],
 })

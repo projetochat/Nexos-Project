@@ -1,13 +1,27 @@
 import * as React from "react";
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, MessageSquare, Plus, Inbox as InboxIcon, Clock, Sparkles, Play, UserPlus, Check, ChevronDown, X, PauseCircle, RefreshCw } from "lucide-react";
+import {
+  Search,
+  MessageSquare,
+  Plus,
+  Inbox as InboxIcon,
+  Clock,
+  Sparkles,
+  Play,
+  UserPlus,
+  Check,
+  ChevronDown,
+  X,
+  PauseCircle,
+  RefreshCw,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Badge, Button, Field, Input } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
-import { CATALOG, CONV, CONTACTS, CUSTOMERS, type Contact, type ConvStatus } from "@/lib/mvp";
-import { supabase } from "@/integrations/supabase/client";
+import { type Contact } from "@/lib/mvp";
+import { conversationApi, crmApi, type ApiConversationStatus as ConvStatus } from "@/lib/nexos-api";
 import { useSession } from "@/lib/session";
 import { relativeTime } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
@@ -29,7 +43,6 @@ const SOURCES: { id: SourceId; label: string; hint: string }[] = [
   { id: "bots", label: "Agente IA", hint: "Atendimento feito por Agente IA" },
 ];
 
-
 const STATUS_TONE: Record<ConvStatus, "warning" | "info" | "success" | "default"> = {
   aberta: "warning",
   em_andamento: "info",
@@ -47,48 +60,8 @@ const STATUS_LABEL: Record<ConvStatus, string> = {
 export function InboxLayout({ children }: { children: React.ReactNode }) {
   const params = useParams({ strict: false }) as { conversationId?: string };
   const activeId = params.conversationId;
-  const user = useSession((s) => s.user);
   const qc = useQueryClient();
   const newConv = useDisclosure();
-
-  const { data: conversas = [], isLoading } = useQuery({
-    queryKey: ["mvp", "conversations"],
-    queryFn: CONV.list,
-    refetchInterval: 30_000,
-  });
-
-  const { data: unread = {} } = useQuery({
-    queryKey: ["mvp", "unread"],
-    queryFn: CONV.unreadCounts,
-    refetchInterval: 20_000,
-  });
-
-  const { data: firstContactIds = new Set<string>() } = useQuery<Set<string>>({
-    queryKey: ["mvp", "leads-ids"],
-    queryFn: async () => {
-      const { data } = await supabase.from("messages").select("conversation_id");
-      const counts: Record<string, number> = {};
-      (data ?? []).forEach((r: { conversation_id: string }) => {
-        counts[r.conversation_id] = (counts[r.conversation_id] ?? 0) + 1;
-      });
-      return new Set(Object.entries(counts).filter(([, n]) => n <= 1).map(([id]) => id));
-    },
-    refetchInterval: 30_000,
-  });
-
-  const { data: customers = [] } = useQuery({
-    queryKey: ["mvp", "customers", "all"],
-    queryFn: () => CUSTOMERS.list(),
-  });
-
-  const { data: instanciasList = [] } = useQuery({
-    queryKey: ["mvp", "instancias", "inbox-filter"],
-    queryFn: async () => {
-      const { data } = await supabase.from("instancias").select("id, nome").order("nome");
-      return (data ?? []) as { id: string; nome: string }[];
-    },
-  });
-
   const queuePrefs = useQueuePrefs();
   const perms = useChatPerms();
   const activeTabs = React.useMemo(
@@ -107,23 +80,44 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const [query, setQuery] = React.useState("");
   const [selectedInstancias, setSelectedInstancias] = React.useState<Set<string>>(new Set());
   const [selectedClientes, setSelectedClientes] = React.useState<Set<string>>(new Set());
+  const selectedCliente = selectedClientes.size === 1 ? [...selectedClientes][0] : undefined;
+  const selectedInstancia = selectedInstancias.size === 1 ? [...selectedInstancias][0] : undefined;
 
-  React.useEffect(() => {
-    const ch = supabase
-      .channel("mvp-conversations")
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => {
-        qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
-        qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-        qc.invalidateQueries({ queryKey: ["mvp", "unread"] });
-        qc.invalidateQueries({ queryKey: ["mvp", "leads-ids"] });
-      })
-      .subscribe();
-    return () => {
-      supabase.removeChannel(ch);
-    };
-  }, [qc]);
+  const { data: conversationsPage, isLoading } = useQuery({
+    queryKey: [
+      "nexos",
+      "conversations",
+      { tab, source, onlyUnread, query, selectedCliente, selectedInstancia },
+    ],
+    queryFn: () =>
+      conversationApi.list({
+        tab,
+        source,
+        onlyUnread,
+        q: query,
+        customerId: selectedCliente,
+        instance: selectedInstancia,
+        pageSize: 100,
+      }),
+    refetchInterval: 30_000,
+  });
+  const conversas = React.useMemo(() => conversationsPage?.items ?? [], [conversationsPage?.items]);
+  const unread = React.useMemo(
+    () => Object.fromEntries(conversas.map((c) => [c.id, c.unreadCount])) as Record<string, number>,
+    [conversas],
+  );
+
+  const { data: customersPage } = useQuery({
+    queryKey: ["nexos", "customers", "all"],
+    queryFn: () => crmApi.listCustomers({ pageSize: 100 }),
+  });
+  const customers = React.useMemo(() => customersPage?.items ?? [], [customersPage?.items]);
+
+  const { data: contactOptions } = useQuery({
+    queryKey: ["nexos", "contact-options", "inbox-filter"],
+    queryFn: crmApi.contactOptions,
+  });
+  const instanciasList = contactOptions?.instances ?? [];
 
   // Clientes distintos para o filtro "Cliente" (nome do cliente cadastrado).
   const clientesList = React.useMemo(() => {
@@ -141,48 +135,20 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
 
   const list = React.useMemo(() => {
     return conversas.filter((c) => {
-      // Tab principal
-      if (tab === "ativas" && !(c.agent_id === user?.id && c.status !== "fechada" && c.status !== "aguardando")) return false;
-      if (tab === "standby" && c.status !== "aguardando") return false;
-      if (tab === "fila" && !(c.status === "aberta" && !c.agent_id && !firstContactIds.has(c.id))) return false;
-      if (tab === "leads" && !(!c.agent_id && c.status !== "fechada" && firstContactIds.has(c.id))) return false;
-
-      // Origem do atendimento (humano vs bot)
-      if (source === "humano" && !c.agent_id) return false;
-      if (source === "bots" && c.agent_id) return false;
-
-      if (onlyUnread && !((unread[c.id] ?? 0) > 0)) return false;
-
-
-
       if (selectedClientes.size > 0) {
         const cid = c.contact?.customer_id ?? null;
         if (!cid || !selectedClientes.has(cid)) return false;
       }
 
-
       if (selectedInstancias.size > 0) {
         const inst = c.contact?.instancia ?? null;
         if (!inst || !selectedInstancias.has(inst)) return false;
       }
-
-      if (query) {
-        const hay = ((c.contact?.nome ?? "") + (c.contact?.telefone ?? "")).toLowerCase();
-        if (!hay.includes(query.toLowerCase())) return false;
-      }
       return true;
     });
-  }, [conversas, tab, source, onlyUnread, unread, query, user?.id, firstContactIds, selectedClientes, selectedInstancias]);
+  }, [conversas, selectedClientes, selectedInstancias]);
 
-  const counts = React.useMemo(
-    () => ({
-      ativas: conversas.filter((c) => c.agent_id === user?.id && c.status !== "fechada" && c.status !== "aguardando").length,
-      standby: conversas.filter((c) => c.status === "aguardando").length,
-      fila: conversas.filter((c) => c.status === "aberta" && !c.agent_id && !firstContactIds.has(c.id)).length,
-      leads: conversas.filter((c) => !c.agent_id && c.status !== "fechada" && firstContactIds.has(c.id)).length,
-    }),
-    [conversas, user?.id, firstContactIds],
-  );
+  const counts = conversationsPage?.counts ?? { ativas: 0, standby: 0, fila: 0, leads: 0 };
 
   const toggle = (set: Set<string>, key: string, setter: (s: Set<string>) => void) => {
     const next = new Set(set);
@@ -194,7 +160,9 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   return (
     <AppShellFull>
       <div className="flex h-full min-h-0">
-        <aside className={`${activeId ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-r border-border md:w-[380px] xl:w-[440px]`}>
+        <aside
+          className={`${activeId ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-r border-border md:w-[380px] xl:w-[440px]`}
+        >
           <div className="space-y-3 border-b border-border p-4">
             <div className="flex items-center gap-2">
               <div className="flex flex-1 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
@@ -213,18 +181,19 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                 title="Atualizar"
                 onClick={async () => {
                   setRefreshing(true);
-                  await Promise.all([
-                    qc.invalidateQueries({ queryKey: ["mvp", "conversations"] }),
-                    qc.invalidateQueries({ queryKey: ["mvp", "unread"] }),
-                    qc.invalidateQueries({ queryKey: ["mvp", "leads-ids"] }),
-                    qc.invalidateQueries({ queryKey: ["mvp", "customers", "all"] }),
-                  ]);
+                  await qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+                  await qc.invalidateQueries({ queryKey: ["nexos", "customers", "all"] });
                   setRefreshing(false);
                 }}
               >
                 <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
               </Button>
-              <Button variant="primary" size="icon" aria-label="Nova conversa" onClick={newConv.show}>
+              <Button
+                variant="primary"
+                size="icon"
+                aria-label="Nova conversa"
+                onClick={newConv.show}
+              >
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
@@ -234,7 +203,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
               <MultiSelect
                 label="Instância"
                 placeholder="Todas"
-                options={instanciasList.map((i) => ({ id: i.nome, label: i.nome }))}
+                options={instanciasList.map((nome) => ({ id: nome, label: nome }))}
                 selected={selectedInstancias}
                 onChange={setSelectedInstancias}
               />
@@ -248,7 +217,6 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
               />
             </div>
 
-
             {/* Tabs */}
             <div className="flex items-center gap-1 rounded-lg border border-border bg-surface-1 p-1">
               {activeTabs.map((t) => {
@@ -259,12 +227,16 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                     key={t.id}
                     onClick={() => setTab(t.id)}
                     className={`flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-1.5 text-xs font-medium transition ${
-                      active ? "border-primary bg-primary/10 text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+                      active
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     <Icon className="h-3.5 w-3.5 shrink-0" />
                     <span className="whitespace-nowrap">{t.label}</span>
-                    <span className="font-mono text-[10px] text-muted-foreground">{counts[t.id]}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {counts[t.id]}
+                    </span>
                   </button>
                 );
               })}
@@ -310,50 +282,68 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
 
           <ul className="flex-1 overflow-y-auto">
             {isLoading && (
-              <li className="p-6 text-center text-xs text-muted-foreground">Carregando conversas…</li>
+              <li className="p-6 text-center text-xs text-muted-foreground">
+                Carregando conversas…
+              </li>
             )}
-            {!isLoading && list.map((c) => {
-              const active = activeId === c.id;
-              const u = unread[c.id] ?? 0;
-              return (
-                <li key={c.id}>
-                  <Link
-                    to="/inbox/$conversationId"
-                    params={{ conversationId: c.id }}
-                    className={`flex gap-3 border-b border-border/60 px-4 py-3 transition ${active ? "bg-surface-2" : "hover:bg-surface-1"}`}
-                  >
-                    <div className="relative">
-                      <Avatar name={c.contact?.nome ?? "?"} size={38} />
-                      {u > 0 && (
-                        <span
-                          aria-label={`${u} mensagens não lidas`}
-                          className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-surface-1 bg-success px-1 font-mono text-[10px] font-bold leading-none text-white shadow-card"
-                        >
-                          {u > 99 ? "99+" : u}
-                        </span>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className={`truncate text-sm ${u > 0 ? "font-semibold" : "font-medium"}`}>
-                          {c.contact?.nome ?? "Contato"}
-                          {c.is_group && <span className="ml-1 text-[10px] text-muted-foreground">· grupo</span>}
-                        </p>
-                        <span className={`shrink-0 font-mono text-[10px] ${u > 0 ? "text-success" : "text-muted-foreground"}`}>
-                          {relativeTime(new Date(c.last_message_at).getTime())}
-                        </span>
+            {!isLoading &&
+              list.map((c) => {
+                const active = activeId === c.id;
+                const u = unread[c.id] ?? 0;
+                return (
+                  <li key={c.id}>
+                    <Link
+                      to="/inbox/$conversationId"
+                      params={{ conversationId: c.id }}
+                      className={`flex gap-3 border-b border-border/60 px-4 py-3 transition ${active ? "bg-surface-2" : "hover:bg-surface-1"}`}
+                    >
+                      <div className="relative">
+                        <Avatar name={c.contact?.nome ?? "?"} size={38} />
+                        {u > 0 && (
+                          <span
+                            aria-label={`${u} mensagens não lidas`}
+                            className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-surface-1 bg-success px-1 font-mono text-[10px] font-bold leading-none text-white shadow-card"
+                          >
+                            {u > 99 ? "99+" : u}
+                          </span>
+                        )}
                       </div>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {[c.contact?.instancia, (c.contact as unknown as { customer?: { nome?: string } })?.customer?.nome, c.department?.nome].filter(Boolean).join(" - ") || "—"}
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {c.agent?.nome ?? "sem atendente"}
-                      </p>
-                    </div>
-                  </Link>
-                </li>
-              );
-            })}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p
+                            className={`truncate text-sm ${u > 0 ? "font-semibold" : "font-medium"}`}
+                          >
+                            {c.contact?.nome ?? "Contato"}
+                            {c.is_group && (
+                              <span className="ml-1 text-[10px] text-muted-foreground">
+                                · grupo
+                              </span>
+                            )}
+                          </p>
+                          <span
+                            className={`shrink-0 font-mono text-[10px] ${u > 0 ? "text-success" : "text-muted-foreground"}`}
+                          >
+                            {relativeTime(new Date(c.last_message_at).getTime())}
+                          </span>
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {[
+                            c.contact?.instancia,
+                            (c.contact as unknown as { customer?: { nome?: string } })?.customer
+                              ?.nome,
+                            c.department?.nome,
+                          ]
+                            .filter(Boolean)
+                            .join(" - ") || "—"}
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {c.agent?.nome ?? "sem atendente"}
+                        </p>
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
             {!isLoading && list.length === 0 && (
               <li className="p-8 text-center text-xs text-muted-foreground">
                 Nenhuma conversa neste filtro.
@@ -402,7 +392,12 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
   const [firstMsg, setFirstMsg] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
-  const { data: contacts = [] } = useQuery({ queryKey: ["mvp", "contacts"], queryFn: CATALOG.contacts, enabled: open });
+  const { data: contactsPage } = useQuery({
+    queryKey: ["nexos", "contacts", "conversation-modal"],
+    queryFn: () => crmApi.listContacts({ pageSize: 100 }),
+    enabled: open,
+  });
+  const contacts = React.useMemo(() => contactsPage?.items ?? [], [contactsPage?.items]);
 
   React.useEffect(() => {
     if (!open) {
@@ -418,7 +413,9 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
   const filtered = React.useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return contacts.slice(0, 20);
-    return contacts.filter((c) => (c.nome + " " + c.telefone).toLowerCase().includes(s)).slice(0, 20);
+    return contacts
+      .filter((c) => (c.nome + " " + c.telefone).toLowerCase().includes(s))
+      .slice(0, 20);
   }, [contacts, q]);
 
   const submit = async () => {
@@ -433,7 +430,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
           setBusy(false);
           return;
         }
-        const c = await CONTACTS.create({ nome: newName.trim(), telefone: newPhone.trim() });
+        const c = await crmApi.createContact({ name: newName.trim(), phone: newPhone.trim() });
         contactId = c.id;
       }
       if (!contactId) {
@@ -441,15 +438,15 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
         setBusy(false);
         return;
       }
-      const convId = await CONV.startWithAgent({
+      const conversation = await conversationApi.create({
         contactId,
-        agentId: user.id,
-        firstMessage: firstMsg.trim(),
+        assignToSelf: true,
+        firstMessagePreview: firstMsg.trim(),
       });
       toast.success("Conversa iniciada");
-      qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
+      qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
       onClose();
-      navigate({ to: "/inbox/$conversationId", params: { conversationId: convId } });
+      navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -465,7 +462,9 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
       description="Selecione um contato existente ou cadastre um novo."
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
           <Button variant="primary" size="sm" onClick={submit} disabled={busy}>
             {busy ? "Enviando…" : "Iniciar conversa"}
           </Button>
@@ -490,7 +489,11 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
       {tab === "existing" ? (
         <div className="space-y-2">
           <Field label="Buscar contato">
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome ou telefone…" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Nome ou telefone…"
+            />
           </Field>
           <ul className="max-h-56 overflow-y-auto rounded-lg border border-border">
             {filtered.map((c) => {
@@ -510,13 +513,23 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
                 </li>
               );
             })}
-            {filtered.length === 0 && <li className="p-4 text-center text-xs text-muted-foreground">Nenhum contato.</li>}
+            {filtered.length === 0 && (
+              <li className="p-4 text-center text-xs text-muted-foreground">Nenhum contato.</li>
+            )}
           </ul>
         </div>
       ) : (
         <div className="space-y-3">
-          <Field label="Nome"><Input value={newName} onChange={(e) => setNewName(e.target.value)} /></Field>
-          <Field label="Telefone"><Input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} placeholder="+55…" /></Field>
+          <Field label="Nome">
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} />
+          </Field>
+          <Field label="Telefone">
+            <Input
+              value={newPhone}
+              onChange={(e) => setNewPhone(e.target.value)}
+              placeholder="+55…"
+            />
+          </Field>
         </div>
       )}
 
@@ -576,8 +589,8 @@ function MultiSelect({
     count === 0
       ? placeholder
       : count === 1
-      ? options.find((o) => selected.has(o.id))?.label ?? `${count} selecionado`
-      : `${count} selecionados`;
+        ? (options.find((o) => selected.has(o.id))?.label ?? `${count} selecionado`)
+        : `${count} selecionados`;
 
   return (
     <div ref={ref} className="relative">
@@ -613,7 +626,9 @@ function MultiSelect({
       {open && (
         <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-64 overflow-y-auto rounded-lg border border-border bg-card shadow-card">
           {options.length === 0 && (
-            <div className="p-3 text-[11px] text-muted-foreground">{emptyHint ?? "Nenhuma opção."}</div>
+            <div className="p-3 text-[11px] text-muted-foreground">
+              {emptyHint ?? "Nenhuma opção."}
+            </div>
           )}
           {options.map((o) => {
             const active = selected.has(o.id);
@@ -628,7 +643,9 @@ function MultiSelect({
               >
                 <span
                   className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
-                    active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-surface-1"
+                    active
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-surface-1"
                   }`}
                 >
                   {active && <Check className="h-2.5 w-2.5" />}
@@ -642,4 +659,3 @@ function MultiSelect({
     </div>
   );
 }
-

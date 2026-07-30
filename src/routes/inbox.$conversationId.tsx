@@ -14,6 +14,7 @@ import {
   CATALOG, CONV, CONTACTS, CUSTOMERS, QUICK_REPLIES, TAGS,
   type ConvStatus, type Message, type QuickReply, type Tag, type Customer,
 } from "@/lib/mvp";
+import { conversationApi, organizationApi } from "@/lib/nexos-api";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/session";
 import { fmtHM, fmtDate, fmtLogStamp } from "@/lib/format";
@@ -35,8 +36,10 @@ function ConversationPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
 
-  const { data: conversas = [] } = useQuery({ queryKey: ["mvp", "conversations"], queryFn: CONV.list });
-  const conv = conversas.find((c) => c.id === conversationId);
+  const { data: conv } = useQuery({
+    queryKey: ["nexos", "conversations", conversationId],
+    queryFn: () => conversationApi.get(conversationId),
+  });
 
   const { data: mensagens = [] } = useQuery({
     queryKey: ["mvp", "messages", conversationId],
@@ -44,8 +47,40 @@ function ConversationPage() {
     refetchInterval: 30_000,
   });
 
-  const { data: agents = [] } = useQuery({ queryKey: ["mvp", "agents"], queryFn: CATALOG.agents });
-  const { data: departments = [] } = useQuery({ queryKey: ["mvp", "departments"], queryFn: CATALOG.departments });
+  const { data: memberships = [] } = useQuery({
+    queryKey: ["nexos", "users", "conversation-transfer"],
+    queryFn: organizationApi.listUsers,
+  });
+  const agents = React.useMemo(
+    () =>
+      memberships
+        .filter((membership) => membership.status === "ACTIVE" && membership.user.status === "ACTIVE")
+        .map((membership) => ({
+          id: membership.id,
+          userId: membership.user.id,
+          nome: membership.user.name,
+          email: membership.user.email,
+        })),
+    [memberships],
+  );
+  const messageAgents = React.useMemo(
+    () => agents.map((agent) => ({ id: agent.userId, nome: agent.nome })),
+    [agents],
+  );
+  const { data: apiDepartments = [] } = useQuery({
+    queryKey: ["nexos", "departments", "conversation-transfer"],
+    queryFn: organizationApi.listDepartments,
+  });
+  const departments = React.useMemo(
+    () =>
+      apiDepartments.map((department) => ({
+        id: department.id,
+        nome: department.name,
+        cor: department.color,
+        descricao: department.description,
+      })),
+    [apiDepartments],
+  );
 
   const perms = useChatPerms();
   const showAgentName = perms.mostrar_nome_atendente;
@@ -57,11 +92,8 @@ function ConversationPage() {
         { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` },
         () => {
           qc.invalidateQueries({ queryKey: ["mvp", "messages", conversationId] });
-          qc.invalidateQueries({ queryKey: ["mvp", "unread"] });
+          qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
         })
-      .on("postgres_changes",
-        { event: "UPDATE", schema: "public", table: "conversations", filter: `id=eq.${conversationId}` },
-        () => qc.invalidateQueries({ queryKey: ["mvp", "conversations"] }))
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [conversationId, qc]);
@@ -102,43 +134,27 @@ function ConversationPage() {
   const handleAssume = async () => {
     if (!user) return;
     try {
-      if (isStandby) {
-        if (!conv.agent_id) {
-          await supabase.from("conversations").update({ agent_id: user.id } as never).eq("id", conv.id);
-        }
-        await CONV.setStatus(conv.id, "em_andamento");
-        await CONV.sendSystem(conv.id, user.id, "Conversa retomada");
-        qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-        qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
-        toast.success("Conversa retomada");
-      } else {
-        const hadProtocolo = !!conv.protocolo;
-        await CONV.assume(conv.id, user.id);
-        if (hadProtocolo) {
-          await CONV.sendSystem(conv.id, user.id, "Conversa retomada");
-        }
-        qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-        qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
-        toast.success(hadProtocolo ? "Conversa retomada" : "Conversa iniciada — protocolo gerado");
-      }
+      const hadProtocolo = !!conv.protocolo;
+      await conversationApi.assign(conv.id, { self: true });
+      if (isStandby) await conversationApi.updateStatus(conv.id, "em_andamento");
+      qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+      qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
+      toast.success(hadProtocolo || isStandby ? "Conversa retomada" : "Conversa iniciada — protocolo gerado");
     } catch (e) { toast.error((e as Error).message); }
   };
 
   const handleNewConversation = async () => {
     if (!user || !conv.contact_id) return;
     try {
-      const { data, error } = await supabase.from("conversations").insert({
-        contact_id: conv.contact_id,
-        department_id: conv.department_id,
-        agent_id: user.id,
-        status: "em_andamento" as ConvStatus,
-      } as never).select("id").single();
-      if (error) throw error;
-      const newId = (data as { id: string }).id;
-      await supabase.rpc("assign_conversation_protocolo" as never, { _conversation_id: newId } as never);
-      qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
+      const conversation = await conversationApi.create({
+        contactId: conv.contact_id,
+        departmentId: conv.department_id,
+        assignToSelf: true,
+        firstMessagePreview: "Nova conversa iniciada pelo atendimento.",
+      });
+      qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
       toast.success("Nova conversa iniciada — protocolo gerado");
-      navigate({ to: "/inbox/$conversationId", params: { conversationId: newId } });
+      navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
     } catch (e) { toast.error((e as Error).message); }
   };
 
@@ -166,7 +182,7 @@ function ConversationPage() {
         const who =
           m.sender === "contact"
             ? contactName
-            : agents.find((a) => a.id === m.author_id)?.nome ?? "Atendente";
+            : messageAgents.find((a) => a.id === m.author_id)?.nome ?? "Atendente";
         if (m.type === "image" && m.media_data) {
           const caption = m.content ? `<br/>${esc(m.content)}` : "";
           return `<p><strong>${esc(who)}</strong> <span style="color:#64748b">[${ts}]</span>:<br/><img src="${m.media_data}" alt="anexo" style="max-width:100%;border-radius:8px;margin:4px 0"/>${caption}</p>`;
@@ -306,7 +322,7 @@ function ConversationPage() {
                   </div>
                 );
               })()}
-              {mensagens.filter((m) => !(conv.protocolo && m.type === "system" && /novo lead/i.test(m.content))).map((m) => <MessageBubble key={m.id} m={m} agents={agents} showAgentName={showAgentName} />)}
+              {mensagens.filter((m) => !(conv.protocolo && m.type === "system" && /novo lead/i.test(m.content))).map((m) => <MessageBubble key={m.id} m={m} agents={messageAgents} showAgentName={showAgentName} />)}
               {mensagens.length === 0 && (
                 <p className="text-center text-xs text-muted-foreground">Nenhuma mensagem ainda.</p>
               )}
@@ -334,7 +350,8 @@ function ConversationPage() {
               allowAudio={perms.enviar_audio}
               onSent={() => {
                 qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
-                qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
+                qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+                qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
               }}
             />
             <div className="pointer-events-none absolute inset-y-0 right-4 hidden items-center xl:flex">
@@ -371,35 +388,27 @@ function ConversationPage() {
       <TransferModal
         open={transferModal.open}
         onClose={transferModal.hide}
-        agents={agents.filter((a) => a.id !== conv.agent_id)}
+        agents={agents.filter((a) => a.userId !== conv.agent_id)}
         departments={departments.filter((d) => d.id !== conv.department_id)}
         onSubmitAgent={async (id) => {
-          const target = agents.find((a) => a.id === id);
-          await CONV.transferAgent(conv.id, id, user ? { authorId: user.id, text: `Conversa transferida para ${target?.nome ?? "outro atendente"}` } : undefined);
-          qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
+          await conversationApi.assign(conv.id, { membershipId: id });
+          qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
           toast.success("Conversa transferida");
           transferModal.hide();
         }}
         onSubmitDepartment={async (id) => {
-          const target = departments.find((d) => d.id === id);
-          await CONV.moveDepartment(conv.id, id);
-          if (user) await CONV.sendSystem(conv.id, user.id, `Conversa movida para ${target?.nome ?? "outro departamento"}`);
-          qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
+          await conversationApi.transferDepartment(conv.id, id);
+          qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
           toast.success("Conversa movida");
           transferModal.hide();
         }}
         onSubmitStatus={async (status) => {
           const label = status === "fila" ? filaLabel : standbyLabel;
-          if (status === "fila") {
-            await supabase.from("conversations").update({ status: "aberta", agent_id: null } as never).eq("id", conv.id);
-          } else {
-            await CONV.setStatus(conv.id, "aguardando");
-          }
-          if (user) await CONV.sendSystem(conv.id, user.id, `Conversa movida para ${label}`);
-          qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
+          await conversationApi.updateStatus(conv.id, status === "fila" ? "aberta" : "aguardando");
+          qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
           toast.success(`Conversa movida para ${label}`);
           transferModal.hide();
         }}
@@ -411,9 +420,9 @@ function ConversationPage() {
         confirmLabel="Encerrar"
         onClose={() => setClosing(false)}
         onConfirm={async () => {
-          await CONV.close(conv.id, user ? { authorId: user.id, text: "Encerrada" } : undefined);
-          qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
+          await conversationApi.updateStatus(conv.id, "fechada");
+          qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
           toast.success("Conversa encerrada");
         }}
       />
@@ -593,10 +602,10 @@ function Composer({
       setShowQR(false);
       setQrFilter("");
       setPendingCloseAfter(false);
-      void CONV.markRead(conversationId).then(() => qc.invalidateQueries({ queryKey: ["mvp", "unread"] }));
+      void CONV.markRead(conversationId).then(() => qc.invalidateQueries({ queryKey: ["nexos", "conversations"] }));
       if (closeAfter) {
         try {
-          await CONV.close(conversationId, { authorId, text: "CONVERSA ENCERRADA" });
+          await conversationApi.updateStatus(conversationId, "fechada");
           toast.success("Conversa encerrada");
         } catch (e) { toast.error((e as Error).message); }
       }
@@ -665,7 +674,7 @@ function Composer({
     try {
       await CONV.sendAgentMedia(conversationId, authorId, "audio", pendingAudio.url, { durationMs: pendingAudio.duration });
       setPendingAudio(null);
-      void CONV.markRead(conversationId).then(() => qc.invalidateQueries({ queryKey: ["mvp", "unread"] }));
+      void CONV.markRead(conversationId).then(() => qc.invalidateQueries({ queryKey: ["nexos", "conversations"] }));
       onSent();
     } catch (e) { toast.error((e as Error).message); }
   };
@@ -819,17 +828,22 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
   });
 
   const { data: protocolos = [] } = useQuery({
-    queryKey: ["mvp", "contact_protocols", contactId],
+    queryKey: ["nexos", "contact_protocols", contactId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select("id, protocolo, status, created_at")
-        .eq("contact_id", contactId)
-        .not("protocolo", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      return (data ?? []) as { id: string; protocolo: string; status: ConvStatus; created_at: string }[];
+      const page = await conversationApi.list({
+        contactId,
+        pageSize: 50,
+        sort: "createdAt",
+        direction: "desc",
+      });
+      return page.items
+        .filter((conversation) => conversation.protocolo)
+        .map((conversation) => ({
+          id: conversation.id,
+          protocolo: conversation.protocolo!,
+          status: conversation.status,
+          created_at: conversation.created_at,
+        }));
     },
   });
 
@@ -974,7 +988,8 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ["mvp", "contact", contactId] });
           qc.invalidateQueries({ queryKey: ["mvp", "customer", customerId] });
-          qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["nexos", "contact_protocols", contactId] });
           renameModal.hide();
         }}
       />

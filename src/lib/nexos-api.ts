@@ -70,6 +70,134 @@ export type ApiUserMembership = {
   departments: ApiDepartment[];
 };
 
+export type PaginatedResponse<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+export type ApiCustomer = {
+  id: string;
+  tenantId: string;
+  nome: string;
+  email: string | null;
+  telefone: string | null;
+  notas: string | null;
+  contato_responsavel: string | null;
+  cor: string;
+  contactCount?: number;
+};
+
+export type ApiTag = {
+  id: string;
+  nome: string;
+  cor: string;
+};
+
+export type ApiContact = {
+  id: string;
+  tenantId: string;
+  nome: string;
+  telefone: string;
+  normalizedPhone: string;
+  avatar_url: string | null;
+  customer_id: string | null;
+  email: string | null;
+  departamento: string | null;
+  departmentId: string | null;
+  nivel_gerencia: "Colaborador" | "Supervisor" | "Gerente" | "Diretoria" | null;
+  instancia: string | null;
+  customer: Pick<ApiCustomer, "id" | "nome" | "cor"> | null;
+  tags: ApiTag[];
+};
+
+export type ApiConversationStatus = "aberta" | "em_andamento" | "aguardando" | "fechada";
+
+export type ApiConversation = {
+  id: string;
+  tenantId: string;
+  contact_id: string;
+  department_id: string | null;
+  assigned_membership_id: string | null;
+  agent_id: string | null;
+  status: ApiConversationStatus;
+  is_group: boolean;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string;
+  protocolo: string | null;
+  unreadCount: number;
+  lastMessagePreview: string | null;
+  is_lead: boolean;
+  contact: ApiContact | null;
+  department: { id: string; nome: string; cor: string; descricao: string | null } | null;
+  agent: { id: string; membershipId: string; nome: string; email: string } | null;
+};
+
+export type ConversationCounts = {
+  ativas: number;
+  standby: number;
+  fila: number;
+  leads: number;
+};
+
+type ListParams = {
+  q?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+type ListContactsParams = ListParams & {
+  linked?: "all" | "linked" | "unlinked";
+  instance?: string;
+  department?: string;
+  customerId?: string;
+};
+
+type CustomerPayload = {
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  notes?: string | null;
+  responsibleContactName?: string | null;
+  color?: string;
+};
+
+type ContactPayload = {
+  name: string;
+  phone: string;
+  email?: string | null;
+  customerId?: string | null;
+  departmentId?: string | null;
+  departmentName?: string | null;
+  companyRole?: "COLABORADOR" | "SUPERVISOR" | "GERENTE" | "DIRETORIA" | null;
+  instance?: string | null;
+  tagIds?: string[];
+};
+
+type ListConversationsParams = ListParams & {
+  tab?: "ativas" | "standby" | "fila" | "leads";
+  source?: "todos" | "humano" | "bots";
+  onlyUnread?: boolean;
+  customerId?: string;
+  instance?: string;
+  contactId?: string;
+  status?: ApiConversationStatus;
+  departmentId?: string;
+  sort?: "lastMessageAt" | "createdAt" | "status";
+  direction?: "asc" | "desc";
+};
+
+type ConversationPayload = {
+  contactId: string;
+  departmentId?: string | null;
+  assignToSelf?: boolean;
+  isGroup?: boolean;
+  firstMessagePreview?: string | null;
+};
+
 const roleMap: Record<string, Role> = {
   tenant_admin: "admin",
   supervisor: "supervisor",
@@ -193,6 +321,68 @@ export const organizationApi = {
     apiRequest<ApiUserMembership>(`/users/${id}/deactivate`, { method: "PATCH" }),
 };
 
+export const crmApi = {
+  listCustomers: (params: ListParams = {}) =>
+    apiRequest<PaginatedResponse<ApiCustomer>>(`/crm/customers${queryString(params)}`),
+  getCustomer: (id: string) => apiRequest<ApiCustomer>(`/crm/customers/${id}`),
+  createCustomer: (data: CustomerPayload) =>
+    apiRequest<ApiCustomer>("/crm/customers", { method: "POST", body: JSON.stringify(data) }),
+  updateCustomer: (id: string, data: Partial<CustomerPayload>) =>
+    apiRequest<ApiCustomer>(`/crm/customers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteCustomer: (id: string) =>
+    apiRequest<ApiCustomer>(`/crm/customers/${id}`, { method: "DELETE" }),
+  listCustomerContacts: (id: string) => apiRequest<ApiContact[]>(`/crm/customers/${id}/contacts`),
+
+  listContacts: (params: ListContactsParams = {}) =>
+    apiRequest<PaginatedResponse<ApiContact>>(`/crm/contacts${queryString(params)}`),
+  getContact: (id: string) => apiRequest<ApiContact>(`/crm/contacts/${id}`),
+  createContact: (data: ContactPayload) =>
+    apiRequest<ApiContact>("/crm/contacts", { method: "POST", body: JSON.stringify(data) }),
+  updateContact: (id: string, data: Partial<ContactPayload>) =>
+    apiRequest<ApiContact>(`/crm/contacts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteContact: (id: string) =>
+    apiRequest<ApiContact>(`/crm/contacts/${id}`, { method: "DELETE" }),
+  listTags: () => apiRequest<ApiTag[]>("/crm/tags"),
+  contactOptions: () =>
+    apiRequest<{ instances: string[]; departments: string[]; tags: ApiTag[] }>(
+      "/crm/contacts/options",
+    ),
+};
+
+export const conversationApi = {
+  list: (params: ListConversationsParams = {}) =>
+    apiRequest<PaginatedResponse<ApiConversation> & { counts: ConversationCounts }>(
+      `/conversations${queryString(params)}`,
+    ),
+  get: (id: string) => apiRequest<ApiConversation>(`/conversations/${id}`),
+  create: (data: ConversationPayload) =>
+    apiRequest<ApiConversation>("/conversations", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  assign: (
+    id: string,
+    data: { membershipId?: string | null; self?: boolean; unassign?: boolean },
+  ) =>
+    apiRequest<ApiConversation>(`/conversations/${id}/assignee`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  transferDepartment: (id: string, departmentId: string) =>
+    apiRequest<ApiConversation>(`/conversations/${id}/department`, {
+      method: "PATCH",
+      body: JSON.stringify({ departmentId }),
+    }),
+  updateStatus: (id: string, status: ApiConversationStatus) =>
+    apiRequest<ApiConversation>(`/conversations/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+};
+
 export function clearNexosApiSession() {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
@@ -213,4 +403,13 @@ function storeNexosSession(data: LoginResponse) {
   localStorage.setItem(ACCESS_KEY, data.accessToken);
   localStorage.setItem(REFRESH_KEY, data.refreshToken);
   localStorage.setItem(TENANT_KEY, JSON.stringify(data.tenant));
+}
+
+function queryString(params: Record<string, string | number | boolean | undefined>) {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") search.set(key, String(value));
+  });
+  const serialized = search.toString();
+  return serialized ? `?${serialized}` : "";
 }

@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-29 - Sprint 04 conversations
+
+- Criada migration Prisma para `conversations` e `conversation_protocol_counters`.
+- Adicionadas permissions `conversations.read`, `conversations.assign` e `conversations.manage`.
+- Implementada API NestJS `/api/conversations/*` com tenant isolation, escopo operacional por departamento, filtros, busca, sort, paginação e contadores por aba.
+- Migradas as superficies estruturais de `/inbox` e `/inbox/:conversationId` para Nexos API, sem fallback Supabase para Conversation.
+- Mantida fronteira temporaria: mensagens, quick replies e composer continuam legados ate a Sprint 05.
+- Seed atualizado com conversas por tenant em estados ativa, standby, fila, lead, fechada e escopo financeiro restrito.
+- Adicionados testes e2e de RBAC, filtros, detail, assignment/unassignment, cross-tenant, inactive membership, transfer, status e agent visibility.
+
+## 2026-07-29 - Sprint 03 contacts / CRM
+
+- Criada migration Prisma para `customers`, `contacts`, `tags` e `contact_tags`.
+- Adicionadas permissions `crm.read` e `crm.manage`.
+- Implementada API NestJS `/api/crm/*` com tenant server-side, DTO validation, paginacao, filtros e busca.
+- Implementada normalizacao canonica de telefone e unicidade por tenant.
+- Migradas telas `/clientes` e `/contatos` para Nexos API, removendo Supabase dessas superficies.
+- Preservado default local `http://localhost:5173` -> `http://localhost:3001/api`.
+- CORS ajustado para allowlist explicita por ambiente via `FRONTEND_ORIGIN`, sem wildcard de producao.
+- Seed atualizado com clientes, contatos e tags por tenant.
+- Adicionados testes e2e de CRUD CRM, tenant isolation, permissions, input invalido e telefone duplicado.
+
 ## 2026-07-29 - Sprint 02 organization, users, departments & RBAC
 
 - Criada migration Prisma da camada organizacional.

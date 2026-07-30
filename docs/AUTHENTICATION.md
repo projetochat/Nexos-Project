@@ -114,16 +114,56 @@ User global
 
 ## Matriz de permissoes Sprint 02
 
-| Operacao | Platform Admin | Tenant Admin | Supervisor | Agent |
-| --- | ---: | ---: | ---: | ---: |
-| Ver usuarios | Nao automatico | Sim | Sim | Nao |
-| Criar/editar/desativar usuario | Nao automatico | Sim | Nao | Nao |
-| Ver departamentos | Nao automatico | Sim | Sim | Sim |
-| Criar/editar/desativar departamento | Nao automatico | Sim | Sim | Nao |
-| Associar usuario a departamento | Nao automatico | Sim | Sim | Nao |
-| Ver roles/perfis | Nao automatico | Sim | Sim | Nao |
-| Gerenciar roles/perfis | Nao automatico | Sim | Nao | Nao |
-| Permissoes de chat | Nao automatico | Todas | Operacionais | Operacionais limitadas |
+| Operacao                            | Platform Admin | Tenant Admin |   Supervisor |                  Agent |
+| ----------------------------------- | -------------: | -----------: | -----------: | ---------------------: |
+| Ver usuarios                        | Nao automatico |          Sim |          Sim |                    Nao |
+| Criar/editar/desativar usuario      | Nao automatico |          Sim |          Nao |                    Nao |
+| Ver departamentos                   | Nao automatico |          Sim |          Sim |                    Sim |
+| Criar/editar/desativar departamento | Nao automatico |          Sim |          Sim |                    Nao |
+| Associar usuario a departamento     | Nao automatico |          Sim |          Sim |                    Nao |
+| Ver roles/perfis                    | Nao automatico |          Sim |          Sim |                    Nao |
+| Gerenciar roles/perfis              | Nao automatico |          Sim |          Nao |                    Nao |
+| Permissoes de chat                  | Nao automatico |        Todas | Operacionais | Operacionais limitadas |
+
+## Matriz de permissoes Sprint 03 CRM
+
+Novas permission keys:
+
+- `crm.read`
+- `crm.manage`
+
+| Operacao CRM                           | Platform Admin | Tenant Admin | Supervisor | Agent |
+| -------------------------------------- | -------------: | -----------: | ---------: | ----: |
+| Ver clientes, contatos e tags          | Nao automatico |          Sim |        Sim |   Sim |
+| Criar/editar/arquivar clientes         | Nao automatico |          Sim |        Sim |   Nao |
+| Criar/editar/arquivar contatos         | Nao automatico |          Sim |        Sim |   Nao |
+| Vincular/desvincular contato a cliente | Nao automatico |          Sim |        Sim |   Nao |
+
+As rotas CRM usam `JwtAuthGuard` e `PermissionsGuard`. O tenant e sempre derivado da membership ativa no token e validado novamente no banco.
+
+## Matriz de permissoes Sprint 04 Conversations
+
+Novas permission keys:
+
+- `conversations.read`
+- `conversations.assign`
+- `conversations.manage`
+
+| Operacao Conversations                 | Platform Admin | Tenant Admin | Supervisor | Agent |
+| -------------------------------------- | -------------: | -----------: | ---------: | ----: |
+| Listar/detalhar conversas visiveis     | Nao automatico |          Sim |        Sim |   Sim |
+| Assumir ou atribuir conversa           | Nao automatico |          Sim |        Sim |   Sim |
+| Desatribuir conversa                   | Nao automatico |          Sim |        Sim |   Sim |
+| Transferir departamento permitido      | Nao automatico |          Sim |        Sim |   Sim |
+| Alterar status explicitamente          | Nao automatico |          Sim |        Sim |   Sim |
+
+Mesmo com permission concedida, o backend aplica escopo operacional:
+
+- `tenant_admin`: todas as conversas do tenant.
+- `supervisor`: departamentos vinculados a sua membership ou conversas atribuidas a ele.
+- `agent`: departamentos vinculados a sua membership ou conversas atribuidas a ele.
+
+Um Platform Admin continua sem acesso automatico; precisa de membership tenant-scoped com permissions.
 
 ## Supabase residual de auth
 

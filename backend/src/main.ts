@@ -10,8 +10,18 @@ async function bootstrap() {
   const config = app.get(ConfigService);
 
   app.use(helmet());
+  const allowedOrigins = (config.get<string>("FRONTEND_ORIGIN") ?? "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: config.get<string>("FRONTEND_ORIGIN") ?? "http://localhost:5173",
+    origin(origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error("Origin not allowed by CORS"));
+    },
     credentials: true,
   });
   app.useGlobalPipes(

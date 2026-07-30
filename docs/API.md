@@ -75,28 +75,28 @@ Base local: `http://localhost:3001/api`.
 
 Todas as rotas abaixo usam `Authorization: Bearer <accessToken>` e derivam `tenantId` da membership do JWT. `tenantId` livre enviado pelo cliente nao e aceito como escopo.
 
-| Metodo | Endpoint | Permission | Descricao |
-| --- | --- | --- | --- |
-| `GET` | `/me` | JWT | Usuario, tenant, departamentos e permissoes atuais |
-| `GET` | `/users` | `users.read` | Lista memberships do tenant |
-| `GET` | `/users/:id` | `users.read` | Consulta membership do tenant |
-| `POST` | `/users` | `users.manage` | Cria usuario global ou adiciona membership ao tenant |
-| `PATCH` | `/users/:id` | `users.manage` | Edita usuario, role, status e departamentos |
-| `PATCH` | `/users/:id/activate` | `users.manage` | Ativa membership |
-| `PATCH` | `/users/:id/deactivate` | `users.manage` | Desativa membership |
-| `GET` | `/departments` | `departments.read` | Lista departamentos do tenant |
-| `GET` | `/departments/:id` | `departments.read` | Consulta departamento do tenant |
-| `POST` | `/departments` | `departments.manage` | Cria departamento |
-| `PATCH` | `/departments/:id` | `departments.manage` | Edita departamento |
-| `DELETE` | `/departments/:id` | `departments.manage` | Desativa departamento |
-| `POST` | `/departments/:id/members` | `departments.manage` | Associa membership ao departamento |
-| `DELETE` | `/departments/:id/members/:membershipId` | `departments.manage` | Remove associacao |
-| `GET` | `/permissions` | `roles.read` | Lista catalogo de permission keys |
-| `GET` | `/roles` | `roles.read` | Lista perfis de acesso do tenant |
-| `GET` | `/roles/:id` | `roles.read` | Consulta perfil |
-| `POST` | `/roles` | `roles.manage` | Cria perfil com permission keys validas |
-| `PATCH` | `/roles/:id` | `roles.manage` | Edita perfil e permissoes |
-| `DELETE` | `/roles/:id` | `roles.manage` | Remove perfil customizado nao usado |
+| Metodo   | Endpoint                                 | Permission           | Descricao                                            |
+| -------- | ---------------------------------------- | -------------------- | ---------------------------------------------------- |
+| `GET`    | `/me`                                    | JWT                  | Usuario, tenant, departamentos e permissoes atuais   |
+| `GET`    | `/users`                                 | `users.read`         | Lista memberships do tenant                          |
+| `GET`    | `/users/:id`                             | `users.read`         | Consulta membership do tenant                        |
+| `POST`   | `/users`                                 | `users.manage`       | Cria usuario global ou adiciona membership ao tenant |
+| `PATCH`  | `/users/:id`                             | `users.manage`       | Edita usuario, role, status e departamentos          |
+| `PATCH`  | `/users/:id/activate`                    | `users.manage`       | Ativa membership                                     |
+| `PATCH`  | `/users/:id/deactivate`                  | `users.manage`       | Desativa membership                                  |
+| `GET`    | `/departments`                           | `departments.read`   | Lista departamentos do tenant                        |
+| `GET`    | `/departments/:id`                       | `departments.read`   | Consulta departamento do tenant                      |
+| `POST`   | `/departments`                           | `departments.manage` | Cria departamento                                    |
+| `PATCH`  | `/departments/:id`                       | `departments.manage` | Edita departamento                                   |
+| `DELETE` | `/departments/:id`                       | `departments.manage` | Desativa departamento                                |
+| `POST`   | `/departments/:id/members`               | `departments.manage` | Associa membership ao departamento                   |
+| `DELETE` | `/departments/:id/members/:membershipId` | `departments.manage` | Remove associacao                                    |
+| `GET`    | `/permissions`                           | `roles.read`         | Lista catalogo de permission keys                    |
+| `GET`    | `/roles`                                 | `roles.read`         | Lista perfis de acesso do tenant                     |
+| `GET`    | `/roles/:id`                             | `roles.read`         | Consulta perfil                                      |
+| `POST`   | `/roles`                                 | `roles.manage`       | Cria perfil com permission keys validas              |
+| `PATCH`  | `/roles/:id`                             | `roles.manage`       | Edita perfil e permissoes                            |
+| `DELETE` | `/roles/:id`                             | `roles.manage`       | Remove perfil customizado nao usado                  |
 
 Erros principais:
 
@@ -104,3 +104,79 @@ Erros principais:
 - `403`: permission ausente.
 - `400`: DTO invalido, role/permission/departamento inexistente no tenant.
 - `404`: recurso de outro tenant ou inexistente.
+
+## Sprint 03 - APIs CRM
+
+Base local validada: `http://localhost:3001/api`.
+
+Todas as rotas abaixo usam `Authorization: Bearer <accessToken>` e derivam `tenantId` da membership autenticada. O frontend nao envia `tenantId` para escopo.
+
+| Metodo   | Endpoint                      | Permission   | Descricao                                                      |
+| -------- | ----------------------------- | ------------ | -------------------------------------------------------------- |
+| `GET`    | `/crm/customers`              | `crm.read`   | Lista clientes com `q`, `page` e `pageSize` server-side        |
+| `GET`    | `/crm/customers/:id`          | `crm.read`   | Consulta cliente do tenant                                     |
+| `POST`   | `/crm/customers`              | `crm.manage` | Cria cliente                                                   |
+| `PATCH`  | `/crm/customers/:id`          | `crm.manage` | Edita cliente                                                  |
+| `DELETE` | `/crm/customers/:id`          | `crm.manage` | Arquiva cliente e desvincula contatos ativos                   |
+| `GET`    | `/crm/customers/:id/contacts` | `crm.read`   | Lista contatos vinculados a um cliente                         |
+| `GET`    | `/crm/contacts`               | `crm.read`   | Lista contatos com busca, paginacao e filtros server-side      |
+| `GET`    | `/crm/contacts/options`       | `crm.read`   | Opcoes de filtros de contatos e tags                           |
+| `GET`    | `/crm/contacts/:id`           | `crm.read`   | Consulta contato do tenant                                     |
+| `POST`   | `/crm/contacts`               | `crm.manage` | Cria contato com telefone normalizado, cliente opcional e tags |
+| `PATCH`  | `/crm/contacts/:id`           | `crm.manage` | Edita contato, vinculo de cliente e tags                       |
+| `DELETE` | `/crm/contacts/:id`           | `crm.manage` | Arquiva contato                                                |
+| `GET`    | `/crm/tags`                   | `crm.read`   | Lista etiquetas do tenant                                      |
+
+Filtros de `/crm/contacts`:
+
+- `q`: busca por nome, telefone, email ou cliente.
+- `linked`: `all`, `linked`, `unlinked`.
+- `instance`: instancia/canal.
+- `department`: nome do departamento operacional exibido no CRM.
+- `customerId`: cliente vinculado.
+- `page`, `pageSize`: paginacao server-side; `pageSize` maximo 100.
+
+Contrato de telefone:
+
+- O backend remove caracteres nao numericos.
+- Telefones BR locais com 10 ou 11 digitos sao persistidos como `+55...`.
+- O indice unico e `[tenantId, normalizedPhone]`.
+- Duplicidade no mesmo tenant retorna `409`.
+
+## Sprint 04 - APIs Conversations
+
+Base local validada: `http://localhost:3001/api`.
+
+Todas as rotas abaixo usam `Authorization: Bearer <accessToken>`, derivam `tenantId` da membership autenticada e aplicam escopo operacional server-side.
+
+| Metodo  | Endpoint                        | Permission             | Descricao                                                                 |
+| ------- | ------------------------------- | ---------------------- | ------------------------------------------------------------------------- |
+| `GET`   | `/conversations`                | `conversations.read`   | Lista conversas com paginacao, filtros, busca, sort e contadores por aba  |
+| `GET`   | `/conversations/:id`            | `conversations.read`   | Consulta conversa visivel ao usuario                                      |
+| `POST`  | `/conversations`                | `conversations.assign` | Cria conversa para contato do tenant; pode atribuir ao usuario atual      |
+| `PATCH` | `/conversations/:id/assignee`   | `conversations.assign` | Atribui, assume ou desatribui conversa                                    |
+| `PATCH` | `/conversations/:id/department` | `conversations.manage` | Transfere conversa para departamento ativo e permitido                    |
+| `PATCH` | `/conversations/:id/status`     | `conversations.manage` | Altera status explicitamente: `aberta`, `em_andamento`, `aguardando`, `fechada` |
+
+Filtros de `/conversations`:
+
+- `tab`: `ativas`, `standby`, `fila`, `leads`.
+- `source`: `todos`, `humano`, `bots`.
+- `onlyUnread`: boolean.
+- `q`: busca por protocolo, preview, contato, telefone ou cliente.
+- `customerId`, `instance`, `contactId`, `status`, `departmentId`.
+- `sort`: `lastMessageAt`, `createdAt`, `status`.
+- `direction`: `asc`, `desc`.
+- `page`, `pageSize`: paginacao server-side; `pageSize` maximo 100.
+
+Decisao de visibilidade operacional:
+
+- `tenant_admin`: ve todas as conversas do tenant.
+- `supervisor`: ve conversas dos departamentos aos quais sua membership pertence e conversas atribuidas a ele.
+- `agent`: ve conversas dos departamentos aos quais sua membership pertence e conversas atribuidas a ele.
+
+Fronteira Sprint 04:
+
+- `Conversation` e do backend Nexos.
+- `Message` permanece legado ate Sprint 05; envio/listagem de mensagens no inbox ainda usa a camada antiga.
+- Nao ha endpoint `DELETE`; encerramento usa status `fechada` e arquivamento futuro deve preservar auditoria.
