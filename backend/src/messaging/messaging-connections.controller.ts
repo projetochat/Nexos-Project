@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -10,7 +10,10 @@ import { MessagingConnectionsService } from "./messaging-connections.service";
 @Controller("messaging/connections")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class MessagingConnectionsController {
-  constructor(private readonly connections: MessagingConnectionsService) {}
+  constructor(
+    @Inject(MessagingConnectionsService)
+    private readonly connections: MessagingConnectionsService,
+  ) {}
 
   @Get()
   @RequirePermissions("connections.read")

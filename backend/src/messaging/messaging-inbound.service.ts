@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConversationStatus, MessageDirection, MessageStatus, Prisma } from "../generated/prisma";
 import { normalizePhone } from "../crm/phone-normalization";
 import { PrismaService } from "../prisma/prisma.service";
@@ -8,7 +8,7 @@ import { InboundMessageEvent } from "./messaging.contracts";
 export class MessagingInboundService {
   private readonly logger = new Logger(MessagingInboundService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async process(event: InboundMessageEvent) {
     const normalizedPhone = normalizePhone(event.sender.normalizedPhone || event.sender.phone);

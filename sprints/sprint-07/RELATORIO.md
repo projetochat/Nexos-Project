@@ -131,10 +131,10 @@ Backend:
 - E2E de webhook sem auth
 - E2E de tenant isolation em connections
 
-Resultado:
+Resultado apos correcao de homologacao:
 
-- 7 arquivos PASS
-- 43 testes PASS
+- 8 arquivos PASS
+- 44 testes PASS
 
 ## 14. Verify
 
@@ -142,7 +142,7 @@ Executado durante a sprint:
 
 - `npm run typecheck` - PASS
 - `tsc -p backend/tsconfig.build.json` - PASS
-- `vitest run --root backend` - PASS, 43 testes
+- `vitest run --root backend` - PASS, 44 testes
 - `node scripts/verify.mjs` - PASS
 - `node scripts/verify.mjs` - PASS, segunda execucao
 
@@ -183,7 +183,24 @@ Atualizados:
 - Sem filas Nexos, outbound segue sincrono.
 - Midia real permanece para sprint futura com storage.
 
-## 18. Gate
+## 18. Correcao de homologacao manual
+
+Durante homologacao manual foi encontrado bootstrap failure em `MessagingProviderRegistry.register` porque o runtime `tsx watch src/main.ts` nao emite `design:paramtypes` para constructor injection. A camada Messaging nova foi alinhada ao padrao ja usado nos modulos antigos do backend, com `@Inject(...)` explicito nos construtores que dependem do container.
+
+Teste adicionado:
+
+- `backend/src/messaging/messaging.module.spec.ts`
+
+Esse teste inicializa o `MessagingModule` pelo container Nest e confirma que `DEVELOPMENT` e `EVOLUTION` sao resolvidos pelo `MessagingProviderRegistry`.
+
+Validacao da correcao:
+
+- `bun run backend:dev`: bloqueado neste executor porque `bun` nao esta no PATH.
+- `tsx watch src/main.ts`: PASS.
+- `GET /api/health`: PASS.
+- `node scripts/verify.mjs`: PASS.
+
+## 19. Gate
 
 A Evolution API esta conectada ao Universal Messaging Adapter sem vazar payload provider-specific para o dominio central.
 

@@ -1,4 +1,12 @@
-import { Body, Controller, Headers, HttpCode, Post, UnauthorizedException } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Headers,
+  HttpCode,
+  Inject,
+  Post,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { evolutionConfigFromEnv } from "./evolution.config";
 import { EvolutionWebhookPayload } from "./evolution.types";
@@ -10,10 +18,15 @@ import { MessagingStatusService } from "../messaging-status.service";
 @Controller("webhooks/evolution")
 export class EvolutionWebhookController {
   constructor(
+    @Inject(JwtService)
     private readonly jwt: JwtService,
+    @Inject(MessagingConnectionsService)
     private readonly connections: MessagingConnectionsService,
+    @Inject(EvolutionWebhookTranslator)
     private readonly translator: EvolutionWebhookTranslator,
+    @Inject(MessagingInboundService)
     private readonly inbound: MessagingInboundService,
+    @Inject(MessagingStatusService)
     private readonly status: MessagingStatusService,
   ) {}
 

@@ -103,3 +103,5 @@
 - Adicionado Docker Compose da Evolution API v2.3.1 com Postgres/Redis internos.
 - Adicionadas permissoes `connections.read` e `connections.manage`.
 - Fechadas lacunas de teste de inbound duplicado e external IDs iguais em tenants diferentes.
+- Corrigido wiring de DI sob `tsx watch src/main.ts` com `@Inject(...)` explicito na camada Messaging.
+- Adicionado teste de bootstrap do `MessagingModule` pelo container Nest para validar registro Development/Evolution.

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -49,7 +50,9 @@ export class MessagingOutboundService {
   private readonly logger = new Logger(MessagingOutboundService.name);
 
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(MessagingProviderRegistry)
     private readonly providers: MessagingProviderRegistry,
   ) {}
 

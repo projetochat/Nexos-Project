@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { MessageStatus } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { MessageStatusEvent } from "./messaging.contracts";
@@ -16,7 +16,7 @@ const STATUS_RANK: Record<MessageStatus, number> = {
 export class MessagingStatusService {
   private readonly logger = new Logger(MessagingStatusService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async process(event: MessageStatusEvent) {
     const message = await this.prisma.message.findFirst({

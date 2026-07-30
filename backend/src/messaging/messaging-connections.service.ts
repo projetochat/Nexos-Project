@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { MessagingConnectionStatus, MessagingProviderType, Prisma } from "../generated/prisma";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
@@ -9,7 +9,9 @@ import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.
 @Injectable()
 export class MessagingConnectionsService {
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(EvolutionClient)
     private readonly evolution: EvolutionClient,
   ) {}
 

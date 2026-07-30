@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -31,7 +32,9 @@ type MessageWithRelations = Prisma.MessageGetPayload<{ include: typeof messageIn
 @Injectable()
 export class MessagesService {
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(MessagingOutboundService)
     private readonly outbound: MessagingOutboundService,
   ) {}
 

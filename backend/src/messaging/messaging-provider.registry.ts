@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { MessagingProviderType } from "../generated/prisma";
 import {
   capabilityForMessageType,
@@ -14,7 +14,9 @@ export class MessagingProviderRegistry {
   private readonly providers = new Map<MessagingProviderType, MessagingProvider>();
 
   constructor(
+    @Inject(DevelopmentMessagingProvider)
     developmentProvider: DevelopmentMessagingProvider,
+    @Inject(EvolutionMessagingProvider)
     evolutionProvider: EvolutionMessagingProvider,
   ) {
     this.register(developmentProvider);

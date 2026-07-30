@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { MessageType, MessagingProviderType } from "../../generated/prisma";
 import {
   MessagingCapability,
@@ -15,7 +15,7 @@ export class EvolutionMessagingProvider implements MessagingProvider {
   readonly type = MessagingProviderType.EVOLUTION;
   readonly capabilities = [MessagingCapability.TEXT] as const;
 
-  constructor(private readonly client: EvolutionClient) {}
+  constructor(@Inject(EvolutionClient) private readonly client: EvolutionClient) {}
 
   async send(command: SendMessageCommand): Promise<SendMessageResult> {
     if (command.content.type !== MessageType.TEXT) {
