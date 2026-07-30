@@ -57,6 +57,19 @@ Proxima sprint sugerida:
 
 - Consolidar realtime/filas para mensagens e conexoes, ou migrar o proximo fluxo operacional ainda dependente de Supabase.
 
+## Sprint 07.01 - Evolution E2E Hardening
+
+Hardening corretivo da Sprint 07:
+
+- env real do backend corrigido para `.env` da raiz;
+- webhook registration explicito;
+- reconciliação de instance ausente;
+- cleanup/delete de connections;
+- mocks operacionais removidos de `/instancias`;
+- testes de bootstrap, lifecycle, webhook e payload realista ampliados.
+
+Sprint 08 permanece bloqueada ate aceite manual do fluxo WhatsApp real inbound/outbound.
+
 ## Sprint 01.1 concluida
 
 Entregue:

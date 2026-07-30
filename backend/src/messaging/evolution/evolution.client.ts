@@ -4,6 +4,7 @@ import { assertEvolutionConfigured, evolutionConfigFromEnv } from "./evolution.c
 import {
   EvolutionConnectionStateResponse,
   EvolutionCreateInstanceResponse,
+  EvolutionInstance,
   EvolutionSendTextResponse,
 } from "./evolution.types";
 
@@ -18,42 +19,29 @@ export class EvolutionClient {
     const config = evolutionConfigFromEnv();
     if (!assertEvolutionConfigured(config)) return { ok: false, configured: false };
     try {
-      await this.request<unknown>("/instance/fetchInstances");
-      return { ok: true, configured: true };
-    } catch {
-      return { ok: false, configured: true };
+      const instances = await this.fetchInstances();
+      return { ok: true, configured: true, instanceCount: instances.length };
+    } catch (error) {
+      if (error instanceof MessagingProviderError) {
+        return {
+          ok: false,
+          configured: true,
+          code: error.code,
+          message: error.message,
+          retryable: error.retryable,
+        };
+      }
+      return { ok: false, configured: true, code: MessagingErrorCode.PROVIDER_UNAVAILABLE };
     }
   }
 
-  createInstance(input: {
-    instanceName: string;
-    webhookUrl?: string | null;
-    webhookSecret?: string | null;
-  }) {
+  createInstance(input: { instanceName: string }) {
     return this.request<EvolutionCreateInstanceResponse>("/instance/create", {
       method: "POST",
       body: {
         instanceName: input.instanceName,
         qrcode: true,
         integration: "WHATSAPP-BAILEYS",
-        ...(input.webhookUrl
-          ? {
-              webhook: {
-                enabled: true,
-                url: input.webhookUrl,
-                byEvents: false,
-                base64: false,
-                headers: input.webhookSecret ? { jwt_key: input.webhookSecret } : undefined,
-                events: [
-                  "MESSAGES_UPSERT",
-                  "MESSAGES_UPDATE",
-                  "SEND_MESSAGE_UPDATE",
-                  "QRCODE_UPDATED",
-                  "CONNECTION_UPDATE",
-                ],
-              },
-            }
-          : {}),
       },
     });
   }
@@ -70,6 +58,27 @@ export class EvolutionClient {
 
   logout(instanceName: string) {
     return this.request<unknown>(`/instance/logout/${instanceName}`, { method: "DELETE" });
+  }
+
+  deleteInstance(instanceName: string) {
+    return this.request<unknown>(`/instance/delete/${instanceName}`, { method: "DELETE" });
+  }
+
+  async fetchInstances(instanceName?: string) {
+    const query = instanceName ? `?instanceName=${encodeURIComponent(instanceName)}` : "";
+    const response = await this.request<EvolutionInstance[] | { value?: EvolutionInstance[] }>(
+      `/instance/fetchInstances${query}`,
+    );
+    return Array.isArray(response) ? response : (response.value ?? []);
+  }
+
+  async findInstance(instanceName: string) {
+    const instances = await this.fetchInstances(instanceName);
+    return (
+      instances.find(
+        (instance) => instance.name === instanceName || instance.instanceName === instanceName,
+      ) ?? null
+    );
   }
 
   setWebhook(input: { instanceName: string; webhookUrl: string; webhookSecret?: string | null }) {

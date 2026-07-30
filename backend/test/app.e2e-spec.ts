@@ -48,6 +48,10 @@ describe("Nexos API organization and RBAC", () => {
     await app?.close();
   });
 
+  afterEach(async () => {
+    await cleanupEvolutionTestConnections();
+  });
+
   it("reports API and database health", async () => {
     await request(app.getHttpServer())
       .get("/api/health")
@@ -1038,6 +1042,21 @@ describe("Nexos API organization and RBAC", () => {
       .get(`/api/messaging/connections/${orbitConnection.id}`)
       .set("Authorization", `Bearer ${acmeToken}`)
       .expect(404);
+
+    await request(app.getHttpServer())
+      .get(`/api/messaging/connections/${orbitConnection.id}/qr`)
+      .set("Authorization", `Bearer ${acmeToken}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .patch(`/api/messaging/connections/${orbitConnection.id}/logout`)
+      .set("Authorization", `Bearer ${acmeToken}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .delete(`/api/messaging/connections/${orbitConnection.id}`)
+      .set("Authorization", `Bearer ${acmeToken}`)
+      .expect(404);
   });
 
   it("rejects invalid credentials", async () => {
@@ -1060,5 +1079,35 @@ describe("Nexos API organization and RBAC", () => {
       { app: "evolution", action: "webhook" },
       { secret: process.env.EVOLUTION_WEBHOOK_SECRET, expiresIn: "10m" },
     );
+  }
+
+  async function cleanupEvolutionTestConnections() {
+    const connections = await prisma.messagingConnection.findMany({
+      where: {
+        providerType: MessagingProviderType.EVOLUTION,
+        OR: [
+          { name: { startsWith: "Evolution E2E" } },
+          { name: { startsWith: "Evolution Acme Cross" } },
+          { name: { startsWith: "Evolution Orbit Cross" } },
+          { externalReference: { startsWith: "e2e-" } },
+        ],
+      },
+      select: { id: true, tenantId: true },
+    });
+    for (const connection of connections) {
+      await prisma.$transaction([
+        prisma.message.updateMany({
+          where: { tenantId: connection.tenantId, connectionId: connection.id },
+          data: { connectionId: null },
+        }),
+        prisma.conversation.updateMany({
+          where: { tenantId: connection.tenantId, connectionId: connection.id },
+          data: { connectionId: null },
+        }),
+        prisma.messagingConnection.delete({
+          where: { tenantId_id: { tenantId: connection.tenantId, id: connection.id } },
+        }),
+      ]);
+    }
   }
 });

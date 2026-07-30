@@ -85,3 +85,12 @@ Somente regras comprovadas no codigo.
 - Eventos `fromMe` recebidos no webhook inbound sao ignorados para evitar duplicacao do outbound local.
 - Eventos desconhecidos ou payloads incompletos sao descartados sem vazar erro de provider para o dominio.
 - QR Code e status de conexao sao dados operacionais temporarios; mensagens continuam no modelo canonico.
+
+## Sprint 07.01 - Evolution hardening
+
+- Uma connection Evolution so deve aparecer como instancia operacional se for provider `EVOLUTION`.
+- Connections locais sem instance correspondente na Evolution sao orfas; QR deve falhar com `INSTANCE_NOT_FOUND`.
+- Remover connection e uma acao explicita: se a instance existe, remove na Evolution; se nao existe, limpa apenas o registro local.
+- Mensagens de grupos (`@g.us`) continuam fora de escopo e sao ignoradas pelo translator inbound.
+- Webhook inbound deve responder rapido e usar idempotencia por message id.
+- Historico anterior a conexao WhatsApp nao e importado nesta etapa.

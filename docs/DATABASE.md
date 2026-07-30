@@ -273,3 +273,9 @@ Permissoes padrao:
 - `tenant_admin`: leitura e gestao
 - `supervisor`: leitura e gestao
 - `agent`: leitura
+
+### Sprint 07.01
+
+Nao houve nova migration. Para cleanup de connection Evolution removida, mensagens e conversas existentes sao preservadas com `connectionId = null` antes de apagar `messaging_connections`, evitando delecao de historico operacional.
+
+O seed nao cria connection `EVOLUTION`. Connections `DEVELOPMENT` seedadas continuam internas para testes/dev e nao sao exibidas como instancias operacionais em `/instancias`.

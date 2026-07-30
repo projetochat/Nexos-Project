@@ -20,6 +20,21 @@ export type EvolutionConnectionStateResponse = {
   };
 };
 
+export type EvolutionInstance = {
+  id?: string;
+  name?: string;
+  instanceName?: string;
+  connectionStatus?: string;
+  status?: string;
+  ownerJid?: string | null;
+  integration?: string | null;
+  Webhook?: {
+    enabled?: boolean;
+    url?: string;
+    events?: string[];
+  } | null;
+};
+
 export type EvolutionSendTextResponse = {
   key?: {
     id?: string;
@@ -34,6 +49,9 @@ export type EvolutionWebhookPayload = {
   event?: string;
   instance?: string;
   data?: Record<string, unknown>;
+  destination?: string;
   date_time?: string;
   sender?: string;
+  server_url?: string;
+  apikey?: string;
 };

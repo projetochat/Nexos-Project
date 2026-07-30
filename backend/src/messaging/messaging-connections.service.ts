@@ -17,7 +17,7 @@ export class MessagingConnectionsService {
 
   async list(current: AuthenticatedUser) {
     const connections = await this.prisma.messagingConnection.findMany({
-      where: { tenantId: current.tenantId },
+      where: { tenantId: current.tenantId, providerType: MessagingProviderType.EVOLUTION },
       orderBy: [{ providerType: "asc" }, { createdAt: "asc" }],
     });
     return connections.map((connection) => this.serialize(connection));
@@ -34,8 +34,17 @@ export class MessagingConnectionsService {
       throw new BadRequestException("Evolution API nao configurada.");
     }
 
-    const instanceName = cleanInstanceName(dto.instanceName ?? dto.name, current.tenantId);
+    const instanceName = cleanInstanceName(dto.instanceName ?? dto.name, current.tenantId, {
+      unique: !dto.instanceName,
+    });
     const response = await this.evolution.createInstance({
+      instanceName,
+    });
+    if (!config.webhookPublicUrl || !config.webhookSecret) {
+      await this.evolution.deleteInstance(instanceName).catch(() => undefined);
+      throw new BadRequestException("Webhook Evolution nao configurado.");
+    }
+    await this.evolution.setWebhook({
       instanceName,
       webhookUrl: config.webhookPublicUrl,
       webhookSecret: config.webhookSecret,
@@ -66,12 +75,14 @@ export class MessagingConnectionsService {
     ) {
       return this.serialize(connection);
     }
+    const instance = await this.evolution.findInstance(connection.externalReference);
+    if (!instance) return this.markOrphan(connection.id);
     const state = await this.evolution.connectionState(connection.externalReference);
     const updated = await this.prisma.messagingConnection.update({
       where: { id: connection.id },
       data: { status: translateEvolutionState(state.instance?.state ?? state.instance?.status) },
     });
-    return this.serialize(updated);
+    return this.serialize(updated, { existsInProvider: true, webhookUrl: instance.Webhook?.url });
   }
 
   async qrCode(id: string, current: AuthenticatedUser) {
@@ -81,6 +92,11 @@ export class MessagingConnectionsService {
       !connection.externalReference
     ) {
       throw new BadRequestException("Connection nao e Evolution.");
+    }
+    const instance = await this.evolution.findInstance(connection.externalReference);
+    if (!instance) {
+      await this.markOrphan(connection.id);
+      throw new BadRequestException("INSTANCE_NOT_FOUND: instance Evolution nao encontrada.");
     }
     const response = await this.evolution.connect(connection.externalReference);
     await this.prisma.messagingConnection.update({
@@ -111,7 +127,50 @@ export class MessagingConnectionsService {
   }
 
   async providerHealth() {
+    const config = evolutionConfigFromEnv();
+    const missing = [
+      !config.baseUrl ? "EVOLUTION_BASE_URL" : null,
+      !config.apiKey ? "EVOLUTION_API_KEY" : null,
+      !config.webhookSecret ? "EVOLUTION_WEBHOOK_SECRET" : null,
+      !config.webhookPublicUrl ? "EVOLUTION_WEBHOOK_PUBLIC_URL" : null,
+    ].filter(Boolean);
+    if (missing.length) {
+      return { ok: false, configured: false, missing };
+    }
     return this.evolution.health();
+  }
+
+  async remove(id: string, current: AuthenticatedUser) {
+    const connection = await this.findTenantConnection(id, current.tenantId);
+    if (
+      connection.providerType !== MessagingProviderType.EVOLUTION ||
+      !connection.externalReference
+    ) {
+      throw new BadRequestException("Connection nao e Evolution.");
+    }
+
+    const instance = await this.evolution.findInstance(connection.externalReference);
+    if (instance) await this.evolution.deleteInstance(connection.externalReference);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.message.updateMany({
+        where: { tenantId: current.tenantId, connectionId: connection.id },
+        data: { connectionId: null },
+      });
+      await tx.conversation.updateMany({
+        where: { tenantId: current.tenantId, connectionId: connection.id },
+        data: { connectionId: null },
+      });
+      await tx.messagingConnection.delete({
+        where: { tenantId_id: { tenantId: current.tenantId, id: connection.id } },
+      });
+    });
+
+    return {
+      id: connection.id,
+      removed: true,
+      providerInstanceExisted: !!instance,
+    };
   }
 
   async findByEvolutionInstance(instanceName: string) {
@@ -135,7 +194,21 @@ export class MessagingConnectionsService {
     return connection;
   }
 
-  private serialize(connection: Prisma.MessagingConnectionGetPayload<object>) {
+  private async markOrphan(id: string) {
+    const updated = await this.prisma.messagingConnection.update({
+      where: { id },
+      data: { status: MessagingConnectionStatus.ERROR },
+    });
+    return this.serialize(updated, {
+      existsInProvider: false,
+      reason: "INSTANCE_NOT_FOUND",
+    });
+  }
+
+  private serialize(
+    connection: Prisma.MessagingConnectionGetPayload<object>,
+    provider?: { existsInProvider?: boolean; webhookUrl?: string | null; reason?: string },
+  ) {
     return {
       id: connection.id,
       tenantId: connection.tenantId,
@@ -143,6 +216,7 @@ export class MessagingConnectionsService {
       providerType: connection.providerType.toLowerCase(),
       status: connection.status.toLowerCase(),
       externalReference: connection.externalReference,
+      provider,
       createdAt: connection.createdAt,
       updatedAt: connection.updatedAt,
     };
@@ -162,7 +236,11 @@ function translateInitialStatus(value: string | null | undefined) {
   return translateEvolutionState(value ?? "connecting");
 }
 
-function cleanInstanceName(value: string, tenantId: string) {
+export function cleanInstanceName(
+  value: string,
+  tenantId: string,
+  options: { unique?: boolean } = {},
+) {
   const base = value
     .trim()
     .toLowerCase()
@@ -172,5 +250,6 @@ function cleanInstanceName(value: string, tenantId: string) {
     .replace(/^-+|-+$/g, "")
     .slice(0, 50);
   if (!base) throw new BadRequestException("Nome da instance invalido.");
+  if (options.unique) return `${tenantId.slice(0, 8)}-${base}-${Date.now().toString(36).slice(-6)}`;
   return `${tenantId.slice(0, 8)}-${base}`;
 }

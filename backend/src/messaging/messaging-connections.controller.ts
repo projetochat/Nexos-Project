@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -58,5 +68,11 @@ export class MessagingConnectionsController {
   @RequirePermissions("connections.manage")
   logout(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.connections.logout(id, current);
+  }
+
+  @Delete(":id")
+  @RequirePermissions("connections.manage")
+  remove(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.remove(id, current);
   }
 }

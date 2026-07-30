@@ -4,6 +4,7 @@ import {
   Headers,
   HttpCode,
   Inject,
+  Logger,
   Post,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -17,6 +18,8 @@ import { MessagingStatusService } from "../messaging-status.service";
 
 @Controller("webhooks/evolution")
 export class EvolutionWebhookController {
+  private readonly logger = new Logger(EvolutionWebhookController.name);
+
   constructor(
     @Inject(JwtService)
     private readonly jwt: JwtService,
@@ -37,14 +40,39 @@ export class EvolutionWebhookController {
     @Headers("authorization") authorization?: string,
   ) {
     await this.assertWebhookAuth(authorization);
+    this.logger.log({
+      event: "evolution.webhook.received",
+      instance: payload.instance ?? null,
+      eventType: payload.event ?? null,
+    });
     if (!payload.instance) return { ok: true, ignored: "missing_instance" };
 
     const connection = await this.connections.findByEvolutionInstance(payload.instance);
-    if (!connection) return { ok: true, ignored: "unknown_instance" };
+    if (!connection) {
+      this.logger.warn({
+        event: "evolution.webhook.unknown_instance",
+        instance: payload.instance,
+        eventType: payload.event ?? null,
+      });
+      return { ok: true, ignored: "unknown_instance" };
+    }
 
     const translated = this.translator.translate(payload, connection);
+    this.logger.log({
+      event: "evolution.webhook.translated",
+      instance: payload.instance,
+      connectionId: connection.id,
+      tenantId: connection.tenantId,
+      kind: translated.kind,
+    });
     if (translated.kind === "inbound") {
-      await this.inbound.process(translated.event);
+      const result = await this.inbound.process(translated.event);
+      this.logger.log({
+        event: "evolution.webhook.inbound_persisted",
+        connectionId: connection.id,
+        messageId: result.message.id,
+        duplicate: result.duplicate,
+      });
     } else if (translated.kind === "status") {
       await this.status.process(translated.event);
     } else if (translated.kind === "connection") {

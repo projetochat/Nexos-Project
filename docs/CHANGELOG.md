@@ -105,3 +105,13 @@
 - Fechadas lacunas de teste de inbound duplicado e external IDs iguais em tenants diferentes.
 - Corrigido wiring de DI sob `tsx watch src/main.ts` com `@Inject(...)` explicito na camada Messaging.
 - Adicionado teste de bootstrap do `MessagingModule` pelo container Nest para validar registro Development/Evolution.
+
+## Sprint 07.01 - Evolution E2E Hardening
+
+- Corrigido carregamento de `.env` da raiz no backend rodando com cwd `backend`.
+- Criacao Evolution agora registra webhook explicitamente via `/webhook/set/:instanceName`.
+- Adicionada reconciliação de connections contra `fetchInstances` e erro `INSTANCE_NOT_FOUND` para QR orfao.
+- Adicionado `DELETE /messaging/connections/:id` para cleanup local/provider.
+- `/instancias` deixa de exibir Development Provider como instancia operacional.
+- Adicionado script `backend/scripts/cleanup-messaging-connections.mjs`.
+- Ampliados testes de webhook registration, payload realista, grupos, lifecycle, orfa e tenant isolation.

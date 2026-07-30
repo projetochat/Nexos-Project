@@ -36,6 +36,65 @@ describe("EvolutionClient", () => {
     );
   });
 
+  it("registers per-instance webhook with jwt_key and event filters", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ ok: true }));
+    globalThis.fetch = fetchMock;
+
+    await new EvolutionClient().setWebhook({
+      instanceName: "instance-a",
+      webhookUrl: "http://host.docker.internal:3001/api/webhooks/evolution",
+      webhookSecret: "webhook-secret",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://evolution.local/webhook/set/instance-a",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ apikey: "test-key" }),
+        body: JSON.stringify({
+          webhook: {
+            enabled: true,
+            url: "http://host.docker.internal:3001/api/webhooks/evolution",
+            byEvents: false,
+            base64: false,
+            headers: { jwt_key: "webhook-secret" },
+            events: [
+              "MESSAGES_UPSERT",
+              "MESSAGES_UPDATE",
+              "SEND_MESSAGE_UPDATE",
+              "QRCODE_UPDATED",
+              "CONNECTION_UPDATE",
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
+  it("fetches and deletes Evolution instances", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response([{ name: "instance-a", connectionStatus: "open" }]))
+      .mockResolvedValueOnce(response({ ok: true }));
+    globalThis.fetch = fetchMock;
+
+    await expect(new EvolutionClient().findInstance("instance-a")).resolves.toMatchObject({
+      name: "instance-a",
+    });
+    await new EvolutionClient().deleteInstance("instance-a");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://evolution.local/instance/fetchInstances?instanceName=instance-a",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://evolution.local/instance/delete/instance-a",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
   it("maps auth failures to canonical errors", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(response({ message: "bad key" }, 401));
 

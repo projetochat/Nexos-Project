@@ -110,3 +110,7 @@ Para o usuario, o envio textual da Inbox permanece igual. Internamente, a API pe
 Administradores e supervisores podem abrir `/instancias`, criar uma connection Evolution, solicitar QR Code, atualizar status e desconectar. Atendentes podem consultar connections para contexto operacional.
 
 Na Inbox, o envio textual permanece no mesmo composer. Quando a conversa esta ligada a uma connection Evolution conectada, o backend envia pela Evolution API; quando nao ha connection configurada, o backend retorna erro explicito.
+
+## Sprint 07.01 - Instancias reais
+
+`/instancias` mostra apenas connections Evolution. Connections Development seedadas nao aparecem como canal operacional. A tela permite status, QR, desconexao e remocao. Se a instance foi removida na Evolution mas ainda existe no Nexos, o usuario recebe diagnostico de instance ausente e pode remover a connection local.

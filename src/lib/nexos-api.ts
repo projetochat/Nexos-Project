@@ -173,6 +173,11 @@ export type ApiMessagingConnection = {
   providerType: "development" | "evolution" | "meta_cloud";
   status: "disconnected" | "connecting" | "connected" | "error";
   externalReference: string | null;
+  provider?: {
+    existsInProvider?: boolean;
+    webhookUrl?: string | null;
+    reason?: string;
+  };
   createdAt: string;
   updatedAt: string;
   qrCodeBase64?: string | null;
@@ -449,6 +454,11 @@ export const connectionsApi = {
     apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/logout`, {
       method: "PATCH",
     }),
+  remove: (id: string) =>
+    apiRequest<{ id: string; removed: boolean; providerInstanceExisted: boolean }>(
+      `/messaging/connections/${id}`,
+      { method: "DELETE" },
+    ),
 };
 
 export function clearNexosApiSession() {

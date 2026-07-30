@@ -54,6 +54,7 @@ export class EvolutionWebhookTranslator {
 
     const externalMessageId = stringValue(key?.id);
     const remoteJid = stringValue(key?.remoteJid);
+    if (isGroupJid(remoteJid)) return { kind: "ignored", reason: "group_message" };
     const text =
       readNestedString(data, ["message", "conversation"]) ??
       readNestedString(data, ["message", "extendedTextMessage", "text"]);
@@ -135,8 +136,13 @@ function stringValue(value: unknown) {
 
 function phoneFromJid(value: string | null) {
   if (!value) return null;
+  if (isGroupJid(value)) return null;
   const [phone] = value.split("@");
   return phone?.replace(/\D/g, "") || null;
+}
+
+function isGroupJid(value: string | null) {
+  return !!value && value.endsWith("@g.us");
 }
 
 function timestamp(payload: EvolutionWebhookPayload) {

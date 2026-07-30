@@ -1,7 +1,16 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Plug, Plus, QrCode, RefreshCw, WifiOff } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Plug,
+  Plus,
+  QrCode,
+  RefreshCw,
+  Trash2,
+  WifiOff,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Badge, Button, Card, Field, Input, SectionHeader } from "@/components/ui-kit";
@@ -29,6 +38,7 @@ function Page() {
     queryFn: connectionsApi.list,
     refetchInterval: 15_000,
   });
+  const evolutionItems = items.filter((item) => item.providerType === "evolution");
 
   const create = useMutation({
     mutationFn: connectionsApi.createEvolution,
@@ -64,13 +74,21 @@ function Page() {
     },
     onError: (e) => toast.error((e as Error).message),
   });
+  const remove = useMutation({
+    mutationFn: connectionsApi.remove,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
+      toast.success("Conexao removida");
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
 
   return (
     <AppShell>
       <PageContainer>
         <SectionHeader
           title="Instancias"
-          subtitle={`${items.length} conexoes cadastradas.`}
+          subtitle={`${evolutionItems.length} conexoes Evolution cadastradas.`}
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>
               <Plus className="h-3.5 w-3.5" /> Nova Evolution
@@ -80,13 +98,13 @@ function Page() {
 
         {isLoading ? (
           <Card className="p-8 text-center text-sm text-muted-foreground">Carregando...</Card>
-        ) : items.length === 0 ? (
+        ) : evolutionItems.length === 0 ? (
           <Card className="p-12 text-center text-sm text-muted-foreground">
-            Nenhuma connection cadastrada.
+            Nenhuma connection Evolution cadastrada.
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {items.map((connection) => (
+            {evolutionItems.map((connection) => (
               <Card key={connection.id}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -109,6 +127,20 @@ function Page() {
                     <span className="text-muted-foreground">Criada em</span>
                     <span>{new Date(connection.createdAt).toLocaleDateString("pt-BR")}</span>
                   </div>
+                  {connection.provider?.reason && (
+                    <div className="flex justify-between gap-3 text-destructive">
+                      <span>Diagnostico</span>
+                      <span className="text-right">
+                        {diagnosticLabel(connection.provider.reason)}
+                      </span>
+                    </div>
+                  )}
+                  {connection.provider?.webhookUrl && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">Webhook</span>
+                      <span className="truncate text-right">{connection.provider.webhookUrl}</span>
+                    </div>
+                  )}
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button
@@ -130,6 +162,14 @@ function Page() {
                   >
                     <WifiOff className="h-3.5 w-3.5" /> Desconectar
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => remove.mutate(connection.id)}
+                    disabled={remove.isPending}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Remover
+                  </Button>
                 </div>
               </Card>
             ))}
@@ -146,6 +186,13 @@ function Page() {
       </PageContainer>
     </AppShell>
   );
+}
+
+function diagnosticLabel(reason: string) {
+  const labels: Record<string, string> = {
+    INSTANCE_NOT_FOUND: "Instance nao encontrada na Evolution",
+  };
+  return labels[reason] ?? reason;
 }
 
 function ConnectionForm({

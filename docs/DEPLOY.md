@@ -90,6 +90,23 @@ Usar valores fortes para `EVOLUTION_API_KEY` e `EVOLUTION_WEBHOOK_SECRET` fora d
 
 O Redis e PostgreSQL extras do Compose sao internos da Evolution API. Eles nao habilitam filas BullMQ, cache ou realtime do Nexos.
 
+## Sprint 07.01
+
+O backend Nest roda com cwd `backend` no script `backend:dev`, portanto o carregamento de ambiente considera `.env` e `../.env`. Em desenvolvimento local, manter as variaveis Evolution no `.env` da raiz e validar com:
+
+```powershell
+GET http://localhost:3001/api/messaging/connections/health/evolution
+```
+
+Cleanup explicito de fake/orphan connections de testes:
+
+```powershell
+$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public"
+node backend/scripts/cleanup-messaging-connections.mjs --yes
+```
+
+Para remover todas as Evolution locais em ambiente de desenvolvimento, usar `--all-evolution` apenas de forma consciente. O script desvincula `connectionId` de mensagens/conversas e nao apaga CRM.
+
 ## Operacao Local Sprint 01
 
 Subir banco:

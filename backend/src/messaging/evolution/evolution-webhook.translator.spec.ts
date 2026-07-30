@@ -32,6 +32,57 @@ describe("EvolutionWebhookTranslator", () => {
     });
   });
 
+  it("normalizes realistic Evolution v2.3.1 uppercase webhook payloads", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        destination: "http://host.docker.internal:3001/api/webhooks/evolution",
+        date_time: "2026-03-04T12:34:56.789Z",
+        sender: "5511999999999@s.whatsapp.net",
+        data: {
+          key: {
+            remoteJid: "5511999999999@s.whatsapp.net",
+            fromMe: false,
+            id: "3EB0C7B4E7A2B8E6D4F1",
+          },
+          pushName: "John Doe",
+          message: {
+            extendedTextMessage: { text: "Hello, I need help with my order" },
+          },
+          messageType: "extendedTextMessage",
+          messageTimestamp: 1_709_553_296,
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        externalMessageId: "3EB0C7B4E7A2B8E6D4F1",
+        sender: { phone: "5511999999999", normalizedPhone: "+5511999999999" },
+        content: "Hello, I need help with my order",
+      },
+    });
+  });
+
+  it("ignores group messages because groups are outside the current product scope", () => {
+    expect(
+      translator.translate(
+        {
+          event: "MESSAGES_UPSERT",
+          instance: "tenant-support",
+          data: {
+            key: { remoteJid: "120363123456789@g.us", fromMe: false, id: "GROUP-1" },
+            message: { conversation: "Grupo" },
+          },
+        },
+        connection,
+      ),
+    ).toMatchObject({ kind: "ignored", reason: "group_message" });
+  });
+
   it("normalizes status updates into canonical status events", () => {
     const result = translator.translate(
       {

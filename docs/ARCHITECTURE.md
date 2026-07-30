@@ -145,6 +145,19 @@ Eventos suportados: `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `SEND_MESSAGE_UPDATE`,
 
 Redis/PostgreSQL adicionados no Compose pertencem a infraestrutura interna da Evolution API. Nexos ainda nao implementa Redis/BullMQ, filas, Socket.io, R2, campanhas, bots, IA ou billing.
 
+## Sprint 07.01 - Evolution E2E hardening
+
+O hardening corrigiu diferencas entre teste automatizado e runtime real:
+
+- `ConfigModule` agora carrega `.env` da raiz quando o backend roda com cwd `backend`.
+- Connections Evolution sao reconciliadas contra `fetchInstances`; ausencia da instance vira estado `ERROR` e erro de negocio `INSTANCE_NOT_FOUND`.
+- Criacao de connection registra webhook explicitamente via `/webhook/set/:instanceName`.
+- Webhook JWT com `jwt_key` foi mantido por ser suportado oficialmente pela Evolution.
+- `/instancias` deixa de exibir provider `DEVELOPMENT` como instancia operacional.
+- Remocao de connection chama `/instance/delete/:instanceName` quando a instance existe e desvincula dados locais antes de apagar a connection.
+
+Historical WhatsApp synchronization permanece fora de escopo.
+
 ## Sprint 01.1 - Regression Gate
 
 O frontend Lovable/TanStack segue como contrato funcional e visual. A Sprint 01.1 nao mudou design, rotas ou navegacao; ela estabilizou o pipeline local para as proximas sprints.

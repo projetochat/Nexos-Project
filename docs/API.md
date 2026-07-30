@@ -235,16 +235,17 @@ Base local: `http://localhost:3001/api`.
 
 Rotas autenticadas:
 
-| Metodo  | Endpoint                                  | Permission            | Descricao                                      |
-| ------- | ----------------------------------------- | --------------------- | ---------------------------------------------- |
-| `GET`   | `/messaging/connections`                  | `connections.read`    | Lista connections do tenant                    |
-| `GET`   | `/messaging/connections/:id`              | `connections.read`    | Consulta connection tenant-scoped              |
-| `GET`   | `/messaging/connections/health/evolution` | `connections.read`    | Verifica configuracao/saude do provider        |
-| `POST`  | `/messaging/connections/evolution`        | `connections.manage`  | Cria instancia Evolution e registra connection |
-| `GET`   | `/messaging/connections/:id/status`       | `connections.read`    | Consulta status real da instancia Evolution    |
-| `GET`   | `/messaging/connections/:id/qr`           | `connections.manage`  | Solicita QR Code de conexao                    |
-| `PATCH` | `/messaging/connections/:id/logout`       | `connections.manage`  | Desconecta instancia Evolution                 |
-| `POST`  | `/webhooks/evolution`                     | JWT Evolution webhook | Recebe eventos provider-specific               |
+| Metodo   | Endpoint                                  | Permission            | Descricao                                          |
+| -------- | ----------------------------------------- | --------------------- | -------------------------------------------------- |
+| `GET`    | `/messaging/connections`                  | `connections.read`    | Lista connections do tenant                        |
+| `GET`    | `/messaging/connections/:id`              | `connections.read`    | Consulta connection tenant-scoped                  |
+| `GET`    | `/messaging/connections/health/evolution` | `connections.read`    | Verifica configuracao/saude do provider            |
+| `POST`   | `/messaging/connections/evolution`        | `connections.manage`  | Cria instancia Evolution e registra connection     |
+| `GET`    | `/messaging/connections/:id/status`       | `connections.read`    | Consulta status real da instancia Evolution        |
+| `GET`    | `/messaging/connections/:id/qr`           | `connections.manage`  | Solicita QR Code de conexao                        |
+| `PATCH`  | `/messaging/connections/:id/logout`       | `connections.manage`  | Desconecta instancia Evolution                     |
+| `DELETE` | `/messaging/connections/:id`              | `connections.manage`  | Remove instance Evolution e limpa connection local |
+| `POST`   | `/webhooks/evolution`                     | JWT Evolution webhook | Recebe eventos provider-specific                   |
 
 Payload de criacao:
 
@@ -257,3 +258,11 @@ Payload de criacao:
 O endpoint de webhook nao usa JWT de usuario. Ele exige `Authorization: Bearer <token>` assinado com `EVOLUTION_WEBHOOK_SECRET` e claims `app=evolution` e `action=webhook`.
 
 O endpoint existente `POST /conversations/:conversationId/messages` agora envia texto real via Evolution quando a conversa possui `connectionId` apontando para uma connection `EVOLUTION` conectada. Sem connection configurada, o envio falha com erro de negocio em vez de escolher provider automaticamente.
+
+## Sprint 07.01 - Evolution hardening
+
+- `/messaging/connections` lista somente connections Evolution operacionais; o Development Provider permanece interno/test-only.
+- Criacao Evolution executa `POST /instance/create` e depois `POST /webhook/set/:instanceName`.
+- `GET /messaging/connections/:id/status` reconcilia Nexos DB contra `fetchInstances`/`connectionState`.
+- QR de instance ausente retorna erro de negocio `INSTANCE_NOT_FOUND`, nao 500 generico.
+- `DELETE /messaging/connections/:id` remove a instance na Evolution quando ela existe e limpa a connection local com desvinculo seguro de mensagens/conversas.
