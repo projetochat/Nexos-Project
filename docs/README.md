@@ -247,3 +247,28 @@ Credenciais demo:
 - `admin-orbit@nexo.app` / `demo1234` tenant `orbit`
 - `agent-orbit@nexo.app` / `demo1234` tenant `orbit`
 - `platform@nexo.app` / `demo1234` tenant `acme` (`PlatformRole.ADMIN`, role de tenant `agent`)
+
+## Atualizacao Sprint 05
+
+O nucleo de mensagens do inbox migrado usa PostgreSQL/Prisma pela Nexos API:
+
+- `Message` pertence a tenant e conversa.
+- Historico, envio de texto e leitura ficam em `/api/conversations/:id/messages`.
+- Eventos de sistema sao internos a acoes de conversa.
+- `Conversation.lastMessagePreview`, `lastMessageAt` e `unreadCount` sao atualizados pelo backend.
+- Midia permanece bloqueada no composer migrado ate existir storage/provider formal.
+
+Regression gate local:
+
+```powershell
+cd "C:\Users\Rabel\Downloads\Nexos Project"
+$env:BUN_INSTALL="$env:USERPROFILE\.bun"
+$env:PATH="$env:BUN_INSTALL\bin;$env:PATH"
+$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public"
+
+docker compose up -d postgres
+bun --cwd backend prisma migrate deploy --schema prisma/schema.prisma
+bun run backend:prisma:generate
+bun run backend:prisma:seed
+bun run verify
+```

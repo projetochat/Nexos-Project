@@ -24,6 +24,7 @@ import { CreateConversationDto } from "./dto/create-conversation.dto";
 import { ListConversationsQueryDto } from "./dto/list-conversations-query.dto";
 import { TransferDepartmentDto } from "./dto/transfer-department.dto";
 import { UpdateConversationStatusDto } from "./dto/update-conversation-status.dto";
+import { MessagesService } from "./messages.service";
 
 const conversationInclude = {
   contact: {
@@ -48,7 +49,10 @@ type ConversationWithRelations = Prisma.ConversationGetPayload<{
 @Controller("conversations")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ConversationsController {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    private readonly messages: MessagesService,
+  ) {}
 
   @Get()
   @RequirePermissions("conversations.read")
@@ -107,7 +111,7 @@ export class ConversationsController {
 
     const conversation = await this.prisma.$transaction(async (tx) => {
       const protocol = assignToSelf ? await this.nextProtocol(tx, current.tenantId) : null;
-      return tx.conversation.create({
+      const created = await tx.conversation.create({
         data: {
           tenantId: current.tenantId,
           contactId: contact.id,
@@ -116,9 +120,23 @@ export class ConversationsController {
           status,
           protocol,
           isGroup: dto.isGroup ?? false,
-          lastMessagePreview: cleanNullable(dto.firstMessagePreview),
-          lastMessageAt: now,
+          lastMessagePreview: null,
+          lastMessageAt: null,
         },
+        include: conversationInclude,
+      });
+      const firstMessage = cleanNullable(dto.firstMessagePreview);
+      if (firstMessage) {
+        await this.messages.createInitialOutboundMessage(
+          tx,
+          created.id,
+          current,
+          firstMessage,
+          now,
+        );
+      }
+      return tx.conversation.findUniqueOrThrow({
+        where: { id: created.id },
         include: conversationInclude,
       });
     });
@@ -170,7 +188,7 @@ export class ConversationsController {
           conversation.departmentId,
         );
       }
-      return tx.conversation.update({
+      const updated = await tx.conversation.update({
         where: { id: conversation.id },
         data: {
           assignedMembershipId: targetMembershipId,
@@ -178,6 +196,19 @@ export class ConversationsController {
           protocol,
           lastMessageAt: conversation.lastMessageAt ?? new Date(),
         },
+        include: conversationInclude,
+      });
+      const targetName = targetMembershipId
+        ? await this.membershipDisplayName(tx, targetMembershipId, current.tenantId)
+        : null;
+      await this.messages.createSystemMessage(
+        tx,
+        conversation.id,
+        current,
+        assignmentSystemNote(conversation, updated, targetName),
+      );
+      return tx.conversation.findUniqueOrThrow({
+        where: { id: conversation.id },
         include: conversationInclude,
       });
     });
@@ -204,17 +235,33 @@ export class ConversationsController {
         )
       : true;
 
-    const updated = await this.prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        departmentId: dto.departmentId,
-        assignedMembershipId: assigneeCompatible ? conversation.assignedMembershipId : null,
-        status:
-          assigneeCompatible || conversation.status !== ConversationStatus.EM_ANDAMENTO
-            ? conversation.status
-            : ConversationStatus.ABERTA,
-      },
-      include: conversationInclude,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const saved = await tx.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          departmentId: dto.departmentId,
+          assignedMembershipId: assigneeCompatible ? conversation.assignedMembershipId : null,
+          status:
+            assigneeCompatible || conversation.status !== ConversationStatus.EM_ANDAMENTO
+              ? conversation.status
+              : ConversationStatus.ABERTA,
+        },
+        include: conversationInclude,
+      });
+      const department = await tx.department.findUnique({
+        where: { id: dto.departmentId },
+        select: { name: true },
+      });
+      await this.messages.createSystemMessage(
+        tx,
+        conversation.id,
+        current,
+        `Conversa transferida para o departamento ${department?.name ?? "selecionado"}.`,
+      );
+      return tx.conversation.findUniqueOrThrow({
+        where: { id: saved.id },
+        include: conversationInclude,
+      });
     });
     return this.serialize(updated);
   }
@@ -264,7 +311,7 @@ export class ConversationsController {
         );
       }
 
-      return tx.conversation.update({
+      const updated = await tx.conversation.update({
         where: { id: conversation.id },
         data: {
           status: target,
@@ -273,6 +320,16 @@ export class ConversationsController {
           closedAt: target === ConversationStatus.FECHADA ? new Date() : conversation.closedAt,
           lastMessageAt: conversation.lastMessageAt ?? new Date(),
         },
+        include: conversationInclude,
+      });
+      await this.messages.createSystemMessage(
+        tx,
+        conversation.id,
+        current,
+        statusSystemNote(target),
+      );
+      return tx.conversation.findUniqueOrThrow({
+        where: { id: updated.id },
         include: conversationInclude,
       });
     });
@@ -454,6 +511,18 @@ export class ConversationsController {
     return String(counter.lastNumber).padStart(6, "0");
   }
 
+  private async membershipDisplayName(
+    tx: Prisma.TransactionClient,
+    membershipId: string,
+    tenantId: string,
+  ) {
+    const membership = await tx.tenantMembership.findFirst({
+      where: { id: membershipId, tenantId },
+      include: { user: { select: { name: true, email: true } } },
+    });
+    return membership?.user.name ?? membership?.user.email ?? "atendente selecionado";
+  }
+
   private serialize(conversation: ConversationWithRelations) {
     return {
       id: conversation.id,
@@ -574,6 +643,38 @@ function serializeStatus(status: ConversationStatus) {
     EM_ANDAMENTO: "em_andamento",
     AGUARDANDO: "aguardando",
     FECHADA: "fechada",
+  };
+  return map[status];
+}
+
+function assignmentSystemNote(
+  before: {
+    assignedMembershipId: string | null;
+    protocol: string | null;
+    status: ConversationStatus;
+  },
+  after: {
+    assignedMembershipId: string | null;
+    protocol: string | null;
+    status: ConversationStatus;
+  },
+  targetName: string | null,
+) {
+  if (!after.assignedMembershipId) return "Conversa movida para fila.";
+  if (!before.protocol && after.protocol) {
+    return `Conversa iniciada - protocolo ${after.protocol}.`;
+  }
+  if (before.status === ConversationStatus.AGUARDANDO) return "Conversa retomada.";
+  if (targetName) return `Conversa transferida para ${targetName}.`;
+  return "Responsavel pela conversa atualizado.";
+}
+
+function statusSystemNote(status: ConversationStatus) {
+  const map: Record<ConversationStatus, string> = {
+    ABERTA: "Conversa movida para fila.",
+    EM_ANDAMENTO: "Conversa retomada.",
+    AGUARDANDO: "Conversa movida para stand by.",
+    FECHADA: "Conversa encerrada.",
   };
   return map[status];
 }

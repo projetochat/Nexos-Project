@@ -136,6 +136,29 @@ export type ApiConversation = {
   agent: { id: string; membershipId: string; nome: string; email: string } | null;
 };
 
+export type ApiMessage = {
+  id: string;
+  tenantId: string;
+  conversation_id: string;
+  direction: "inbound" | "outbound" | "system";
+  sender: "contact" | "agent";
+  author_id: string | null;
+  author_membership_id: string | null;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  read_at: string | null;
+  type: "text" | "image" | "audio" | "system";
+  status: "created";
+  media_data: null;
+  duration_ms: null;
+};
+
+export type MessagePage = {
+  items: ApiMessage[];
+  nextCursor: string | null;
+};
+
 export type ConversationCounts = {
   ativas: number;
   standby: number;
@@ -381,6 +404,21 @@ export const conversationApi = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
+};
+
+export const messageApi = {
+  list: (conversationId: string, params: { limit?: number; cursor?: string } = {}) =>
+    apiRequest<MessagePage>(`/conversations/${conversationId}/messages${queryString(params)}`),
+  sendText: (conversationId: string, content: string, clientMessageId = crypto.randomUUID()) =>
+    apiRequest<ApiMessage>(`/conversations/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content, clientMessageId }),
+    }),
+  markRead: (conversationId: string) =>
+    apiRequest<{ unreadCount: number; readAt: string }>(
+      `/conversations/${conversationId}/messages/read`,
+      { method: "PATCH" },
+    ),
 };
 
 export function clearNexosApiSession() {

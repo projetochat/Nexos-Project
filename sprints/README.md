@@ -10,6 +10,7 @@ Indice permanente dos relatorios de sprint.
 | 02     | Organization, Users, Departments & RBAC                      | READY              | 2026-07-29 | dd37f0c             | TBD                 | [sprint-02/RELATORIO.md](./sprint-02/RELATORIO.md)     |
 | 03     | Contacts / CRM                                               | READY              | 2026-07-29 | e576cde             | TBD                 | [sprint-03/RELATORIO.md](./sprint-03/RELATORIO.md)     |
 | 04     | Conversations                                                | READY              | 2026-07-29 | e576cde             | TBD                 | [sprint-04/RELATORIO.md](./sprint-04/RELATORIO.md)     |
+| 05     | Messages & Messaging Core                                    | READY              | 2026-07-30 | de66c9a             | TBD                 | [sprint-05/RELATORIO.md](./sprint-05/RELATORIO.md)     |
 
 ## Observacao de rastreabilidade
 

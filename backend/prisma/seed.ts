@@ -2,6 +2,9 @@ import { hash } from "bcryptjs";
 import {
   ContactCompanyRole,
   ConversationStatus,
+  MessageDirection,
+  MessageType,
+  Prisma,
   PrismaClient,
   PlatformRole,
 } from "../src/generated/prisma";
@@ -391,10 +394,12 @@ async function seedConversations(tenantId: string, departments: { id: string; na
   const finance = departments[2] ?? support;
   const now = Date.now();
 
+  const minimumCounter = isOrbit ? 3 : 5;
+  const currentMaxProtocol = await maxConversationProtocolNumber(tenantId);
   await prisma.conversationProtocolCounter.upsert({
     where: { tenantId },
-    update: { lastNumber: isOrbit ? 3 : 5 },
-    create: { tenantId, lastNumber: isOrbit ? 3 : 5 },
+    update: { lastNumber: Math.max(minimumCounter, currentMaxProtocol) },
+    create: { tenantId, lastNumber: Math.max(minimumCounter, currentMaxProtocol) },
   });
 
   await Promise.all([
@@ -411,6 +416,7 @@ async function seedConversations(tenantId: string, departments: { id: string; na
         ? "Preciso acompanhar a entrega Orbit."
         : "Preciso acompanhar meu pedido.",
       lastMessageAt: new Date(now - 5 * 60_000),
+      authorMembershipId: agent?.id ?? admin.id,
     }),
     seedConversation({
       id: palette.standby,
@@ -423,6 +429,7 @@ async function seedConversations(tenantId: string, departments: { id: string; na
       unreadCount: 0,
       lastMessagePreview: "Cliente em espera para retorno.",
       lastMessageAt: new Date(now - 40 * 60_000),
+      authorMembershipId: supervisor?.id ?? admin.id,
     }),
     seedConversation({
       id: palette.queue,
@@ -435,6 +442,7 @@ async function seedConversations(tenantId: string, departments: { id: string; na
       unreadCount: 1,
       lastMessagePreview: "Novo atendimento aguardando na fila.",
       lastMessageAt: new Date(now - 70 * 60_000),
+      authorMembershipId: admin.id,
     }),
     seedConversation({
       id: palette.lead,
@@ -447,6 +455,7 @@ async function seedConversations(tenantId: string, departments: { id: string; na
       unreadCount: 1,
       lastMessagePreview: "Lead recebido pelo canal digital.",
       lastMessageAt: new Date(now - 95 * 60_000),
+      authorMembershipId: admin.id,
     }),
   ]);
 
@@ -467,6 +476,7 @@ async function seedConversations(tenantId: string, departments: { id: string; na
         lastMessagePreview: "Atendimento encerrado com sucesso.",
         lastMessageAt: new Date(now - 24 * 60 * 60_000),
         closedAt: new Date(now - 23 * 60 * 60_000),
+        authorMembershipId: admin.id,
       }),
       seedConversation({
         id: financeId,
@@ -479,6 +489,7 @@ async function seedConversations(tenantId: string, departments: { id: string; na
         unreadCount: 0,
         lastMessagePreview: "Demanda financeira restrita ao departamento.",
         lastMessageAt: new Date(now - 15 * 60_000),
+        authorMembershipId: admin.id,
       }),
     ]);
   }
@@ -495,6 +506,7 @@ async function seedConversation(input: {
   unreadCount: number;
   lastMessagePreview: string;
   lastMessageAt: Date;
+  authorMembershipId: string;
   closedAt?: Date;
 }) {
   await prisma.conversation.upsert({
@@ -526,6 +538,72 @@ async function seedConversation(input: {
       closedAt: input.closedAt ?? null,
     },
   });
+  await seedConversationMessages(input);
+}
+
+async function seedConversationMessages(input: {
+  id: string;
+  tenantId: string;
+  protocol: string | null;
+  unreadCount: number;
+  lastMessagePreview: string;
+  lastMessageAt: Date;
+  authorMembershipId: string;
+  closedAt?: Date;
+}) {
+  await prisma.message.deleteMany({
+    where: { tenantId: input.tenantId, conversationId: input.id },
+  });
+  const introAt = new Date(input.lastMessageAt.getTime() - 20 * 60_000);
+  const previousAt = new Date(input.lastMessageAt.getTime() - 10 * 60_000);
+  const rows: Prisma.MessageCreateManyInput[] = [
+    {
+      tenantId: input.tenantId,
+      conversationId: input.id,
+      direction: MessageDirection.SYSTEM,
+      type: MessageType.SYSTEM,
+      authorMembershipId: input.authorMembershipId,
+      content: input.protocol
+        ? `Conversa iniciada - protocolo ${input.protocol}.`
+        : "Novo lead recebido.",
+      createdAt: introAt,
+    },
+  ];
+
+  if (input.unreadCount > 1) {
+    rows.push({
+      tenantId: input.tenantId,
+      conversationId: input.id,
+      direction: MessageDirection.INBOUND,
+      type: MessageType.TEXT,
+      authorMembershipId: null,
+      content: "Pode verificar essa solicitacao?",
+      createdAt: previousAt,
+    });
+  }
+
+  rows.push({
+    tenantId: input.tenantId,
+    conversationId: input.id,
+    direction: input.unreadCount > 0 ? MessageDirection.INBOUND : MessageDirection.OUTBOUND,
+    type: MessageType.TEXT,
+    authorMembershipId: input.unreadCount > 0 ? null : input.authorMembershipId,
+    content: input.lastMessagePreview,
+    createdAt: input.lastMessageAt,
+  });
+
+  await prisma.message.createMany({ data: rows });
+}
+
+async function maxConversationProtocolNumber(tenantId: string) {
+  const conversations = await prisma.conversation.findMany({
+    where: { tenantId, protocol: { not: null } },
+    select: { protocol: true },
+  });
+  return conversations.reduce((max, conversation) => {
+    const value = Number(conversation.protocol);
+    return Number.isInteger(value) ? Math.max(max, value) : max;
+  }, 0);
 }
 
 function permissionDescription(permission: PermissionKey) {

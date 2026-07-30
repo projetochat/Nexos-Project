@@ -4,6 +4,7 @@ import { Test } from "@nestjs/testing";
 import request from "supertest";
 import helmet from "helmet";
 import { AppModule } from "../src/app.module";
+import { ConversationStatus, MessageDirection, MessageType } from "../src/generated/prisma";
 import { PrismaService } from "../src/prisma/prisma.service";
 
 describe("Nexos API organization and RBAC", () => {
@@ -591,6 +592,301 @@ describe("Nexos API organization and RBAC", () => {
       .get(`/api/conversations/${financeConversation}`)
       .set("Authorization", `Bearer ${agentToken}`)
       .expect(404);
+  });
+
+  it("lists conversation messages with cursor pagination and tenant visibility", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const financeConversation = "44444444-4444-4444-8444-444444444446";
+    const orbitConversation = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const membership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenantId: tenant.id, user: { email: "admin@nexo.app" } },
+    });
+    const department = await prisma.department.findFirstOrThrow({
+      where: { tenantId: tenant.id, name: "Suporte" },
+    });
+    const contact = await prisma.contact.findFirstOrThrow({
+      where: { tenantId: tenant.id, archivedAt: null },
+    });
+    const createdAt = new Date();
+    const pagedConversation = await prisma.conversation.create({
+      data: {
+        tenantId: tenant.id,
+        contactId: contact.id,
+        departmentId: department.id,
+        assignedMembershipId: membership.id,
+        status: ConversationStatus.EM_ANDAMENTO,
+        lastMessagePreview: "Terceira mensagem",
+        lastMessageAt: createdAt,
+      },
+    });
+    await prisma.message.createMany({
+      data: [
+        {
+          tenantId: tenant.id,
+          conversationId: pagedConversation.id,
+          direction: MessageDirection.SYSTEM,
+          type: MessageType.SYSTEM,
+          authorMembershipId: membership.id,
+          content: "Primeira mensagem",
+          createdAt: new Date(createdAt.getTime() - 2_000),
+        },
+        {
+          tenantId: tenant.id,
+          conversationId: pagedConversation.id,
+          direction: MessageDirection.INBOUND,
+          type: MessageType.TEXT,
+          content: "Segunda mensagem",
+          createdAt: new Date(createdAt.getTime() - 1_000),
+        },
+        {
+          tenantId: tenant.id,
+          conversationId: pagedConversation.id,
+          direction: MessageDirection.OUTBOUND,
+          type: MessageType.TEXT,
+          authorMembershipId: membership.id,
+          content: "Terceira mensagem",
+          createdAt,
+        },
+      ],
+    });
+
+    const firstPage = await request(app.getHttpServer())
+      .get(`/api/conversations/${pagedConversation.id}/messages?limit=2`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(firstPage.body.items).toHaveLength(2);
+    expect(Date.parse(firstPage.body.items[0].created_at)).toBeLessThanOrEqual(
+      Date.parse(firstPage.body.items[1].created_at),
+    );
+    expect(firstPage.body.nextCursor).toEqual(expect.any(String));
+
+    await request(app.getHttpServer())
+      .get(
+        `/api/conversations/${pagedConversation.id}/messages?limit=2&cursor=${firstPage.body.nextCursor}`,
+      )
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.items.length).toBeGreaterThanOrEqual(1);
+        expect(body.items.some((message: { type: string }) => message.type === "system")).toBe(
+          true,
+        );
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/conversations/${orbitConversation}/messages`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .get(`/api/conversations/${financeConversation}/messages`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .expect(404);
+  });
+
+  it("sends text messages transactionally and validates message input", async () => {
+    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const agentMembership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenantId: tenant.id, user: { email: "atendente@nexo.app" } },
+    });
+    const department = await prisma.department.findFirstOrThrow({
+      where: { tenantId: tenant.id, name: "Suporte" },
+    });
+    const contact = await prisma.contact.findFirstOrThrow({
+      where: { tenantId: tenant.id, archivedAt: null },
+    });
+    const activeConversation = (
+      await prisma.conversation.create({
+        data: {
+          tenantId: tenant.id,
+          contactId: contact.id,
+          departmentId: department.id,
+          assignedMembershipId: agentMembership.id,
+          status: ConversationStatus.EM_ANDAMENTO,
+          lastMessagePreview: "Conversa para envio e2e",
+          lastMessageAt: new Date(),
+        },
+      })
+    ).id;
+    const content = `<b>Resposta segura ${Date.now()}</b>`;
+    const clientMessageId = `e2e-${Date.now()}`;
+
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${activeConversation}/messages`)
+      .send({ content })
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${activeConversation}/messages`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({ content: "   " })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${activeConversation}/messages`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({ content: "x".repeat(4001) })
+      .expect(400);
+
+    const created = await request(app.getHttpServer())
+      .post(`/api/conversations/${activeConversation}/messages`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({ content, clientMessageId })
+      .expect(201);
+
+    expect(created.body).toMatchObject({
+      conversation_id: activeConversation,
+      sender: "agent",
+      type: "text",
+      content,
+    });
+
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${activeConversation}/messages`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({ content, clientMessageId })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.id).toBe(created.body.id);
+      });
+
+    const conversation = await prisma.conversation.findUniqueOrThrow({
+      where: { id: activeConversation },
+    });
+    expect(conversation.lastMessagePreview).toBe(content);
+    expect(conversation.lastMessageAt?.toISOString()).toBe(created.body.created_at);
+  });
+
+  it("enforces message send permissions and conversation states", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const supervisorToken = await login("supervisor@nexo.app", "demo1234", "acme");
+    const activeConversation = "44444444-4444-4444-8444-444444444441";
+    const closedConversation = "44444444-4444-4444-8444-444444444445";
+    const standbyConversation = "44444444-4444-4444-8444-444444444442";
+    const platformMembership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenant: { slug: "acme" }, user: { email: "platform@nexo.app" } },
+    });
+    const noSendRole = await prisma.role.upsert({
+      where: { tenantId_key: { tenantId: platformMembership.tenantId, key: "no_message_send" } },
+      update: { name: "Sem Envio", system: false },
+      create: {
+        id: `${platformMembership.tenantId}:no_message_send`,
+        tenantId: platformMembership.tenantId,
+        key: "no_message_send",
+        name: "Sem Envio",
+        system: false,
+      },
+    });
+    await prisma.rolePermission.deleteMany({ where: { roleId: noSendRole.id } });
+    await prisma.rolePermission.createMany({
+      data: [
+        { roleId: noSendRole.id, permissionId: "conversations.read" },
+        { roleId: noSendRole.id, permissionId: "conversations.assign" },
+      ],
+      skipDuplicates: true,
+    });
+    const originalRoleId = platformMembership.roleId;
+    await prisma.tenantMembership.update({
+      where: { id: platformMembership.id },
+      data: { roleId: noSendRole.id },
+    });
+
+    try {
+      const noSendToken = await login("platform@nexo.app", "demo1234", "acme");
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${activeConversation}/messages`)
+        .set("Authorization", `Bearer ${noSendToken}`)
+        .send({ content: "Sem permissao" })
+        .expect(403);
+    } finally {
+      await prisma.tenantMembership.update({
+        where: { id: platformMembership.id },
+        data: { roleId: originalRoleId },
+      });
+    }
+
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${closedConversation}/messages`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ content: "Nao pode enviar em conversa encerrada" })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${standbyConversation}/messages`)
+      .set("Authorization", `Bearer ${supervisorToken}`)
+      .send({ content: "Retomar antes de enviar" })
+      .expect(400);
+  });
+
+  it("marks inbound messages as read and resets conversation unread count", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const membership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenantId: tenant.id, user: { email: "admin@nexo.app" } },
+    });
+    const department = await prisma.department.findFirstOrThrow({
+      where: { tenantId: tenant.id, name: "Suporte" },
+    });
+    const contact = await prisma.contact.findFirstOrThrow({
+      where: { tenantId: tenant.id, archivedAt: null },
+    });
+    const conversation = await prisma.conversation.create({
+      data: {
+        tenantId: tenant.id,
+        contactId: contact.id,
+        departmentId: department.id,
+        assignedMembershipId: membership.id,
+        status: ConversationStatus.EM_ANDAMENTO,
+        unreadCount: 2,
+        lastMessagePreview: "Mensagem inbound pendente",
+        lastMessageAt: new Date(),
+      },
+    });
+    await prisma.message.createMany({
+      data: [
+        {
+          tenantId: tenant.id,
+          conversationId: conversation.id,
+          direction: MessageDirection.INBOUND,
+          type: MessageType.TEXT,
+          content: "Primeira pendente",
+        },
+        {
+          tenantId: tenant.id,
+          conversationId: conversation.id,
+          direction: MessageDirection.INBOUND,
+          type: MessageType.TEXT,
+          content: "Segunda pendente",
+        },
+      ],
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/api/conversations/${conversation.id}/messages/read`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.unreadCount).toBe(0);
+        expect(body.readAt).toEqual(expect.any(String));
+      });
+
+    const [updated, unread] = await Promise.all([
+      prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } }),
+      prisma.message.count({
+        where: {
+          tenantId: tenant.id,
+          conversationId: conversation.id,
+          direction: MessageDirection.INBOUND,
+          readAt: null,
+        },
+      }),
+    ]);
+    expect(updated.unreadCount).toBe(0);
+    expect(unread).toBe(0);
   });
 
   it("rejects invalid credentials", async () => {

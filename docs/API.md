@@ -180,3 +180,36 @@ Fronteira Sprint 04:
 - `Conversation` e do backend Nexos.
 - `Message` permanece legado ate Sprint 05; envio/listagem de mensagens no inbox ainda usa a camada antiga.
 - Nao ha endpoint `DELETE`; encerramento usa status `fechada` e arquivamento futuro deve preservar auditoria.
+
+## Sprint 05 - APIs Messages
+
+Base local validada: `http://localhost:3001/api`.
+
+Todas as rotas abaixo usam `Authorization: Bearer <accessToken>`, derivam `tenantId` da membership autenticada e reaproveitam o escopo operacional de `Conversation`.
+
+| Metodo  | Endpoint                                      | Permission           | Descricao                                                         |
+| ------- | --------------------------------------------- | -------------------- | ----------------------------------------------------------------- |
+| `GET`   | `/conversations/:conversationId/messages`     | `conversations.read` | Lista historico com `limit` e `cursor` para paginacao backwards   |
+| `POST`  | `/conversations/:conversationId/messages`     | `messages.send`      | Persiste mensagem `TEXT` outbound do atendente responsavel        |
+| `PATCH` | `/conversations/:conversationId/messages/read` | `conversations.read` | Marca mensagens inbound como lidas e zera `unreadCount` da conversa |
+
+Contrato de envio:
+
+- Payload: `{ "content": "texto", "clientMessageId": "opcional-idempotencia" }`.
+- `content` e obrigatorio, trimado e limitado a 4000 caracteres.
+- `clientMessageId` e opcional, limitado a 100 caracteres e idempotente por `[tenantId, conversationId, clientMessageId]`.
+- Envio so e permitido quando a conversa esta atribuida ao usuario atual, nao esta `fechada` e nao esta `aguardando`.
+- Nao ha envio de midia nesta sprint. `IMAGE` e `AUDIO` existem como fronteira de schema, sem provider/storage.
+
+Contrato de historico:
+
+- Resposta: `{ items: Message[], nextCursor: string | null }`.
+- Ordenacao de retorno: cronologica ascendente dentro da pagina.
+- `cursor` e o `id` da mensagem mais antiga ja recebida; a proxima chamada retorna itens anteriores.
+- Mensagens de sistema sao criadas apenas internamente em acoes de conversa; nao existe endpoint publico para criar `SYSTEM`.
+
+Efeitos transacionais:
+
+- Criar mensagem atualiza `Conversation.lastMessagePreview` e `Conversation.lastMessageAt`.
+- Marcar leitura atualiza `Message.readAt` para inbound pendentes e `Conversation.unreadCount = 0`.
+- Acoes estruturais de conversa geram eventos `SYSTEM` internos para inicio, atribuicao, transferencia, fila, stand by e encerramento.

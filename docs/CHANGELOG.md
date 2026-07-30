@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-30 - Sprint 05 messages
+
+- Criada migration Prisma para `messages` com `MessageDirection`, `MessageType` e `MessageStatus`.
+- Adicionada permission `messages.send` ao catalogo RBAC e aos roles operacionais seedados.
+- Implementada API NestJS aninhada em `/api/conversations/:conversationId/messages` para historico, envio de texto e leitura.
+- Integradas acoes estruturais de conversa com mensagens `SYSTEM` internas, sem endpoint publico generico.
+- Migrado o historico, envio de texto e mark read de `/inbox/:conversationId` para Nexos API/PostgreSQL.
+- Bloqueado envio de midia no composer migrado sem criar data URL fake ou provider improvisado.
+- Seed atualizado com mensagens reais por conversa e contador de protocolos idempotente em execucoes repetidas.
+- Adicionados testes e2e para paginacao, envio, idempotencia, validacao, RBAC, tenant isolation, escopo departamental, estados bloqueados e leitura.
+
 ## 2026-07-29 - Sprint 04 conversations
 
 - Criada migration Prisma para `conversations` e `conversation_protocol_counters`.

@@ -165,6 +165,26 @@ Mesmo com permission concedida, o backend aplica escopo operacional:
 
 Um Platform Admin continua sem acesso automatico; precisa de membership tenant-scoped com permissions.
 
+## Matriz de permissoes Sprint 05 Messages
+
+Nova permission key:
+
+- `messages.send`
+
+| Operacao Messages                    | Platform Admin | Tenant Admin | Supervisor | Agent |
+| ------------------------------------ | -------------: | -----------: | ---------: | ----: |
+| Listar historico visivel             | Nao automatico |          Sim |        Sim |   Sim |
+| Marcar inbound como lido             | Nao automatico |          Sim |        Sim |   Sim |
+| Enviar texto na conversa atribuida   | Nao automatico |          Sim |        Sim |   Sim |
+| Criar mensagem de sistema diretamente | Nao automatico |          Nao |        Nao |   Nao |
+
+Mesmo com `messages.send`, o backend bloqueia envio quando:
+
+- a conversa nao esta atribuida ao usuario atual;
+- a conversa esta `fechada`;
+- a conversa esta em `aguardando` e precisa ser retomada;
+- a conversa nao e visivel pelo escopo operacional do usuario.
+
 ## Supabase residual de auth
 
 REMOVIDO das superficies migradas:

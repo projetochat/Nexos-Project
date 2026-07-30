@@ -38,6 +38,23 @@ enum ConversationStatus {
   FECHADA
 }
 
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+  SYSTEM
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  SYSTEM
+}
+
+enum MessageStatus {
+  CREATED
+}
+
 model Tenant {
   id                          String                       @id @default(uuid())
   name                        String
@@ -51,21 +68,22 @@ model Tenant {
   contacts                    Contact[]
   tags                        Tag[]
   conversations               Conversation[]
+  messages                    Message[]
   conversationProtocolCounter ConversationProtocolCounter?
 
   @@map("tenants")
 }
 
 model User {
-  id                    String             @id @default(uuid())
-  email                 String             @unique
-  name                  String
-  passwordHash          String
-  status                UserStatus         @default(ACTIVE)
-  platformRole          PlatformRole       @default(USER)
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
-  memberships           TenantMembership[]
+  id           String             @id @default(uuid())
+  email        String             @unique
+  name         String
+  passwordHash String
+  status       UserStatus         @default(ACTIVE)
+  platformRole PlatformRole       @default(USER)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  memberships  TenantMembership[]
 
   @@index([status])
   @@index([platformRole])
@@ -85,6 +103,7 @@ model TenantMembership {
   role          Role                   @relation(fields: [tenantId, roleId], references: [tenantId, id])
   departments   DepartmentMembership[]
   conversations Conversation[]
+  messages      Message[]
 
   @@unique([tenantId, userId])
   @@unique([tenantId, id])
@@ -172,18 +191,18 @@ model RolePermission {
 }
 
 model Customer {
-  id                     String         @id @default(uuid())
+  id                     String    @id @default(uuid())
   tenantId               String
   name                   String
   email                  String?
   phone                  String?
   notes                  String?
   responsibleContactName String?
-  color                  String         @default("#6366f1")
+  color                  String    @default("#6366f1")
   archivedAt             DateTime?
-  createdAt              DateTime       @default(now())
-  updatedAt              DateTime       @updatedAt
-  tenant                 Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  tenant                 Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contacts               Contact[]
 
   @@unique([tenantId, id])
@@ -284,6 +303,7 @@ model Conversation {
   contact              Contact            @relation(fields: [contactId], references: [id], onDelete: Restrict)
   department           Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   assignedMembership   TenantMembership?  @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+  messages             Message[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, protocol])
@@ -293,4 +313,28 @@ model Conversation {
   @@index([tenantId, contactId])
   @@index([tenantId, lastMessageAt])
   @@map("conversations")
+}
+
+model Message {
+  id                 String            @id @default(uuid())
+  tenantId           String
+  conversationId     String
+  direction          MessageDirection
+  type               MessageType       @default(TEXT)
+  status             MessageStatus     @default(CREATED)
+  authorMembershipId String?
+  content            String?
+  clientMessageId    String?
+  readAt             DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  tenant             Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation       Conversation      @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+  authorMembership   TenantMembership? @relation(fields: [authorMembershipId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, conversationId, clientMessageId])
+  @@index([tenantId])
+  @@index([tenantId, conversationId, createdAt, id])
+  @@index([conversationId])
+  @@map("messages")
 }

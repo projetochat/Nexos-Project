@@ -2,19 +2,45 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Send, ArrowRightLeft, CheckCircle2, Mic, Square, Trash2, Play, Pause,
-  Zap, Paperclip, X, Link as LinkIcon, Tag as TagIcon, Plus, Pencil, Ticket,
+  Send,
+  ArrowRightLeft,
+  CheckCircle2,
+  Mic,
+  Square,
+  Trash2,
+  Play,
+  Pause,
+  Zap,
+  Paperclip,
+  X,
+  Link as LinkIcon,
+  Tag as TagIcon,
+  Plus,
+  Pencil,
+  Ticket,
 } from "lucide-react";
 // Notificações desativadas nesta tela — nenhum toast deve aparecer no chat.
-const toast = { success: (_?: unknown) => {}, error: (_?: unknown) => {}, message: (_?: unknown) => {}, info: (_?: unknown) => {} };
+const toast = {
+  success: (_?: unknown) => {},
+  error: (_?: unknown) => {},
+  message: (_?: unknown) => {},
+  info: (_?: unknown) => {},
+};
 import { InboxLayout } from "./inbox.index";
 import { Avatar, Badge, Button, Field, Input, Select } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import {
-  CATALOG, CONV, CONTACTS, CUSTOMERS, QUICK_REPLIES, TAGS,
-  type ConvStatus, type Message, type QuickReply, type Tag, type Customer,
+  CATALOG,
+  CONTACTS,
+  CUSTOMERS,
+  QUICK_REPLIES,
+  TAGS,
+  type ConvStatus,
+  type QuickReply,
+  type Tag,
+  type Customer,
 } from "@/lib/mvp";
-import { conversationApi, organizationApi } from "@/lib/nexos-api";
+import { conversationApi, messageApi, organizationApi, type ApiMessage } from "@/lib/nexos-api";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/session";
 import { fmtHM, fmtDate, fmtLogStamp } from "@/lib/format";
@@ -22,6 +48,8 @@ import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 
 export const Route = createFileRoute("/inbox/$conversationId")({ component: ConversationPage });
+
+type Message = ApiMessage;
 
 const STATUS_TONE: Record<ConvStatus, "warning" | "info" | "success" | "default"> = {
   aberta: "warning",
@@ -42,8 +70,8 @@ function ConversationPage() {
   });
 
   const { data: mensagens = [] } = useQuery({
-    queryKey: ["mvp", "messages", conversationId],
-    queryFn: () => CONV.messages(conversationId),
+    queryKey: ["nexos", "messages", conversationId],
+    queryFn: () => messageApi.list(conversationId, { limit: 50 }).then((page) => page.items),
     refetchInterval: 30_000,
   });
 
@@ -54,7 +82,9 @@ function ConversationPage() {
   const agents = React.useMemo(
     () =>
       memberships
-        .filter((membership) => membership.status === "ACTIVE" && membership.user.status === "ACTIVE")
+        .filter(
+          (membership) => membership.status === "ACTIVE" && membership.user.status === "ACTIVE",
+        )
         .map((membership) => ({
           id: membership.id,
           userId: membership.user.id,
@@ -86,18 +116,13 @@ function ConversationPage() {
   const showAgentName = perms.mostrar_nome_atendente;
 
   React.useEffect(() => {
-    const ch = supabase
-      .channel(`mvp-conv-${conversationId}`)
-      .on("postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` },
-        () => {
-          qc.invalidateQueries({ queryKey: ["mvp", "messages", conversationId] });
-          qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-        })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [conversationId, qc]);
-
+    if (!conv?.id || conv.unreadCount <= 0) return;
+    void messageApi.markRead(conv.id).then(() => {
+      qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+      qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
+      qc.invalidateQueries({ queryKey: ["nexos", "messages", conv.id] });
+    });
+  }, [conv?.id, conv?.unreadCount, qc]);
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
@@ -139,8 +164,12 @@ function ConversationPage() {
       if (isStandby) await conversationApi.updateStatus(conv.id, "em_andamento");
       qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
       qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
-      toast.success(hadProtocolo || isStandby ? "Conversa retomada" : "Conversa iniciada — protocolo gerado");
-    } catch (e) { toast.error((e as Error).message); }
+      toast.success(
+        hadProtocolo || isStandby ? "Conversa retomada" : "Conversa iniciada — protocolo gerado",
+      );
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
 
   const handleNewConversation = async () => {
@@ -155,19 +184,27 @@ function ConversationPage() {
       qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
       toast.success("Nova conversa iniciada — protocolo gerado");
       navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
-    } catch (e) { toast.error((e as Error).message); }
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
 
   const handleGerarChamado = async () => {
     if (!user || !conv.contact) return;
     if (!conv.protocolo) {
-      window.alert("Esta conversa ainda não possui protocolo. Inicie a conversa antes de gerar o chamado.");
+      window.alert(
+        "Esta conversa ainda não possui protocolo. Inicie a conversa antes de gerar o chamado.",
+      );
       return;
     }
     setGerando(true);
     try {
       const esc = (s: string) =>
-        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
       const fmt = (iso: string) => {
         const d = new Date(iso);
         const p = (n: number) => String(n).padStart(2, "0");
@@ -182,7 +219,7 @@ function ConversationPage() {
         const who =
           m.sender === "contact"
             ? contactName
-            : messageAgents.find((a) => a.id === m.author_id)?.nome ?? "Atendente";
+            : (messageAgents.find((a) => a.id === m.author_id)?.nome ?? "Atendente");
         if (m.type === "image" && m.media_data) {
           const caption = m.content ? `<br/>${esc(m.content)}` : "";
           return `<p><strong>${esc(who)}</strong> <span style="color:#64748b">[${ts}]</span>:<br/><img src="${m.media_data}" alt="anexo" style="max-width:100%;border-radius:8px;margin:4px 0"/>${caption}</p>`;
@@ -192,12 +229,14 @@ function ConversationPage() {
         }
         return `<p><strong>${esc(who)}</strong> <span style="color:#64748b">[${ts}]</span>: ${esc(m.content).replace(/\n/g, "<br/>")}</p>`;
       });
-      const descricao_html = parts.length > 0 ? parts.join("") : "<p><em>Sem mensagens registradas.</em></p>";
+      const descricao_html =
+        parts.length > 0 ? parts.join("") : "<p><em>Sem mensagens registradas.</em></p>";
 
       // cliente (customer) — se vinculado ao contato
       let clienteId: string | null = null;
       let clienteNome = contactName;
-      const customerId = (conv.contact as unknown as { customer_id?: string | null }).customer_id ?? null;
+      const customerId =
+        (conv.contact as unknown as { customer_id?: string | null }).customer_id ?? null;
       if (customerId) {
         const { data: cust } = await supabase
           .from("customers")
@@ -234,15 +273,6 @@ function ConversationPage() {
         .select("numero")
         .single();
       if (error || !data) throw error ?? new Error("Falha ao gerar chamado.");
-      const numero = (data as { numero: number }).numero;
-      if (user) {
-        await CONV.sendSystem(
-          conv.id,
-          user.id,
-          `Chamado #${String(numero).padStart(6, "0")} gerado a partir desta conversa`,
-        );
-        qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
-      }
       navigate({ to: "/chamados" });
     } catch (e) {
       window.alert((e as Error).message || "Não foi possível gerar o chamado.");
@@ -268,7 +298,9 @@ function ConversationPage() {
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-semibold">
                     {conv.contact?.nome ?? "Contato"}
-                    {conv.is_group && <span className="ml-1 text-[10px] text-muted-foreground">· grupo</span>}
+                    {conv.is_group && (
+                      <span className="ml-1 text-[10px] text-muted-foreground">· grupo</span>
+                    )}
                   </p>
                   <Badge tone={STATUS_TONE[conv.status]}>{conv.status.replace("_", " ")}</Badge>
                 </div>
@@ -290,16 +322,17 @@ function ConversationPage() {
                     </Button>
                   )}
                   <Button variant="ghost" size="sm" onClick={transferModal.show}>
-                    <ArrowRightLeft className="h-3.5 w-3.5" /> <span className="hidden lg:inline">Transferir</span>
+                    <ArrowRightLeft className="h-3.5 w-3.5" />{" "}
+                    <span className="hidden lg:inline">Transferir</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => setClosing(true)}>
-                    <CheckCircle2 className="h-3.5 w-3.5" /> <span className="hidden lg:inline">Encerrar</span>
+                    <CheckCircle2 className="h-3.5 w-3.5" />{" "}
+                    <span className="hidden lg:inline">Encerrar</span>
                   </Button>
                 </>
               )}
             </div>
           </header>
-
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-6">
             <div className="mx-auto max-w-4xl space-y-4">
@@ -315,14 +348,27 @@ function ConversationPage() {
                 return (
                   <div className="flex items-center gap-3">
                     <span className={`h-0.5 flex-1 ${line}`} />
-                    <span className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${pill}`}>
+                    <span
+                      className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${pill}`}
+                    >
                       {label}
                     </span>
                     <span className={`h-0.5 flex-1 ${line}`} />
                   </div>
                 );
               })()}
-              {mensagens.filter((m) => !(conv.protocolo && m.type === "system" && /novo lead/i.test(m.content))).map((m) => <MessageBubble key={m.id} m={m} agents={messageAgents} showAgentName={showAgentName} />)}
+              {mensagens
+                .filter(
+                  (m) => !(conv.protocolo && m.type === "system" && /novo lead/i.test(m.content)),
+                )
+                .map((m) => (
+                  <MessageBubble
+                    key={m.id}
+                    m={m}
+                    agents={messageAgents}
+                    showAgentName={showAgentName}
+                  />
+                ))}
               {mensagens.length === 0 && (
                 <p className="text-center text-xs text-muted-foreground">Nenhuma mensagem ainda.</p>
               )}
@@ -338,18 +384,18 @@ function ConversationPage() {
                 conv.status === "fechada"
                   ? "closed"
                   : isStandby
-                  ? "standby"
-                  : !conv.agent_id
-                  ? "lead"
-                  : !isMine
-                  ? "not-mine"
-                  : null
+                    ? "standby"
+                    : !conv.agent_id
+                      ? "lead"
+                      : !isMine
+                        ? "not-mine"
+                        : null
               }
               onStart={showStart ? handleAssume : undefined}
               allowQuickReplies={perms.acessa_mensagens_rapidas}
               allowAudio={perms.enviar_audio}
               onSent={() => {
-                qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
+                qc.invalidateQueries({ queryKey: ["nexos", "messages", conv.id] });
                 qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
                 qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
               }}
@@ -360,7 +406,11 @@ function ConversationPage() {
                 size="sm"
                 onClick={handleGerarChamado}
                 disabled={gerando || !conv.protocolo}
-                title={conv.protocolo ? "Gerar chamado a partir desta conversa" : "Inicie a conversa para gerar o chamado"}
+                title={
+                  conv.protocolo
+                    ? "Gerar chamado a partir desta conversa"
+                    : "Inicie a conversa para gerar o chamado"
+                }
                 className="pointer-events-auto"
               >
                 <Ticket className="h-3.5 w-3.5" /> {gerando ? "Gerando…" : "Gerar Chamado"}
@@ -431,42 +481,60 @@ function ConversationPage() {
 }
 
 /* -------- Message bubble -------- */
-function MessageBubble({ m, agents, showAgentName = true }: { m: Message; agents: { id: string; nome: string }[]; showAgentName?: boolean }) {
+function MessageBubble({
+  m,
+  agents,
+  showAgentName = true,
+}: {
+  m: Message;
+  agents: { id: string; nome: string }[];
+  showAgentName?: boolean;
+}) {
   if (m.type === "system") {
     const ts = new Date(m.created_at).getTime();
     const isClosing = /encerra/i.test(m.content);
     const isLead = /novo lead/i.test(m.content);
     const tone = isClosing
-      ? { line: "bg-destructive/40", pill: "border-destructive/40 bg-destructive/10 text-destructive" }
+      ? {
+          line: "bg-destructive/40",
+          pill: "border-destructive/40 bg-destructive/10 text-destructive",
+        }
       : isLead
-      ? { line: "bg-primary/40", pill: "border-primary/40 bg-primary/10 text-primary" }
-      : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
+        ? { line: "bg-primary/40", pill: "border-primary/40 bg-primary/10 text-primary" }
+        : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
     const withLines = isClosing || isLead;
     const label = isLead ? "NOVO LEAD" : m.content.toUpperCase();
     return (
       <div className="flex items-center gap-3">
         <span className={`h-0.5 flex-1 ${withLines ? tone.line : "opacity-0"}`} />
-        <span className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${tone.pill}`}>
+        <span
+          className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${tone.pill}`}
+        >
           {label}
-          <span className="ml-2 opacity-80">
-            — {fmtLogStamp(ts)}
-          </span>
+          <span className="ml-2 opacity-80">— {fmtLogStamp(ts)}</span>
         </span>
         <span className={`h-0.5 flex-1 ${withLines ? tone.line : "opacity-0"}`} />
       </div>
     );
   }
   const mine = m.sender === "agent";
-  const authorName = showAgentName && mine && m.author_id ? agents.find((a) => a.id === m.author_id)?.nome ?? null : null;
+  const authorName =
+    showAgentName && mine && m.author_id
+      ? (agents.find((a) => a.id === m.author_id)?.nome ?? null)
+      : null;
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
       <div
         className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-card ${
-          mine ? "rounded-br-sm bg-gradient-brand text-white" : "rounded-bl-sm border border-border bg-surface-1"
+          mine
+            ? "rounded-br-sm bg-gradient-brand text-white"
+            : "rounded-bl-sm border border-border bg-surface-1"
         }`}
       >
         {authorName && (
-          <p className={`mb-1 text-[11px] font-semibold ${mine ? "text-white/90" : "text-foreground"}`}>
+          <p
+            className={`mb-1 text-[11px] font-semibold ${mine ? "text-white/90" : "text-foreground"}`}
+          >
             {authorName}
           </p>
         )}
@@ -479,7 +547,9 @@ function MessageBubble({ m, agents, showAgentName = true }: { m: Message; agents
         {m.content && m.content !== "[áudio]" && m.content !== "[imagem]" && (
           <span className="break-words">{m.content.replace(/\s+/g, " ").trim()}</span>
         )}
-        <p className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}>
+        <p
+          className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
+        >
           {fmtHM(new Date(m.created_at).getTime())}
         </p>
       </div>
@@ -487,19 +557,38 @@ function MessageBubble({ m, agents, showAgentName = true }: { m: Message; agents
   );
 }
 
-function AudioPlayer({ src, durationMs, mine }: { src: string; durationMs: number | null; mine: boolean }) {
+function AudioPlayer({
+  src,
+  durationMs,
+  mine,
+}: {
+  src: string;
+  durationMs: number | null;
+  mine: boolean;
+}) {
   const audioRef = React.useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = React.useState(false);
   const toggle = () => {
     const a = audioRef.current;
     if (!a) return;
-    if (a.paused) { a.play(); setPlaying(true); }
-    else { a.pause(); setPlaying(false); }
+    if (a.paused) {
+      a.play();
+      setPlaying(true);
+    } else {
+      a.pause();
+      setPlaying(false);
+    }
   };
   const secs = durationMs ? Math.round(durationMs / 1000) : null;
   return (
-    <div className={`flex min-w-[180px] items-center gap-2 rounded-lg px-2 py-1 ${mine ? "bg-white/15" : "bg-surface-2"}`}>
-      <button type="button" onClick={toggle} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/20">
+    <div
+      className={`flex min-w-[180px] items-center gap-2 rounded-lg px-2 py-1 ${mine ? "bg-white/15" : "bg-surface-2"}`}
+    >
+      <button
+        type="button"
+        onClick={toggle}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/20"
+      >
         {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
       </button>
       <div className="flex-1 text-[11px] opacity-80">Áudio {secs !== null ? `· ${secs}s` : ""}</div>
@@ -511,8 +600,14 @@ function AudioPlayer({ src, durationMs, mine }: { src: string; durationMs: numbe
 /* -------- Composer with quick replies, audio, paste-image -------- */
 type DisabledReason = "closed" | "standby" | "lead" | "not-mine" | null;
 function Composer({
-  conversationId, authorId, disabled, disabledReason, onStart, onSent,
-  allowQuickReplies = true, allowAudio = true,
+  conversationId,
+  authorId,
+  disabled,
+  disabledReason,
+  onStart,
+  onSent,
+  allowQuickReplies = true,
+  allowAudio = true,
 }: {
   conversationId: string;
   authorId: string | null;
@@ -533,7 +628,10 @@ function Composer({
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
-  const { data: quickReplies = [] } = useQuery({ queryKey: ["quick_replies", "mine"], queryFn: QUICK_REPLIES.mine });
+  const { data: quickReplies = [] } = useQuery({
+    queryKey: ["quick_replies", "mine"],
+    queryFn: QUICK_REPLIES.mine,
+  });
 
   // Show quick reply list when text starts with '/'
   React.useEffect(() => {
@@ -558,8 +656,8 @@ function Composer({
 
   const filteredQR = React.useMemo(() => {
     if (!qrFilter) return quickReplies;
-    return quickReplies.filter((q) =>
-      q.atalho.toLowerCase().includes(qrFilter) || q.texto.toLowerCase().includes(qrFilter),
+    return quickReplies.filter(
+      (q) => q.atalho.toLowerCase().includes(qrFilter) || q.texto.toLowerCase().includes(qrFilter),
     );
   }, [quickReplies, qrFilter]);
 
@@ -569,7 +667,6 @@ function Composer({
     setShowQR(false);
     setTimeout(() => textareaRef.current?.focus(), 0);
   };
-
 
   const handleSend = async () => {
     if (disabled || !authorId) return;
@@ -586,32 +683,35 @@ function Composer({
         closeAfter = closeAfter || !!match.close_on_send;
       }
     }
-    if (!t && !pendingImage) {
-      toast.error("Escreva uma mensagem ou anexe uma imagem.");
+    if (pendingImage) {
+      toast.error("Envio de mídia ainda não está disponível no core Nexos.");
+      return;
+    }
+    if (!t) {
+      toast.error("Escreva uma mensagem.");
       return;
     }
     try {
-      if (pendingImage) {
-        await CONV.sendAgentMedia(conversationId, authorId, "image", pendingImage, { caption: t || undefined });
-        setPendingImage(null);
-        setText("");
-      } else {
-        await CONV.sendAgentMessage(conversationId, t, authorId);
-        setText("");
-      }
+      await messageApi.sendText(conversationId, t);
+      setText("");
       setShowQR(false);
       setQrFilter("");
       setPendingCloseAfter(false);
-      void CONV.markRead(conversationId).then(() => qc.invalidateQueries({ queryKey: ["nexos", "conversations"] }));
+      void messageApi
+        .markRead(conversationId)
+        .then(() => qc.invalidateQueries({ queryKey: ["nexos", "conversations"] }));
       if (closeAfter) {
         try {
           await conversationApi.updateStatus(conversationId, "fechada");
           toast.success("Conversa encerrada");
-        } catch (e) { toast.error((e as Error).message); }
+        } catch (e) {
+          toast.error((e as Error).message);
+        }
       }
       onSent();
-    } catch (e) { toast.error((e as Error).message); }
-
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -619,35 +719,34 @@ function Composer({
     const imageItem = items.find((it) => it.type.startsWith("image/"));
     if (imageItem) {
       e.preventDefault();
-      const file = imageItem.getAsFile();
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => setPendingImage(String(reader.result));
-      reader.readAsDataURL(file);
+      toast.error("Envio de mídia ainda não está disponível no core Nexos.");
     }
   };
 
   const onFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) { toast.error("Envie uma imagem."); return; }
-    const reader = new FileReader();
-    reader.onload = () => setPendingImage(String(reader.result));
-    reader.readAsDataURL(file);
+    toast.error("Envio de mídia ainda não está disponível no core Nexos.");
     e.target.value = "";
   };
 
   /* --- audio recording --- */
   const [recording, setRecording] = React.useState(false);
-  const [pendingAudio, setPendingAudio] = React.useState<{ url: string; duration: number } | null>(null);
-  const recRef = React.useRef<{ rec: MediaRecorder; chunks: Blob[]; startedAt: number } | null>(null);
+  const [pendingAudio, setPendingAudio] = React.useState<{ url: string; duration: number } | null>(
+    null,
+  );
+  const recRef = React.useRef<{ rec: MediaRecorder; chunks: Blob[]; startedAt: number } | null>(
+    null,
+  );
 
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const rec = new MediaRecorder(stream);
       const chunks: Blob[] = [];
-      rec.ondataavailable = (ev) => { if (ev.data.size > 0) chunks.push(ev.data); };
+      rec.ondataavailable = (ev) => {
+        if (ev.data.size > 0) chunks.push(ev.data);
+      };
       rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
@@ -661,7 +760,9 @@ function Composer({
       rec.start();
       recRef.current = { rec, chunks, startedAt: Date.now() };
       setRecording(true);
-    } catch { toast.error("Não foi possível acessar o microfone."); }
+    } catch {
+      toast.error("Não foi possível acessar o microfone.");
+    }
   };
 
   const stopRecording = () => {
@@ -671,27 +772,26 @@ function Composer({
 
   const sendAudio = async () => {
     if (!pendingAudio || !authorId) return;
-    try {
-      await CONV.sendAgentMedia(conversationId, authorId, "audio", pendingAudio.url, { durationMs: pendingAudio.duration });
-      setPendingAudio(null);
-      void CONV.markRead(conversationId).then(() => qc.invalidateQueries({ queryKey: ["nexos", "conversations"] }));
-      onSent();
-    } catch (e) { toast.error((e as Error).message); }
+    toast.error("Envio de áudio ainda não está disponível no core Nexos.");
   };
-
-
-
 
   return (
     <div className="border-t border-border bg-surface-1 p-3">
       <div className="mx-auto max-w-3xl">
-
-
         {pendingImage && (
           <div className="mb-2 flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
             <img src={pendingImage} alt="preview" className="h-16 w-16 rounded object-cover" />
-            <p className="flex-1 text-xs text-muted-foreground">Imagem anexada. Envie para incluir na conversa.</p>
-            <Button variant="ghost" size="icon" aria-label="Remover" onClick={() => setPendingImage(null)}><X className="h-4 w-4" /></Button>
+            <p className="flex-1 text-xs text-muted-foreground">
+              Imagem anexada. Envie para incluir na conversa.
+            </p>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Remover"
+              onClick={() => setPendingImage(null)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
         )}
 
@@ -699,8 +799,17 @@ function Composer({
           <div className="mb-2 flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
             <audio src={pendingAudio.url} controls className="h-8" />
             <p className="flex-1 text-xs text-muted-foreground">Áudio pronto. Envie ou descarte.</p>
-            <Button variant="ghost" size="icon" aria-label="Descartar" onClick={() => setPendingAudio(null)}><Trash2 className="h-4 w-4" /></Button>
-            <Button variant="primary" size="sm" onClick={sendAudio}><Send className="h-3.5 w-3.5" /> Enviar áudio</Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Descartar"
+              onClick={() => setPendingAudio(null)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+            <Button variant="primary" size="sm" onClick={sendAudio}>
+              <Send className="h-3.5 w-3.5" /> Enviar áudio
+            </Button>
           </div>
         )}
 
@@ -713,7 +822,9 @@ function Composer({
                 onClick={() => applyQR(qr)}
                 className="flex w-full items-start gap-3 border-b border-border/60 px-3 py-2 text-left hover:bg-surface-1"
               >
-                <span className="font-mono text-xs text-primary">/{qr.atalho.replace(/^\//, "")}</span>
+                <span className="font-mono text-xs text-primary">
+                  /{qr.atalho.replace(/^\//, "")}
+                </span>
                 <span className="flex-1 text-xs text-foreground/80 line-clamp-1">{qr.texto}</span>
               </button>
             ))}
@@ -724,17 +835,31 @@ function Composer({
           <div className="flex items-center gap-0.5">
             {allowQuickReplies && (
               <Button
-                variant="ghost" size="icon" aria-label="Mensagens rápidas"
+                variant="ghost"
+                size="icon"
+                aria-label="Mensagens rápidas"
                 onClick={() => setShowQR((v) => !v)}
                 disabled={disabled}
-              ><Zap className="h-4 w-4" /></Button>
+              >
+                <Zap className="h-4 w-4" />
+              </Button>
             )}
             <Button
-              variant="ghost" size="icon" aria-label="Anexar imagem"
+              variant="ghost"
+              size="icon"
+              aria-label="Anexar imagem"
               onClick={() => fileRef.current?.click()}
               disabled={disabled}
-            ><Paperclip className="h-4 w-4" /></Button>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFilePick} />
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={onFilePick}
+            />
           </div>
           <textarea
             ref={textareaRef}
@@ -743,7 +868,10 @@ function Composer({
             onChange={(e) => setText(e.target.value)}
             onPaste={handlePaste}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
               if (e.key === "Escape") setShowQR(false);
             }}
             disabled={disabled}
@@ -751,34 +879,46 @@ function Composer({
               disabledReason === "closed"
                 ? "Conversa encerrada."
                 : disabledReason === "lead"
-                ? "Clique em Iniciar acima para responder este lead."
-                : disabledReason === "standby"
-                ? "Clique em Retomar acima para voltar a atender."
-                : disabledReason === "not-mine"
-                ? "Conversa atribuída a outro atendente."
-                : "Escreva uma resposta…  (digite / para atalhos)"
+                  ? "Clique em Iniciar acima para responder este lead."
+                  : disabledReason === "standby"
+                    ? "Clique em Retomar acima para voltar a atender."
+                    : disabledReason === "not-mine"
+                      ? "Conversa atribuída a outro atendente."
+                      : "Escreva uma resposta…  (digite / para atalhos)"
             }
             className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-5 outline-none placeholder:text-muted-foreground disabled:opacity-50"
             style={{ minHeight: 32, maxHeight: 5 * 20 + 12 }}
           />
 
-          {allowAudio && (
-            !recording ? (
-              <Button variant="ghost" size="icon" aria-label="Gravar áudio" onClick={startRecording} disabled={disabled || !!pendingAudio}>
+          {allowAudio &&
+            (!recording ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Gravar áudio"
+                onClick={startRecording}
+                disabled={disabled || !!pendingAudio}
+              >
                 <Mic className="h-4 w-4" />
               </Button>
             ) : (
-              <Button variant="destructive" size="icon" aria-label="Parar gravação" onClick={stopRecording}>
+              <Button
+                variant="destructive"
+                size="icon"
+                aria-label="Parar gravação"
+                onClick={stopRecording}
+              >
                 <Square className="h-4 w-4" />
               </Button>
-            )
-          )}
+            ))}
           <Button variant="primary" size="sm" onClick={handleSend} disabled={disabled}>
             <Send className="h-3.5 w-3.5" /> Enviar
           </Button>
         </div>
         {recording && (
-          <p className="mt-2 text-center text-[11px] text-destructive">● Gravando… clique no quadrado para parar.</p>
+          <p className="mt-2 text-center text-[11px] text-destructive">
+            ● Gravando… clique no quadrado para parar.
+          </p>
         )}
       </div>
     </div>
@@ -798,13 +938,22 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
     queryFn: async () => {
       const { data, error } = await supabase
         .from("contacts")
-        .select("id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia")
+        .select(
+          "id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia",
+        )
         .eq("id", contactId)
         .single();
       if (error) throw error;
       return data as {
-        id: string; nome: string; telefone: string; avatar_url: string | null; customer_id: string | null;
-        email: string | null; departamento: string | null; nivel_gerencia: string | null; instancia: string | null;
+        id: string;
+        nome: string;
+        telefone: string;
+        avatar_url: string | null;
+        customer_id: string | null;
+        email: string | null;
+        departamento: string | null;
+        nivel_gerencia: string | null;
+        instancia: string | null;
       };
     },
   });
@@ -814,13 +963,16 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
     queryKey: ["mvp", "customer", customerId],
     queryFn: async () => {
       if (!customerId) return null;
-      const { data, error } = await supabase.from("customers").select("*").eq("id", customerId).maybeSingle();
+      const { data, error } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("id", customerId)
+        .maybeSingle();
       if (error) throw error;
       return data as Customer | null;
     },
     enabled: !!customerId,
   });
-
 
   const { data: contactTags = [] } = useQuery({
     queryKey: ["mvp", "contact_tags", contactId],
@@ -849,7 +1001,10 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
 
   const [protoFilter, setProtoFilter] = React.useState("");
   const filteredProtocolos = React.useMemo(
-    () => protocolos.filter((p) => p.protocolo.toLowerCase().includes(protoFilter.trim().toLowerCase())),
+    () =>
+      protocolos.filter((p) =>
+        p.protocolo.toLowerCase().includes(protoFilter.trim().toLowerCase()),
+      ),
     [protocolos, protoFilter],
   );
 
@@ -857,10 +1012,17 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
     <aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-surface-1 lg:w-[400px]">
       <div className="border-b border-border p-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Contato</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Contato
+          </p>
           <div className="flex items-center gap-1">
             {perms.pode_editar_contato && (
-              <Button variant="ghost" size="sm" onClick={renameModal.show} aria-label="Editar contato">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={renameModal.show}
+                aria-label="Editar contato"
+              >
                 <Pencil className="h-3 w-3" /> Editar
               </Button>
             )}
@@ -885,27 +1047,35 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
             <dt className="uppercase tracking-wide text-muted-foreground">Cliente</dt>
             <dd className="flex min-w-0 items-center justify-end gap-1.5 truncate text-right text-foreground/90">
               {customer?.cor && (
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: customer.cor }} />
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: customer.cor }}
+                />
               )}
               <span className="truncate">{customer?.nome ?? "—"}</span>
             </dd>
           </div>
           <div className="flex items-start justify-between gap-2">
             <dt className="uppercase tracking-wide text-muted-foreground">Departamento</dt>
-            <dd className="truncate text-right text-foreground/90">{contact?.departamento ?? "—"}</dd>
+            <dd className="truncate text-right text-foreground/90">
+              {contact?.departamento ?? "—"}
+            </dd>
           </div>
           <div className="flex items-start justify-between gap-2">
             <dt className="uppercase tracking-wide text-muted-foreground">Perfil na Empresa</dt>
-            <dd className="truncate text-right text-foreground/90">{contact?.nivel_gerencia ?? "—"}</dd>
+            <dd className="truncate text-right text-foreground/90">
+              {contact?.nivel_gerencia ?? "—"}
+            </dd>
           </div>
         </dl>
       </div>
 
-
       <div className="space-y-4 overflow-y-auto p-4">
         <section>
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Etiquetas</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Etiquetas
+            </p>
             {perms.pode_editar_etiquetas && (
               <Button variant="ghost" size="sm" onClick={tagsModal.show}>
                 <TagIcon className="h-3 w-3" /> Gerenciar
@@ -914,7 +1084,8 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
           </div>
           <div className="flex flex-wrap gap-1.5">
             {contactTags.map((t) => (
-              <span key={t.id}
+              <span
+                key={t.id}
                 className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px]"
                 style={{ borderColor: t.cor + "80", color: t.cor, backgroundColor: t.cor + "20" }}
               >
@@ -922,15 +1093,21 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
                 {t.nome}
               </span>
             ))}
-            {contactTags.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma etiqueta.</p>}
+            {contactTags.length === 0 && (
+              <p className="text-xs text-muted-foreground">Nenhuma etiqueta.</p>
+            )}
           </div>
         </section>
 
         <section>
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Protocolos</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Protocolos
+            </p>
             <span className="font-mono text-[10px] text-muted-foreground">
-              {protoFilter ? `${filteredProtocolos.length}/${protocolos.length}` : protocolos.length}
+              {protoFilter
+                ? `${filteredProtocolos.length}/${protocolos.length}`
+                : protocolos.length}
             </span>
           </div>
           {protocolos.length > 0 && (
@@ -957,7 +1134,11 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
                   >
                     <span className="font-mono text-foreground/90">#{p.protocolo}</span>
                     <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {new Date(p.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · {fmtDate(new Date(p.created_at).getTime())}
+                      {new Date(p.created_at).toLocaleTimeString("pt-BR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}{" "}
+                      · {fmtDate(new Date(p.created_at).getTime())}
                     </span>
                   </Link>
                 </li>
@@ -966,8 +1147,6 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
           )}
         </section>
       </div>
-
-
 
       <TagsModal
         open={tagsModal.open}
@@ -984,7 +1163,14 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
         initialCustomerId={customerId}
         initialEmail={contact?.email ?? ""}
         initialDepartamento={contact?.departamento ?? ""}
-        initialNivel={(contact?.nivel_gerencia as "Colaborador" | "Supervisor" | "Gerente" | "Diretoria" | null) ?? null}
+        initialNivel={
+          (contact?.nivel_gerencia as
+            | "Colaborador"
+            | "Supervisor"
+            | "Gerente"
+            | "Diretoria"
+            | null) ?? null
+        }
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ["mvp", "contact", contactId] });
           qc.invalidateQueries({ queryKey: ["mvp", "customer", customerId] });
@@ -993,18 +1179,28 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
           renameModal.hide();
         }}
       />
-
-
     </aside>
   );
 }
 
 function RenameContactModal({
-  open, onClose, contactId, initialName, initialCustomerId, initialEmail, initialDepartamento, initialNivel, onSaved,
+  open,
+  onClose,
+  contactId,
+  initialName,
+  initialCustomerId,
+  initialEmail,
+  initialDepartamento,
+  initialNivel,
+  onSaved,
 }: {
-  open: boolean; onClose: () => void; contactId: string;
-  initialName: string; initialCustomerId: string | null;
-  initialEmail: string; initialDepartamento: string;
+  open: boolean;
+  onClose: () => void;
+  contactId: string;
+  initialName: string;
+  initialCustomerId: string | null;
+  initialEmail: string;
+  initialDepartamento: string;
   initialNivel: "Colaborador" | "Supervisor" | "Gerente" | "Diretoria" | null;
   onSaved: () => void;
 }) {
@@ -1013,7 +1209,9 @@ function RenameContactModal({
   const [customerId, setCustomerId] = React.useState<string | null>(initialCustomerId);
   const [email, setEmail] = React.useState(initialEmail);
   const [departamento, setDepartamento] = React.useState(initialDepartamento);
-  const [nivel, setNivel] = React.useState<"" | "Colaborador" | "Supervisor" | "Gerente" | "Diretoria">(initialNivel ?? "");
+  const [nivel, setNivel] = React.useState<
+    "" | "Colaborador" | "Supervisor" | "Gerente" | "Diretoria"
+  >(initialNivel ?? "");
   const [busy, setBusy] = React.useState(false);
 
   const { data: customers = [] } = useQuery({
@@ -1034,27 +1232,43 @@ function RenameContactModal({
 
   const save = async () => {
     const n = nome.trim();
-    if (!n) { toast.error("Informe o nome."); return; }
+    if (!n) {
+      toast.error("Informe o nome.");
+      return;
+    }
     const em = email.trim();
-    if (em && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { toast.error("E-mail inválido."); return; }
+    if (em && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
+      toast.error("E-mail inválido.");
+      return;
+    }
     setBusy(true);
     try {
       const patch: Record<string, unknown> = {};
       if (n !== initialName) patch.nome = n;
       if ((em || null) !== (initialEmail || null)) patch.email = em || null;
-      if ((departamento.trim() || null) !== (initialDepartamento || null)) patch.departamento = departamento.trim() || null;
+      if ((departamento.trim() || null) !== (initialDepartamento || null))
+        patch.departamento = departamento.trim() || null;
       if ((nivel || null) !== (initialNivel ?? null)) patch.nivel_gerencia = nivel || null;
       if (Object.keys(patch).length) {
-        const { error } = await supabase.from("contacts").update(patch as never).eq("id", contactId);
+        const { error } = await supabase
+          .from("contacts")
+          .update(patch as never)
+          .eq("id", contactId);
         if (error) throw error;
       }
-      if (perms.pode_editar_vinculo_cliente && (customerId ?? null) !== (initialCustomerId ?? null)) {
+      if (
+        perms.pode_editar_vinculo_cliente &&
+        (customerId ?? null) !== (initialCustomerId ?? null)
+      ) {
         await CONTACTS.setCustomer(contactId, customerId);
       }
       toast.success("Contato atualizado");
       onSaved();
-    } catch (e) { toast.error((e as Error).message); }
-    finally { setBusy(false); }
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -1064,30 +1278,54 @@ function RenameContactModal({
       title="Editar contato"
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" size="sm" onClick={save} disabled={busy}>{busy ? "Salvando…" : "Salvar"}</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" size="sm" onClick={save} disabled={busy}>
+            {busy ? "Salvando…" : "Salvar"}
+          </Button>
         </>
       }
     >
       <div className="space-y-3">
         <Field label="Nome">
-          <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome do contato" />
+          <Input
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            placeholder="Nome do contato"
+          />
         </Field>
         {perms.pode_editar_vinculo_cliente && (
           <Field label="Cliente">
-            <Select value={customerId ?? ""} onChange={(e) => setCustomerId(e.target.value || null)}>
+            <Select
+              value={customerId ?? ""}
+              onChange={(e) => setCustomerId(e.target.value || null)}
+            >
               <option value="">Sem vínculo</option>
               {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.nome}</option>
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
               ))}
             </Select>
           </Field>
         )}
         <Field label="Departamento">
-          <Input value={departamento} onChange={(e) => setDepartamento(e.target.value)} placeholder="Ex.: Financeiro" />
+          <Input
+            value={departamento}
+            onChange={(e) => setDepartamento(e.target.value)}
+            placeholder="Ex.: Financeiro"
+          />
         </Field>
         <Field label="Perfil na Empresa">
-          <Select value={nivel} onChange={(e) => setNivel(e.target.value as "" | "Colaborador" | "Supervisor" | "Gerente" | "Diretoria")}>
+          <Select
+            value={nivel}
+            onChange={(e) =>
+              setNivel(
+                e.target.value as "" | "Colaborador" | "Supervisor" | "Gerente" | "Diretoria",
+              )
+            }
+          >
             <option value="">— Selecione —</option>
             <option value="Colaborador">Colaborador</option>
             <option value="Supervisor">Supervisor</option>
@@ -1096,15 +1334,17 @@ function RenameContactModal({
           </Select>
         </Field>
         <Field label="E-mail">
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nome@empresa.com" />
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="nome@empresa.com"
+          />
         </Field>
       </div>
     </Modal>
   );
 }
-
-
-
 
 function maskTelefone(v: string) {
   const d = v.replace(/\D/g, "").slice(0, 11);
@@ -1115,8 +1355,16 @@ function maskTelefone(v: string) {
 }
 
 function LinkCustomerModal({
-  open, onClose, contactId, onLinked,
-}: { open: boolean; onClose: () => void; contactId: string; onLinked: () => void }) {
+  open,
+  onClose,
+  contactId,
+  onLinked,
+}: {
+  open: boolean;
+  onClose: () => void;
+  contactId: string;
+  onLinked: () => void;
+}) {
   const [q, setQ] = React.useState("");
   const [tab, setTab] = React.useState<"existing" | "new">("existing");
   const [nome, setNome] = React.useState("");
@@ -1139,8 +1387,14 @@ function LinkCustomerModal({
 
   React.useEffect(() => {
     if (!open) {
-      setQ(""); setNome(""); setEmail(""); setCliente(""); setTelefone("");
-      setDepartamentoId(""); setSupervisor(false); setTab("existing");
+      setQ("");
+      setNome("");
+      setEmail("");
+      setCliente("");
+      setTelefone("");
+      setDepartamentoId("");
+      setSupervisor(false);
+      setTab("existing");
     }
   }, [open]);
 
@@ -1149,62 +1403,101 @@ function LinkCustomerModal({
       await CONTACTS.setCustomer(contactId, customerId);
       toast.success("Vinculado");
       onLinked();
-    } catch (e) { toast.error((e as Error).message); }
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
 
   const createAndLink = async () => {
     if (!nome.trim()) return toast.error("Informe o nome do cliente.");
     try {
       const dep = departamentos.find((d) => d.id === departamentoId);
-      const notas = [
-        dep ? `Departamento: ${dep.nome}` : null,
-        supervisor ? "Supervisor" : null,
-      ].filter(Boolean).join(" · ") || null;
+      const notas =
+        [dep ? `Departamento: ${dep.nome}` : null, supervisor ? "Supervisor" : null]
+          .filter(Boolean)
+          .join(" · ") || null;
       const c = await CUSTOMERS.create({
-        nome: (cliente.trim() || nome.trim()),
+        nome: cliente.trim() || nome.trim(),
         email: email.trim() || null,
         telefone: telefone.trim() || null,
         notas,
       });
       await link(c.id);
-    } catch (e) { toast.error((e as Error).message); }
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
 
   return (
     <Modal
-      open={open} onClose={onClose}
+      open={open}
+      onClose={onClose}
       title="Vincular contato a cliente"
       description="Associe este contato ao cadastro comercial correspondente."
-      footer={<Button variant="ghost" size="sm" onClick={onClose}>Fechar</Button>}
+      footer={
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Fechar
+        </Button>
+      }
     >
       <div className="mb-3 inline-flex rounded-lg border border-border bg-surface-1 p-1 text-xs">
-        <button onClick={() => setTab("existing")} className={`rounded-md px-3 py-1.5 ${tab === "existing" ? "bg-card shadow-card" : "text-muted-foreground"}`}>Existente</button>
-        <button onClick={() => setTab("new")} className={`rounded-md px-3 py-1.5 ${tab === "new" ? "bg-card shadow-card" : "text-muted-foreground"}`}>Cadastrar novo</button>
+        <button
+          onClick={() => setTab("existing")}
+          className={`rounded-md px-3 py-1.5 ${tab === "existing" ? "bg-card shadow-card" : "text-muted-foreground"}`}
+        >
+          Existente
+        </button>
+        <button
+          onClick={() => setTab("new")}
+          className={`rounded-md px-3 py-1.5 ${tab === "new" ? "bg-card shadow-card" : "text-muted-foreground"}`}
+        >
+          Cadastrar novo
+        </button>
       </div>
 
       {tab === "existing" ? (
         <>
-          <Field label="Buscar"><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome do cliente…" /></Field>
+          <Field label="Buscar">
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Nome do cliente…"
+            />
+          </Field>
           <ul className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-border">
             {customers.map((c) => (
               <li key={c.id}>
-                <button onClick={() => link(c.id)} className="flex w-full items-start justify-between gap-3 border-b border-border/60 px-3 py-2 text-left text-sm hover:bg-surface-1">
+                <button
+                  onClick={() => link(c.id)}
+                  className="flex w-full items-start justify-between gap-3 border-b border-border/60 px-3 py-2 text-left text-sm hover:bg-surface-1"
+                >
                   <div className="min-w-0">
                     <p className="truncate">{c.nome}</p>
-                    
                   </div>
                   <span className="text-[11px] text-primary">Vincular</span>
                 </button>
               </li>
             ))}
-            {customers.length === 0 && <li className="p-4 text-center text-xs text-muted-foreground">Nenhum cliente.</li>}
+            {customers.length === 0 && (
+              <li className="p-4 text-center text-xs text-muted-foreground">Nenhum cliente.</li>
+            )}
           </ul>
         </>
       ) : (
         <div className="space-y-3">
-          <Field label="Nome"><Input value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
-          <Field label="Cliente"><Input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Classificação comercial" /></Field>
-          <Field label="E-mail"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+          <Field label="Nome">
+            <Input value={nome} onChange={(e) => setNome(e.target.value)} />
+          </Field>
+          <Field label="Cliente">
+            <Input
+              value={cliente}
+              onChange={(e) => setCliente(e.target.value)}
+              placeholder="Classificação comercial"
+            />
+          </Field>
+          <Field label="E-mail">
+            <Input value={email} onChange={(e) => setEmail(e.target.value)} />
+          </Field>
           <Field label="Telefone">
             <Input
               value={telefone}
@@ -1217,7 +1510,9 @@ function LinkCustomerModal({
             <Select value={departamentoId} onChange={(e) => setDepartamentoId(e.target.value)}>
               <option value="">Selecione…</option>
               {departamentos.map((d) => (
-                <option key={d.id} value={d.id}>{d.nome}</option>
+                <option key={d.id} value={d.id}>
+                  {d.nome}
+                </option>
               ))}
             </Select>
           </Field>
@@ -1230,7 +1525,9 @@ function LinkCustomerModal({
             />
             <span>Supervisor</span>
           </label>
-          <Button variant="primary" size="sm" onClick={createAndLink}>Cadastrar e vincular</Button>
+          <Button variant="primary" size="sm" onClick={createAndLink}>
+            Cadastrar e vincular
+          </Button>
         </div>
       )}
     </Modal>
@@ -1238,10 +1535,24 @@ function LinkCustomerModal({
 }
 
 function TagsModal({
-  open, onClose, contactId, current, onChanged,
-}: { open: boolean; onClose: () => void; contactId: string; current: Tag[]; onChanged: () => void }) {
+  open,
+  onClose,
+  contactId,
+  current,
+  onChanged,
+}: {
+  open: boolean;
+  onClose: () => void;
+  contactId: string;
+  current: Tag[];
+  onChanged: () => void;
+}) {
   const qc = useQueryClient();
-  const { data: allTags = [] } = useQuery({ queryKey: ["mvp", "tags"], queryFn: CATALOG.tags, enabled: open });
+  const { data: allTags = [] } = useQuery({
+    queryKey: ["mvp", "tags"],
+    queryFn: CATALOG.tags,
+    enabled: open,
+  });
   const [creating, setCreating] = React.useState(false);
   const [newName, setNewName] = React.useState("");
   const [newColor, setNewColor] = React.useState("#6366f1");
@@ -1253,7 +1564,9 @@ function TagsModal({
       if (currentIds.has(t.id)) await CONTACTS.removeTag(contactId, t.id);
       else await CONTACTS.addTag(contactId, t.id);
       onChanged();
-    } catch (e) { toast.error((e as Error).message); }
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
 
   const createTag = async () => {
@@ -1265,21 +1578,30 @@ function TagsModal({
       setCreating(false);
       qc.invalidateQueries({ queryKey: ["mvp", "tags"] });
       onChanged();
-    } catch (e) { toast.error((e as Error).message); }
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
 
   return (
     <Modal
-      open={open} onClose={onClose}
+      open={open}
+      onClose={onClose}
       title="Etiquetas do contato"
       description="Selecione as etiquetas ou crie novas."
-      footer={<Button variant="ghost" size="sm" onClick={onClose}>Fechar</Button>}
+      footer={
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Fechar
+        </Button>
+      }
     >
       <div className="flex flex-wrap gap-1.5">
         {allTags.map((t) => {
           const active = currentIds.has(t.id);
           return (
-            <button key={t.id} onClick={() => toggle(t)}
+            <button
+              key={t.id}
+              onClick={() => toggle(t)}
               className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
               style={{
                 borderColor: t.cor + (active ? "" : "60"),
@@ -1287,12 +1609,17 @@ function TagsModal({
                 backgroundColor: active ? t.cor : t.cor + "15",
               }}
             >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: active ? "#fff" : t.cor }} />
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: active ? "#fff" : t.cor }}
+              />
               {t.nome}
             </button>
           );
         })}
-        {allTags.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma etiqueta cadastrada.</p>}
+        {allTags.length === 0 && (
+          <p className="text-xs text-muted-foreground">Nenhuma etiqueta cadastrada.</p>
+        )}
       </div>
 
       {!creating ? (
@@ -1301,13 +1628,24 @@ function TagsModal({
         </Button>
       ) : (
         <div className="mt-3 space-y-2 rounded-lg border border-border p-3">
-          <Field label="Nome"><Input value={newName} onChange={(e) => setNewName(e.target.value)} /></Field>
+          <Field label="Nome">
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} />
+          </Field>
           <Field label="Cor">
-            <input type="color" value={newColor} onChange={(e) => setNewColor(e.target.value)} className="h-9 w-16 rounded-md border border-border bg-surface-1" />
+            <input
+              type="color"
+              value={newColor}
+              onChange={(e) => setNewColor(e.target.value)}
+              className="h-9 w-16 rounded-md border border-border bg-surface-1"
+            />
           </Field>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>Cancelar</Button>
-            <Button variant="primary" size="sm" onClick={createTag}>Criar</Button>
+            <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="sm" onClick={createTag}>
+              Criar
+            </Button>
           </div>
         </div>
       )}
@@ -1317,7 +1655,13 @@ function TagsModal({
 
 /* -------- Unified Transfer modal (departamento, atendente ou status) -------- */
 function TransferModal({
-  open, onClose, onSubmitAgent, onSubmitDepartment, onSubmitStatus, agents, departments,
+  open,
+  onClose,
+  onSubmitAgent,
+  onSubmitDepartment,
+  onSubmitStatus,
+  agents,
+  departments,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1372,13 +1716,18 @@ function TransferModal({
 
   return (
     <Modal
-      open={open} onClose={onClose}
+      open={open}
+      onClose={onClose}
       title="Transferir atendimento"
       description="Escolha entre mover para outro departamento, transferir para outro atendente ou alterar o status."
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" size="sm" onClick={handleSubmit}>Transferir</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" size="sm" onClick={handleSubmit}>
+            Transferir
+          </Button>
         </>
       }
     >
@@ -1391,7 +1740,11 @@ function TransferModal({
       {mode === "department" && (
         <Field label="Departamento">
           <Select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
-            {departments.map((d) => (<option key={d.id} value={d.id}>{d.nome}</option>))}
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.nome}
+              </option>
+            ))}
             {departments.length === 0 && <option value="">Nenhum outro departamento</option>}
           </Select>
         </Field>
@@ -1399,30 +1752,48 @@ function TransferModal({
       {mode === "agent" && (
         <Field label="Novo atendente">
           <Select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)}>
-            {agents.map((a) => (<option key={a.id} value={a.id}>{a.nome}</option>))}
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.nome}
+              </option>
+            ))}
             {agents.length === 0 && <option value="">Nenhum outro atendente</option>}
           </Select>
         </Field>
       )}
-      {mode === "status" && (() => {
-        const statusOptions = (["fila", "standby"] as const)
-          .map((id) => {
-            const p = queuePrefs.find((q) => q.id === id);
-            return { id, label: id === "fila" ? filaLabel : standbyLabel, enabled: p?.enabled ?? true };
-          })
-          .filter((o) => o.enabled);
-        return (
-          <Field label="Novo status">
-            {statusOptions.length === 0 ? (
-              <div className="text-sm text-muted-foreground">Nenhuma fila ativa. Ative uma em Configurações › Geral.</div>
-            ) : (
-              <Select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value as "fila" | "standby")}>
-                {statusOptions.map((o) => (<option key={o.id} value={o.id}>{o.label}</option>))}
-              </Select>
-            )}
-          </Field>
-        );
-      })()}
+      {mode === "status" &&
+        (() => {
+          const statusOptions = (["fila", "standby"] as const)
+            .map((id) => {
+              const p = queuePrefs.find((q) => q.id === id);
+              return {
+                id,
+                label: id === "fila" ? filaLabel : standbyLabel,
+                enabled: p?.enabled ?? true,
+              };
+            })
+            .filter((o) => o.enabled);
+          return (
+            <Field label="Novo status">
+              {statusOptions.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  Nenhuma fila ativa. Ative uma em Configurações › Geral.
+                </div>
+              ) : (
+                <Select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value as "fila" | "standby")}
+                >
+                  {statusOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          );
+        })()}
     </Modal>
   );
 }

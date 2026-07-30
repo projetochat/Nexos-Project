@@ -176,3 +176,41 @@ Decisoes:
 - Transferencia de departamento valida tenant e escopo do operador; se o assignee nao pertence ao novo departamento, a conversa e desatribuida.
 - `Message` nao foi modelado nesta sprint; campos `unreadCount`, `lastMessagePreview` e `lastMessageAt` sustentam a lista ate a migracao de mensagens na Sprint 05.
 - Nao ha hard delete de conversa.
+
+## Sprint 05 - Messages Prisma
+
+Migration:
+
+- `backend/prisma/migrations/20260730000400_messages_core/migration.sql`
+
+Entidades finais do recorte:
+
+- `Message`: mensagem tenant-owned vinculada a `Conversation`, com autor opcional em `TenantMembership`.
+
+Enums:
+
+- `MessageDirection`: `INBOUND`, `OUTBOUND`, `SYSTEM`.
+- `MessageType`: `TEXT`, `IMAGE`, `AUDIO`, `SYSTEM`.
+- `MessageStatus`: `CREATED`.
+
+Campos principais de `Message`:
+
+- `tenantId`, `conversationId`, `authorMembershipId`.
+- `direction`, `type`, `status`.
+- `content`, `clientMessageId`, `readAt`.
+- `createdAt`, `updatedAt`.
+
+Constraints e indices:
+
+- FK composta `Message(tenantId, conversationId)` para `Conversation(tenantId, id)`.
+- FK para `Tenant` e FK opcional para `TenantMembership`.
+- Unicidade por `[tenantId, conversationId, clientMessageId]` para idempotencia de envio.
+- Indice por `[tenantId, conversationId, createdAt, id]` para historico paginado.
+
+Decisoes:
+
+- `Conversation.lastMessagePreview` e `Conversation.lastMessageAt` passam a ser atualizados a partir de `Message`.
+- `unreadCount` continua denormalizado em `Conversation`, mas leitura grava `Message.readAt` nos inbound pendentes.
+- Mensagens `SYSTEM` sao criadas por acoes internas do backend; nao existe rota publica generica para sistema.
+- `IMAGE` e `AUDIO` ficam apenas como fronteira explicita de schema. Sem R2, provider ou data URL fake nesta sprint.
+- O seed foi estabilizado para nao reduzir o contador de protocolos em execucoes repetidas.
