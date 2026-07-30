@@ -66,3 +66,47 @@ Seed:
 - usuarios demo e registros protegidos de tenants distintos
 
 O schema Supabase legado permanece preservado em `supabase/migrations` para a migracao incremental.
+
+## Sprint 02 - Camada organizacional Prisma
+
+Migration:
+
+- `backend/prisma/migrations/20260730000100_organization_rbac/migration.sql`
+
+Entidades finais do recorte:
+
+- `Tenant`: organizacao SaaS.
+- `User`: identidade global, com `platformRole` separado de roles de tenant.
+- `TenantMembership`: relacao `User <-> Tenant`, com `status` e `roleId`.
+- `Department`: departamento tenant-owned, com `active`, `color` e `description`.
+- `DepartmentMembership`: relacao `TenantMembership <-> Department`.
+- `Role`: perfil tenant-scoped.
+- `Permission`: catalogo controlado pelo backend.
+- `RolePermission`: relacao N:N de role para permissoes.
+
+Removido:
+
+- `ProtectedRecord`, artefato da Sprint 01 usado apenas para provar isolamento.
+
+Constraints e indices:
+
+- `Tenant.slug` unico.
+- `User.email` unico global.
+- `TenantMembership` unico por `[tenantId, userId]`.
+- `TenantMembership` tambem unico por `[tenantId, id]` para FKs compostas.
+- `Department` unico por `[tenantId, name]` e `[tenantId, id]`.
+- `Role` unico por `[tenantId, key]` e `[tenantId, id]`.
+- `DepartmentMembership` unico por `[departmentId, membershipId]`.
+- FKs compostas em `DepartmentMembership` impedem associar membership de um tenant a departamento de outro.
+- FK composta em `TenantMembership.role` impede role de outro tenant.
+
+Roles tenant-scoped:
+
+- `tenant_admin`
+- `supervisor`
+- `agent`
+
+Platform Admin:
+
+- `User.platformRole = ADMIN`
+- Nao substitui `Role.key = tenant_admin`.

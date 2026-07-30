@@ -6,11 +6,14 @@ import helmet from "helmet";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 
-describe("Nexos API vertical slice", () => {
+describe("Nexos API organization and RBAC", () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
   beforeAll(async () => {
+    process.env.DATABASE_URL =
+      process.env.DATABASE_URL ??
+      "postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public";
     process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test-access-secret-minimum-32-chars";
     process.env.JWT_REFRESH_SECRET =
       process.env.JWT_REFRESH_SECRET ?? "test-refresh-secret-minimum-32-chars";
@@ -43,7 +46,15 @@ describe("Nexos API vertical slice", () => {
       });
   });
 
-  it("authenticates and exposes the current tenant context", async () => {
+  it("denies unauthenticated and invalid token requests", async () => {
+    await request(app.getHttpServer()).get("/api/users").expect(401);
+    await request(app.getHttpServer())
+      .get("/api/users")
+      .set("Authorization", "Bearer invalid-token")
+      .expect(401);
+  });
+
+  it("authenticates and exposes current tenant context with permissions", async () => {
     const token = await login("admin@nexo.app", "demo1234", "acme");
 
     await request(app.getHttpServer())
@@ -52,21 +63,116 @@ describe("Nexos API vertical slice", () => {
       .expect(200)
       .expect(({ body }) => {
         expect(body.user.email).toBe("admin@nexo.app");
+        expect(body.user.roleKey).toBe("tenant_admin");
         expect(body.tenant.slug).toBe("acme");
-        expect(body.permissions.canManageTenant).toBe(true);
+        expect(body.permissions).toContain("users.manage");
       });
   });
 
-  it("keeps protected records isolated by tenant", async () => {
+  it("denies inactive memberships even when the token was previously valid", async () => {
+    const token = await login("atendente@nexo.app", "demo1234", "acme");
+    const membership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { user: { email: "atendente@nexo.app" }, tenant: { slug: "acme" } },
+    });
+
+    await prisma.tenantMembership.update({
+      where: { id: membership.id },
+      data: { status: "DISABLED" },
+    });
+    await request(app.getHttpServer())
+      .get("/api/departments")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(401);
+    await prisma.tenantMembership.update({
+      where: { id: membership.id },
+      data: { status: "ACTIVE" },
+    });
+  });
+
+  it("denies missing permissions and allows valid permissions", async () => {
+    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    await request(app.getHttpServer())
+      .post("/api/departments")
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({ name: "Sem permissao", color: "#111111" })
+      .expect(403);
+
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    await request(app.getHttpServer())
+      .get("/api/users")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(
+          body.some((item: { user: { email: string } }) => item.user.email === "admin@nexo.app"),
+        ).toBe(true);
+      });
+  });
+
+  it("blocks cross-tenant user and department access", async () => {
     const acmeToken = await login("admin@nexo.app", "demo1234", "acme");
-    const orbitRecord = await prisma.protectedRecord.findFirstOrThrow({
+    const orbitMembership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenant: { slug: "orbit" }, user: { email: "agent-orbit@nexo.app" } },
+    });
+    const orbitDepartment = await prisma.department.findFirstOrThrow({
       where: { tenant: { slug: "orbit" } },
     });
 
     await request(app.getHttpServer())
-      .get(`/api/tenant-records/${orbitRecord.id}`)
+      .get(`/api/users/${orbitMembership.id}`)
       .set("Authorization", `Bearer ${acmeToken}`)
       .expect(404);
+    await request(app.getHttpServer())
+      .patch(`/api/departments/${orbitDepartment.id}`)
+      .set("Authorization", `Bearer ${acmeToken}`)
+      .send({ name: "Cross tenant blocked" })
+      .expect(404);
+  });
+
+  it("blocks cross-tenant department membership assignment", async () => {
+    const acmeToken = await login("admin@nexo.app", "demo1234", "acme");
+    const acmeDepartment = await prisma.department.findFirstOrThrow({
+      where: { tenant: { slug: "acme" } },
+    });
+    const orbitMembership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenant: { slug: "orbit" }, user: { email: "agent-orbit@nexo.app" } },
+    });
+
+    await request(app.getHttpServer())
+      .post(`/api/departments/${acmeDepartment.id}/members`)
+      .set("Authorization", `Bearer ${acmeToken}`)
+      .send({ membershipId: orbitMembership.id })
+      .expect(400);
+  });
+
+  it("blocks cross-tenant role assignment", async () => {
+    const acmeToken = await login("admin@nexo.app", "demo1234", "acme");
+    const acmeMembership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenant: { slug: "acme" }, user: { email: "atendente@nexo.app" } },
+    });
+    const orbitRole = await prisma.role.findFirstOrThrow({
+      where: { tenant: { slug: "orbit" }, key: "agent" },
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/api/users/${acmeMembership.id}`)
+      .set("Authorization", `Bearer ${acmeToken}`)
+      .send({ roleId: orbitRole.id })
+      .expect(400);
+  });
+
+  it("keeps platform admin separate from tenant admin", async () => {
+    const token = await login("platform@nexo.app", "demo1234", "acme");
+
+    await request(app.getHttpServer())
+      .post("/api/users")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        email: "blocked-platform-admin@nexo.app",
+        name: "Blocked Platform",
+        password: "demo1234",
+      })
+      .expect(403);
   });
 
   it("rejects invalid credentials", async () => {

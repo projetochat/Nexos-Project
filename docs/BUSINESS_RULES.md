@@ -48,3 +48,16 @@ Somente regras comprovadas no codigo.
 - Roles persistidas no backend: `SUPER_ADMIN`, `ADMIN`, `SUPERVISOR`, `OPERATOR`.
 - Permissoes retornadas em `/api/me` sao derivadas de role e tenant no servidor.
 - Provisionamento automatico de usuarios demo por service role fica desabilitado por padrao.
+
+## Sprint 02 - Regras Organizacionais e RBAC
+
+- `User` e identidade global e pode participar de mais de um tenant via memberships.
+- `TenantMembership` ativa e obrigatoria para operar em um tenant.
+- Membership inativa bloqueia requests protegidos mesmo com JWT emitido anteriormente.
+- `Role` pertence a um tenant; role de Tenant A nao pode ser atribuida a membership de Tenant B.
+- `Permission` e catalogada pelo backend; keys arbitrarias sao rejeitadas.
+- `Department` pertence a um tenant.
+- Membership de Tenant A nao pode ser associada a Department de Tenant B.
+- `PlatformRole.ADMIN` nao equivale a `tenant_admin`.
+- Toda autorizacao de users, departments e roles ocorre no backend via permission guard.
+- Frontend pode esconder acoes por UX, mas nao substitui autorizacao server-side.

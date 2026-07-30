@@ -89,3 +89,58 @@ Criterio de remocao do fallback:
 Risco de permanencia:
 
 - dois modelos de sessao coexistem e podem divergir em roles/permissoes.
+
+## Sprint 02 - Auth, RBAC e Supabase Auth removido das superficies migradas
+
+DEFINITIVO IMPLEMENTADO:
+
+- `/login`, `hydrateSession`, `signIn` e `signOut` usam a Nexos API.
+- O fallback `Nexos API -> Supabase Auth` foi removido das superficies de organizacao.
+- JWT access inclui `sub`, `tenantId`, `membershipId`, `roleId`, `roleKey`, `platformRole` e `typ`.
+- `JwtAuthGuard` converte token ausente, invalido ou malformado em `401`.
+- `PermissionsGuard` recalcula membership ativa e permissoes no banco antes de liberar a rota.
+
+Modelo:
+
+```text
+User global
+  -> TenantMembership ativa
+  -> Role tenant-scoped
+  -> RolePermission
+  -> Permission catalogada
+```
+
+`PlatformRole.ADMIN` e separado de `tenant_admin`. Um Platform Admin nao recebe acesso operacional ao tenant sem uma membership e role de tenant com permissoes explicitas.
+
+## Matriz de permissoes Sprint 02
+
+| Operacao | Platform Admin | Tenant Admin | Supervisor | Agent |
+| --- | ---: | ---: | ---: | ---: |
+| Ver usuarios | Nao automatico | Sim | Sim | Nao |
+| Criar/editar/desativar usuario | Nao automatico | Sim | Nao | Nao |
+| Ver departamentos | Nao automatico | Sim | Sim | Sim |
+| Criar/editar/desativar departamento | Nao automatico | Sim | Sim | Nao |
+| Associar usuario a departamento | Nao automatico | Sim | Sim | Nao |
+| Ver roles/perfis | Nao automatico | Sim | Sim | Nao |
+| Gerenciar roles/perfis | Nao automatico | Sim | Nao | Nao |
+| Permissoes de chat | Nao automatico | Todas | Operacionais | Operacionais limitadas |
+
+## Supabase residual de auth
+
+REMOVIDO das superficies migradas:
+
+- `src/lib/session.ts`
+- `src/lib/perms.ts`
+- `src/routes/login.tsx`
+- `src/routes/__root.tsx`
+- `src/routes/departamentos.tsx`
+- `src/routes/atendentes.tsx`
+- `src/routes/perfis.tsx`
+- `src/routes/configuracoes.usuarios.tsx`
+- `src/routes/configuracoes.permissoes.tsx`
+
+AINDA LEGADO:
+
+- `src/start.ts` ainda anexa sessao Supabase para server functions legadas.
+- `src/lib/mvp.ts`, inbox, chamados, instancias, simulador, historico e filtros de relatorio ainda usam Supabase para fluxos operacionais nao migrados.
+- `ensureDemoUsers` permanece protegido por `ALLOW_DEMO_USER_PROVISIONING=true` e nao e chamado pelo login.

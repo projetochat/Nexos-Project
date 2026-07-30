@@ -63,3 +63,24 @@ O backend fica em `backend/src`:
 - `users`: endpoint `/api/me`.
 - `tenant-records`: rota protegida de prova de isolamento.
 - `prisma`: modulo global e service Prisma.
+
+## Sprint 02 - Componentes e Servicos Migrados
+
+Frontend:
+
+- `src/lib/nexos-api.ts`: cliente de auth, users, departments, roles e permissions.
+- `src/lib/session.ts`: sessao hidratada pela Nexos API.
+- `src/lib/perms.ts`: permissoes de chat derivadas das permission keys do backend.
+- `src/routes/departamentos.tsx`: CRUD real de departments.
+- `src/routes/atendentes.tsx`: users/memberships reais.
+- `src/routes/perfis.tsx`: roles/perfis reais.
+- `src/routes/configuracoes.usuarios.tsx`: lista users reais.
+- `src/routes/configuracoes.permissoes.tsx`: lista roles/permissoes reais.
+
+Backend:
+
+- `auth/permissions.*`: catalogo, decorator e guard.
+- `departments`: controller, DTOs e modulo.
+- `roles`: controller, DTOs e modulo.
+- `users/dto`: DTOs de create/update user.
+- `tenant-records` removido por ser artefato de teste da Sprint 01.

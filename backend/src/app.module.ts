@@ -1,9 +1,10 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { AuthModule } from "./auth/auth.module";
+import { DepartmentsModule } from "./departments/departments.module";
 import { HealthModule } from "./health/health.module";
 import { PrismaModule } from "./prisma/prisma.module";
-import { TenantRecordsModule } from "./tenant-records/tenant-records.module";
+import { RolesModule } from "./roles/roles.module";
 import { UsersModule } from "./users/users.module";
 
 @Module({
@@ -12,8 +13,9 @@ import { UsersModule } from "./users/users.module";
     PrismaModule,
     AuthModule,
     UsersModule,
+    DepartmentsModule,
+    RolesModule,
     HealthModule,
-    TenantRecordsModule,
   ],
 })
 export class AppModule {}

@@ -96,3 +96,34 @@ Decisoes:
 - Supabase Auth permanece como legado temporario do MVP ate os fluxos operacionais serem migrados.
 - `routeTree.gen.ts` deve manter o footer gerado pelo TanStack Start com o registro de `@tanstack/react-start`; sem esse footer, o manifest recebe `routeTreeRoutes` indefinido.
 - O gate de regressao oficial e `bun run verify`.
+
+## Sprint 02 - Organizacao e RBAC
+
+A primeira camada real de dominio SaaS foi migrada para NestJS/PostgreSQL/Prisma:
+
+```text
+React/TanStack
+  -> Nexos API
+  -> JwtAuthGuard
+  -> PermissionsGuard
+  -> TenantMembership
+  -> RolePermission
+  -> Users / Departments / Roles
+  -> Prisma
+  -> PostgreSQL
+```
+
+Fronteiras novas:
+
+- `backend/src/departments`: departamentos reais tenant-owned.
+- `backend/src/roles`: perfis de acesso e permission catalog.
+- `backend/src/users`: users/memberships com associacao de roles e departments.
+- `backend/src/auth/permissions.guard.ts`: autorizacao server-side por permission.
+
+Decisoes:
+
+- Roles sao tenant-scoped.
+- Permissions sao catalogo global controlado pelo backend.
+- Platform Admin e separado de Tenant Admin.
+- `ProtectedRecord` foi removido do dominio de producao.
+- As superficies `/login`, `/departamentos`, `/atendentes`, `/perfis`, `/configuracoes/usuarios` e `/configuracoes/permissoes` nao dependem mais de Supabase.

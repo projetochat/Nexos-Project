@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService, type JwtSignOptions } from "@nestjs/jwt";
 import { compare } from "bcryptjs";
@@ -9,15 +9,25 @@ import { LoginDto } from "./dto/login.dto";
 @Injectable()
 export class AuthService {
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(JwtService)
     private readonly jwt: JwtService,
+    @Inject(ConfigService)
     private readonly config: ConfigService,
   ) {}
 
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase().trim() },
-      include: { memberships: { include: { tenant: true } } },
+      include: {
+        memberships: {
+          include: {
+            tenant: true,
+            role: { include: { permissions: { select: { permissionId: true } } } },
+          },
+        },
+      },
     });
     if (!user || user.status !== "ACTIVE")
       throw new UnauthorizedException("Credenciais invalidas.");
@@ -26,15 +36,20 @@ export class AuthService {
     if (!validPassword) throw new UnauthorizedException("Credenciais invalidas.");
 
     const membership = dto.tenantSlug
-      ? user.memberships.find((item) => item.tenant.slug === dto.tenantSlug)
-      : user.memberships[0];
+      ? user.memberships.find(
+          (item) => item.tenant.slug === dto.tenantSlug && item.status === "ACTIVE",
+        )
+      : user.memberships.find((item) => item.status === "ACTIVE");
     if (!membership) throw new UnauthorizedException("Tenant nao autorizado para este usuario.");
+    const permissions = membership.role.permissions.map((item) => item.permissionId);
 
     const basePayload = {
       sub: user.id,
       tenantId: membership.tenantId,
       membershipId: membership.id,
-      role: membership.role,
+      roleId: membership.roleId,
+      roleKey: membership.role.key,
+      platformRole: user.platformRole,
     };
 
     return {
@@ -48,13 +63,16 @@ export class AuthService {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: membership.role,
+        roleId: membership.roleId,
+        roleKey: membership.role.key,
+        platformRole: user.platformRole,
       },
       tenant: {
         id: membership.tenant.id,
         slug: membership.tenant.slug,
         name: membership.tenant.name,
       },
+      permissions,
     };
   }
 
@@ -64,9 +82,9 @@ export class AuthService {
 
     const membership = await this.prisma.tenantMembership.findUnique({
       where: { id: payload.membershipId },
-      include: { user: true, tenant: true },
+      include: { user: true, tenant: true, role: true },
     });
-    if (!membership || membership.user.status !== "ACTIVE") {
+    if (!membership || membership.status !== "ACTIVE" || membership.user.status !== "ACTIVE") {
       throw new UnauthorizedException("Sessao expirada.");
     }
 
@@ -76,7 +94,9 @@ export class AuthService {
           sub: membership.userId,
           tenantId: membership.tenantId,
           membershipId: membership.id,
-          role: membership.role,
+          roleId: membership.roleId,
+          roleKey: membership.role.key,
+          platformRole: membership.user.platformRole,
           typ: "access",
         },
         "JWT_SECRET",

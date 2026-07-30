@@ -52,3 +52,18 @@ Entregue:
 - smoke HTTP das principais rotas.
 
 Com o gate aprovado, a Sprint 02 pode iniciar com foco em Organizacao + Users + Departments + RBAC, sem implementar essa etapa dentro da Sprint 01.1.
+
+## Sprint 02 concluida
+
+Entregue:
+
+- camada organizacional NestJS/PostgreSQL/Prisma;
+- users, memberships, departments, department memberships, roles e permissions;
+- RBAC server-side por permission;
+- Platform Admin separado de Tenant Admin;
+- telas administrativas migradas para Nexos API;
+- Supabase removido das superficies migradas.
+
+Proxima sprint:
+
+- Sprint 03 - Contacts / CRM.

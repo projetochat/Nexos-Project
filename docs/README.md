@@ -212,3 +212,38 @@ bun run verify
 - security/XSS tests.
 
 O lint usa baseline legado: erros antigos ficam registrados em `scripts/eslint-baseline.json`, mas novas mensagens por arquivo/regra fazem o gate falhar.
+
+## Atualizacao Sprint 02
+
+Camada organizacional real implementada no backend NestJS:
+
+- Users e TenantMemberships.
+- Departments e DepartmentMemberships.
+- Roles tenant-scoped.
+- Permission catalog + RolePermission.
+- Platform Admin separado de Tenant Admin.
+- RBAC server-side com `@RequirePermissions`.
+
+Validacao local:
+
+```powershell
+cd "C:\Users\Rabel\Downloads\Nexos Project"
+$env:BUN_INSTALL="$env:USERPROFILE\.bun"
+$env:PATH="$env:BUN_INSTALL\bin;$env:PATH"
+$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public"
+
+docker compose up -d postgres
+bun run backend:prisma:generate
+bun --cwd backend prisma migrate deploy --schema prisma/schema.prisma
+bun run backend:prisma:seed
+bun run verify
+```
+
+Credenciais demo:
+
+- `admin@nexo.app` / `demo1234` tenant `acme` (`tenant_admin`)
+- `supervisor@nexo.app` / `demo1234` tenant `acme`
+- `atendente@nexo.app` / `demo1234` tenant `acme`
+- `admin-orbit@nexo.app` / `demo1234` tenant `orbit`
+- `agent-orbit@nexo.app` / `demo1234` tenant `orbit`
+- `platform@nexo.app` / `demo1234` tenant `acme` (`PlatformRole.ADMIN`, role de tenant `agent`)

@@ -11,7 +11,6 @@ import {
   currentRoleHome,
   type Role,
 } from "@/lib/session";
-import { loginWithNexosApi } from "@/lib/nexos-api";
 import { useTheme } from "@/components/theme-provider";
 
 export const Route = createFileRoute("/login")({
@@ -59,15 +58,8 @@ function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      let u = null;
-      try {
-        u = await loginWithNexosApi(email, password);
-        useSession.getState().loginAs(u);
-      } catch (apiError) {
-        console.warn("nexos api login fallback", apiError);
-        await signIn(email, password);
-        u = useSession.getState().user;
-      }
+      await signIn(email, password);
+      const u = useSession.getState().user;
       const role: Role = u?.role ?? "operator";
       toast.success(`Bem-vindo(a), ${u?.nome ?? ""}`);
       navigate({ to: currentRoleHome(role) as never });

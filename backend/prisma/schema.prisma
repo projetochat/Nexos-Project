@@ -13,21 +13,26 @@ enum UserStatus {
   DISABLED
 }
 
-enum Role {
-  SUPER_ADMIN
+enum MembershipStatus {
+  ACTIVE
+  DISABLED
+  INVITED
+}
+
+enum PlatformRole {
+  USER
   ADMIN
-  SUPERVISOR
-  OPERATOR
 }
 
 model Tenant {
-  id        String             @id @default(uuid())
-  name      String
-  slug      String             @unique
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
-  users     TenantMembership[]
-  records   ProtectedRecord[]
+  id          String             @id @default(uuid())
+  name        String
+  slug        String             @unique
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  users       TenantMembership[]
+  departments Department[]
+  roles       Role[]
 
   @@map("tenants")
 }
@@ -38,38 +43,108 @@ model User {
   name         String
   passwordHash String
   status       UserStatus         @default(ACTIVE)
+  platformRole PlatformRole       @default(USER)
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   memberships  TenantMembership[]
 
+  @@index([status])
+  @@index([platformRole])
   @@map("users")
 }
 
 model TenantMembership {
-  id        String   @id @default(uuid())
-  tenantId  String
-  userId    String
-  role      Role
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String                 @id @default(uuid())
+  tenantId    String
+  userId      String
+  roleId      String
+  status      MembershipStatus       @default(ACTIVE)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        Role                   @relation(fields: [tenantId, roleId], references: [tenantId, id])
+  departments DepartmentMembership[]
 
   @@unique([tenantId, userId])
+  @@unique([tenantId, id])
   @@index([userId])
+  @@index([roleId])
+  @@index([status])
   @@map("tenant_memberships")
 }
 
-model ProtectedRecord {
-  id        String   @id @default(uuid())
-  tenantId  String
-  title     String
-  body      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+model Department {
+  id          String                 @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  color       String                 @default("#6366f1")
+  active      Boolean                @default(true)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members     DepartmentMembership[]
 
+  @@unique([tenantId, name])
+  @@unique([tenantId, id])
   @@index([tenantId])
-  @@map("protected_records")
+  @@index([active])
+  @@map("departments")
 }
 
+model DepartmentMembership {
+  id           String           @id @default(uuid())
+  tenantId     String
+  departmentId String
+  membershipId String
+  createdAt    DateTime         @default(now())
+  department   Department       @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Cascade)
+  membership   TenantMembership @relation(fields: [tenantId, membershipId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([departmentId, membershipId])
+  @@index([tenantId])
+  @@index([departmentId])
+  @@index([membershipId])
+  @@map("department_memberships")
+}
+
+model Role {
+  id          String             @id @default(uuid())
+  tenantId    String
+  key         String
+  name        String
+  description String?
+  metadata    Json?
+  system      Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships TenantMembership[]
+  permissions RolePermission[]
+
+  @@unique([tenantId, key])
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id
+  description String
+  createdAt   DateTime         @default(now())
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}

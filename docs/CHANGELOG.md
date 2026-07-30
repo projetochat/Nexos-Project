@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-29 - Sprint 02 organization, users, departments & RBAC
+
+- Criada migration Prisma da camada organizacional.
+- Removido `ProtectedRecord` do dominio de producao.
+- Implementados Departments, DepartmentMemberships, Roles, Permissions e RolePermissions.
+- Evoluido User/TenantMembership com `platformRole`, `membershipStatus` e role tenant-scoped.
+- Criado `@RequirePermissions` + `PermissionsGuard` para RBAC server-side.
+- Implementadas APIs reais de users, departments, roles e permissions.
+- Atualizado seed com Tenant A/B, roles, permissions, departamentos e usuarios demo.
+- Migradas telas `/login`, `/departamentos`, `/atendentes`, `/perfis`, `/configuracoes/usuarios` e `/configuracoes/permissoes` para Nexos API.
+- Removido Supabase Auth das superficies migradas.
+- Adicionados testes e2e de auth denial, permission denial, tenant isolation, department isolation, role isolation e Platform Admin separado.
+
 ## 2026-07-29 - Sprint 01.1 frontend baseline
 
 - Estabilizado build frontend TanStack/Lovable no Windows.

@@ -71,3 +71,32 @@ Contexto autenticado novo:
 Bearer token -> GET /api/me -> usuario + tenant + permissoes
 Bearer token -> GET /api/tenant-records/:id -> retorno apenas se tenantId coincidir
 ```
+
+Fluxos Sprint 02:
+
+```text
+Login -> POST /api/auth/login -> tokens Nexos -> useSession -> GET /api/me -> permissoes
+```
+
+```text
+/departamentos -> GET /api/departments -> criar/editar/desativar via Nexos API
+```
+
+```text
+/atendentes -> GET /api/users + /api/roles + /api/departments
+  -> criar/editar/desativar membership do tenant
+```
+
+```text
+/perfis -> GET /api/roles -> criar/editar/remover roles customizadas
+  -> permissionIds validadas pelo backend
+```
+
+Rotas atualizadas na matriz:
+
+- `/login`: Nexos API.
+- `/perfis`: Nexos API.
+- `/atendentes`: Nexos API.
+- `/departamentos`: Nexos API.
+- `/configuracoes/usuarios`: Nexos API.
+- `/configuracoes/permissoes`: Nexos API.

@@ -79,3 +79,13 @@ Sprint 01 adicionou testes automatizados para o backend e sanitizacao XSS. Para 
 - `bun run lint:raw` mostra o ESLint completo e continua retornando erro enquanto houver divida legada.
 - Prisma Client gerado (`backend/src/generated/prisma/**`) fica fora do ESLint por ser artefato gerado.
 - A reducao gradual da divida deve acontecer em sprints dedicadas ou junto de mudancas pequenas e rastreaveis.
+
+## Backend Sprint 02
+
+- Funcionalidade nova nao deve importar Supabase.
+- Endpoints novos devem usar `JwtAuthGuard` e, para acoes sensiveis, `PermissionsGuard`.
+- Use `@RequirePermissions(...)` em vez de checagens espalhadas de role.
+- Nunca aceite `tenantId` livre do cliente como escopo operacional.
+- Roles de tenant devem ser consultadas por `[tenantId, roleId]`.
+- Associations de departamento devem preservar consistencia por tenant.
+- Permission keys novas devem entrar no catalogo controlado em `backend/src/auth/permissions.constants.ts`.

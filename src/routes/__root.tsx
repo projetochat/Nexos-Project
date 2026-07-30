@@ -137,14 +137,6 @@ function SessionHydrator() {
     import("@/lib/session").then(({ hydrateSession }) => {
       if (!cancelled) hydrateSession();
     });
-    import("@/integrations/supabase/client").then(({ supabase }) => {
-      const { data } = supabase.auth.onAuthStateChange((event) => {
-        if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
-          import("@/lib/session").then(({ hydrateSession }) => hydrateSession());
-        }
-      });
-      if (cancelled) data.subscription.unsubscribe();
-    });
     return () => {
       cancelled = true;
     };
@@ -166,8 +158,7 @@ function RootComponent() {
           closeButton
           toastOptions={{
             classNames: {
-              toast:
-                "!bg-card !text-foreground !border !border-border !shadow-elevated",
+              toast: "!bg-card !text-foreground !border !border-border !shadow-elevated",
             },
           }}
         />

@@ -108,3 +108,29 @@ Observacoes:
 - O footer de `@tanstack/react-start` no route tree e necessario para o manifest.
 - `bun run build` foi executado duas vezes em sequencia com sucesso.
 - A limpeza de artefatos gerados pode ser feita localmente quando necessario, mas nao e requisito do build validado.
+
+## Operacao Local Sprint 02
+
+Banco definitivo do recorte organizacional:
+
+```powershell
+cd "C:\Users\Rabel\Downloads\Nexos Project"
+$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public"
+docker compose up -d postgres
+bun run backend:prisma:generate
+bun --cwd backend prisma migrate deploy --schema prisma/schema.prisma
+bun run backend:prisma:seed
+```
+
+Verificacao:
+
+```powershell
+bun run verify
+```
+
+Observacoes:
+
+- Migrations Prisma ficam em `backend/prisma/migrations`.
+- Migrations Supabase permanecem apenas para o legado MVP ainda nao migrado.
+- `DATABASE_URL`, `JWT_SECRET` e `JWT_REFRESH_SECRET` sao obrigatorias para backend fora do `verify`.
+- O frontend usa `VITE_NEXOS_API_URL` quando definido; padrao local: `http://localhost:3001/api`.

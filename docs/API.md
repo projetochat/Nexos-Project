@@ -68,3 +68,39 @@ Exemplo de login:
 ```
 
 O token JWT inclui `sub`, `tenantId`, `membershipId`, `role` e `typ`. O tenant efetivo e selecionado a partir da membership persistida, nao confiado como escopo livre do cliente.
+
+## Sprint 02 - APIs organizacionais
+
+Base local: `http://localhost:3001/api`.
+
+Todas as rotas abaixo usam `Authorization: Bearer <accessToken>` e derivam `tenantId` da membership do JWT. `tenantId` livre enviado pelo cliente nao e aceito como escopo.
+
+| Metodo | Endpoint | Permission | Descricao |
+| --- | --- | --- | --- |
+| `GET` | `/me` | JWT | Usuario, tenant, departamentos e permissoes atuais |
+| `GET` | `/users` | `users.read` | Lista memberships do tenant |
+| `GET` | `/users/:id` | `users.read` | Consulta membership do tenant |
+| `POST` | `/users` | `users.manage` | Cria usuario global ou adiciona membership ao tenant |
+| `PATCH` | `/users/:id` | `users.manage` | Edita usuario, role, status e departamentos |
+| `PATCH` | `/users/:id/activate` | `users.manage` | Ativa membership |
+| `PATCH` | `/users/:id/deactivate` | `users.manage` | Desativa membership |
+| `GET` | `/departments` | `departments.read` | Lista departamentos do tenant |
+| `GET` | `/departments/:id` | `departments.read` | Consulta departamento do tenant |
+| `POST` | `/departments` | `departments.manage` | Cria departamento |
+| `PATCH` | `/departments/:id` | `departments.manage` | Edita departamento |
+| `DELETE` | `/departments/:id` | `departments.manage` | Desativa departamento |
+| `POST` | `/departments/:id/members` | `departments.manage` | Associa membership ao departamento |
+| `DELETE` | `/departments/:id/members/:membershipId` | `departments.manage` | Remove associacao |
+| `GET` | `/permissions` | `roles.read` | Lista catalogo de permission keys |
+| `GET` | `/roles` | `roles.read` | Lista perfis de acesso do tenant |
+| `GET` | `/roles/:id` | `roles.read` | Consulta perfil |
+| `POST` | `/roles` | `roles.manage` | Cria perfil com permission keys validas |
+| `PATCH` | `/roles/:id` | `roles.manage` | Edita perfil e permissoes |
+| `DELETE` | `/roles/:id` | `roles.manage` | Remove perfil customizado nao usado |
+
+Erros principais:
+
+- `401`: token ausente/invalido, membership inativa ou usuario desativado.
+- `403`: permission ausente.
+- `400`: DTO invalido, role/permission/departamento inexistente no tenant.
+- `404`: recurso de outro tenant ou inexistente.
