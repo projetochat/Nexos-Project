@@ -94,3 +94,18 @@ Somente regras comprovadas no codigo.
 - Mensagens de grupos (`@g.us`) continuam fora de escopo e sao ignoradas pelo translator inbound.
 - Webhook inbound deve responder rapido e usar idempotencia por message id.
 - Historico anterior a conexao WhatsApp nao e importado nesta etapa.
+
+# Sprint 08 - Regras de fila e envio
+
+- HTTP nunca chama provider diretamente para outbound.
+- Message outbound nasce `QUEUED`.
+- Message e OutboxEvent sao persistidos na mesma transacao.
+- Redis nao e fonte da verdade; jobs podem ser reconstruidos a partir do PostgreSQL.
+- Worker nao conhece Evolution diretamente; envio passa pelo `MessagingProviderRegistry`.
+- Development Provider nao e fallback silencioso.
+- Mensagens `SENT`, `DELIVERED` e `READ` nao sao reenviadas por job duplicado.
+- Mensagens `SENDING` antigas nao sao reenviadas automaticamente; exigem reconciliacao ou regra explicita futura.
+- Mensagens da mesma Conversation respeitam predecessor guard: posterior aguarda anterior sair de `QUEUED`/`SENDING`.
+- Conversas diferentes podem ser processadas em paralelo.
+- Erros retryable usam BullMQ attempts/backoff; erros terminais marcam `FAILED`.
+- Logs nao devem conter corpo da mensagem, telefone completo, QR, API key, JWT ou secrets.

@@ -119,6 +119,34 @@ Migration:
 
 Entidades finais do recorte:
 
+## Sprint 08 - Outbox e lifecycle assincrono
+
+Migration:
+
+- `backend/prisma/migrations/20260803080000_redis_bullmq_outbox/migration.sql`
+
+Alteracoes:
+
+- `MessageStatus` ganhou `QUEUED`.
+- `Message` ganhou `sendAttempts` e `lastAttemptAt`.
+- Nova entidade `OutboxEvent`.
+
+`OutboxEvent`:
+
+- `tenantId`, `type`, `aggregateId` e `payload` guardam a intencao minima.
+- `status`: `PENDING`, `PROCESSING`, `PROCESSED`, `FAILED`.
+- `attempts`, `processingAt`, `processedAt` e `lastError` sustentam auditoria e recovery.
+- Unique `[tenantId, type, aggregateId]` evita duplicar outbox para a mesma Message.
+
+Fluxo transacional:
+
+```text
+Message OUTBOUND QUEUED
++ OutboxEvent PENDING
+```
+
+ambos na mesma transacao. Se Redis cair, a Message e o OutboxEvent continuam recuperaveis no PostgreSQL.
+
 - `Customer`: cliente tenant-owned, com `name`, `email`, `phone`, `notes`, `responsibleContactName`, `color` e `archivedAt`.
 - `Contact`: contato tenant-owned, com `name`, `phone`, `normalizedPhone`, `email`, `customerId`, `departmentId`, `departmentName`, `companyRole`, `instance`, `avatarUrl` e `archivedAt`.
 - `Tag`: etiqueta tenant-owned.

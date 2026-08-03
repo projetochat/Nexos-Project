@@ -217,3 +217,7 @@ Connections usam RBAC proprio:
 - `connections.manage`: criar instancia Evolution, solicitar QR e desconectar.
 
 O webhook `/api/webhooks/evolution` e publico para usuarios Nexos, mas autenticado por JWT assinado com `EVOLUTION_WEBHOOK_SECRET`. Tokens de usuario nao sao aceitos nessa rota; o token precisa carregar `app=evolution` e `action=webhook`.
+
+# Sprint 08
+
+Jobs BullMQ nao carregam JWT. O worker deve resolver Message, Conversation e Connection por `tenantId + messageId` persistidos e nunca confiar em escopo vindo do Redis alem desse identificador minimo.

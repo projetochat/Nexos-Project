@@ -20,6 +20,7 @@ const gates = bunAvailable
       ["frontend:build", bun(), ["run", "build"]],
       ["backend:build", bun(), ["run", "backend:build"]],
       ["backend:test", bun(), ["run", "backend:test"]],
+      ["redis:queue-smoke", bun(), ["backend/scripts/verify-redis-queue.mjs"]],
       ["security:xss", bun(), ["run", "test:security"]],
     ]
   : [
@@ -29,6 +30,7 @@ const gates = bunAvailable
       ["backend:build:tsc", backendBin("tsc"), ["-p", "backend/tsconfig.build.json"]],
       ["backend:build:copy-prisma", process.execPath, ["backend/scripts/copy-prisma-client.mjs"]],
       ["backend:test", backendBin("vitest"), ["run"], { cwd: resolve(root, "backend") }],
+      ["redis:queue-smoke", process.execPath, ["backend/scripts/verify-redis-queue.mjs"]],
       [
         "security:xss",
         bin("vitest"),

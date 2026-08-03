@@ -5,11 +5,12 @@ import { MessageStatusEvent } from "./messaging.contracts";
 
 const STATUS_RANK: Record<MessageStatus, number> = {
   CREATED: 0,
-  SENDING: 1,
-  SENT: 2,
-  FAILED: 2,
-  DELIVERED: 3,
-  READ: 4,
+  QUEUED: 1,
+  SENDING: 2,
+  SENT: 3,
+  FAILED: 3,
+  DELIVERED: 4,
+  READ: 5,
 };
 
 @Injectable()

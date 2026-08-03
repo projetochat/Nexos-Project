@@ -114,3 +114,13 @@ Na Inbox, o envio textual permanece no mesmo composer. Quando a conversa esta li
 ## Sprint 07.01 - Instancias reais
 
 `/instancias` mostra apenas connections Evolution. Connections Development seedadas nao aparecem como canal operacional. A tela permite status, QR, desconexao e remocao. Se a instance foi removida na Evolution mas ainda existe no Nexos, o usuario recebe diagnostico de instance ausente e pode remover a connection local.
+
+# Sprint 08 - Nova conversa e outbound assincrono
+
+Fluxo preservado:
+
+```text
+Inbox -> Nova conversa -> Contact -> Connection WhatsApp conectada -> Message
+```
+
+A primeira mensagem aparece como `queued` apos o HTTP persistir Message + OutboxEvent. O polling existente atualiza a UI para `sending`, `sent` ou `failed` conforme o worker processa o job.

@@ -551,10 +551,24 @@ function MessageBubble({
           className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
         >
           {fmtHM(new Date(m.created_at).getTime())}
+          {mine && <span className="ml-2">{messageStatusLabel(m.status)}</span>}
         </p>
       </div>
     </div>
   );
+}
+
+function messageStatusLabel(status: Message["status"]) {
+  const labels: Record<Message["status"], string> = {
+    created: "criada",
+    queued: "fila",
+    sending: "enviando",
+    sent: "enviada",
+    failed: "falhou",
+    delivered: "entregue",
+    read: "lida",
+  };
+  return labels[status];
 }
 
 function AudioPlayer({

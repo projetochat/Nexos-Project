@@ -112,3 +112,11 @@ Entregue:
 Proxima sprint:
 
 - Sprint 03 - Contacts / CRM.
+
+# Sprint 08
+
+Status: implementada localmente com Redis + BullMQ + Transactional Outbox.
+
+Proximo bloco planejado apos gate fisico completo:
+
+- Sprint 09: Socket.io/realtime operacional.

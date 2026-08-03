@@ -88,3 +88,16 @@ Backend:
 ## Sprint 06 - Frontend components
 
 Nao houve redesign da Inbox. Componentes existentes continuam consumindo `messageApi.sendText`; o tipo de status do cliente foi ampliado para aceitar `sending`, `sent`, `failed`, `delivered` e `read`, preservando compatibilidade visual.
+
+# Sprint 08 - Status de mensagem
+
+As bolhas outbound exibem um texto curto para o status operacional:
+
+- `fila`
+- `enviando`
+- `enviada`
+- `falhou`
+- `entregue`
+- `lida`
+
+Polling existente continua responsavel pela atualizacao visual.

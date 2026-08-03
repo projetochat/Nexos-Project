@@ -180,3 +180,36 @@ Observacoes:
 - Migrations Supabase permanecem apenas para o legado MVP ainda nao migrado.
 - `DATABASE_URL`, `JWT_SECRET` e `JWT_REFRESH_SECRET` sao obrigatorias para backend fora do `verify`.
 - O frontend usa `VITE_NEXOS_API_URL` quando definido; padrao local: `http://localhost:3001/api`.
+
+# Sprint 08 - Redis Nexos e worker outbound
+
+Servico local:
+
+```text
+nexos-redis = Redis/BullMQ do Nexos
+evolution-redis = infraestrutura interna da Evolution
+```
+
+Variaveis:
+
+```text
+REDIS_URL=redis://localhost:6379
+NEXOS_QUEUE_ENABLED=true
+NEXOS_QUEUE_WORKER_ENABLED=true
+NEXOS_OUTBOUND_WORKER_CONCURRENCY=5
+NEXOS_OUTBOX_POLL_INTERVAL_MS=1000
+```
+
+Producao:
+
+- usar Redis gerenciado ou privado;
+- exigir auth/TLS quando exposto fora da rede privada;
+- nao reutilizar Redis da Evolution;
+- monitorar `/api/health` para `database` e `redis`;
+- garantir shutdown limpo de worker, queue, poller e clientes Redis.
+
+Smoke local:
+
+```bash
+bun backend/scripts/verify-redis-queue.mjs
+```

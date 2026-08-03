@@ -19,6 +19,11 @@ import {
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { SendMessageDto } from "../conversations/dto/send-message.dto";
+import {
+  OUTBOX_MESSAGING_OUTBOUND_REQUESTED,
+  type MessagingOutboundJob,
+} from "../queue/messaging-outbound.queue";
+import { OutboxDispatcherService } from "../queue/outbox-dispatcher.service";
 import { MessagingProviderRegistry } from "./messaging-provider.registry";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 
@@ -30,20 +35,22 @@ const messageInclude = {
   },
 } satisfies Prisma.MessageInclude;
 
+const dispatchInclude = {
+  conversation: {
+    include: {
+      contact: true,
+      connection: true,
+    },
+  },
+} satisfies Prisma.MessageInclude;
+
+const DISPATCHABLE_STATUSES = [MessageStatus.CREATED, MessageStatus.QUEUED] as const;
+
 type DbClient = PrismaService | Prisma.TransactionClient;
 type MessageWithRelations = Prisma.MessageGetPayload<{ include: typeof messageInclude }>;
 type PreparedOutbound =
   | { dispatch: false; message: MessageWithRelations }
-  | {
-      dispatch: true;
-      message: MessageWithRelations;
-      connection: {
-        id: string;
-        providerType: MessagingProviderType;
-        status: MessagingConnectionStatus;
-        externalReference: string | null;
-      };
-    };
+  | { dispatch: true; message: MessageWithRelations };
 
 @Injectable()
 export class MessagingOutboundService {
@@ -54,6 +61,8 @@ export class MessagingOutboundService {
     private readonly prisma: PrismaService,
     @Inject(MessagingProviderRegistry)
     private readonly providers: MessagingProviderRegistry,
+    @Inject(OutboxDispatcherService)
+    private readonly outboxDispatcher: OutboxDispatcherService,
   ) {}
 
   async sendText(conversationId: string, dto: SendMessageDto, current: AuthenticatedUser) {
@@ -86,7 +95,7 @@ export class MessagingOutboundService {
           connectionId: connection.id,
           direction: MessageDirection.OUTBOUND,
           type: MessageType.TEXT,
-          status: MessageStatus.SENDING,
+          status: MessageStatus.QUEUED,
           authorMembershipId: current.membershipId,
           content,
           clientMessageId: dto.clientMessageId?.trim() || null,
@@ -94,86 +103,199 @@ export class MessagingOutboundService {
         },
         include: messageInclude,
       });
+      const job: MessagingOutboundJob = { tenantId: current.tenantId, messageId: message.id };
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: current.tenantId,
+          type: OUTBOX_MESSAGING_OUTBOUND_REQUESTED,
+          aggregateId: message.id,
+          payload: job,
+        },
+      });
       await this.updateConversationFromMessage(tx, conversationId, current.tenantId, content, now);
-      return { message, connection, dispatch: true };
+      return { message, dispatch: true };
     });
 
-    if (!prepared.dispatch) return this.serialize(prepared.message);
-
-    const connection = prepared.connection;
-    if (connection.status !== MessagingConnectionStatus.CONNECTED) {
-      const updated = await this.prisma.message.update({
-        where: { id: prepared.message.id },
-        data: {
-          status: MessageStatus.FAILED,
-          providerErrorCode: MessagingErrorCode.PROVIDER_UNAVAILABLE,
-          providerErrorMessage: "Messaging connection is not connected.",
-        },
-        include: messageInclude,
+    if (prepared.dispatch) {
+      void this.outboxDispatcher.dispatchMessage(prepared.message.id).catch((error) => {
+        this.logger.warn({
+          event: "outbox.messaging_outbound.immediate_dispatch_failed",
+          tenantId: prepared.message.tenantId,
+          messageId: prepared.message.id,
+          error: error instanceof Error ? error.message : "Outbox dispatch failed.",
+        });
       });
-      return this.serialize(updated);
+    }
+    return this.serialize(prepared.message);
+  }
+
+  async dispatchQueuedMessage(input: {
+    tenantId: string;
+    messageId: string;
+    attempt: number;
+    finalAttempt: boolean;
+  }) {
+    const message = await this.prisma.message.findFirst({
+      where: { id: input.messageId, tenantId: input.tenantId },
+      include: dispatchInclude,
+    });
+    if (!message) {
+      throw new OutboundDispatchError(
+        MessagingErrorCode.DELIVERY_REJECTED,
+        "Message not found for outbound dispatch.",
+        false,
+      );
+    }
+    if (message.direction !== MessageDirection.OUTBOUND || message.type !== MessageType.TEXT) {
+      await this.failMessage(message.id, input.tenantId, {
+        code: MessagingErrorCode.UNSUPPORTED_MESSAGE_TYPE,
+        message: "Invalid message type for outbound dispatch.",
+      });
+      throw new OutboundDispatchError(
+        MessagingErrorCode.UNSUPPORTED_MESSAGE_TYPE,
+        "Invalid message type for outbound dispatch.",
+        false,
+      );
+    }
+    if (
+      message.status === MessageStatus.SENT ||
+      message.status === MessageStatus.DELIVERED ||
+      message.status === MessageStatus.READ
+    ) {
+      return { skipped: true, status: message.status };
+    }
+    if (message.status === MessageStatus.SENDING) {
+      return { skipped: true, status: message.status };
+    }
+    if (message.status === MessageStatus.FAILED) {
+      throw new OutboundDispatchError(
+        MessagingErrorCode.DELIVERY_REJECTED,
+        "Message is already failed and needs an explicit retry rule.",
+        false,
+      );
+    }
+
+    const connection = message.conversation.connection;
+    if (!connection || connection.id !== message.connectionId) {
+      await this.failMessage(message.id, input.tenantId, {
+        code: MessagingErrorCode.PROVIDER_UNAVAILABLE,
+        message: "Messaging connection not found for outbound dispatch.",
+      });
+      throw new OutboundDispatchError(
+        MessagingErrorCode.PROVIDER_UNAVAILABLE,
+        "Messaging connection not found for outbound dispatch.",
+        false,
+      );
+    }
+    if (connection.status !== MessagingConnectionStatus.CONNECTED) {
+      await this.failMessage(message.id, input.tenantId, {
+        code: MessagingErrorCode.PROVIDER_UNAVAILABLE,
+        message: "Messaging connection is not connected.",
+      });
+      throw new OutboundDispatchError(
+        MessagingErrorCode.PROVIDER_UNAVAILABLE,
+        "Messaging connection is not connected.",
+        false,
+      );
+    }
+
+    const predecessor = await this.findPendingPredecessor(message);
+    if (predecessor) {
+      throw new OutboundDispatchError(
+        MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+        "Conversation predecessor is still pending.",
+        true,
+      );
+    }
+
+    const claim = await this.prisma.message.updateMany({
+      where: {
+        id: message.id,
+        tenantId: input.tenantId,
+        status: { in: [...DISPATCHABLE_STATUSES] },
+      },
+      data: {
+        status: MessageStatus.SENDING,
+        sendAttempts: { increment: 1 },
+        lastAttemptAt: new Date(),
+      },
+    });
+    if (claim.count !== 1) {
+      const current = await this.prisma.message.findFirst({
+        where: { id: message.id, tenantId: input.tenantId },
+        select: { status: true },
+      });
+      return { skipped: true, status: current?.status ?? message.status };
     }
 
     const provider = this.providers.resolve(connection.providerType);
-    this.providers.assertSupports(provider, MessageType.TEXT);
+    this.providers.assertSupports(provider, message.type);
 
     try {
       const result = await provider.send({
-        tenantId: current.tenantId,
-        conversationId,
-        messageId: prepared.message.id,
+        tenantId: input.tenantId,
+        conversationId: message.conversationId,
+        messageId: message.id,
         connectionId: connection.id,
         providerConnectionRef: connection.externalReference,
         providerType: connection.providerType,
         recipient: {
-          phone: conversation.contact.phone,
-          normalizedPhone: conversation.contact.normalizedPhone,
-          displayName: conversation.contact.name,
+          phone: message.conversation.contact.phone,
+          normalizedPhone: message.conversation.contact.normalizedPhone,
+          displayName: message.conversation.contact.name,
         },
-        content: { type: MessageType.TEXT, text: content },
-        clientMessageId: dto.clientMessageId,
+        content: { type: MessageType.TEXT, text: message.content ?? "" },
+        clientMessageId: message.clientMessageId,
       });
 
       const updated = await this.prisma.message.update({
-        where: { id: prepared.message.id },
+        where: { id: message.id },
         data: {
           status: result.accepted ? MessageStatus.SENT : MessageStatus.FAILED,
           providerMessageId: result.providerMessageId ?? null,
           providerStatus: result.providerStatus ?? null,
           providerAcceptedAt: result.providerTimestamp ?? null,
-          providerErrorCode: null,
-          providerErrorMessage: null,
+          providerErrorCode: result.accepted ? null : MessagingErrorCode.DELIVERY_REJECTED,
+          providerErrorMessage: result.accepted ? null : "Messaging provider rejected dispatch.",
         },
-        include: messageInclude,
       });
       this.logger.log({
         event: "messaging.outbound.sent",
+        tenantId: input.tenantId,
         messageId: updated.id,
-        conversationId,
+        conversationId: message.conversationId,
         connectionId: connection.id,
         providerType: connection.providerType,
+        attempt: input.attempt,
+        result: updated.status,
       });
-      return this.serialize(updated);
+      return { skipped: false, status: updated.status };
     } catch (error) {
       const canonical = canonicalProviderError(error);
-      const updated = await this.prisma.message.update({
-        where: { id: prepared.message.id },
-        data: {
-          status: MessageStatus.FAILED,
-          providerErrorCode: canonical.code,
-          providerErrorMessage: canonical.message,
-        },
-        include: messageInclude,
-      });
+      if (!canonical.retryable || input.finalAttempt) {
+        await this.failMessage(message.id, input.tenantId, canonical);
+      } else {
+        await this.prisma.message.update({
+          where: { id: message.id },
+          data: {
+            status: MessageStatus.QUEUED,
+            providerErrorCode: canonical.code,
+            providerErrorMessage: sanitizeErrorMessage(canonical.message),
+          },
+        });
+      }
       this.logger.warn({
         event: "messaging.outbound.failed",
-        messageId: updated.id,
-        conversationId,
+        tenantId: input.tenantId,
+        messageId: message.id,
+        conversationId: message.conversationId,
         connectionId: connection.id,
         providerType: connection.providerType,
+        attempt: input.attempt,
+        result: input.finalAttempt || !canonical.retryable ? "failed" : "retrying",
         errorCode: canonical.code,
       });
-      return this.serialize(updated);
+      throw new OutboundDispatchError(canonical.code, canonical.message, canonical.retryable);
     }
   }
 
@@ -306,6 +428,43 @@ export class MessagingOutboundService {
     });
   }
 
+  private findPendingPredecessor(message: {
+    id: string;
+    tenantId: string;
+    conversationId: string;
+    createdAt: Date;
+  }) {
+    return this.prisma.message.findFirst({
+      where: {
+        tenantId: message.tenantId,
+        conversationId: message.conversationId,
+        direction: MessageDirection.OUTBOUND,
+        status: { in: [MessageStatus.QUEUED, MessageStatus.SENDING] },
+        OR: [
+          { createdAt: { lt: message.createdAt } },
+          { createdAt: message.createdAt, id: { lt: message.id } },
+        ],
+      },
+      select: { id: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+  }
+
+  private failMessage(
+    messageId: string,
+    tenantId: string,
+    error: { code: MessagingErrorCode | string; message: string },
+  ) {
+    return this.prisma.message.update({
+      where: { id: messageId, tenantId },
+      data: {
+        status: MessageStatus.FAILED,
+        providerErrorCode: error.code,
+        providerErrorMessage: sanitizeErrorMessage(error.message),
+      },
+    });
+  }
+
   private serialize(message: MessageWithRelations) {
     return {
       id: message.id,
@@ -324,6 +483,16 @@ export class MessagingOutboundService {
       media_data: null,
       duration_ms: null,
     };
+  }
+}
+
+export class OutboundDispatchError extends Error {
+  constructor(
+    public readonly code: MessagingErrorCode,
+    message: string,
+    public readonly retryable: boolean,
+  ) {
+    super(message);
   }
 }
 
@@ -359,9 +528,16 @@ function serializeType(type: MessageType) {
 
 function canonicalProviderError(error: unknown) {
   if (error instanceof MessagingProviderError) return error;
+  if (error instanceof OutboundDispatchError) {
+    return new MessagingProviderError(error.code, error.message, error.retryable);
+  }
   return new MessagingProviderError(
     MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
     "Messaging provider failed before accepting the message.",
     true,
   );
+}
+
+function sanitizeErrorMessage(message: string) {
+  return message.replace(/(apikey|api_key|secret|token)=\S+/gi, "$1=[redacted]").slice(0, 500);
 }

@@ -53,11 +53,19 @@ enum MessageType {
 
 enum MessageStatus {
   CREATED
+  QUEUED
   SENDING
   SENT
   FAILED
   DELIVERED
   READ
+}
+
+enum OutboxEventStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
 }
 
 enum MessagingProviderType {
@@ -88,6 +96,7 @@ model Tenant {
   conversations               Conversation[]
   messages                    Message[]
   messagingConnections        MessagingConnection[]
+  outboxEvents                OutboxEvent[]
   conversationProtocolCounter ConversationProtocolCounter?
 
   @@map("tenants")
@@ -353,6 +362,8 @@ model Message {
   providerErrorCode    String?
   providerErrorMessage String?
   providerAcceptedAt   DateTime?
+  sendAttempts         Int                  @default(0)
+  lastAttemptAt        DateTime?
   externalMessageId    String?
   readAt               DateTime?
   createdAt            DateTime             @default(now())
@@ -370,6 +381,27 @@ model Message {
   @@index([tenantId, conversationId, createdAt, id])
   @@index([conversationId])
   @@map("messages")
+}
+
+model OutboxEvent {
+  id           String            @id @default(uuid())
+  tenantId     String
+  type         String
+  aggregateId  String
+  payload      Json
+  status       OutboxEventStatus @default(PENDING)
+  attempts     Int               @default(0)
+  processingAt DateTime?
+  processedAt  DateTime?
+  lastError    String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, type, aggregateId])
+  @@index([status, createdAt])
+  @@index([tenantId, status])
+  @@map("outbox_events")
 }
 
 model MessagingConnection {

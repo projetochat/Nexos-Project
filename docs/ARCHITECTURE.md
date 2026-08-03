@@ -120,6 +120,34 @@ Messages API
   -> Evolution API v2.3.1
 ```
 
+## Sprint 08 - Redis, BullMQ e Transactional Outbox
+
+Outbound textual passa a ser assincrono:
+
+```text
+HTTP Messages API
+  -> PostgreSQL transaction
+     -> Message QUEUED
+     -> OutboxEvent PENDING
+  -> OutboxDispatcher
+  -> BullMQ queue messaging-outbound
+  -> MessagingOutboundWorker
+  -> MessagingOutboundService.dispatchQueuedMessage
+  -> MessagingProviderRegistry
+  -> Provider adapter
+  -> Evolution/Development provider
+```
+
+PostgreSQL continua fonte da verdade. Redis/BullMQ representa execucao transitoria e pode reconstruir jobs a partir de `OutboxEvent` + `Message QUEUED`.
+
+Inbound permanece direto:
+
+```text
+Evolution webhook -> MessagingInboundService -> PostgreSQL
+```
+
+Socket.io, Meta Cloud API, R2, historico retroativo e transferencia avancada permanecem fora do escopo desta sprint.
+
 O provider traduz comandos canonicos para `sendText`, usa `externalReference` da connection como `instanceName` e retorna apenas resultado provider-neutral. Payload bruto da Evolution nao entra no core.
 
 Lifecycle de connection:

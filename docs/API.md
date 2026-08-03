@@ -109,6 +109,36 @@ Erros principais:
 
 Base local validada: `http://localhost:3001/api`.
 
+## Sprint 08 - Envio assincrono
+
+`POST /api/conversations/:conversationId/messages` continua aceitando:
+
+```json
+{
+  "content": "Texto",
+  "clientMessageId": "uuid-opcional"
+}
+```
+
+Resposta esperada apos persistencia:
+
+```json
+{
+  "status": "queued"
+}
+```
+
+O endpoint nao aguarda Evolution nem retorna `sent` no request HTTP. O envio real ocorre no worker BullMQ. Estados visiveis para mensagem outbound:
+
+- `queued`
+- `sending`
+- `sent`
+- `failed`
+- `delivered`
+- `read`
+
+Repetir o mesmo `clientMessageId` preserva idempotencia: uma Message, um OutboxEvent logico e um job deterministico.
+
 Todas as rotas abaixo usam `Authorization: Bearer <accessToken>` e derivam `tenantId` da membership autenticada. O frontend nao envia `tenantId` para escopo.
 
 | Metodo   | Endpoint                      | Permission   | Descricao                                                      |

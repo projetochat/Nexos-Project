@@ -286,3 +286,13 @@ bun run backend:prisma:generate
 bun run backend:prisma:seed
 bun run verify
 ```
+
+# Sprint 08
+
+Para validar a stack assincrona local, suba PostgreSQL e Redis Nexos:
+
+```bash
+docker compose up -d postgres nexos-redis
+```
+
+Use `REDIS_URL=redis://localhost:6379`. O Redis da Evolution (`evolution-redis`) nao deve ser usado pelo BullMQ do Nexos.

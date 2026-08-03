@@ -124,3 +124,14 @@
 - `/instancias` deixa de exibir Development Provider como instancia operacional.
 - Adicionado script `backend/scripts/cleanup-messaging-connections.mjs`.
 - Ampliados testes de webhook registration, payload realista, grupos, lifecycle, orfa e tenant isolation.
+
+# Sprint 08
+
+- Adicionado Redis Nexos separado de `evolution-redis`.
+- Integrado BullMQ com queue `messaging-outbound`.
+- Implementado Transactional Outbox para outbound.
+- `POST /messages` passa a retornar Message `QUEUED`.
+- Worker outbound processa `QUEUED -> SENDING -> SENT/FAILED`.
+- Adicionados retries com backoff exponencial e final failure.
+- Preservados adapter provider-neutral, owner identity Sprint 07.03 e inbound direto.
+- Adicionado smoke real de Redis/BullMQ ao `bun run verify`.

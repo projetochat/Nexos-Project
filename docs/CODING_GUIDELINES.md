@@ -107,3 +107,11 @@ Sprint 01 adicionou testes automatizados para o backend e sanitizacao XSS. Para 
 - Todo webhook novo deve validar autenticidade antes de tocar dados de tenant.
 - Novos eventos Evolution devem ser traduzidos ou ignorados no translator, nunca tratados inline em controllers.
 - Nao registrar secrets, QR payloads completos ou headers sensiveis em logs persistentes.
+
+# Sprint 08 - Queue/outbox
+
+- Payload de job deve conter apenas `{ tenantId, messageId }`.
+- Secrets, QR, telefone completo e corpo de mensagem nao devem ser logados.
+- Worker deve resolver provider pelo registry, sem `if provider === EVOLUTION`.
+- Redis failures devem preservar intencao no PostgreSQL.
+- Novas regras de retry devem diferenciar erro retryable de terminal.
