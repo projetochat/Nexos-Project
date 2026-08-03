@@ -432,6 +432,19 @@ Esperado limpo apos commit final local. Push nao executado.
 
 ```text
 NOT READY TO RESUME PHYSICAL HOMOLOGATION
+
+## Adendo Sprint 08.04 - aprovacao fisica recebida do Product Owner
+
+Estado informado pelo Product Owner em 2026-08-03:
+
+- UI login PASS;
+- F5 PASS;
+- logout PASS;
+- wrong password PASS;
+- API offline PASS.
+
+Este adendo registra a aprovacao fisica recebida para a Sprint 08.03 sem apagar o gate historico original
+do relatorio, que havia ficado NOT READY nesta sessao por indisponibilidade de navegador para validacao UI.
 ```
 
 NOT READY TO RESUME PHYSICAL HOMOLOGATION

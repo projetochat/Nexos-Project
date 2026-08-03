@@ -108,7 +108,7 @@ describe("EvolutionWebhookTranslator", () => {
         },
         connection,
       ),
-    ).toMatchObject({ kind: "ignored", reason: "group_message" });
+    ).toMatchObject({ kind: "ignored", reason: "GROUP_MESSAGE" });
   });
 
   it("normalizes status updates into canonical status events", () => {
@@ -154,6 +154,36 @@ describe("EvolutionWebhookTranslator", () => {
   it("ignores unknown events safely", () => {
     expect(
       translator.translate({ event: "labels.edit", instance: "x", data: {} }, connection),
-    ).toMatchObject({ kind: "ignored", reason: "unknown_event" });
+    ).toMatchObject({ kind: "ignored", reason: "UNSUPPORTED_EVENT" });
+  });
+
+  it("returns canonical ignored reasons for invalid inbound payloads", () => {
+    expect(
+      translator.translate(
+        {
+          event: "MESSAGES_UPSERT",
+          instance: "tenant-support",
+          data: {
+            key: { remoteJid: "5511999999999@s.whatsapp.net", fromMe: true, id: "FROM-ME-1" },
+            message: { conversation: "Outbound echo" },
+          },
+        },
+        connection,
+      ),
+    ).toMatchObject({ kind: "ignored", reason: "FROM_ME" });
+
+    expect(
+      translator.translate(
+        {
+          event: "MESSAGES_UPSERT",
+          instance: "tenant-support",
+          data: {
+            key: { remoteJid: "5511999999999@s.whatsapp.net", fromMe: false },
+            message: { conversation: "Sem id" },
+          },
+        },
+        connection,
+      ),
+    ).toMatchObject({ kind: "ignored", reason: "MISSING_MESSAGE_ID" });
   });
 });

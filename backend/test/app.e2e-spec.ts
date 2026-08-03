@@ -1149,6 +1149,52 @@ describe("Nexos API organization and RBAC", () => {
     ).resolves.toBe(1);
   });
 
+  it("accepts the Evolution webhook jwt_key header configured on the real instance", async () => {
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const connection = await prisma.messagingConnection.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Evolution E2E Jwt Key",
+        providerType: MessagingProviderType.EVOLUTION,
+        status: MessagingConnectionStatus.CONNECTED,
+        externalReference: `e2e-jwt-key-${Date.now()}`,
+      },
+    });
+    const externalMessageId = `EXT-JWT-KEY-${Date.now()}`;
+
+    await request(app.getHttpServer())
+      .post("/api/webhooks/evolution")
+      .set("jwt_key", process.env.EVOLUTION_WEBHOOK_SECRET ?? "test-evolution-webhook-secret")
+      .send({
+        event: "MESSAGES_UPSERT",
+        instance: connection.externalReference,
+        data: {
+          key: {
+            remoteJid: "551198887778@s.whatsapp.net",
+            fromMe: false,
+            id: externalMessageId,
+          },
+          message: { conversation: "Webhook inbound via jwt_key" },
+          messageTimestamp: Math.floor(Date.now() / 1000),
+          pushName: "Webhook Cliente Jwt",
+        },
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.kind).toBe("inbound");
+      });
+
+    await expect(
+      prisma.message.count({
+        where: {
+          tenantId: tenant.id,
+          connectionId: connection.id,
+          externalMessageId,
+        },
+      }),
+    ).resolves.toBe(1);
+  });
+
   it("deduplicates inbound messages across reconnected Evolution instances with the same owner", async () => {
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const suffix = Date.now();

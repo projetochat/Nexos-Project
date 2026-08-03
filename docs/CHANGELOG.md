@@ -164,3 +164,13 @@
 - Adicionados retries com backoff exponencial e final failure.
 - Preservados adapter provider-neutral, owner identity Sprint 07.03 e inbound direto.
 - Adicionado smoke real de Redis/BullMQ ao `bun run verify`.
+
+# Sprint 08.04
+
+- Removida dependencia operacional de lista legada para dropdowns de Connections no Inbox.
+- Adicionado helper testado para exibir apenas Connections Evolution conectadas.
+- Webhook Evolution agora aceita o header real `jwt_key` configurado pela propria integracao.
+- Webhook registra `authResult`, `requestId`, tipo de evento e `ignoredReason` canonico.
+- Translator passou a retornar motivos canonicos como `FROM_ME`, `GROUP_MESSAGE` e `UNSUPPORTED_EVENT`.
+- Adicionado teste E2E para inbound autenticado via `jwt_key`.
+- Documentada separacao `nexos_0801` para regressao e `nexos_0802` para homologacao fisica preservada.

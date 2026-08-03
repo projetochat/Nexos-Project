@@ -261,3 +261,26 @@ O frontend nao seleciona `acme` por padrao. Em homologacao, o backend auto-selec
 `GET /api/health` separa API/database de Redis: o login depende de API + database, enquanto Redis down e diagnostico operacional, nao falha de credencial.
 
 Tokens continuam em `localStorage` por compatibilidade; refresh automatico e logout sincronizado entre abas foram consolidados, mas HttpOnly cookie permanece melhoria futura.
+
+## Sprint 08.04 - Operational data e inbound
+
+Outbound:
+
+```text
+Frontend -> API -> PostgreSQL + Outbox -> BullMQ -> Worker -> Evolution -> WhatsApp
+```
+
+Inbound:
+
+```text
+WhatsApp -> Evolution -> authenticated webhook -> translator -> Connection resolution
+-> Contact resolution -> Conversation resolution -> Message persistence -> polling/refetch -> Frontend
+```
+
+`GET /api/messaging/connections` e a fonte operacional unica para Connections no Inbox. A camada de UI
+nao sintetiza instances e nao volta para mock/Supabase quando a API falha.
+
+Webhook auth usa o mesmo contrato configurado por `ensureWebhookConfigured`: header `jwt_key` com
+`EVOLUTION_WEBHOOK_SECRET`. Bearer JWT segue aceito para compatibilidade automatizada. Logs estruturados
+incluem `requestId`, `authResult`, `eventType`, `kind` e `ignoredReason` sem registrar corpo completo,
+telefone completo ou secrets.

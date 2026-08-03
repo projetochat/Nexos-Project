@@ -272,3 +272,14 @@ GET /api/health
 ```
 
 `ok=true` significa API + database disponiveis. Redis e diagnosticado separadamente; Redis down nao invalida credenciais.
+
+## Sprint 08.04 - Webhook auth
+
+Webhook Evolution nao usa sessao de usuario. Ele e autenticado por segredo operacional:
+
+- contrato fisico: header `jwt_key` igual a `EVOLUTION_WEBHOOK_SECRET`;
+- contrato automatizado compativel: Bearer JWT assinado com `EVOLUTION_WEBHOOK_SECRET` e claims
+  `{ app: "evolution", action: "webhook" }`.
+
+Falha de auth registra `evolution.webhook.auth_failed` com `authResult` e HTTP 401, sem logar segredo,
+telefone completo ou conteudo da mensagem.

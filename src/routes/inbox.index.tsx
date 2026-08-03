@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Badge, Button, Field, Input } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
+import { connectedEvolutionConnections, connectionDisplayLabel } from "@/lib/connection-options";
 import { type Contact } from "@/lib/mvp";
 import {
   connectionsApi,
@@ -27,7 +28,6 @@ import {
   crmApi,
   messageApi,
   type ApiConversationStatus as ConvStatus,
-  type ApiMessagingConnection,
 } from "@/lib/nexos-api";
 import { useSession } from "@/lib/session";
 import { relativeTime } from "@/lib/format";
@@ -120,11 +120,19 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   });
   const customers = React.useMemo(() => customersPage?.items ?? [], [customersPage?.items]);
 
-  const { data: contactOptions } = useQuery({
-    queryKey: ["nexos", "contact-options", "inbox-filter"],
-    queryFn: crmApi.contactOptions,
+  const { data: filterConnections = [] } = useQuery({
+    queryKey: ["nexos", "messaging-connections", "inbox-filter"],
+    queryFn: connectionsApi.list,
+    staleTime: 0,
   });
-  const instanciasList = contactOptions?.instances ?? [];
+  const instanciasList = React.useMemo(
+    () =>
+      connectedEvolutionConnections(filterConnections)
+        .map((connection) => connection.externalReference ?? connection.name)
+        .filter(Boolean)
+        .sort(),
+    [filterConnections],
+  );
 
   // Clientes distintos para o filtro "Cliente" (nome do cliente cadastrado).
   const clientesList = React.useMemo(() => {
@@ -405,18 +413,16 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
     queryFn: () => crmApi.listContacts({ pageSize: 100 }),
     enabled: open,
   });
-  const { data: connections = [] } = useQuery({
+  const { data: connections = [], error: connectionsError } = useQuery({
     queryKey: ["nexos", "messaging-connections", "conversation-modal"],
     queryFn: connectionsApi.list,
     enabled: open,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
   const contacts = React.useMemo(() => contactsPage?.items ?? [], [contactsPage?.items]);
   const availableConnections = React.useMemo(
-    () =>
-      connections.filter(
-        (connection) =>
-          connection.providerType === "evolution" && connection.status === "connected",
-      ),
+    () => connectedEvolutionConnections(connections),
     [connections],
   );
 
@@ -572,15 +578,22 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
             className="w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring"
           >
             {availableConnections.length === 0 ? (
-              <option value="">Nenhuma conexao conectada</option>
+              <option value="">Nenhuma instancia conectada disponivel.</option>
             ) : (
               availableConnections.map((connection) => (
                 <option key={connection.id} value={connection.id}>
-                  {connectionLabel(connection)}
+                  {connectionDisplayLabel(connection)}
                 </option>
               ))
             )}
           </select>
+          {connectionsError ? (
+            <p className="mt-1 text-xs text-destructive">{(connectionsError as Error).message}</p>
+          ) : availableConnections.length === 0 ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Conecte uma instancia antes de iniciar uma conversa.
+            </p>
+          ) : null}
         </Field>
       </div>
 
@@ -597,12 +610,6 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
       </div>
     </Modal>
   );
-}
-
-function connectionLabel(connection: ApiMessagingConnection) {
-  return connection.ownerPhoneMasked
-    ? `${connection.name} (${connection.ownerPhoneMasked})`
-    : connection.name;
 }
 
 type MultiSelectOption = { id: string; label: string };

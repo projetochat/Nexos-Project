@@ -417,6 +417,22 @@ Esperado limpo apos commit final local. Push nao executado.
 
 ```text
 NOT READY TO RESUME SPRINT 08.01 HOMOLOGATION
+
+## Adendo Sprint 08.04 - fonte real de Connections
+
+Estado recebido do Product Owner em 2026-08-03: reset, Contact lifecycle, Connection, Conversation e
+outbound smoke da Sprint 08.02 estavam aprovados fisicamente; a ressalva pendente era o dropdown exibir
+nomes de exemplo em vez de Connections reais.
+
+Correcao aplicada:
+
+- fonte operacional unica no Inbox: `GET /api/messaging/connections`;
+- filtro por `providerType=evolution` e `status=connected`;
+- lista de instancia do Inbox tambem deixou de vir de `contactOptions.instances`;
+- estado vazio e erro real nao usam fallback demo;
+- testes automatizados cobrem zero, uma, duas, disconnected excluida, tenant-scoped response e ausencia de exemplos.
+
+Dados reais do `nexos_0802` foram auditados e preservados; nenhum reset inicial foi executado.
 ```
 
 NOT READY TO RESUME SPRINT 08.01 HOMOLOGATION

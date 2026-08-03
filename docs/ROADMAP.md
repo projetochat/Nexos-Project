@@ -163,3 +163,19 @@ Entregue:
 - sessao com refresh e logout local sincronizado entre abas.
 
 Proxima etapa: executar validacao UI fisica em navegador disponivel. Sprint 09 continua bloqueada.
+
+# Sprint 08.04
+
+Status: corretiva operacional implementada localmente, gate fisico ainda nao liberado nesta sessao.
+
+Entregue:
+
+- dropdown operacional sem mock/exemplo/fallback;
+- filtro por Connections Evolution conectadas;
+- webhook Evolution autenticado por `jwt_key`;
+- motivos canonicos para eventos ignorados;
+- testes automatizados de dropdown, translator, inbound e webhook `jwt_key`;
+- regressao completa aprovada em `nexos_0801`.
+
+Sprint 09 continua bloqueada ate execucao fisica completa: dropdown real, outbound real, inbound real na
+mesma Conversation, reconnect, zero replay, Redis down/recovery e exactly-once.

@@ -158,3 +158,21 @@ A tela nao preenche credenciais demo e nao oferece selecao visual de perfil. Err
 - falta de acesso a organizacao ativa;
 - excesso de tentativas;
 - erro interno de autenticacao.
+
+## Sprint 08.04 - Nova conversa e inbound
+
+Nova conversa:
+
+```text
+Inbox -> Nova conversa -> GET /api/messaging/connections
+  -> filtra Evolution connected
+  -> seleciona Connection real
+  -> cria/reusa Conversation
+  -> envia primeira Message outbound
+```
+
+Sem Connection conectada, a UI mostra estado vazio e orienta conectar uma instancia. Erro da API e exibido
+como erro real; nao ha preenchimento com exemplo.
+
+Inbound segue polling/refetch enquanto Socket.io estiver fora de escopo. A resposta do cliente deve aparecer
+na mesma Conversation aberta quando o webhook persistir a Message inbound.

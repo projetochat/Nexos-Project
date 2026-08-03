@@ -25,7 +25,7 @@ export type EvolutionWebhookTranslation =
 export class EvolutionWebhookTranslator {
   translate(payload: EvolutionWebhookPayload, connection: { tenantId: string; id: string }) {
     const event = normalizeEvent(payload.event);
-    if (!payload.instance) return { kind: "ignored", reason: "missing_instance" } as const;
+    if (!payload.instance) return { kind: "ignored", reason: "MISSING_INSTANCE" } as const;
 
     if (event === "messages.upsert") {
       return this.translateInbound(payload, connection);
@@ -51,7 +51,7 @@ export class EvolutionWebhookTranslator {
         qrCodeBase64: readNestedString(payload.data, ["qrcode", "base64"]),
       } as const;
     }
-    return { kind: "ignored", reason: "unknown_event" } as const;
+    return { kind: "ignored", reason: "UNSUPPORTED_EVENT" } as const;
   }
 
   private translateInbound(
@@ -60,17 +60,19 @@ export class EvolutionWebhookTranslator {
   ): EvolutionWebhookTranslation {
     const data = payload.data ?? {};
     const key = readRecord(data, "key");
-    if (key?.fromMe === true) return { kind: "ignored", reason: "from_me" };
+    if (key?.fromMe === true) return { kind: "ignored", reason: "FROM_ME" };
 
     const externalMessageId = stringValue(key?.id);
     const remoteJid = stringValue(key?.remoteJid);
-    if (isGroupRemoteIdentity(remoteJid)) return { kind: "ignored", reason: "group_message" };
+    if (isGroupRemoteIdentity(remoteJid)) return { kind: "ignored", reason: "GROUP_MESSAGE" };
     const text =
       readNestedString(data, ["message", "conversation"]) ??
       readNestedString(data, ["message", "extendedTextMessage", "text"]);
     const phone = phoneFromRemoteIdentity(remoteJid) ?? payload.sender;
     if (!externalMessageId || !phone || !text) {
-      return { kind: "ignored", reason: "unsupported_inbound_payload" };
+      if (!externalMessageId) return { kind: "ignored", reason: "MISSING_MESSAGE_ID" };
+      if (!phone) return { kind: "ignored", reason: "MISSING_REMOTE_IDENTITY" };
+      return { kind: "ignored", reason: "INVALID_PAYLOAD" };
     }
     const normalizedPhoneCandidates = normalizeRemotePhoneCandidates(phone);
 
@@ -105,7 +107,7 @@ export class EvolutionWebhookTranslator {
     const key = readRecord(data, "key");
     const providerMessageId = stringValue(key?.id) ?? readString(data, "id");
     const status = translateMessageStatus(readString(data, "status") ?? readString(data, "update"));
-    if (!providerMessageId || !status) return { kind: "ignored", reason: "unsupported_status" };
+    if (!providerMessageId || !status) return { kind: "ignored", reason: "INVALID_PAYLOAD" };
 
     return {
       kind: "status",

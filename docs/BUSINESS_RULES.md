@@ -146,3 +146,16 @@ Somente regras comprovadas no codigo.
 - API offline e senha invalida devem aparecer como erros distintos na UI.
 - Redis indisponivel nao invalida credenciais se API e database estiverem online.
 - Logout deve limpar tokens, estado de sessao e impedir reabertura de conteudo privado por sessao local antiga.
+
+## Sprint 08.04 - Connections reais e inbound
+
+- Dropdown operacional de Connection usa apenas `GET /api/messaging/connections`.
+- Nao existe fallback para mock, exemplos, fixture, Supabase legado ou Development Provider.
+- Apenas Connections `evolution` e `connected` sao selecionaveis para iniciar Conversation.
+- Connections `disconnected`, `error`, deletadas ou inexistentes nao sao selecionaveis.
+- Conversation aberta por `tenant + Contact + Connection` e reutilizada quando chega inbound do mesmo remoto.
+- `externalMessageId` novo persiste uma Message inbound.
+- `externalMessageId` repetido e replay: nao cria Message, nao incrementa unread e nao altera lastMessage.
+- Reconnect preserva a Connection local e reexecuta ensure de webhook de forma idempotente.
+- Webhook recebido sem contrato valido nao e aceito anonimamente.
+- Evento ignorado deve ter `ignoredReason` canonico e observavel.

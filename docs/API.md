@@ -364,3 +364,17 @@ Resposta:
 ```
 
 Email e normalizado com trim + lowercase antes da busca. Senha usa bcrypt, mesmo algoritmo do seed.
+
+## Sprint 08.04 - Connections e webhooks
+
+`GET /api/messaging/connections` retorna somente Connections Evolution do tenant autenticado. A UI de
+Inbox consome esse endpoint diretamente e filtra `providerType = evolution` + `status = connected`.
+
+`POST /api/webhooks/evolution` aceita webhook autenticado por:
+
+- `jwt_key: <EVOLUTION_WEBHOOK_SECRET>`: contrato fisico configurado na Evolution;
+- `Authorization: Bearer <token>` com claims `{ app: "evolution", action: "webhook" }`: contrato de teste.
+
+Respostas 2xx podem indicar processamento, replay idempotente ou evento suportadamente ignorado. Motivos
+canonicos incluem `FROM_ME`, `GROUP_MESSAGE`, `UNSUPPORTED_EVENT`, `MISSING_MESSAGE_ID`,
+`MISSING_REMOTE_IDENTITY`, `INVALID_PAYLOAD` e `CONNECTION_NOT_FOUND`.

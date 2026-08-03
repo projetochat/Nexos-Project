@@ -338,3 +338,27 @@ Esperado limpo apos commit final.
 ```text
 NOT READY FOR SPRINT 09
 ```
+
+## Adendo Sprint 08.04 - homologacao fisica inbound
+
+Estado recebido do Product Owner em 2026-08-03: Sprint 08.01 permanecia NOT READY porque a resposta
+inbound real do WhatsApp B nao aparecia no Nexos.
+
+Correcao tecnica aplicada na Sprint 08.04:
+
+- contrato real de webhook Evolution aceito via header `jwt_key`;
+- Bearer JWT preservado para regressao automatizada;
+- motivos canonicos de ignoredReason adicionados ao translator;
+- logs estruturados para auth, event type, translation e persistence.
+
+Validacao automatizada:
+
+- inbound basico real-equivalent: PASS;
+- same Conversation por Contact/Connection: PASS em testes de servico/E2E existentes;
+- reconnect/idempotencia por owner identity: PASS em E2E;
+- new inbound: PASS;
+- zero replay: PASS;
+- outbound after reconnect: coberto por preservacao de outbound/queue, sem teste fisico nesta sessao.
+
+Homologacao fisica WhatsApp/Evolution real nao foi executada nesta sessao; portanto este adendo nao muda
+o gate historico para READY.

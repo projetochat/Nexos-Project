@@ -302,3 +302,17 @@ docker compose up -d postgres nexos-redis
 ```
 
 Use `REDIS_URL=redis://localhost:6379`. O Redis da Evolution (`evolution-redis`) nao deve ser usado pelo BullMQ do Nexos.
+
+## Sprint 08.04
+
+O fluxo operacional de Connections passa a ter uma fonte unica: `GET /api/messaging/connections`.
+Dropdowns operacionais nao usam mocks, exemplos, Supabase legado ou fallback demo; a UI filtra somente
+Connections `evolution` com status `connected`.
+
+Separacao de ambientes:
+
+- regressao automatizada ampla: `nexos_0801`, com tenants `acme/orbit`;
+- homologacao fisica preservada: `nexos_0802`, sem reset automatico quando dados reais existem.
+
+O webhook Evolution aceita o header real configurado na instance (`jwt_key`) e tambem preserva suporte
+ao Bearer JWT usado em testes. Eventos ignorados passam a registrar motivo canonico.

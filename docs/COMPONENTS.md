@@ -101,3 +101,15 @@ As bolhas outbound exibem um texto curto para o status operacional:
 - `lida`
 
 Polling existente continua responsavel pela atualizacao visual.
+
+## Sprint 08.04 - Connection dropdown
+
+`src/lib/connection-options.ts` centraliza a selecao exibivel no Inbox:
+
+- entrada: resposta real de `connectionsApi.list()`;
+- filtro: `providerType === "evolution"` e `status === "connected"`;
+- label: nome real, telefone owner mascarado quando existe, provider e status;
+- vazio: mensagem operacional sem fallback.
+
+`InboxLayout` tambem usa Connections reais para o filtro de instancia, evitando listas vindas de opções de
+contato ou fontes legadas.
