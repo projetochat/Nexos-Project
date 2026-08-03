@@ -13,7 +13,7 @@ import {
 import { hash } from "bcryptjs";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { AuthenticatedUser } from "../auth/auth.types";
+import type { AuthenticatedUser } from "../auth/auth.types";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { PrismaService } from "../prisma/prisma.service";

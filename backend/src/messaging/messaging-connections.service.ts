@@ -1,8 +1,16 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { MessagingConnectionStatus, MessagingProviderType, Prisma } from "../generated/prisma";
-import { AuthenticatedUser } from "../auth/auth.types";
+import type { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
+import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { phoneFromRemoteIdentity } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
 import { assertEvolutionConfigured, evolutionConfigFromEnv } from "./evolution/evolution.config";
@@ -17,6 +25,7 @@ export class MessagingConnectionsService {
     private readonly prisma: PrismaService,
     @Inject(EvolutionClient)
     private readonly evolution: EvolutionClient,
+    @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
   ) {}
 
   async list(current: AuthenticatedUser) {
@@ -59,6 +68,12 @@ export class MessagingConnectionsService {
         externalReference: instanceName,
       },
     });
+    this.realtime?.publishConnectionStatusUpdated({
+      tenantId: connection.tenantId,
+      connectionId: connection.id,
+      status: connection.status.toLowerCase(),
+      updatedAt: connection.updatedAt,
+    });
     return {
       ...this.serialize(connection),
       qrCodeBase64: evolutionQrBase64(response),
@@ -92,6 +107,14 @@ export class MessagingConnectionsService {
         ownerPhoneNormalized: ownerPhoneNormalized ?? undefined,
       },
     });
+    if (updated.status !== connection.status) {
+      this.realtime?.publishConnectionStatusUpdated({
+        tenantId: updated.tenantId,
+        connectionId: updated.id,
+        status: updated.status.toLowerCase(),
+        updatedAt: updated.updatedAt,
+      });
+    }
     return this.serialize(updated, { existsInProvider: true, webhookUrl: instance.Webhook?.url });
   }
 
@@ -110,9 +133,15 @@ export class MessagingConnectionsService {
     }
     const response = await this.evolution.connect(connection.externalReference);
     await this.ensureWebhookConfigured(connection.externalReference);
-    await this.prisma.messagingConnection.update({
+    const updated = await this.prisma.messagingConnection.update({
       where: { id: connection.id },
       data: { status: MessagingConnectionStatus.CONNECTING },
+    });
+    this.realtime?.publishConnectionStatusUpdated({
+      tenantId: updated.tenantId,
+      connectionId: updated.id,
+      status: updated.status.toLowerCase(),
+      updatedAt: updated.updatedAt,
     });
     return {
       connectionId: connection.id,
@@ -133,6 +162,12 @@ export class MessagingConnectionsService {
     const updated = await this.prisma.messagingConnection.update({
       where: { id: connection.id },
       data: { status: MessagingConnectionStatus.DISCONNECTED },
+    });
+    this.realtime?.publishConnectionStatusUpdated({
+      tenantId: updated.tenantId,
+      connectionId: updated.id,
+      status: updated.status.toLowerCase(),
+      updatedAt: updated.updatedAt,
     });
     return this.serialize(updated);
   }
@@ -177,6 +212,12 @@ export class MessagingConnectionsService {
       });
     });
 
+    this.realtime?.publishConnectionStatusUpdated({
+      tenantId: connection.tenantId,
+      connectionId: connection.id,
+      status: "removed",
+      updatedAt: new Date(),
+    });
     return {
       id: connection.id,
       removed: true,
@@ -235,19 +276,35 @@ export class MessagingConnectionsService {
         },
       });
       if (duplicateOwner) {
-        return this.prisma.messagingConnection.update({
+        const updated = await this.prisma.messagingConnection.update({
           where: { id },
           data: {
             status: MessagingConnectionStatus.ERROR,
             ...ownerData,
           },
         });
+        this.realtime?.publishConnectionStatusUpdated({
+          tenantId: updated.tenantId,
+          connectionId: updated.id,
+          status: updated.status.toLowerCase(),
+          updatedAt: updated.updatedAt,
+        });
+        return updated;
       }
     }
-    return this.prisma.messagingConnection.update({
+    const updated = await this.prisma.messagingConnection.update({
       where: { id },
       data: { status, ...ownerData },
     });
+    if (updated.status !== current.status) {
+      this.realtime?.publishConnectionStatusUpdated({
+        tenantId: updated.tenantId,
+        connectionId: updated.id,
+        status: updated.status.toLowerCase(),
+        updatedAt: updated.updatedAt,
+      });
+    }
+    return updated;
   }
 
   private async ensureWebhookConfiguredSafely(instanceName: string, connectionId: string) {
@@ -275,6 +332,12 @@ export class MessagingConnectionsService {
     const updated = await this.prisma.messagingConnection.update({
       where: { id },
       data: { status: MessagingConnectionStatus.ERROR },
+    });
+    this.realtime?.publishConnectionStatusUpdated({
+      tenantId: updated.tenantId,
+      connectionId: updated.id,
+      status: updated.status.toLowerCase(),
+      updatedAt: updated.updatedAt,
     });
     return this.serialize(updated, {
       existsInProvider: false,

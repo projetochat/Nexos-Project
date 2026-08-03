@@ -8,6 +8,7 @@ import { HealthModule } from "./health/health.module";
 import { MessagingModule } from "./messaging/messaging.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { QueueModule } from "./queue/queue.module";
+import { RealtimeModule } from "./realtime/realtime.module";
 import { RolesModule } from "./roles/roles.module";
 import { UsersModule } from "./users/users.module";
 
@@ -21,6 +22,7 @@ import { UsersModule } from "./users/users.module";
     RolesModule,
     CrmModule,
     QueueModule,
+    RealtimeModule,
     MessagingModule,
     ConversationsModule,
     HealthModule,

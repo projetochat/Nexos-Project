@@ -117,3 +117,9 @@ contato ou fontes legadas.
 No rework da Sprint 08.04, `Contatos` e `ReportFiltersBar` tambem passaram para
 `useConnectedMessagingConnections`. O modal de contato mostra o nome real da Connection como label e grava
 a referencia operacional da Connection como valor.
+
+## Sprint 09 - Inbox realtime
+
+Inbox exibe indicador discreto de realtime. Quando conectado, polling agressivo e reduzido; quando
+offline/degradado, a UI mantém fallback periódico por REST. A camada visual usa `src/lib/realtime` como
+singleton, sem abrir sockets por componente.

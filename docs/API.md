@@ -370,6 +370,22 @@ Email e normalizado com trim + lowercase antes da busca. Senha usa bcrypt, mesmo
 `GET /api/messaging/connections` retorna somente Connections Evolution do tenant autenticado. A UI de
 Inbox consome esse endpoint diretamente e filtra `providerType = evolution` + `status = connected`.
 
+## Sprint 09 - Realtime
+
+Socket.io:
+
+- namespace `/realtime`
+- path `/socket.io`
+- auth `socket.auth.accessToken`
+
+Health REST inclui campos sanitizados:
+
+- `queue`
+- `realtime`
+- `realtimeAdapter`
+
+Catalogo de eventos e payloads em `docs/REALTIME.md`.
+
 `POST /api/webhooks/evolution` aceita webhook autenticado por:
 
 - `jwt_key: <EVOLUTION_WEBHOOK_SECRET>`: contrato fisico configurado na Evolution;

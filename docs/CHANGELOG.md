@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-03 - Sprint 09 Realtime Messaging
+
+- Adicionado gateway Socket.io autenticado no namespace `/realtime`.
+- Adicionadas rooms tenant/membership/department/conversation centralizadas.
+- Adicionado `RealtimePublisher` para eventos pós-commit de Message, Conversation, Connection, presence e typing.
+- Adicionado adapter Redis do Socket.io com modo degradado.
+- Frontend passa a ter singleton `src/lib/realtime`, indicador na Inbox, subscription de Conversation e fallback polling.
+- Health passa a expor `queue`, `realtime` e `realtimeAdapter`.
+- Documentado contrato em `docs/REALTIME.md`.
+- Gate fisico final permanece `NOT READY FOR SPRINT 10` ate validação browser/WhatsApp/Redis recovery.
+
 ## 2026-08-03 - Sprint 08.04 Rework II
 
 - Criado backup fisico da Evolution antes de qualquer atualizacao: `backups/evolution-before-0804.dump`.

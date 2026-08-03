@@ -11,6 +11,7 @@ Indice permanente dos relatorios de sprint.
 | 03     | Contacts / CRM                                               | READY              | 2026-07-29 | e576cde             | TBD                 | [sprint-03/RELATORIO.md](./sprint-03/RELATORIO.md)     |
 | 04     | Conversations                                                | READY              | 2026-07-29 | e576cde             | TBD                 | [sprint-04/RELATORIO.md](./sprint-04/RELATORIO.md)     |
 | 05     | Messages & Messaging Core                                    | READY              | 2026-07-30 | de66c9a             | TBD                 | [sprint-05/RELATORIO.md](./sprint-05/RELATORIO.md)     |
+| 09     | Realtime messaging, presence e live inbox                    | NOT READY          | 2026-08-03 | c5b27a3             | TBD                 | [sprint-09/RELATORIO.md](./sprint-09/RELATORIO.md)     |
 
 ## Observacao de rastreabilidade
 

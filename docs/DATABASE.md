@@ -287,6 +287,11 @@ Nenhum payload bruto de provider deve ser armazenado nesses campos.
 
 Nenhuma tabela provider-specific foi criada. Evolution usa `messaging_connections`:
 
+## Sprint 09 - Realtime
+
+Nao houve migration. Presenca e typing sao efemeros e usam Redis Nexos com TTL, sem persistencia em
+PostgreSQL. Eventos de UI nao reutilizam `outbox_events`; a Outbox continua dedicada ao envio para provider.
+
 - `providerType = EVOLUTION`
 - `externalReference = instanceName` criado no provider
 - `status` sincronizado para `DISCONNECTED`, `CONNECTING`, `CONNECTED` ou `ERROR`

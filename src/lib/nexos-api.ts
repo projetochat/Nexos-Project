@@ -266,6 +266,24 @@ export function nexosApiBaseUrl() {
   return import.meta.env.VITE_NEXOS_API_URL || "http://localhost:3001/api";
 }
 
+export function nexosRealtimeBaseUrl() {
+  return nexosApiBaseUrl().replace(/\/api\/?$/, "");
+}
+
+export function getNexosAccessToken() {
+  return localStorage.getItem(ACCESS_KEY);
+}
+
+export async function ensureNexosAccessToken() {
+  const token = getNexosAccessToken();
+  if (token) return token;
+  return (await refreshAccessToken()) ? getNexosAccessToken() : null;
+}
+
+export async function refreshNexosAccessToken() {
+  return (await refreshAccessToken()) ? getNexosAccessToken() : null;
+}
+
 export async function loginWithNexosApi(email: string, password: string, tenantSlug?: string) {
   const body: { email: string; password: string; tenantSlug?: string } = { email, password };
   if (tenantSlug) body.tenantSlug = tenantSlug;

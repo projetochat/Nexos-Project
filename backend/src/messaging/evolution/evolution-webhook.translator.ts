@@ -6,7 +6,7 @@ import {
   normalizeRemotePhoneCandidates,
   phoneFromRemoteIdentity,
 } from "../messaging-identity";
-import { EvolutionWebhookPayload } from "./evolution.types";
+import type { EvolutionWebhookPayload } from "./evolution.types";
 
 export type EvolutionWebhookTranslation =
   | { kind: "inbound"; event: InboundMessageEvent }

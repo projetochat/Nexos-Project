@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { MessageStatus } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { MessageStatusEvent } from "./messaging.contracts";
 
 const STATUS_RANK: Record<MessageStatus, number> = {
@@ -17,7 +18,10 @@ const STATUS_RANK: Record<MessageStatus, number> = {
 export class MessagingStatusService {
   private readonly logger = new Logger(MessagingStatusService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
+  ) {}
 
   async process(event: MessageStatusEvent) {
     const message = await this.prisma.message.findFirst({
@@ -49,6 +53,15 @@ export class MessagingStatusService {
       messageId: updated.id,
       connectionId: event.connectionId,
       eventType: event.status,
+    });
+    this.realtime?.publishMessageStatusUpdated({
+      tenantId: event.tenantId,
+      conversationId: updated.conversationId,
+      messageId: updated.id,
+      previousStatus: message.status,
+      status: updated.status,
+      updatedAt: updated.updatedAt,
+      failureCode: updated.providerErrorCode,
     });
     return { updated: true, message: updated };
   }

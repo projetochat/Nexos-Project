@@ -1,4 +1,4 @@
-﻿import * as React from "react";
+import * as React from "react";
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -46,6 +46,7 @@ import { useSession } from "@/lib/session";
 import { fmtHM, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
+import { startTyping, stopTyping } from "@/lib/realtime/client";
 
 export const Route = createFileRoute("/inbox/$conversationId")({ component: ConversationPage });
 
@@ -641,6 +642,8 @@ function Composer({
   const [pendingCloseAfter, setPendingCloseAfter] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const typingActiveRef = React.useRef(false);
+  const typingStopTimerRef = React.useRef<number | null>(null);
 
   const { data: quickReplies = [] } = useQuery({
     queryKey: ["quick_replies", "mine"],
@@ -684,6 +687,7 @@ function Composer({
 
   const handleSend = async () => {
     if (disabled || !authorId) return;
+    emitTypingStop();
     let t = text.replace(/\s+/g, " ").trim();
     let closeAfter = pendingCloseAfter;
     // Expand quick reply shortcut like "/bd" → full text
@@ -727,6 +731,24 @@ function Composer({
       toast.error((e as Error).message);
     }
   };
+
+  const emitTypingStart = () => {
+    if (disabled || typingActiveRef.current) return;
+    typingActiveRef.current = true;
+    startTyping(conversationId);
+  };
+
+  const emitTypingStop = React.useCallback(() => {
+    if (typingStopTimerRef.current) {
+      window.clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+    if (!typingActiveRef.current) return;
+    typingActiveRef.current = false;
+    stopTyping(conversationId);
+  }, [conversationId]);
+
+  React.useEffect(() => emitTypingStop, [emitTypingStop]);
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = Array.from(e.clipboardData?.items ?? []);
@@ -879,7 +901,12 @@ function Composer({
             ref={textareaRef}
             rows={1}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              emitTypingStart();
+              if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
+              typingStopTimerRef.current = window.setTimeout(emitTypingStop, 2500);
+            }}
             onPaste={handlePaste}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {

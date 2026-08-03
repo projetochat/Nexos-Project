@@ -4,8 +4,9 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
-import { AuthenticatedUser } from "../auth/auth.types";
+import type { AuthenticatedUser } from "../auth/auth.types";
 import {
   ConversationStatus,
   MembershipStatus,
@@ -14,6 +15,7 @@ import {
   Prisma,
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { ListMessagesQueryDto } from "./dto/list-messages-query.dto";
 import { SendMessageDto } from "./dto/send-message.dto";
 import { MessagingOutboundService } from "../messaging/messaging-outbound.service";
@@ -36,6 +38,7 @@ export class MessagesService {
     private readonly prisma: PrismaService,
     @Inject(MessagingOutboundService)
     private readonly outbound: MessagingOutboundService,
+    @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
   ) {}
 
   async list(conversationId: string, query: ListMessagesQueryDto, current: AuthenticatedUser) {
@@ -97,6 +100,11 @@ export class MessagesService {
         data: { unreadCount: 0 },
       }),
     ]);
+    this.realtime?.publishUnreadUpdated({
+      tenantId: current.tenantId,
+      conversationId,
+      unreadCount: 0,
+    });
     return { unreadCount: 0, readAt };
   }
 

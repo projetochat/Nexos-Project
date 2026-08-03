@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { CurrentUser } from "../auth/current-user.decorator";
-import { AuthenticatedUser } from "../auth/auth.types";
+import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";

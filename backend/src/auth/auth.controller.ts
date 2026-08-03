@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
 import { CurrentUser } from "./current-user.decorator";
 import { JwtAuthGuard } from "./jwt-auth.guard";
-import { AuthenticatedUser } from "./auth.types";
+import type { AuthenticatedUser } from "./auth.types";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshDto } from "./dto/refresh.dto";

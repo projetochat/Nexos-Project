@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { Request } from "express";
 import { AuthService } from "./auth.service";
-import { AuthenticatedUser } from "./auth.types";
+import type { AuthenticatedUser } from "./auth.types";
 
 export type AuthenticatedRequest = Request & { user: AuthenticatedUser };
 

@@ -274,6 +274,15 @@ Inbound:
 
 ```text
 WhatsApp -> Evolution -> authenticated webhook -> translator -> Connection resolution
+
+## Sprint 09 - Realtime
+
+Socket.io foi adicionado como camada de notificação, não como fonte da verdade. O backend expõe namespace
+`/realtime` no path `/socket.io`, autentica o handshake com access token e deriva tenant/membership pelo
+servidor. Rooms oficiais ficam centralizadas em `backend/src/realtime/realtime-rooms.ts`.
+
+Eventos de Message, Conversation, Connection, presença e digitação saem por `RealtimePublisher` após
+persistência confirmada. REST permanece responsável por recuperação e reconciliação.
 -> Contact resolution -> Conversation resolution -> Message persistence -> polling/refetch -> Frontend
 ```
 

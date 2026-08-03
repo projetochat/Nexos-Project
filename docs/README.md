@@ -337,3 +337,13 @@ Evolution local atualizada de `v2.3.1` para `v2.3.7` com backup fisico previo em
 Inbound fisico segue bloqueado por falha de decriptacao antes do webhook. Logs reais mostraram erros
 Signal/Baileys com `@lid` e `senderPn`, mas nenhum `MESSAGES_UPSERT` valido foi recebido pelo Nexos nesta
 sessao. Sprint 09 permanece bloqueada.
+
+## Sprint 09
+
+Realtime oficial integrado com Socket.io no backend NestJS, Redis adapter, auth por access token no
+handshake, rooms por tenant/membership/departamento/conversa, publishers post-commit e Live Inbox com
+fallback REST. O contrato completo esta em `docs/REALTIME.md`.
+
+Gates automatizados passaram duas vezes com `bun run verify`, e um smoke fisico isolado recebeu
+`realtime.ready`. A homologacao fisica completa com dois usuarios, WhatsApp real, presence visual e typing
+visual ainda esta pendente.

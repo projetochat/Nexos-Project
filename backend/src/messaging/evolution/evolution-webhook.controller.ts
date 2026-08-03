@@ -11,7 +11,7 @@ import {
 import { JwtService } from "@nestjs/jwt";
 import { randomUUID } from "node:crypto";
 import { evolutionConfigFromEnv } from "./evolution.config";
-import { EvolutionWebhookPayload } from "./evolution.types";
+import type { EvolutionWebhookPayload } from "./evolution.types";
 import { EvolutionWebhookTranslator } from "./evolution-webhook.translator";
 import { MessagingConnectionsService } from "../messaging-connections.service";
 import { MessagingInboundService } from "../messaging-inbound.service";

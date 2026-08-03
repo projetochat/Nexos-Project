@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { ConversationStatus, MessageDirection, MessageStatus, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { InboundMessageEvent } from "./messaging.contracts";
 import { normalizeRemotePhoneCandidates } from "./messaging-identity";
 
@@ -8,7 +9,10 @@ import { normalizeRemotePhoneCandidates } from "./messaging-identity";
 export class MessagingInboundService {
   private readonly logger = new Logger(MessagingInboundService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
+  ) {}
 
   async process(event: InboundMessageEvent) {
     const normalizedPhoneCandidates = uniqueNormalizedPhones([
@@ -58,6 +62,7 @@ export class MessagingInboundService {
           });
 
       const conversation = await this.findOrCreateConversation(tx, event, contact.id, connection);
+      const createdConversation = !conversation.lastMessageAt && conversation.unreadCount === 0;
       const preview = event.content ?? mediaPreview(event.type);
       const message = await tx.message.create({
         data: {
@@ -74,7 +79,7 @@ export class MessagingInboundService {
           createdAt: event.occurredAt,
         },
       });
-      await tx.conversation.update({
+      const updatedConversation = await tx.conversation.update({
         where: { tenantId_id: { tenantId: event.tenantId, id: conversation.id } },
         data: {
           unreadCount: { increment: 1 },
@@ -88,7 +93,13 @@ export class MessagingInboundService {
             conversation.status === ConversationStatus.FECHADA ? null : conversation.closedAt,
         },
       });
-      return { message, duplicate: false };
+      return {
+        message,
+        duplicate: false,
+        contactId: contact.id,
+        createdConversation,
+        unreadCount: updatedConversation.unreadCount,
+      };
     });
 
     this.logger.log({
@@ -101,6 +112,30 @@ export class MessagingInboundService {
       duplicate: result.duplicate,
       resolutionResult: result.duplicate ? "ignored_duplicate" : "persisted",
     });
+    if (!result.duplicate) {
+      this.realtime?.publishMessageCreated({
+        tenantId: event.tenantId,
+        conversationId: result.message.conversationId,
+        contactId: result.contactId,
+        connectionId: event.connectionId,
+        message: {
+          id: result.message.id,
+          direction: "inbound",
+          status: result.message.status.toLowerCase(),
+          createdAt: result.message.createdAt,
+        },
+      });
+      this.realtime?.publishConversationUpdated({
+        tenantId: event.tenantId,
+        conversationId: result.message.conversationId,
+        reason: result.createdConversation ? "inbound.created" : "inbound.updated",
+      });
+      this.realtime?.publishUnreadUpdated({
+        tenantId: event.tenantId,
+        conversationId: result.message.conversationId,
+        unreadCount: result.unreadCount ?? 0,
+      });
+    }
     return result;
   }
 

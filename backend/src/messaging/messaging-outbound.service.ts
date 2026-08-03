@@ -5,8 +5,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
-import { AuthenticatedUser } from "../auth/auth.types";
+import type { AuthenticatedUser } from "../auth/auth.types";
 import {
   ConversationStatus,
   MembershipStatus,
@@ -18,6 +19,7 @@ import {
   Prisma,
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { SendMessageDto } from "../conversations/dto/send-message.dto";
 import {
   OUTBOX_MESSAGING_OUTBOUND_REQUESTED,
@@ -63,6 +65,7 @@ export class MessagingOutboundService {
     private readonly providers: MessagingProviderRegistry,
     @Inject(OutboxDispatcherService)
     private readonly outboxDispatcher: OutboxDispatcherService,
+    @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
   ) {}
 
   async sendText(conversationId: string, dto: SendMessageDto, current: AuthenticatedUser) {
@@ -117,6 +120,17 @@ export class MessagingOutboundService {
     });
 
     if (prepared.dispatch) {
+      this.realtime?.publishMessageCreated({
+        tenantId: prepared.message.tenantId,
+        conversationId: prepared.message.conversationId,
+        connectionId: prepared.message.connectionId,
+        message: this.serialize(prepared.message),
+      });
+      this.realtime?.publishConversationUpdated({
+        tenantId: prepared.message.tenantId,
+        conversationId: prepared.message.conversationId,
+        reason: "outbound.queued",
+      });
       void this.outboxDispatcher.dispatchMessage(prepared.message.id).catch((error) => {
         this.logger.warn({
           event: "outbox.messaging_outbound.immediate_dispatch_failed",
@@ -188,10 +202,17 @@ export class MessagingOutboundService {
       );
     }
     if (connection.status !== MessagingConnectionStatus.CONNECTED) {
-      await this.failMessage(message.id, input.tenantId, {
+      const failed = await this.failMessage(message.id, input.tenantId, {
         code: MessagingErrorCode.PROVIDER_UNAVAILABLE,
         message: "Messaging connection is not connected.",
       });
+      this.publishStatus(
+        message,
+        MessageStatus.FAILED,
+        message.status,
+        failed?.updatedAt ?? new Date(),
+        failed?.providerErrorCode,
+      );
       throw new OutboundDispatchError(
         MessagingErrorCode.PROVIDER_UNAVAILABLE,
         "Messaging connection is not connected.",
@@ -227,6 +248,7 @@ export class MessagingOutboundService {
       });
       return { skipped: true, status: current?.status ?? message.status };
     }
+    this.publishStatus(message, MessageStatus.SENDING, message.status, new Date());
 
     const provider = this.providers.resolve(connection.providerType);
     this.providers.assertSupports(provider, message.type);
@@ -259,6 +281,13 @@ export class MessagingOutboundService {
           providerErrorMessage: result.accepted ? null : "Messaging provider rejected dispatch.",
         },
       });
+      this.publishStatus(
+        message,
+        updated.status,
+        MessageStatus.SENDING,
+        updated.updatedAt,
+        updated.providerErrorCode,
+      );
       this.logger.log({
         event: "messaging.outbound.sent",
         tenantId: input.tenantId,
@@ -273,9 +302,16 @@ export class MessagingOutboundService {
     } catch (error) {
       const canonical = canonicalProviderError(error);
       if (!canonical.retryable || input.finalAttempt) {
-        await this.failMessage(message.id, input.tenantId, canonical);
+        const failed = await this.failMessage(message.id, input.tenantId, canonical);
+        this.publishStatus(
+          message,
+          MessageStatus.FAILED,
+          message.status,
+          failed?.updatedAt ?? new Date(),
+          failed?.providerErrorCode,
+        );
       } else {
-        await this.prisma.message.update({
+        const queued = await this.prisma.message.update({
           where: { id: message.id },
           data: {
             status: MessageStatus.QUEUED,
@@ -283,6 +319,13 @@ export class MessagingOutboundService {
             providerErrorMessage: sanitizeErrorMessage(canonical.message),
           },
         });
+        this.publishStatus(
+          message,
+          MessageStatus.QUEUED,
+          MessageStatus.SENDING,
+          queued?.updatedAt ?? new Date(),
+          queued?.providerErrorCode,
+        );
       }
       this.logger.warn({
         event: "messaging.outbound.failed",
@@ -462,6 +505,24 @@ export class MessagingOutboundService {
         providerErrorCode: error.code,
         providerErrorMessage: sanitizeErrorMessage(error.message),
       },
+    });
+  }
+
+  private publishStatus(
+    message: { tenantId: string; conversationId: string; id: string; status: MessageStatus },
+    status: MessageStatus,
+    previousStatus: MessageStatus,
+    updatedAt: Date,
+    failureCode?: string | null,
+  ) {
+    this.realtime?.publishMessageStatusUpdated({
+      tenantId: message.tenantId,
+      conversationId: message.conversationId,
+      messageId: message.id,
+      previousStatus,
+      status,
+      updatedAt,
+      failureCode,
     });
   }
 

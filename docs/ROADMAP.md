@@ -181,3 +181,9 @@ Sprint 09 continua bloqueada. Rework II atualizou Evolution para `v2.3.7`, prese
 confirmou a instancia conectada `26293569-whatsapp-nata-cffd5f5c`, mas o inbound fisico ainda falha antes
 do webhook por decriptacao Signal/Baileys. A liberacao exige `MESSAGES_UPSERT` real chegando ao backend,
 mesma Conversation, reconnect, zero replay, Redis down/recovery e exactly-once.
+
+# Sprint 09
+
+Realtime oficial implementado em codigo com Socket.io autenticado, rooms tenant-scoped, eventos de Message,
+Conversation, Connection, presença, typing, Redis adapter e fallback REST no frontend. Gate fisico ainda
+depende de validacao browser/WhatsApp/Redis down-recovery ponta a ponta antes de liberar Sprint 10.

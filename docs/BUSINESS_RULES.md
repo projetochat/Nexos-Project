@@ -149,6 +149,15 @@ Somente regras comprovadas no codigo.
 
 ## Sprint 08.04 - Connections reais e inbound
 
+## Sprint 09 - Realtime
+
+- PostgreSQL segue como fonte da verdade.
+- Socket.io notifica; REST recupera.
+- Nenhum evento atravessa tenants.
+- `conversation.subscribe` exige autorizacao server-side.
+- Presenca e typing sao efemeros e nao gravam conteudo operacional.
+- Queda de realtime nao pode derrubar REST, webhook, PostgreSQL ou Outbox.
+
 - Dropdown operacional de Connection usa apenas `GET /api/messaging/connections`.
 - Nao existe fallback para mock, exemplos, fixture, Supabase legado ou Development Provider.
 - Apenas Connections `evolution` e `connected` sao selecionaveis para iniciar Conversation.

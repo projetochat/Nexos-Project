@@ -12,7 +12,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { AuthenticatedUser } from "../auth/auth.types";
+import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
@@ -25,6 +25,7 @@ import {
   Prisma,
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { AssignConversationDto } from "./dto/assign-conversation.dto";
 import { CreateConversationDto } from "./dto/create-conversation.dto";
 import { ListConversationsQueryDto } from "./dto/list-conversations-query.dto";
@@ -58,6 +59,7 @@ export class ConversationsController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     private readonly messages: MessagesService,
+    @Inject(RealtimePublisher) private readonly realtime: RealtimePublisher,
   ) {}
 
   @Get()
@@ -116,7 +118,7 @@ export class ConversationsController {
     const status = assignToSelf ? ConversationStatus.EM_ANDAMENTO : ConversationStatus.ABERTA;
     const now = new Date();
 
-    const conversation = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       if (connection) {
         const existing = await tx.conversation.findFirst({
           where: {
@@ -129,7 +131,7 @@ export class ConversationsController {
           orderBy: { updatedAt: "desc" },
           include: conversationInclude,
         });
-        if (existing) return existing;
+        if (existing) return { conversation: existing, created: false };
       }
 
       const protocol = assignToSelf ? await this.nextProtocol(tx, current.tenantId) : null;
@@ -158,13 +160,21 @@ export class ConversationsController {
           now,
         );
       }
-      return tx.conversation.findUniqueOrThrow({
+      const conversation = await tx.conversation.findUniqueOrThrow({
         where: { id: created.id },
         include: conversationInclude,
       });
+      return { conversation, created: true };
     });
 
-    return this.serialize(conversation);
+    if (result.created) {
+      this.realtime.publishConversationCreated({
+        tenantId: current.tenantId,
+        conversationId: result.conversation.id,
+        conversation: this.serialize(result.conversation),
+      });
+    }
+    return this.serialize(result.conversation);
   }
 
   @Patch(":id/assignee")
@@ -235,6 +245,20 @@ export class ConversationsController {
         include: conversationInclude,
       });
     });
+    this.realtime.publishAssignmentUpdated({
+      tenantId: current.tenantId,
+      conversationId: updated.id,
+      previousMembershipId: conversation.assignedMembershipId,
+      membershipId: updated.assignedMembershipId,
+      departmentId: updated.departmentId,
+      updatedAt: updated.updatedAt,
+    });
+    this.realtime.publishConversationUpdated({
+      tenantId: current.tenantId,
+      conversationId: updated.id,
+      conversation: this.serialize(updated),
+      reason: "assignment.updated",
+    });
 
     return this.serialize(updated);
   }
@@ -285,6 +309,20 @@ export class ConversationsController {
         where: { id: saved.id },
         include: conversationInclude,
       });
+    });
+    this.realtime.publishAssignmentUpdated({
+      tenantId: current.tenantId,
+      conversationId: updated.id,
+      previousMembershipId: conversation.assignedMembershipId,
+      membershipId: updated.assignedMembershipId,
+      departmentId: updated.departmentId,
+      updatedAt: updated.updatedAt,
+    });
+    this.realtime.publishConversationUpdated({
+      tenantId: current.tenantId,
+      conversationId: updated.id,
+      conversation: this.serialize(updated),
+      reason: "department.updated",
     });
     return this.serialize(updated);
   }
@@ -356,6 +394,22 @@ export class ConversationsController {
         include: conversationInclude,
       });
     });
+    this.realtime.publishConversationUpdated({
+      tenantId: current.tenantId,
+      conversationId: updated.id,
+      conversation: this.serialize(updated),
+      reason: "status.updated",
+    });
+    if (conversation.assignedMembershipId !== updated.assignedMembershipId) {
+      this.realtime.publishAssignmentUpdated({
+        tenantId: current.tenantId,
+        conversationId: updated.id,
+        previousMembershipId: conversation.assignedMembershipId,
+        membershipId: updated.assignedMembershipId,
+        departmentId: updated.departmentId,
+        updatedAt: updated.updatedAt,
+      });
+    }
 
     return this.serialize(updated);
   }

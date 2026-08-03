@@ -90,6 +90,18 @@ Usar valores fortes para `EVOLUTION_API_KEY` e `EVOLUTION_WEBHOOK_SECRET` fora d
 
 O Redis e PostgreSQL extras do Compose sao internos da Evolution API. Eles nao habilitam filas BullMQ, cache ou realtime do Nexos.
 
+Realtime local:
+
+```powershell
+$env:NEXOS_REALTIME_ENABLED="true"
+$env:NEXOS_REALTIME_REDIS_ADAPTER_ENABLED="true"
+$env:NEXOS_REALTIME_PATH="/socket.io"
+$env:NEXOS_REALTIME_CORS_ORIGIN="http://localhost:5173"
+$env:NEXOS_PRESENCE_TTL_SECONDS="90"
+```
+
+Usar `REDIS_URL` do Nexos. Nao usar `evolution-redis` para adapter Socket.io.
+
 ## Sprint 07.01
 
 O backend Nest roda com cwd `backend` no script `backend:dev`, portanto o carregamento de ambiente considera `.env` e `../.env`. Em desenvolvimento local, manter as variaveis Evolution no `.env` da raiz e validar com:

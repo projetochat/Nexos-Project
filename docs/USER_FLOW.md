@@ -166,6 +166,12 @@ Nova conversa:
 ```text
 Inbox -> Nova conversa -> GET /api/messaging/connections
   -> filtra Evolution connected
+
+## Sprint 09 - Inbox ao vivo
+
+Ao entrar na Inbox, o frontend conecta no realtime autenticado. Ao abrir uma Conversation, subscreve a room
+da conversa apos autorizacao server-side. Mensagens, status, unread e lista de conversas atualizam por
+eventos; em queda do socket, a tela volta para atualizacao periodica REST e reconcilia ao reconectar.
   -> seleciona Connection real
   -> cria/reusa Conversation
   -> envia primeira Message outbound

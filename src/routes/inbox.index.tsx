@@ -33,6 +33,7 @@ import { useSession } from "@/lib/session";
 import { relativeTime } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
+import { useRealtimeInbox } from "@/lib/realtime/hooks";
 
 type TabId = "ativas" | "standby" | "fila" | "leads";
 type SourceId = "todos" | "humano" | "bots";
@@ -89,6 +90,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const [selectedClientes, setSelectedClientes] = React.useState<Set<string>>(new Set());
   const selectedCliente = selectedClientes.size === 1 ? [...selectedClientes][0] : undefined;
   const selectedInstancia = selectedInstancias.size === 1 ? [...selectedInstancias][0] : undefined;
+  const realtime = useRealtimeInbox(activeId);
 
   const { data: conversationsPage, isLoading } = useQuery({
     queryKey: [
@@ -106,7 +108,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
         instance: selectedInstancia,
         pageSize: 100,
       }),
-    refetchInterval: 30_000,
+    refetchInterval: realtime.status === "connected" ? false : 30_000,
   });
   const conversas = React.useMemo(() => conversationsPage?.items ?? [], [conversationsPage?.items]);
   const unread = React.useMemo(
@@ -210,6 +212,13 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Instância + Cliente (multi-select, mesma linha) */}
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>{realtimeLabel(realtime.status)}</span>
+              <span className={realtime.status === "connected" ? "text-success" : "text-warning"}>
+                {realtime.status}
+              </span>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <MultiSelect
                 label="Instância"
@@ -709,4 +718,10 @@ function MultiSelect({
       )}
     </div>
   );
+}
+
+function realtimeLabel(status: string) {
+  if (status === "connected") return "Tempo real conectado";
+  if (status === "connecting" || status === "reconnecting") return "Reconectando";
+  return "Atualizacao periodica ativa";
 }
