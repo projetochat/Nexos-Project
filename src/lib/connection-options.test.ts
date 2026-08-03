@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { connectedEvolutionConnections, connectionDisplayLabel } from "@/lib/connection-options";
+import {
+  connectedConnectionOptions,
+  connectedEvolutionConnections,
+  connectionDisplayLabel,
+  hasExampleInstanceName,
+} from "@/lib/connection-options";
 import type { ApiMessagingConnection } from "@/lib/nexos-api";
 
 describe("connection options", () => {
@@ -41,6 +46,15 @@ describe("connection options", () => {
     const tenantScopedResponse = [connection({ tenantId: "tenant-a", name: "Tenant A" })];
 
     expect(connectedEvolutionConnections(tenantScopedResponse)).toEqual(tenantScopedResponse);
+  });
+
+  it("never generates operational options for legacy example names", () => {
+    const options = connectedConnectionOptions([
+      connection({ id: "real-1", name: "Homologacao - Nata", externalReference: "homolog-nata" }),
+    ]);
+
+    expect(options.map((option) => option.label).join(" ")).not.toMatch(/ENORE|FLOWID|ZYVO/);
+    expect(["ENORE", "FLOWID", "ZYVO"].every((name) => hasExampleInstanceName(name))).toBe(true);
   });
 });
 

@@ -338,8 +338,125 @@ Worktree limpo apos commit final local. Push nao executado.
 
 ## 58. Gate
 
+````text
+NOT READY FOR SPRINT 09
+
+## Rework apos reprovacao fisica
+
+### Status recebido
+
+Product Owner reportou em homologacao:
+
+- FAIL: `Contatos -> Novo contato -> Instancia` ainda exibia `ENORE`, `FLOWID`, `ZYVO`.
+- PASS: outbound real chegou ao WhatsApp.
+- FAIL CRITICO: resposta do WhatsApp nao apareceu no Nexos.
+
+### Auditoria global
+
+Buscas executadas:
+
+```powershell
+rg -n "ENORE|FLOWID|ZYVO" .
+rg -n "contactOptions\.instances|instances:" src
+rg -n "Instância|Instancia|instance|connectionId|connectionsApi" src
+rg -n "SelectItem|<option|options.*instance|instance.*options" src
+````
+
+Classificacao:
+
+- `src/routes/contatos.tsx`: STATIC EXAMPLE operacional removido.
+- `src/components/report-filters.tsx`: SUPABASE LEGACY para instancias removido.
+- `src/routes/inbox.index.tsx`: REAL API consolidada em hook compartilhado.
+- `src/routes/simulador.tsx`: MVP MOCK com nomes legados removidos do runtime.
+- `backend/prisma/seed.ts` e `backend/test/app.e2e-spec.ts`: TEST FIXTURE/demo, mantido fora do runtime de homologacao.
+- `supabase/migrations/*`: DOCUMENTATION/historico legado.
+
+### Arquivos corrigidos
+
+- `src/lib/use-connected-messaging-connections.ts`
+- `src/lib/connection-options.ts`
+- `src/routes/contatos.tsx`
+- `src/routes/inbox.index.tsx`
+- `src/components/report-filters.tsx`
+- `src/routes/simulador.tsx`
+- `backend/prisma/seed.ts`
+- `backend/scripts/reset-homologation.mjs`
+- `backend/scripts/verify-homologation-login.mjs`
+- docs e exemplos de env
+
+### Evidencia real Evolution
+
+Consulta real da instance `26293569-homologacao-nata-018f43a5`:
+
+- Connection Nexos: `Homologacao - Nata`
+- status Evolution: `open`
+- webhook enabled: `true`
+- URL: `http://host.docker.internal:3001/api/webhooks/evolution`
+- events: `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `SEND_MESSAGE_UPDATE`, `QRCODE_UPDATED`, `CONNECTION_UPDATE`
+- header `jwt_key`: presente
+- `secretConfigured=true`
+- `secretMatch=true` contra `.env` local carregado para a consulta
+
+### Reconcile real da Connection
+
+`GET /api/messaging/connections/79caa9a2-6fff-4c36-923c-0c6ddf7ecabf/status` executado com backend temporario em `nexos_0802`:
+
+- name: `Homologacao - Nata`
+- providerType: `evolution`
+- status: `connected`
+- ownerPhoneMasked: `******8679`
+- provider exists: `true`
+
+### Atendente homologacao
+
+Seed idempotente executado sem reset em `nexos_0802`.
+
+Auditoria:
+
+- users: 2
+- memberships: 2
+- departments: 1
+- contacts: 1 preservado
+- conversations: 1 preservada
+- messagingConnections: 1 preservada
+- orphan audit: zero
+
+Smoke API:
+
+- `admin@nexo.app`: PASS, role `tenant_admin`
+- `atendente@nexo.app`: PASS, role `agent`
+
+### Testes automatizados do rework
+
+- `connection-options.test.ts`: PASS
+- `operational-connection-sources.test.ts`: PASS
+- `messaging-connections.service.spec.ts`: PASS
+- `evolution-webhook.translator.spec.ts`: PASS
+- `messaging-inbound.service.spec.ts`: PASS
+- `bun run typecheck`: PASS
+
+### Pendencias fisicas
+
+Nao foi possivel concluir nesta sessao:
+
+- envio do WhatsApp B com `NEXOS-0804-REWORK-IN-DIAG-001`;
+- captura do payload fisico real;
+- backend HTTP real durante inbound fisico;
+- exibicao no browser apos inbound;
+- F5 fisico;
+- testes admin/agent com WhatsApp real;
+- reconnect;
+- Redis down/recovery exactly once.
+
+### Gate apos rework
+
 ```text
 NOT READY FOR SPRINT 09
 ```
 
 NOT READY FOR SPRINT 09
+
+```
+
+NOT READY FOR SPRINT 09
+```

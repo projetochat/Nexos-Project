@@ -168,10 +168,13 @@ describe("MessagingConnectionsService", () => {
     prisma.messagingConnection.update.mockResolvedValue({
       ...connection(),
       status: MessagingConnectionStatus.CONNECTED,
+      ownerExternalId: "551199990000@s.whatsapp.net",
+      ownerPhoneNormalized: "+551199990000",
     });
     const evolution = {
       findInstance: vi.fn().mockResolvedValue({
         name: "tenant-a-suporte",
+        ownerJid: "551199990000@s.whatsapp.net",
         Webhook: { url: "old-url" },
       }),
       connectionState: vi.fn().mockResolvedValue({ instance: { state: "open" } }),
@@ -184,6 +187,14 @@ describe("MessagingConnectionsService", () => {
     );
 
     expect(evolution.setWebhook).toHaveBeenCalledTimes(1);
+    expect(prisma.messagingConnection.update).toHaveBeenCalledWith({
+      where: { id: "connection-a" },
+      data: {
+        status: MessagingConnectionStatus.CONNECTED,
+        ownerExternalId: "551199990000@s.whatsapp.net",
+        ownerPhoneNormalized: "+551199990000",
+      },
+    });
   });
 
   it("exposes an idempotent webhook ensure operation", async () => {

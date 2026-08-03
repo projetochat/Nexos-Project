@@ -316,3 +316,14 @@ Separacao de ambientes:
 
 O webhook Evolution aceita o header real configurado na instance (`jwt_key`) e tambem preserva suporte
 ao Bearer JWT usado em testes. Eventos ignorados passam a registrar motivo canonico.
+
+### Rework Sprint 08.04
+
+O modal `Contatos -> Novo contato` tambem usa a fonte unica de Connections reais. Os nomes legados
+`ENORE`, `FLOWID` e `ZYVO` nao aparecem mais em arquivos runtime operacionais; permanecem apenas em testes
+de guarda.
+
+Credenciais locais/homologacao:
+
+- `admin@nexo.app` / `demo1234` role `tenant_admin`
+- `atendente@nexo.app` / `demo1234` role `agent`

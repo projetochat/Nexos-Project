@@ -283,3 +283,21 @@ Webhook Evolution nao usa sessao de usuario. Ele e autenticado por segredo opera
 
 Falha de auth registra `evolution.webhook.auth_failed` com `authResult` e HTTP 401, sem logar segredo,
 telefone completo ou conteudo da mensagem.
+
+## Sprint 08.04 Rework - Atendente homologacao
+
+O seed `homologation` cria dois acessos locais:
+
+| E-mail             | Role         | Departamento |
+| ------------------ | ------------ | ------------ |
+| admin@nexo.app     | tenant_admin | Atendimento  |
+| atendente@nexo.app | agent        | Atendimento  |
+
+Variaveis locais:
+
+```text
+SEED_AGENT_EMAIL=atendente@nexo.app
+SEED_AGENT_PASSWORD=demo1234
+```
+
+Defaults continuam bloqueados em producao.

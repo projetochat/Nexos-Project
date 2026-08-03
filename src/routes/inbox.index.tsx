@@ -20,15 +20,15 @@ import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Badge, Button, Field, Input } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
-import { connectedEvolutionConnections, connectionDisplayLabel } from "@/lib/connection-options";
+import { connectionDisplayLabel, connectionInstanceValue } from "@/lib/connection-options";
 import { type Contact } from "@/lib/mvp";
 import {
-  connectionsApi,
   conversationApi,
   crmApi,
   messageApi,
   type ApiConversationStatus as ConvStatus,
 } from "@/lib/nexos-api";
+import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 import { useSession } from "@/lib/session";
 import { relativeTime } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
@@ -120,15 +120,11 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   });
   const customers = React.useMemo(() => customersPage?.items ?? [], [customersPage?.items]);
 
-  const { data: filterConnections = [] } = useQuery({
-    queryKey: ["nexos", "messaging-connections", "inbox-filter"],
-    queryFn: connectionsApi.list,
-    staleTime: 0,
-  });
+  const { connectedConnections: filterConnections } = useConnectedMessagingConnections();
   const instanciasList = React.useMemo(
     () =>
-      connectedEvolutionConnections(filterConnections)
-        .map((connection) => connection.externalReference ?? connection.name)
+      filterConnections
+        .map((connection) => connectionInstanceValue(connection))
         .filter(Boolean)
         .sort(),
     [filterConnections],
@@ -413,18 +409,9 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
     queryFn: () => crmApi.listContacts({ pageSize: 100 }),
     enabled: open,
   });
-  const { data: connections = [], error: connectionsError } = useQuery({
-    queryKey: ["nexos", "messaging-connections", "conversation-modal"],
-    queryFn: connectionsApi.list,
-    enabled: open,
-    staleTime: 0,
-    refetchOnMount: "always",
-  });
+  const { connectedConnections: availableConnections, error: connectionsError } =
+    useConnectedMessagingConnections({ enabled: open });
   const contacts = React.useMemo(() => contactsPage?.items ?? [], [contactsPage?.items]);
-  const availableConnections = React.useMemo(
-    () => connectedEvolutionConnections(connections),
-    [connections],
-  );
 
   React.useEffect(() => {
     if (!open || selectedConnectionId || availableConnections.length === 0) return;

@@ -14,12 +14,14 @@ import {
   SectionHeader,
   Select,
 } from "@/components/ui-kit";
+import type { ConnectedConnectionOption } from "@/lib/connection-options";
+import { connectionPrimaryLabel, hasExampleInstanceName } from "@/lib/connection-options";
 import { crmApi, type ApiContact, type ApiCustomer, type ApiTag } from "@/lib/nexos-api";
+import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 
 export const Route = createFileRoute("/contatos")({ component: ContatosPage });
 
 const PAGE_SIZE = 15;
-const DEFAULT_INSTANCES = ["FLOWID", "ZYVO", "ENORE"] as const;
 
 type Customer = ApiCustomer;
 type Contact = ApiContact;
@@ -45,7 +47,6 @@ function ContatosPage() {
   const [contacts, setContacts] = React.useState<Contact[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [tags, setTags] = React.useState<Tag[]>([]);
-  const [instances, setInstances] = React.useState<string[]>([...DEFAULT_INSTANCES]);
   const [departments, setDepartments] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [query, setQuery] = React.useState("");
@@ -60,6 +61,17 @@ function ContatosPage() {
   const [editing, setEditing] = React.useState<Contact | null>(null);
   const [deleting, setDeleting] = React.useState<Contact | null>(null);
   const create = useDisclosure();
+  const { connectionOptions, error: connectionsError } = useConnectedMessagingConnections();
+  const connectionLabelByValue = React.useMemo(
+    () =>
+      new Map(
+        connectionOptions.map((option) => [
+          option.value,
+          connectionPrimaryLabel(option.connection),
+        ]),
+      ),
+    [connectionOptions],
+  );
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -82,7 +94,6 @@ function ContatosPage() {
       setTotalPages(contactResponse.totalPages);
       setCustomers(customerResponse.items);
       setTags(options.tags);
-      setInstances(Array.from(new Set([...DEFAULT_INSTANCES, ...options.instances])).sort());
       setDepartments(options.departments);
     } catch (e) {
       toast.error("Falha ao carregar", { description: (e as Error).message });
@@ -127,9 +138,9 @@ function ContatosPage() {
             </div>
             <Select value={instanciaFilter} onChange={(e) => setInstanciaFilter(e.target.value)}>
               <option value="">Instancia: Todas</option>
-              {instances.map((i) => (
-                <option key={i} value={i}>
-                  {i}
+              {connectionOptions.map((option) => (
+                <option key={option.id} value={option.value}>
+                  {connectionPrimaryLabel(option.connection)}
                 </option>
               ))}
             </Select>
@@ -193,7 +204,7 @@ function ContatosPage() {
                     <td className="px-4 py-3">
                       {c.instancia ? (
                         <Badge tone="default" dot={false}>
-                          {c.instancia}
+                          {connectionLabelByValue.get(c.instancia) ?? c.instancia}
                         </Badge>
                       ) : (
                         <span className="text-xs text-muted-foreground">-</span>
@@ -291,7 +302,8 @@ function ContatosPage() {
           onClose={create.hide}
           customers={customers}
           tags={tags}
-          instances={instances}
+          connectionOptions={connectionOptions}
+          connectionsError={connectionsError}
           onSubmit={async (data) => {
             try {
               const contact = await crmApi.createContact(contactPayload(data));
@@ -313,7 +325,8 @@ function ContatosPage() {
           initial={editing ?? undefined}
           customers={customers}
           tags={tags}
-          instances={instances}
+          connectionOptions={connectionOptions}
+          connectionsError={connectionsError}
           onClose={() => setEditing(null)}
           onSubmit={async (data) => {
             if (!editing) return;
@@ -358,13 +371,15 @@ function ContactFormModal({
   initial,
   customers,
   tags,
-  instances,
+  connectionOptions,
+  connectionsError,
 }: {
   open: boolean;
   onClose: () => void;
   customers: Customer[];
   tags: Tag[];
-  instances: string[];
+  connectionOptions: ConnectedConnectionOption[];
+  connectionsError: Error | null;
   onSubmit: (data: {
     nome: string;
     telefone: string;
@@ -395,10 +410,12 @@ function ContactFormModal({
     setEmail(initial?.email ?? "");
     setDepartamento(initial?.departamento ?? "");
     setNivelGerencia(initial?.nivel_gerencia ?? "");
-    setInstancia(initial?.instancia ?? "");
+    const initialInstance = initial?.instancia ?? "";
+    const isAvailable = connectionOptions.some((option) => option.value === initialInstance);
+    setInstancia(isAvailable && !hasExampleInstanceName(initialInstance) ? initialInstance : "");
     setTagIds(initial?.tags.map((tag) => tag.id) ?? []);
     setErrors({});
-  }, [initial, open]);
+  }, [connectionOptions, initial, open]);
 
   const toggleTag = (id: string) => {
     setTagIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -488,13 +505,26 @@ function ContactFormModal({
         </Field>
         <Field label="Instancia">
           <Select value={instancia} onChange={(e) => setInstancia(e.target.value)}>
-            <option value="">- Selecione -</option>
-            {instances.map((i) => (
-              <option key={i} value={i}>
-                {i}
+            <option value="">
+              {connectionOptions.length === 0
+                ? "Nenhuma instancia conectada disponivel."
+                : "- Selecione -"}
+            </option>
+            {connectionOptions.map((option) => (
+              <option key={option.id} value={option.value}>
+                {connectionPrimaryLabel(option.connection)}
               </option>
             ))}
           </Select>
+          {connectionsError ? (
+            <span className="mt-1 block text-[11px] text-destructive">
+              {connectionsError.message}
+            </span>
+          ) : connectionOptions.length === 0 ? (
+            <span className="mt-1 block text-[11px] text-muted-foreground">
+              Conecte uma instancia antes de continuar.
+            </span>
+          ) : null}
         </Field>
         <Field label="Perfil na Empresa">
           <Select

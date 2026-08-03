@@ -20,25 +20,28 @@ type GhostContact = Contact & { __ghost: true };
 const GHOSTS: GhostContact[] = [
   {
     id: "ghost-zyvo-1",
-    nome: "Contato desconhecido · ZYVO",
+    nome: "Contato desconhecido",
     telefone: "+55 11 90000-1111",
     avatar_url: null,
-    instancia: "ZYVO",
+    instancia: "Instancia conectada",
     __ghost: true,
   },
   {
     id: "ghost-flowid-1",
-    nome: "Contato desconhecido · FLOWID",
+    nome: "Contato desconhecido",
     telefone: "+55 21 90000-2222",
     avatar_url: null,
-    instancia: "FLOWID",
+    instancia: "Instancia conectada",
     __ghost: true,
   },
 ];
 
 function SimuladorPage() {
   const qc = useQueryClient();
-  const { data: contatos = [] } = useQuery({ queryKey: ["mvp", "contacts"], queryFn: CATALOG.contacts });
+  const { data: contatos = [] } = useQuery({
+    queryKey: ["mvp", "contacts"],
+    queryFn: CATALOG.contacts,
+  });
   const { data: activeContactIds = [] } = useQuery({
     queryKey: ["mvp", "sim-active-contact-ids"],
     queryFn: async () => {
@@ -47,7 +50,9 @@ function SimuladorPage() {
         .select("contact_id")
         .neq("status", "fechada");
       if (error) throw error;
-      return Array.from(new Set(((data ?? []) as { contact_id: string }[]).map((r) => r.contact_id)));
+      return Array.from(
+        new Set(((data ?? []) as { contact_id: string }[]).map((r) => r.contact_id)),
+      );
     },
     refetchInterval: 5000,
   });
@@ -77,7 +82,9 @@ function SimuladorPage() {
   const { data: mensagens = [] } = useQuery({
     queryKey: ["mvp", "sim-messages", activeId],
     queryFn: () =>
-      activeId && !isGhost ? SIMULATOR.messagesForContact(activeId) : Promise.resolve([] as Message[]),
+      activeId && !isGhost
+        ? SIMULATOR.messagesForContact(activeId)
+        : Promise.resolve([] as Message[]),
     enabled: !!activeId && !isGhost,
   });
 
@@ -171,7 +178,9 @@ function SimuladorPage() {
                     <Avatar name="?" size={36} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{g.telefone}</p>
-                      <p className="truncate text-[11px] text-muted-foreground">Via {g.instancia}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        Via {g.instancia}
+                      </p>
                     </div>
                     <Badge tone="warning">novo</Badge>
                   </button>
@@ -207,8 +216,9 @@ function SimuladorPage() {
             <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-surface-1/50 p-4">
               {isGhost ? (
                 <p className="pt-16 text-center text-xs text-muted-foreground">
-                  Esse número ainda não está cadastrado. Ao enviar a primeira mensagem, o contato será criado
-                  automaticamente na instância <b>{activo?.instancia}</b> e a mensagem de boas-vindas configurada será disparada.
+                  Esse número ainda não está cadastrado. Ao enviar a primeira mensagem, o contato
+                  será criado automaticamente na instância <b>{activo?.instancia}</b> e a mensagem
+                  de boas-vindas configurada será disparada.
                 </p>
               ) : (
                 <>
@@ -218,11 +228,15 @@ function SimuladorPage() {
                       <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                         <div
                           className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm shadow-card ${
-                            mine ? "rounded-br-sm bg-success/90 text-white" : "rounded-bl-sm border border-border bg-card"
+                            mine
+                              ? "rounded-br-sm bg-success/90 text-white"
+                              : "rounded-bl-sm border border-border bg-card"
                           }`}
                         >
                           <p>{m.content}</p>
-                          <p className={`mt-0.5 text-right font-mono text-[10px] ${mine ? "text-white/80" : "text-muted-foreground"}`}>
+                          <p
+                            className={`mt-0.5 text-right font-mono text-[10px] ${mine ? "text-white/80" : "text-muted-foreground"}`}
+                          >
                             {fmtHM(new Date(m.created_at).getTime())}
                           </p>
                         </div>
@@ -250,16 +264,26 @@ function SimuladorPage() {
                       send();
                     }
                   }}
-                  placeholder={activo ? `Escreva como ${isGhost ? "novo contato" : activo.nome.split(" ")[0]}…` : "Selecione um contato"}
+                  placeholder={
+                    activo
+                      ? `Escreva como ${isGhost ? "novo contato" : activo.nome.split(" ")[0]}…`
+                      : "Selecione um contato"
+                  }
                   disabled={!activo}
                   className="max-h-32 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50"
                 />
-                <Button variant="primary" size="sm" onClick={send} disabled={!activo || !text.trim()}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={send}
+                  disabled={!activo || !text.trim()}
+                >
                   <Send className="h-3.5 w-3.5" /> Enviar
                 </Button>
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">
-                A mensagem aparecerá na Inbox dos atendentes em tempo real, vinculada à instância do contato.
+                A mensagem aparecerá na Inbox dos atendentes em tempo real, vinculada à instância do
+                contato.
               </p>
             </div>
           </Card>
@@ -285,7 +309,9 @@ function ContactGroup({
   return (
     <>
       <li className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-surface-1 px-4 py-2">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">{title}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+          {title}
+        </p>
         <Badge tone="default">{items.length}</Badge>
       </li>
       {items.map((c) => {

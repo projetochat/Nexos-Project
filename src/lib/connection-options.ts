@@ -2,12 +2,29 @@ import type { ApiMessagingConnection } from "@/lib/nexos-api";
 
 const SUPPORTED_PROVIDER = "evolution";
 const CONNECTED_STATUS = "connected";
+export const EXAMPLE_INSTANCE_NAMES = ["ENORE", "FLOWID", "ZYVO"] as const;
+
+export type ConnectedConnectionOption = {
+  id: string;
+  value: string;
+  label: string;
+  connection: ApiMessagingConnection;
+};
 
 export function connectedEvolutionConnections(connections: ApiMessagingConnection[]) {
   return connections.filter(
     (connection) =>
       connection.providerType === SUPPORTED_PROVIDER && connection.status === CONNECTED_STATUS,
   );
+}
+
+export function connectedConnectionOptions(connections: ApiMessagingConnection[]) {
+  return connectedEvolutionConnections(connections).map((connection) => ({
+    id: connection.id,
+    value: connectionInstanceValue(connection),
+    label: connectionDisplayLabel(connection),
+    connection,
+  }));
 }
 
 export function connectionDisplayLabel(connection: ApiMessagingConnection) {
@@ -18,6 +35,19 @@ export function connectionDisplayLabel(connection: ApiMessagingConnection) {
     statusLabel(connection.status),
   ].filter(Boolean);
   return parts.join(" - ");
+}
+
+export function connectionPrimaryLabel(connection: ApiMessagingConnection) {
+  return connection.name;
+}
+
+export function connectionInstanceValue(connection: ApiMessagingConnection) {
+  return connection.externalReference ?? connection.name;
+}
+
+export function hasExampleInstanceName(value: string | null | undefined) {
+  const normalized = value?.trim().toUpperCase();
+  return EXAMPLE_INSTANCE_NAMES.some((name) => name === normalized);
 }
 
 function providerLabel(provider: ApiMessagingConnection["providerType"]) {

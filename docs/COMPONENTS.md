@@ -113,3 +113,7 @@ Polling existente continua responsavel pela atualizacao visual.
 
 `InboxLayout` tambem usa Connections reais para o filtro de instancia, evitando listas vindas de opções de
 contato ou fontes legadas.
+
+No rework da Sprint 08.04, `Contatos` e `ReportFiltersBar` tambem passaram para
+`useConnectedMessagingConnections`. O modal de contato mostra o nome real da Connection como label e grava
+a referencia operacional da Connection como valor.

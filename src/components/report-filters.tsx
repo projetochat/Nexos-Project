@@ -2,7 +2,9 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, Select } from "@/components/ui-kit";
 import { supabase } from "@/integrations/supabase/client";
+import { connectionPrimaryLabel } from "@/lib/connection-options";
 import type { ReportFilters, PeriodKey } from "@/lib/mvp";
+import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 
 const PERIOD_OPTIONS: { value: PeriodKey; label: string }[] = [
   { value: "hoje", label: "Hoje" },
@@ -21,13 +23,7 @@ export function ReportFiltersBar({
   value: ReportFilters;
   onChange: (patch: Partial<ReportFilters>) => void;
 }) {
-  const { data: instancias = [] } = useQuery({
-    queryKey: ["report-filters", "instancias"],
-    queryFn: async () => {
-      const { data } = await supabase.from("instancias").select("id,nome").order("nome");
-      return data ?? [];
-    },
-  });
+  const { connectionOptions } = useConnectedMessagingConnections();
   const { data: clientes = [] } = useQuery({
     queryKey: ["report-filters", "customers"],
     queryFn: async () => {
@@ -47,37 +43,59 @@ export function ReportFiltersBar({
     <Card className="mb-6 p-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">Período</label>
-          <Select value={value.period} onChange={(e) => onChange({ period: e.target.value as PeriodKey })}>
+          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
+            Período
+          </label>
+          <Select
+            value={value.period}
+            onChange={(e) => onChange({ period: e.target.value as PeriodKey })}
+          >
             {PERIOD_OPTIONS.map((p) => (
-              <option key={p.value} value={p.value}>{p.label}</option>
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
             ))}
           </Select>
         </div>
         <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">Instância</label>
+          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
+            Instância
+          </label>
           <Select value={value.instancia} onChange={(e) => onChange({ instancia: e.target.value })}>
             <option value="all">Todas</option>
-            {(instancias as { id: string; nome: string }[]).map((i) => (
-              <option key={i.id} value={i.nome}>{i.nome}</option>
+            {connectionOptions.map((option) => (
+              <option key={option.id} value={option.value}>
+                {connectionPrimaryLabel(option.connection)}
+              </option>
             ))}
           </Select>
         </div>
         <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">Cliente</label>
+          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
+            Cliente
+          </label>
           <Select value={value.clienteId} onChange={(e) => onChange({ clienteId: e.target.value })}>
             <option value="all">Todos</option>
             {(clientes as { id: string; nome: string }[]).map((c) => (
-              <option key={c.id} value={c.id}>{c.nome}</option>
+              <option key={c.id} value={c.id}>
+                {c.nome}
+              </option>
             ))}
           </Select>
         </div>
         <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">Departamento</label>
-          <Select value={value.departamentoId} onChange={(e) => onChange({ departamentoId: e.target.value })}>
+          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
+            Departamento
+          </label>
+          <Select
+            value={value.departamentoId}
+            onChange={(e) => onChange({ departamentoId: e.target.value })}
+          >
             <option value="all">Todos</option>
             {(departamentos as { id: string; nome: string }[]).map((d) => (
-              <option key={d.id} value={d.id}>{d.nome}</option>
+              <option key={d.id} value={d.id}>
+                {d.nome}
+              </option>
             ))}
           </Select>
         </div>

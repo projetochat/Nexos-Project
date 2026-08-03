@@ -174,3 +174,11 @@
 - Translator passou a retornar motivos canonicos como `FROM_ME`, `GROUP_MESSAGE` e `UNSUPPORTED_EVENT`.
 - Adicionado teste E2E para inbound autenticado via `jwt_key`.
 - Documentada separacao `nexos_0801` para regressao e `nexos_0802` para homologacao fisica preservada.
+
+## Sprint 08.04 Rework
+
+- Removidos `ENORE`, `FLOWID` e `ZYVO` dos seletores runtime de Contatos, Inbox, filtros de relatorio e simulador.
+- Adicionado hook canonico `useConnectedMessagingConnections` com query key unica.
+- Modal de Novo/Editar contato passa a exibir somente Connections Evolution conectadas.
+- Seed de homologacao cria Admin e Atendente idempotentes.
+- Reconcile de status da Connection Evolution persiste owner identity quando a Evolution informa `ownerJid`.

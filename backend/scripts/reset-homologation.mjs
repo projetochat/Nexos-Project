@@ -148,8 +148,8 @@ async function validateCounts(databaseUrl) {
     };
     if (
       counts.tenants !== 1 ||
-      counts.users !== 1 ||
-      counts.memberships !== 1 ||
+      counts.users !== 2 ||
+      counts.memberships !== 2 ||
       counts.departments !== 1 ||
       counts.contacts !== 0 ||
       counts.conversations !== 0 ||

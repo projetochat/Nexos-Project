@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { MessagingConnectionStatus, MessagingProviderType, Prisma } from "../generated/prisma";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
+import { phoneFromRemoteIdentity } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
 import { assertEvolutionConfigured, evolutionConfigFromEnv } from "./evolution/evolution.config";
 import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.dto";
@@ -81,9 +82,15 @@ export class MessagingConnectionsService {
     if (translatedStatus === MessagingConnectionStatus.CONNECTED) {
       await this.ensureWebhookConfigured(connection.externalReference);
     }
+    const ownerExternalId = instance.ownerJid ?? null;
+    const ownerPhoneNormalized = normalizeOwnerPhone(ownerExternalId);
     const updated = await this.prisma.messagingConnection.update({
       where: { id: connection.id },
-      data: { status: translatedStatus },
+      data: {
+        status: translatedStatus,
+        ownerExternalId: ownerExternalId ?? undefined,
+        ownerPhoneNormalized: ownerPhoneNormalized ?? undefined,
+      },
     });
     return this.serialize(updated, { existsInProvider: true, webhookUrl: instance.Webhook?.url });
   }
@@ -334,6 +341,11 @@ function maskPhone(value: string | null | undefined) {
   const digits = value.replace(/\D/g, "");
   if (!digits) return null;
   return `******${digits.slice(-4)}`;
+}
+
+function normalizeOwnerPhone(value: string | null) {
+  const phone = phoneFromRemoteIdentity(value);
+  return phone ? `+${phone}` : null;
 }
 
 function sanitizeEnsureError(error: unknown) {

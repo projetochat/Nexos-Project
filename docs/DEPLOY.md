@@ -308,3 +308,14 @@ $env:EVOLUTION_WEBHOOK_SECRET="use-um-secret-forte"
 
 Para regressao automatizada ampla, use `nexos_0801`. Para homologacao fisica, use `nexos_0802` e nao rode
 reset enquanto houver Contact, Connection, Conversation ou Messages reais aprovados.
+
+O seed idempotente de homologacao pode ser executado sem reset para garantir Admin + Atendente:
+
+```powershell
+$env:SEED_MODE="homologation"
+$env:SEED_ADMIN_EMAIL="admin@nexo.app"
+$env:SEED_ADMIN_PASSWORD="demo1234"
+$env:SEED_AGENT_EMAIL="atendente@nexo.app"
+$env:SEED_AGENT_PASSWORD="demo1234"
+bun --cwd backend prisma db seed
+```

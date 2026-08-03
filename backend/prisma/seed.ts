@@ -58,6 +58,8 @@ async function main() {
 async function seedHomologationMinimum() {
   const adminEmail = seedAdminEmail();
   const adminPassword = seedAdminPassword();
+  const agentEmail = seedAgentEmail();
+  const agentPassword = seedAgentPassword();
   const tenant = await prisma.tenant.upsert({
     where: { slug: "homologacao" },
     update: { name: "Homologacao Nexos" },
@@ -71,9 +73,14 @@ async function seedHomologationMinimum() {
     "Departamento minimo de homologacao.",
   );
   const passwordHash = await hash(adminPassword, 12);
+  const agentPasswordHash = await hash(agentPassword, 12);
   const admin = await seedUser(adminEmail, "Admin Homologacao", passwordHash);
+  const agent = await seedUser(agentEmail, "Atendente Homologacao", agentPasswordHash);
   await seedMembership(tenant.id, admin.id, roles.tenant_admin.id, [department.id]);
-  console.info(`Seed completed. Mode: homologation. Tenant: homologacao. Admin: ${adminEmail}.`);
+  await seedMembership(tenant.id, agent.id, roles.agent.id, [department.id]);
+  console.info(
+    `Seed completed. Mode: homologation. Tenant: homologacao. Admin: ${adminEmail}. Agent: ${agentEmail}.`,
+  );
 }
 
 async function seedDemoData() {
@@ -703,6 +710,24 @@ function seedAdminPassword() {
   if (password) return password;
   if (process.env.NODE_ENV === "production") {
     throw new Error("SEED_ADMIN_PASSWORD must be configured in production.");
+  }
+  return "demo1234";
+}
+
+function seedAgentEmail() {
+  const email = process.env.SEED_AGENT_EMAIL;
+  if (email) return email.toLowerCase().trim();
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("SEED_AGENT_EMAIL must be configured in production.");
+  }
+  return "atendente@nexo.app";
+}
+
+function seedAgentPassword() {
+  const password = process.env.SEED_AGENT_PASSWORD;
+  if (password) return password;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("SEED_AGENT_PASSWORD must be configured in production.");
   }
   return "demo1234";
 }
