@@ -20,8 +20,10 @@ export function useRealtimeInbox(conversationId?: string | null) {
   const user = useSession((state) => state.user);
   const queryClient = useQueryClient();
   const realtime = useRealtimeStatus();
+  const previousStatusRef = React.useRef(realtime.status);
 
   React.useEffect(() => {
+    if (realtime.status === "disabled") return;
     if (!user) {
       disconnectRealtime();
       return;
@@ -29,7 +31,7 @@ export function useRealtimeInbox(conversationId?: string | null) {
     void connectRealtime();
     const heartbeat = window.setInterval(() => heartbeatRealtime("online"), 30_000);
     return () => window.clearInterval(heartbeat);
-  }, [user]);
+  }, [realtime.status, user]);
 
   React.useEffect(() => {
     if (!conversationId || realtime.status !== "connected") return;
@@ -71,7 +73,9 @@ export function useRealtimeInbox(conversationId?: string | null) {
   }, [queryClient]);
 
   React.useEffect(() => {
-    if (realtime.status !== "connected") return;
+    const previousStatus = previousStatusRef.current;
+    previousStatusRef.current = realtime.status;
+    if (realtime.status !== "connected" || previousStatus === "connected") return;
     void queryClient.invalidateQueries({ queryKey: ["nexos", "conversations"] });
     void queryClient.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
     if (conversationId) {

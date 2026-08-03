@@ -131,6 +131,30 @@ No mesmo rework, o Redis adapter passou a detectar corretamente quando o Nest en
 Socket.io no `afterInit`. Para namespace `/realtime`, o adapter deve ser aplicado no servidor raiz
 (`namespace.server.adapter(...)`), nao na propriedade `namespace.adapter`.
 
+## Rework II Sprint 09 - Inbox runtime
+
+Frontend realtime possui flag explicita:
+
+```text
+VITE_NEXOS_REALTIME_ENABLED=true|false
+```
+
+Quando `false`, `connectRealtime()` retorna `null`, o status externo e `disabled`, nenhum socket e criado,
+nenhuma subscription de Conversation e enviada e a Inbox continua por REST com polling.
+
+A falha fisica da Inbox foi causada por `useSyncExternalStore` recebendo snapshot instavel em
+`src/lib/realtime/client.ts`. Antes do rework, `realtimeSnapshot()` criava `{ status, lastEventId }` a cada
+chamada. Mesmo com valores iguais, a referencia nova fazia o React re-renderizar `InboxLayout` em ciclo ate
+`Maximum update depth exceeded`. O snapshot agora e cacheado e atualizado somente em transicoes reais de
+`status` ou `lastEventId`.
+
+`subscribeConversation()` e `unsubscribeConversation()` sao idempotentes por `conversationId`. O client
+expoe `realtimeDiagnostics()` para desenvolvimento, com contagem sanitizada de socket, listeners,
+event handlers e subscriptions ativas.
+
+Reconcile REST ocorre somente na transicao para `connected`; eventos recebidos invalidam queries
+especificas, mas nao recriam o snapshot nem registram listeners adicionais.
+
 ## Segurança
 
 Não enviar pelo socket:

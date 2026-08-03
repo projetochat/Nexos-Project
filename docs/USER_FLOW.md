@@ -166,12 +166,6 @@ Nova conversa:
 ```text
 Inbox -> Nova conversa -> GET /api/messaging/connections
   -> filtra Evolution connected
-
-## Sprint 09 - Inbox ao vivo
-
-Ao entrar na Inbox, o frontend conecta no realtime autenticado. Ao abrir uma Conversation, subscreve a room
-da conversa apos autorizacao server-side. Mensagens, status, unread e lista de conversas atualizam por
-eventos; em queda do socket, a tela volta para atualizacao periodica REST e reconcilia ao reconectar.
   -> seleciona Connection real
   -> cria/reusa Conversation
   -> envia primeira Message outbound
@@ -182,3 +176,20 @@ como erro real; nao ha preenchimento com exemplo.
 
 Inbound segue polling/refetch enquanto Socket.io estiver fora de escopo. A resposta do cliente deve aparecer
 na mesma Conversation aberta quando o webhook persistir a Message inbound.
+
+## Sprint 09 - Inbox ao vivo
+
+Ao entrar na Inbox, o frontend conecta no realtime autenticado quando `VITE_NEXOS_REALTIME_ENABLED` nao e
+`false`. Ao abrir uma Conversation, subscreve a room da conversa apos autorizacao server-side. Mensagens,
+status, unread e lista de conversas atualizam por eventos; em queda do socket, a tela volta para
+atualizacao periodica REST e reconcilia apenas em transicoes reais de conexao.
+
+### Rework II - Inbox runtime
+
+`InboxLayout` nao depende de socket conectado para renderizar. O conteudo base vem de REST; Socket.io
+apenas melhora a atualizacao. Quando `VITE_NEXOS_REALTIME_ENABLED=false`, o hook retorna `disabled`, nao
+instancia socket, nao cria subscriptions e mantem polling REST.
+
+A causa do crash era o snapshot instavel de `useSyncExternalStore` em `src/lib/realtime/client.ts`.
+`realtimeSnapshot()` retornava um objeto novo a cada chamada mesmo sem mudanca de estado, retroalimentando
+render em `InboxLayout`. O snapshot agora e cacheado e so muda quando `status` ou `lastEventId` mudam.

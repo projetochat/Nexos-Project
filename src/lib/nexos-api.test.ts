@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clearNexosApiSession, loginWithNexosApi } from "./nexos-api";
+import { apiRequest, clearNexosApiSession, loginWithNexosApi } from "./nexos-api";
 
 describe("nexos-api auth client", () => {
   afterEach(() => {
@@ -83,6 +83,51 @@ describe("nexos-api auth client", () => {
     await expect(loginWithNexosApi("admin@nexo.app", "demo1234")).rejects.toThrow(
       "Ocorreu um erro interno ao autenticar.",
     );
+  });
+
+  it("uses one refresh request for concurrent 401 responses and retries each request once", async () => {
+    localStorage.setItem("nexo.api.accessToken", "old-access");
+    localStorage.setItem("nexo.api.refreshToken", "refresh");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/auth/refresh")) {
+        return responseJson(200, { accessToken: "new-access" });
+      }
+      const authorization = new Headers(init?.headers).get("Authorization");
+      if (authorization === "Bearer old-access") return responseJson(401, { message: "expired" });
+      return responseJson(200, { ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      Promise.all([apiRequest<{ ok: true }>("/conversations"), apiRequest<{ ok: true }>("/users")]),
+    ).resolves.toEqual([{ ok: true }, { ok: true }]);
+
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh")),
+    ).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(localStorage.getItem("nexo.api.accessToken")).toBe("new-access");
+  });
+
+  it("does not recursively refresh the refresh endpoint after a definitive 401", async () => {
+    localStorage.setItem("nexo.api.accessToken", "old-access");
+    localStorage.setItem("nexo.api.refreshToken", "refresh");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/auth/refresh")) return responseJson(401, { message: "invalid refresh" });
+      return responseJson(401, { message: "expired" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiRequest("/conversations")).rejects.toThrow("E-mail ou senha invalidos.");
+
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh")),
+    ).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(localStorage.getItem("nexo.api.accessToken")).toBeNull();
+    expect(localStorage.getItem("nexo.api.refreshToken")).toBeNull();
   });
 });
 

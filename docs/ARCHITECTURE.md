@@ -298,3 +298,19 @@ No rework da Sprint 09, o bootstrap fisico no `nexos_0802` foi protegido por tes
 A dependencia de indice 1 de `ConversationsController` e `MessagesService` e agora usa token explicito
 `@Inject(MessagesService)`. O Redis adapter tambem foi corrigido para aplicar `namespace.server.adapter(...)`
 quando o Nest entrega um namespace Socket.io no `afterInit`.
+
+## Sprint 09 Rework II - Inbox runtime
+
+`InboxLayout` consome REST como fonte principal e usa Socket.io apenas como atualizacao incremental. O hook
+`useRealtimeInbox` nao pode bloquear render: estados `disabled`, `offline`, `degraded`, `connecting` e
+`reconnecting` mantem polling REST.
+
+O estado externo de realtime segue o contrato do React:
+
+```text
+useSyncExternalStore -> realtimeSnapshot cacheado -> render estavel
+```
+
+Snapshots so mudam quando `status` ou `lastEventId` mudam. Subscriptions de Conversation sao idempotentes,
+listeners sao registrados uma vez por socket singleton e reconcile REST ocorre somente na transicao real
+para `connected`.

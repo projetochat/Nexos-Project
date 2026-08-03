@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-03 - Sprint 09 Rework II Inbox Runtime Recovery
+
+- Corrigido loop React da Inbox causado por snapshot instavel em `useSyncExternalStore`.
+- `realtimeSnapshot()` agora e cacheado e so muda quando `status` ou `lastEventId` mudam.
+- Adicionada flag frontend `VITE_NEXOS_REALTIME_ENABLED`; quando `false`, nenhum socket e instanciado.
+- Subscriptions de Conversation no client realtime agora sao idempotentes e limpas por `conversationId`.
+- Reconcile REST da Inbox ocorre somente na transicao real para `connected`.
+- Refresh HTTP passa a ser single-flight, com retry unico e endpoints publicos fora do ciclo de refresh.
+- Adicionados testes frontend para snapshot/render stability, realtime disabled, socket singleton/subscription cleanup, 401 recovery e refresh failure.
+- Gate fisico completo permanece `NOT READY FOR SPRINT 10` porque browser controlavel e WhatsApp/Redis recovery ponta a ponta nao foram executados nesta sessao.
+
 ## 2026-08-03 - Sprint 09 Rework Bootstrap Recovery
 
 - Corrigida a injecao de `MessagesService` em `ConversationsController` com `@Inject(MessagesService)`.

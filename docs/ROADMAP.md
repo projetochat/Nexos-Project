@@ -192,3 +192,8 @@ Rework Sprint 09 recuperou o bootstrap backend fisico em `nexos_0802`, adicionou
 `AppModule`, validou health `realtime=up` com Redis adapter e confirmou sockets admin/agente em homologacao.
 Sprint 10 continua bloqueada ate homologacao fisica completa de inbound, outbound/status, presence visual,
 typing visual, reconnect/F5 com reconcile REST e queda/retorno de Redis.
+
+Rework II Sprint 09 recuperou a estabilidade runtime da Inbox: snapshot realtime cacheado, flag frontend
+`VITE_NEXOS_REALTIME_ENABLED`, subscriptions idempotentes e refresh single-flight. A liberacao da Sprint 10
+continua condicionada ao gate fisico completo em browser real com admin/agente, WhatsApp inbound/outbound,
+presence, typing, reconnect e Redis degraded/recovery.

@@ -354,3 +354,23 @@ Resultado esperado:
 ```json
 {"ok":true,"health":{"database":"up","redis":"up","queue":"up","realtime":"up","realtimeAdapter":"redis"}}
 ```
+
+## Sprint 09 Rework II - Flag frontend realtime
+
+Ambiente local com realtime ativo:
+
+```powershell
+$env:VITE_NEXOS_API_URL="http://localhost:3001/api"
+$env:VITE_NEXOS_REALTIME_ENABLED="true"
+```
+
+Ambiente local com realtime desativado:
+
+```powershell
+$env:VITE_NEXOS_API_URL="http://localhost:3001/api"
+$env:VITE_NEXOS_REALTIME_ENABLED="false"
+```
+
+Com a flag frontend em `false`, o browser nao instancia Socket.io e a Inbox deve abrir por REST/polling.
+Nao dependa apenas de `NEXOS_REALTIME_ENABLED=false` no backend para desligar tentativas de conexao no
+cliente.

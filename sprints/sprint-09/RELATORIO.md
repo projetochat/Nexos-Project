@@ -101,6 +101,201 @@ O incremento esta tecnicamente integrado e verificavel, mas nao deve abrir Sprin
 
 NOT READY FOR SPRINT 10
 
+## Rework II - Inbox Runtime Recovery
+
+Data: 2026-08-03
+
+Branch: `sprint/09-realtime-socketio-live-inbox`
+
+HEAD inicial: `6fcb5db70e18704fa52f09970cef006c7e18e134`
+
+### Falha fisica
+
+Falha reportada em `http://localhost:5173/inbox` para admin e atendente:
+
+```text
+Esta pagina nao carregou.
+Maximum update depth exceeded
+The above error occurred in the <InboxLayout> component.
+```
+
+O browser controlavel desta sessao nao estava disponivel (`No browser is available`), entao a reproducao
+visual completa nao pode ser capturada por automacao. A causa foi reproduzida de forma minima antes da
+correcao:
+
+```json
+{"sameReference":false,"a":{"status":"offline","lastEventId":null},"b":{"status":"offline","lastEventId":null}}
+```
+
+### Componente
+
+`InboxLayout`, em `src/routes/inbox.index.tsx`, chama `useRealtimeInbox(activeId)`.
+
+### Hook
+
+`useRealtimeInbox`, em `src/lib/realtime/hooks.ts`.
+
+### Effect
+
+O hook usa `useRealtimeStatus()`, que chama `React.useSyncExternalStore(subscribeRealtime,
+realtimeSnapshot, realtimeSnapshot)`.
+
+### Dependencia instavel
+
+Arquivo: `src/lib/realtime/client.ts`.
+
+Funcao exata: `realtimeSnapshot()`.
+
+Antes do rework:
+
+```text
+return { status, lastEventId };
+```
+
+Cada chamada retornava um objeto novo mesmo quando `status` e `lastEventId` eram identicos.
+
+### Ciclo de atualizacao
+
+`useSyncExternalStore` lia um snapshot com referencia nova, o React entendia que o estado externo mudou,
+`InboxLayout` renderizava novamente, `useRealtimeStatus` lia outro objeto novo, e o ciclo nao terminava ate
+`Maximum update depth exceeded`. O backend realtime estar ligado ou desligado nao alterava isso, porque o
+hook era executado antes de qualquer socket.
+
+### 401/refresh loop
+
+`apiRequest` ja limitava retry por request, mas requests concorrentes podiam iniciar refresh paralelo.
+`refreshAccessToken()` agora e single-flight: requests concorrentes aguardam a mesma promise, endpoints
+publicos nao entram em refresh, e refresh 401 limpa tokens locais.
+
+### Legado removido
+
+Nenhum fluxo legado foi removido neste rework sem prova direta de execucao no crash. Auditoria encontrou
+Supabase legado ainda presente em `src/lib/mvp.ts` e em areas auxiliares de `src/routes/inbox.$conversationId.tsx`
+(quick replies, tags e painel lateral), mas a rota `/inbox` que crashava usa a API oficial Nexos para
+Conversations, Customers e Connections. A remocao completa do legado do detalhe da conversa permanece
+pendente para sprint propria, pois exigiria migrar etiquetas/quick replies/customer side panel.
+
+### Correcao
+
+- `realtimeSnapshot()` passou a retornar snapshot cacheado.
+- Snapshot so muda quando `status` ou `lastEventId` mudam.
+- `VITE_NEXOS_REALTIME_ENABLED=false` desliga socket no frontend e retorna status `disabled`.
+- `subscribeConversation`/`unsubscribeConversation` sao idempotentes por Conversation.
+- `realtimeDiagnostics()` expoe contadores sanitizados de socket, listeners, handlers e subscriptions.
+- Reconcile REST roda somente na transicao real para `connected`.
+- Refresh HTTP usa single-flight.
+
+Reproducao minima apos correcao:
+
+```json
+{"sameReference":true,"a":{"status":"offline","lastEventId":null},"b":{"status":"offline","lastEventId":null}}
+```
+
+### Realtime enabled
+
+PASS automatizado: socket singleton e subscription unica por Conversation cobertos em
+`src/lib/realtime/client.test.ts`.
+
+### Realtime disabled
+
+PASS automatizado: com `VITE_NEXOS_REALTIME_ENABLED=false`, `connectRealtime()` retorna `null`, nenhum
+socket e instanciado e o hook estabiliza com status `disabled`.
+
+### Automated tests
+
+PASS:
+
+- `bunx vitest run src/lib/realtime/client.test.ts src/lib/realtime/hooks.test.tsx src/lib/nexos-api.test.ts --environment jsdom`
+- `bunx vitest run src/lib/realtime/client.test.ts src/lib/nexos-api.test.ts src/lib/connection-options.test.ts src/lib/operational-connection-sources.test.ts src/lib/sanitize-html.test.ts --environment jsdom`
+- `bun run typecheck`
+- `bun run build`
+- `bun run --cwd backend build`
+- `bun test --cwd backend`
+
+### Physical tests
+
+PARTIAL:
+
+- `/api/health` local respondeu `database=up`, `redis=up`, `queue=up`.
+- `http://localhost:5173/inbox` respondeu HTTP 200.
+- Browser controlavel nao estava disponivel para captura visual/console.
+- WhatsApp inbound/outbound, presence, typing, reconnect e Redis degraded/recovery nao foram executados.
+
+### Regressions
+
+Backend preservado:
+
+- `@Inject(MessagesService)` mantido.
+- Bootstrap test mantido.
+- Redis adapter no servidor raiz mantido.
+- Gateway, publisher, rooms e auth socket preservados.
+
+### Metricas M157-M207
+
+| Metrica | Meta | Resultado | Evidencia | Status |
+| --- | --- | --- | --- | --- |
+| M157 | Crash fisico reproduzido | Reproducao visual bloqueada; causa reproduzida por snapshot instavel | `sameReference=false` pre-fix | PARTIAL |
+| M158 | Maximum update depth confirmado | Confirmado pelo relato fisico e explicado pelo contrato de `useSyncExternalStore` | Stack reportada em `InboxLayout` | PARTIAL |
+| M159 | InboxLayout auditado | `useRealtimeInbox(activeId)` localizado | `src/routes/inbox.index.tsx` | PASS |
+| M160 | Hook exato identificado | `useRealtimeInbox` / `useRealtimeStatus` | `src/lib/realtime/hooks.ts` | PASS |
+| M161 | Effect exato identificado | `useSyncExternalStore(subscribeRealtime, realtimeSnapshot, realtimeSnapshot)` | `src/lib/realtime/hooks.ts` | PASS |
+| M162 | Dependencia instavel identificada | `realtimeSnapshot()` retornava objeto novo | `src/lib/realtime/client.ts` | PASS |
+| M163 | Ciclo documentado | Snapshot novo -> render -> snapshot novo | Relatorio e docs | PASS |
+| M164 | Correcao do loop | Snapshot cacheado | `sameReference=true` pos-fix | PASS |
+| M165 | Zustand selectors auditados | `InboxLayout` usa selectors primitivos de sessao indiretamente | Sem selector objeto novo no componente | PASS |
+| M166 | Query cache auditado | Invalidacoes realtime localizadas | `useRealtimeInbox` | PASS |
+| M167 | Reconcile auditado | Limitado a transicao para `connected` | `previousStatusRef` | PASS |
+| M168 | Subscriptions auditadas | Set por `conversationId` | `activeConversationIds` | PASS |
+| M169 | Cleanup corrigido | Unsubscribe idempotente | Teste de emit subscribe/unsubscribe unico | PASS |
+| M170 | 401 flow auditado | Fluxo HTTP revisado | `src/lib/nexos-api.ts` | PASS |
+| M171 | Refresh single-flight | Promise compartilhada | Teste concorrente 401 | PASS |
+| M172 | Refresh retry limit | Retry unico por request | Teste concorrente 401 | PASS |
+| M173 | Refresh failure cleanup | Tokens limpos em refresh 401 | Teste refresh failure | PASS |
+| M174 | Socket reconnect limit | Socket singleton preservado | Teste `io` chamado uma vez | PASS |
+| M175 | Supabase legacy audit | Legado identificado | `src/lib/mvp.ts`, detalhe da Inbox | PASS |
+| M176 | Legacy requests removidas | Nao removidas por falta de prova direta no crash | Escopo preservado | N/A |
+| M177 | Inbox official API only | `/inbox` usa Nexos API; detalhe ainda tem legado auxiliar | Auditoria de imports | PARTIAL |
+| M178 | Frontend realtime flag | Criada | `VITE_NEXOS_REALTIME_ENABLED` | PASS |
+| M179 | Realtime disabled render | Hook estabiliza disabled | `hooks.test.tsx` | PASS |
+| M180 | Realtime enabled render | Singleton/subscription cobertos | `client.test.ts` | PASS |
+| M181 | Render stability test | Adicionado | `hooks.test.tsx` | PASS |
+| M182 | Subscription cleanup test | Adicionado | `client.test.ts` | PASS |
+| M183 | 401 recovery test | Adicionado | `nexos-api.test.ts` | PASS |
+| M184 | Refresh failure test | Adicionado | `nexos-api.test.ts` | PASS |
+| M185 | Navigation test | Nao executado em browser | Browser indisponivel | N/A |
+| M186 | F5 test | Nao executado em browser | Browser indisponivel | N/A |
+| M187 | Conversation switch test | Subscription idempotente testada; UI nao testada | `client.test.ts` | PARTIAL |
+| M188 | Cache events test | Invalidacoes preservadas; eventos end-to-end nao simulados | `useRealtimeInbox` | PARTIAL |
+| M189 | Physical admin Inbox | Nao executado visualmente | Browser indisponivel | N/A |
+| M190 | Physical agent Inbox | Nao executado visualmente | Browser indisponivel | N/A |
+| M191 | Physical disabled mode | HTTP 200 observado; UI nao inspecionada | `Invoke-WebRequest /inbox` | PARTIAL |
+| M192 | Physical inbound | Nao executado | WhatsApp fisico pendente | N/A |
+| M193 | Physical outbound | Nao executado | WhatsApp fisico pendente | N/A |
+| M194 | Physical presence | Nao executado | Browser indisponivel | N/A |
+| M195 | Physical typing | Nao executado | Browser indisponivel | N/A |
+| M196 | Physical reconnect | Nao executado | Browser indisponivel | N/A |
+| M197 | Physical Redis degraded | Nao executado | Redis gate pendente | N/A |
+| M198 | Physical Redis recovery | Nao executado | Redis gate pendente | N/A |
+| M199 | Verify #1 | PASS | `bun run verify` em `nexos_0801` | PASS |
+| M200 | Verify #2 | PASS | `bun run verify` em `nexos_0801` novamente | PASS |
+| M201 | Frontend tests | PASS | 21 testes frontend focados/legados | PASS |
+| M202 | Builds | PASS | frontend/backend build | PASS |
+| M203 | Docs | Atualizados | docs exigidos | PASS |
+| M204 | Report | Atualizado | Este adendo | PASS |
+| M205 | Commit | PASS | Commit final desta execucao registra codigo, testes e docs | PASS |
+| M206 | Final git clean | PASS | Worktree limpa deve ser validada apos commit | PASS |
+| M207 | Gate | Bloqueado | Fisico completo pendente | NOT READY |
+
+### Commit
+
+Commit final desta execucao sera informado no fechamento.
+
+### Gate
+
+Backend e frontend runtime estabilizados por testes automatizados. Gate fisico completo ainda pendente.
+
+NOT READY FOR SPRINT 10
+
 ## Rework - Backend Bootstrap Recovery
 
 Data: 2026-08-03

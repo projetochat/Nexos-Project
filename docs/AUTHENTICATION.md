@@ -307,3 +307,22 @@ SEED_AGENT_PASSWORD=demo1234
 ```
 
 Defaults continuam bloqueados em producao.
+
+## Sprint 09 Rework II - Refresh single-flight
+
+O client Nexos API usa refresh single-flight:
+
+- requests concorrentes que recebem 401 aguardam a mesma promise de refresh;
+- cada request protegida tenta refresh e retry no maximo uma vez;
+- `/auth/login`, `/auth/refresh`, `/auth/logout` e `/health` nao entram em retry de refresh;
+- refresh 401 limpa access token, refresh token e tenant locais;
+- Socket.io consome o mesmo `refreshNexosAccessToken()`, portanto nao cria refresh paralelo ao HTTP.
+
+Esse fluxo impede o ciclo:
+
+```text
+401 -> refresh -> session update -> socket reconnect -> query refetch -> 401
+```
+
+de virar uma rajada infinita de requests. O socket nao e fonte de identidade; a sessao continua vindo de
+`/api/auth/me` durante bootstrap.

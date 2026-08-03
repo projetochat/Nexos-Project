@@ -11,14 +11,16 @@ type Listener = () => void;
 type EventHandler = (event: RealtimeEnvelope) => void;
 
 let socket: Socket | null = null;
-let status: RealtimeStatus = "offline";
+let status: RealtimeStatus = realtimeEnabled() ? "offline" : "disabled";
 let lastEventId: string | null = null;
+let snapshot: { status: RealtimeStatus; lastEventId: string | null } = { status, lastEventId };
 const listeners = new Set<Listener>();
 const handlers = new Set<EventHandler>();
 const seenEventIds = new Set<string>();
+const activeConversationIds = new Set<string>();
 
 export function realtimeSnapshot() {
-  return { status, lastEventId };
+  return snapshot;
 }
 
 export function subscribeRealtime(listener: Listener) {
@@ -36,6 +38,10 @@ export function onRealtimeEvent(handler: EventHandler) {
 }
 
 export async function connectRealtime() {
+  if (!realtimeEnabled()) {
+    setStatus("disabled");
+    return null;
+  }
   const accessToken = await ensureNexosAccessToken();
   if (!accessToken) {
     setStatus("offline");
@@ -44,7 +50,7 @@ export async function connectRealtime() {
   if (socket?.connected) return socket;
   if (socket) {
     socket.auth = { accessToken };
-    socket.connect();
+    if (!socket.connected) socket.connect();
     return socket;
   }
 
@@ -96,7 +102,7 @@ export async function connectRealtime() {
       if (!envelope?.eventId || seenEventIds.has(envelope.eventId)) return;
       seenEventIds.add(envelope.eventId);
       if (seenEventIds.size > 500) seenEventIds.clear();
-      lastEventId = envelope.eventId;
+      setLastEventId(envelope.eventId);
       handlers.forEach((handler) => handler(envelope));
       notify();
     });
@@ -107,15 +113,19 @@ export async function connectRealtime() {
 export function disconnectRealtime() {
   socket?.disconnect();
   socket = null;
+  activeConversationIds.clear();
   seenEventIds.clear();
-  setStatus("offline");
+  setStatus(realtimeEnabled() ? "offline" : "disabled");
 }
 
 export function subscribeConversation(conversationId: string) {
+  if (!socket?.connected || activeConversationIds.has(conversationId)) return;
+  activeConversationIds.add(conversationId);
   socket?.emit("conversation.subscribe", { conversationId });
 }
 
 export function unsubscribeConversation(conversationId: string) {
+  if (!activeConversationIds.delete(conversationId)) return;
   socket?.emit("conversation.unsubscribe", { conversationId });
 }
 
@@ -131,11 +141,34 @@ export function heartbeatRealtime(statusValue: "online" | "away" = "online") {
   socket?.emit("presence.heartbeat", { status: statusValue });
 }
 
+export function realtimeDiagnostics() {
+  return {
+    enabled: realtimeEnabled(),
+    socketInstances: socket ? 1 : 0,
+    listenerCount: listeners.size,
+    eventHandlerCount: handlers.size,
+    conversationSubscriptions: activeConversationIds.size,
+    status,
+  };
+}
+
 function setStatus(next: RealtimeStatus) {
+  if (status === next) return;
   status = next;
+  snapshot = { status, lastEventId };
   notify();
 }
 
 function notify() {
   listeners.forEach((listener) => listener());
+}
+
+function setLastEventId(next: string) {
+  if (lastEventId === next) return;
+  lastEventId = next;
+  snapshot = { status, lastEventId };
+}
+
+function realtimeEnabled() {
+  return import.meta.env.VITE_NEXOS_REALTIME_ENABLED !== "false";
 }

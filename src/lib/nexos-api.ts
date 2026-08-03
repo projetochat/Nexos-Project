@@ -3,6 +3,8 @@ import type { Role, SessionUser } from "@/lib/session";
 const ACCESS_KEY = "nexo.api.accessToken";
 const REFRESH_KEY = "nexo.api.refreshToken";
 const TENANT_KEY = "nexo.api.tenant";
+let refreshPromise: Promise<boolean> | null = null;
+let sessionAlreadyCleared = false;
 
 type ApiRoleKey = "tenant_admin" | "supervisor" | "agent" | string;
 
@@ -323,7 +325,7 @@ export async function hydrateWithNexosApi() {
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response = await fetchNexos(path, init, true);
-  if (response.status === 401 && (await refreshAccessToken())) {
+  if (response.status === 401 && canRefresh(path) && (await refreshAccessToken())) {
     response = await fetchNexos(path, init, true);
   }
   if (!response.ok) {
@@ -515,6 +517,7 @@ export const connectionsApi = {
 };
 
 export function clearNexosApiSession() {
+  sessionAlreadyCleared = true;
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
   localStorage.removeItem(TENANT_KEY);
@@ -574,6 +577,14 @@ function authMessageFromStatus(status: number, code?: string) {
 }
 
 async function refreshAccessToken() {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = refreshAccessTokenOnce().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+async function refreshAccessTokenOnce() {
   const refreshToken = localStorage.getItem(REFRESH_KEY);
   if (!refreshToken) return false;
   try {
@@ -587,6 +598,7 @@ async function refreshAccessToken() {
     }
     const data = (await response.json()) as { accessToken: string };
     localStorage.setItem(ACCESS_KEY, data.accessToken);
+    sessionAlreadyCleared = false;
     return true;
   } catch {
     return false;
@@ -594,9 +606,19 @@ async function refreshAccessToken() {
 }
 
 function storeNexosSession(data: LoginResponse) {
+  sessionAlreadyCleared = false;
   localStorage.setItem(ACCESS_KEY, data.accessToken);
   localStorage.setItem(REFRESH_KEY, data.refreshToken);
   localStorage.setItem(TENANT_KEY, JSON.stringify(data.tenant));
+}
+
+function canRefresh(path: string) {
+  return !(
+    path.startsWith("/auth/login") ||
+    path.startsWith("/auth/refresh") ||
+    path.startsWith("/auth/logout") ||
+    path.startsWith("/health")
+  );
 }
 
 function queryString(params: Record<string, string | number | boolean | undefined>) {

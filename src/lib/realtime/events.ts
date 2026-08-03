@@ -1,4 +1,10 @@
-export type RealtimeStatus = "connecting" | "connected" | "reconnecting" | "degraded" | "offline";
+export type RealtimeStatus =
+  | "disabled"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "degraded"
+  | "offline";
 
 export type RealtimeEnvelope<T = unknown> = {
   eventId: string;
