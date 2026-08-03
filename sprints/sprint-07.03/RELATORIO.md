@@ -31,6 +31,49 @@ Como o criterio formal exige prova fisica de outbound/inbound/reconnect duplicat
 NOT READY FOR SPRINT 08
 ```
 
+## Adendo de homologacao fisica do Product Owner
+
+Data do adendo: 2026-08-03
+
+Este adendo registra que os testes fisicos foram executados apos o relatorio original da Sprint 07.03. O status historico original acima foi preservado para manter a ordem dos acontecimentos. Com a homologacao fisica posterior, a Sprint 07.03 passa a liberar formalmente a retomada da Sprint 08.
+
+Evidencias informadas pelo Product Owner:
+
+- QR real: PASS
+- CONNECTED real: PASS
+- nova Conversation: PASS
+- primeira Message outbound: PASS
+- mensagens outbound seguintes: PASS
+- WhatsApp fisico recebendo: PASS
+- inbound real: PASS
+- persistencia: PASS
+- disconnect: PASS
+- reconnect: PASS
+- zero replay duplicado: PASS
+- nova inbound apos reconnect: PASS
+- bloqueio de duplicate owner no mesmo tenant: PASS
+- delete: PASS
+- recreate: PASS
+
+Metricas atualizadas por homologacao fisica posterior:
+
+| ID | Meta | Resultado | Evidencia | Status |
+| --- | --- | --- | --- | --- |
+| M09 | Evolution health | Homologado fisicamente | Product Owner confirmou QR/CONNECTED real apos relatorio original | PASS |
+| M24 | outbound real | Homologado fisicamente | Product Owner confirmou primeira Message outbound e mensagens seguintes recebidas no WhatsApp fisico | PASS |
+| M25 | outbound persistence | Homologado fisicamente | Product Owner confirmou persistencia das mensagens outbound | PASS |
+| M26 | reconnect replay | Homologado fisicamente | Product Owner confirmou disconnect/reconnect sem replay duplicado | PASS |
+| M29 | replay no duplicate Message | Homologado fisicamente | Product Owner confirmou zero mensagens antigas duplicadas | PASS |
+| M30 | replay no unread increment | Homologado fisicamente | Product Owner confirmou zero unread duplicado | PASS |
+| M31 | replay no new Conversation | Homologado fisicamente | Product Owner confirmou zero Conversation nova apos reconnect | PASS |
+| M34 | duplicate owner blocked | Homologado fisicamente | Product Owner confirmou bloqueio de duplicate owner no mesmo tenant | PASS |
+| M43 | inbound after reconnect | Homologado fisicamente | Product Owner confirmou nova inbound unica apos reconnect | PASS |
+| M81 | gate | Sprint 07.03 aprovada | Homologacao fisica posterior libera Sprint 08 | PASS |
+
+```text
+READY FOR SPRINT 08
+```
+
 ## M01-M81
 
 | ID | Meta | Resultado | Evidencia | Status |
