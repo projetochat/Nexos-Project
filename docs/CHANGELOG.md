@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-03 - Sprint 07.02 Real WhatsApp Acceptance Closure
+
+- Preservado o WIP parcial da Sprint 08 em branch local de backup antes de iniciar a 07.02.
+- Criada branch `sprint/07.02-real-whatsapp-acceptance` a partir da baseline 07.01 confirmada.
+- Corrigido mapeamento de QR da Evolution para aceitar `base64` no topo do payload de `/instance/connect/:instanceName`.
+- Corrigido lookup de instance Evolution ausente para orfa canonica em vez de 500.
+- Validado create, QR, delete, recreate, orphan handling, Docker/Evolution health, builds, testes e dois verifies.
+- Gate final permanece `NOT READY FOR SPRINT 08` porque CONNECTED/outbound/inbound/lifecycle fisicos nao foram comprovados nesta execucao.
+
 ## 2026-07-30 - Sprint 05 messages
 
 - Criada migration Prisma para `messages` com `MessageDirection`, `MessageType` e `MessageStatus`.

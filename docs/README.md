@@ -37,6 +37,12 @@ Sprint 06 adicionou o Universal Messaging Adapter no backend. O envio textual da
 
 Sprint 07 adicionou Evolution API como provider real: lifecycle de connections, QR Code, outbound textual, webhook inbound/status e tela `/instancias` via Nexos API. Meta Cloud API, filas do Nexos, realtime proprio e storage continuam fora de escopo.
 
+## Sprint 07.02
+
+Sprint corretiva de aceite WhatsApp real. O WIP parcial da Sprint 08 foi preservado em branch local de backup antes de qualquer retorno a baseline. Na branch 07.02 foram corrigidos o payload real de QR da Evolution e o tratamento de connections orfas sem 500 generico.
+
+Resultado formal desta execucao: `NOT READY FOR SPRINT 08`, pois os gates fisicos de CONNECTED, outbound real, inbound real e lifecycle conectado exigem WhatsApp de teste e nao foram reproduzidos nesta maquina.
+
 ## Tecnologias atuais
 
 | Area            | Tecnologia                                                    |

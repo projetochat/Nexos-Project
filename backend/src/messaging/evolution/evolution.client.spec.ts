@@ -95,6 +95,12 @@ describe("EvolutionClient", () => {
     );
   });
 
+  it("treats missing instance lookup as null", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(response({ message: "Not Found" }, 404));
+
+    await expect(new EvolutionClient().findInstance("missing-instance")).resolves.toBeNull();
+  });
+
   it("maps auth failures to canonical errors", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(response({ message: "bad key" }, 401));
 

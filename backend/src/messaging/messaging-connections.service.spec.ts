@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { MessagingConnectionStatus, MessagingProviderType } from "../generated/prisma";
-import { MessagingConnectionsService } from "./messaging-connections.service";
+import { evolutionQrBase64, MessagingConnectionsService } from "./messaging-connections.service";
 
 const current = {
   userId: "user-a",
@@ -81,6 +81,12 @@ describe("MessagingConnectionsService", () => {
     expect(prisma.message.updateMany).toHaveBeenCalled();
     expect(prisma.conversation.updateMany).toHaveBeenCalled();
     expect(prisma.messagingConnection.delete).toHaveBeenCalled();
+  });
+
+  it("reads QR base64 from create and connect Evolution payload shapes", () => {
+    expect(evolutionQrBase64({ qrcode: { base64: "create-qr" } })).toBe("create-qr");
+    expect(evolutionQrBase64({ base64: "connect-qr" })).toBe("connect-qr");
+    expect(evolutionQrBase64({})).toBeNull();
   });
 });
 

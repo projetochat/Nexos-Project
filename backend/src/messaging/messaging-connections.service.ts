@@ -63,7 +63,7 @@ export class MessagingConnectionsService {
     });
     return {
       ...this.serialize(connection),
-      qrCodeBase64: response.qrcode?.base64 ?? null,
+      qrCodeBase64: evolutionQrBase64(response),
     };
   }
 
@@ -105,7 +105,7 @@ export class MessagingConnectionsService {
     });
     return {
       connectionId: connection.id,
-      qrCodeBase64: response.qrcode?.base64 ?? null,
+      qrCodeBase64: evolutionQrBase64(response),
       status: "connecting",
     };
   }
@@ -221,6 +221,10 @@ export class MessagingConnectionsService {
       updatedAt: connection.updatedAt,
     };
   }
+}
+
+export function evolutionQrBase64(response: { base64?: string; qrcode?: { base64?: string } }) {
+  return response.qrcode?.base64 ?? response.base64 ?? null;
 }
 
 export function translateEvolutionState(value: string | null | undefined) {

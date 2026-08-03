@@ -70,6 +70,22 @@ Hardening corretivo da Sprint 07:
 
 Sprint 08 permanece bloqueada ate aceite manual do fluxo WhatsApp real inbound/outbound.
 
+## Sprint 07.02 - Real WhatsApp Acceptance Closure
+
+Executada preservacao formal do WIP parcial da Sprint 08 em `backup/sprint-08-partial-before-07.02` e criada branch limpa `sprint/07.02-real-whatsapp-acceptance` a partir da baseline 07.01.
+
+Entregue nesta sprint:
+
+- QR endpoint corrigido para o formato real retornado por `/instance/connect/:instanceName`.
+- Orphan handling corrigido para `INSTANCE_NOT_FOUND` canonico sem 500 generico.
+- Create, webhook registration, QR, delete, recreate, orphan cleanup, health, builds, testes e verify validados localmente.
+
+Gate final:
+
+- `NOT READY FOR SPRINT 08` ate reproducao fisica de CONNECTED, outbound real para WhatsApp B, inbound real de WhatsApp B, persistencia e lifecycle conectado.
+
+Sprint 08 Redis/BullMQ permanece congelada como WIP preservado, nao aprovado.
+
 ## Sprint 01.1 concluida
 
 Entregue:

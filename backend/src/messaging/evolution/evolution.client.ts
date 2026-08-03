@@ -73,7 +73,17 @@ export class EvolutionClient {
   }
 
   async findInstance(instanceName: string) {
-    const instances = await this.fetchInstances(instanceName);
+    const instances = await this.fetchInstances(instanceName).catch((error) => {
+      if (
+        error instanceof MessagingProviderError &&
+        error.code === MessagingErrorCode.PROVIDER_UNAVAILABLE &&
+        !error.retryable &&
+        error.message.toLowerCase().includes("not found")
+      ) {
+        return [];
+      }
+      throw error;
+    });
     return (
       instances.find(
         (instance) => instance.name === instanceName || instance.instanceName === instanceName,

@@ -5,6 +5,10 @@ export type EvolutionCreateInstanceResponse = {
     connectionStatus?: string;
   };
   hash?: string;
+  pairingCode?: string;
+  code?: string;
+  base64?: string;
+  count?: number;
   qrcode?: {
     base64?: string;
     code?: string;
