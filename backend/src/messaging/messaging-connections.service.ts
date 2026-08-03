@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { MessagingConnectionStatus, MessagingProviderType, Prisma } from "../generated/prisma";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
@@ -34,9 +35,7 @@ export class MessagingConnectionsService {
       throw new BadRequestException("Evolution API nao configurada.");
     }
 
-    const instanceName = cleanInstanceName(dto.instanceName ?? dto.name, current.tenantId, {
-      unique: !dto.instanceName,
-    });
+    const instanceName = cleanInstanceName(dto.name, current.tenantId, { unique: true });
     const response = await this.evolution.createInstance({
       instanceName,
     });
@@ -182,8 +181,40 @@ export class MessagingConnectionsService {
     });
   }
 
-  async updateConnectionStatus(id: string, status: MessagingConnectionStatus) {
-    return this.prisma.messagingConnection.update({ where: { id }, data: { status } });
+  async updateConnectionStatus(
+    id: string,
+    status: MessagingConnectionStatus,
+    owner?: { ownerExternalId?: string | null; ownerPhoneNormalized?: string | null },
+  ) {
+    const current = await this.prisma.messagingConnection.findUniqueOrThrow({ where: { id } });
+    const ownerData = {
+      ownerExternalId: owner?.ownerExternalId ?? undefined,
+      ownerPhoneNormalized: owner?.ownerPhoneNormalized ?? undefined,
+    };
+    if (status === MessagingConnectionStatus.CONNECTED && owner?.ownerPhoneNormalized) {
+      const duplicateOwner = await this.prisma.messagingConnection.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          id: { not: current.id },
+          providerType: MessagingProviderType.EVOLUTION,
+          status: MessagingConnectionStatus.CONNECTED,
+          ownerPhoneNormalized: owner.ownerPhoneNormalized,
+        },
+      });
+      if (duplicateOwner) {
+        return this.prisma.messagingConnection.update({
+          where: { id },
+          data: {
+            status: MessagingConnectionStatus.ERROR,
+            ...ownerData,
+          },
+        });
+      }
+    }
+    return this.prisma.messagingConnection.update({
+      where: { id },
+      data: { status, ...ownerData },
+    });
   }
 
   private async findTenantConnection(id: string, tenantId: string) {
@@ -216,6 +247,7 @@ export class MessagingConnectionsService {
       providerType: connection.providerType.toLowerCase(),
       status: connection.status.toLowerCase(),
       externalReference: connection.externalReference,
+      ownerPhoneMasked: maskPhone(connection.ownerPhoneNormalized),
       provider,
       createdAt: connection.createdAt,
       updatedAt: connection.updatedAt,
@@ -254,6 +286,13 @@ export function cleanInstanceName(
     .replace(/^-+|-+$/g, "")
     .slice(0, 50);
   if (!base) throw new BadRequestException("Nome da instance invalido.");
-  if (options.unique) return `${tenantId.slice(0, 8)}-${base}-${Date.now().toString(36).slice(-6)}`;
+  if (options.unique) return `${tenantId.slice(0, 8)}-${base}-${randomUUID().slice(0, 8)}`;
   return `${tenantId.slice(0, 8)}-${base}`;
+}
+
+function maskPhone(value: string | null | undefined) {
+  if (!value) return null;
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return null;
+  return `******${digits.slice(-4)}`;
 }

@@ -17,7 +17,13 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
-import { ConversationStatus, MembershipStatus, Prisma } from "../generated/prisma";
+import {
+  ConversationStatus,
+  MembershipStatus,
+  MessagingConnectionStatus,
+  MessagingProviderType,
+  Prisma,
+} from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { AssignConversationDto } from "./dto/assign-conversation.dto";
 import { CreateConversationDto } from "./dto/create-conversation.dto";
@@ -105,17 +111,34 @@ export class ConversationsController {
       dto.departmentId ?? contact.departmentId,
       current,
     );
+    const connection = await this.resolveConversationConnection(dto.connectionId, current);
     const assignToSelf = dto.assignToSelf ?? false;
     const status = assignToSelf ? ConversationStatus.EM_ANDAMENTO : ConversationStatus.ABERTA;
     const now = new Date();
 
     const conversation = await this.prisma.$transaction(async (tx) => {
+      if (connection) {
+        const existing = await tx.conversation.findFirst({
+          where: {
+            tenantId: current.tenantId,
+            contactId: contact.id,
+            connectionId: connection.id,
+            archivedAt: null,
+            status: { not: ConversationStatus.FECHADA },
+          },
+          orderBy: { updatedAt: "desc" },
+          include: conversationInclude,
+        });
+        if (existing) return existing;
+      }
+
       const protocol = assignToSelf ? await this.nextProtocol(tx, current.tenantId) : null;
       const created = await tx.conversation.create({
         data: {
           tenantId: current.tenantId,
           contactId: contact.id,
           departmentId,
+          connectionId: connection?.id ?? null,
           assignedMembershipId: assignToSelf ? current.membershipId : null,
           status,
           protocol,
@@ -442,6 +465,27 @@ export class ConversationsController {
     return department.id;
   }
 
+  private async resolveConversationConnection(
+    connectionId: string | null | undefined,
+    current: AuthenticatedUser,
+  ) {
+    if (!connectionId) return null;
+    const connection = await this.prisma.messagingConnection.findFirst({
+      where: { id: connectionId, tenantId: current.tenantId },
+    });
+    if (!connection) throw new BadRequestException("Connection inexistente para este tenant.");
+    if (
+      connection.providerType !== MessagingProviderType.EVOLUTION ||
+      !connection.externalReference
+    ) {
+      throw new BadRequestException("Selecione uma connection WhatsApp Evolution valida.");
+    }
+    if (connection.status !== MessagingConnectionStatus.CONNECTED) {
+      throw new BadRequestException("A connection WhatsApp precisa estar conectada.");
+    }
+    return connection;
+  }
+
   private async assertDepartmentInTenant(departmentId: string, tenantId: string) {
     const department = await this.prisma.department.findFirst({
       where: { id: departmentId, tenantId, active: true },
@@ -528,6 +572,7 @@ export class ConversationsController {
       id: conversation.id,
       tenantId: conversation.tenantId,
       contact_id: conversation.contactId,
+      connection_id: conversation.connectionId,
       department_id: conversation.departmentId,
       assigned_membership_id: conversation.assignedMembershipId,
       agent_id: conversation.assignedMembership?.user.id ?? null,

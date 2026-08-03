@@ -76,7 +76,10 @@ export class EvolutionWebhookController {
     } else if (translated.kind === "status") {
       await this.status.process(translated.event);
     } else if (translated.kind === "connection") {
-      await this.connections.updateConnectionStatus(connection.id, translated.status);
+      await this.connections.updateConnectionStatus(connection.id, translated.status, {
+        ownerExternalId: translated.ownerExternalId,
+        ownerPhoneNormalized: translated.ownerPhoneNormalized,
+      });
     }
 
     return {

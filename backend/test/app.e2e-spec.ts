@@ -609,6 +609,78 @@ describe("Nexos API organization and RBAC", () => {
       .expect(404);
   });
 
+  it("creates conversations only with connected Evolution connections and reuses open duplicates", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const [tenant, orbit] = await Promise.all([
+      prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } }),
+      prisma.tenant.findUniqueOrThrow({ where: { slug: "orbit" } }),
+    ]);
+    const contact = await prisma.contact.findFirstOrThrow({
+      where: { tenantId: tenant.id, archivedAt: null },
+    });
+    const suffix = Date.now();
+    const [connected, disconnected, crossTenant] = await Promise.all([
+      prisma.messagingConnection.create({
+        data: {
+          tenantId: tenant.id,
+          name: "Evolution E2E Conversation",
+          providerType: MessagingProviderType.EVOLUTION,
+          status: MessagingConnectionStatus.CONNECTED,
+          externalReference: `e2e-conversation-${suffix}`,
+        },
+      }),
+      prisma.messagingConnection.create({
+        data: {
+          tenantId: tenant.id,
+          name: "Evolution E2E Conversation Disconnected",
+          providerType: MessagingProviderType.EVOLUTION,
+          status: MessagingConnectionStatus.DISCONNECTED,
+          externalReference: `e2e-conversation-disconnected-${suffix}`,
+        },
+      }),
+      prisma.messagingConnection.create({
+        data: {
+          tenantId: orbit.id,
+          name: "Evolution E2E Conversation Orbit",
+          providerType: MessagingProviderType.EVOLUTION,
+          status: MessagingConnectionStatus.CONNECTED,
+          externalReference: `e2e-conversation-orbit-${suffix}`,
+        },
+      }),
+    ]);
+
+    const created = await request(app.getHttpServer())
+      .post("/api/conversations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ contactId: contact.id, connectionId: connected.id, assignToSelf: true })
+      .expect(201);
+
+    expect(created.body.connection_id).toBe(connected.id);
+    expect(created.body.status).toBe("em_andamento");
+    expect(created.body.assigned_membership_id).toEqual(expect.any(String));
+
+    await request(app.getHttpServer())
+      .post("/api/conversations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ contactId: contact.id, connectionId: connected.id, assignToSelf: true })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.id).toBe(created.body.id);
+      });
+
+    await request(app.getHttpServer())
+      .post("/api/conversations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ contactId: contact.id, connectionId: disconnected.id, assignToSelf: true })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post("/api/conversations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ contactId: contact.id, connectionId: crossTenant.id, assignToSelf: true })
+      .expect(400);
+  });
+
   it("lists conversation messages with cursor pagination and tenant visibility", async () => {
     const adminToken = await login("admin@nexo.app", "demo1234", "acme");
     const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
@@ -955,6 +1027,142 @@ describe("Nexos API organization and RBAC", () => {
         },
       }),
     ).resolves.toBe(1);
+  });
+
+  it("deduplicates inbound messages across reconnected Evolution instances with the same owner", async () => {
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const suffix = Date.now();
+    const ownerPhoneNormalized = "+551199990000";
+    const remotePhone = `5511988${String(suffix).slice(-6)}`;
+    const [firstConnection, reconnectedConnection] = await Promise.all([
+      prisma.messagingConnection.create({
+        data: {
+          tenantId: tenant.id,
+          name: "Evolution E2E Owner First",
+          providerType: MessagingProviderType.EVOLUTION,
+          status: MessagingConnectionStatus.CONNECTED,
+          externalReference: `e2e-owner-first-${suffix}`,
+          ownerExternalId: "551199990000@s.whatsapp.net",
+          ownerPhoneNormalized,
+        },
+      }),
+      prisma.messagingConnection.create({
+        data: {
+          tenantId: tenant.id,
+          name: "Evolution E2E Owner Reconnected",
+          providerType: MessagingProviderType.EVOLUTION,
+          status: MessagingConnectionStatus.CONNECTED,
+          externalReference: `e2e-owner-reconnected-${suffix}`,
+          ownerExternalId: "551199990000@s.whatsapp.net",
+          ownerPhoneNormalized,
+        },
+      }),
+    ]);
+    const token = webhookToken();
+    const externalMessageId = `EXT-OWNER-${suffix}`;
+    const baseData = {
+      key: {
+        remoteJid: `${remotePhone}@s.whatsapp.net`,
+        fromMe: false,
+        id: externalMessageId,
+      },
+      message: { conversation: "Mensagem apos reconexao" },
+      messageTimestamp: Math.floor(Date.now() / 1000),
+      pushName: "Webhook Cliente Reconexao",
+    };
+
+    for (const connection of [firstConnection, reconnectedConnection]) {
+      await request(app.getHttpServer())
+        .post("/api/webhooks/evolution")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          event: "messages.upsert",
+          instance: connection.externalReference,
+          data: baseData,
+        })
+        .expect(200);
+    }
+
+    const messages = await prisma.message.findMany({
+      where: { tenantId: tenant.id, externalMessageId },
+      include: { conversation: true },
+    });
+    expect(messages).toHaveLength(1);
+    expect(messages[0].conversation.unreadCount).toBe(1);
+
+    await expect(
+      prisma.conversation.count({
+        where: {
+          tenantId: tenant.id,
+          contact: { normalizedPhone: `+${remotePhone}` },
+          status: { not: ConversationStatus.FECHADA },
+        },
+      }),
+    ).resolves.toBe(1);
+  });
+
+  it("marks same-tenant duplicate WhatsApp owners as connection errors without blocking other tenants", async () => {
+    const [acme, orbit] = await Promise.all([
+      prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } }),
+      prisma.tenant.findUniqueOrThrow({ where: { slug: "orbit" } }),
+    ]);
+    const suffix = Date.now();
+    const ownerJid = "551188880000@s.whatsapp.net";
+    const token = webhookToken();
+    const [acmeFirst, acmeSecond, orbitConnection] = await Promise.all([
+      prisma.messagingConnection.create({
+        data: {
+          tenantId: acme.id,
+          name: "Evolution E2E Owner Active",
+          providerType: MessagingProviderType.EVOLUTION,
+          status: MessagingConnectionStatus.CONNECTING,
+          externalReference: `e2e-owner-active-${suffix}`,
+        },
+      }),
+      prisma.messagingConnection.create({
+        data: {
+          tenantId: acme.id,
+          name: "Evolution E2E Owner Duplicate",
+          providerType: MessagingProviderType.EVOLUTION,
+          status: MessagingConnectionStatus.CONNECTING,
+          externalReference: `e2e-owner-duplicate-${suffix}`,
+        },
+      }),
+      prisma.messagingConnection.create({
+        data: {
+          tenantId: orbit.id,
+          name: "Evolution Orbit Cross Owner",
+          providerType: MessagingProviderType.EVOLUTION,
+          status: MessagingConnectionStatus.CONNECTING,
+          externalReference: `e2e-owner-orbit-${suffix}`,
+        },
+      }),
+    ]);
+
+    for (const connection of [acmeFirst, orbitConnection, acmeSecond]) {
+      await request(app.getHttpServer())
+        .post("/api/webhooks/evolution")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          event: "connection.update",
+          instance: connection.externalReference,
+          data: { state: "open", ownerJid },
+        })
+        .expect(200);
+    }
+
+    await expect(
+      prisma.messagingConnection.findUniqueOrThrow({ where: { id: acmeFirst.id } }),
+    ).resolves.toMatchObject({ status: MessagingConnectionStatus.CONNECTED });
+    await expect(
+      prisma.messagingConnection.findUniqueOrThrow({ where: { id: orbitConnection.id } }),
+    ).resolves.toMatchObject({ status: MessagingConnectionStatus.CONNECTED });
+    await expect(
+      prisma.messagingConnection.findUniqueOrThrow({ where: { id: acmeSecond.id } }),
+    ).resolves.toMatchObject({
+      status: MessagingConnectionStatus.ERROR,
+      ownerPhoneNormalized: "+551188880000",
+    });
   });
 
   it("keeps equal external message IDs isolated across tenants", async () => {

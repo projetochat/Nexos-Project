@@ -119,6 +119,7 @@ export type ApiConversation = {
   id: string;
   tenantId: string;
   contact_id: string;
+  connection_id: string | null;
   department_id: string | null;
   assigned_membership_id: string | null;
   agent_id: string | null;
@@ -173,6 +174,7 @@ export type ApiMessagingConnection = {
   providerType: "development" | "evolution" | "meta_cloud";
   status: "disconnected" | "connecting" | "connected" | "error";
   externalReference: string | null;
+  ownerPhoneMasked?: string | null;
   provider?: {
     existsInProvider?: boolean;
     webhookUrl?: string | null;
@@ -233,6 +235,7 @@ type ListConversationsParams = ListParams & {
 type ConversationPayload = {
   contactId: string;
   departmentId?: string | null;
+  connectionId?: string | null;
   assignToSelf?: boolean;
   isGroup?: boolean;
   firstMessagePreview?: string | null;

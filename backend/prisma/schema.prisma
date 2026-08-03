@@ -303,26 +303,26 @@ model ConversationProtocolCounter {
 }
 
 model Conversation {
-  id                   String             @id @default(uuid())
+  id                   String               @id @default(uuid())
   tenantId             String
   contactId            String
   departmentId         String?
   assignedMembershipId String?
-  connectionId          String?
-  status               ConversationStatus @default(ABERTA)
+  connectionId         String?
+  status               ConversationStatus   @default(ABERTA)
   protocol             String?
-  isGroup              Boolean            @default(false)
-  unreadCount          Int                @default(0)
+  isGroup              Boolean              @default(false)
+  unreadCount          Int                  @default(0)
   lastMessagePreview   String?
   lastMessageAt        DateTime?
   archivedAt           DateTime?
   closedAt             DateTime?
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
-  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact              Contact            @relation(fields: [contactId], references: [id], onDelete: Restrict)
-  department           Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  assignedMembership   TenantMembership?  @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact              Contact              @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  department           Department?          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  assignedMembership   TenantMembership?    @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
   connection           MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
   messages             Message[]
 
@@ -338,29 +338,29 @@ model Conversation {
 }
 
 model Message {
-  id                 String            @id @default(uuid())
-  tenantId           String
-  conversationId     String
-  connectionId       String?
-  direction          MessageDirection
-  type               MessageType       @default(TEXT)
-  status             MessageStatus     @default(CREATED)
-  authorMembershipId String?
-  content            String?
-  clientMessageId    String?
-  providerMessageId  String?
-  providerStatus     String?
-  providerErrorCode  String?
+  id                   String               @id @default(uuid())
+  tenantId             String
+  conversationId       String
+  connectionId         String?
+  direction            MessageDirection
+  type                 MessageType          @default(TEXT)
+  status               MessageStatus        @default(CREATED)
+  authorMembershipId   String?
+  content              String?
+  clientMessageId      String?
+  providerMessageId    String?
+  providerStatus       String?
+  providerErrorCode    String?
   providerErrorMessage String?
-  providerAcceptedAt DateTime?
-  externalMessageId  String?
-  readAt             DateTime?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  tenant             Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  conversation       Conversation      @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
-  connection         MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
-  authorMembership   TenantMembership? @relation(fields: [authorMembershipId], references: [id], onDelete: SetNull)
+  providerAcceptedAt   DateTime?
+  externalMessageId    String?
+  readAt               DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation         Conversation         @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+  connection           MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
+  authorMembership     TenantMembership?    @relation(fields: [authorMembershipId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, conversationId, clientMessageId])
   @@unique([tenantId, connectionId, externalMessageId])
@@ -373,21 +373,24 @@ model Message {
 }
 
 model MessagingConnection {
-  id                String                    @id @default(uuid())
-  tenantId          String
-  name              String
-  providerType      MessagingProviderType
-  status            MessagingConnectionStatus @default(DISCONNECTED)
-  externalReference String?
-  createdAt         DateTime                  @default(now())
-  updatedAt         DateTime                  @updatedAt
-  tenant            Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  conversations     Conversation[]
-  messages          Message[]
+  id                   String                    @id @default(uuid())
+  tenantId             String
+  name                 String
+  providerType         MessagingProviderType
+  status               MessagingConnectionStatus @default(DISCONNECTED)
+  externalReference    String?
+  ownerExternalId      String?
+  ownerPhoneNormalized String?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  tenant               Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversations        Conversation[]
+  messages             Message[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, providerType, externalReference])
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([tenantId, ownerPhoneNormalized])
   @@map("messaging_connections")
 }

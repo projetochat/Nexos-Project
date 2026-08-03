@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MessageStatus } from "../../generated/prisma";
+import { MessageStatus, MessagingConnectionStatus } from "../../generated/prisma";
 import { EvolutionWebhookTranslator } from "./evolution-webhook.translator";
 
 describe("EvolutionWebhookTranslator", () => {
@@ -102,6 +102,24 @@ describe("EvolutionWebhookTranslator", () => {
         providerMessageId: "MSG1",
         status: MessageStatus.READ,
       },
+    });
+  });
+
+  it("extracts owner identity from connection updates", () => {
+    expect(
+      translator.translate(
+        {
+          event: "connection.update",
+          instance: "tenant-support",
+          data: { state: "open", ownerJid: "551199990000@s.whatsapp.net" },
+        },
+        connection,
+      ),
+    ).toMatchObject({
+      kind: "connection",
+      status: MessagingConnectionStatus.CONNECTED,
+      ownerExternalId: "551199990000@s.whatsapp.net",
+      ownerPhoneNormalized: "+551199990000",
     });
   });
 

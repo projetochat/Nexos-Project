@@ -19,12 +19,22 @@ export class MessagingInboundService {
       });
       if (!connection) throw new Error("Messaging connection not found for tenant.");
 
+      const duplicateWhere: Prisma.MessageWhereInput = connection.ownerPhoneNormalized
+        ? {
+            tenantId: event.tenantId,
+            externalMessageId: event.externalMessageId,
+            OR: [
+              { connectionId: event.connectionId },
+              { connection: { is: { ownerPhoneNormalized: connection.ownerPhoneNormalized } } },
+            ],
+          }
+        : {
+            tenantId: event.tenantId,
+            connectionId: event.connectionId,
+            externalMessageId: event.externalMessageId,
+          };
       const duplicate = await tx.message.findFirst({
-        where: {
-          tenantId: event.tenantId,
-          connectionId: event.connectionId,
-          externalMessageId: event.externalMessageId,
-        },
+        where: duplicateWhere,
       });
       if (duplicate) return { message: duplicate, duplicate: true };
 
@@ -48,7 +58,7 @@ export class MessagingInboundService {
         },
       });
 
-      const conversation = await this.findOrCreateConversation(tx, event, contact.id);
+      const conversation = await this.findOrCreateConversation(tx, event, contact.id, connection);
       const preview = event.content ?? mediaPreview(event.type);
       const message = await tx.message.create({
         data: {
@@ -96,6 +106,7 @@ export class MessagingInboundService {
     tx: Prisma.TransactionClient,
     event: InboundMessageEvent,
     contactId: string,
+    connection: { ownerPhoneNormalized: string | null },
   ) {
     const existing = await tx.conversation.findFirst({
       where: {
@@ -108,6 +119,20 @@ export class MessagingInboundService {
       orderBy: { updatedAt: "desc" },
     });
     if (existing) return existing;
+
+    if (connection.ownerPhoneNormalized) {
+      const existingByOwner = await tx.conversation.findFirst({
+        where: {
+          tenantId: event.tenantId,
+          contactId,
+          archivedAt: null,
+          status: { not: ConversationStatus.FECHADA },
+          connection: { is: { ownerPhoneNormalized: connection.ownerPhoneNormalized } },
+        },
+        orderBy: { updatedAt: "desc" },
+      });
+      if (existingByOwner) return existingByOwner;
+    }
 
     return tx.conversation.create({
       data: {

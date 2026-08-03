@@ -9,6 +9,10 @@ export class CreateConversationDto {
   departmentId?: string | null;
 
   @IsOptional()
+  @IsUUID()
+  connectionId?: string | null;
+
+  @IsOptional()
   @IsBoolean()
   assignToSelf?: boolean;
 

@@ -123,6 +123,12 @@ function Page() {
                     <span className="text-muted-foreground">Provedor</span>
                     <span>{providerLabel(connection.providerType)}</span>
                   </div>
+                  {connection.ownerPhoneMasked && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">WhatsApp</span>
+                      <span>{connection.ownerPhoneMasked}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Criada em</span>
                     <span>{new Date(connection.createdAt).toLocaleDateString("pt-BR")}</span>
@@ -203,15 +209,13 @@ function ConnectionForm({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: { name: string; instanceName?: string }) => void;
+  onSubmit: (data: { name: string }) => void;
   busy: boolean;
 }) {
   const [name, setName] = React.useState("");
-  const [instanceName, setInstanceName] = React.useState("");
   React.useEffect(() => {
     if (!open) {
       setName("");
-      setInstanceName("");
     }
   }, [open]);
 
@@ -228,7 +232,7 @@ function ConnectionForm({
           <Button
             variant="primary"
             size="sm"
-            onClick={() => onSubmit({ name, instanceName: instanceName || undefined })}
+            onClick={() => onSubmit({ name })}
             disabled={busy || name.trim().length < 2}
           >
             Criar
@@ -242,13 +246,6 @@ function ConnectionForm({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Suporte WhatsApp"
-          />
-        </Field>
-        <Field label="Instance name">
-          <Input
-            value={instanceName}
-            onChange={(e) => setInstanceName(e.target.value)}
-            placeholder="opcional"
           />
         </Field>
       </div>

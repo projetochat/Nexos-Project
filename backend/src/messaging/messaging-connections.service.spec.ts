@@ -65,6 +65,63 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
+  it("marks a second connected same-tenant owner as error", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findUniqueOrThrow.mockResolvedValue(connection());
+    prisma.messagingConnection.findFirst.mockResolvedValue({ ...connection(), id: "connection-b" });
+    prisma.messagingConnection.update.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.ERROR,
+      ownerPhoneNormalized: "+551199990000",
+    });
+    const evolution = {};
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, evolution as never).updateConnectionStatus(
+        "connection-a",
+        MessagingConnectionStatus.CONNECTED,
+        {
+          ownerExternalId: "551199990000@s.whatsapp.net",
+          ownerPhoneNormalized: "+551199990000",
+        },
+      ),
+    ).resolves.toMatchObject({ status: MessagingConnectionStatus.ERROR });
+
+    expect(prisma.messagingConnection.update).toHaveBeenCalledWith({
+      where: { id: "connection-a" },
+      data: {
+        status: MessagingConnectionStatus.ERROR,
+        ownerExternalId: "551199990000@s.whatsapp.net",
+        ownerPhoneNormalized: "+551199990000",
+      },
+    });
+  });
+
+  it("ignores raw instanceName and always generates a unique technical instance", async () => {
+    process.env.EVOLUTION_BASE_URL = "http://evolution.local";
+    process.env.EVOLUTION_API_KEY = "key";
+    process.env.EVOLUTION_WEBHOOK_PUBLIC_URL =
+      "http://host.docker.internal:3001/api/webhooks/evolution";
+    process.env.EVOLUTION_WEBHOOK_SECRET = "secret";
+
+    const prisma = prismaMock();
+    prisma.messagingConnection.create.mockResolvedValue(connection());
+    const evolution = {
+      createInstance: vi.fn().mockResolvedValue({ instance: { status: "connecting" } }),
+      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
+      deleteInstance: vi.fn(),
+    };
+
+    await new MessagingConnectionsService(prisma as never, evolution as never).createEvolution(
+      { name: "Suporte", instanceName: "manual-raw-name" },
+      current as never,
+    );
+
+    expect(evolution.createInstance).toHaveBeenCalledWith({
+      instanceName: expect.stringMatching(/^tenant-a-suporte-/),
+    });
+  });
+
   it("removes orphaned local connections without requiring an Evolution instance", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
@@ -108,6 +165,7 @@ function prismaMock() {
     messagingConnection: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),

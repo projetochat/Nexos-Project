@@ -21,7 +21,14 @@ import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Badge, Button, Field, Input } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
 import { type Contact } from "@/lib/mvp";
-import { conversationApi, crmApi, type ApiConversationStatus as ConvStatus } from "@/lib/nexos-api";
+import {
+  connectionsApi,
+  conversationApi,
+  crmApi,
+  messageApi,
+  type ApiConversationStatus as ConvStatus,
+  type ApiMessagingConnection,
+} from "@/lib/nexos-api";
 import { useSession } from "@/lib/session";
 import { relativeTime } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
@@ -389,6 +396,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
   const [selectedContact, setSelectedContact] = React.useState<Contact | null>(null);
   const [newName, setNewName] = React.useState("");
   const [newPhone, setNewPhone] = React.useState("");
+  const [selectedConnectionId, setSelectedConnectionId] = React.useState("");
   const [firstMsg, setFirstMsg] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
@@ -397,7 +405,25 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
     queryFn: () => crmApi.listContacts({ pageSize: 100 }),
     enabled: open,
   });
+  const { data: connections = [] } = useQuery({
+    queryKey: ["nexos", "messaging-connections", "conversation-modal"],
+    queryFn: connectionsApi.list,
+    enabled: open,
+  });
   const contacts = React.useMemo(() => contactsPage?.items ?? [], [contactsPage?.items]);
+  const availableConnections = React.useMemo(
+    () =>
+      connections.filter(
+        (connection) =>
+          connection.providerType === "evolution" && connection.status === "connected",
+      ),
+    [connections],
+  );
+
+  React.useEffect(() => {
+    if (!open || selectedConnectionId || availableConnections.length === 0) return;
+    setSelectedConnectionId(availableConnections[0].id);
+  }, [availableConnections, open, selectedConnectionId]);
 
   React.useEffect(() => {
     if (!open) {
@@ -405,6 +431,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
       setSelectedContact(null);
       setNewName("");
       setNewPhone("");
+      setSelectedConnectionId("");
       setFirstMsg("");
       setTab("existing");
     }
@@ -421,6 +448,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
   const submit = async () => {
     if (!user) return toast.error("Sessão inválida.");
     if (!firstMsg.trim()) return toast.error("Escreva a primeira mensagem.");
+    if (!selectedConnectionId) return toast.error("Selecione uma conexao WhatsApp conectada.");
     setBusy(true);
     try {
       let contactId = selectedContact?.id;
@@ -440,11 +468,14 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
       }
       const conversation = await conversationApi.create({
         contactId,
+        connectionId: selectedConnectionId,
         assignToSelf: true,
-        firstMessagePreview: firstMsg.trim(),
       });
-      toast.success("Conversa iniciada");
+      const sent = await messageApi.sendText(conversation.id, firstMsg.trim());
+      if (sent.status === "failed") toast.warning("Conversa criada, mas o envio falhou.");
+      else toast.success("Conversa iniciada");
       qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+      qc.invalidateQueries({ queryKey: ["nexos", "messages", conversation.id] });
       onClose();
       navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
     } catch (e) {
@@ -534,6 +565,26 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
       )}
 
       <div className="mt-3">
+        <Field label="Conexao WhatsApp">
+          <select
+            value={selectedConnectionId}
+            onChange={(e) => setSelectedConnectionId(e.target.value)}
+            className="w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring"
+          >
+            {availableConnections.length === 0 ? (
+              <option value="">Nenhuma conexao conectada</option>
+            ) : (
+              availableConnections.map((connection) => (
+                <option key={connection.id} value={connection.id}>
+                  {connectionLabel(connection)}
+                </option>
+              ))
+            )}
+          </select>
+        </Field>
+      </div>
+
+      <div className="mt-3">
         <Field label="Primeira mensagem">
           <textarea
             rows={3}
@@ -546,6 +597,12 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
       </div>
     </Modal>
   );
+}
+
+function connectionLabel(connection: ApiMessagingConnection) {
+  return connection.ownerPhoneMasked
+    ? `${connection.name} (${connection.ownerPhoneMasked})`
+    : connection.name;
 }
 
 type MultiSelectOption = { id: string; label: string };

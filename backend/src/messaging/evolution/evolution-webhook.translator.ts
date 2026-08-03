@@ -11,6 +11,8 @@ export type EvolutionWebhookTranslation =
       instanceName: string;
       status: MessagingConnectionStatus;
       qrCodeBase64?: string | null;
+      ownerExternalId?: string | null;
+      ownerPhoneNormalized?: string | null;
     }
   | { kind: "ignored"; reason: string };
 
@@ -27,10 +29,13 @@ export class EvolutionWebhookTranslator {
       return this.translateStatus(payload, connection);
     }
     if (event === "connection.update") {
+      const ownerExternalId = ownerJid(payload.data);
       return {
         kind: "connection",
         instanceName: payload.instance,
         status: translateConnectionStatus(readString(payload.data, "state")),
+        ownerExternalId,
+        ownerPhoneNormalized: normalizeOwnerPhone(ownerExternalId),
       } as const;
     }
     if (event === "qrcode.updated") {
@@ -139,6 +144,21 @@ function phoneFromJid(value: string | null) {
   if (isGroupJid(value)) return null;
   const [phone] = value.split("@");
   return phone?.replace(/\D/g, "") || null;
+}
+
+function ownerJid(data: Record<string, unknown> | undefined) {
+  return (
+    readString(data, "ownerJid") ??
+    readNestedString(data, ["instance", "ownerJid"]) ??
+    readNestedString(data, ["instance", "owner"]) ??
+    readNestedString(data, ["me", "id"]) ??
+    readString(data, "owner")
+  );
+}
+
+function normalizeOwnerPhone(value: string | null) {
+  const phone = phoneFromJid(value);
+  return phone ? `+${phone}` : null;
 }
 
 function isGroupJid(value: string | null) {
