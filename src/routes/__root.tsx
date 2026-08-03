@@ -137,8 +137,16 @@ function SessionHydrator() {
     import("@/lib/session").then(({ hydrateSession }) => {
       if (!cancelled) hydrateSession();
     });
+    function syncLogout(event: StorageEvent) {
+      if (event.key !== "nexo.session.logoutAt") return;
+      import("@/lib/session").then(({ useSession }) => {
+        useSession.setState({ user: null, impersonating: null, hydrated: true });
+      });
+    }
+    window.addEventListener("storage", syncLogout);
     return () => {
       cancelled = true;
+      window.removeEventListener("storage", syncLogout);
     };
   }, []);
   return null;

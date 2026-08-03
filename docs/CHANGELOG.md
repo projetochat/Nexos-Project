@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-03 - Sprint 08.03 Authentication, Login & Access Consolidation
+
+- Removido login generico/demo da tela `/login`.
+- Frontend passa a autenticar sem `tenantSlug=acme` fixo, permitindo o tenant `homologacao`.
+- Adicionado endpoint oficial `GET /api/auth/me`.
+- Login agora normaliza email antes da validacao e retorna erros canonicos para credencial invalida, usuario inativo, ausencia de membership e rate limit.
+- Health pre-login diferencia API/database de Redis.
+- Seed minimo aceita `SEED_ADMIN_EMAIL` e `SEED_ADMIN_PASSWORD` sem imprimir senha.
+- Criado smoke script `backend/scripts/verify-homologation-login.mjs`.
+- Adicionados testes E2E de auth e testes frontend do client Nexos API.
+
 ## 2026-08-03 - Sprint 08.02 Homologation Reset & Contact Lifecycle Recovery
 
 - Criado reset oficial de homologacao com allowlist, production guard, confirm guard, migrations, generate, seed minimo e validacao de contagens.

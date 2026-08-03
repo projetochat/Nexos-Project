@@ -221,3 +221,54 @@ O webhook `/api/webhooks/evolution` e publico para usuarios Nexos, mas autentica
 # Sprint 08
 
 Jobs BullMQ nao carregam JWT. O worker deve resolver Message, Conversation e Connection por `tenantId + messageId` persistidos e nunca confiar em escopo vindo do Redis alem desse identificador minimo.
+
+## Sprint 08.03 - Login e acesso de homologacao
+
+DEFINITIVO:
+
+- `/login` usa somente a Nexos API.
+- Nao ha fallback para Supabase Auth, usuario estatico, timeout fake ou sessao mockada no fluxo real.
+- API base unica do frontend: `VITE_NEXOS_API_URL`, padrao local `http://localhost:3001/api`.
+- O login nao envia `tenantSlug` fixo por padrao; o backend seleciona automaticamente a unica membership ativa. Isso permite o seed minimo `homologacao`.
+- `/api/auth/me` e o endpoint oficial de bootstrap de sessao. `/api/me` permanece por compatibilidade.
+- Tokens continuam em `localStorage` por compatibilidade com a arquitetura atual. Risco documentado: nao e HttpOnly cookie.
+- Refresh automatico em `apiRequest`: se o access token expira e o refresh ainda e valido, o cliente busca novo access token e repete a chamada uma vez.
+- Logout chama `/api/auth/logout`, limpa tokens locais, limpa estado Zustand e sincroniza logout entre abas por `storage`.
+
+Contrato de homologacao:
+
+```text
+Tenant: homologacao
+Usuario: admin@nexo.app
+Senha local/homologacao: demo1234
+Role: tenant_admin
+```
+
+Seed configuravel:
+
+```text
+SEED_MODE=homologation
+SEED_ADMIN_EMAIL=admin@nexo.app
+SEED_ADMIN_PASSWORD=demo1234
+```
+
+Defaults de email/senha sao permitidos apenas fora de producao. O seed imprime modo, tenant e admin, mas nunca imprime senha.
+
+Erros canonicos de auth:
+
+| Cenario              | HTTP | Code                             | Mensagem UI                                                                     |
+| -------------------- | ---: | -------------------------------- | ------------------------------------------------------------------------------- |
+| Credencial invalida  |  401 | `INVALID_CREDENTIALS`            | E-mail ou senha invalidos.                                                      |
+| Usuario inativo      |  403 | `USER_INACTIVE`                  | Seu usuario nao possui permissao para acessar este ambiente.                    |
+| Sem membership ativa |  403 | `USER_WITHOUT_ACTIVE_MEMBERSHIP` | Seu usuario nao possui acesso a nenhuma organizacao ativa.                      |
+| Muitas tentativas    |  429 | `TOO_MANY_LOGIN_ATTEMPTS`        | Muitas tentativas de acesso. Aguarde e tente novamente.                         |
+| Erro interno         |  500 | n/a                              | Ocorreu um erro interno ao autenticar.                                          |
+| API offline          |  n/a | n/a                              | Nao foi possivel conectar a API Nexos. Verifique se o backend esta em execucao. |
+
+Health pre-login:
+
+```text
+GET /api/health
+```
+
+`ok=true` significa API + database disponiveis. Redis e diagnosticado separadamente; Redis down nao invalida credenciais.

@@ -148,3 +148,18 @@ Entregue:
 - erro canonico para telefone ativo duplicado.
 
 Proxima etapa: aprovar ambiente e retomar a homologacao fisica da Sprint 08.01. Sprint 09 continua bloqueada.
+
+# Sprint 08.03
+
+Status: corretiva de autenticacao e acesso implementada localmente.
+
+Entregue:
+
+- login real sem fallback mock/demo;
+- `/api/auth/me`;
+- mensagens de erro especificas;
+- seed admin configuravel;
+- smoke API real no `nexos_0802`;
+- sessao com refresh e logout local sincronizado entre abas.
+
+Proxima etapa: executar validacao UI fisica em navegador disponivel. Sprint 09 continua bloqueada.

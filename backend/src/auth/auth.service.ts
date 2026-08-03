@@ -1,4 +1,11 @@
-import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService, type JwtSignOptions } from "@nestjs/jwt";
 import { compare } from "bcryptjs";
@@ -8,6 +15,8 @@ import { LoginDto } from "./dto/login.dto";
 
 @Injectable()
 export class AuthService {
+  private readonly failedLoginAttempts = new Map<string, { count: number; resetAt: number }>();
+
   constructor(
     @Inject(PrismaService)
     private readonly prisma: PrismaService,
@@ -18,8 +27,11 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto) {
+    const email = dto.email.toLowerCase().trim();
+    this.assertLoginRateLimit(email);
+
     const user = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase().trim() },
+      where: { email },
       include: {
         memberships: {
           include: {
@@ -29,18 +41,30 @@ export class AuthService {
         },
       },
     });
-    if (!user || user.status !== "ACTIVE")
-      throw new UnauthorizedException("Credenciais invalidas.");
+    if (!user) throw this.invalidCredentials(email);
+    if (user.status !== "ACTIVE") {
+      throw new ForbiddenException({
+        code: "USER_INACTIVE",
+        message: "Usuario inativo.",
+      });
+    }
 
     const validPassword = await compare(dto.password, user.passwordHash);
-    if (!validPassword) throw new UnauthorizedException("Credenciais invalidas.");
+    if (!validPassword) throw this.invalidCredentials(email);
 
-    const membership = dto.tenantSlug
-      ? user.memberships.find(
-          (item) => item.tenant.slug === dto.tenantSlug && item.status === "ACTIVE",
-        )
-      : user.memberships.find((item) => item.status === "ACTIVE");
-    if (!membership) throw new UnauthorizedException("Tenant nao autorizado para este usuario.");
+    const activeMemberships = user.memberships.filter((item) => item.status === "ACTIVE");
+    const requestedTenantSlug = dto.tenantSlug?.trim().toLowerCase();
+    const membership = requestedTenantSlug
+      ? activeMemberships.find((item) => item.tenant.slug === requestedTenantSlug)
+      : activeMemberships.length === 1
+        ? activeMemberships[0]
+        : (activeMemberships.find((item) => item.tenant.slug === "homologacao") ?? null);
+    if (!membership) {
+      throw new ForbiddenException({
+        code: "USER_WITHOUT_ACTIVE_MEMBERSHIP",
+        message: "Seu usuario nao possui acesso a nenhuma organizacao ativa.",
+      });
+    }
     const permissions = membership.role.permissions.map((item) => item.permissionId);
 
     const basePayload = {
@@ -71,6 +95,11 @@ export class AuthService {
         id: membership.tenant.id,
         slug: membership.tenant.slug,
         name: membership.tenant.name,
+      },
+      membership: {
+        id: membership.id,
+        role: membership.role.key,
+        roleId: membership.roleId,
       },
       permissions,
     };
@@ -105,6 +134,53 @@ export class AuthService {
     };
   }
 
+  async me(membershipId: string) {
+    const membership = await this.prisma.tenantMembership.findUniqueOrThrow({
+      where: { id: membershipId },
+      include: {
+        user: true,
+        tenant: true,
+        role: { include: { permissions: { select: { permissionId: true } } } },
+        departments: { include: { department: true } },
+      },
+    });
+    const permissions = membership.role.permissions.map((item) => item.permissionId);
+
+    return {
+      user: {
+        id: membership.user.id,
+        email: membership.user.email,
+        name: membership.user.name,
+        roleId: membership.roleId,
+        roleKey: membership.role.key,
+        roleName: membership.role.name,
+        platformRole: membership.user.platformRole,
+      },
+      tenant: {
+        id: membership.tenant.id,
+        slug: membership.tenant.slug,
+        name: membership.tenant.name,
+      },
+      membership: {
+        id: membership.id,
+        role: membership.role.key,
+        roleId: membership.roleId,
+      },
+      departments: membership.departments.map((item) => ({
+        id: item.department.id,
+        name: item.department.name,
+        description: item.department.description,
+        color: item.department.color,
+        active: item.department.active,
+      })),
+      permissions,
+      capabilities: {
+        canManageTenant: permissions.includes("users.manage"),
+        canOperateInbox: permissions.some((permission) => permission.startsWith("chat.")),
+      },
+    };
+  }
+
   async verifyToken(token: string, secretName: "JWT_SECRET" | "JWT_REFRESH_SECRET") {
     return this.jwt.verifyAsync<JwtPayload>(token, {
       secret: this.requiredSecret(secretName),
@@ -128,5 +204,38 @@ export class AuthService {
       throw new Error(`${name} must be configured with a non-placeholder value.`);
     }
     return value;
+  }
+
+  private invalidCredentials(email: string) {
+    this.recordFailedLogin(email);
+    return new UnauthorizedException({
+      code: "INVALID_CREDENTIALS",
+      message: "E-mail ou senha invalidos.",
+    });
+  }
+
+  private assertLoginRateLimit(email: string) {
+    const now = Date.now();
+    const entry = this.failedLoginAttempts.get(email);
+    if (!entry || entry.resetAt <= now) return;
+    if (entry.count >= 5) {
+      throw new HttpException(
+        {
+          code: "TOO_MANY_LOGIN_ATTEMPTS",
+          message: "Muitas tentativas de acesso. Aguarde e tente novamente.",
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  private recordFailedLogin(email: string) {
+    const now = Date.now();
+    const entry = this.failedLoginAttempts.get(email);
+    if (!entry || entry.resetAt <= now) {
+      this.failedLoginAttempts.set(email, { count: 1, resetAt: now + 60_000 });
+      return;
+    }
+    entry.count += 1;
   }
 }

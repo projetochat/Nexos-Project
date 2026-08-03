@@ -22,13 +22,27 @@ type LoginResponse = {
     slug: string;
     name: string;
   };
+  membership: {
+    id: string;
+    role: string;
+    roleId: string;
+  };
   permissions: string[];
 };
 
 type MeResponse = {
   user: LoginResponse["user"] & { roleName: string };
   tenant: LoginResponse["tenant"];
+  membership: LoginResponse["membership"];
   permissions: string[];
+};
+
+export type NexosHealth = {
+  ok: boolean;
+  service: string;
+  database: "up" | "down";
+  redis: "up" | "down";
+  timestamp: string;
 };
 
 export type ApiDepartment = {
@@ -252,13 +266,14 @@ export function nexosApiBaseUrl() {
   return import.meta.env.VITE_NEXOS_API_URL || "http://localhost:3001/api";
 }
 
-export async function loginWithNexosApi(email: string, password: string, tenantSlug = "acme") {
-  const response = await fetch(`${nexosApiBaseUrl()}/auth/login`, {
+export async function loginWithNexosApi(email: string, password: string, tenantSlug?: string) {
+  const body: { email: string; password: string; tenantSlug?: string } = { email, password };
+  if (tenantSlug) body.tenantSlug = tenantSlug;
+  const response = await fetchNexos("/auth/login", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, tenantSlug }),
+    body: JSON.stringify(body),
   });
-  if (!response.ok) throw new Error("API Nexos indisponivel ou credenciais invalidas.");
+  if (!response.ok) throw await authErrorFromResponse(response);
 
   const data = (await response.json()) as LoginResponse;
   storeNexosSession(data);
@@ -276,7 +291,7 @@ export async function loginWithNexosApi(email: string, password: string, tenantS
 }
 
 export async function hydrateWithNexosApi() {
-  const data = await apiRequest<MeResponse>("/me");
+  const data = await apiRequest<MeResponse>("/auth/me");
   return {
     id: data.user.id,
     nome: data.user.name,
@@ -289,21 +304,37 @@ export async function hydrateWithNexosApi() {
 }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  headers.set("Content-Type", "application/json");
-  const token = localStorage.getItem(ACCESS_KEY);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-
-  const response = await fetch(`${nexosApiBaseUrl()}${path}`, {
-    ...init,
-    headers,
-  });
+  let response = await fetchNexos(path, init, true);
+  if (response.status === 401 && (await refreshAccessToken())) {
+    response = await fetchNexos(path, init, true);
+  }
   if (!response.ok) {
     const message = await readError(response);
     throw new Error(message);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+async function fetchNexos(path: string, init: RequestInit = {}, attachAuthorization = false) {
+  const headers = new Headers(init.headers);
+  headers.set("Content-Type", "application/json");
+  const token = attachAuthorization ? localStorage.getItem(ACCESS_KEY) : null;
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(`${nexosApiBaseUrl()}${path}`, {
+    ...init,
+    headers,
+  });
+}
+
+export async function healthCheck() {
+  try {
+    const response = await fetchNexos("/health");
+    if (!response.ok) return null;
+    return (await response.json()) as NexosHealth;
+  } catch {
+    return null;
+  }
 }
 
 export const organizationApi = {
@@ -471,13 +502,76 @@ export function clearNexosApiSession() {
   localStorage.removeItem(TENANT_KEY);
 }
 
+export async function logoutFromNexosApi() {
+  try {
+    await fetchNexos("/auth/logout", { method: "POST" }, true);
+  } finally {
+    clearNexosApiSession();
+  }
+}
+
 async function readError(response: Response) {
   try {
-    const data = (await response.json()) as { message?: string | string[]; error?: string };
+    const data = (await response.json()) as {
+      code?: string;
+      message?: string | string[];
+      error?: string;
+    };
+    const mapped = authMessageFromStatus(response.status, data.code);
+    if (mapped) return mapped;
     if (Array.isArray(data.message)) return data.message.join(", ");
     return data.message ?? data.error ?? "Erro na API Nexos.";
   } catch {
     return "Erro na API Nexos.";
+  }
+}
+
+async function authErrorFromResponse(response: Response) {
+  try {
+    const data = (await response.json()) as { code?: string; message?: string | string[] };
+    return new Error(
+      authMessageFromStatus(response.status, data.code) ??
+        (Array.isArray(data.message) ? data.message.join(", ") : data.message) ??
+        "Ocorreu um erro interno ao autenticar.",
+    );
+  } catch {
+    return new Error(
+      authMessageFromStatus(response.status) ?? "Ocorreu um erro interno ao autenticar.",
+    );
+  }
+}
+
+function authMessageFromStatus(status: number, code?: string) {
+  if (status === 401) return "E-mail ou senha invalidos.";
+  if (status === 403) {
+    if (code === "USER_WITHOUT_ACTIVE_MEMBERSHIP") {
+      return "Seu usuario nao possui acesso a nenhuma organizacao ativa.";
+    }
+    if (code === "TENANT_INACTIVE") return "A organizacao vinculada ao usuario esta inativa.";
+    return "Seu usuario nao possui permissao para acessar este ambiente.";
+  }
+  if (status === 429) return "Muitas tentativas de acesso. Aguarde e tente novamente.";
+  if (status >= 500) return "Ocorreu um erro interno ao autenticar.";
+  return null;
+}
+
+async function refreshAccessToken() {
+  const refreshToken = localStorage.getItem(REFRESH_KEY);
+  if (!refreshToken) return false;
+  try {
+    const response = await fetchNexos("/auth/refresh", {
+      method: "POST",
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!response.ok) {
+      clearNexosApiSession();
+      return false;
+    }
+    const data = (await response.json()) as { accessToken: string };
+    localStorage.setItem(ACCESS_KEY, data.accessToken);
+    return true;
+  } catch {
+    return false;
   }
 }
 

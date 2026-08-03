@@ -12,6 +12,7 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "audit:homologation": "node scripts/audit-homologation-data.mjs",
     "cleanup:homologation": "node scripts/cleanup-homologation-data.mjs",
+    "verify:homologation-login": "node scripts/verify-homologation-login.mjs",
     "reset:homologation": "node scripts/reset-homologation.mjs"
   },
   "dependencies": {

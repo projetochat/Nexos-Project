@@ -1,70 +1,60 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ShieldCheck, Headphones, Sun, Moon, ArrowRight, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Eye, EyeOff, Loader2, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
-import { LogoMark, Button, Input, Field } from "@/components/ui-kit";
-import {
-  DEMO_ACCOUNTS,
-  useSession,
-  signIn,
-  ROLE_META,
-  currentRoleHome,
-  type Role,
-} from "@/lib/session";
 import { useTheme } from "@/components/theme-provider";
+import { LogoMark, Button, Field, Input } from "@/components/ui-kit";
+import { healthCheck, type NexosHealth } from "@/lib/nexos-api";
+import { currentRoleHome, signIn, useSession, type Role } from "@/lib/session";
 
 export const Route = createFileRoute("/login")({
-  head: () => ({ meta: [{ title: "Entrar · Nexo" }] }),
+  head: () => ({ meta: [{ title: "Entrar - Nexo" }] }),
   component: LoginPage,
 });
-
-type DemoRole = "admin" | "operator";
-
-const ROLE_ICONS: Record<DemoRole, React.ComponentType<{ className?: string }>> = {
-  admin: ShieldCheck,
-  operator: Headphones,
-};
-
-const ROLE_DESCRIPTIONS: Record<DemoRole, string> = {
-  admin: "Administra a operação da empresa: usuários, filas, relatórios e canais.",
-  operator: "Atende clientes na Central de Atendimento em tempo real.",
-};
 
 function LoginPage() {
   const navigate = useNavigate();
   const user = useSession((s) => s.user);
   const { resolved, toggle } = useTheme();
 
-  const [selectedRole, setSelectedRole] = React.useState<DemoRole>("admin");
-  const [email, setEmail] = React.useState(DEMO_ACCOUNTS[0].email);
-  const [password, setPassword] = React.useState(DEMO_ACCOUNTS[0].password);
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [health, setHealth] = React.useState<NexosHealth | null>(null);
+  const errorRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (user) navigate({ to: currentRoleHome(user.role) as never });
   }, [user, navigate]);
 
   React.useEffect(() => {
-    const acc = DEMO_ACCOUNTS.find(
-      (a) => (a.role === "admin" ? "admin" : "operator") === selectedRole,
-    );
-    if (acc) {
-      setEmail(acc.email);
-      setPassword(acc.password);
-    }
-  }, [selectedRole]);
+    let cancelled = false;
+    healthCheck().then((result) => {
+      if (!cancelled) setHealth(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleLogin(event: React.FormEvent) {
+    event.preventDefault();
+    if (loading) return;
+    setError(null);
     setLoading(true);
     try {
       await signIn(email, password);
-      const u = useSession.getState().user;
-      const role: Role = u?.role ?? "operator";
-      toast.success(`Bem-vindo(a), ${u?.nome ?? ""}`);
+      const sessionUser = useSession.getState().user;
+      const role: Role = sessionUser?.role ?? "operator";
+      toast.success(`Bem-vindo(a), ${sessionUser?.nome ?? ""}`);
       navigate({ to: currentRoleHome(role) as never });
     } catch (err) {
-      toast.error((err as Error).message || "Não foi possível entrar.");
+      const message = normalizeLoginError(err);
+      setError(message);
+      toast.error(message);
+      requestAnimationFrame(() => errorRef.current?.focus());
     } finally {
       setLoading(false);
     }
@@ -93,54 +83,26 @@ function LoginPage() {
             </div>
           </div>
 
-          <h2 className="text-3xl font-semibold tracking-tight">
-            Uma plataforma. <span className="text-gradient-brand">Duas experiências.</span>
-          </h2>
+          <h2 className="text-3xl font-semibold tracking-tight">Acesse o ambiente Nexos.</h2>
           <p className="mt-3 max-w-md text-sm text-muted-foreground">
-            Escolha um perfil de demonstração — cada um enxerga o sistema pelo ângulo do seu papel.
+            A autenticacao usa a API e o banco configurados para homologacao. A sessao e validada
+            antes de liberar as rotas protegidas.
           </p>
 
-          <div className="mt-8 grid gap-2">
-            {(["admin", "operator"] as DemoRole[]).map((r) => {
-              const Icon = ROLE_ICONS[r];
-              const active = selectedRole === r;
-              const label = r === "admin" ? "Administrador" : "Atendente";
-              return (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setSelectedRole(r)}
-                  className={`group flex items-center gap-3 rounded-xl border p-3 text-left transition ${
-                    active
-                      ? "border-primary/60 bg-surface-1 shadow-glow"
-                      : "border-border bg-surface-1/50 hover:border-border hover:bg-surface-1"
-                  }`}
-                >
-                  <div
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                      active
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-surface-2 text-muted-foreground"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium">{label}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      {ROLE_DESCRIPTIONS[r]}
-                    </div>
-                  </div>
-                  <ArrowRight
-                    className={`h-4 w-4 shrink-0 transition ${
-                      active
-                        ? "text-primary"
-                        : "text-muted-foreground opacity-0 group-hover:opacity-100"
-                    }`}
-                  />
-                </button>
-              );
-            })}
+          <div className="mt-8 max-w-md rounded-lg border border-border bg-surface-1 p-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              {health?.database === "up" ? (
+                <CheckCircle2 className="h-4 w-4 text-success" />
+              ) : (
+                <AlertCircle className="h-4 w-4 text-warning" />
+              )}
+              Ambiente de homologacao
+            </div>
+            <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+              <span>API: {health ? "online" : "indisponivel"}</span>
+              <span>Database: {health?.database ?? "desconhecido"}</span>
+              <span>Redis: {health?.redis ?? "desconhecido"}</span>
+            </div>
           </div>
         </div>
 
@@ -152,75 +114,88 @@ function LoginPage() {
 
           <div className="rounded-2xl border border-border bg-card p-8 shadow-elevated">
             <div className="mb-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              {selectedRole === "admin" ? ROLE_META.admin.scope : ROLE_META.operator.scope}
+              Ambiente de homologacao
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Entrar como {selectedRole === "admin" ? "Administrador" : "Atendente"}
-            </h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Entrar no Nexos</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Credenciais demo preenchidas para o ambiente local preparado pela sprint.
+              Use uma conta ativa vinculada a uma organizacao de homologacao.
             </p>
 
             <form onSubmit={handleLogin} className="mt-6 space-y-4">
               <Field label="E-mail">
                 <Input
+                  id="email"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(event) => setEmail(event.target.value)}
                   placeholder="voce@empresa.com"
-                  required
-                />
-              </Field>
-              <Field label="Senha">
-                <Input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  autoComplete="email"
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "login-error" : undefined}
                   required
                 />
               </Field>
 
+              <Field label="Senha">
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="Senha"
+                    autoComplete="current-password"
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={error ? "login-error" : undefined}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((value) => !value)}
+                    className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+                    aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </Field>
+
+              {error && (
+                <div
+                  id="login-error"
+                  ref={errorRef}
+                  tabIndex={-1}
+                  className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive outline-none"
+                  role="alert"
+                >
+                  {error}
+                </div>
+              )}
+
               <Button variant="primary" className="w-full" type="submit" disabled={loading}>
                 {loading ? (
                   <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Entrando…
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Entrando...
                   </>
                 ) : (
                   <>Entrar</>
                 )}
               </Button>
             </form>
-
-            <div className="my-6 flex items-center gap-3 text-[10px] uppercase tracking-widest text-muted-foreground">
-              <span className="h-px flex-1 bg-border" />
-              modo demonstração
-              <span className="h-px flex-1 bg-border" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 lg:hidden">
-              {(["admin", "operator"] as DemoRole[]).map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setSelectedRole(r)}
-                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
-                    selectedRole === r
-                      ? "border-primary/60 bg-surface-1 text-foreground"
-                      : "border-border bg-surface-1/50 text-muted-foreground hover:bg-surface-1"
-                  }`}
-                >
-                  {r === "admin" ? "Administrador" : "Atendente"}
-                </button>
-              ))}
-            </div>
           </div>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            Nexo · MVP de atendimento empresarial via WhatsApp (simulado)
+            Nexo - acesso real ao ambiente configurado
           </p>
         </div>
       </div>
     </div>
   );
+}
+
+function normalizeLoginError(error: unknown) {
+  if (error instanceof TypeError) {
+    return "Nao foi possivel conectar a API Nexos. Verifique se o backend esta em execucao.";
+  }
+  return (error as Error).message || "Ocorreu um erro interno ao autenticar.";
 }

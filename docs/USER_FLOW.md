@@ -134,3 +134,27 @@ Depois de logout/reconnect, a mesma instancia/connection deve voltar a receber w
 # Sprint 08.02 - Contatos na homologacao limpa
 
 No ambiente resetado, `/contatos` deve iniciar sem contatos operacionais. Criar, editar, excluir e recriar o mesmo telefone deve funcionar sem erro generico. Se o contato estava arquivado, ele volta para a lista como restaurado. Se ja existe ativo, a UI mostra que ja existe um contato ativo com este telefone.
+
+# Sprint 08.03 - Login real
+
+Fluxo atualizado:
+
+```text
+Abrir /login
+  -> health pre-login mostra API/database/Redis
+  -> usuario informa email e senha
+  -> POST /api/auth/login
+  -> tokens salvos
+  -> GET /api/auth/me no bootstrap
+  -> redirect para rota principal
+  -> F5 preserva sessao
+  -> logout limpa sessao e volta para /login
+```
+
+A tela nao preenche credenciais demo e nao oferece selecao visual de perfil. Erros especificos sao exibidos inline e em toast:
+
+- API offline;
+- email ou senha invalidos;
+- falta de acesso a organizacao ativa;
+- excesso de tentativas;
+- erro interno de autenticacao.

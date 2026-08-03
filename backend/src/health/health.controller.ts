@@ -14,7 +14,7 @@ export class HealthController {
     await this.prisma.$queryRaw`SELECT 1`;
     const redis = await this.queue.health();
     return {
-      ok: redis.ok,
+      ok: true,
       service: "nexos-api",
       database: "up",
       redis: redis.ok ? "up" : "down",

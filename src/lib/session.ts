@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { clearNexosApiSession, hydrateWithNexosApi, loginWithNexosApi } from "@/lib/nexos-api";
+import { hydrateWithNexosApi, loginWithNexosApi, logoutFromNexosApi } from "@/lib/nexos-api";
 
 /* ============================================================
    Nexo Session
@@ -28,29 +28,11 @@ export const ROLE_META: Record<Role, { label: string; scope: string; home: strin
   operator: { label: "Atendente", scope: "Central de Atendimento", home: "/inbox" },
 };
 
-export const DEMO_ACCOUNTS = [
-  {
-    id: "demo-admin",
-    nome: "Ana Ribeiro",
-    email: "admin@nexo.app",
-    password: "demo1234",
-    role: "admin" as Role,
-    empresaNome: "Acme Corp",
-  },
-  {
-    id: "demo-agent",
-    nome: "Camila Duarte",
-    email: "atendente@nexo.app",
-    password: "demo1234",
-    role: "operator" as Role,
-    empresaNome: "Acme Corp",
-  },
-];
-
 type SessionState = {
   user: SessionUser | null;
   impersonating: { empresaId: string; empresaNome: string } | null;
   hydrated: boolean;
+  error: string | null;
   loginAs: (user: SessionUser) => void;
   logout: () => void;
   impersonate: (empresaId: string, empresaNome: string) => void;
@@ -63,8 +45,9 @@ export const useSession = create<SessionState>()(
       user: null,
       impersonating: null,
       hydrated: false,
-      loginAs: (user) => set({ user, impersonating: null, hydrated: true }),
-      logout: () => set({ user: null, impersonating: null }),
+      error: null,
+      loginAs: (user) => set({ user, impersonating: null, hydrated: true, error: null }),
+      logout: () => set({ user: null, impersonating: null, error: null }),
       impersonate: (empresaId, empresaNome) => set({ impersonating: { empresaId, empresaNome } }),
       stopImpersonation: () => set({ impersonating: null }),
     }),
@@ -80,9 +63,9 @@ export function currentRoleHome(role: Role | undefined): string {
 export async function hydrateSession(): Promise<void> {
   try {
     const user = await hydrateWithNexosApi();
-    useSession.setState({ user, hydrated: true });
-  } catch {
-    useSession.setState({ user: null, hydrated: true });
+    useSession.setState({ user, hydrated: true, error: null });
+  } catch (error) {
+    useSession.setState({ user: null, hydrated: true, error: (error as Error).message });
   }
 }
 
@@ -92,6 +75,7 @@ export async function signIn(email: string, password: string): Promise<void> {
 }
 
 export async function signOut(): Promise<void> {
-  clearNexosApiSession();
+  await logoutFromNexosApi();
   useSession.setState({ user: null, impersonating: null, hydrated: true });
+  localStorage.setItem("nexo.session.logoutAt", String(Date.now()));
 }

@@ -197,6 +197,8 @@ Sprint 08.01: dados demo completos sao opt-in. Use `SEED_DEMO_DATA=true` antes d
 
 Sprint 08.02: homologacao deve ser reconstruida com `bun run --cwd backend reset:homologation -- --confirm` apontando `DATABASE_URL` para `nexos_0802`. O reset valida seed minimo com zero dados operacionais.
 
+Sprint 08.03: login real de homologacao usa `VITE_NEXOS_API_URL=http://localhost:3001/api`, `DATABASE_URL` apontando `nexos_0802`, `SEED_MODE=homologation`, `SEED_ADMIN_EMAIL=admin@nexo.app` e `SEED_ADMIN_PASSWORD=demo1234`. A tela `/login` nao usa mais contas demo preenchidas nem tenant fixo `acme`.
+
 - `admin@nexo.app` / `demo1234` no tenant `acme`
 - `atendente@nexo.app` / `demo1234` no tenant `acme`
 - `outsider@nexo.app` / `demo1234` no tenant `orbit`

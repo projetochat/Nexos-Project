@@ -317,3 +317,50 @@ Eventos `CONNECTION_UPDATE` conectados atualizam owner identity e disparam ensur
 Se houver Contact arquivado com o mesmo telefone, o endpoint restaura o registro existente, preserva o mesmo `id` e retorna `lifecycle: "restored"`. Novo registro retorna `lifecycle: "created"`.
 
 `DELETE /api/crm/contacts/:id` e soft delete: marca `archivedAt`, remove o Contact das listas operacionais e preserva historico. `PATCH /api/crm/contacts/:id` continua operando apenas sobre Contact ativo.
+
+## Sprint 08.03 - Auth consolidation
+
+Base local oficial: `http://localhost:3001/api`.
+
+| Metodo | Endpoint        | Auth       | Descricao                                                    |
+| ------ | --------------- | ---------- | ------------------------------------------------------------ |
+| `GET`  | `/health`       | Publico    | Verifica API + database e informa Redis separadamente        |
+| `POST` | `/auth/login`   | Publico    | Autentica por email/senha; `tenantSlug` e opcional           |
+| `POST` | `/auth/refresh` | Publico    | Emite novo access token a partir de refresh token valido     |
+| `GET`  | `/auth/me`      | Bearer JWT | Retorna user, tenant, membership, departamentos e permissoes |
+| `POST` | `/auth/logout`  | Publico    | Logout stateless; cliente limpa sessao local                 |
+
+Login de homologacao:
+
+```json
+{
+  "email": "admin@nexo.app",
+  "password": "demo1234"
+}
+```
+
+Resposta:
+
+```json
+{
+  "accessToken": "...",
+  "refreshToken": "...",
+  "user": {
+    "id": "...",
+    "email": "admin@nexo.app",
+    "name": "Admin Homologacao"
+  },
+  "tenant": {
+    "id": "...",
+    "slug": "homologacao",
+    "name": "Homologacao Nexos"
+  },
+  "membership": {
+    "id": "...",
+    "role": "tenant_admin",
+    "roleId": "..."
+  }
+}
+```
+
+Email e normalizado com trim + lowercase antes da busca. Senha usa bcrypt, mesmo algoritmo do seed.

@@ -239,3 +239,25 @@ Reconnect preserva a `MessagingConnection` local. Quando uma connection fica `CO
 Homologacao passa a ter reset deterministico via script local com allowlist de database, bloqueio de producao, migrations, Prisma generate, seed minimo e validacao de contagens. Cleanup seletivo permanece auxiliar; a estrategia principal e recriar o banco `nexos_0802`.
 
 Contact lifecycle segue soft delete + restore: `archivedAt` preserva historico, e create com mesmo telefone normalizado restaura o Contact arquivado em vez de criar duplicata ou falhar por unique constraint.
+
+## Sprint 08.03 - Auth consolidation
+
+O acesso passa a seguir um contrato unico:
+
+```text
+/login
+  -> VITE_NEXOS_API_URL
+  -> POST /api/auth/login
+  -> User ACTIVE
+  -> TenantMembership ACTIVE
+  -> JWT access + refresh
+  -> GET /api/auth/me
+  -> Zustand session
+  -> route guards
+```
+
+O frontend nao seleciona `acme` por padrao. Em homologacao, o backend auto-seleciona a unica membership ativa do usuario `admin@nexo.app` no tenant `homologacao`.
+
+`GET /api/health` separa API/database de Redis: o login depende de API + database, enquanto Redis down e diagnostico operacional, nao falha de credencial.
+
+Tokens continuam em `localStorage` por compatibilidade; refresh automatico e logout sincronizado entre abas foram consolidados, mas HttpOnly cookie permanece melhoria futura.

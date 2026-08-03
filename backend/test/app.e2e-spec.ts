@@ -4,6 +4,7 @@ import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import helmet from "helmet";
+import { hash } from "bcryptjs";
 import { AppModule } from "../src/app.module";
 import {
   ConversationStatus,
@@ -84,6 +85,94 @@ describe("Nexos API organization and RBAC", () => {
         expect(body.permissions).toContain("users.manage");
         expect(body.permissions).toContain("crm.manage");
       });
+  });
+
+  it("authenticates with normalized email and auto-selects a single active membership", async () => {
+    await request(app.getHttpServer())
+      .post("/api/auth/login")
+      .send({ email: " Admin@Nexo.App ", password: "demo1234" })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.accessToken).toEqual(expect.any(String));
+        expect(body.refreshToken).toEqual(expect.any(String));
+        expect(body.user.email).toBe("admin@nexo.app");
+        expect(body.tenant.slug).toBe("acme");
+        expect(body.membership.role).toBe("tenant_admin");
+      });
+  });
+
+  it("exposes the official auth /me endpoint", async () => {
+    const token = await login("admin@nexo.app", "demo1234", "acme");
+
+    await request(app.getHttpServer())
+      .get("/api/auth/me")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.user.email).toBe("admin@nexo.app");
+        expect(body.tenant.slug).toBe("acme");
+        expect(body.membership.role).toBe("tenant_admin");
+      });
+  });
+
+  it("refreshes an active session and accepts logout", async () => {
+    const response = await request(app.getHttpServer())
+      .post("/api/auth/login")
+      .send({ email: "admin@nexo.app", password: "demo1234", tenantSlug: "acme" })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post("/api/auth/refresh")
+      .send({ refreshToken: response.body.refreshToken })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.accessToken).toEqual(expect.any(String));
+      });
+
+    await request(app.getHttpServer()).post("/api/auth/logout").expect(201, { ok: true });
+  });
+
+  it("rejects inactive users with a canonical error", async () => {
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: "admin@nexo.app" } });
+    await prisma.user.update({ where: { id: user.id }, data: { status: "DISABLED" } });
+
+    try {
+      await request(app.getHttpServer())
+        .post("/api/auth/login")
+        .send({ email: "admin@nexo.app", password: "demo1234", tenantSlug: "acme" })
+        .expect(403)
+        .expect(({ body }) => {
+          expect(body.code).toBe("USER_INACTIVE");
+        });
+    } finally {
+      await prisma.user.update({ where: { id: user.id }, data: { status: "ACTIVE" } });
+    }
+  });
+
+  it("rejects users without active membership with a canonical error", async () => {
+    const email = "sem-membership@nexo.app";
+    await prisma.user.upsert({
+      where: { email },
+      update: { passwordHash: await hash("demo1234", 12), status: "ACTIVE" },
+      create: {
+        email,
+        name: "Sem Membership",
+        passwordHash: await hash("demo1234", 12),
+        status: "ACTIVE",
+      },
+    });
+
+    try {
+      await request(app.getHttpServer())
+        .post("/api/auth/login")
+        .send({ email, password: "demo1234" })
+        .expect(403)
+        .expect(({ body }) => {
+          expect(body.code).toBe("USER_WITHOUT_ACTIVE_MEMBERSHIP");
+        });
+    } finally {
+      await prisma.user.delete({ where: { email } });
+    }
   });
 
   it("denies inactive memberships even when the token was previously valid", async () => {

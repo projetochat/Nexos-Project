@@ -267,3 +267,29 @@ Audit sem remocao:
 ```powershell
 bun run --cwd backend audit:homologation
 ```
+
+## Sprint 08.03 - Auth local/homologacao
+
+Variaveis oficiais:
+
+```powershell
+$env:VITE_NEXOS_API_URL="http://localhost:3001/api"
+$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0802?schema=public"
+$env:REDIS_URL="redis://localhost:6379"
+$env:SEED_MODE="homologation"
+$env:SEED_ADMIN_EMAIL="admin@nexo.app"
+$env:SEED_ADMIN_PASSWORD="demo1234"
+$env:JWT_SECRET="use-um-secret-forte"
+$env:JWT_REFRESH_SECRET="use-outro-secret-forte"
+$env:FRONTEND_ORIGIN="http://localhost:5173"
+```
+
+`SEED_ADMIN_PASSWORD=demo1234` e apenas para local/homologacao. Nao use defaults em producao.
+
+Smoke oficial de login:
+
+```powershell
+bun run --cwd backend verify:homologation-login
+```
+
+O backend registra de forma sanitizada o banco efetivo no startup, sem senha. Se `SEED_MODE=homologation` estiver ativo, o startup bloqueia database fora da allowlist de homologacao.
