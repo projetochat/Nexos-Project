@@ -177,5 +177,7 @@ Entregue:
 - testes automatizados de dropdown, translator, inbound e webhook `jwt_key`;
 - regressao completa aprovada em `nexos_0801`.
 
-Sprint 09 continua bloqueada ate execucao fisica completa: dropdown real, outbound real, inbound real na
+Sprint 09 continua bloqueada. Rework II atualizou Evolution para `v2.3.7`, preservou `nexos_0802` e
+confirmou a instancia conectada `26293569-whatsapp-nata-cffd5f5c`, mas o inbound fisico ainda falha antes
+do webhook por decriptacao Signal/Baileys. A liberacao exige `MESSAGES_UPSERT` real chegando ao backend,
 mesma Conversation, reconnect, zero replay, Redis down/recovery e exactly-once.

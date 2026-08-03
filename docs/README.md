@@ -327,3 +327,13 @@ Credenciais locais/homologacao:
 
 - `admin@nexo.app` / `demo1234` role `tenant_admin`
 - `atendente@nexo.app` / `demo1234` role `agent`
+
+### Rework II Sprint 08.04
+
+Evolution local atualizada de `v2.3.1` para `v2.3.7` com backup fisico previo em
+`backups/evolution-before-0804.dump`. A instancia operacional unica do Nexos em `nexos_0802` aponta para
+`26293569-whatsapp-nata-cffd5f5c`, conectada, com owner normalizado apos reconcile por endpoint.
+
+Inbound fisico segue bloqueado por falha de decriptacao antes do webhook. Logs reais mostraram erros
+Signal/Baileys com `@lid` e `senderPn`, mas nenhum `MESSAGES_UPSERT` valido foi recebido pelo Nexos nesta
+sessao. Sprint 09 permanece bloqueada.

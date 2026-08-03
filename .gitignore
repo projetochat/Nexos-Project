@@ -30,6 +30,7 @@ sprint-*-after-eslint.json
 
 # Local container data
 infra/postgres-data/
+backups/
 
 # Generated backend clients
 backend/src/generated/prisma/

@@ -86,7 +86,7 @@ Variaveis:
 - `EVOLUTION_POSTGRES_PASSWORD`
 - `EVOLUTION_POSTGRES_DATABASE`
 
-Usar valores fortes para `EVOLUTION_API_KEY` e `EVOLUTION_WEBHOOK_SECRET` fora de desenvolvimento. A imagem Evolution esta fixada em `evoapicloud/evolution-api:v2.3.1`; nao usar `latest` em deploy reproduzivel.
+Usar valores fortes para `EVOLUTION_API_KEY` e `EVOLUTION_WEBHOOK_SECRET` fora de desenvolvimento. A imagem Evolution esta fixada em `evoapicloud/evolution-api:v2.3.7`; nao usar `latest` em deploy reproduzivel. Procedimento de backup, rollback e evidencias ficam em `docs/EVOLUTION.md`.
 
 O Redis e PostgreSQL extras do Compose sao internos da Evolution API. Eles nao habilitam filas BullMQ, cache ou realtime do Nexos.
 

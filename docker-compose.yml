@@ -57,7 +57,7 @@ services:
       - evolution-redis-data:/data
 
   evolution-api:
-    image: evoapicloud/evolution-api:v2.3.1
+    image: evoapicloud/evolution-api:v2.3.7
     container_name: nexos-evolution-api
     restart: unless-stopped
     depends_on:

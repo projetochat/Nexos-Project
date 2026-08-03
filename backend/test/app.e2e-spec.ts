@@ -700,6 +700,15 @@ describe("Nexos API organization and RBAC", () => {
         expect(body.agent_id).toBeNull();
         expect(body.status).toBe("aberta");
       });
+    await expect(
+      prisma.message.findFirstOrThrow({
+        where: {
+          conversationId: created.body.id,
+          direction: MessageDirection.SYSTEM,
+          content: "Conversa movida para fila.",
+        },
+      }),
+    ).resolves.toBeTruthy();
 
     await request(app.getHttpServer())
       .patch(`/api/conversations/${created.body.id}/status`)

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-03 - Sprint 08.04 Rework II
+
+- Criado backup fisico da Evolution antes de qualquer atualizacao: `backups/evolution-before-0804.dump`.
+- Evolution API fixada em `evoapicloud/evolution-api:v2.3.7`; `latest` e `2.4.0-rc*` foram descartados.
+- Reconciliada a connection fisica do Nexos para a instancia conectada `26293569-whatsapp-nata-cffd5f5c`.
+- Confirmados login admin/agente em `homologacao`, webhook da instancia e owner normalizado.
+- Adicionada regressao E2E para `PATCH /api/conversations/:id/status` criando mensagem de sistema.
+- Documentado diagnostico inbound: falha permanece antes do webhook por decriptacao Signal/Baileys.
+- Gate final permanece `NOT READY FOR SPRINT 09`.
+
 ## 2026-08-03 - Sprint 08.03 Authentication, Login & Access Consolidation
 
 - Removido login generico/demo da tela `/login`.
