@@ -296,6 +296,24 @@ Backend e frontend runtime estabilizados por testes automatizados. Gate fisico c
 
 NOT READY FOR SPRINT 10
 
+## Homologacao fisica final - Product Owner
+
+- Inbox admin: PASS
+- Inbox atendente: PASS
+- Zero Maximum update depth: PASS
+- Realtime enabled: PASS
+- Realtime disabled + REST fallback: PASS
+- Inbound sem F5: PASS
+- Outbound lifecycle sem F5: PASS
+- Presence: PASS
+- Typing: PASS
+- Reconnect: PASS
+- Redis degraded/recovery: PASS
+- RBAC e isolamento: PASS
+
+Gate:
+READY FOR SPRINT 10
+
 ## Rework - Backend Bootstrap Recovery
 
 Data: 2026-08-03
