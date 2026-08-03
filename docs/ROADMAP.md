@@ -187,3 +187,8 @@ mesma Conversation, reconnect, zero replay, Redis down/recovery e exactly-once.
 Realtime oficial implementado em codigo com Socket.io autenticado, rooms tenant-scoped, eventos de Message,
 Conversation, Connection, presença, typing, Redis adapter e fallback REST no frontend. Gate fisico ainda
 depende de validacao browser/WhatsApp/Redis down-recovery ponta a ponta antes de liberar Sprint 10.
+
+Rework Sprint 09 recuperou o bootstrap backend fisico em `nexos_0802`, adicionou teste real de DI do
+`AppModule`, validou health `realtime=up` com Redis adapter e confirmou sockets admin/agente em homologacao.
+Sprint 10 continua bloqueada ate homologacao fisica completa de inbound, outbound/status, presence visual,
+typing visual, reconnect/F5 com reconcile REST e queda/retorno de Redis.

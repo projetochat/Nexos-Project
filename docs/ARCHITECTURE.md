@@ -274,15 +274,6 @@ Inbound:
 
 ```text
 WhatsApp -> Evolution -> authenticated webhook -> translator -> Connection resolution
-
-## Sprint 09 - Realtime
-
-Socket.io foi adicionado como camada de notificação, não como fonte da verdade. O backend expõe namespace
-`/realtime` no path `/socket.io`, autentica o handshake com access token e deriva tenant/membership pelo
-servidor. Rooms oficiais ficam centralizadas em `backend/src/realtime/realtime-rooms.ts`.
-
-Eventos de Message, Conversation, Connection, presença e digitação saem por `RealtimePublisher` após
-persistência confirmada. REST permanece responsável por recuperação e reconciliação.
 -> Contact resolution -> Conversation resolution -> Message persistence -> polling/refetch -> Frontend
 ```
 
@@ -293,3 +284,17 @@ Webhook auth usa o mesmo contrato configurado por `ensureWebhookConfigured`: hea
 `EVOLUTION_WEBHOOK_SECRET`. Bearer JWT segue aceito para compatibilidade automatizada. Logs estruturados
 incluem `requestId`, `authResult`, `eventType`, `kind` e `ignoredReason` sem registrar corpo completo,
 telefone completo ou secrets.
+
+## Sprint 09 - Realtime
+
+Socket.io foi adicionado como camada de notificacao, nao como fonte da verdade. O backend expoe namespace
+`/realtime` no path `/socket.io`, autentica o handshake com access token e deriva tenant/membership pelo
+servidor. Rooms oficiais ficam centralizadas em `backend/src/realtime/realtime-rooms.ts`.
+
+Eventos de Message, Conversation, Connection, presenca e digitacao saem por `RealtimePublisher` apos
+persistencia confirmada. REST permanece responsavel por recuperacao e reconciliacao.
+
+No rework da Sprint 09, o bootstrap fisico no `nexos_0802` foi protegido por teste real de `AppModule`.
+A dependencia de indice 1 de `ConversationsController` e `MessagesService` e agora usa token explicito
+`@Inject(MessagesService)`. O Redis adapter tambem foi corrigido para aplicar `namespace.server.adapter(...)`
+quando o Nest entrega um namespace Socket.io no `afterInit`.

@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import Redis from "ioredis";
-import type { Server } from "socket.io";
+import type { Namespace, Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { PrismaService } from "../prisma/prisma.service";
 import { realtimeConfig } from "./realtime.config";
@@ -31,7 +31,7 @@ type RealtimeHealth = {
 @Injectable()
 export class RealtimeService {
   private readonly logger = new Logger(RealtimeService.name);
-  private server: Server | null = null;
+  private server: Server | Namespace | null = null;
   private readonly socketMemberships = new Map<string, RealtimeSocketContext>();
   private readonly membershipSockets = new Map<string, Set<string>>();
   private readonly typingTimers = new Map<string, NodeJS.Timeout>();
@@ -50,7 +50,7 @@ export class RealtimeService {
     return realtimeConfig(this.configService);
   }
 
-  async attachServer(server: Server) {
+  async attachServer(server: Server | Namespace) {
     this.server = server;
     const config = this.config;
     if (!config.enabled || !config.redisAdapterEnabled) return;
@@ -60,7 +60,8 @@ export class RealtimeService {
     const subClient = pubClient.duplicate();
     try {
       await Promise.all([pubClient.connect(), subClient.connect()]);
-      server.adapter(createAdapter(pubClient, subClient));
+      const adapterTarget = this.adapterTarget(server);
+      adapterTarget.adapter(createAdapter(pubClient, subClient));
       this.adapter = "redis";
     } catch (error) {
       this.adapter = "redis_degraded";
@@ -69,6 +70,11 @@ export class RealtimeService {
         error: error instanceof Error ? error.message : "Redis adapter unavailable.",
       });
     }
+  }
+
+  private adapterTarget(server: Server | Namespace): Server {
+    const candidate = server as Server & { server?: Server };
+    return typeof candidate.adapter === "function" ? candidate : candidate.server!;
   }
 
   async registerSocket(socketId: string, context: RealtimeSocketContext) {

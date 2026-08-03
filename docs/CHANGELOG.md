@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-03 - Sprint 09 Rework Bootstrap Recovery
+
+- Corrigida a injecao de `MessagesService` em `ConversationsController` com `@Inject(MessagesService)`.
+- Adicionado teste de bootstrap real do `AppModule` e validacao de `design:paramtypes`.
+- Adicionado smoke `backend/scripts/verify-backend-startup.mjs` para health fisico com PostgreSQL, Redis, fila e realtime.
+- Corrigido Redis adapter do Socket.io quando o Nest entrega `Namespace` no `afterInit`, aplicando o adapter no servidor raiz.
+- Confirmado startup em `nexos_0802` com `database=up`, `redis=up`, `queue=up`, `realtime=up` e `realtimeAdapter=redis`.
+- Confirmado smoke socket fisico para admin e agente no tenant `homologacao`.
+- Gate fisico completo permanece `NOT READY FOR SPRINT 10` ate inbound/outbound WhatsApp, presence, typing, reconnect e Redis recovery ponto a ponto.
+
 ## 2026-08-03 - Sprint 09 Realtime Messaging
 
 - Adicionado gateway Socket.io autenticado no namespace `/realtime`.

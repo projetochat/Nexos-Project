@@ -113,6 +113,24 @@ Conversation aberta, Messages e Connections para catch-up por REST.
 Se Redis adapter falhar, o health informa `realtime=degraded` e `realtimeAdapter=redis_degraded`. REST,
 PostgreSQL, webhook e Outbox continuam sendo caminhos de consistência.
 
+## Rework Sprint 09 - Bootstrap e Redis adapter
+
+A falha fisica de startup no `nexos_0802` foi isolada em `ConversationsController`:
+
+```text
+index 0 = PrismaService
+index 1 = MessagesService
+index 2 = RealtimePublisher
+```
+
+O indice 1 agora usa token explicito `@Inject(MessagesService)`. O teste
+`backend/src/app.module.spec.ts` compila o `AppModule` real e valida `design:paramtypes`, evitando que
+build/typecheck substituam teste de metadata de DI.
+
+No mesmo rework, o Redis adapter passou a detectar corretamente quando o Nest entrega um `Namespace` do
+Socket.io no `afterInit`. Para namespace `/realtime`, o adapter deve ser aplicado no servidor raiz
+(`namespace.server.adapter(...)`), nao na propriedade `namespace.adapter`.
+
 ## Segurança
 
 Não enviar pelo socket:

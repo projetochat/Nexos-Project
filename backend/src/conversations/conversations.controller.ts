@@ -58,7 +58,7 @@ type ConversationWithRelations = Prisma.ConversationGetPayload<{
 export class ConversationsController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    private readonly messages: MessagesService,
+    @Inject(MessagesService) private readonly messages: MessagesService,
     @Inject(RealtimePublisher) private readonly realtime: RealtimePublisher,
   ) {}
 

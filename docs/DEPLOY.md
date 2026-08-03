@@ -331,3 +331,26 @@ $env:SEED_AGENT_EMAIL="atendente@nexo.app"
 $env:SEED_AGENT_PASSWORD="demo1234"
 bun --cwd backend prisma db seed
 ```
+
+## Sprint 09 - Bootstrap realtime
+
+Smoke oficial de startup backend em homologacao preservada:
+
+```powershell
+$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0802?schema=public"
+$env:REDIS_URL="redis://localhost:6379"
+$env:NEXOS_QUEUE_ENABLED="true"
+$env:NEXOS_QUEUE_WORKER_ENABLED="true"
+$env:NEXOS_REALTIME_ENABLED="true"
+$env:NEXOS_REALTIME_REDIS_ADAPTER_ENABLED="true"
+$env:NEXOS_REALTIME_PATH="/socket.io"
+$env:NEXOS_REALTIME_CORS_ORIGIN="http://localhost:5173"
+$env:PORT="3019"
+node backend/scripts/verify-backend-startup.mjs
+```
+
+Resultado esperado:
+
+```json
+{"ok":true,"health":{"database":"up","redis":"up","queue":"up","realtime":"up","realtimeAdapter":"redis"}}
+```

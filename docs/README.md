@@ -347,3 +347,13 @@ fallback REST. O contrato completo esta em `docs/REALTIME.md`.
 Gates automatizados passaram duas vezes com `bun run verify`, e um smoke fisico isolado recebeu
 `realtime.ready`. A homologacao fisica completa com dois usuarios, WhatsApp real, presence visual e typing
 visual ainda esta pendente.
+
+### Rework Sprint 09
+
+O bootstrap fisico em `nexos_0802` foi recuperado. A dependencia de indice 1 de
+`ConversationsController` e `MessagesService`; ela agora usa `@Inject(MessagesService)` e tem cobertura em
+`backend/src/app.module.spec.ts` com compilacao real de `AppModule` e verificacao de metadata.
+
+O adapter Redis do Socket.io tambem foi corrigido para namespace `/realtime`, usando o servidor raiz
+quando o Nest entrega `Namespace` no `afterInit`. Health fisico confirmou `database=up`, `redis=up`,
+`queue=up`, `realtime=up` e `realtimeAdapter=redis`. Sprint 10 segue bloqueada ate gate fisico completo.
