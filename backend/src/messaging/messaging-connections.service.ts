@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { MessagingConnectionStatus, MessagingProviderType, Prisma } from "../generated/prisma";
 import { AuthenticatedUser } from "../auth/auth.types";
@@ -9,6 +9,8 @@ import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.
 
 @Injectable()
 export class MessagingConnectionsService {
+  private readonly logger = new Logger(MessagingConnectionsService.name);
+
   constructor(
     @Inject(PrismaService)
     private readonly prisma: PrismaService,
@@ -43,11 +45,7 @@ export class MessagingConnectionsService {
       await this.evolution.deleteInstance(instanceName).catch(() => undefined);
       throw new BadRequestException("Webhook Evolution nao configurado.");
     }
-    await this.evolution.setWebhook({
-      instanceName,
-      webhookUrl: config.webhookPublicUrl,
-      webhookSecret: config.webhookSecret,
-    });
+    await this.ensureWebhookConfigured(instanceName);
 
     const connection = await this.prisma.messagingConnection.create({
       data: {
@@ -77,9 +75,15 @@ export class MessagingConnectionsService {
     const instance = await this.evolution.findInstance(connection.externalReference);
     if (!instance) return this.markOrphan(connection.id);
     const state = await this.evolution.connectionState(connection.externalReference);
+    const translatedStatus = translateEvolutionState(
+      state.instance?.state ?? state.instance?.status,
+    );
+    if (translatedStatus === MessagingConnectionStatus.CONNECTED) {
+      await this.ensureWebhookConfigured(connection.externalReference);
+    }
     const updated = await this.prisma.messagingConnection.update({
       where: { id: connection.id },
-      data: { status: translateEvolutionState(state.instance?.state ?? state.instance?.status) },
+      data: { status: translatedStatus },
     });
     return this.serialize(updated, { existsInProvider: true, webhookUrl: instance.Webhook?.url });
   }
@@ -98,6 +102,7 @@ export class MessagingConnectionsService {
       throw new BadRequestException("INSTANCE_NOT_FOUND: instance Evolution nao encontrada.");
     }
     const response = await this.evolution.connect(connection.externalReference);
+    await this.ensureWebhookConfigured(connection.externalReference);
     await this.prisma.messagingConnection.update({
       where: { id: connection.id },
       data: { status: MessagingConnectionStatus.CONNECTING },
@@ -181,6 +186,24 @@ export class MessagingConnectionsService {
     });
   }
 
+  async ensureWebhookConfigured(instanceName: string) {
+    const config = evolutionConfigFromEnv();
+    if (!config.webhookPublicUrl || !config.webhookSecret) {
+      throw new BadRequestException("Webhook Evolution nao configurado.");
+    }
+    await this.evolution.setWebhook({
+      instanceName,
+      webhookUrl: config.webhookPublicUrl,
+      webhookSecret: config.webhookSecret,
+    });
+    this.logger.log({
+      event: "evolution.webhook.ensure_configured",
+      instanceName,
+      webhookUrl: config.webhookPublicUrl,
+    });
+    return { configured: true };
+  }
+
   async updateConnectionStatus(
     id: string,
     status: MessagingConnectionStatus,
@@ -191,6 +214,9 @@ export class MessagingConnectionsService {
       ownerExternalId: owner?.ownerExternalId ?? undefined,
       ownerPhoneNormalized: owner?.ownerPhoneNormalized ?? undefined,
     };
+    if (status === MessagingConnectionStatus.CONNECTED && current.externalReference) {
+      await this.ensureWebhookConfiguredSafely(current.externalReference, current.id);
+    }
     if (status === MessagingConnectionStatus.CONNECTED && owner?.ownerPhoneNormalized) {
       const duplicateOwner = await this.prisma.messagingConnection.findFirst({
         where: {
@@ -215,6 +241,19 @@ export class MessagingConnectionsService {
       where: { id },
       data: { status, ...ownerData },
     });
+  }
+
+  private async ensureWebhookConfiguredSafely(instanceName: string, connectionId: string) {
+    try {
+      await this.ensureWebhookConfigured(instanceName);
+    } catch (error) {
+      this.logger.warn({
+        event: "evolution.webhook.ensure_failed",
+        instanceName,
+        connectionId,
+        error: sanitizeEnsureError(error),
+      });
+    }
   }
 
   private async findTenantConnection(id: string, tenantId: string) {
@@ -295,4 +334,9 @@ function maskPhone(value: string | null | undefined) {
   const digits = value.replace(/\D/g, "");
   if (!digits) return null;
   return `******${digits.slice(-4)}`;
+}
+
+function sanitizeEnsureError(error: unknown) {
+  if (error instanceof Error) return error.message.slice(0, 200);
+  return "webhook ensure failed";
 }

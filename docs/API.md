@@ -296,3 +296,9 @@ O endpoint existente `POST /conversations/:conversationId/messages` agora envia 
 - `GET /messaging/connections/:id/status` reconcilia Nexos DB contra `fetchInstances`/`connectionState`.
 - QR de instance ausente retorna erro de negocio `INSTANCE_NOT_FOUND`, nao 500 generico.
 - `DELETE /messaging/connections/:id` remove a instance na Evolution quando ela existe e limpa a connection local com desvinculo seguro de mensagens/conversas.
+
+## Sprint 08.01 - Webhook inbound/reconnect
+
+`POST /api/webhooks/evolution` preserva JWT bearer assinado por `EVOLUTION_WEBHOOK_SECRET`. Payloads inbound `MESSAGES_UPSERT` normalizam `remoteJid` e reutilizam Contact/Conversation compativeis. Replays pelo mesmo `externalMessageId` retornam resposta OK sem criar outra Message, sem alterar unread e sem atualizar lastMessage.
+
+Eventos `CONNECTION_UPDATE` conectados atualizam owner identity e disparam ensure idempotente do webhook Evolution. Falha nesse ensure e registrada de forma sanitizada e nao transforma o callback em erro 500.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-03 - Sprint 08.01 Inbound Conversation Resolution & Reconnect Recovery
+
+- Corrigida resolucao inbound para reutilizar Contact canonico e Conversation aberta compativel.
+- Adicionada normalizacao de `remoteJid` para `@s.whatsapp.net`, `@c.us`, device suffix e variantes brasileiras com/sem nono digito.
+- Reconnect passa a garantir webhook Evolution novamente por operacao idempotente.
+- Replay pelo mesmo `externalMessageId` nao cria Message, Conversation, unread ou lastMessage falso.
+- Seed Prisma padrao passa a ser minimo; dados demo exigem `SEED_DEMO_DATA=true`.
+- Criado `backend/scripts/cleanup-homologation-data.mjs` tenant-scoped e dry-run por padrao.
+
 ## 2026-08-03 - Sprint 07.02 Real WhatsApp Acceptance Closure
 
 - Preservado o WIP parcial da Sprint 08 em branch local de backup antes de iniciar a 07.02.

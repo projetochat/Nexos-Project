@@ -213,3 +213,34 @@ Smoke local:
 ```bash
 bun backend/scripts/verify-redis-queue.mjs
 ```
+
+## Sprint 08.01 - Homologacao limpa
+
+Banco recomendado para a corretiva:
+
+```powershell
+$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0801?schema=public"
+$env:REDIS_URL="redis://localhost:6379"
+$env:NEXOS_QUEUE_ENABLED="true"
+$env:NEXOS_QUEUE_WORKER_ENABLED="true"
+```
+
+Seed padrao:
+
+```powershell
+bun --cwd backend prisma db seed
+```
+
+Sem `SEED_DEMO_DATA=true`, o seed cria apenas tenant de homologacao, admin, roles/permissoes, membership e departamento minimo. Para dados demo locais:
+
+```powershell
+$env:SEED_DEMO_DATA="true"
+bun --cwd backend prisma db seed
+```
+
+Cleanup seguro:
+
+```powershell
+bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao
+bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao --confirm
+```

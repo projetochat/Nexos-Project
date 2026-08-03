@@ -1,5 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MessagingConnectionStatus, MessagingProviderType } from "../generated/prisma";
 import { evolutionQrBase64, MessagingConnectionsService } from "./messaging-connections.service";
 
@@ -13,13 +13,15 @@ const current = {
 };
 
 describe("MessagingConnectionsService", () => {
-  it("creates Evolution instances and explicitly registers webhook", async () => {
+  beforeEach(() => {
     process.env.EVOLUTION_BASE_URL = "http://evolution.local";
     process.env.EVOLUTION_API_KEY = "key";
     process.env.EVOLUTION_WEBHOOK_PUBLIC_URL =
       "http://host.docker.internal:3001/api/webhooks/evolution";
     process.env.EVOLUTION_WEBHOOK_SECRET = "secret";
+  });
 
+  it("creates Evolution instances and explicitly registers webhook", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.create.mockResolvedValue(connection());
     const evolution = {
@@ -74,7 +76,7 @@ describe("MessagingConnectionsService", () => {
       status: MessagingConnectionStatus.ERROR,
       ownerPhoneNormalized: "+551199990000",
     });
-    const evolution = {};
+    const evolution = { setWebhook: vi.fn().mockResolvedValue({ ok: true }) };
 
     await expect(
       new MessagingConnectionsService(prisma as never, evolution as never).updateConnectionStatus(
@@ -98,12 +100,6 @@ describe("MessagingConnectionsService", () => {
   });
 
   it("ignores raw instanceName and always generates a unique technical instance", async () => {
-    process.env.EVOLUTION_BASE_URL = "http://evolution.local";
-    process.env.EVOLUTION_API_KEY = "key";
-    process.env.EVOLUTION_WEBHOOK_PUBLIC_URL =
-      "http://host.docker.internal:3001/api/webhooks/evolution";
-    process.env.EVOLUTION_WEBHOOK_SECRET = "secret";
-
     const prisma = prismaMock();
     prisma.messagingConnection.create.mockResolvedValue(connection());
     const evolution = {
@@ -138,6 +134,72 @@ describe("MessagingConnectionsService", () => {
     expect(prisma.message.updateMany).toHaveBeenCalled();
     expect(prisma.conversation.updateMany).toHaveBeenCalled();
     expect(prisma.messagingConnection.delete).toHaveBeenCalled();
+  });
+
+  it("ensures webhook again when QR reconnect is requested", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.messagingConnection.update.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.CONNECTING,
+    });
+    const evolution = {
+      findInstance: vi.fn().mockResolvedValue({ name: "tenant-a-suporte" }),
+      connect: vi.fn().mockResolvedValue({ base64: "qr" }),
+      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
+    };
+
+    await new MessagingConnectionsService(prisma as never, evolution as never).qrCode(
+      "connection-a",
+      current as never,
+    );
+
+    expect(evolution.setWebhook).toHaveBeenCalledTimes(1);
+    expect(evolution.setWebhook).toHaveBeenCalledWith({
+      instanceName: "tenant-a-suporte",
+      webhookUrl: "http://host.docker.internal:3001/api/webhooks/evolution",
+      webhookSecret: "secret",
+    });
+  });
+
+  it("ensures webhook exactly once when reconciliation sees a connected instance", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.messagingConnection.update.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.CONNECTED,
+    });
+    const evolution = {
+      findInstance: vi.fn().mockResolvedValue({
+        name: "tenant-a-suporte",
+        Webhook: { url: "old-url" },
+      }),
+      connectionState: vi.fn().mockResolvedValue({ instance: { state: "open" } }),
+      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
+    };
+
+    await new MessagingConnectionsService(prisma as never, evolution as never).status(
+      "connection-a",
+      current as never,
+    );
+
+    expect(evolution.setWebhook).toHaveBeenCalledTimes(1);
+  });
+
+  it("exposes an idempotent webhook ensure operation", async () => {
+    const prisma = prismaMock();
+    const evolution = { setWebhook: vi.fn().mockResolvedValue({ ok: true }) };
+    const service = new MessagingConnectionsService(prisma as never, evolution as never);
+
+    await service.ensureWebhookConfigured("tenant-a-suporte");
+    await service.ensureWebhookConfigured("tenant-a-suporte");
+
+    expect(evolution.setWebhook).toHaveBeenCalledTimes(2);
+    expect(evolution.setWebhook).toHaveBeenLastCalledWith({
+      instanceName: "tenant-a-suporte",
+      webhookUrl: "http://host.docker.internal:3001/api/webhooks/evolution",
+      webhookSecret: "secret",
+    });
   });
 
   it("reads QR base64 from create and connect Evolution payload shapes", () => {

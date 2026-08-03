@@ -109,3 +109,14 @@ Somente regras comprovadas no codigo.
 - Conversas diferentes podem ser processadas em paralelo.
 - Erros retryable usam BullMQ attempts/backoff; erros terminais marcam `FAILED`.
 - Logs nao devem conter corpo da mensagem, telefone completo, QR, API key, JWT ou secrets.
+
+## Sprint 08.01 - Regras inbound/reconnect
+
+- Resposta inbound de um contato ja conhecido reutiliza o Contact canonico do tenant.
+- Resposta inbound em Conversation aberta compativel reutiliza a mesma Conversation.
+- Conversation fechada nao e reaberta silenciosamente; uma nova Conversation aberta e criada.
+- `externalMessageId` repetido e replay e nao cria Message, nao incrementa unread e nao altera lastMessage.
+- `externalMessageId` novo apos reconnect persiste normalmente.
+- Reconnect deve preservar `MessagingConnection.id`, `externalReference` e owner identity.
+- Webhook Evolution e registrado novamente de forma idempotente quando a connection volta a `CONNECTED`.
+- Seed demo e opt-in via `SEED_DEMO_DATA=true`; seed padrao de homologacao nao cria contatos, conversas, mensagens ou connections fake.

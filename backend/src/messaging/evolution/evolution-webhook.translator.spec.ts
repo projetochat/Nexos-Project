@@ -62,7 +62,35 @@ describe("EvolutionWebhookTranslator", () => {
       event: {
         externalMessageId: "3EB0C7B4E7A2B8E6D4F1",
         sender: { phone: "5511999999999", normalizedPhone: "+5511999999999" },
+        metadata: {
+          remoteJid: "5511999999999@s.whatsapp.net",
+          normalizedPhoneCandidates: ["+5511999999999", "+551199999999"],
+        },
         content: "Hello, I need help with my order",
+      },
+    });
+  });
+
+  it("normalizes c.us and device-suffixed remote identities", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          key: { remoteJid: "551199999999:7@c.us", fromMe: false, id: "MSG-CUS" },
+          message: { conversation: "Oi" },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        sender: { phone: "551199999999", normalizedPhone: "+551199999999" },
+        metadata: {
+          normalizedPhoneCandidates: ["+551199999999", "+5511999999999"],
+        },
       },
     });
   });

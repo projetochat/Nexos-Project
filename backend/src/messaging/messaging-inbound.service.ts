@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConversationStatus, MessageDirection, MessageStatus, Prisma } from "../generated/prisma";
-import { normalizePhone } from "../crm/phone-normalization";
 import { PrismaService } from "../prisma/prisma.service";
 import { InboundMessageEvent } from "./messaging.contracts";
+import { normalizeRemotePhoneCandidates } from "./messaging-identity";
 
 @Injectable()
 export class MessagingInboundService {
@@ -11,7 +11,12 @@ export class MessagingInboundService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async process(event: InboundMessageEvent) {
-    const normalizedPhone = normalizePhone(event.sender.normalizedPhone || event.sender.phone);
+    const normalizedPhoneCandidates = uniqueNormalizedPhones([
+      ...(event.metadata?.normalizedPhoneCandidates ?? []),
+      event.sender.normalizedPhone,
+      ...normalizeRemotePhoneCandidates(event.sender.phone),
+    ]);
+    const canonicalPhone = normalizedPhoneCandidates[0];
 
     const result = await this.prisma.$transaction(async (tx) => {
       const connection = await tx.messagingConnection.findFirst({
@@ -19,44 +24,38 @@ export class MessagingInboundService {
       });
       if (!connection) throw new Error("Messaging connection not found for tenant.");
 
-      const duplicateWhere: Prisma.MessageWhereInput = connection.ownerPhoneNormalized
-        ? {
-            tenantId: event.tenantId,
-            externalMessageId: event.externalMessageId,
-            OR: [
-              { connectionId: event.connectionId },
-              { connection: { is: { ownerPhoneNormalized: connection.ownerPhoneNormalized } } },
-            ],
-          }
-        : {
-            tenantId: event.tenantId,
-            connectionId: event.connectionId,
-            externalMessageId: event.externalMessageId,
-          };
+      const duplicateWhere = this.duplicateWhere(event, connection.ownerPhoneNormalized);
       const duplicate = await tx.message.findFirst({
         where: duplicateWhere,
       });
       if (duplicate) return { message: duplicate, duplicate: true };
 
-      const contact = await tx.contact.upsert({
+      const existingContact = await tx.contact.findFirst({
         where: {
-          tenantId_normalizedPhone: {
-            tenantId: event.tenantId,
-            normalizedPhone,
-          },
-        },
-        update: {
-          phone: event.sender.phone,
-          name: event.metadata?.displayName ?? event.sender.displayName ?? undefined,
-        },
-        create: {
           tenantId: event.tenantId,
-          name: event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone,
-          phone: event.sender.phone,
-          normalizedPhone,
-          instance: connection.externalReference,
+          normalizedPhone: { in: normalizedPhoneCandidates },
+          archivedAt: null,
         },
+        orderBy: { updatedAt: "desc" },
       });
+      const contact = existingContact
+        ? await tx.contact.update({
+            where: { tenantId_id: { tenantId: event.tenantId, id: existingContact.id } },
+            data: {
+              phone: event.sender.phone,
+              name: event.metadata?.displayName ?? event.sender.displayName ?? undefined,
+              instance: connection.externalReference ?? existingContact.instance,
+            },
+          })
+        : await tx.contact.create({
+            data: {
+              tenantId: event.tenantId,
+              name: event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone,
+              phone: event.sender.phone,
+              normalizedPhone: canonicalPhone,
+              instance: connection.externalReference,
+            },
+          });
 
       const conversation = await this.findOrCreateConversation(tx, event, contact.id, connection);
       const preview = event.content ?? mediaPreview(event.type);
@@ -94,12 +93,32 @@ export class MessagingInboundService {
 
     this.logger.log({
       event: "messaging.inbound.processed",
+      tenantId: event.tenantId,
       messageId: result.message.id,
       connectionId: event.connectionId,
+      externalMessageId: event.externalMessageId,
       eventType: event.type,
       duplicate: result.duplicate,
+      resolutionResult: result.duplicate ? "ignored_duplicate" : "persisted",
     });
     return result;
+  }
+
+  private duplicateWhere(
+    event: InboundMessageEvent,
+    ownerPhoneNormalized: string | null,
+  ): Prisma.MessageWhereInput {
+    const exactConnection: Prisma.MessageWhereInput = {
+      tenantId: event.tenantId,
+      connectionId: event.connectionId,
+      externalMessageId: event.externalMessageId,
+    };
+    if (!ownerPhoneNormalized) return exactConnection;
+    return {
+      tenantId: event.tenantId,
+      externalMessageId: event.externalMessageId,
+      OR: [{ connectionId: event.connectionId }, { connection: { is: { ownerPhoneNormalized } } }],
+    };
   }
 
   private async findOrCreateConversation(
@@ -146,6 +165,10 @@ export class MessagingInboundService {
       },
     });
   }
+}
+
+function uniqueNormalizedPhones(values: Array<string | null | undefined>) {
+  return [...new Set(values.filter((value): value is string => !!value))];
 }
 
 function mediaPreview(type: InboundMessageEvent["type"]) {

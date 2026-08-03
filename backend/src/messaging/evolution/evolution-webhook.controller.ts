@@ -69,8 +69,12 @@ export class EvolutionWebhookController {
       const result = await this.inbound.process(translated.event);
       this.logger.log({
         event: "evolution.webhook.inbound_persisted",
+        instanceName: payload.instance,
         connectionId: connection.id,
+        tenantId: connection.tenantId,
         messageId: result.message.id,
+        externalMessageId: translated.event.externalMessageId,
+        resolutionResult: result.duplicate ? "ignored_duplicate" : "persisted",
         duplicate: result.duplicate,
       });
     } else if (translated.kind === "status") {
@@ -79,6 +83,14 @@ export class EvolutionWebhookController {
       await this.connections.updateConnectionStatus(connection.id, translated.status, {
         ownerExternalId: translated.ownerExternalId,
         ownerPhoneNormalized: translated.ownerPhoneNormalized,
+      });
+    } else {
+      this.logger.log({
+        event: "evolution.webhook.ignored",
+        instanceName: payload.instance,
+        connectionId: connection.id,
+        tenantId: connection.tenantId,
+        ignoredReason: translated.reason,
       });
     }
 

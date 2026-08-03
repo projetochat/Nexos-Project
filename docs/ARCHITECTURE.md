@@ -227,3 +227,9 @@ Decisoes:
 - Platform Admin e separado de Tenant Admin.
 - `ProtectedRecord` foi removido do dominio de producao.
 - As superficies `/login`, `/departamentos`, `/atendentes`, `/perfis`, `/configuracoes/usuarios` e `/configuracoes/permissoes` nao dependem mais de Supabase.
+
+## Sprint 08.01 - Inbound e reconnect
+
+Inbound separa identidade do owner conectado da identidade remota do cliente. `EvolutionWebhookTranslator` extrai `remoteJid`, normaliza JIDs reais (`@s.whatsapp.net`, `@c.us` e device suffix) e envia candidatos canonicos ao `MessagingInboundService`. O inbound procura contato existente por telefone normalizado antes de criar novo registro, evitando que uma resposta real abra outra Conversation.
+
+Reconnect preserva a `MessagingConnection` local. Quando uma connection fica `CONNECTED`, o backend chama `ensureWebhookConfigured(instanceName)` para registrar novamente o callback Evolution de forma idempotente. Falha nesse ensure durante webhook de status e registrada de forma sanitizada e nao derruba a resposta HTTP do webhook.

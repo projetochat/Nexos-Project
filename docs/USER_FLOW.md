@@ -124,3 +124,9 @@ Inbox -> Nova conversa -> Contact -> Connection WhatsApp conectada -> Message
 ```
 
 A primeira mensagem aparece como `queued` apos o HTTP persistir Message + OutboxEvent. O polling existente atualiza a UI para `sending`, `sent` ou `failed` conforme o worker processa o job.
+
+# Sprint 08.01 - Resposta inbound e reconnect
+
+Quando o cliente responde pelo WhatsApp, o inbound reutiliza o Contact e a Conversation aberta compativeis com a connection. Variacoes tecnicas do JID da Evolution nao devem aparecer para o usuario como contatos duplicados.
+
+Depois de logout/reconnect, a mesma instancia/connection deve voltar a receber webhook. Mensagens novas apos reconnect aparecem uma vez na mesma Conversation; replays do provider nao alteram unread nem lastMessage.

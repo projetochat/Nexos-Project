@@ -75,6 +75,8 @@ export type InboundMessageEvent = {
   metadata?: {
     displayName?: string | null;
     mediaRef?: string | null;
+    remoteJid?: string | null;
+    normalizedPhoneCandidates?: string[];
   };
 };
 

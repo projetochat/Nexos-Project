@@ -1,6 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import { MessageStatus, MessageType, MessagingConnectionStatus } from "../../generated/prisma";
 import { InboundMessageEvent, MessageStatusEvent } from "../messaging.contracts";
+import {
+  isGroupRemoteIdentity,
+  normalizeRemotePhoneCandidates,
+  phoneFromRemoteIdentity,
+} from "../messaging-identity";
 import { EvolutionWebhookPayload } from "./evolution.types";
 
 export type EvolutionWebhookTranslation =
@@ -59,14 +64,15 @@ export class EvolutionWebhookTranslator {
 
     const externalMessageId = stringValue(key?.id);
     const remoteJid = stringValue(key?.remoteJid);
-    if (isGroupJid(remoteJid)) return { kind: "ignored", reason: "group_message" };
+    if (isGroupRemoteIdentity(remoteJid)) return { kind: "ignored", reason: "group_message" };
     const text =
       readNestedString(data, ["message", "conversation"]) ??
       readNestedString(data, ["message", "extendedTextMessage", "text"]);
-    const phone = phoneFromJid(remoteJid) ?? payload.sender;
+    const phone = phoneFromRemoteIdentity(remoteJid) ?? payload.sender;
     if (!externalMessageId || !phone || !text) {
       return { kind: "ignored", reason: "unsupported_inbound_payload" };
     }
+    const normalizedPhoneCandidates = normalizeRemotePhoneCandidates(phone);
 
     return {
       kind: "inbound",
@@ -76,7 +82,7 @@ export class EvolutionWebhookTranslator {
         externalMessageId,
         sender: {
           phone,
-          normalizedPhone: phone.startsWith("+") ? phone : `+${phone}`,
+          normalizedPhone: normalizedPhoneCandidates[0],
           displayName: readString(data, "pushName"),
         },
         type: MessageType.TEXT,
@@ -84,6 +90,8 @@ export class EvolutionWebhookTranslator {
         occurredAt: timestamp(payload),
         metadata: {
           displayName: readString(data, "pushName"),
+          remoteJid,
+          normalizedPhoneCandidates,
         },
       },
     };
@@ -140,10 +148,7 @@ function stringValue(value: unknown) {
 }
 
 function phoneFromJid(value: string | null) {
-  if (!value) return null;
-  if (isGroupJid(value)) return null;
-  const [phone] = value.split("@");
-  return phone?.replace(/\D/g, "") || null;
+  return phoneFromRemoteIdentity(value);
 }
 
 function ownerJid(data: Record<string, unknown> | undefined) {
@@ -162,7 +167,7 @@ function normalizeOwnerPhone(value: string | null) {
 }
 
 function isGroupJid(value: string | null) {
-  return !!value && value.endsWith("@g.us");
+  return isGroupRemoteIdentity(value);
 }
 
 function timestamp(payload: EvolutionWebhookPayload) {

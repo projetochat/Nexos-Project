@@ -120,3 +120,17 @@ Status: implementada localmente com Redis + BullMQ + Transactional Outbox.
 Proximo bloco planejado apos gate fisico completo:
 
 - Sprint 09: Socket.io/realtime operacional.
+
+# Sprint 08.01
+
+Status: corretiva de inbound/reconnect implementada localmente.
+
+Entregue:
+
+- Contact/Conversation inbound por identidade remota canonica;
+- reconnect com ensure idempotente de webhook Evolution;
+- idempotencia preservando replay sem bloquear mensagem nova;
+- seed minimo por padrao e demo opt-in;
+- cleanup de homologacao tenant-scoped e dry-run por padrao.
+
+Sprint 09 permanece condicionada ao gate fisico completo.

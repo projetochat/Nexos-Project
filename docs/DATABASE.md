@@ -307,3 +307,21 @@ Permissoes padrao:
 Nao houve nova migration. Para cleanup de connection Evolution removida, mensagens e conversas existentes sao preservadas com `connectionId = null` antes de apagar `messaging_connections`, evitando delecao de historico operacional.
 
 O seed nao cria connection `EVOLUTION`. Connections `DEVELOPMENT` seedadas continuam internas para testes/dev e nao sao exibidas como instancias operacionais em `/instancias`.
+
+## Sprint 08.01 - Identidade inbound e seed limpo
+
+Inbound resolve contato por identidade remota canonica tenant-scoped. O backend normaliza JIDs `@s.whatsapp.net`, `@c.us`, sufixo de device e variantes brasileiras com/sem nono digito antes de decidir criar contato. A resolucao de Conversation reutiliza uma conversa aberta compativel por `tenantId + contactId + connectionId`; se o reconnect preservar o owner do WhatsApp, tambem aceita `tenantId + contactId + ownerPhoneNormalized`. Conversas fechadas continuam gerando uma nova conversa aberta.
+
+Idempotencia inbound ignora replay pelo mesmo `externalMessageId` na mesma connection e, quando o owner esta conhecido, tambem protege contra replay apos reconnect da mesma identidade de owner. Um `externalMessageId` novo sempre deve persistir, atualizar `lastMessagePreview`, `lastMessageAt` e incrementar `unreadCount`.
+
+O seed Prisma agora e minimo por padrao: tenant `homologacao`, admin, membership, roles/permissoes e departamento `Atendimento`. Dados demo de CRM, conversas, mensagens e connection Development so sao criados com `SEED_DEMO_DATA=true`.
+
+Cleanup seguro:
+
+```powershell
+$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0801?schema=public"
+bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao
+bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao --confirm
+```
+
+O script e dry-run por padrao, tenant-scoped, nao remove usuarios/memberships/departamentos essenciais e remove apenas dados marcados por IDs deterministos do seed demo ou connections demo que ficaram orfas.

@@ -43,7 +43,32 @@ const SYSTEM_ROLES = [
 
 async function main() {
   await seedPermissionCatalog();
+  if (process.env.SEED_DEMO_DATA === "true") {
+    await seedDemoData();
+    return;
+  }
+  await seedHomologationMinimum();
+}
 
+async function seedHomologationMinimum() {
+  const tenant = await prisma.tenant.upsert({
+    where: { slug: "homologacao" },
+    update: { name: "Homologacao Nexos" },
+    create: { name: "Homologacao Nexos", slug: "homologacao" },
+  });
+  const roles = await seedRoles(tenant.id);
+  const department = await seedDepartment(
+    tenant.id,
+    "Atendimento",
+    "#2563eb",
+    "Departamento minimo de homologacao.",
+  );
+  const passwordHash = await hash("demo1234", 12);
+  const admin = await seedUser("admin@nexo.app", "Admin Homologacao", passwordHash);
+  await seedMembership(tenant.id, admin.id, roles.tenant_admin.id, [department.id]);
+}
+
+async function seedDemoData() {
   const [acme, orbit] = await Promise.all([
     prisma.tenant.upsert({
       where: { slug: "acme" },

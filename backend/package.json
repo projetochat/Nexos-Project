@@ -9,7 +9,8 @@
     "test": "vitest run",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "cleanup:homologation": "node scripts/cleanup-homologation-data.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.9",
