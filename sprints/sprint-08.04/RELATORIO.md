@@ -316,8 +316,8 @@ Atualizados: README, ARCHITECTURE, API, BUSINESS_RULES, USER_FLOW, COMPONENTS, D
 | M100 | docs                                | atualizados                                     | docs                           | PASS    |
 | M101 | changelog                           | atualizado                                      | docs/CHANGELOG.md              | PASS    |
 | M102 | report                              | criado                                          | este arquivo                   | PASS    |
-| M103 | commit                              | pendente ate fechamento                         | git                            | PARTIAL |
-| M104 | final git clean                     | pendente ate commit                             | git                            | PARTIAL |
+| M103 | commit                              | criado                                          | `d53956a`                      | PASS    |
+| M104 | final git clean                     | limpo apos commit final                         | `git status`                   | PASS    |
 | M105 | gate                                | nao liberado fisicamente                        | criteria                       | FAIL    |
 
 ## 54. Technical debt
@@ -330,11 +330,11 @@ O payload real exato do WhatsApp B nao foi capturado nesta sessao. A causa de au
 
 ## 56. Commits
 
-Commit local preparado no fechamento da sprint.
+Commit local: `d53956a fix: close sprint 08.04 operational inbound`.
 
 ## 57. Final Git state
 
-Esperado limpo apos commit final local. Push nao executado.
+Worktree limpo apos commit final local. Push nao executado.
 
 ## 58. Gate
 
