@@ -233,3 +233,9 @@ Decisoes:
 Inbound separa identidade do owner conectado da identidade remota do cliente. `EvolutionWebhookTranslator` extrai `remoteJid`, normaliza JIDs reais (`@s.whatsapp.net`, `@c.us` e device suffix) e envia candidatos canonicos ao `MessagingInboundService`. O inbound procura contato existente por telefone normalizado antes de criar novo registro, evitando que uma resposta real abra outra Conversation.
 
 Reconnect preserva a `MessagingConnection` local. Quando uma connection fica `CONNECTED`, o backend chama `ensureWebhookConfigured(instanceName)` para registrar novamente o callback Evolution de forma idempotente. Falha nesse ensure durante webhook de status e registrada de forma sanitizada e nao derruba a resposta HTTP do webhook.
+
+## Sprint 08.02 - Homologation reset
+
+Homologacao passa a ter reset deterministico via script local com allowlist de database, bloqueio de producao, migrations, Prisma generate, seed minimo e validacao de contagens. Cleanup seletivo permanece auxiliar; a estrategia principal e recriar o banco `nexos_0802`.
+
+Contact lifecycle segue soft delete + restore: `archivedAt` preserva historico, e create com mesmo telefone normalizado restaura o Contact arquivado em vez de criar duplicata ou falhar por unique constraint.

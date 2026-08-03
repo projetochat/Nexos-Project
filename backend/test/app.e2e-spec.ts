@@ -213,6 +213,7 @@ describe("Nexos API organization and RBAC", () => {
   it("creates, searches, updates and archives CRM contacts", async () => {
     const token = await login("admin@nexo.app", "demo1234", "acme");
     const suffix = `${Date.now()}`.slice(-6);
+    const phone = `(11) 9${suffix.slice(0, 4)}-${suffix.slice(2, 6)}`;
 
     const customerResponse = await request(app.getHttpServer())
       .post("/api/crm/customers")
@@ -230,7 +231,7 @@ describe("Nexos API organization and RBAC", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: `Contato Sprint ${suffix}`,
-        phone: `(11) 9${suffix.slice(0, 4)}-${suffix.slice(2, 6)}`,
+        phone,
         email: `contato-${suffix}@example.com`,
         customerId,
         departmentName: "Suporte",
@@ -270,6 +271,22 @@ describe("Nexos API organization and RBAC", () => {
       .get(`/api/crm/contacts/${contactId}`)
       .set("Authorization", `Bearer ${token}`)
       .expect(404);
+
+    await request(app.getHttpServer())
+      .post("/api/crm/contacts")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        name: `Contato Restaurado ${suffix}`,
+        phone,
+        customerId,
+        departmentName: "Suporte",
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.id).toBe(contactId);
+        expect(body.lifecycle).toBe("restored");
+        expect(body.nome).toBe(`Contato Restaurado ${suffix}`);
+      });
   });
 
   it("blocks cross-tenant CRM access and links", async () => {
@@ -341,7 +358,21 @@ describe("Nexos API organization and RBAC", () => {
         customerId: customer.id,
         departmentName: "Suporte",
       })
-      .expect(409);
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body.message).toBe("Ja existe um contato ativo com este telefone.");
+      });
+
+    const orbitToken = await login("admin-orbit@nexo.app", "demo1234", "orbit");
+    await request(app.getHttpServer())
+      .post("/api/crm/contacts")
+      .set("Authorization", `Bearer ${orbitToken}`)
+      .send({
+        name: "Mesmo telefone outro tenant",
+        phone,
+        departmentName: "Suporte Orbit",
+      })
+      .expect(201);
   });
 
   it("protects conversations with authentication and explicit RBAC", async () => {

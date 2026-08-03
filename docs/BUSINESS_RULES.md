@@ -120,3 +120,14 @@ Somente regras comprovadas no codigo.
 - Reconnect deve preservar `MessagingConnection.id`, `externalReference` e owner identity.
 - Webhook Evolution e registrado novamente de forma idempotente quando a connection volta a `CONNECTED`.
 - Seed demo e opt-in via `SEED_DEMO_DATA=true`; seed padrao de homologacao nao cria contatos, conversas, mensagens ou connections fake.
+
+## Sprint 08.02 - Homologacao e Contact lifecycle
+
+- Homologacao nao deve continuar em banco inconsistente; reset completo e o fluxo oficial.
+- Banco demo e banco de homologacao nao devem se misturar.
+- Seed de homologacao e operacionalmente vazio: zero Contacts, Conversations, Messages, Connections e OutboxEvents.
+- Contact uniqueness e tenant-scoped por telefone normalizado.
+- DELETE de Contact e soft delete para preservar historico.
+- Criar Contact com telefone de Contact arquivado restaura o registro existente.
+- Criar Contact com telefone de Contact ativo retorna erro canonico claro.
+- Mesmo telefone em tenants diferentes e permitido.

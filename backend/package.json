@@ -10,7 +10,9 @@
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",
     "prisma:seed": "tsx prisma/seed.ts",
-    "cleanup:homologation": "node scripts/cleanup-homologation-data.mjs"
+    "audit:homologation": "node scripts/audit-homologation-data.mjs",
+    "cleanup:homologation": "node scripts/cleanup-homologation-data.mjs",
+    "reset:homologation": "node scripts/reset-homologation.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.9",

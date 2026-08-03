@@ -244,3 +244,26 @@ Cleanup seguro:
 bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao
 bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao --confirm
 ```
+
+## Sprint 08.02 - Reset oficial de homologacao
+
+Reset e somente local/homologacao. Nunca execute contra producao.
+
+```powershell
+$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0802?schema=public"
+bun run --cwd backend reset:homologation -- --confirm
+```
+
+Guards:
+
+- bloqueia `NODE_ENV=production`;
+- bloqueia hosts com sinais de producao;
+- aceita apenas bancos allowlisted (`nexos_08*`, `nexos_homolog`, `nexos_test`);
+- exige `--confirm`;
+- valida que o seed minimo termina com zero dados operacionais.
+
+Audit sem remocao:
+
+```powershell
+bun run --cwd backend audit:homologation
+```

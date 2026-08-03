@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-03 - Sprint 08.02 Homologation Reset & Contact Lifecycle Recovery
+
+- Criado reset oficial de homologacao com allowlist, production guard, confirm guard, migrations, generate, seed minimo e validacao de contagens.
+- Criado audit de homologacao para contagens, duplicidades mascaradas e orfaos.
+- Contact create passa a restaurar Contact arquivado com mesmo telefone normalizado.
+- Contact ativo duplicado retorna erro canonico `CONTACT_ALREADY_EXISTS`.
+- Frontend de contatos mostra sucesso especifico para Contact restaurado.
+- Documentado ciclo de banco `nexos_0802`, seed modes e regra soft delete + restore.
+
 ## 2026-08-03 - Sprint 08.01 Inbound Conversation Resolution & Reconnect Recovery
 
 - Corrigida resolucao inbound para reutilizar Contact canonico e Conversation aberta compativel.

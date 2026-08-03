@@ -246,13 +246,57 @@ export class CrmController {
   @RequirePermissions("crm.manage")
   async createContact(@Body() dto: CreateContactDto, @CurrentUser() current: AuthenticatedUser) {
     const links = await this.resolveContactLinks(dto, current.tenantId);
+    const normalizedPhone = normalizePhone(dto.phone);
+    const existing = await this.prisma.contact.findFirst({
+      where: { tenantId: current.tenantId, normalizedPhone },
+      include: contactInclude,
+    });
+    if (existing?.archivedAt === null) {
+      throw new ConflictException({
+        code: "CONTACT_ALREADY_EXISTS",
+        message: "Ja existe um contato ativo com este telefone.",
+      });
+    }
+    if (existing?.archivedAt) {
+      const contact = await this.prisma.$transaction(async (tx) => {
+        await tx.contactTag.deleteMany({
+          where: { contactId: existing.id, tenantId: current.tenantId },
+        });
+        if (links.tagIds.length) {
+          await tx.contactTag.createMany({
+            data: links.tagIds.map((tagId) => ({
+              tenantId: current.tenantId,
+              contactId: existing.id,
+              tagId,
+            })),
+          });
+        }
+        return tx.contact.update({
+          where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
+          data: {
+            name: dto.name.trim(),
+            phone: dto.phone.trim(),
+            normalizedPhone,
+            email: cleanNullable(dto.email),
+            customerId: links.customerId,
+            departmentId: links.departmentId,
+            departmentName: cleanNullable(dto.departmentName),
+            companyRole: dto.companyRole ?? null,
+            instance: cleanNullable(dto.instance),
+            archivedAt: null,
+          },
+          include: contactInclude,
+        });
+      });
+      return this.serializeContact(contact, { lifecycle: "restored" });
+    }
     try {
       const contact = await this.prisma.contact.create({
         data: {
           tenantId: current.tenantId,
           name: dto.name.trim(),
           phone: dto.phone.trim(),
-          normalizedPhone: normalizePhone(dto.phone),
+          normalizedPhone,
           email: cleanNullable(dto.email),
           customerId: links.customerId,
           departmentId: links.departmentId,
@@ -269,7 +313,7 @@ export class CrmController {
         },
         include: contactInclude,
       });
-      return this.serializeContact(contact);
+      return this.serializeContact(contact, { lifecycle: "created" });
     } catch (error) {
       handlePrismaError(error);
     }
@@ -414,7 +458,10 @@ export class CrmController {
     };
   }
 
-  private serializeContact(contact: Prisma.ContactGetPayload<{ include: typeof contactInclude }>) {
+  private serializeContact(
+    contact: Prisma.ContactGetPayload<{ include: typeof contactInclude }>,
+    meta?: { lifecycle?: "created" | "restored" },
+  ) {
     return {
       id: contact.id,
       tenantId: contact.tenantId,
@@ -432,6 +479,7 @@ export class CrmController {
         ? { id: contact.customer.id, nome: contact.customer.name, cor: contact.customer.color }
         : null,
       tags: contact.tags.map((item) => this.serializeTag(item.tag)),
+      lifecycle: meta?.lifecycle,
       createdAt: contact.createdAt,
       updatedAt: contact.updatedAt,
     };
@@ -478,7 +526,10 @@ function roleLabel(role: ContactCompanyRole | null) {
 
 function handlePrismaError(error: unknown): never {
   if (isPrismaError(error, "P2002")) {
-    throw new ConflictException("Telefone ja cadastrado para este tenant.");
+    throw new ConflictException({
+      code: "CONTACT_ALREADY_EXISTS",
+      message: "Ja existe um contato ativo com este telefone.",
+    });
   }
   throw error;
 }

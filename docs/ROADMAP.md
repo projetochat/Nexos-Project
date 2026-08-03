@@ -134,3 +134,17 @@ Entregue:
 - cleanup de homologacao tenant-scoped e dry-run por padrao.
 
 Sprint 09 permanece condicionada ao gate fisico completo.
+
+# Sprint 08.02
+
+Status: corretiva de ambiente de homologacao e Contact lifecycle implementada localmente.
+
+Entregue:
+
+- reset oficial de homologacao para `nexos_0802`;
+- seed minimo idempotente e operacionalmente vazio;
+- audit de contagens/orfaos;
+- Contact soft delete + restore no create;
+- erro canonico para telefone ativo duplicado.
+
+Proxima etapa: aprovar ambiente e retomar a homologacao fisica da Sprint 08.01. Sprint 09 continua bloqueada.

@@ -195,6 +195,8 @@ Credenciais locais do seed minimo:
 
 Sprint 08.01: dados demo completos sao opt-in. Use `SEED_DEMO_DATA=true` antes de `bun run backend:prisma:seed` quando precisar de CRM/conversas demo locais.
 
+Sprint 08.02: homologacao deve ser reconstruida com `bun run --cwd backend reset:homologation -- --confirm` apontando `DATABASE_URL` para `nexos_0802`. O reset valida seed minimo com zero dados operacionais.
+
 - `admin@nexo.app` / `demo1234` no tenant `acme`
 - `atendente@nexo.app` / `demo1234` no tenant `acme`
 - `outsider@nexo.app` / `demo1234` no tenant `orbit`

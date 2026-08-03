@@ -43,9 +43,14 @@ const SYSTEM_ROLES = [
 
 async function main() {
   await seedPermissionCatalog();
-  if (process.env.SEED_DEMO_DATA === "true") {
+  const seedMode =
+    process.env.SEED_MODE ?? (process.env.SEED_DEMO_DATA === "true" ? "demo" : "homologation");
+  if (seedMode === "demo") {
     await seedDemoData();
     return;
+  }
+  if (seedMode !== "homologation") {
+    throw new Error(`SEED_MODE invalido: ${seedMode}`);
   }
   await seedHomologationMinimum();
 }

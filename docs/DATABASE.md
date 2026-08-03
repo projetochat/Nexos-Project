@@ -325,3 +325,31 @@ bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao --confir
 ```
 
 O script e dry-run por padrao, tenant-scoped, nao remove usuarios/memberships/departamentos essenciais e remove apenas dados marcados por IDs deterministos do seed demo ou connections demo que ficaram orfas.
+
+## Sprint 08.02 - Reset de homologacao e ciclo de Contact
+
+O fluxo oficial para recuperar homologacao e reconstruir o banco, nao limpar manualmente pela UI:
+
+```powershell
+$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0802?schema=public"
+bun run --cwd backend reset:homologation -- --confirm
+```
+
+`backend/scripts/reset-homologation.mjs` recusa producao, exige `--confirm`, valida allowlist de database (`nexos_08*`, `nexos_homolog`, `nexos_test`), dropa/recria apenas o banco alvo, aplica migrations, gera Prisma Client, executa seed minimo e valida contagens.
+
+Contagem obrigatoria apos seed minimo:
+
+- tenants: 1
+- users: 1
+- memberships: 1
+- departments: 1
+- contacts/conversations/messages/messagingConnections/outboxEvents: 0
+
+Contact usa soft delete por `archivedAt`. A unicidade continua tenant-scoped por `tenantId + normalizedPhone`. Ao criar um Contact:
+
+- telefone e normalizado;
+- Contact ativo equivalente retorna erro canonico `CONTACT_ALREADY_EXISTS`;
+- Contact arquivado equivalente e restaurado, preservando historico;
+- caso contrario, um novo Contact e criado.
+
+`backend/scripts/audit-homologation-data.mjs` registra contagens, duplicidades de telefone mascaradas e orfaos sem remover dados.

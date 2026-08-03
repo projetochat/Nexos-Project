@@ -294,8 +294,13 @@ function ContatosPage() {
           instances={instances}
           onSubmit={async (data) => {
             try {
-              await crmApi.createContact(contactPayload(data));
-              toast.success("Contato criado");
+              const contact = await crmApi.createContact(contactPayload(data));
+              toast.success(
+                contact.lifecycle === "restored" ? "Contato restaurado" : "Contato criado",
+                contact.lifecycle === "restored"
+                  ? { description: "O contato arquivado com este telefone voltou para a lista." }
+                  : undefined,
+              );
               create.hide();
               await load();
             } catch (e) {

@@ -130,3 +130,7 @@ A primeira mensagem aparece como `queued` apos o HTTP persistir Message + Outbox
 Quando o cliente responde pelo WhatsApp, o inbound reutiliza o Contact e a Conversation aberta compativeis com a connection. Variacoes tecnicas do JID da Evolution nao devem aparecer para o usuario como contatos duplicados.
 
 Depois de logout/reconnect, a mesma instancia/connection deve voltar a receber webhook. Mensagens novas apos reconnect aparecem uma vez na mesma Conversation; replays do provider nao alteram unread nem lastMessage.
+
+# Sprint 08.02 - Contatos na homologacao limpa
+
+No ambiente resetado, `/contatos` deve iniciar sem contatos operacionais. Criar, editar, excluir e recriar o mesmo telefone deve funcionar sem erro generico. Se o contato estava arquivado, ele volta para a lista como restaurado. Se ja existe ativo, a UI mostra que ja existe um contato ativo com este telefone.

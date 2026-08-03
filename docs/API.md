@@ -302,3 +302,18 @@ O endpoint existente `POST /conversations/:conversationId/messages` agora envia 
 `POST /api/webhooks/evolution` preserva JWT bearer assinado por `EVOLUTION_WEBHOOK_SECRET`. Payloads inbound `MESSAGES_UPSERT` normalizam `remoteJid` e reutilizam Contact/Conversation compativeis. Replays pelo mesmo `externalMessageId` retornam resposta OK sem criar outra Message, sem alterar unread e sem atualizar lastMessage.
 
 Eventos `CONNECTION_UPDATE` conectados atualizam owner identity e disparam ensure idempotente do webhook Evolution. Falha nesse ensure e registrada de forma sanitizada e nao transforma o callback em erro 500.
+
+## Sprint 08.02 - Contact lifecycle
+
+`POST /api/crm/contacts` normaliza telefone por tenant. Se ja houver Contact ativo com o mesmo telefone normalizado, retorna `409` com:
+
+```json
+{
+  "code": "CONTACT_ALREADY_EXISTS",
+  "message": "Ja existe um contato ativo com este telefone."
+}
+```
+
+Se houver Contact arquivado com o mesmo telefone, o endpoint restaura o registro existente, preserva o mesmo `id` e retorna `lifecycle: "restored"`. Novo registro retorna `lifecycle: "created"`.
+
+`DELETE /api/crm/contacts/:id` e soft delete: marca `archivedAt`, remove o Contact das listas operacionais e preserva historico. `PATCH /api/crm/contacts/:id` continua operando apenas sobre Contact ativo.

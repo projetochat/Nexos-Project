@@ -111,6 +111,7 @@ export type ApiContact = {
   instancia: string | null;
   customer: Pick<ApiCustomer, "id" | "nome" | "cor"> | null;
   tags: ApiTag[];
+  lifecycle?: "created" | "restored";
 };
 
 export type ApiConversationStatus = "aberta" | "em_andamento" | "aguardando" | "fechada";
