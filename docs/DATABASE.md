@@ -358,3 +358,30 @@ Contact usa soft delete por `archivedAt`. A unicidade continua tenant-scoped por
 - caso contrario, um novo Contact e criado.
 
 `backend/scripts/audit-homologation-data.mjs` registra contagens, duplicidades de telefone mascaradas e orfaos sem remover dados.
+
+## Sprint 10 - Tags e Quick Replies
+
+Migration: `20260803100000_inbox_domain_tags_quick_replies`.
+
+`tags` agora possui:
+
+- `normalizedName`: `lower(trim(name))` obrigatorio.
+- `archivedAt`: soft archive.
+- unique `tenantId + normalizedName`.
+- indice `tenantId + archivedAt`.
+
+`quick_replies` foi adicionada com:
+
+- `tenantId`, `title`, `shortcut`, `normalizedShortcut`, `content`.
+- `departmentId` opcional para escopo por departamento.
+- `createdByMembershipId` opcional para auditoria.
+- `archivedAt`, `createdAt`, `updatedAt`.
+- unique `tenantId + id`.
+- indices de listagem por tenant/status/departamento.
+- indices parciais para impedir duplicata global (`departmentId IS NULL`) e duplicata por departamento.
+
+Validacao fisica:
+
+- `nexos_1000`: drop/create, `prisma migrate deploy`, seed e smoke SQL de duplicata global.
+- `nexos_0802`: `prisma migrate deploy` e seed idempotente sem reset.
+- `nexos_0801`: migration aplicada para suite regressiva automatizada.

@@ -110,6 +110,7 @@ export type ApiTag = {
   id: string;
   nome: string;
   cor: string;
+  archivedAt?: string | null;
 };
 
 export type ApiContact = {
@@ -152,6 +153,29 @@ export type ApiConversation = {
   contact: ApiContact | null;
   department: { id: string; nome: string; cor: string; descricao: string | null } | null;
   agent: { id: string; membershipId: string; nome: string; email: string } | null;
+  connection: {
+    id: string;
+    name: string;
+    providerType: "development" | "evolution" | "meta_cloud";
+    status: "disconnected" | "connecting" | "connected" | "error";
+    externalReference: string | null;
+  } | null;
+};
+
+export type ApiQuickReply = {
+  id: string;
+  tenantId: string;
+  title: string;
+  atalho: string;
+  shortcut: string;
+  texto: string;
+  content: string;
+  departmentId: string | null;
+  department: { id: string; nome: string; cor: string } | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  close_on_send: false;
 };
 
 export type ApiMessage = {
@@ -441,10 +465,40 @@ export const crmApi = {
   deleteContact: (id: string) =>
     apiRequest<ApiContact>(`/crm/contacts/${id}`, { method: "DELETE" }),
   listTags: () => apiRequest<ApiTag[]>("/crm/tags"),
+  createTag: (data: { name: string; color?: string }) =>
+    apiRequest<ApiTag>("/tags", { method: "POST", body: JSON.stringify(data) }),
+  updateTag: (id: string, data: { name?: string; color?: string }) =>
+    apiRequest<ApiTag>(`/tags/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  archiveTag: (id: string) => apiRequest<ApiTag>(`/tags/${id}`, { method: "DELETE" }),
+  assignContactTag: (contactId: string, tagId: string) =>
+    apiRequest<ApiTag[]>(`/contacts/${contactId}/tags/${tagId}`, { method: "POST" }),
+  removeContactTag: (contactId: string, tagId: string) =>
+    apiRequest<ApiTag[]>(`/contacts/${contactId}/tags/${tagId}`, { method: "DELETE" }),
   contactOptions: () =>
     apiRequest<{ instances: string[]; departments: string[]; tags: ApiTag[] }>(
       "/crm/contacts/options",
     ),
+};
+
+export const quickReplyApi = {
+  list: (
+    params: { q?: string; departmentId?: string; status?: "active" | "archived" | "all" } = {},
+  ) => apiRequest<ApiQuickReply[]>(`/quick-replies${queryString(params)}`),
+  create: (data: {
+    title: string;
+    shortcut: string;
+    content: string;
+    departmentId?: string | null;
+  }) => apiRequest<ApiQuickReply>("/quick-replies", { method: "POST", body: JSON.stringify(data) }),
+  update: (
+    id: string,
+    data: { title?: string; shortcut?: string; content?: string; departmentId?: string | null },
+  ) =>
+    apiRequest<ApiQuickReply>(`/quick-replies/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  archive: (id: string) => apiRequest<ApiQuickReply>(`/quick-replies/${id}`, { method: "DELETE" }),
 };
 
 export const conversationApi = {

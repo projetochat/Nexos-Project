@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-03 - Sprint 10 Inbox Domain Consolidation
+
+- Inbox operacional deixou de importar `@/lib/mvp` e Supabase nas rotas `/inbox`.
+- Conversa detalhada passou a consumir Tags, Contact detail, Customers, Departments e Quick Replies via Nexos API.
+- Adicionados endpoints oficiais `/api/tags`, `/api/contacts/:id/tags/:tagId` e `/api/quick-replies`.
+- Tags ganharam `normalizedName`, `archivedAt` e unicidade normalizada por tenant.
+- Quick Replies ganharam modelo tenant-scoped com escopo global/departamento, RBAC e bloqueio de atalho duplicado.
+- Adicionada guarda automatizada `test:inbox-legacy-runtime` ao `verify`.
+- Migration validada em `nexos_1000` e aplicada sem reset em `nexos_0802`.
+
 ## 2026-08-03 - Sprint 09 Rework II Inbox Runtime Recovery
 
 - Corrigido loop React da Inbox causado por snapshot instavel em `useSyncExternalStore`.

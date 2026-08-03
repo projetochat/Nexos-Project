@@ -87,6 +87,14 @@ export class RealtimePublisher {
       updatedAt: input.updatedAt ? dateString(input.updatedAt) : new Date().toISOString(),
     });
   }
+
+  publishContactUpdated(input: { tenantId: string; contactId: string; contact: unknown }) {
+    this.realtime.publish({ tenantId: input.tenantId }, "contact.updated", input);
+  }
+
+  publishContactTagsUpdated(input: { tenantId: string; contactId: string; tags: unknown[] }) {
+    this.realtime.publish({ tenantId: input.tenantId }, "contact.tags.updated", input);
+  }
 }
 
 function dateString(value: Date | string) {

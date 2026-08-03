@@ -330,14 +330,26 @@ async function seedCrm(tenantId: string, departments: { id: string; name: string
       },
     }),
     prisma.tag.upsert({
-      where: { tenantId_name: { tenantId, name: "VIP" } },
-      update: { color: "#f59e0b" },
-      create: { id: palette.tagVip, tenantId, name: "VIP", color: "#f59e0b" },
+      where: { tenantId_normalizedName: { tenantId, normalizedName: "vip" } },
+      update: { name: "VIP", color: "#f59e0b", archivedAt: null },
+      create: {
+        id: palette.tagVip,
+        tenantId,
+        name: "VIP",
+        normalizedName: "vip",
+        color: "#f59e0b",
+      },
     }),
     prisma.tag.upsert({
-      where: { tenantId_name: { tenantId, name: "Lead" } },
-      update: { color: "#16a34a" },
-      create: { id: palette.tagLead, tenantId, name: "Lead", color: "#16a34a" },
+      where: { tenantId_normalizedName: { tenantId, normalizedName: "lead" } },
+      update: { name: "Lead", color: "#16a34a", archivedAt: null },
+      create: {
+        id: palette.tagLead,
+        tenantId,
+        name: "Lead",
+        normalizedName: "lead",
+        color: "#16a34a",
+      },
     }),
   ]);
 

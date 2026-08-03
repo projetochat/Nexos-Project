@@ -30,18 +30,16 @@ import { InboxLayout } from "./inbox.index";
 import { Avatar, Badge, Button, Field, Input, Select } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import {
-  CATALOG,
-  CONTACTS,
-  CUSTOMERS,
-  QUICK_REPLIES,
-  TAGS,
-  type ConvStatus,
-  type QuickReply,
-  type Tag,
-  type Customer,
-} from "@/lib/mvp";
-import { conversationApi, messageApi, organizationApi, type ApiMessage } from "@/lib/nexos-api";
-import { supabase } from "@/integrations/supabase/client";
+  conversationApi,
+  crmApi,
+  messageApi,
+  organizationApi,
+  quickReplyApi,
+  type ApiConversationStatus as ConvStatus,
+  type ApiMessage,
+  type ApiQuickReply as QuickReply,
+  type ApiTag as Tag,
+} from "@/lib/nexos-api";
 import { useSession } from "@/lib/session";
 import { fmtHM, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
@@ -233,48 +231,8 @@ function ConversationPage() {
       const descricao_html =
         parts.length > 0 ? parts.join("") : "<p><em>Sem mensagens registradas.</em></p>";
 
-      // cliente (customer) — se vinculado ao contato
-      let clienteId: string | null = null;
-      let clienteNome = contactName;
-      const customerId =
-        (conv.contact as unknown as { customer_id?: string | null }).customer_id ?? null;
-      if (customerId) {
-        const { data: cust } = await supabase
-          .from("customers")
-          .select("id, nome")
-          .eq("id", customerId)
-          .maybeSingle();
-        if (cust) {
-          clienteId = cust.id;
-          clienteNome = cust.nome;
-        }
-      }
-
-      const departamentoId = conv.department_id ?? null;
-      const departamentoNome = conv.department?.nome ?? "—";
-      const titulo = `Chamado aberto pelo Chat - ${conv.protocolo}`;
-
-      const { data, error } = await supabase
-        .from("chamados")
-        .insert({
-          tipo: "Suporte",
-          status: "Novo",
-          titulo,
-          cliente_id: clienteId,
-          cliente_nome: clienteNome,
-          solicitante_id: conv.contact.id,
-          solicitante_nome: contactName,
-          departamento_id: departamentoId,
-          departamento_nome: departamentoNome,
-          descricao_html,
-          aberto_em: new Date().toISOString(),
-          usuario_abertura_id: user.id,
-          usuario_abertura_nome: user.nome ?? user.email ?? "—",
-        } as never)
-        .select("numero")
-        .single();
-      if (error || !data) throw error ?? new Error("Falha ao gerar chamado.");
-      navigate({ to: "/chamados" });
+      void descricao_html;
+      throw new Error("Geracao de chamados pela Inbox exige API oficial de Chamados.");
     } catch (e) {
       window.alert((e as Error).message || "Não foi possível gerar o chamado.");
     } finally {
@@ -646,8 +604,8 @@ function Composer({
   const typingStopTimerRef = React.useRef<number | null>(null);
 
   const { data: quickReplies = [] } = useQuery({
-    queryKey: ["quick_replies", "mine"],
-    queryFn: QUICK_REPLIES.mine,
+    queryKey: ["nexos", "quick-replies", "composer"],
+    queryFn: () => quickReplyApi.list(),
   });
 
   // Show quick reply list when text starts with '/'
@@ -975,50 +933,12 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
   const renameModal = useDisclosure();
 
   const { data: contact } = useQuery({
-    queryKey: ["mvp", "contact", contactId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("contacts")
-        .select(
-          "id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia",
-        )
-        .eq("id", contactId)
-        .single();
-      if (error) throw error;
-      return data as {
-        id: string;
-        nome: string;
-        telefone: string;
-        avatar_url: string | null;
-        customer_id: string | null;
-        email: string | null;
-        departamento: string | null;
-        nivel_gerencia: string | null;
-        instancia: string | null;
-      };
-    },
+    queryKey: ["nexos", "contacts", contactId],
+    queryFn: () => crmApi.getContact(contactId),
   });
   const customerId = contact?.customer_id ?? null;
-
-  const { data: customer } = useQuery({
-    queryKey: ["mvp", "customer", customerId],
-    queryFn: async () => {
-      if (!customerId) return null;
-      const { data, error } = await supabase
-        .from("customers")
-        .select("*")
-        .eq("id", customerId)
-        .maybeSingle();
-      if (error) throw error;
-      return data as Customer | null;
-    },
-    enabled: !!customerId,
-  });
-
-  const { data: contactTags = [] } = useQuery({
-    queryKey: ["mvp", "contact_tags", contactId],
-    queryFn: () => CONTACTS.tags(contactId),
-  });
+  const customer = contact?.customer ?? null;
+  const contactTags = contact?.tags ?? [];
 
   const { data: protocolos = [] } = useQuery({
     queryKey: ["nexos", "contact_protocols", contactId],
@@ -1194,7 +1114,7 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
         onClose={tagsModal.hide}
         contactId={contactId}
         current={contactTags}
-        onChanged={() => qc.invalidateQueries({ queryKey: ["mvp", "contact_tags", contactId] })}
+        onChanged={() => qc.invalidateQueries({ queryKey: ["nexos", "contacts", contactId] })}
       />
       <RenameContactModal
         open={renameModal.open}
@@ -1213,8 +1133,7 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
             | null) ?? null
         }
         onSaved={() => {
-          qc.invalidateQueries({ queryKey: ["mvp", "contact", contactId] });
-          qc.invalidateQueries({ queryKey: ["mvp", "customer", customerId] });
+          qc.invalidateQueries({ queryKey: ["nexos", "contacts", contactId] });
           qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
           qc.invalidateQueries({ queryKey: ["nexos", "contact_protocols", contactId] });
           renameModal.hide();
@@ -1256,8 +1175,8 @@ function RenameContactModal({
   const [busy, setBusy] = React.useState(false);
 
   const { data: customers = [] } = useQuery({
-    queryKey: ["customers", "list-all"],
-    queryFn: () => CUSTOMERS.list(),
+    queryKey: ["nexos", "customers", "list-all"],
+    queryFn: () => crmApi.listCustomers({ pageSize: 100 }).then((page) => page.items),
     enabled: open,
   });
 
@@ -1284,24 +1203,28 @@ function RenameContactModal({
     }
     setBusy(true);
     try {
-      const patch: Record<string, unknown> = {};
-      if (n !== initialName) patch.nome = n;
+      const patch: Parameters<typeof crmApi.updateContact>[1] = {};
+      if (n !== initialName) patch.name = n;
       if ((em || null) !== (initialEmail || null)) patch.email = em || null;
       if ((departamento.trim() || null) !== (initialDepartamento || null))
-        patch.departamento = departamento.trim() || null;
-      if ((nivel || null) !== (initialNivel ?? null)) patch.nivel_gerencia = nivel || null;
-      if (Object.keys(patch).length) {
-        const { error } = await supabase
-          .from("contacts")
-          .update(patch as never)
-          .eq("id", contactId);
-        if (error) throw error;
+        patch.departmentName = departamento.trim() || null;
+      if ((nivel || null) !== (initialNivel ?? null)) {
+        const roleMap = {
+          Colaborador: "COLABORADOR",
+          Supervisor: "SUPERVISOR",
+          Gerente: "GERENTE",
+          Diretoria: "DIRETORIA",
+        } as const;
+        patch.companyRole = nivel ? roleMap[nivel] : null;
       }
       if (
         perms.pode_editar_vinculo_cliente &&
         (customerId ?? null) !== (initialCustomerId ?? null)
       ) {
-        await CONTACTS.setCustomer(contactId, customerId);
+        patch.customerId = customerId;
+      }
+      if (Object.keys(patch).length) {
+        await crmApi.updateContact(contactId, patch);
       }
       toast.success("Contato atualizado");
       onSaved();
@@ -1387,194 +1310,6 @@ function RenameContactModal({
   );
 }
 
-function maskTelefone(v: string) {
-  const d = v.replace(/\D/g, "").slice(0, 11);
-  if (d.length <= 2) return d.length ? `(${d}` : "";
-  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-}
-
-function LinkCustomerModal({
-  open,
-  onClose,
-  contactId,
-  onLinked,
-}: {
-  open: boolean;
-  onClose: () => void;
-  contactId: string;
-  onLinked: () => void;
-}) {
-  const [q, setQ] = React.useState("");
-  const [tab, setTab] = React.useState<"existing" | "new">("existing");
-  const [nome, setNome] = React.useState("");
-  const [email, setEmail] = React.useState("");
-  const [cliente, setCliente] = React.useState("");
-  const [telefone, setTelefone] = React.useState("");
-  const [departamentoId, setDepartamentoId] = React.useState("");
-  const [supervisor, setSupervisor] = React.useState(false);
-
-  const { data: customers = [] } = useQuery({
-    queryKey: ["customers", "list", q],
-    queryFn: () => CUSTOMERS.list(q || undefined),
-    enabled: open,
-  });
-  const { data: departamentos = [] } = useQuery({
-    queryKey: ["mvp", "departments"],
-    queryFn: CATALOG.departments,
-    enabled: open,
-  });
-
-  React.useEffect(() => {
-    if (!open) {
-      setQ("");
-      setNome("");
-      setEmail("");
-      setCliente("");
-      setTelefone("");
-      setDepartamentoId("");
-      setSupervisor(false);
-      setTab("existing");
-    }
-  }, [open]);
-
-  const link = async (customerId: string) => {
-    try {
-      await CONTACTS.setCustomer(contactId, customerId);
-      toast.success("Vinculado");
-      onLinked();
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  };
-
-  const createAndLink = async () => {
-    if (!nome.trim()) return toast.error("Informe o nome do cliente.");
-    try {
-      const dep = departamentos.find((d) => d.id === departamentoId);
-      const notas =
-        [dep ? `Departamento: ${dep.nome}` : null, supervisor ? "Supervisor" : null]
-          .filter(Boolean)
-          .join(" · ") || null;
-      const c = await CUSTOMERS.create({
-        nome: cliente.trim() || nome.trim(),
-        email: email.trim() || null,
-        telefone: telefone.trim() || null,
-        notas,
-      });
-      await link(c.id);
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  };
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Vincular contato a cliente"
-      description="Associe este contato ao cadastro comercial correspondente."
-      footer={
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Fechar
-        </Button>
-      }
-    >
-      <div className="mb-3 inline-flex rounded-lg border border-border bg-surface-1 p-1 text-xs">
-        <button
-          onClick={() => setTab("existing")}
-          className={`rounded-md px-3 py-1.5 ${tab === "existing" ? "bg-card shadow-card" : "text-muted-foreground"}`}
-        >
-          Existente
-        </button>
-        <button
-          onClick={() => setTab("new")}
-          className={`rounded-md px-3 py-1.5 ${tab === "new" ? "bg-card shadow-card" : "text-muted-foreground"}`}
-        >
-          Cadastrar novo
-        </button>
-      </div>
-
-      {tab === "existing" ? (
-        <>
-          <Field label="Buscar">
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Nome do cliente…"
-            />
-          </Field>
-          <ul className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-border">
-            {customers.map((c) => (
-              <li key={c.id}>
-                <button
-                  onClick={() => link(c.id)}
-                  className="flex w-full items-start justify-between gap-3 border-b border-border/60 px-3 py-2 text-left text-sm hover:bg-surface-1"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate">{c.nome}</p>
-                  </div>
-                  <span className="text-[11px] text-primary">Vincular</span>
-                </button>
-              </li>
-            ))}
-            {customers.length === 0 && (
-              <li className="p-4 text-center text-xs text-muted-foreground">Nenhum cliente.</li>
-            )}
-          </ul>
-        </>
-      ) : (
-        <div className="space-y-3">
-          <Field label="Nome">
-            <Input value={nome} onChange={(e) => setNome(e.target.value)} />
-          </Field>
-          <Field label="Cliente">
-            <Input
-              value={cliente}
-              onChange={(e) => setCliente(e.target.value)}
-              placeholder="Classificação comercial"
-            />
-          </Field>
-          <Field label="E-mail">
-            <Input value={email} onChange={(e) => setEmail(e.target.value)} />
-          </Field>
-          <Field label="Telefone">
-            <Input
-              value={telefone}
-              onChange={(e) => setTelefone(maskTelefone(e.target.value))}
-              placeholder="(00) 00000-0000"
-              inputMode="tel"
-            />
-          </Field>
-          <Field label="Departamento">
-            <Select value={departamentoId} onChange={(e) => setDepartamentoId(e.target.value)}>
-              <option value="">Selecione…</option>
-              {departamentos.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.nome}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={supervisor}
-              onChange={(e) => setSupervisor(e.target.checked)}
-              className="h-4 w-4 rounded border-border accent-primary"
-            />
-            <span>Supervisor</span>
-          </label>
-          <Button variant="primary" size="sm" onClick={createAndLink}>
-            Cadastrar e vincular
-          </Button>
-        </div>
-      )}
-    </Modal>
-  );
-}
-
 function TagsModal({
   open,
   onClose,
@@ -1590,8 +1325,8 @@ function TagsModal({
 }) {
   const qc = useQueryClient();
   const { data: allTags = [] } = useQuery({
-    queryKey: ["mvp", "tags"],
-    queryFn: CATALOG.tags,
+    queryKey: ["nexos", "tags"],
+    queryFn: crmApi.listTags,
     enabled: open,
   });
   const [creating, setCreating] = React.useState(false);
@@ -1602,8 +1337,8 @@ function TagsModal({
 
   const toggle = async (t: Tag) => {
     try {
-      if (currentIds.has(t.id)) await CONTACTS.removeTag(contactId, t.id);
-      else await CONTACTS.addTag(contactId, t.id);
+      if (currentIds.has(t.id)) await crmApi.removeContactTag(contactId, t.id);
+      else await crmApi.assignContactTag(contactId, t.id);
       onChanged();
     } catch (e) {
       toast.error((e as Error).message);
@@ -1613,11 +1348,11 @@ function TagsModal({
   const createTag = async () => {
     if (!newName.trim()) return toast.error("Informe o nome.");
     try {
-      const t = await TAGS.create({ nome: newName.trim(), cor: newColor });
-      await CONTACTS.addTag(contactId, t.id);
+      const t = await crmApi.createTag({ name: newName.trim(), color: newColor });
+      await crmApi.assignContactTag(contactId, t.id);
       setNewName("");
       setCreating(false);
-      qc.invalidateQueries({ queryKey: ["mvp", "tags"] });
+      qc.invalidateQueries({ queryKey: ["nexos", "tags"] });
       onChanged();
     } catch (e) {
       toast.error((e as Error).message);

@@ -93,6 +93,7 @@ model Tenant {
   customers                   Customer[]
   contacts                    Contact[]
   tags                        Tag[]
+  quickReplies                QuickReply[]
   conversations               Conversation[]
   messages                    Message[]
   messagingConnections        MessagingConnection[]
@@ -132,6 +133,7 @@ model TenantMembership {
   departments   DepartmentMembership[]
   conversations Conversation[]
   messages      Message[]
+  quickReplies  QuickReply[]
 
   @@unique([tenantId, userId])
   @@unique([tenantId, id])
@@ -154,6 +156,7 @@ model Department {
   members       DepartmentMembership[]
   contacts      Contact[]
   conversations Conversation[]
+  quickReplies  QuickReply[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, id])
@@ -273,18 +276,20 @@ model Contact {
 }
 
 model Tag {
-  id        String       @id @default(uuid())
-  tenantId  String
-  name      String
-  color     String       @default("#6366f1")
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contacts  ContactTag[]
+  id             String       @id @default(uuid())
+  tenantId       String
+  name           String
+  normalizedName String
+  color          String       @default("#6366f1")
+  archivedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts       ContactTag[]
 
   @@unique([tenantId, id])
-  @@unique([tenantId, name])
-  @@index([tenantId])
+  @@unique([tenantId, normalizedName])
+  @@index([tenantId, archivedAt])
   @@map("tags")
 }
 
@@ -425,4 +430,27 @@ model MessagingConnection {
   @@index([tenantId, status])
   @@index([tenantId, ownerPhoneNormalized])
   @@map("messaging_connections")
+}
+
+model QuickReply {
+  id                    String            @id @default(uuid())
+  tenantId              String
+  title                 String
+  shortcut              String
+  normalizedShortcut    String
+  content               String
+  departmentId          String?
+  createdByMembershipId String?
+  archivedAt            DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  tenant                Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department            Department?       @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: SetNull)
+  createdByMembership   TenantMembership? @relation(fields: [createdByMembershipId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, departmentId, normalizedShortcut])
+  @@unique([tenantId, id])
+  @@index([tenantId, archivedAt])
+  @@index([tenantId, departmentId])
+  @@map("quick_replies")
 }

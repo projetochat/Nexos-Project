@@ -120,6 +120,36 @@ Base local validada: `http://localhost:3001/api`.
 }
 ```
 
+## Sprint 10 - Inbox domain
+
+Base local validada: `http://localhost:3001/api`.
+
+A Inbox operacional usa Nexos API como fonte unica. As rotas `/inbox`, `/inbox/` e
+`/inbox/$conversationId` nao importam `@/lib/mvp`, Supabase ou aliases legados de runtime.
+
+| Metodo   | Endpoint                         | Permission                  | Descricao                                      |
+| -------- | -------------------------------- | --------------------------- | ---------------------------------------------- |
+| `GET`    | `/tags`                          | `crm.read`                  | Lista Tags ativas do tenant                    |
+| `POST`   | `/tags`                          | `chat.tags.manage`          | Cria Tag tenant-scoped com nome normalizado    |
+| `PATCH`  | `/tags/:id`                      | `chat.tags.manage`          | Edita nome/cor da Tag ativa                    |
+| `DELETE` | `/tags/:id`                      | `chat.tags.manage`          | Arquiva Tag                                    |
+| `POST`   | `/contacts/:id/tags/:tagId`      | `chat.tags.use`             | Aplica Tag existente a Contact do tenant       |
+| `DELETE` | `/contacts/:id/tags/:tagId`      | `chat.tags.use`             | Remove Tag de Contact                          |
+| `GET`    | `/quick-replies`                 | `chat.quick_replies.read`   | Lista respostas rapidas globais/departamento   |
+| `POST`   | `/quick-replies`                 | `chat.quick_replies.manage` | Cria resposta rapida                           |
+| `PATCH`  | `/quick-replies/:id`             | `chat.quick_replies.manage` | Edita resposta rapida ativa                    |
+| `DELETE` | `/quick-replies/:id`             | `chat.quick_replies.manage` | Arquiva resposta rapida                        |
+| `GET`    | `/conversations/:id`             | `conversations.read`        | Inclui contact tags/customer e connection      |
+
+Quick Reply selecionada no frontend apenas insere o texto no composer; envio continua separado em
+`POST /api/conversations/:conversationId/messages`.
+
+RBAC:
+
+- `tenant_admin`: gerencia e usa Tags, gerencia e le Quick Replies.
+- `supervisor`: gerencia e usa Tags, gerencia e le Quick Replies.
+- `agent`: usa Tags existentes e le Quick Replies; nao cria/edita/arquiva.
+
 Resposta esperada apos persistencia:
 
 ```json

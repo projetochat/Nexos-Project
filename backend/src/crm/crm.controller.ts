@@ -20,6 +20,7 @@ import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { ContactCompanyRole, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { CreateContactDto } from "./dto/create-contact.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
 import { ListContactsQueryDto } from "./dto/list-contacts-query.dto";
@@ -40,7 +41,10 @@ const contactInclude = {
 @Controller("crm")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class CrmController {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(RealtimePublisher) private readonly realtime: RealtimePublisher,
+  ) {}
 
   @Get("customers")
   @RequirePermissions("crm.read")
@@ -224,7 +228,7 @@ export class CrmController {
         orderBy: { departmentName: "asc" },
       }),
       this.prisma.tag.findMany({
-        where: { tenantId: current.tenantId },
+        where: { tenantId: current.tenantId, archivedAt: null },
         orderBy: { name: "asc" },
       }),
     ]);
@@ -358,6 +362,11 @@ export class CrmController {
           include: contactInclude,
         });
       });
+      this.realtime.publishContactUpdated({
+        tenantId: current.tenantId,
+        contactId: contact.id,
+        contact: this.serializeContact(contact),
+      });
       return this.serializeContact(contact);
     } catch (error) {
       handlePrismaError(error);
@@ -380,7 +389,7 @@ export class CrmController {
   @RequirePermissions("crm.read")
   async listTags(@CurrentUser() current: AuthenticatedUser) {
     const tags = await this.prisma.tag.findMany({
-      where: { tenantId: current.tenantId },
+      where: { tenantId: current.tenantId, archivedAt: null },
       orderBy: { name: "asc" },
     });
     return tags.map((tag) => this.serializeTag(tag));

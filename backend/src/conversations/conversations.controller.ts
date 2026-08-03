@@ -36,9 +36,11 @@ import { MessagesService } from "./messages.service";
 const conversationInclude = {
   contact: {
     include: {
-      customer: { select: { id: true, name: true, color: true } },
+      customer: true,
+      tags: { include: { tag: true }, where: { tag: { archivedAt: null } } },
     },
   },
+  connection: true,
   department: true,
   assignedMembership: {
     include: {
@@ -657,9 +659,20 @@ export class ConversationsController {
               ? {
                   id: conversation.contact.customer.id,
                   nome: conversation.contact.customer.name,
+                  email: conversation.contact.customer.email,
+                  telefone: conversation.contact.customer.phone,
+                  notas: conversation.contact.customer.notes,
+                  contato_responsavel: conversation.contact.customer.responsibleContactName,
                   cor: conversation.contact.customer.color,
                 }
               : null,
+            tags: conversation.contact.tags.map((item) => ({
+              id: item.tag.id,
+              nome: item.tag.name,
+              cor: item.tag.color,
+            })),
+            createdAt: conversation.contact.createdAt,
+            updatedAt: conversation.contact.updatedAt,
           }
         : null,
       department: conversation.department
@@ -676,6 +689,15 @@ export class ConversationsController {
             membershipId: conversation.assignedMembership.id,
             nome: conversation.assignedMembership.user.name,
             email: conversation.assignedMembership.user.email,
+          }
+        : null,
+      connection: conversation.connection
+        ? {
+            id: conversation.connection.id,
+            name: conversation.connection.name,
+            providerType: conversation.connection.providerType.toLowerCase(),
+            status: conversation.connection.status.toLowerCase(),
+            externalReference: conversation.connection.externalReference,
           }
         : null,
     };

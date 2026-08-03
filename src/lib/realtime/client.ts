@@ -93,6 +93,8 @@ export async function connectRealtime() {
     "conversation.assignment.updated",
     "conversation.unread.updated",
     "connection.status.updated",
+    "contact.updated",
+    "contact.tags.updated",
     "presence.updated",
     "typing.started",
     "typing.stopped",

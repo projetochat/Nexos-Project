@@ -21,10 +21,10 @@ import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Badge, Button, Field, Input } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
 import { connectionDisplayLabel, connectionInstanceValue } from "@/lib/connection-options";
-import { type Contact } from "@/lib/mvp";
 import {
   conversationApi,
   crmApi,
+  type ApiContact,
   messageApi,
   type ApiConversationStatus as ConvStatus,
 } from "@/lib/nexos-api";
@@ -406,7 +406,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
   const qc = useQueryClient();
   const [tab, setTab] = React.useState<"existing" | "new">("existing");
   const [q, setQ] = React.useState("");
-  const [selectedContact, setSelectedContact] = React.useState<Contact | null>(null);
+  const [selectedContact, setSelectedContact] = React.useState<ApiContact | null>(null);
   const [newName, setNewName] = React.useState("");
   const [newPhone, setNewPhone] = React.useState("");
   const [selectedConnectionId, setSelectedConnectionId] = React.useState("");

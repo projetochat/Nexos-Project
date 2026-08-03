@@ -69,6 +69,16 @@ export function useRealtimeInbox(conversationId?: string | null) {
       if (event.event === "connection.status.updated") {
         void queryClient.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
       }
+      if (event.event === "contact.updated" || event.event === "contact.tags.updated") {
+        const data = event.data as { contactId?: string };
+        if (data.contactId) {
+          void queryClient.invalidateQueries({ queryKey: ["nexos", "contacts", data.contactId] });
+          void queryClient.invalidateQueries({
+            queryKey: ["nexos", "contact_protocols", data.contactId],
+          });
+          void queryClient.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+        }
+      }
     });
   }, [queryClient]);
 

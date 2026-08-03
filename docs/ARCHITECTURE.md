@@ -314,3 +314,27 @@ useSyncExternalStore -> realtimeSnapshot cacheado -> render estavel
 Snapshots so mudam quando `status` ou `lastEventId` mudam. Subscriptions de Conversation sao idempotentes,
 listeners sao registrados uma vez por socket singleton e reconcile REST ocorre somente na transicao real
 para `connected`.
+
+## Sprint 10 - Inbox sem runtime legado
+
+A Inbox passa a seguir o limite oficial de dominio:
+
+```text
+Inbox UI -> Nexos API -> PostgreSQL
+Realtime -> invalida cache/reconcilia via REST
+```
+
+`@/lib/mvp`, Supabase client, stores mock e fallbacks nao participam mais das rotas operacionais da
+Inbox. A protecao automatizada `scripts/check-inbox-legacy-runtime.mjs` roda no `verify` para impedir
+regressao.
+
+Tags sao tenant-scoped, normalizadas por `lower(trim(name))`, arquivaveis e aplicadas a Contacts por API.
+Agentes podem usar Tags existentes (`chat.tags.use`), enquanto criacao/edicao/archive exige
+`chat.tags.manage`.
+
+Quick Replies sao tenant-scoped, opcionais por departamento e respeitam o escopo operacional do usuario.
+Atalhos sao normalizados com `/`, bloqueados contra duplicidade no mesmo escopo e inseridos no composer
+sem envio automatico.
+
+Eventos realtime novos (`contact.updated`, `contact.tags.updated`) servem apenas para atualizar a UI; o
+estado final continua vindo das queries REST.
