@@ -454,9 +454,19 @@ Nao foi possivel concluir nesta sessao:
 NOT READY FOR SPRINT 09
 ```
 
-NOT READY FOR SPRINT 09
+## Homologacao fisica final - Product Owner
 
-```
+- Evolution v2.3.7: PASS
+- Connections reais nos seletores: PASS
+- Outbound real: PASS
+- Inbound real: PASS
+- Admin: PASS
+- Atendente: PASS
+- Persistencia apos F5: PASS
+- Reconnect: PASS
+- Zero replay: PASS
+- Redis recovery: PASS
 
-NOT READY FOR SPRINT 09
-```
+Gate final:
+
+READY FOR SPRINT 09
