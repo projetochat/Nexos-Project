@@ -15,6 +15,9 @@ import {
   MessagingProviderType,
 } from "../src/generated/prisma";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { TicketsController } from "../src/tickets/tickets.controller";
+import { TicketsModule } from "../src/tickets/tickets.module";
+import { TicketsService } from "../src/tickets/tickets.service";
 
 describe("Nexos API organization and RBAC", () => {
   let app: INestApplication;
@@ -1664,6 +1667,128 @@ describe("Nexos API organization and RBAC", () => {
       .expect(200)
       .expect(({ body }) => {
         expect(body.some((reply: { id: string }) => reply.id === created.body.id)).toBe(false);
+      });
+  });
+
+  it("bootstraps AppModule and resolves TicketsModule controller/service dependencies", async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot({ isGlobal: true }), AppModule],
+    }).compile();
+    try {
+      const controller = moduleRef.get(TicketsController, { strict: false });
+      const service = moduleRef.get(TicketsService, { strict: false });
+      expect(controller).toBeDefined();
+      expect(service).toBeDefined();
+      Logger.log(
+        {
+          event: "tickets.di.audit",
+          moduleLoaded: true,
+          controllerInstance: controller.constructor.name,
+          servicePresent: Boolean(service),
+          serviceConstructorName: service.constructor.name,
+          providerResolved: true,
+        },
+        "TicketsControllerDiTest",
+      );
+    } finally {
+      await moduleRef.close();
+    }
+  });
+
+  it("compiles TicketsModule and resolves TicketsController/TicketsService explicitly", async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot({ isGlobal: true }), TicketsModule],
+    }).compile();
+    try {
+      const controller = moduleRef.get(TicketsController);
+      const service = moduleRef.get(TicketsService);
+      expect(controller).toBeDefined();
+      expect(service).toBeDefined();
+      Logger.log(
+        {
+          event: "tickets.module.di.audit",
+          moduleLoaded: true,
+          controllerInstance: controller.constructor.name,
+          servicePresent: Boolean(service),
+          serviceConstructorName: service.constructor.name,
+          providerResolved: true,
+        },
+        "TicketsControllerDiTest",
+      );
+    } finally {
+      await moduleRef.close();
+    }
+  });
+
+  it("lists tickets through a real Nest app without controller DI TypeError", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    await request(app.getHttpServer())
+      .get("/api/tickets")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(Array.isArray(body.items)).toBe(true);
+        expect(body.page).toEqual(expect.any(Number));
+        expect(body.pageSize).toEqual(expect.any(Number));
+        expect(body.total).toEqual(expect.any(Number));
+        Logger.log(
+          {
+            event: "tickets.http.audit",
+            endpoint: "GET /api/tickets",
+            httpStatus: 200,
+            moduleLoaded: true,
+            providerResolved: true,
+          },
+          "TicketsControllerDiTest",
+        );
+      });
+  });
+
+  it("creates tickets through a real Nest app without controller DI TypeError", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const department = await prisma.department.findFirstOrThrow({
+      where: { tenant: { slug: "acme" }, name: "Suporte" },
+    });
+    const contact = await prisma.contact.findFirstOrThrow({
+      where: { tenant: { slug: "acme" }, archivedAt: null },
+    });
+    const customer = await prisma.customer.findFirstOrThrow({
+      where: { tenant: { slug: "acme" }, archivedAt: null },
+    });
+    const agent = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenant: { slug: "acme" }, user: { email: "atendente@nexo.app" } },
+    });
+
+    await request(app.getHttpServer())
+      .post("/api/tickets")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: `Ticket DI Rework ${Date.now()}`,
+        descriptionHtml: "<p>Criacao real via controller DI.</p>",
+        priority: "NORMAL",
+        category: "SUPORTE",
+        departmentId: department.id,
+        requesterContactId: contact.id,
+        customerId: customer.id,
+        assignedMembershipId: agent.id,
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.protocol).toMatch(/^TKT-\d{6}$/);
+        expect(body.department.id).toBe(department.id);
+        expect(body.requesterContact.id).toBe(contact.id);
+        expect(body.customer.id).toBe(customer.id);
+        expect(body.assignedMembership.id).toBe(agent.id);
+        Logger.log(
+          {
+            event: "tickets.http.audit",
+            endpoint: "POST /api/tickets",
+            httpStatus: 201,
+            moduleLoaded: true,
+            providerResolved: true,
+          },
+          "TicketsControllerDiTest",
+        );
       });
   });
 

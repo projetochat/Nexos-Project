@@ -11,5 +11,6 @@ import { TicketsService } from "./tickets.service";
   imports: [AuthModule, PrismaModule, RealtimeModule, StorageModule],
   controllers: [TicketsController],
   providers: [TicketsService, AttachmentSecurityScanner],
+  exports: [TicketsService],
 })
 export class TicketsModule {}

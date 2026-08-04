@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Header,
+  Inject,
   Param,
   Patch,
   Post,
@@ -31,24 +32,24 @@ import { TicketsService } from "./tickets.service";
 @Controller("tickets")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class TicketsController {
-  constructor(private readonly tickets: TicketsService) {}
+  constructor(@Inject(TicketsService) private readonly ticketsService: TicketsService) {}
 
   @Get()
   @RequirePermissions("tickets.read")
   list(@Query() query: ListTicketsQueryDto, @CurrentUser() current: AuthenticatedUser) {
-    return this.tickets.list(query, current);
+    return this.ticketsService.list(query, current);
   }
 
   @Post()
   @RequirePermissions("tickets.create")
   create(@Body() dto: CreateTicketDto, @CurrentUser() current: AuthenticatedUser) {
-    return this.tickets.create(dto, current);
+    return this.ticketsService.create(dto, current);
   }
 
   @Get(":id")
   @RequirePermissions("tickets.read")
   detail(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    return this.tickets.detail(id, current);
+    return this.ticketsService.detail(id, current);
   }
 
   @Patch(":id")
@@ -58,7 +59,7 @@ export class TicketsController {
     @Body() dto: UpdateTicketDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.tickets.update(id, dto, current);
+    return this.ticketsService.update(id, dto, current);
   }
 
   @Patch(":id/status")
@@ -68,7 +69,7 @@ export class TicketsController {
     @Body() dto: UpdateTicketStatusDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.tickets.updateStatus(id, dto.status, current);
+    return this.ticketsService.updateStatus(id, dto.status, current);
   }
 
   @Patch(":id/assignee")
@@ -78,7 +79,7 @@ export class TicketsController {
     @Body() dto: UpdateTicketAssigneeDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.tickets.updateAssignee(id, dto.assignedMembershipId, current);
+    return this.ticketsService.updateAssignee(id, dto.assignedMembershipId, current);
   }
 
   @Patch(":id/department")
@@ -88,19 +89,19 @@ export class TicketsController {
     @Body() dto: UpdateTicketDepartmentDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.tickets.updateDepartment(id, dto.departmentId, current);
+    return this.ticketsService.updateDepartment(id, dto.departmentId, current);
   }
 
   @Delete(":id")
   @RequirePermissions("tickets.manage")
   archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    return this.tickets.archive(id, current);
+    return this.ticketsService.archive(id, current);
   }
 
   @Get(":id/comments")
   @RequirePermissions("tickets.read")
   comments(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    return this.tickets.comments(id, current);
+    return this.ticketsService.comments(id, current);
   }
 
   @Post(":id/comments")
@@ -110,7 +111,7 @@ export class TicketsController {
     @Body() dto: CreateTicketCommentDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.tickets.createComment(id, dto, current);
+    return this.ticketsService.createComment(id, dto, current);
   }
 
   @Post(":id/attachments/init")
@@ -120,7 +121,7 @@ export class TicketsController {
     @Body() dto: InitTicketAttachmentDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.tickets.initAttachment(id, dto, current);
+    return this.ticketsService.initAttachment(id, dto, current);
   }
 
   @Post(":id/attachments/:attachmentId/complete")
@@ -131,13 +132,13 @@ export class TicketsController {
     @Body() dto: CompleteTicketAttachmentDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.tickets.completeAttachment(id, attachmentId, dto.contentBase64, current);
+    return this.ticketsService.completeAttachment(id, attachmentId, dto.contentBase64, current);
   }
 
   @Get(":id/attachments")
   @RequirePermissions("tickets.read")
   attachments(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    return this.tickets.attachments(id, current);
+    return this.ticketsService.attachments(id, current);
   }
 
   @Get(":id/attachments/:attachmentId/download")
@@ -149,7 +150,11 @@ export class TicketsController {
     @CurrentUser() current: AuthenticatedUser,
     @Res() res: Response,
   ) {
-    const { attachment, body } = await this.tickets.downloadAttachment(id, attachmentId, current);
+    const { attachment, body } = await this.ticketsService.downloadAttachment(
+      id,
+      attachmentId,
+      current,
+    );
     res.setHeader("Content-Type", attachment.mimeType);
     res.setHeader("Content-Length", String(body.byteLength));
     res.setHeader(
@@ -166,6 +171,6 @@ export class TicketsController {
     @Param("attachmentId") attachmentId: string,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.tickets.deleteAttachment(id, attachmentId, current);
+    return this.ticketsService.deleteAttachment(id, attachmentId, current);
   }
 }

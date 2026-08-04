@@ -47,6 +47,18 @@ export type NexosHealth = {
   timestamp: string;
 };
 
+export class NexosApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+    readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = "NexosApiError";
+  }
+}
+
 export type ApiDepartment = {
   id: string;
   tenantId: string;
@@ -408,8 +420,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     response = await fetchNexos(path, init, true);
   }
   if (!response.ok) {
-    const message = await readError(response);
-    throw new Error(message);
+    throw await readError(response);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -710,7 +721,7 @@ export const ticketApi = {
     if (response.status === 401 && (await refreshAccessToken())) {
       response = await fetchNexos(`/tickets/${id}/attachments/${attachmentId}/download`, {}, true);
     }
-    if (!response.ok) throw new Error(await readError(response));
+    if (!response.ok) throw await readError(response);
     return response.blob();
   },
 };
@@ -736,15 +747,17 @@ async function readError(response: Response) {
       code?: string;
       message?: string | string[];
       error?: string;
+      details?: unknown;
     };
-    if (Array.isArray(data.message)) return data.message.join(", ");
-    if (data.message) return data.message;
-    if (data.error) return data.error;
+    const message = Array.isArray(data.message)
+      ? data.message.join(", ")
+      : data.message || data.error || authMessageFromStatus(response.status, data.code);
+    if (message) return new NexosApiError(message, response.status, data.code, data.details);
     const mapped = authMessageFromStatus(response.status, data.code);
-    if (mapped) return mapped;
-    return "Erro na API Nexos.";
+    if (mapped) return new NexosApiError(mapped, response.status, data.code, data.details);
+    return new NexosApiError("Erro na API Nexos.", response.status, data.code, data.details);
   } catch {
-    return "Erro na API Nexos.";
+    return new NexosApiError("Erro na API Nexos.", response.status);
   }
 }
 
