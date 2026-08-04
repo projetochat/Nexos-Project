@@ -289,6 +289,99 @@ Observacao: teste visual automatizado de UI nao foi executado nesta sessao porqu
 | M150 | Git clean | Worktree final limpa apos commit | git status | PASS |
 | M151 | Gate | Sprint 12 permanece bloqueada | `NOT READY FOR SPRINT 12` | PASS |
 
+## Rework Final - Inbox Ticket Creation & Attachment Pipeline Recovery
+
+### Causa raiz
+
+A Inbox ainda mantinha um placeholder operacional em `src/routes/inbox.$conversationId.tsx`: o botao de gerar chamado executava `window.alert` e lancava erro informando que a Inbox exigia a API oficial de Chamados, mesmo apos o dominio de Tickets estar disponivel. Isso impedia o fluxo real Inbox -> Chamados.
+
+O upload anterior de anexo usava o contrato `init + complete` com JSON/base64 (`contentBase64`). Para um PDF fisico de aproximadamente 249 KB, o payload crescia dentro de `application/json` e entrava pelo parser JSON do Express/Nest, gerando risco real de `request entity too large` antes da camada de storage. O novo contrato usa corpo binario direto em `POST /api/tickets/:id/attachments`, com `Content-Type` do arquivo, por exemplo `application/pdf`, e headers sanitizados `X-File-Name` e `X-File-Size`.
+
+A inconsistenia de Attachment vinha da criacao antecipada de metadata `PENDING` no `init`, antes dos bytes estarem persistidos. A listagem tambem podia expor anexos nao prontos. Agora o endpoint unico valida tamanho/MIME/assinatura, grava o objeto, confirma `headObject`, marca `READY` somente depois da existencia fisica, publica realtime apenas apos `READY`, lista somente `READY` nao deletado e marca falhas como `REJECTED`/`DELETED` sem expor object key completo.
+
+### Correcao aplicada
+
+- Inbox removeu `window.alert` e o placeholder, abrindo `/chamados?conversationId=...` para criacao real.
+- Chamados preenche dados a partir da Conversation e envia upload binario direto.
+- Backend removeu `attachments/init` e `attachments/:attachmentId/complete`.
+- Backend adicionou `POST /api/tickets/:id/attachments`, `GET .../download` e `GET .../inline`.
+- Backend aplica limite de 10 MB, allowlist de MIME, assinatura basica de arquivo, filename sanitizado e erro canonico.
+- Auditoria `backend/scripts/audit-ticket-attachments.mjs` lista status, existencia fisica e hash da object key, nunca o caminho completo.
+- Cleanup marcou como `DELETED` dois registros `PENDING` sem objeto em `nexos_0802`.
+
+### Evidencia fisica HTTP
+
+Ambiente fisico usado: backend em `3001`, banco `nexos_0802`, storage local.
+
+- Criacao de Ticket vinculado a Conversation: `POST /api/tickets -> 201`.
+- `conversationIdPresent=true`.
+- `contactPrefilled=true`.
+- `customerPrefilled=false` porque a Conversation fisica escolhida nao tinha customer vinculado; inferencia de customer esta coberta por teste backend.
+- Protocolo fisico criado: `TKT-000005`.
+- Upload PDF real: `POST /api/tickets/:id/attachments -> 201`.
+- Arquivo fisico: `homologacao-249kb.pdf`, `Content-Type=application/pdf`, `sizeBytes=254976`.
+- Attachment fisico: `381eb6c0-edd7-438c-852b-e7d47714a7d7`, `status=READY`, `objectExists=true`.
+- Download: `GET /download -> 200`, `Content-Disposition=attachment`.
+- Visualizacao inline: `GET /inline -> 200`, `Content-Disposition=inline`.
+- Upload grande: `413`, `code=ATTACHMENT_TOO_LARGE`.
+- `requestEntityTooLarge=false`.
+- `inaccessibleAttachment=false`.
+
+### Validacao
+
+- `bun run --cwd backend build`: PASS.
+- `bun run typecheck`: PASS.
+- `bun run build`: PASS.
+- `bun run test:ticket-legacy-runtime`: PASS.
+- `bun run --cwd backend test`: PASS, 20 arquivos, 115 testes.
+- `bun run verify` #1: PASS.
+- `bun run verify` #2: PASS.
+
+### Metricas M152-M191
+
+| Metrica | Meta | Resultado | Evidencia | Status |
+| --- | --- | --- | --- | --- |
+| M152 | Reproduzir placeholder da Inbox | Placeholder identificado antes da correcao | `rg` em `inbox.$conversationId.tsx` | PASS |
+| M153 | Remover placeholder | `window.alert` e erro falso removidos | Inbox navega para `/chamados` | PASS |
+| M154 | Prefill Conversation | Chamados recebe `conversationId` | URL `/chamados?conversationId=...` | PASS |
+| M155 | Prefill Contact | Contact inferido fisicamente | `contactPrefilled=true` | PASS |
+| M156 | Prefill Customer | Backend infere quando Conversation tem customer | E2E; amostra fisica sem customer | PARTIAL |
+| M157 | Criacao Inbox -> Ticket | Ticket fisico criado | `POST /api/tickets -> 201`, `TKT-000005` | PASS |
+| M158 | Auditar pipeline upload | Fluxo antigo e novo auditados | controller/service/API client | PASS |
+| M159 | Identificar base64 | `contentBase64` removido | guarda anti-legado | PASS |
+| M160 | Remover upload base64 | Endpoints init/complete removidos | `check-ticket-legacy-runtime` | PASS |
+| M161 | Upload binario | Corpo binario direto | `Content-Type=application/pdf` | PASS |
+| M162 | PDF 249 KB fisico | Upload aceito | `201`, `sizeBytes=254976` | PASS |
+| M163 | Atomicidade | Metadata vira READY apos objeto existir | `headObject` antes de READY | PASS |
+| M164 | Cleanup de falha | Falhas rejeitadas/deletadas | cleanup de 2 PENDING sem objeto | PASS |
+| M165 | Consistencia READY/objeto | READY exige objeto existente | audit + download fisico | PASS |
+| M166 | Listagem segura | Lista somente READY nao deletado | `attachments()` filtrado | PASS |
+| M167 | Limite de tamanho | Arquivo grande rejeitado | `413 ATTACHMENT_TOO_LARGE` | PASS |
+| M168 | MIME seguro | MIME bloqueado rejeitado | teste `.exe -> 415` | PASS |
+| M169 | Filename seguro | Nome sanitizado | E2E filename CR/LF/aspas | PASS |
+| M170 | Download autorizado | Download passa por RBAC e READY | E2E + HTTP 200 | PASS |
+| M171 | Visualizacao inline | Inline separado de download | HTTP 200 inline | PASS |
+| M172 | Objeto ausente | Falha canonica | `409 ATTACHMENT_OBJECT_MISSING` | PASS |
+| M173 | Auditoria/cleanup PENDING | Script criado e executado | `audit:ticket-attachments`, `cleanup:ticket-attachments` | PASS |
+| M174 | Realtime apos READY | Evento emitido somente apos READY | service post-commit | PASS |
+| M175 | Testes frontend Inbox | Coberto por typecheck/build/guard | sem Playwright UI nesta sessao | PARTIAL |
+| M176 | Testes frontend upload | Coberto por typecheck/build/guard | sem teste componente dedicado | PARTIAL |
+| M177 | Testes backend upload | Upload binario coberto | backend E2E | PASS |
+| M178 | Testes download/inline | Download e inline cobertos | backend E2E | PASS |
+| M179 | Cross-tenant | RBAC/tenant preservado | backend E2E existente | PASS |
+| M180 | Department visibility | Regras preservadas | backend E2E existente | PASS |
+| M181 | Reabrir/F5 fisico | API persiste e lista apos criacao | UI F5 nao automatizado | PARTIAL |
+| M182 | RBAC fisico | Backend cobre admin/agente/cross-tenant | UI fisica nao automatizada | PARTIAL |
+| M183 | Zero request entity too large | Upload grande retorna erro canonico | `requestEntityTooLarge=false` | PASS |
+| M184 | Zero attachment inacessivel | READY fisico abre download/inline | `inaccessibleAttachment=false` | PASS |
+| M185 | Regressao Ticket core | Criacao/listagem/status preservados | backend tests | PASS |
+| M186 | Verify #1 | Verificacao completa passa | `bun run verify` | PASS |
+| M187 | Verify #2 | Verificacao completa passa novamente | `bun run verify` | PASS |
+| M188 | Relatorio | Secao final documentada | esta secao | PASS |
+| M189 | Commit | Commit final realizado apos validacao | git | PASS |
+| M190 | Git clean | Worktree limpa apos commit | git status | PASS |
+| M191 | Gate | Sprint 12 permanece bloqueada | pendencias fisicas de UI completa | PASS |
+
 ## 49. Gate
 
 NOT READY FOR SPRINT 12

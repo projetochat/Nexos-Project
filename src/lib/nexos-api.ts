@@ -428,7 +428,9 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
 
 async function fetchNexos(path: string, init: RequestInit = {}, attachAuthorization = false) {
   const headers = new Headers(init.headers);
-  headers.set("Content-Type", "application/json");
+  if (!headers.has("Content-Type") && (typeof init.body === "string" || init.body == null)) {
+    headers.set("Content-Type", "application/json");
+  }
   const token = attachAuthorization ? localStorage.getItem(ACCESS_KEY) : null;
   if (token) headers.set("Authorization", `Bearer ${token}`);
   return fetch(`${nexosApiBaseUrl()}${path}`, {
@@ -646,6 +648,7 @@ export const ticketApi = {
       assignedMembershipId?: string;
       requesterContactId?: string;
       customerId?: string;
+      conversationId?: string;
       page?: number;
       pageSize?: number;
       sort?: string;
@@ -695,19 +698,38 @@ export const ticketApi = {
       body: JSON.stringify({ bodyHtml, internal: true }),
     }),
   attachments: (id: string) => apiRequest<ApiTicketAttachment[]>(`/tickets/${id}/attachments`),
-  initAttachment: (
-    id: string,
-    data: { originalName: string; mimeType: string; sizeBytes: number },
-  ) =>
-    apiRequest<{ attachment: ApiTicketAttachment; uploadUrl: string; objectKey: string }>(
-      `/tickets/${id}/attachments/init`,
-      { method: "POST", body: JSON.stringify(data) },
-    ),
-  completeAttachment: (id: string, attachmentId: string, contentBase64: string) =>
-    apiRequest<ApiTicketAttachment>(`/tickets/${id}/attachments/${attachmentId}/complete`, {
-      method: "POST",
-      body: JSON.stringify({ contentBase64 }),
-    }),
+  uploadAttachment: async (id: string, file: File) => {
+    let response = await fetchNexos(
+      `/tickets/${id}/attachments`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "X-File-Name": encodeURIComponent(file.name),
+          "X-File-Size": String(file.size),
+        },
+        body: file,
+      },
+      true,
+    );
+    if (response.status === 401 && (await refreshAccessToken())) {
+      response = await fetchNexos(
+        `/tickets/${id}/attachments`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": file.type || "application/octet-stream",
+            "X-File-Name": encodeURIComponent(file.name),
+            "X-File-Size": String(file.size),
+          },
+          body: file,
+        },
+        true,
+      );
+    }
+    if (!response.ok) throw await readError(response);
+    return response.json() as Promise<ApiTicketAttachment>;
+  },
   deleteAttachment: (id: string, attachmentId: string) =>
     apiRequest<ApiTicketAttachment>(`/tickets/${id}/attachments/${attachmentId}`, {
       method: "DELETE",
@@ -720,6 +742,14 @@ export const ticketApi = {
     );
     if (response.status === 401 && (await refreshAccessToken())) {
       response = await fetchNexos(`/tickets/${id}/attachments/${attachmentId}/download`, {}, true);
+    }
+    if (!response.ok) throw await readError(response);
+    return response.blob();
+  },
+  preview: async (id: string, attachmentId: string) => {
+    let response = await fetchNexos(`/tickets/${id}/attachments/${attachmentId}/inline`, {}, true);
+    if (response.status === 401 && (await refreshAccessToken())) {
+      response = await fetchNexos(`/tickets/${id}/attachments/${attachmentId}/inline`, {}, true);
     }
     if (!response.ok) throw await readError(response);
     return response.blob();

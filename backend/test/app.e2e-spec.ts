@@ -1749,11 +1749,9 @@ describe("Nexos API organization and RBAC", () => {
     const department = await prisma.department.findFirstOrThrow({
       where: { tenant: { slug: "acme" }, name: "Suporte" },
     });
-    const contact = await prisma.contact.findFirstOrThrow({
-      where: { tenant: { slug: "acme" }, archivedAt: null },
-    });
-    const customer = await prisma.customer.findFirstOrThrow({
-      where: { tenant: { slug: "acme" }, archivedAt: null },
+    const conversation = await prisma.conversation.findFirstOrThrow({
+      where: { tenant: { slug: "acme" }, archivedAt: null, contact: { customerId: { not: null } } },
+      include: { contact: true },
     });
     const agent = await prisma.tenantMembership.findFirstOrThrow({
       where: { tenant: { slug: "acme" }, user: { email: "atendente@nexo.app" } },
@@ -1768,16 +1766,16 @@ describe("Nexos API organization and RBAC", () => {
         priority: "NORMAL",
         category: "SUPORTE",
         departmentId: department.id,
-        requesterContactId: contact.id,
-        customerId: customer.id,
+        conversationId: conversation.id,
         assignedMembershipId: agent.id,
       })
       .expect(201)
       .expect(({ body }) => {
         expect(body.protocol).toMatch(/^TKT-\d{6}$/);
         expect(body.department.id).toBe(department.id);
-        expect(body.requesterContact.id).toBe(contact.id);
-        expect(body.customer.id).toBe(customer.id);
+        expect(body.conversation.id).toBe(conversation.id);
+        expect(body.requesterContact.id).toBe(conversation.contactId);
+        expect(body.customer.id).toBe(conversation.contact.customerId);
         expect(body.assignedMembership.id).toBe(agent.id);
         Logger.log(
           {
@@ -1865,29 +1863,80 @@ describe("Nexos API organization and RBAC", () => {
     expect(comment.body.bodyText).toBe("Comentario interno");
     expect(comment.body.bodyHtmlSanitized).not.toContain("iframe");
 
-    const init = await request(app.getHttpServer())
-      .post(`/api/tickets/${created.body.id}/attachments/init`)
+    const pdfBody = Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.alloc(249 * 1024 - 9, 0x20)]);
+    const pdf = await request(app.getHttpServer())
+      .post(`/api/tickets/${created.body.id}/attachments`)
       .set("Authorization", `Bearer ${adminToken}`)
-      .send({ originalName: "../evidencia.txt", mimeType: "text/plain", sizeBytes: 5 })
-      .expect(201);
-    expect(init.body.attachment.originalName).toBe("evidencia.txt");
-    expect(init.body.objectKey).not.toContain("..");
-
-    await request(app.getHttpServer())
-      .post(`/api/tickets/${created.body.id}/attachments/${init.body.attachment.id}/complete`)
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ contentBase64: Buffer.from("hello").toString("base64") })
+      .set("Content-Type", "application/pdf")
+      .set("X-File-Name", encodeURIComponent("../evidencia-com-nome-muito-longo.pdf"))
+      .set("X-File-Size", String(pdfBody.byteLength))
+      .send(pdfBody)
       .expect(201)
       .expect(({ body }) => {
         expect(body.status).toBe("READY");
+        expect(body.originalName).toBe("evidencia-com-nome-muito-longo.pdf");
       });
 
     await request(app.getHttpServer())
-      .get(`/api/tickets/${created.body.id}/attachments/${init.body.attachment.id}/download`)
+      .get(`/api/tickets/${created.body.id}/attachments/${pdf.body.id}/download`)
       .set("Authorization", `Bearer ${agentToken}`)
       .expect(200)
-      .expect(({ text }) => {
-        expect(text).toBe("hello");
+      .expect("Content-Type", /application\/pdf/)
+      .expect("Content-Disposition", /attachment/)
+      .expect(({ body }) => {
+        expect(Buffer.isBuffer(body)).toBe(true);
+        expect(body.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/tickets/${created.body.id}/attachments/${pdf.body.id}/inline`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .expect(200)
+      .expect("Content-Disposition", /inline/);
+
+    await request(app.getHttpServer())
+      .post(`/api/tickets/${created.body.id}/attachments`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Content-Type", "application/x-msdownload")
+      .set("X-File-Name", "malware.exe")
+      .set("X-File-Size", "4")
+      .send(Buffer.from("MZxx"))
+      .expect(415)
+      .expect(({ body }) => {
+        expect(body.code).toBe("ATTACHMENT_MIME_NOT_ALLOWED");
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/tickets/${created.body.id}/attachments`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Content-Type", "text/plain")
+      .set("X-File-Name", "grande.txt")
+      .set("X-File-Size", String(11 * 1024 * 1024))
+      .send(Buffer.from("too-large"))
+      .expect(413)
+      .expect(({ body }) => {
+        expect(body.code).toBe("ATTACHMENT_TOO_LARGE");
+      });
+
+    const missing = await prisma.ticketAttachment.create({
+      data: {
+        tenantId: department.tenantId,
+        ticketId: created.body.id,
+        uploadedByMembershipId: agent.id,
+        storageProvider: "local",
+        objectKey: `tenants/${department.tenantId}/tickets/${created.body.id}/missing/file.txt`,
+        originalNameSanitized: "missing.txt",
+        mimeType: "text/plain",
+        sizeBytes: 7,
+        status: "READY",
+      },
+    });
+    await request(app.getHttpServer())
+      .get(`/api/tickets/${created.body.id}/attachments/${missing.id}/download`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body.code).toBe("ATTACHMENT_OBJECT_MISSING");
       });
   });
 

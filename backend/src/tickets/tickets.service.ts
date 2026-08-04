@@ -2,12 +2,14 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import type { Request } from "express";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import {
   Prisma,
@@ -21,7 +23,6 @@ import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { AttachmentSecurityScanner } from "./attachment-security-scanner";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { CreateTicketCommentDto } from "./dto/create-ticket-comment.dto";
-import { InitTicketAttachmentDto } from "./dto/init-ticket-attachment.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
 import { UpdateTicketDto } from "./dto/update-ticket.dto";
 import { FileStorageProvider } from "./storage/file-storage.provider";
@@ -308,74 +309,92 @@ export class TicketsService {
     return serializeComment(comment);
   }
 
-  async initAttachment(id: string, dto: InitTicketAttachmentDto, current: AuthenticatedUser) {
+  async uploadAttachment(id: string, req: Request, current: AuthenticatedUser) {
     const ticket = await this.findVisibleTicket(id, current);
-    this.validateAttachment(dto.mimeType, dto.sizeBytes);
+    const originalName = decodeHeader(req.headers["x-file-name"]) ?? "arquivo";
+    const declaredMimeType = String(req.headers["content-type"] ?? "application/octet-stream")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    const declaredSize = Number(req.headers["x-file-size"] ?? req.headers["content-length"] ?? 0);
+    this.validateAttachment(declaredMimeType, Number.isFinite(declaredSize) ? declaredSize : 0);
+    const body = await readLimitedRequest(req, this.maxAttachmentSizeBytes());
+    this.validateAttachment(declaredMimeType, body.byteLength);
+    const detectedMimeType = detectMimeType(body, declaredMimeType);
+    if (detectedMimeType && detectedMimeType !== declaredMimeType) {
+      throw canonicalException(
+        HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+        "ATTACHMENT_MIME_MISMATCH",
+        "Tipo de arquivo nao permitido.",
+      );
+    }
+
     const attachmentId = randomUUID();
-    const safeName = sanitizeFileName(dto.originalName);
+    const safeName = sanitizeFileName(originalName);
     const objectKey = `tenants/${current.tenantId}/tickets/${ticket.id}/${attachmentId}/${safeName}`;
     const created = await this.prisma.ticketAttachment.create({
       data: {
         id: attachmentId,
         tenantId: current.tenantId,
         ticketId: ticket.id,
-        commentId: dto.commentId ?? null,
         uploadedByMembershipId: current.membershipId,
         storageProvider: this.storage.provider,
         objectKey,
         originalNameSanitized: safeName,
-        mimeType: dto.mimeType,
-        sizeBytes: dto.sizeBytes,
+        mimeType: declaredMimeType,
+        sizeBytes: body.byteLength,
       },
     });
-    const upload = await this.storage
-      .createUpload({ objectKey, mimeType: dto.mimeType, sizeBytes: dto.sizeBytes })
-      .catch(async () => {
-        await this.prisma.ticketAttachment.update({
-          where: { tenantId_id: { tenantId: current.tenantId, id: attachmentId } },
-          data: { status: TicketAttachmentStatus.REJECTED },
-        });
-        throw new ServiceUnavailableException("Storage indisponivel para upload.");
-      });
-    return { attachment: serializeAttachment(created), ...upload };
-  }
 
-  async completeAttachment(
-    id: string,
-    attachmentId: string,
-    contentBase64: string,
-    current: AuthenticatedUser,
-  ) {
-    const ticket = await this.findVisibleTicket(id, current);
-    const attachment = await this.findAttachment(ticket.id, attachmentId, current);
-    if (attachment.status !== TicketAttachmentStatus.PENDING)
-      throw new ConflictException("Attachment nao esta pendente.");
-    const body = Buffer.from(contentBase64, "base64");
-    this.validateAttachment(attachment.mimeType, body.byteLength);
-    await this.storage.completeUpload({
-      objectKey: attachment.objectKey,
-      mimeType: attachment.mimeType,
-      sizeBytes: attachment.sizeBytes,
-      body,
-    });
-    const scanStatus = await this.scanner.scan();
-    const updated = await this.prisma.ticketAttachment.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id: attachment.id } },
-      data: { status: TicketAttachmentStatus.READY, scanStatus },
-    });
-    await this.recordHistory(ticket.id, current, "attachment.created", null, updated.id);
-    this.realtime.publishTicketAttachmentCreated({
-      tenantId: current.tenantId,
-      ticketId: ticket.id,
-      attachment: serializeAttachment(updated),
-    });
-    return serializeAttachment(updated);
+    try {
+      await this.storage.completeUpload({
+        objectKey,
+        mimeType: declaredMimeType,
+        sizeBytes: body.byteLength,
+        body,
+      });
+      const stored = await this.storage.headObject(objectKey);
+      if (!stored.exists || stored.sizeBytes !== body.byteLength) {
+        throw new Error("ATTACHMENT_OBJECT_MISSING");
+      }
+      const scanStatus = await this.scanner.scan();
+      const updated = await this.prisma.ticketAttachment.update({
+        where: { tenantId_id: { tenantId: current.tenantId, id: created.id } },
+        data: { status: TicketAttachmentStatus.READY, scanStatus },
+      });
+      await this.recordHistory(ticket.id, current, "attachment.created", null, updated.id);
+      this.realtime.publishTicketAttachmentCreated({
+        tenantId: current.tenantId,
+        ticketId: ticket.id,
+        attachment: serializeAttachment(updated),
+      });
+      return serializeAttachment(updated);
+    } catch (error) {
+      await this.storage.deleteObject(objectKey).catch(() => undefined);
+      await this.prisma.ticketAttachment
+        .update({
+          where: { tenantId_id: { tenantId: current.tenantId, id: created.id } },
+          data: { status: TicketAttachmentStatus.REJECTED, deletedAt: new Date() },
+        })
+        .catch(() => undefined);
+      if (error instanceof HttpException) throw error;
+      throw canonicalException(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        "ATTACHMENT_STORAGE_FAILED",
+        "Nao foi possivel armazenar o arquivo.",
+      );
+    }
   }
 
   async attachments(id: string, current: AuthenticatedUser) {
     const ticket = await this.findVisibleTicket(id, current);
     const items = await this.prisma.ticketAttachment.findMany({
-      where: { tenantId: current.tenantId, ticketId: ticket.id, deletedAt: null },
+      where: {
+        tenantId: current.tenantId,
+        ticketId: ticket.id,
+        deletedAt: null,
+        status: TicketAttachmentStatus.READY,
+      },
       orderBy: { createdAt: "desc" },
     });
     return items.map(serializeAttachment);
@@ -386,6 +405,14 @@ export class TicketsService {
     const attachment = await this.findAttachment(ticket.id, attachmentId, current);
     if (attachment.status !== TicketAttachmentStatus.READY || attachment.deletedAt)
       throw new NotFoundException("Anexo nao encontrado.");
+    const object = await this.storage.headObject(attachment.objectKey);
+    if (!object.exists) {
+      throw canonicalException(
+        HttpStatus.CONFLICT,
+        "ATTACHMENT_OBJECT_MISSING",
+        "Arquivo do anexo nao encontrado no storage.",
+      );
+    }
     const stored = await this.storage.getDownloadObject(attachment.objectKey);
     return { attachment, body: stored.body };
   }
@@ -420,6 +447,7 @@ export class TicketsService {
       assignedMembershipId: query.assignedMembershipId,
       requesterContactId: query.requesterContactId,
       customerId: query.customerId,
+      conversationId: query.conversationId,
       createdAt:
         query.createdFrom || query.createdTo
           ? {
@@ -457,7 +485,11 @@ export class TicketsService {
     };
   }
 
-  private async resolveDepartment(departmentId: string, current: AuthenticatedUser) {
+  private async resolveDepartment(
+    departmentId: string | null | undefined,
+    current: AuthenticatedUser,
+  ) {
+    if (!departmentId) throw new BadRequestException("Departamento invalido.");
     const department = await this.prisma.department.findFirst({
       where: { tenantId: current.tenantId, id: departmentId, active: true },
     });
@@ -529,8 +561,27 @@ export class TicketsService {
     if (dto.conversationId) {
       const conversation = await this.prisma.conversation.findFirst({
         where: { tenantId: current.tenantId, id: dto.conversationId },
+        include: { contact: { select: { id: true, customerId: true } } },
       });
       if (!conversation) throw new BadRequestException("Conversation invalida.");
+      if (current.roleKey !== "tenant_admin") {
+        const allowed = await this.allowedDepartmentIds(current);
+        if (
+          !(
+            (conversation.departmentId && allowed.includes(conversation.departmentId)) ||
+            conversation.assignedMembershipId === current.membershipId
+          )
+        ) {
+          throw new ForbiddenException("Conversation fora do escopo do usuario.");
+        }
+      }
+      if (data.requesterContactId && data.requesterContactId !== conversation.contactId) {
+        throw new BadRequestException("Contact nao pertence a Conversation.");
+      }
+      if (!data.requesterContactId) data.requesterContactId = conversation.contactId;
+      if (!data.customerId && conversation.contact?.customerId) {
+        data.customerId = conversation.contact.customerId;
+      }
       data.conversationId = conversation.id;
     } else if (dto.conversationId === null) data.conversationId = null;
     return data;
@@ -564,10 +615,24 @@ export class TicketsService {
   }
 
   private validateAttachment(mimeType: string, sizeBytes: number) {
-    const limit = Number(process.env.NEXOS_STORAGE_MAX_FILE_SIZE_MB ?? 10) * 1024 * 1024;
+    const limit = this.maxAttachmentSizeBytes();
     if (!allowedMimeTypes.has(mimeType))
-      throw new BadRequestException("Tipo de arquivo nao permitido.");
-    if (sizeBytes > limit) throw new BadRequestException("Arquivo acima do limite permitido.");
+      throw canonicalException(
+        HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+        "ATTACHMENT_MIME_NOT_ALLOWED",
+        "Tipo de arquivo nao permitido.",
+      );
+    if (sizeBytes > limit) {
+      throw canonicalException(
+        HttpStatus.PAYLOAD_TOO_LARGE,
+        "ATTACHMENT_TOO_LARGE",
+        `O arquivo excede o limite permitido de ${Number(process.env.NEXOS_STORAGE_MAX_FILE_SIZE_MB ?? 10)} MB.`,
+      );
+    }
+  }
+
+  private maxAttachmentSizeBytes() {
+    return Number(process.env.NEXOS_STORAGE_MAX_FILE_SIZE_MB ?? 10) * 1024 * 1024;
   }
 
   private async findAttachment(ticketId: string, attachmentId: string, current: AuthenticatedUser) {
@@ -671,6 +736,54 @@ function serializeAttachment(attachment: {
     createdAt: attachment.createdAt,
     deletedAt: attachment.deletedAt,
   };
+}
+
+async function readLimitedRequest(req: Request, limitBytes: number) {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.byteLength;
+    if (total > limitBytes) {
+      throw canonicalException(
+        HttpStatus.PAYLOAD_TOO_LARGE,
+        "ATTACHMENT_TOO_LARGE",
+        `O arquivo excede o limite permitido de ${Number(process.env.NEXOS_STORAGE_MAX_FILE_SIZE_MB ?? 10)} MB.`,
+      );
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
+function decodeHeader(value: string | string[] | undefined) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function detectMimeType(body: Buffer, declaredMimeType: string) {
+  if (body.subarray(0, 5).toString("ascii") === "%PDF-") return "application/pdf";
+  if (body.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return "image/png";
+  }
+  if (body.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return "image/jpeg";
+  if (
+    body.subarray(0, 4).toString("ascii") === "RIFF" &&
+    body.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  if (declaredMimeType === "text/plain") return "text/plain";
+  return null;
+}
+
+function canonicalException(status: HttpStatus, code: string, message: string) {
+  return new HttpException({ code, message }, status);
 }
 
 function orderBy(sort?: string): Prisma.TicketOrderByWithRelationInput[] {

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Paperclip, Plus, Search, Ticket, Trash2 } from "lucide-react";
+import { Download, Eye, Paperclip, Plus, Search, Ticket, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -21,6 +21,7 @@ import {
   organizationApi,
   ticketApi,
   type ApiContact,
+  type ApiConversation,
   type ApiCustomer,
   type ApiDepartment,
   type ApiTicket,
@@ -56,6 +57,14 @@ const statuses: ApiTicketStatus[] = [
 const priorities: ApiTicketPriority[] = ["BAIXA", "NORMAL", "ALTA", "URGENTE"];
 const categories: ApiTicketCategory[] = ["SUPORTE", "DEV", "FINANCEIRO", "OPERACIONAL"];
 const listKey = ["tickets", "list"] as const;
+const maxAttachmentSizeMb = 10;
+const allowedAttachmentMimeTypes = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "text/plain",
+]);
 
 function ChamadosPage() {
   const qc = useQueryClient();
@@ -70,6 +79,7 @@ function ChamadosPage() {
     search: query || undefined,
     status: status || undefined,
     priority: priority || undefined,
+    conversationId: search.conversationId,
     pageSize: 25,
   };
   const tickets = useQuery({
@@ -236,6 +246,11 @@ function TicketEditor({
   initialConversationId?: string;
 }) {
   const options = useTicketOptions(open);
+  const initialConversation = useQuery({
+    queryKey: ["tickets", "prefill-conversation", initialConversationId],
+    queryFn: () => conversationApi.get(initialConversationId!),
+    enabled: open && !!initialConversationId,
+  });
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [category, setCategory] = React.useState<ApiTicketCategory>("SUPORTE");
@@ -259,6 +274,16 @@ function TicketEditor({
     setConversationId(initialConversationId ?? "");
     setAssignedMembershipId("");
   }, [open, initialConversationId, options.departments]);
+
+  React.useEffect(() => {
+    const conversation = initialConversation.data;
+    if (!open || !conversation) return;
+    setConversationId(conversation.id);
+    setContactId(conversation.contact_id ?? "");
+    setCustomerId(conversation.contact?.customer_id ?? conversation.contact?.customer?.id ?? "");
+    setDepartmentId(conversation.department_id ?? options.departments[0]?.id ?? "");
+    setAssignedMembershipId(conversation.assigned_membership_id ?? "");
+  }, [initialConversation.data, open, options.departments]);
 
   const submit = async () => {
     if (!title.trim()) return toast.error("Informe o título.");
@@ -560,15 +585,17 @@ function Attachments({
   const [busy, setBusy] = React.useState(false);
   const upload = async (file: File | undefined) => {
     if (!file) return;
+    if (!allowedAttachmentMimeTypes.has(file.type || "application/octet-stream")) {
+      toast.error("Tipo de arquivo não permitido.");
+      return;
+    }
+    if (file.size > maxAttachmentSizeMb * 1024 * 1024) {
+      toast.error(`O arquivo excede o limite permitido de ${maxAttachmentSizeMb} MB.`);
+      return;
+    }
     setBusy(true);
     try {
-      const init = await ticketApi.initAttachment(ticketId, {
-        originalName: file.name,
-        mimeType: file.type || "application/octet-stream",
-        sizeBytes: file.size,
-      });
-      const contentBase64 = arrayBufferToBase64(await file.arrayBuffer());
-      await ticketApi.completeAttachment(ticketId, init.attachment.id, contentBase64);
+      await ticketApi.uploadAttachment(ticketId, file);
       toast.success("Anexo enviado");
       onChanged();
     } catch (error) {
@@ -585,6 +612,12 @@ function Attachments({
     anchor.download = attachment.originalName;
     anchor.click();
     URL.revokeObjectURL(url);
+  };
+  const preview = async (attachment: ApiTicketAttachment) => {
+    const blob = await ticketApi.preview(ticketId, attachment.id);
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
   };
   return (
     <section>
@@ -605,13 +638,30 @@ function Attachments({
           <Card key={item.id} className="flex items-center justify-between gap-3 p-3">
             <button
               type="button"
-              className="truncate text-left text-sm underline-offset-2 hover:underline"
-              onClick={() => download(item)}
+              className="min-w-0 truncate text-left text-sm underline-offset-2 hover:underline"
+              title={item.originalName}
+              onClick={() => preview(item)}
             >
               {item.originalName}
             </button>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>{Math.ceil(item.sizeBytes / 1024)} KB</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Visualizar anexo"
+                onClick={() => preview(item)}
+              >
+                <Eye className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Baixar anexo"
+                onClick={() => download(item)}
+              >
+                <Download className="h-4 w-4" />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -678,14 +728,6 @@ function textToHtml(value: string) {
 
 function escapeHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer) {
-  let binary = "";
-  new Uint8Array(buffer).forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
-  return btoa(binary);
 }
 
 function statusLabel(status: ApiTicketStatus) {

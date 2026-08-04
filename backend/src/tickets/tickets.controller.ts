@@ -4,24 +4,24 @@ import {
   Delete,
   Get,
   Header,
+  HttpCode,
   Inject,
   Param,
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UseGuards,
 } from "@nestjs/common";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
-import { CompleteTicketAttachmentDto } from "./dto/complete-ticket-attachment.dto";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { CreateTicketCommentDto } from "./dto/create-ticket-comment.dto";
-import { InitTicketAttachmentDto } from "./dto/init-ticket-attachment.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
 import { UpdateTicketAssigneeDto } from "./dto/update-ticket-assignee.dto";
 import { UpdateTicketDepartmentDto } from "./dto/update-ticket-department.dto";
@@ -114,25 +114,15 @@ export class TicketsController {
     return this.ticketsService.createComment(id, dto, current);
   }
 
-  @Post(":id/attachments/init")
+  @Post(":id/attachments")
+  @HttpCode(201)
   @RequirePermissions("tickets.attachments.upload")
-  initAttachment(
+  uploadAttachment(
     @Param("id") id: string,
-    @Body() dto: InitTicketAttachmentDto,
     @CurrentUser() current: AuthenticatedUser,
+    @Req() req: Request,
   ) {
-    return this.ticketsService.initAttachment(id, dto, current);
-  }
-
-  @Post(":id/attachments/:attachmentId/complete")
-  @RequirePermissions("tickets.attachments.upload")
-  completeAttachment(
-    @Param("id") id: string,
-    @Param("attachmentId") attachmentId: string,
-    @Body() dto: CompleteTicketAttachmentDto,
-    @CurrentUser() current: AuthenticatedUser,
-  ) {
-    return this.ticketsService.completeAttachment(id, attachmentId, dto.contentBase64, current);
+    return this.ticketsService.uploadAttachment(id, req, current);
   }
 
   @Get(":id/attachments")
@@ -155,13 +145,30 @@ export class TicketsController {
       attachmentId,
       current,
     );
-    res.setHeader("Content-Type", attachment.mimeType);
-    res.setHeader("Content-Length", String(body.byteLength));
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${attachment.originalNameSanitized.replace(/"/g, "")}"`,
+    this.sendAttachment(
+      res,
+      attachment.mimeType,
+      attachment.originalNameSanitized,
+      body,
+      "attachment",
     );
-    res.end(body);
+  }
+
+  @Get(":id/attachments/:attachmentId/inline")
+  @RequirePermissions("tickets.read")
+  @Header("Cache-Control", "private, no-store")
+  async inline(
+    @Param("id") id: string,
+    @Param("attachmentId") attachmentId: string,
+    @CurrentUser() current: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const { attachment, body } = await this.ticketsService.downloadAttachment(
+      id,
+      attachmentId,
+      current,
+    );
+    this.sendAttachment(res, attachment.mimeType, attachment.originalNameSanitized, body, "inline");
   }
 
   @Delete(":id/attachments/:attachmentId")
@@ -172,5 +179,19 @@ export class TicketsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     return this.ticketsService.deleteAttachment(id, attachmentId, current);
+  }
+
+  private sendAttachment(
+    res: Response,
+    mimeType: string,
+    fileName: string,
+    body: Buffer,
+    disposition: "attachment" | "inline",
+  ) {
+    const safeName = fileName.replace(/[\r\n"]/g, "");
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Length", String(body.byteLength));
+    res.setHeader("Content-Disposition", `${disposition}; filename="${safeName}"`);
+    res.end(body);
   }
 }

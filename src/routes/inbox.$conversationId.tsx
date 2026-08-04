@@ -190,51 +190,12 @@ function ConversationPage() {
 
   const handleGerarChamado = async () => {
     if (!user || !conv.contact) return;
-    if (!conv.protocolo) {
-      window.alert(
-        "Esta conversa ainda não possui protocolo. Inicie a conversa antes de gerar o chamado.",
-      );
-      return;
-    }
     setGerando(true);
     try {
-      const esc = (s: string) =>
-        s
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;");
-      const fmt = (iso: string) => {
-        const d = new Date(iso);
-        const p = (n: number) => String(n).padStart(2, "0");
-        return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
-      };
-      const contactName = conv.contact.nome ?? "Contato";
-      const parts = mensagens.map((m) => {
-        const ts = fmt(m.created_at);
-        if (m.type === "system") {
-          return `<p style="color:#64748b;font-size:12px"><em>[${ts}] ${esc(m.content)}</em></p>`;
-        }
-        const who =
-          m.sender === "contact"
-            ? contactName
-            : (messageAgents.find((a) => a.id === m.author_id)?.nome ?? "Atendente");
-        if (m.type === "image" && m.media_data) {
-          const caption = m.content ? `<br/>${esc(m.content)}` : "";
-          return `<p><strong>${esc(who)}</strong> <span style="color:#64748b">[${ts}]</span>:<br/><img src="${m.media_data}" alt="anexo" style="max-width:100%;border-radius:8px;margin:4px 0"/>${caption}</p>`;
-        }
-        if (m.type === "audio") {
-          return `<p><strong>${esc(who)}</strong> <span style="color:#64748b">[${ts}]</span>: <em>[áudio]</em></p>`;
-        }
-        return `<p><strong>${esc(who)}</strong> <span style="color:#64748b">[${ts}]</span>: ${esc(m.content).replace(/\n/g, "<br/>")}</p>`;
-      });
-      const descricao_html =
-        parts.length > 0 ? parts.join("") : "<p><em>Sem mensagens registradas.</em></p>";
-
-      void descricao_html;
-      throw new Error("Geracao de chamados pela Inbox exige API oficial de Chamados.");
+      navigate({ to: "/chamados", search: { conversationId: conv.id } });
+      toast.success("Formulário de chamado aberto");
     } catch (e) {
-      window.alert((e as Error).message || "Não foi possível gerar o chamado.");
+      toast.error((e as Error).message || "Não foi possível abrir o chamado.");
     } finally {
       setGerando(false);
     }
@@ -381,10 +342,18 @@ function ConversationPage() {
               variant="secondary"
               size="sm"
               onClick={handleGerarChamado}
-              disabled={gerando || !conv.protocolo}
+              disabled={gerando}
               className="w-full"
             >
-              <Ticket className="h-3.5 w-3.5" /> {gerando ? "Gerando…" : "Gerar Chamado"}
+              <Ticket className="h-3.5 w-3.5" /> {gerando ? "Abrindo…" : "Criar chamado"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate({ to: "/chamados", search: { conversationId: conv.id } })}
+              className="w-full"
+            >
+              Ver chamados relacionados
             </Button>
           </div>
         </div>
