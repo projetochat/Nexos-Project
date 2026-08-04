@@ -31,6 +31,13 @@ describe("Nexos API organization and RBAC", () => {
   let prisma: PrismaService;
   let jwt: JwtService;
 
+  function uniqueBrazilianMobilePhone() {
+    const suffix = `${Date.now()}${Math.floor(Math.random() * 1_000_000)
+      .toString()
+      .padStart(6, "0")}`.slice(-8);
+    return `(11) 9${suffix.slice(0, 4)}-${suffix.slice(4, 8)}`;
+  }
+
   beforeAll(async () => {
     process.env.DATABASE_URL =
       process.env.NEXOS_TEST_DATABASE_URL ??
@@ -772,7 +779,7 @@ describe("Nexos API organization and RBAC", () => {
   it("creates, searches, updates and archives CRM contacts", async () => {
     const token = await login("admin@nexo.app", "demo1234", "acme");
     const suffix = `${Date.now()}`.slice(-6);
-    const phone = `(11) 9${suffix.slice(0, 4)}-${suffix.slice(2, 6)}`;
+    const phone = uniqueBrazilianMobilePhone();
 
     const customerResponse = await request(app.getHttpServer())
       .post("/api/crm/customers")
@@ -877,7 +884,7 @@ describe("Nexos API organization and RBAC", () => {
     const customer = await prisma.customer.findFirstOrThrow({
       where: { tenant: { slug: "acme" }, archivedAt: null },
     });
-    const phone = `(11) 98888-${`${Date.now()}`.slice(-4)}`;
+    const phone = uniqueBrazilianMobilePhone();
 
     await request(app.getHttpServer())
       .post("/api/crm/contacts")
@@ -931,6 +938,62 @@ describe("Nexos API organization and RBAC", () => {
         phone,
         departmentName: "Suporte Orbit",
       })
+      .expect(201);
+  });
+
+  it("supports invitation first access and password reset without exposing token hashes", async () => {
+    const token = await login("admin@nexo.app", "demo1234", "acme");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const role = await prisma.role.findUniqueOrThrow({
+      where: { tenantId_key: { tenantId: tenant.id, key: "agent" } },
+    });
+    const department = await prisma.department.findFirstOrThrow({
+      where: { tenantId: tenant.id, active: true },
+    });
+    const email = `invite-${Date.now()}@example.com`;
+
+    const invitation = await request(app.getHttpServer())
+      .post("/api/user-invitations")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ email, roleId: role.id, departmentIds: [department.id] })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.email).toBe(email);
+        expect(body.status).toBe("pending");
+        expect(JSON.stringify(body)).not.toContain("tokenHash");
+      });
+    const inviteToken = new URL(invitation.body.acceptUrl).searchParams.get("invite");
+    expect(inviteToken).toEqual(expect.any(String));
+
+    await request(app.getHttpServer())
+      .post("/api/auth/invitations/accept")
+      .send({ token: inviteToken, password: "newpass123", name: "Invite User" })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.user.email).toBe(email);
+        expect(body.tenant.slug).toBe("acme");
+      });
+
+    const reset = await request(app.getHttpServer())
+      .post("/api/auth/password/forgot")
+      .send({ email })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.ok).toBe(true);
+        expect(JSON.stringify(body)).not.toContain("tokenHash");
+      });
+    const resetToken = new URL(reset.body.resetUrl).searchParams.get("reset");
+    expect(resetToken).toEqual(expect.any(String));
+
+    await request(app.getHttpServer())
+      .post("/api/auth/password/reset")
+      .send({ token: resetToken, password: "resetpass123" })
+      .expect(201)
+      .expect(({ body }) => expect(body.ok).toBe(true));
+
+    await request(app.getHttpServer())
+      .post("/api/auth/login")
+      .send({ email, password: "resetpass123", tenantSlug: "acme" })
       .expect(201);
   });
 
@@ -1626,6 +1689,26 @@ describe("Nexos API organization and RBAC", () => {
         },
       }),
     ).resolves.toBe(1);
+    const conversation = await prisma.conversation.findFirstOrThrow({
+      where: {
+        tenantId: tenant.id,
+        connectionId: connection.id,
+        messages: { some: { externalMessageId: "EXT-DUP-1" } },
+      },
+    });
+    const lead = await prisma.lead.findFirstOrThrow({
+      where: { tenantId: tenant.id, conversationId: conversation.id },
+    });
+    await expect(
+      prisma.notification.count({
+        where: {
+          tenantId: tenant.id,
+          entityType: "lead",
+          entityId: lead.id,
+          kind: "LEAD_CREATED",
+        },
+      }),
+    ).resolves.toBeGreaterThanOrEqual(1);
   });
 
   it("accepts the Evolution webhook jwt_key header configured on the real instance", async () => {

@@ -97,6 +97,27 @@ export class RealtimePublisher {
     this.realtime.publish({ tenantId: input.tenantId }, "contact.tags.updated", input);
   }
 
+  publishLeadCreated(input: { tenantId: string; leadId: string; conversationId: string }) {
+    this.realtime.publish({ tenantId: input.tenantId }, "lead.created", input);
+  }
+
+  publishLeadUpdated(input: { tenantId: string; leadId: string; conversationId: string }) {
+    this.realtime.publish({ tenantId: input.tenantId }, "lead.updated", input);
+  }
+
+  publishNotificationCreated(input: {
+    tenantId: string;
+    notificationId: string;
+    membershipId?: string | null;
+    departmentId?: string | null;
+    kind: string;
+  }) {
+    this.realtime.publish({ tenantId: input.tenantId }, "notification.created", input);
+    if (input.membershipId) {
+      this.realtime.publish({ membershipId: input.membershipId }, "notification.created", input);
+    }
+  }
+
   publishTicketCreated(input: { tenantId: string; ticketId: string; ticket: unknown }) {
     this.realtime.publish({ tenantId: input.tenantId }, "ticket.created", input);
     this.realtime.publish({ ticketId: input.ticketId }, "ticket.created", input);

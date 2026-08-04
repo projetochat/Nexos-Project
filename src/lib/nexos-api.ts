@@ -221,6 +221,53 @@ export type ConversationCounts = {
   leads: number;
 };
 
+export type ApiLead = {
+  id: string;
+  tenantId: string;
+  status: "new" | "queued" | "assigned" | "converted" | "discarded";
+  source: "whatsapp" | "manual" | "campaign" | "bot";
+  firstMessagePreview: string | null;
+  createdAt: string;
+  updatedAt: string;
+  contact: {
+    id: string;
+    nome: string;
+    telefone: string;
+    customer: { id: string; nome: string } | null;
+  };
+  conversation: {
+    id: string;
+    protocolo: string | null;
+    status: string;
+  };
+  department: { id: string; nome: string; cor: string } | null;
+  assignee: { membershipId: string; id: string; nome: string; email: string } | null;
+};
+
+export type ApiNotification = {
+  id: string;
+  kind: string;
+  status: "unread" | "read" | "archived";
+  title: string;
+  body: string | null;
+  entityType: string | null;
+  entityId: string | null;
+  createdAt: string;
+  readAt: string | null;
+};
+
+export type ApiAutomationRule = {
+  id: string;
+  name: string;
+  status: "active" | "disabled";
+  actionType: "bot_reply" | "assign_department" | "notify_team";
+  matchText: string;
+  responseText: string | null;
+  department: { id: string; nome: string; cor: string } | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ApiMessagingConnection = {
   id: string;
   tenantId: string;
@@ -695,6 +742,59 @@ export const conversationApi = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
+};
+
+export const leadApi = {
+  list: (params: { page?: number; pageSize?: number; status?: string } = {}) =>
+    apiRequest<PaginatedResponse<ApiLead>>(`/leads${queryString(params)}`),
+  assign: (id: string, data: { membershipId?: string; self?: boolean }) =>
+    apiRequest<ApiLead>(`/leads/${id}/assign`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+};
+
+export const notificationApi = {
+  list: (params: { page?: number; pageSize?: number; status?: string } = {}) =>
+    apiRequest<PaginatedResponse<ApiNotification> & { unread: number }>(
+      `/notifications${queryString(params)}`,
+    ),
+  markRead: (id: string) =>
+    apiRequest<{ ok: true }>(`/notifications/${id}/read`, { method: "PATCH" }),
+  markAllRead: () =>
+    apiRequest<{ ok: true; updated: number }>("/notifications/read-all", { method: "POST" }),
+};
+
+export const automationApi = {
+  list: (params: { page?: number; pageSize?: number; status?: string } = {}) =>
+    apiRequest<PaginatedResponse<ApiAutomationRule>>(`/automations${queryString(params)}`),
+  create: (data: {
+    name: string;
+    matchText: string;
+    responseText?: string;
+    actionType?: "BOT_REPLY" | "ASSIGN_DEPARTMENT" | "NOTIFY_TEAM";
+    departmentId?: string;
+  }) =>
+    apiRequest<ApiAutomationRule>("/automations", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (
+    id: string,
+    data: {
+      name?: string;
+      matchText?: string;
+      responseText?: string;
+      status?: "ACTIVE" | "DISABLED";
+      actionType?: "BOT_REPLY" | "ASSIGN_DEPARTMENT" | "NOTIFY_TEAM";
+      departmentId?: string;
+    },
+  ) =>
+    apiRequest<ApiAutomationRule>(`/automations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  archive: (id: string) => apiRequest<{ ok: true }>(`/automations/${id}`, { method: "DELETE" }),
 };
 
 export const messageApi = {

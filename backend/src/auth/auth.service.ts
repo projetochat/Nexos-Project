@@ -8,7 +8,8 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService, type JwtSignOptions } from "@nestjs/jwt";
-import { compare } from "bcryptjs";
+import { createHash, randomBytes } from "crypto";
+import { compare, hash } from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
 import { JwtPayload } from "./auth.types";
 import { LoginDto } from "./dto/login.dto";
@@ -93,11 +94,22 @@ export class AuthService {
     }
 
     const activeMemberships = user.memberships.filter((item) => item.status === "ACTIVE");
+    if (!requestedTenantSlug && activeMemberships.length > 1) {
+      throw new ForbiddenException({
+        code: "TENANT_SELECTION_REQUIRED",
+        message: "Selecione a organizacao para continuar.",
+        tenants: activeMemberships.map((item) => ({
+          id: item.tenant.id,
+          slug: item.tenant.slug,
+          name: item.tenant.name,
+        })),
+      });
+    }
     const membership = requestedTenantSlug
       ? activeMemberships.find((item) => item.tenant.slug === requestedTenantSlug)
       : activeMemberships.length === 1
         ? activeMemberships[0]
-        : (activeMemberships.find((item) => item.tenant.slug === "homologacao") ?? null);
+        : null;
     if (!membership) {
       throw new ForbiddenException({
         code: "USER_WITHOUT_ACTIVE_MEMBERSHIP",
@@ -227,6 +239,116 @@ export class AuthService {
         "15m",
       ),
     };
+  }
+
+  async requestPasswordReset(emailInput: string) {
+    const email = emailInput.toLowerCase().trim();
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || user.status !== "ACTIVE") return { ok: true };
+
+    const token = secureToken();
+    await this.prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashToken(token),
+        expiresAt: new Date(Date.now() + 60 * 60_000),
+      },
+    });
+    return {
+      ok: true,
+      ...(this.exposeLocalTokens()
+        ? { resetUrl: `${this.publicAppUrl()}/login?reset=${token}` }
+        : {}),
+    };
+  }
+
+  async resetPassword(token: string, password: string) {
+    const tokenHash = hashToken(token);
+    const record = await this.prisma.passwordResetToken.findFirst({
+      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
+      include: { user: true },
+    });
+    if (!record || record.user.status !== "ACTIVE") {
+      throw new UnauthorizedException("Token de redefinicao invalido ou expirado.");
+    }
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: record.userId },
+        data: { passwordHash: await hash(password, 12) },
+      }),
+      this.prisma.passwordResetToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+    return { ok: true };
+  }
+
+  async acceptInvitation(dto: { token: string; password: string; name?: string }) {
+    const tokenHash = hashToken(dto.token);
+    const invitation = await this.prisma.userInvitation.findFirst({
+      where: { tokenHash, status: "PENDING", expiresAt: { gt: new Date() } },
+      include: { tenant: true, role: true },
+    });
+    if (!invitation) throw new UnauthorizedException("Convite invalido ou expirado.");
+
+    await this.prisma.$transaction(async (tx) => {
+      let user = await tx.user.findUnique({ where: { email: invitation.email } });
+      const passwordHash = await hash(dto.password, 12);
+      if (user) {
+        user = await tx.user.update({
+          where: { id: user.id },
+          data: {
+            name: dto.name?.trim() || user.name,
+            passwordHash,
+            status: "ACTIVE",
+          },
+        });
+      } else {
+        user = await tx.user.create({
+          data: {
+            email: invitation.email,
+            name: dto.name?.trim() || invitation.email,
+            passwordHash,
+          },
+        });
+      }
+      const membership = await tx.tenantMembership.upsert({
+        where: {
+          tenantId_userId: { tenantId: invitation.tenantId, userId: user.id },
+        },
+        update: { roleId: invitation.roleId, status: "ACTIVE" },
+        create: {
+          tenantId: invitation.tenantId,
+          userId: user.id,
+          roleId: invitation.roleId,
+          status: "ACTIVE",
+        },
+      });
+      if (invitation.departmentIds.length) {
+        await tx.departmentMembership.deleteMany({
+          where: { tenantId: invitation.tenantId, membershipId: membership.id },
+        });
+        await tx.departmentMembership.createMany({
+          data: invitation.departmentIds.map((departmentId) => ({
+            tenantId: invitation.tenantId,
+            departmentId,
+            membershipId: membership.id,
+          })),
+          skipDuplicates: true,
+        });
+      }
+      await tx.userInvitation.update({
+        where: { id: invitation.id },
+        data: { status: "ACCEPTED", acceptedAt: new Date() },
+      });
+    });
+
+    return this.login({
+      email: invitation.email,
+      password: dto.password,
+      tenantSlug: invitation.tenant.slug,
+    });
   }
 
   async issueImpersonationTokens(input: {
@@ -393,4 +515,26 @@ export class AuthService {
     }
     entry.count += 1;
   }
+
+  private exposeLocalTokens() {
+    return (
+      process.env.NODE_ENV !== "production" ||
+      this.config.get<string>("NEXOS_EXPOSE_LOCAL_TOKENS") === "true"
+    );
+  }
+
+  private publicAppUrl() {
+    return (this.config.get<string>("NEXOS_PUBLIC_APP_URL") ?? "http://localhost:5173").replace(
+      /\/$/,
+      "",
+    );
+  }
+}
+
+function secureToken() {
+  return randomBytes(32).toString("base64url");
+}
+
+function hashToken(token: string) {
+  return createHash("sha256").update(token.trim(), "utf8").digest("hex");
 }

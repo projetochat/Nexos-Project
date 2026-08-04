@@ -10,7 +10,9 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
+import { createHash, randomBytes } from "crypto";
 import { hash } from "bcryptjs";
+import { IsArray, IsEmail, IsOptional, IsString } from "class-validator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -21,6 +23,23 @@ import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
+
+class CreateInvitationDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  roleId!: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  departmentIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
 
 type MembershipWithRelations = {
   id: string;
@@ -225,6 +244,78 @@ export class UsersController {
     return this.setMembershipStatus(id, current.tenantId, "DISABLED");
   }
 
+  @Get("user-invitations")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.manage")
+  async listInvitations(@CurrentUser() current: AuthenticatedUser) {
+    const invitations = await this.prisma.userInvitation.findMany({
+      where: { tenantId: current.tenantId },
+      include: { role: true },
+      orderBy: { createdAt: "desc" },
+    });
+    return invitations.map((invitation) => ({
+      id: invitation.id,
+      email: invitation.email,
+      role: { id: invitation.role.id, key: invitation.role.key, name: invitation.role.name },
+      departmentIds: invitation.departmentIds,
+      status: invitation.status.toLowerCase(),
+      expiresAt: invitation.expiresAt,
+      acceptedAt: invitation.acceptedAt,
+      revokedAt: invitation.revokedAt,
+      createdAt: invitation.createdAt,
+    }));
+  }
+
+  @Post("user-invitations")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.manage")
+  async createInvitation(
+    @Body() dto: CreateInvitationDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.assertRoleInTenant(dto.roleId, current.tenantId);
+    await this.assertDepartmentsInTenant(dto.departmentIds ?? [], current.tenantId);
+    const token = randomBytes(32).toString("base64url");
+    const email = dto.email.toLowerCase().trim();
+    const invitation = await this.prisma.$transaction(async (tx) => {
+      await tx.userInvitation.updateMany({
+        where: { tenantId: current.tenantId, email, status: "PENDING" },
+        data: { status: "REVOKED", revokedAt: new Date() },
+      });
+      return tx.userInvitation.create({
+        data: {
+          tenantId: current.tenantId,
+          email,
+          roleId: dto.roleId,
+          departmentIds: dto.departmentIds ?? [],
+          tokenHash: hashToken(token),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000),
+          invitedByMembershipId: current.membershipId,
+        },
+      });
+    });
+    return {
+      id: invitation.id,
+      email: invitation.email,
+      status: invitation.status.toLowerCase(),
+      expiresAt: invitation.expiresAt,
+      ...(exposeLocalTokens()
+        ? { acceptUrl: `${publicAppUrl()}/login?invite=${token}` }
+        : { delivery: "provider_required" }),
+    };
+  }
+
+  @Patch("user-invitations/:id/revoke")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.manage")
+  async revokeInvitation(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    await this.prisma.userInvitation.updateMany({
+      where: { id, tenantId: current.tenantId, status: "PENDING" },
+      data: { status: "REVOKED", revokedAt: new Date() },
+    });
+    return { ok: true };
+  }
+
   private async setMembershipStatus(id: string, tenantId: string, status: "ACTIVE" | "DISABLED") {
     const membership = await this.findMembershipOrThrow(id, tenantId);
     const updated = await this.prisma.tenantMembership.update({
@@ -320,4 +411,16 @@ export class UsersController {
       active: department.active,
     };
   }
+}
+
+function hashToken(token: string) {
+  return createHash("sha256").update(token.trim(), "utf8").digest("hex");
+}
+
+function exposeLocalTokens() {
+  return process.env.NODE_ENV !== "production" || process.env.NEXOS_EXPOSE_LOCAL_TOKENS === "true";
+}
+
+function publicAppUrl() {
+  return (process.env.NEXOS_PUBLIC_APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
 }

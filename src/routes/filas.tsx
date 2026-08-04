@@ -1,71 +1,132 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AppShell, PageContainer } from "@/components/app-shell";
-import { Card, SectionHeader, Badge, Button } from "@/components/ui-kit";
-import { useStore } from "@/lib/mock/store";
-import { Clock, Users, MessageSquareText, PlayCircle } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import type * as React from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Clock, MessageSquareText, PlayCircle, Users } from "lucide-react";
 import { toast } from "sonner";
+import { AppShell, PageContainer } from "@/components/app-shell";
+import { Badge, Button, Card, SectionHeader } from "@/components/ui-kit";
+import { leadApi, organizationApi } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/filas")({
-  head: () => ({ meta: [{ title: "Filas · Nexo" }] }),
-  component: () => {
-    const departamentos = useStore((s) => s.departamentos);
-    const conversas = useStore((s) => s.conversas);
-    const atendentes = useStore((s) => s.atendentes);
-    return (
-      <AppShell>
-        <PageContainer>
-          <SectionHeader
-            title="Filas de atendimento"
-            subtitle="Distribuição de conversas por departamento e regras de roteamento."
-            actions={<Button variant="primary" onClick={() => toast.info("Editor de fila em breve")}>Nova regra</Button>}
-          />
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {departamentos.map((d) => {
-              const doDepto = conversas.filter((c) => c.departamentoId === d.id);
-              const aguardando = doDepto.filter((c) => c.status === "aguardando").length;
-              const atendendo = doDepto.filter((c) => c.status === "atendendo").length;
-              const disp = atendentes.filter((a) => a.departamentoId === d.id && a.status === "online").length;
-              return (
-                <Card key={d.id}>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <span className="h-8 w-1 rounded-full" style={{ backgroundColor: d.cor }} />
-                      <div>
-                        <h3 className="text-sm font-semibold">{d.nome}</h3>
-                        <p className="text-xs text-muted-foreground">{d.descricao}</p>
-                      </div>
-                    </div>
-                    <Badge tone={aguardando > 3 ? "warning" : "success"}>
-                      {aguardando > 3 ? "Sobrecarregada" : "Saudável"}
-                    </Badge>
-                  </div>
-                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-lg border border-border bg-surface-1 p-2">
-                      <Clock className="mx-auto h-3.5 w-3.5 text-warning" />
-                      <div className="mt-1 font-mono text-lg font-semibold">{aguardando}</div>
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Fila</div>
-                    </div>
-                    <div className="rounded-lg border border-border bg-surface-1 p-2">
-                      <MessageSquareText className="mx-auto h-3.5 w-3.5 text-info" />
-                      <div className="mt-1 font-mono text-lg font-semibold">{atendendo}</div>
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Ativas</div>
-                    </div>
-                    <div className="rounded-lg border border-border bg-surface-1 p-2">
-                      <Users className="mx-auto h-3.5 w-3.5 text-success" />
-                      <div className="mt-1 font-mono text-lg font-semibold">{disp}</div>
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Online</div>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                    <Button variant="secondary" size="sm" className="flex-1" onClick={() => toast.success(`Roteamento de ${d.nome} atualizado`)}>Configurar</Button>
-                    <Button variant="outline" size="sm" className="flex-1"><PlayCircle className="h-3.5 w-3.5" /> Simular</Button>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        </PageContainer>
-      </AppShell>
-    );
-  },
+  head: () => ({ meta: [{ title: "Filas - Nexo" }] }),
+  component: Page,
 });
+
+const queueQueryKey = ["nexos", "queues"] as const;
+
+function Page() {
+  const qc = useQueryClient();
+  const { data: departments = [], isLoading: departmentsLoading } = useQuery({
+    queryKey: [...queueQueryKey, "departments"],
+    queryFn: organizationApi.listDepartments,
+  });
+  const { data: leadPage, isLoading: leadsLoading } = useQuery({
+    queryKey: [...queueQueryKey, "leads"],
+    queryFn: () => leadApi.list({ pageSize: 100 }),
+  });
+  const leads = leadPage?.items ?? [];
+  const refresh = () => qc.invalidateQueries({ queryKey: queueQueryKey });
+
+  return (
+    <AppShell>
+      <PageContainer>
+        <SectionHeader
+          title="Filas de atendimento"
+          subtitle={`${leads.length} leads e conversas aguardando distribuicao.`}
+          actions={
+            <Link to="/inbox" search={{ tab: "leads" }}>
+              <Button variant="secondary" size="sm">
+                <MessageSquareText className="h-3.5 w-3.5" /> Abrir inbox
+              </Button>
+            </Link>
+          }
+        />
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {departments.map((department) => {
+            const departmentLeads = leads.filter((lead) => lead.department?.id === department.id);
+            const assigned = departmentLeads.filter((lead) => lead.assignee).length;
+            const waiting = departmentLeads.filter((lead) => !lead.assignee).length;
+            return (
+              <Card key={department.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span
+                      className="h-8 w-1 rounded-full"
+                      style={{ backgroundColor: department.color }}
+                    />
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold">{department.name}</h3>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {department.description ?? "Fila operacional"}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge tone={waiting > 3 ? "warning" : "success"}>
+                    {waiting > 3 ? "Atenção" : "Saudável"}
+                  </Badge>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                  <Metric icon={<Clock className="h-3.5 w-3.5" />} label="Leads" value={waiting} />
+                  <Metric
+                    icon={<MessageSquareText className="h-3.5 w-3.5" />}
+                    label="Atribuídos"
+                    value={assigned}
+                  />
+                  <Metric
+                    icon={<Users className="h-3.5 w-3.5" />}
+                    label="Total"
+                    value={departmentLeads.length}
+                  />
+                </div>
+                <div className="mt-4 space-y-2">
+                  {departmentLeads.slice(0, 3).map((lead) => (
+                    <div
+                      key={lead.id}
+                      className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface-1 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium">{lead.contact.nome}</p>
+                        <p className="truncate text-[11px] text-muted-foreground">
+                          {lead.firstMessagePreview ?? lead.contact.telefone}
+                        </p>
+                      </div>
+                      {!lead.assignee && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            await leadApi.assign(lead.id, { self: true });
+                            toast.success("Lead atribuido");
+                            refresh();
+                          }}
+                        >
+                          <PlayCircle className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            );
+          })}
+          {(departmentsLoading || leadsLoading) && (
+            <Card className="p-6 text-sm text-muted-foreground">Carregando filas...</Card>
+          )}
+        </div>
+      </PageContainer>
+    </AppShell>
+  );
+}
+
+function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface-1 p-2">
+      <div className="mx-auto flex h-4 w-4 items-center justify-center text-muted-foreground">
+        {icon}
+      </div>
+      <div className="mt-1 font-mono text-lg font-semibold">{value}</div>
+      <div className="text-[10px] uppercase text-muted-foreground">{label}</div>
+    </div>
+  );
+}

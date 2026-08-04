@@ -111,8 +111,40 @@ describe("MessagingInboundService", () => {
         tenantId: "tenant-a",
         contactId: "contact-a",
         connectionId: "connection-a",
+        departmentId: "department-a",
         status: ConversationStatus.ABERTA,
       }),
+    });
+    expect(prisma.lead.upsert).toHaveBeenCalledWith({
+      where: {
+        tenantId_conversationId: {
+          tenantId: "tenant-a",
+          conversationId: "conversation-new",
+        },
+      },
+      update: expect.objectContaining({
+        contactId: "contact-a",
+        departmentId: "department-a",
+      }),
+      create: expect.objectContaining({
+        tenantId: "tenant-a",
+        contactId: "contact-a",
+        conversationId: "conversation-new",
+        departmentId: "department-a",
+        status: "NEW",
+      }),
+    });
+    expect(prisma.notification.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          tenantId: "tenant-a",
+          membershipId: "membership-a",
+          departmentId: "department-a",
+          kind: "LEAD_CREATED",
+          entityType: "lead",
+          entityId: "lead-a",
+        }),
+      ],
     });
   });
 });
@@ -134,6 +166,7 @@ function contact() {
     normalizedPhone: "+5511999999999",
     name: "Cliente",
     instance: "tenant-a-suporte",
+    departmentId: "department-a",
   };
 }
 
@@ -143,8 +176,10 @@ function conversation(overrides: Record<string, unknown> = {}) {
     tenantId: "tenant-a",
     contactId: "contact-a",
     connectionId: "connection-a",
+    departmentId: "department-a",
     status: ConversationStatus.ABERTA,
     unreadCount: 0,
+    lastMessageAt: new Date("2026-08-03T11:00:00.000Z"),
     closedAt: null,
     ...overrides,
   };
@@ -156,6 +191,20 @@ function prismaMock() {
     message: { findFirst: vi.fn(), create: vi.fn() },
     contact: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
     conversation: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+    department: { findFirst: vi.fn().mockResolvedValue({ id: "department-a" }) },
+    tenantMembership: { findMany: vi.fn().mockResolvedValue([{ id: "membership-a" }]) },
+    lead: { upsert: vi.fn().mockResolvedValue({ id: "lead-a" }) },
+    notification: {
+      createMany: vi.fn().mockResolvedValue({ count: 1 }),
+      findMany: vi.fn().mockResolvedValue([
+        {
+          id: "notification-a",
+          membershipId: "membership-a",
+          departmentId: "department-a",
+          kind: "LEAD_CREATED",
+        },
+      ]),
+    },
     $transaction: vi.fn(async (callback) => callback(prisma)),
   };
   return prisma;

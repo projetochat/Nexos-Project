@@ -218,6 +218,53 @@ enum MessagingPreferenceChannel {
   WHATSAPP
 }
 
+enum UserInvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum LeadStatus {
+  NEW
+  QUEUED
+  ASSIGNED
+  CONVERTED
+  DISCARDED
+}
+
+enum LeadSource {
+  WHATSAPP
+  MANUAL
+  CAMPAIGN
+  BOT
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
+enum NotificationKind {
+  LEAD_CREATED
+  CONVERSATION_ASSIGNED
+  TICKET_UPDATED
+  CAMPAIGN_COMPLETED
+  SYSTEM
+}
+
+enum AutomationRuleStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum AutomationActionType {
+  BOT_REPLY
+  ASSIGN_DEPARTMENT
+  NOTIFY_TEAM
+}
+
 model Tenant {
   id                          String                       @id @default(uuid())
   name                        String
@@ -262,6 +309,10 @@ model Tenant {
   usageSnapshots              TenantUsageSnapshot[]
   auditLogs                   PlatformAuditLog[]
   impersonationSessions       ImpersonationSession[]
+  invitations                 UserInvitation[]
+  leads                       Lead[]
+  notifications               Notification[]
+  automationRules             AutomationRule[]
 
   @@index([status])
   @@map("tenants")
@@ -281,6 +332,7 @@ model User {
   subscriptions         TenantSubscription[]
   platformAuditLogs     PlatformAuditLog[]
   impersonationSessions ImpersonationSession[]
+  passwordResetTokens   PasswordResetToken[]
 
   @@index([status])
   @@index([platformRole])
@@ -472,6 +524,10 @@ model TenantMembership {
   ticketAttachments  TicketAttachment[]
   createdCampaigns   Campaign[]             @relation("CampaignCreator")
   cancelledCampaigns Campaign[]             @relation("CampaignCanceller")
+  sentInvitations    UserInvitation[]       @relation("InvitationSender")
+  assignedLeads      Lead[]                 @relation("LeadAssignee")
+  notifications      Notification[]
+  automationRules    AutomationRule[]       @relation("AutomationCreator")
 
   @@unique([tenantId, userId])
   @@unique([tenantId, id])
@@ -482,20 +538,23 @@ model TenantMembership {
 }
 
 model Department {
-  id            String                 @id @default(uuid())
-  tenantId      String
-  name          String
-  description   String?
-  color         String                 @default("#6366f1")
-  active        Boolean                @default(true)
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
-  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  members       DepartmentMembership[]
-  contacts      Contact[]
-  conversations Conversation[]
-  quickReplies  QuickReply[]
-  tickets       Ticket[]
+  id              String                 @id @default(uuid())
+  tenantId        String
+  name            String
+  description     String?
+  color           String                 @default("#6366f1")
+  active          Boolean                @default(true)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members         DepartmentMembership[]
+  contacts        Contact[]
+  conversations   Conversation[]
+  quickReplies    QuickReply[]
+  tickets         Ticket[]
+  leads           Lead[]
+  notifications   Notification[]
+  automationRules AutomationRule[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, id])
@@ -533,6 +592,7 @@ model Role {
   tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   memberships TenantMembership[]
   permissions RolePermission[]
+  invitations UserInvitation[]
 
   @@unique([tenantId, key])
   @@unique([tenantId, id])
@@ -607,6 +667,7 @@ model Contact {
   tickets              Ticket[]
   campaignRecipients   CampaignRecipient[]
   messagingPreferences ContactMessagingPreference[]
+  leads                Lead[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, normalizedPhone])
@@ -684,6 +745,7 @@ model Conversation {
   connection           MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
   messages             Message[]
   tickets              Ticket[]
+  lead                 Lead?
 
   @@unique([tenantId, id])
   @@unique([tenantId, protocol])
@@ -951,6 +1013,119 @@ model ContactMessagingPreference {
   @@unique([tenantId, contactId, channel])
   @@index([tenantId, marketingAllowed])
   @@map("contact_messaging_preferences")
+}
+
+model UserInvitation {
+  id                    String               @id @default(uuid())
+  tenantId              String
+  email                 String
+  roleId                String
+  departmentIds         String[]             @default([])
+  tokenHash             String
+  status                UserInvitationStatus @default(PENDING)
+  expiresAt             DateTime
+  invitedByMembershipId String?
+  acceptedAt            DateTime?
+  revokedAt             DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  tenant                Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role                  Role                 @relation(fields: [tenantId, roleId], references: [tenantId, id], onDelete: Restrict)
+  invitedByMembership   TenantMembership?    @relation("InvitationSender", fields: [invitedByMembershipId], references: [id], onDelete: SetNull)
+
+  @@unique([tokenHash])
+  @@index([tenantId, status])
+  @@index([expiresAt])
+  @@map("user_invitations")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model Lead {
+  id                   String            @id @default(uuid())
+  tenantId             String
+  contactId            String
+  conversationId       String
+  departmentId         String?
+  assignedMembershipId String?
+  source               LeadSource        @default(WHATSAPP)
+  status               LeadStatus        @default(NEW)
+  firstMessagePreview  String?
+  convertedAt          DateTime?
+  discardedAt          DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact              Contact           @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+  conversation         Conversation      @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+  department           Department?       @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: SetNull)
+  assignedMembership   TenantMembership? @relation("LeadAssignee", fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, conversationId])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, departmentId, status])
+  @@index([tenantId, assignedMembershipId])
+  @@map("leads")
+}
+
+model Notification {
+  id           String             @id @default(uuid())
+  tenantId     String
+  membershipId String?
+  departmentId String?
+  kind         NotificationKind
+  status       NotificationStatus @default(UNREAD)
+  title        String
+  body         String?
+  entityType   String?
+  entityId     String?
+  createdAt    DateTime           @default(now())
+  readAt       DateTime?
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  membership   TenantMembership?  @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  department   Department?        @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, membershipId, status, createdAt])
+  @@index([tenantId, departmentId, status])
+  @@index([tenantId, kind, createdAt])
+  @@map("notifications")
+}
+
+model AutomationRule {
+  id                    String               @id @default(uuid())
+  tenantId              String
+  name                  String
+  status                AutomationRuleStatus @default(ACTIVE)
+  actionType            AutomationActionType @default(BOT_REPLY)
+  matchText             String
+  responseText          String?
+  departmentId          String?
+  createdByMembershipId String?
+  archivedAt            DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  tenant                Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department            Department?          @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: SetNull)
+  createdByMembership   TenantMembership?    @relation("AutomationCreator", fields: [createdByMembershipId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, status, archivedAt])
+  @@index([tenantId, departmentId])
+  @@map("automation_rules")
 }
 
 model Campaign {

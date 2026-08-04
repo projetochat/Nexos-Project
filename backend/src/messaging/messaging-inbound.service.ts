@@ -1,5 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
-import { ConversationStatus, MessageDirection, MessageStatus, Prisma } from "../generated/prisma";
+import {
+  ConversationStatus,
+  LeadStatus,
+  MessageDirection,
+  MessageStatus,
+  NotificationKind,
+  Prisma,
+} from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { InboundMessageEvent } from "./messaging.contracts";
@@ -42,12 +49,15 @@ export class MessagingInboundService {
         },
         orderBy: { updatedAt: "desc" },
       });
+      const defaultDepartmentId =
+        existingContact?.departmentId ?? (await this.defaultDepartmentId(tx, event.tenantId));
       const contact = existingContact
         ? await tx.contact.update({
             where: { tenantId_id: { tenantId: event.tenantId, id: existingContact.id } },
             data: {
               phone: event.sender.phone,
               name: event.metadata?.displayName ?? event.sender.displayName ?? undefined,
+              departmentId: existingContact.departmentId ?? defaultDepartmentId,
               instance: connection.externalReference ?? existingContact.instance,
             },
           })
@@ -57,12 +67,19 @@ export class MessagingInboundService {
               name: event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone,
               phone: event.sender.phone,
               normalizedPhone: canonicalPhone,
+              departmentId: defaultDepartmentId,
               instance: connection.externalReference,
             },
           });
 
-      const conversation = await this.findOrCreateConversation(tx, event, contact.id, connection);
-      const createdConversation = !conversation.lastMessageAt && conversation.unreadCount === 0;
+      const conversationResult = await this.findOrCreateConversation(
+        tx,
+        event,
+        contact,
+        connection,
+      );
+      const conversation = conversationResult.conversation;
+      const createdConversation = conversationResult.created;
       const preview = event.content ?? mediaPreview(event.type);
       const message = await tx.message.create({
         data: {
@@ -93,11 +110,48 @@ export class MessagingInboundService {
             conversation.status === ConversationStatus.FECHADA ? null : conversation.closedAt,
         },
       });
+      const lead = createdConversation
+        ? await tx.lead.upsert({
+            where: {
+              tenantId_conversationId: {
+                tenantId: event.tenantId,
+                conversationId: conversation.id,
+              },
+            },
+            update: {
+              contactId: contact.id,
+              departmentId: updatedConversation.departmentId,
+              firstMessagePreview: truncatePreview(preview),
+            },
+            create: {
+              tenantId: event.tenantId,
+              contactId: contact.id,
+              conversationId: conversation.id,
+              departmentId: updatedConversation.departmentId,
+              source: "WHATSAPP",
+              status: LeadStatus.NEW,
+              firstMessagePreview: truncatePreview(preview),
+            },
+          })
+        : null;
+      const notifications =
+        createdConversation && lead
+          ? await this.notifyLeadCreated(tx, {
+              tenantId: event.tenantId,
+              leadId: lead.id,
+              conversationId: conversation.id,
+              departmentId: updatedConversation.departmentId,
+              contactName: contact.name,
+            })
+          : [];
       return {
         message,
         duplicate: false,
         contactId: contact.id,
+        conversationId: conversation.id,
         createdConversation,
+        leadId: lead?.id ?? null,
+        notifications,
         unreadCount: updatedConversation.unreadCount,
       };
     });
@@ -130,6 +184,22 @@ export class MessagingInboundService {
         conversationId: result.message.conversationId,
         reason: result.createdConversation ? "inbound.created" : "inbound.updated",
       });
+      if (result.leadId) {
+        this.realtime?.publishLeadCreated({
+          tenantId: event.tenantId,
+          leadId: result.leadId,
+          conversationId: result.conversationId,
+        });
+      }
+      for (const notification of result.notifications ?? []) {
+        this.realtime?.publishNotificationCreated({
+          tenantId: event.tenantId,
+          notificationId: notification.id,
+          membershipId: notification.membershipId,
+          departmentId: notification.departmentId,
+          kind: notification.kind,
+        });
+      }
       this.realtime?.publishUnreadUpdated({
         tenantId: event.tenantId,
         conversationId: result.message.conversationId,
@@ -159,45 +229,107 @@ export class MessagingInboundService {
   private async findOrCreateConversation(
     tx: Prisma.TransactionClient,
     event: InboundMessageEvent,
-    contactId: string,
+    contact: { id: string; departmentId?: string | null },
     connection: { ownerPhoneNormalized: string | null },
   ) {
     const existing = await tx.conversation.findFirst({
       where: {
         tenantId: event.tenantId,
-        contactId,
+        contactId: contact.id,
         connectionId: event.connectionId,
         archivedAt: null,
         status: { not: ConversationStatus.FECHADA },
       },
       orderBy: { updatedAt: "desc" },
     });
-    if (existing) return existing;
+    if (existing) return { conversation: existing, created: false };
 
     if (connection.ownerPhoneNormalized) {
       const existingByOwner = await tx.conversation.findFirst({
         where: {
           tenantId: event.tenantId,
-          contactId,
+          contactId: contact.id,
           archivedAt: null,
           status: { not: ConversationStatus.FECHADA },
           connection: { is: { ownerPhoneNormalized: connection.ownerPhoneNormalized } },
         },
         orderBy: { updatedAt: "desc" },
       });
-      if (existingByOwner) return existingByOwner;
+      if (existingByOwner) return { conversation: existingByOwner, created: false };
     }
 
-    return tx.conversation.create({
+    const created = await tx.conversation.create({
       data: {
         tenantId: event.tenantId,
-        contactId,
+        contactId: contact.id,
         connectionId: event.connectionId,
+        departmentId: contact.departmentId ?? null,
         status: ConversationStatus.ABERTA,
         unreadCount: 0,
         lastMessagePreview: null,
         lastMessageAt: null,
       },
+    });
+    return { conversation: created, created: true };
+  }
+
+  private async defaultDepartmentId(tx: Prisma.TransactionClient, tenantId: string) {
+    const department = await tx.department.findFirst({
+      where: { tenantId, active: true },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    return department?.id ?? null;
+  }
+
+  private async notifyLeadCreated(
+    tx: Prisma.TransactionClient,
+    input: {
+      tenantId: string;
+      leadId: string;
+      conversationId: string;
+      departmentId: string | null;
+      contactName: string;
+    },
+  ) {
+    const recipients = await tx.tenantMembership.findMany({
+      where: {
+        tenantId: input.tenantId,
+        status: "ACTIVE",
+        user: { status: "ACTIVE" },
+        OR: [
+          { role: { key: { in: ["tenant_admin", "supervisor"] } } },
+          ...(input.departmentId
+            ? [{ departments: { some: { departmentId: input.departmentId } } }]
+            : []),
+        ],
+      },
+      select: { id: true },
+      take: 50,
+    });
+    const uniqueRecipients = [...new Set(recipients.map((item) => item.id))];
+    if (uniqueRecipients.length === 0) return [];
+
+    await tx.notification.createMany({
+      data: uniqueRecipients.map((membershipId) => ({
+        tenantId: input.tenantId,
+        membershipId,
+        departmentId: input.departmentId,
+        kind: NotificationKind.LEAD_CREATED,
+        title: "Novo lead recebido",
+        body: truncatePreview(input.contactName),
+        entityType: "lead",
+        entityId: input.leadId,
+      })),
+    });
+    return tx.notification.findMany({
+      where: {
+        tenantId: input.tenantId,
+        entityType: "lead",
+        entityId: input.leadId,
+        kind: NotificationKind.LEAD_CREATED,
+      },
+      select: { id: true, membershipId: true, departmentId: true, kind: true },
     });
   }
 }

@@ -446,3 +446,28 @@ O dominio de Chamados usa `/api/tickets` com JWT e RBAC `tickets.*`.
 Listagem suporta `search`, `status`, `priority`, `departmentId`, `assignedMembershipId`, `requesterContactId`, `customerId`, `page`, `pageSize` e `sort`.
 
 HTML recebido em `descriptionHtml` e comentarios e sempre sanitizado no backend. Anexos usam init/complete e download autenticado; object key e URL assinada nao sao expostos como contrato publico.
+
+## Sprint 14 - Product completion foundation
+
+Convites e reset:
+
+- `POST /api/user-invitations`: tenant admin cria convite com `email`, `roleId` e `departmentIds`.
+- `GET /api/user-invitations`: lista convites do tenant.
+- `PATCH /api/user-invitations/:id/revoke`: revoga convite pendente.
+- `POST /api/auth/invitations/accept`: aceite publico por token, define senha e ativa membership.
+- `POST /api/auth/password/forgot`: inicia reset com resposta segura e sem diferenciar usuario inexistente.
+- `POST /api/auth/password/reset`: consome token de uso unico e troca senha.
+
+Tokens de convite/reset ficam somente como hash no banco. URLs com token aparecem na resposta apenas em modo local controlado.
+
+Leads, notificacoes e automacoes:
+
+- `GET /api/leads`: lista leads tenant-scoped.
+- `PATCH /api/leads/:id/assign`: atribui lead para atendente, atualiza Conversation e emite realtime.
+- `GET /api/notifications`: lista notificacoes do membership atual.
+- `PATCH /api/notifications/:id/read`: marca notificacao como lida.
+- `POST /api/notifications/read-all`: marca notificacoes pendentes como lidas.
+- `GET /api/automations`: lista regras de automacao.
+- `POST /api/automations`: cria regra `BOT_REPLY`, `ASSIGN_DEPARTMENT` ou `NOTIFY_TEAM`.
+- `PATCH /api/automations/:id`: atualiza regra.
+- `DELETE /api/automations/:id`: arquiva regra.
