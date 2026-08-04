@@ -67,6 +67,42 @@ Opt-out WhatsApp foi modelado em `ContactMessagingPreference`. Contatos opt-out 
 
 Start e schedule exigem confirmacao e fila saudavel. O dispatch usa BullMQ com job ids idempotentes compativeis com BullMQ 6 e cria mensagens reais no pipeline oficial de outbox outbound.
 
+## 8.1 Correcao obrigatoria - configuracao numerica do worker
+
+Falha fisica confirmada:
+
+```text
+Error: concurrency must be a finite number greater than 0
+at CampaignDispatchWorker.onModuleInit
+campaign-dispatch.worker.ts:35
+```
+
+Causa raiz: `ConfigService.get<number>("NEXOS_CAMPAIGN_CONCURRENCY")` preservava o valor de ambiente como string em runtime, por exemplo `"1"`. A tipagem generica TypeScript nao converte o valor, e o BullMQ rejeitou `concurrency` string.
+
+Correcao aplicada:
+
+- criado `backend/src/campaigns/campaign-config.ts`;
+- adicionado `readPositiveInteger`;
+- adicionado `readCampaignRuntimeConfig`;
+- adicionado `positiveDelayMs`;
+- removido uso de `ConfigService.get<number>()` no dominio de Campaigns;
+- aplicado parser em `NEXOS_CAMPAIGN_CONCURRENCY`;
+- aplicado parser em `NEXOS_CAMPAIGN_MESSAGES_PER_MINUTE`;
+- aplicado parser em `NEXOS_CAMPAIGN_BATCH_SIZE`;
+- aplicado parser em `NEXOS_CAMPAIGN_MAX_RECIPIENTS`;
+- delays de schedule/reconcile/reschedule passam por clamp finito e positivo;
+- attempts, retry backoff e rate-limit duration permanecem literais numericos, sem dependencia de env string.
+
+Startup sanitizado observado em teste real com worker habilitado:
+
+```text
+event=campaign.worker.config
+campaignWorkerConcurrency=1
+campaignMessagesPerMinute=5
+campaignBatchSize=5
+campaignMaxRecipients=5
+```
+
 ## 9. Frontend
 
 `src/routes/campanhas.tsx` foi reescrito para consumir `campaignApi`, `connectionsApi` e `crmApi`.
@@ -118,12 +154,13 @@ Reteste fisico do container com backend persistente em background nao foi conclu
 Resultados executados:
 
 - `bun run --cwd backend build`: PASS
-- `bun run --cwd backend test`: PASS - 20 arquivos, 118 testes
+- `bun run --cwd backend test`: PASS - 22 arquivos, 135 testes
 - `bun run typecheck`: PASS
 - `bun run build`: PASS
 - `bun run test:campaign-legacy-runtime`: PASS
 - `bun run lint`: PASS dentro do baseline legado
 - `bun run verify`: PASS
+- `bun run verify`: PASS em segunda execucao consecutiva
 
 Cobertura adicionada:
 
@@ -135,6 +172,11 @@ Cobertura adicionada:
 - opt-out;
 - RBAC negando agent em create;
 - banco E2E dedicado via `NEXOS_TEST_DATABASE_URL` ou fallback `nexos_1200`.
+- parser numerico: ausente, `"1"`, `"5"`, numero real, `"0"`, `"-1"`, `"abc"`, string vazia, whitespace, Infinity e NaN;
+- bootstrap do worker com env string;
+- BullMQ recebendo `concurrency` numerico;
+- `limiter.max` numerico positivo;
+- delays finitos e nao negativos.
 
 ## 13. Teste fisico pendente
 

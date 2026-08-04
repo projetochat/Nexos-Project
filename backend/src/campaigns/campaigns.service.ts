@@ -33,6 +33,7 @@ import { OutboxDispatcherService } from "../queue/outbox-dispatcher.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import type { RealtimeServerEvent } from "../realtime/realtime-events";
+import { positiveDelayMs, readCampaignRuntimeConfig } from "./campaign-config";
 import { CampaignDispatchQueue } from "./campaign-dispatch.queue";
 import {
   AudiencePreviewDto,
@@ -285,7 +286,7 @@ export class CampaignsService {
     );
     await this.campaignQueue.enqueue(
       { kind: "campaign.prepare", tenantId: current.tenantId, campaignId: id },
-      { delay: Math.max(scheduledAt.getTime() - Date.now(), 0) },
+      { delay: positiveDelayMs(scheduledAt.getTime()) },
     );
     return this.serialize(scheduled);
   }
@@ -517,7 +518,7 @@ export class CampaignsService {
     for (const campaign of campaigns) {
       await this.campaignQueue.enqueue(
         { kind: "campaign.prepare", tenantId: campaign.tenantId, campaignId: campaign.id },
-        { delay: Math.max((campaign.scheduledAt?.getTime() ?? Date.now()) - Date.now(), 0) },
+        { delay: positiveDelayMs(campaign.scheduledAt?.getTime() ?? Date.now()) },
       );
     }
     return { scheduled: campaigns.length };
@@ -533,7 +534,7 @@ export class CampaignsService {
     ) {
       await this.campaignQueue.enqueue(
         { kind: "campaign.prepare", tenantId: campaign.tenantId, campaignId },
-        { delay: campaign.scheduledAt.getTime() - Date.now() },
+        { delay: positiveDelayMs(campaign.scheduledAt.getTime()) },
       );
       return { rescheduled: true };
     }
@@ -544,10 +545,7 @@ export class CampaignsService {
       data: { status: CampaignStatus.RUNNING, startedAt: campaign.startedAt ?? new Date() },
     });
     if (claimed.count !== 1) return { skipped: true };
-    const batchSize = Math.min(
-      Math.max(this.config.get<number>("NEXOS_CAMPAIGN_BATCH_SIZE") ?? 25, 1),
-      100,
-    );
+    const batchSize = readCampaignRuntimeConfig(this.config).batchSize;
     const recipients = await this.prisma.campaignRecipient.findMany({
       where: { campaignId: campaign.id, status: CampaignRecipientStatus.PENDING },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -1164,7 +1162,7 @@ export class CampaignsService {
   }
 
   private maxRecipients() {
-    return Math.max(this.config.get<number>("NEXOS_CAMPAIGN_MAX_RECIPIENTS") ?? 25, 1);
+    return readCampaignRuntimeConfig(this.config).maxRecipients;
   }
 
   private publishCampaign(campaign: Campaign, event: RealtimeServerEvent) {

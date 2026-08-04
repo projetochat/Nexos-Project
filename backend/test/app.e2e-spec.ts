@@ -34,6 +34,10 @@ describe("Nexos API organization and RBAC", () => {
       process.env.JWT_REFRESH_SECRET ?? "test-refresh-secret-minimum-32-chars";
     process.env.EVOLUTION_WEBHOOK_SECRET =
       process.env.EVOLUTION_WEBHOOK_SECRET ?? "test-evolution-webhook-secret";
+    process.env.NEXOS_CAMPAIGN_CONCURRENCY = "1";
+    process.env.NEXOS_CAMPAIGN_MESSAGES_PER_MINUTE = "5";
+    process.env.NEXOS_CAMPAIGN_BATCH_SIZE = "5";
+    process.env.NEXOS_CAMPAIGN_MAX_RECIPIENTS = "5";
 
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true }), AppModule],

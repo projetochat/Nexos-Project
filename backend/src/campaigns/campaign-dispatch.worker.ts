@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Job, Worker } from "bullmq";
+import { readCampaignRuntimeConfig } from "./campaign-config";
 import {
   CAMPAIGN_DISPATCH_QUEUE,
   CampaignDispatchJob,
@@ -27,14 +28,22 @@ export class CampaignDispatchWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
     await this.campaigns.reconcileScheduledCampaigns();
+    const runtimeConfig = readCampaignRuntimeConfig(this.config);
+    this.logger.log({
+      event: "campaign.worker.config",
+      campaignWorkerConcurrency: runtimeConfig.concurrency,
+      campaignMessagesPerMinute: runtimeConfig.messagesPerMinute,
+      campaignBatchSize: runtimeConfig.batchSize,
+      campaignMaxRecipients: runtimeConfig.maxRecipients,
+    });
     this.worker = new Worker<CampaignDispatchJob>(
       CAMPAIGN_DISPATCH_QUEUE,
       (job) => this.handle(job),
       {
         connection: this.redis.createConnection("nexos-campaign-worker", { blocking: true }),
-        concurrency: this.config.get<number>("NEXOS_CAMPAIGN_CONCURRENCY") ?? 2,
+        concurrency: runtimeConfig.concurrency,
         limiter: {
-          max: this.config.get<number>("NEXOS_CAMPAIGN_MESSAGES_PER_MINUTE") ?? 12,
+          max: runtimeConfig.messagesPerMinute,
           duration: 60_000,
         },
       },
