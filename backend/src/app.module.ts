@@ -11,6 +11,7 @@ import { QuickRepliesModule } from "./quick-replies/quick-replies.module";
 import { QueueModule } from "./queue/queue.module";
 import { RealtimeModule } from "./realtime/realtime.module";
 import { RolesModule } from "./roles/roles.module";
+import { TicketsModule } from "./tickets/tickets.module";
 import { UsersModule } from "./users/users.module";
 
 @Module({
@@ -27,6 +28,7 @@ import { UsersModule } from "./users/users.module";
     RealtimeModule,
     MessagingModule,
     ConversationsModule,
+    TicketsModule,
     HealthModule,
   ],
 })

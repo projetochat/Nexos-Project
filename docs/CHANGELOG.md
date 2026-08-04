@@ -253,3 +253,10 @@
 - Modal de Novo/Editar contato passa a exibir somente Connections Evolution conectadas.
 - Seed de homologacao cria Admin e Atendente idempotentes.
 - Reconcile de status da Connection Evolution persiste owner identity quando a Evolution informa `ownerJid`.
+# 2026-08-04 - Sprint 11 Ticketing Domain, Secure Content & Attachments
+
+- Criado dominio oficial `Ticket`/`TicketComment`/`TicketHistory`/`TicketAttachment` no Prisma e NestJS.
+- Migrada rota `/chamados` para Nexos API, removendo Supabase/MVP/contentEditable/insertHTML/data URL do runtime operacional.
+- Adicionado storage privado local/R2 boundary, sanitizacao server-side de HTML, permississoes `tickets.*` e eventos realtime `ticket.*`.
+- Migration aplicada sem reset em `nexos_0801` e `nexos_0802`; migration limpa validada em `nexos_1100`.
+- Gate permanece `NOT READY FOR SPRINT 12` ate homologacao fisica completa admin/atendente/XSS/anexos/multiusuario.

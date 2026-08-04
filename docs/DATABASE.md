@@ -385,3 +385,8 @@ Validacao fisica:
 - `nexos_1000`: drop/create, `prisma migrate deploy`, seed e smoke SQL de duplicata global.
 - `nexos_0802`: `prisma migrate deploy` e seed idempotente sem reset.
 - `nexos_0801`: migration aplicada para suite regressiva automatizada.
+# Sprint 11 - Ticketing
+
+Migration `20260804030000_ticketing_secure_attachments` cria `tickets`, `ticket_comments`, `ticket_history`, `ticket_attachments` e `ticket_protocol_counters`, alem dos enums de status, prioridade, categoria e anexos.
+
+Indices principais cobrem `tenantId + status`, `tenantId + departmentId`, `tenantId + assignedMembershipId`, `tenantId + protocol`, `tenantId + createdAt`, `tenantId + requesterContactId`, `tenantId + customerId` e linhas filhas por `ticketId + createdAt`.

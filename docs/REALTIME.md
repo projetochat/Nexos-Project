@@ -166,3 +166,8 @@ Não enviar pelo socket:
 - telefone completo sem necessidade
 - histórico completo
 - dados de outro tenant
+# Eventos de Tickets
+
+Sprint 11 adiciona eventos `ticket.created`, `ticket.updated`, `ticket.status.updated`, `ticket.assignment.updated`, `ticket.comment.created`, `ticket.attachment.created` e `ticket.attachment.removed`.
+
+REST/PostgreSQL seguem como fonte da verdade; falha de realtime nao desfaz operacoes de Ticket.

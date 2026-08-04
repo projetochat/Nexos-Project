@@ -3,6 +3,7 @@ export const realtimeRooms = {
   membership: (membershipId: string) => `membership:${membershipId}`,
   department: (departmentId: string) => `department:${departmentId}`,
   conversation: (conversationId: string) => `conversation:${conversationId}`,
+  ticket: (ticketId: string) => `ticket:${ticketId}`,
 };
 
 export function conversationRoomId(room: string) {

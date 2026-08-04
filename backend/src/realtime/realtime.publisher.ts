@@ -95,6 +95,67 @@ export class RealtimePublisher {
   publishContactTagsUpdated(input: { tenantId: string; contactId: string; tags: unknown[] }) {
     this.realtime.publish({ tenantId: input.tenantId }, "contact.tags.updated", input);
   }
+
+  publishTicketCreated(input: { tenantId: string; ticketId: string; ticket: unknown }) {
+    this.realtime.publish({ tenantId: input.tenantId }, "ticket.created", input);
+    this.realtime.publish({ ticketId: input.ticketId }, "ticket.created", input);
+  }
+
+  publishTicketUpdated(input: { tenantId: string; ticketId: string; reason: string }) {
+    this.realtime.publish({ tenantId: input.tenantId }, "ticket.updated", input);
+    this.realtime.publish({ ticketId: input.ticketId }, "ticket.updated", input);
+  }
+
+  publishTicketStatusUpdated(input: {
+    tenantId: string;
+    ticketId: string;
+    status: string;
+    updatedAt: Date | string;
+  }) {
+    const payload = { ...input, updatedAt: dateString(input.updatedAt) };
+    this.realtime.publish({ tenantId: input.tenantId }, "ticket.status.updated", payload);
+    this.realtime.publish({ ticketId: input.ticketId }, "ticket.status.updated", payload);
+  }
+
+  publishTicketAssignmentUpdated(input: {
+    tenantId: string;
+    ticketId: string;
+    assignedMembershipId: string | null;
+    updatedAt: Date | string;
+  }) {
+    const payload = { ...input, updatedAt: dateString(input.updatedAt) };
+    this.realtime.publish({ tenantId: input.tenantId }, "ticket.assignment.updated", payload);
+    this.realtime.publish({ ticketId: input.ticketId }, "ticket.assignment.updated", payload);
+  }
+
+  publishTicketCommentCreated(input: { tenantId: string; ticketId: string; comment: unknown }) {
+    this.realtime.publish({ ticketId: input.ticketId }, "ticket.comment.created", input);
+    this.realtime.publish({ tenantId: input.tenantId }, "ticket.comment.created", {
+      tenantId: input.tenantId,
+      ticketId: input.ticketId,
+    });
+  }
+
+  publishTicketAttachmentCreated(input: {
+    tenantId: string;
+    ticketId: string;
+    attachment: unknown;
+  }) {
+    this.realtime.publish({ ticketId: input.ticketId }, "ticket.attachment.created", input);
+    this.realtime.publish({ tenantId: input.tenantId }, "ticket.attachment.created", {
+      tenantId: input.tenantId,
+      ticketId: input.ticketId,
+    });
+  }
+
+  publishTicketAttachmentRemoved(input: {
+    tenantId: string;
+    ticketId: string;
+    attachmentId: string;
+  }) {
+    this.realtime.publish({ ticketId: input.ticketId }, "ticket.attachment.removed", input);
+    this.realtime.publish({ tenantId: input.tenantId }, "ticket.attachment.removed", input);
+  }
 }
 
 function dateString(value: Date | string) {

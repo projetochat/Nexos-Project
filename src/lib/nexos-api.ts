@@ -226,6 +226,61 @@ export type ApiMessagingConnection = {
   qrCodeBase64?: string | null;
 };
 
+export type ApiTicketStatus =
+  | "ABERTO"
+  | "EM_ANDAMENTO"
+  | "AGUARDANDO"
+  | "RESOLVIDO"
+  | "FECHADO"
+  | "CANCELADO";
+
+export type ApiTicketPriority = "BAIXA" | "NORMAL" | "ALTA" | "URGENTE";
+export type ApiTicketCategory = "SUPORTE" | "DEV" | "FINANCEIRO" | "OPERACIONAL";
+
+export type ApiTicket = {
+  id: string;
+  protocol: string;
+  title: string;
+  descriptionText?: string;
+  descriptionHtmlSanitized?: string;
+  status: ApiTicketStatus;
+  priority: ApiTicketPriority;
+  category: ApiTicketCategory;
+  department: { id: string; name: string; color: string };
+  requesterContact: { id: string; name: string; email: string | null; phone: string } | null;
+  customer: { id: string; name: string; email: string | null; phone: string | null } | null;
+  conversation: { id: string; protocol: string | null; status: string } | null;
+  assignedMembership: { id: string; user: { id: string; name: string; email: string } } | null;
+  createdByMembership: { id: string; user: { id: string; name: string; email: string } };
+  commentsCount: number;
+  attachmentsCount: number;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  archivedAt?: string | null;
+};
+
+export type ApiTicketComment = {
+  id: string;
+  bodyText: string;
+  bodyHtmlSanitized: string | null;
+  internal: boolean;
+  createdAt: string;
+  updatedAt: string;
+  authorMembership: { id: string; user: { id: string; name: string; email: string } };
+};
+
+export type ApiTicketAttachment = {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: "PENDING" | "READY" | "DELETED" | "REJECTED";
+  scanStatus: "NOT_SCANNED" | "CLEAN" | "BLOCKED";
+  createdAt: string;
+  deletedAt: string | null;
+};
+
 type ListParams = {
   q?: string;
   page?: number;
@@ -568,6 +623,96 @@ export const connectionsApi = {
       `/messaging/connections/${id}`,
       { method: "DELETE" },
     ),
+};
+
+export const ticketApi = {
+  list: (
+    params: {
+      search?: string;
+      status?: ApiTicketStatus;
+      priority?: ApiTicketPriority;
+      departmentId?: string;
+      assignedMembershipId?: string;
+      requesterContactId?: string;
+      customerId?: string;
+      page?: number;
+      pageSize?: number;
+      sort?: string;
+    } = {},
+  ) => apiRequest<PaginatedResponse<ApiTicket>>(`/tickets${queryString(params)}`),
+  get: (id: string) => apiRequest<ApiTicket>(`/tickets/${id}`),
+  create: (data: {
+    title: string;
+    descriptionHtml: string;
+    priority?: ApiTicketPriority;
+    category?: ApiTicketCategory;
+    departmentId: string;
+    assignedMembershipId?: string | null;
+    requesterContactId?: string | null;
+    customerId?: string | null;
+    conversationId?: string | null;
+  }) => apiRequest<ApiTicket>("/tickets", { method: "POST", body: JSON.stringify(data) }),
+  update: (
+    id: string,
+    data: Partial<Pick<ApiTicket, "title" | "priority" | "category">> & {
+      descriptionHtml?: string;
+      requesterContactId?: string | null;
+      customerId?: string | null;
+      conversationId?: string | null;
+    },
+  ) => apiRequest<ApiTicket>(`/tickets/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  updateStatus: (id: string, status: ApiTicketStatus) =>
+    apiRequest<ApiTicket>(`/tickets/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  updateAssignee: (id: string, assignedMembershipId?: string | null) =>
+    apiRequest<ApiTicket>(`/tickets/${id}/assignee`, {
+      method: "PATCH",
+      body: JSON.stringify({ assignedMembershipId }),
+    }),
+  updateDepartment: (id: string, departmentId: string) =>
+    apiRequest<ApiTicket>(`/tickets/${id}/department`, {
+      method: "PATCH",
+      body: JSON.stringify({ departmentId }),
+    }),
+  archive: (id: string) => apiRequest<ApiTicket>(`/tickets/${id}`, { method: "DELETE" }),
+  comments: (id: string) => apiRequest<ApiTicketComment[]>(`/tickets/${id}/comments`),
+  createComment: (id: string, bodyHtml: string) =>
+    apiRequest<ApiTicketComment>(`/tickets/${id}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ bodyHtml, internal: true }),
+    }),
+  attachments: (id: string) => apiRequest<ApiTicketAttachment[]>(`/tickets/${id}/attachments`),
+  initAttachment: (
+    id: string,
+    data: { originalName: string; mimeType: string; sizeBytes: number },
+  ) =>
+    apiRequest<{ attachment: ApiTicketAttachment; uploadUrl: string; objectKey: string }>(
+      `/tickets/${id}/attachments/init`,
+      { method: "POST", body: JSON.stringify(data) },
+    ),
+  completeAttachment: (id: string, attachmentId: string, contentBase64: string) =>
+    apiRequest<ApiTicketAttachment>(`/tickets/${id}/attachments/${attachmentId}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ contentBase64 }),
+    }),
+  deleteAttachment: (id: string, attachmentId: string) =>
+    apiRequest<ApiTicketAttachment>(`/tickets/${id}/attachments/${attachmentId}`, {
+      method: "DELETE",
+    }),
+  download: async (id: string, attachmentId: string) => {
+    let response = await fetchNexos(
+      `/tickets/${id}/attachments/${attachmentId}/download`,
+      {},
+      true,
+    );
+    if (response.status === 401 && (await refreshAccessToken())) {
+      response = await fetchNexos(`/tickets/${id}/attachments/${attachmentId}/download`, {}, true);
+    }
+    if (!response.ok) throw new Error(await readError(response));
+    return response.blob();
+  },
 };
 
 export function clearNexosApiSession() {

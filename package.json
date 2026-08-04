@@ -20,6 +20,7 @@
     "lint": "node scripts/check-eslint-baseline.mjs",
     "lint:raw": "eslint .",
     "test:inbox-legacy-runtime": "node scripts/check-inbox-legacy-runtime.mjs",
+    "test:ticket-legacy-runtime": "node scripts/check-ticket-legacy-runtime.mjs",
     "test:security": "vitest run src/lib/sanitize-html.test.ts --environment jsdom",
     "typecheck": "tsc --noEmit",
     "verify": "node scripts/verify.mjs",

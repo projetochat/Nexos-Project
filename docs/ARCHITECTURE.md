@@ -338,3 +338,6 @@ sem envio automatico.
 
 Eventos realtime novos (`contact.updated`, `contact.tags.updated`) servem apenas para atualizar a UI; o
 estado final continua vindo das queries REST.
+# Ticketing
+
+Fluxo: Frontend `/chamados` -> Nexos API -> NestJS -> Prisma/PostgreSQL -> Storage Provider -> Realtime Publisher -> Socket.io. Supabase/MVP nao fazem parte do runtime operacional de Chamados.

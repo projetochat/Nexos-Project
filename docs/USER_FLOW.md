@@ -205,3 +205,6 @@ Composer -> seleciona Quick Reply -> insere texto -> usuario envia mensagem sepa
 
 Admin gerencia catalogos e cria Conversation no tenant inteiro. Agente usa Tags existentes e le Quick
 Replies, sem botoes de criacao/edicao de catalogo quando nao possui as permissions de manage.
+# Fluxo de Chamados
+
+Usuario autorizado cria Ticket, seleciona Department, prioridade, categoria e vinculos opcionais de Contact/Customer/Conversation. Comentarios ficam internos ao time. Anexos sao baixados por endpoint autenticado.

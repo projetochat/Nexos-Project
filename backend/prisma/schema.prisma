@@ -81,6 +81,42 @@ enum MessagingConnectionStatus {
   ERROR
 }
 
+enum TicketStatus {
+  ABERTO
+  EM_ANDAMENTO
+  AGUARDANDO
+  RESOLVIDO
+  FECHADO
+  CANCELADO
+}
+
+enum TicketPriority {
+  BAIXA
+  NORMAL
+  ALTA
+  URGENTE
+}
+
+enum TicketCategory {
+  SUPORTE
+  DEV
+  FINANCEIRO
+  OPERACIONAL
+}
+
+enum TicketAttachmentStatus {
+  PENDING
+  READY
+  DELETED
+  REJECTED
+}
+
+enum AttachmentScanStatus {
+  NOT_SCANNED
+  CLEAN
+  BLOCKED
+}
+
 model Tenant {
   id                          String                       @id @default(uuid())
   name                        String
@@ -99,20 +135,26 @@ model Tenant {
   messagingConnections        MessagingConnection[]
   outboxEvents                OutboxEvent[]
   conversationProtocolCounter ConversationProtocolCounter?
+  ticketProtocolCounter       TicketProtocolCounter?
+  tickets                     Ticket[]
+  ticketComments              TicketComment[]
+  ticketHistory               TicketHistory[]
+  ticketAttachments           TicketAttachment[]
 
   @@map("tenants")
 }
 
 model User {
-  id           String             @id @default(uuid())
-  email        String             @unique
-  name         String
-  passwordHash String
-  status       UserStatus         @default(ACTIVE)
-  platformRole PlatformRole       @default(USER)
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  memberships  TenantMembership[]
+  id               String             @id @default(uuid())
+  email            String             @unique
+  name             String
+  passwordHash     String
+  status           UserStatus         @default(ACTIVE)
+  platformRole     PlatformRole       @default(USER)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  memberships      TenantMembership[]
+  requestedTickets Ticket[]
 
   @@index([status])
   @@index([platformRole])
@@ -120,20 +162,26 @@ model User {
 }
 
 model TenantMembership {
-  id            String                 @id @default(uuid())
-  tenantId      String
-  userId        String
-  roleId        String
-  status        MembershipStatus       @default(ACTIVE)
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
-  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role          Role                   @relation(fields: [tenantId, roleId], references: [tenantId, id])
-  departments   DepartmentMembership[]
-  conversations Conversation[]
-  messages      Message[]
-  quickReplies  QuickReply[]
+  id                String                 @id @default(uuid())
+  tenantId          String
+  userId            String
+  roleId            String
+  status            MembershipStatus       @default(ACTIVE)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role              Role                   @relation(fields: [tenantId, roleId], references: [tenantId, id])
+  departments       DepartmentMembership[]
+  conversations     Conversation[]
+  messages          Message[]
+  quickReplies      QuickReply[]
+  assignedTickets   Ticket[]               @relation("TicketAssignee")
+  createdTickets    Ticket[]               @relation("TicketCreator")
+  closedTickets     Ticket[]               @relation("TicketCloser")
+  ticketComments    TicketComment[]
+  ticketHistory     TicketHistory[]
+  ticketAttachments TicketAttachment[]
 
   @@unique([tenantId, userId])
   @@unique([tenantId, id])
@@ -157,6 +205,7 @@ model Department {
   contacts      Contact[]
   conversations Conversation[]
   quickReplies  QuickReply[]
+  tickets       Ticket[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, id])
@@ -235,6 +284,7 @@ model Customer {
   updatedAt              DateTime  @updatedAt
   tenant                 Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contacts               Contact[]
+  tickets                Ticket[]
 
   @@unique([tenantId, id])
   @@index([tenantId, name])
@@ -263,6 +313,7 @@ model Contact {
   department      Department?         @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   tags            ContactTag[]
   conversations   Conversation[]
+  tickets         Ticket[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, normalizedPhone])
@@ -339,6 +390,7 @@ model Conversation {
   assignedMembership   TenantMembership?    @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
   connection           MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
   messages             Message[]
+  tickets              Ticket[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, protocol])
@@ -453,4 +505,130 @@ model QuickReply {
   @@index([tenantId, archivedAt])
   @@index([tenantId, departmentId])
   @@map("quick_replies")
+}
+
+model TicketProtocolCounter {
+  tenantId   String   @id
+  lastNumber Int      @default(0)
+  updatedAt  DateTime @updatedAt
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("ticket_protocol_counters")
+}
+
+model Ticket {
+  id                       String             @id @default(uuid())
+  tenantId                 String
+  number                   Int
+  protocol                 String
+  title                    String
+  descriptionText          String
+  descriptionHtmlSanitized String
+  status                   TicketStatus       @default(ABERTO)
+  priority                 TicketPriority     @default(NORMAL)
+  category                 TicketCategory     @default(SUPORTE)
+  requesterUserId          String?
+  requesterContactId       String?
+  customerId               String?
+  conversationId           String?
+  departmentId             String
+  assignedMembershipId     String?
+  createdByMembershipId    String
+  closedByMembershipId     String?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+  closedAt                 DateTime?
+  archivedAt               DateTime?
+  tenant                   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requesterUser            User?              @relation(fields: [requesterUserId], references: [id], onDelete: SetNull)
+  requesterContact         Contact?           @relation(fields: [requesterContactId], references: [id], onDelete: SetNull)
+  customer                 Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  conversation             Conversation?      @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Restrict)
+  department               Department         @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Restrict)
+  assignedMembership       TenantMembership?  @relation("TicketAssignee", fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+  createdByMembership      TenantMembership   @relation("TicketCreator", fields: [createdByMembershipId], references: [id], onDelete: Restrict)
+  closedByMembership       TenantMembership?  @relation("TicketCloser", fields: [closedByMembershipId], references: [id], onDelete: SetNull)
+  comments                 TicketComment[]
+  history                  TicketHistory[]
+  attachments              TicketAttachment[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, protocol])
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@index([tenantId, departmentId])
+  @@index([tenantId, assignedMembershipId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, requesterContactId])
+  @@index([tenantId, customerId])
+  @@index([tenantId, conversationId])
+  @@map("tickets")
+}
+
+model TicketComment {
+  id                 String             @id @default(uuid())
+  tenantId           String
+  ticketId           String
+  authorMembershipId String
+  bodyText           String
+  bodyHtmlSanitized  String?
+  internal           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  archivedAt         DateTime?
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket             Ticket             @relation(fields: [tenantId, ticketId], references: [tenantId, id], onDelete: Cascade)
+  authorMembership   TenantMembership   @relation(fields: [authorMembershipId], references: [id], onDelete: Restrict)
+  attachments        TicketAttachment[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, ticketId, createdAt])
+  @@index([authorMembershipId])
+  @@map("ticket_comments")
+}
+
+model TicketHistory {
+  id                String            @id @default(uuid())
+  tenantId          String
+  ticketId          String
+  actorMembershipId String?
+  event             String
+  fromValue         String?
+  toValue           String?
+  metadata          Json?
+  createdAt         DateTime          @default(now())
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket            Ticket            @relation(fields: [tenantId, ticketId], references: [tenantId, id], onDelete: Cascade)
+  actorMembership   TenantMembership? @relation(fields: [actorMembershipId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, ticketId, createdAt])
+  @@index([tenantId, event])
+  @@map("ticket_history")
+}
+
+model TicketAttachment {
+  id                     String                 @id @default(uuid())
+  tenantId               String
+  ticketId               String
+  commentId              String?
+  uploadedByMembershipId String
+  storageProvider        String
+  objectKey              String
+  originalNameSanitized  String
+  mimeType               String
+  sizeBytes              Int
+  checksum               String?
+  status                 TicketAttachmentStatus @default(PENDING)
+  scanStatus             AttachmentScanStatus   @default(NOT_SCANNED)
+  createdAt              DateTime               @default(now())
+  deletedAt              DateTime?
+  tenant                 Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket                 Ticket                 @relation(fields: [tenantId, ticketId], references: [tenantId, id], onDelete: Cascade)
+  comment                TicketComment?         @relation(fields: [tenantId, commentId], references: [tenantId, id], onDelete: Restrict)
+  uploadedByMembership   TenantMembership       @relation(fields: [uploadedByMembershipId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, ticketId, createdAt])
+  @@index([tenantId, status])
+  @@map("ticket_attachments")
 }

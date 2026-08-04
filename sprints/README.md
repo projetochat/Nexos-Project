@@ -12,6 +12,7 @@ Indice permanente dos relatorios de sprint.
 | 04     | Conversations                                                | READY              | 2026-07-29 | e576cde             | TBD                 | [sprint-04/RELATORIO.md](./sprint-04/RELATORIO.md)     |
 | 05     | Messages & Messaging Core                                    | READY              | 2026-07-30 | de66c9a             | TBD                 | [sprint-05/RELATORIO.md](./sprint-05/RELATORIO.md)     |
 | 09     | Realtime messaging, presence e live inbox                    | NOT READY          | 2026-08-03 | c5b27a3             | TBD                 | [sprint-09/RELATORIO.md](./sprint-09/RELATORIO.md)     |
+| 11     | Ticketing Domain, Secure Content & Attachments               | NOT READY          | 2026-08-04 | 35bea7d             | TBD                 | [sprint-11/RELATORIO.md](./sprint-11/RELATORIO.md)     |
 
 ## Observacao de rastreabilidade
 

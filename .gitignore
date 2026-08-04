@@ -25,6 +25,7 @@ build/
 tmp/
 temp/
 *.tmp
+backend/.nexos-storage/
 sprint-*-baseline-eslint.json
 sprint-*-after-eslint.json
 

@@ -180,3 +180,6 @@ Somente regras comprovadas no codigo.
 - Agentes podem ler Quick Replies e inserir conteudo no composer, mas nao gerenciar o catalogo.
 - Rotas operacionais da Inbox, Tags e Quick Replies nao podem voltar a `@/lib/mvp`, Supabase, mock store ou
   aliases legados.
+# Regras de Tickets
+
+Todo Ticket operacional pertence a um Department. Protocolos sao gerados server-side por tenant. Fechamento preenche `closedAt` e `closedByMembershipId`; reabertura limpa esses campos. Historico operacional nao e editavel pelo usuario comum.

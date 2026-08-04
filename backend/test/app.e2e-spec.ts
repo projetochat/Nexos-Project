@@ -1667,6 +1667,105 @@ describe("Nexos API organization and RBAC", () => {
       });
   });
 
+  it("manages tickets with sanitized content, comments, attachments and tenant isolation", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const orbitToken = await login("admin-orbit@nexo.app", "demo1234", "orbit");
+    const department = await prisma.department.findFirstOrThrow({
+      where: { tenant: { slug: "acme" }, name: "Suporte" },
+    });
+    const contact = await prisma.contact.findFirstOrThrow({
+      where: { tenant: { slug: "acme" }, archivedAt: null },
+    });
+    const agent = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenant: { slug: "acme" }, user: { email: "atendente@nexo.app" } },
+    });
+    const suffix = Date.now().toString(36);
+
+    const created = await request(app.getHttpServer())
+      .post("/api/tickets")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        title: `Ticket Sprint 11 ${suffix}`,
+        descriptionHtml:
+          '<p>Falha critica</p><script>alert(1)</script><img src=x onerror=alert(1)><a href="javascript:alert(1)">bad</a><a href="https://nexo.local/ticket">ok</a>',
+        priority: "ALTA",
+        category: "SUPORTE",
+        departmentId: department.id,
+        requesterContactId: contact.id,
+        assignedMembershipId: agent.id,
+      })
+      .expect(201);
+
+    expect(created.body.protocol).toMatch(/^TKT-\d{6}$/);
+    expect(created.body.descriptionHtmlSanitized).not.toContain("<script");
+    expect(created.body.descriptionHtmlSanitized).not.toContain("onerror");
+    expect(created.body.descriptionHtmlSanitized).not.toContain("javascript:");
+    expect(created.body.descriptionHtmlSanitized).toContain('rel="noopener noreferrer"');
+
+    await request(app.getHttpServer())
+      .get(`/api/tickets/${created.body.id}`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.id).toBe(created.body.id);
+        expect(body.assignedMembership.id).toBe(agent.id);
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/tickets/${created.body.id}`)
+      .set("Authorization", `Bearer ${orbitToken}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .patch(`/api/tickets/${created.body.id}/status`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ status: "FECHADO" })
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body.code).toBe("TICKET_STATUS_TRANSITION_INVALID");
+      });
+
+    await request(app.getHttpServer())
+      .patch(`/api/tickets/${created.body.id}/status`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ status: "EM_ANDAMENTO" })
+      .expect(200);
+
+    const comment = await request(app.getHttpServer())
+      .post(`/api/tickets/${created.body.id}/comments`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({ bodyHtml: '<p>Comentario interno</p><iframe src="x"></iframe>' })
+      .expect(201);
+    expect(comment.body.bodyText).toBe("Comentario interno");
+    expect(comment.body.bodyHtmlSanitized).not.toContain("iframe");
+
+    const init = await request(app.getHttpServer())
+      .post(`/api/tickets/${created.body.id}/attachments/init`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ originalName: "../evidencia.txt", mimeType: "text/plain", sizeBytes: 5 })
+      .expect(201);
+    expect(init.body.attachment.originalName).toBe("evidencia.txt");
+    expect(init.body.objectKey).not.toContain("..");
+
+    await request(app.getHttpServer())
+      .post(`/api/tickets/${created.body.id}/attachments/${init.body.attachment.id}/complete`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ contentBase64: Buffer.from("hello").toString("base64") })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.status).toBe("READY");
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/tickets/${created.body.id}/attachments/${init.body.attachment.id}/download`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .expect(200)
+      .expect(({ text }) => {
+        expect(text).toBe("hello");
+      });
+  });
+
   it("rejects invalid credentials", async () => {
     await request(app.getHttpServer())
       .post("/api/auth/login")

@@ -439,3 +439,10 @@ completo nem conteudo da mensagem.
 Respostas 2xx podem indicar processamento, replay idempotente ou evento suportadamente ignorado. Motivos
 canonicos incluem `FROM_ME`, `GROUP_MESSAGE`, `UNSUPPORTED_EVENT`, `MISSING_MESSAGE_ID`,
 `MISSING_REMOTE_IDENTITY`, `INVALID_PAYLOAD` e `CONNECTION_NOT_FOUND`.
+# Tickets
+
+O dominio de Chamados usa `/api/tickets` com JWT e RBAC `tickets.*`.
+
+Listagem suporta `search`, `status`, `priority`, `departmentId`, `assignedMembershipId`, `requesterContactId`, `customerId`, `page`, `pageSize` e `sort`.
+
+HTML recebido em `descriptionHtml` e comentarios e sempre sanitizado no backend. Anexos usam init/complete e download autenticado; object key e URL assinada nao sao expostos como contrato publico.

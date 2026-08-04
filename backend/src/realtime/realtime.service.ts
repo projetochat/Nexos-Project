@@ -14,7 +14,8 @@ type EmitTarget =
   | { tenantId: string }
   | { membershipId: string }
   | { departmentId: string }
-  | { conversationId: string };
+  | { conversationId: string }
+  | { ticketId: string };
 
 type RealtimeHealth = {
   enabled: boolean;
@@ -256,5 +257,6 @@ function targetRoom(target: EmitTarget) {
   if ("tenantId" in target) return realtimeRooms.tenant(target.tenantId);
   if ("membershipId" in target) return realtimeRooms.membership(target.membershipId);
   if ("departmentId" in target) return realtimeRooms.department(target.departmentId);
+  if ("ticketId" in target) return realtimeRooms.ticket(target.ticketId);
   return realtimeRooms.conversation(target.conversationId);
 }

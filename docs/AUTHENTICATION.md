@@ -348,3 +348,8 @@ Esse fluxo impede o ciclo:
 
 de virar uma rajada infinita de requests. O socket nao e fonte de identidade; a sessao continua vindo de
 `/api/auth/me` durante bootstrap.
+# RBAC de Tickets
+
+Permissoes adicionadas: `tickets.read`, `tickets.create`, `tickets.update`, `tickets.assign`, `tickets.status.update`, `tickets.comment`, `tickets.attachments.upload`, `tickets.attachments.delete`, `tickets.manage`.
+
+Tenant admin possui escopo total dentro do tenant. Agentes ficam restritos a departamentos permitidos ou tickets atribuidos.

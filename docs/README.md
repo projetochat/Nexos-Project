@@ -357,3 +357,6 @@ O bootstrap fisico em `nexos_0802` foi recuperado. A dependencia de indice 1 de
 O adapter Redis do Socket.io tambem foi corrigido para namespace `/realtime`, usando o servidor raiz
 quando o Nest entrega `Namespace` no `afterInit`. Health fisico confirmou `database=up`, `redis=up`,
 `queue=up`, `realtime=up` e `realtimeAdapter=redis`. Sprint 10 segue bloqueada ate gate fisico completo.
+# Sprint 11
+
+Chamados agora sao dominio oficial de Tickets via Nexos API. Consulte [TICKETING.md](./TICKETING.md) e [STORAGE.md](./STORAGE.md).

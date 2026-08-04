@@ -215,3 +215,12 @@ Entregue:
 
 Sprint 11 permanece bloqueada ate mensagem real do WhatsApp B provar webhook 2xx autenticado por
 `jwt_key`, Message inbound persistida, mesma Conversation, Inbox atualizada sem F5 e zero duplicacao.
+# Sprint 11 - Ticketing Domain
+
+Status: implementacao tecnica inicial concluida; gate fisico pendente.
+
+- Chamados migrados para Nexos API.
+- Supabase/MVP removidos do runtime operacional de `/chamados`.
+- XSS mitigado por sanitizacao server-side e editor textarea seguro.
+- Anexos privados com storage local e boundary R2.
+- Sprint 12 nao liberada automaticamente.

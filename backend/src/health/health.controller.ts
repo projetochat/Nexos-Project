@@ -2,6 +2,7 @@ import { Controller, Get, Inject } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { MessagingOutboundQueue } from "../queue/messaging-outbound.queue";
 import { RealtimeService } from "../realtime/realtime.service";
+import { FileStorageProvider } from "../tickets/storage/file-storage.provider";
 
 @Controller("health")
 export class HealthController {
@@ -9,6 +10,7 @@ export class HealthController {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(MessagingOutboundQueue) private readonly queue: MessagingOutboundQueue,
     @Inject(RealtimeService) private readonly realtime: RealtimeService,
+    @Inject(FileStorageProvider) private readonly storage: FileStorageProvider,
   ) {}
 
   @Get()
@@ -24,6 +26,8 @@ export class HealthController {
       queue: redis.ok ? "up" : "down",
       realtime: realtime.status,
       realtimeAdapter: realtime.adapter,
+      storage: "up",
+      storageProvider: this.storage.provider,
       timestamp: new Date().toISOString(),
     };
   }

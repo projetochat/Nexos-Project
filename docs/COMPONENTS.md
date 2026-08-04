@@ -123,3 +123,6 @@ a referencia operacional da Connection como valor.
 Inbox exibe indicador discreto de realtime. Quando conectado, polling agressivo e reduzido; quando
 offline/degradado, a UI mantém fallback periódico por REST. A camada visual usa `src/lib/realtime` como
 singleton, sem abrir sockets por componente.
+# Chamados
+
+A tela `/chamados` usa lista paginada, filtros, modal de criacao, detalhe, comentarios internos e anexos privados. O editor operacional e textarea seguro; nao usa `contentEditable` nem renderizacao HTML perigosa.
