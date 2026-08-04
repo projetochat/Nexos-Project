@@ -3,6 +3,7 @@ import type { Role, SessionUser } from "@/lib/session";
 const ACCESS_KEY = "nexo.api.accessToken";
 const REFRESH_KEY = "nexo.api.refreshToken";
 const TENANT_KEY = "nexo.api.tenant";
+const IMPERSONATION_KEY = "nexo.api.impersonation";
 let refreshPromise: Promise<boolean> | null = null;
 let sessionAlreadyCleared = false;
 
@@ -475,17 +476,7 @@ export async function loginWithNexosApi(email: string, password: string, tenantS
 
   const data = (await response.json()) as LoginResponse;
   storeNexosSession(data);
-
-  const user: SessionUser = {
-    id: data.user.id,
-    nome: data.user.name,
-    email: data.user.email,
-    role: roleMap[data.user.roleKey] ?? "operator",
-    empresaId: data.tenant.id,
-    empresaNome: data.tenant.name,
-    permissions: data.permissions,
-  };
-  return user;
+  return loginResponseToSessionUser(data);
 }
 
 export async function hydrateWithNexosApi() {
@@ -498,6 +489,24 @@ export async function hydrateWithNexosApi() {
     empresaId: data.tenant.id,
     empresaNome: data.tenant.name,
     permissions: data.permissions,
+  } satisfies SessionUser;
+}
+
+async function hydrateWithPlatformToken(stored: StoredImpersonation) {
+  localStorage.setItem(ACCESS_KEY, stored.actorAccessToken);
+  localStorage.setItem(REFRESH_KEY, stored.actorRefreshToken);
+  localStorage.setItem(
+    TENANT_KEY,
+    JSON.stringify({ id: "platform", slug: "platform", name: "Nexos Platform" }),
+  );
+  return {
+    id: "platform",
+    nome: "Platform",
+    email: "",
+    role: "super_admin",
+    empresaId: "platform",
+    empresaNome: "Nexos Platform",
+    permissions: [],
   } satisfies SessionUser;
 }
 
@@ -939,6 +948,32 @@ export type PlatformTenant = {
   updatedAt: string;
 };
 
+export type PlatformTenantDetail = PlatformTenant & {
+  usage: PlatformUsage;
+  detail: {
+    id: string;
+    name: string;
+    legalName: string | null;
+    displayName: string | null;
+    slug: string;
+    status: string;
+    timezone: string;
+    locale: string;
+    billingEmail: string | null;
+    technicalEmail: string | null;
+    activatedAt: string | null;
+    suspendedAt: string | null;
+    terminatedAt: string | null;
+    suspensionReason: string | null;
+    subscriptions: PlatformSubscription[];
+    users: ApiUserMembership[];
+    departments: ApiDepartment[];
+    messagingConnections: ApiMessagingConnection[];
+    invoices: PlatformInvoice[];
+    auditLogs: PlatformAuditLog[];
+  };
+};
+
 export type PlatformPlan = {
   id: string;
   code: string;
@@ -983,10 +1018,70 @@ export type PlatformAuditLog = {
   createdAt: string;
 };
 
+export type PlatformUsage = {
+  activeUsers: number;
+  departments: number;
+  connections: number;
+  contacts: number;
+  customers: number;
+  conversations: number;
+  messagesThisPeriod: number;
+  storageBytes: number;
+  tickets: number;
+  campaignsThisPeriod: number;
+  campaignRecipientsThisPeriod: number;
+};
+
+export type PlatformHealth = {
+  ok: boolean;
+  database: "up" | "down";
+  redis: "up" | "down";
+  outboundQueue: { status: "up" | "down"; configured: boolean };
+  campaignQueue: { status: "up" | "down"; configured: boolean };
+  workers: { outbound: string; campaign: string };
+  realtime: { status: string; adapter: string };
+  evolution: { status: string };
+  storage: { status: string; provider: string };
+  campaignScheduler: string;
+  timestamp: string;
+};
+
+export type PlatformImpersonation = {
+  id: string;
+  tenant: { id: string; name: string; slug: string };
+  membership: ApiUserMembership;
+  expiresAt: string;
+  tokens: LoginResponse;
+};
+
+export type StoredImpersonation = {
+  id: string;
+  tenant: { id: string; name: string; slug: string };
+  membershipId: string;
+  expiresAt: string;
+  actorAccessToken: string;
+  actorRefreshToken: string;
+  actorUser: SessionUser;
+};
+
 export const platformApi = {
   dashboard: () => apiRequest<PlatformDashboard>("/platform/dashboard"),
+  health: () => apiRequest<PlatformHealth>("/platform/health"),
   tenants: (params: ListParams = {}) =>
     apiRequest<PaginatedResponse<PlatformTenant>>(`/platform/tenants${queryString(params)}`),
+  tenant: (id: string) => apiRequest<PlatformTenantDetail>(`/platform/tenants/${id}`),
+  createTenant: (data: {
+    name: string;
+    slug: string;
+    timezone?: string;
+    locale?: string;
+    planId: string;
+    admin: { email: string; name: string; password: string };
+  }) =>
+    apiRequest<PlatformTenantDetail>("/platform/tenants", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   suspendTenant: (id: string, reason: string) =>
     apiRequest<PlatformTenant>(`/platform/tenants/${id}/suspend`, {
       method: "POST",
@@ -997,34 +1092,105 @@ export const platformApi = {
       method: "POST",
       body: JSON.stringify({ reason }),
     }),
+  terminateTenant: (id: string, reason: string, confirmSlug: string) =>
+    apiRequest<PlatformTenant>(`/platform/tenants/${id}/terminate`, {
+      method: "POST",
+      body: JSON.stringify({ reason, confirmSlug }),
+    }),
   plans: (params: ListParams = {}) =>
     apiRequest<PaginatedResponse<PlatformPlan>>(`/platform/plans${queryString(params)}`),
+  plan: (id: string) => apiRequest<PlatformPlan>(`/platform/plans/${id}`),
   subscriptions: (params: ListParams = {}) =>
     apiRequest<PaginatedResponse<PlatformSubscription>>(
       `/platform/subscriptions${queryString(params)}`,
     ),
+  subscription: (id: string) => apiRequest<PlatformSubscription>(`/platform/subscriptions/${id}`),
   invoices: (params: ListParams = {}) =>
     apiRequest<PaginatedResponse<PlatformInvoice>>(`/platform/invoices${queryString(params)}`),
+  invoice: (id: string) => apiRequest<PlatformInvoice>(`/platform/invoices/${id}`),
   auditLogs: (params: ListParams = {}) =>
     apiRequest<PaginatedResponse<PlatformAuditLog>>(`/platform/audit-logs${queryString(params)}`),
+  auditLog: (id: string) => apiRequest<PlatformAuditLog>(`/platform/audit-logs/${id}`),
   startImpersonation: (data: { tenantId: string; membershipId: string; reason: string }) =>
-    apiRequest<{ id: string; tenant: { id: string; name: string; slug: string } }>(
-      "/platform/impersonation/start",
-      { method: "POST", body: JSON.stringify(data) },
-    ),
+    apiRequest<PlatformImpersonation>("/platform/impersonation/start", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   stopImpersonation: (id: string) =>
     apiRequest<{ id: string }>(`/platform/impersonation/${id}/stop`, { method: "POST" }),
+  currentImpersonation: () =>
+    apiRequest<PlatformImpersonation | null>("/platform/impersonation/current"),
 };
+
+export function activatePlatformImpersonation(data: PlatformImpersonation, actorUser: SessionUser) {
+  const actorAccessToken = localStorage.getItem(ACCESS_KEY);
+  const actorRefreshToken = localStorage.getItem(REFRESH_KEY);
+  if (!actorAccessToken || !actorRefreshToken) {
+    throw new NexosApiError("Sessao de plataforma ausente.", 401, "PLATFORM_SESSION_MISSING");
+  }
+  const stored: StoredImpersonation = {
+    id: data.id,
+    tenant: data.tenant,
+    membershipId: data.membership.id,
+    expiresAt: data.expiresAt,
+    actorAccessToken,
+    actorRefreshToken,
+    actorUser,
+  };
+  localStorage.setItem(IMPERSONATION_KEY, JSON.stringify(stored));
+  storeNexosSession(data.tokens);
+  return loginResponseToSessionUser(data.tokens);
+}
+
+export function readStoredPlatformImpersonation(options: { includeExpired?: boolean } = {}) {
+  try {
+    const raw = localStorage.getItem(IMPERSONATION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredImpersonation;
+    if (new Date(parsed.expiresAt).getTime() <= Date.now()) {
+      if (options.includeExpired) return parsed;
+      restorePlatformTokens(parsed);
+      localStorage.removeItem(IMPERSONATION_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    localStorage.removeItem(IMPERSONATION_KEY);
+    return null;
+  }
+}
+
+export async function stopStoredPlatformImpersonation() {
+  const stored = readStoredPlatformImpersonation({ includeExpired: true });
+  if (!stored) return null;
+  restorePlatformTokens(stored);
+  try {
+    await platformApi.stopImpersonation(stored.id);
+  } finally {
+    localStorage.removeItem(IMPERSONATION_KEY);
+  }
+  return stored.actorUser;
+}
 
 export function clearNexosApiSession() {
   sessionAlreadyCleared = true;
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
   localStorage.removeItem(TENANT_KEY);
+  localStorage.removeItem(IMPERSONATION_KEY);
 }
 
 export async function logoutFromNexosApi() {
+  const storedImpersonation = readStoredPlatformImpersonation({ includeExpired: true });
   try {
+    if (storedImpersonation) {
+      restorePlatformTokens(storedImpersonation);
+      try {
+        await platformApi.stopImpersonation(storedImpersonation.id);
+      } catch {
+        // Local logout must still clear tokens even if the server-side stop was already applied.
+      }
+    }
     await fetchNexos("/auth/logout", { method: "POST" }, true);
   } finally {
     clearNexosApiSession();
@@ -1114,6 +1280,27 @@ function storeNexosSession(data: LoginResponse) {
   localStorage.setItem(ACCESS_KEY, data.accessToken);
   localStorage.setItem(REFRESH_KEY, data.refreshToken);
   localStorage.setItem(TENANT_KEY, JSON.stringify(data.tenant));
+}
+
+function restorePlatformTokens(stored: StoredImpersonation) {
+  localStorage.setItem(ACCESS_KEY, stored.actorAccessToken);
+  localStorage.setItem(REFRESH_KEY, stored.actorRefreshToken);
+  localStorage.setItem(
+    TENANT_KEY,
+    JSON.stringify({ id: "platform", slug: "platform", name: "Nexos Platform" }),
+  );
+}
+
+function loginResponseToSessionUser(data: LoginResponse): SessionUser {
+  return {
+    id: data.user.id,
+    nome: data.user.name,
+    email: data.user.email,
+    role: roleMap[data.user.roleKey] ?? "operator",
+    empresaId: data.tenant.id,
+    empresaNome: data.tenant.name,
+    permissions: data.permissions,
+  };
 }
 
 function canRefresh(path: string) {

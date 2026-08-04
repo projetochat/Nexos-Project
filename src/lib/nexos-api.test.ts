@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiRequest, clearNexosApiSession, loginWithNexosApi } from "./nexos-api";
+import {
+  activatePlatformImpersonation,
+  apiRequest,
+  clearNexosApiSession,
+  loginWithNexosApi,
+  logoutFromNexosApi,
+  readStoredPlatformImpersonation,
+  stopStoredPlatformImpersonation,
+} from "./nexos-api";
 
 describe("nexos-api auth client", () => {
   afterEach(() => {
@@ -120,7 +128,7 @@ describe("nexos-api auth client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(apiRequest("/conversations")).rejects.toThrow("E-mail ou senha invalidos.");
+    await expect(apiRequest("/conversations")).rejects.toThrow("expired");
 
     expect(
       fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh")),
@@ -128,6 +136,195 @@ describe("nexos-api auth client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(localStorage.getItem("nexo.api.accessToken")).toBeNull();
     expect(localStorage.getItem("nexo.api.refreshToken")).toBeNull();
+  });
+
+  it("activates and stops a platform impersonation by restoring platform tokens", async () => {
+    localStorage.setItem("nexo.api.accessToken", "platform-access");
+    localStorage.setItem("nexo.api.refreshToken", "platform-refresh");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const authorization = new Headers(init?.headers).get("Authorization");
+      expect(authorization).toBe("Bearer platform-access");
+      expect(String(input)).toContain("/platform/impersonation/session-a/stop");
+      return responseJson(201, { id: "session-a" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = activatePlatformImpersonation(
+      {
+        id: "session-a",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        tenant: { id: "tenant-a", name: "Tenant A", slug: "tenant-a" },
+        membership: {
+          id: "membership-a",
+          status: "ACTIVE",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            status: "ACTIVE",
+            platformRole: "USER",
+          },
+          role: { id: "role-a", key: "tenant_admin", name: "Administrador" },
+          departments: [],
+        },
+        tokens: {
+          accessToken: "tenant-access",
+          refreshToken: "tenant-refresh",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            roleId: "role-a",
+            roleKey: "tenant_admin",
+            platformRole: "USER",
+          },
+          tenant: { id: "tenant-a", slug: "tenant-a", name: "Tenant A" },
+          membership: { id: "membership-a", role: "tenant_admin", roleId: "role-a" },
+          permissions: ["users.manage"],
+        },
+      },
+      {
+        id: "platform-user",
+        nome: "Platform Admin",
+        email: "platform@nexo.app",
+        role: "super_admin",
+        empresaId: "platform",
+        empresaNome: "Nexos Platform",
+        permissions: [],
+      },
+    );
+
+    expect(user.role).toBe("admin");
+    expect(localStorage.getItem("nexo.api.accessToken")).toBe("tenant-access");
+    expect(readStoredPlatformImpersonation()?.id).toBe("session-a");
+
+    await expect(stopStoredPlatformImpersonation()).resolves.toMatchObject({
+      role: "super_admin",
+      email: "platform@nexo.app",
+    });
+    expect(localStorage.getItem("nexo.api.accessToken")).toBe("platform-access");
+    expect(readStoredPlatformImpersonation()).toBeNull();
+  });
+
+  it("expires a local impersonation and restores platform credentials", async () => {
+    localStorage.setItem("nexo.api.accessToken", "platform-access");
+    localStorage.setItem("nexo.api.refreshToken", "platform-refresh");
+    activatePlatformImpersonation(
+      {
+        id: "session-expired",
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+        tenant: { id: "tenant-a", name: "Tenant A", slug: "tenant-a" },
+        membership: {
+          id: "membership-a",
+          status: "ACTIVE",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            status: "ACTIVE",
+            platformRole: "USER",
+          },
+          role: { id: "role-a", key: "tenant_admin", name: "Administrador" },
+          departments: [],
+        },
+        tokens: {
+          accessToken: "tenant-access",
+          refreshToken: "tenant-refresh",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            roleId: "role-a",
+            roleKey: "tenant_admin",
+            platformRole: "USER",
+          },
+          tenant: { id: "tenant-a", slug: "tenant-a", name: "Tenant A" },
+          membership: { id: "membership-a", role: "tenant_admin", roleId: "role-a" },
+          permissions: ["users.manage"],
+        },
+      },
+      {
+        id: "platform-user",
+        nome: "Platform Admin",
+        email: "platform@nexo.app",
+        role: "super_admin",
+        empresaId: "platform",
+        empresaNome: "Nexos Platform",
+        permissions: [],
+      },
+    );
+
+    expect(readStoredPlatformImpersonation()).toBeNull();
+    expect(localStorage.getItem("nexo.api.accessToken")).toBe("platform-access");
+  });
+
+  it("stops server-side impersonation before logout clears local tokens", async () => {
+    localStorage.setItem("nexo.api.accessToken", "platform-access");
+    localStorage.setItem("nexo.api.refreshToken", "platform-refresh");
+    activatePlatformImpersonation(
+      {
+        id: "session-logout",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        tenant: { id: "tenant-a", name: "Tenant A", slug: "tenant-a" },
+        membership: {
+          id: "membership-a",
+          status: "ACTIVE",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            status: "ACTIVE",
+            platformRole: "USER",
+          },
+          role: { id: "role-a", key: "tenant_admin", name: "Administrador" },
+          departments: [],
+        },
+        tokens: {
+          accessToken: "tenant-access",
+          refreshToken: "tenant-refresh",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            roleId: "role-a",
+            roleKey: "tenant_admin",
+            platformRole: "USER",
+          },
+          tenant: { id: "tenant-a", slug: "tenant-a", name: "Tenant A" },
+          membership: { id: "membership-a", role: "tenant_admin", roleId: "role-a" },
+          permissions: ["users.manage"],
+        },
+      },
+      {
+        id: "platform-user",
+        nome: "Platform Admin",
+        email: "platform@nexo.app",
+        role: "super_admin",
+        empresaId: "platform",
+        empresaNome: "Nexos Platform",
+        permissions: [],
+      },
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const authorization = new Headers(init?.headers).get("Authorization");
+      if (String(input).endsWith("/platform/impersonation/session-logout/stop")) {
+        expect(authorization).toBe("Bearer platform-access");
+        return responseJson(201, { id: "session-logout" });
+      }
+      expect(String(input)).toContain("/auth/logout");
+      expect(authorization).toBe("Bearer platform-access");
+      return responseJson(201, { ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await logoutFromNexosApi();
+
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      "http://localhost:3001/api/platform/impersonation/session-logout/stop",
+      "http://localhost:3001/api/auth/logout",
+    ]);
+    expect(localStorage.getItem("nexo.api.accessToken")).toBeNull();
+    expect(readStoredPlatformImpersonation()).toBeNull();
   });
 });
 

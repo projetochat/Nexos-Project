@@ -14,6 +14,7 @@ import {
   MessageType,
   MessagingConnectionStatus,
   MessagingProviderType,
+  PlatformRole,
 } from "../src/generated/prisma";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { TicketsController } from "../src/tickets/tickets.controller";
@@ -399,6 +400,214 @@ describe("Nexos API organization and RBAC", () => {
         expect(serialized).toContain("invoice.created");
         expect(serialized).not.toContain("demo1234");
       });
+  });
+
+  it("enforces SUPPORT and READONLY platform permissions", async () => {
+    await ensurePlatformUser("platform-support@nexo.app", PlatformRole.SUPPORT);
+    await ensurePlatformUser("platform-readonly@nexo.app", PlatformRole.READONLY);
+
+    const supportToken = await login("platform-support@nexo.app", "demo1234");
+    const readonlyToken = await login("platform-readonly@nexo.app", "demo1234");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+
+    await request(app.getHttpServer())
+      .get("/api/platform/tenants")
+      .set("Authorization", `Bearer ${supportToken}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/platform/tenants/${tenant.id}/terminate`)
+      .set("Authorization", `Bearer ${supportToken}`)
+      .send({ reason: "Support cannot terminate", confirmSlug: tenant.slug })
+      .expect(403);
+    await request(app.getHttpServer())
+      .get("/api/platform/plans")
+      .set("Authorization", `Bearer ${readonlyToken}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .post("/api/platform/impersonation/start")
+      .set("Authorization", `Bearer ${readonlyToken}`)
+      .send({ tenantId: tenant.id, membershipId: "none", reason: "Readonly cannot impersonate" })
+      .expect(403);
+  });
+
+  it("exposes platform detail APIs and protected health without sensitive values", async () => {
+    const platformToken = await login("platform@nexo.app", "demo1234");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const plan = await prisma.plan.findFirstOrThrow({ where: { code: "professional" } });
+    const subscription = await prisma.tenantSubscription.findFirstOrThrow({
+      where: { tenantId: tenant.id },
+    });
+    const invoice = await prisma.invoice.create({
+      data: {
+        tenantId: tenant.id,
+        subscriptionId: subscription.id,
+        number: `INV-2099-${String(Date.now()).slice(-6)}`,
+        subtotalCents: 1000,
+        totalCents: 1000,
+        dueAt: new Date(Date.now() + 86_400_000),
+      },
+    });
+    const audit = await prisma.platformAuditLog.create({
+      data: {
+        actorUserId: (
+          await prisma.user.findUniqueOrThrow({ where: { email: "platform@nexo.app" } })
+        ).id,
+        actorPlatformRole: "ADMIN",
+        action: "platform.health.test",
+        targetType: "health",
+        metadataJson: { ok: true },
+      },
+    });
+
+    await request(app.getHttpServer())
+      .get("/api/platform/health")
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        const serialized = JSON.stringify(body);
+        expect(body.database).toMatch(/up|down/);
+        expect(serialized).not.toContain("JWT_SECRET");
+        expect(serialized).not.toContain("EVOLUTION_API_KEY");
+        expect(serialized).not.toContain(process.env.EVOLUTION_WEBHOOK_SECRET);
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/platform/tenants/${tenant.id}`)
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.usage).toBeDefined();
+        expect(body.detail.users).toEqual(expect.any(Array));
+      });
+    await request(app.getHttpServer())
+      .get(`/api/platform/plans/${plan.id}`)
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get(`/api/platform/subscriptions/${subscription.id}`)
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get(`/api/platform/invoices/${invoice.id}`)
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get(`/api/platform/audit-logs/${audit.id}`)
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(200);
+  });
+
+  it("rolls back tenant creation when initial admin provisioning fails", async () => {
+    const platformToken = await login("platform@nexo.app", "demo1234");
+    const plan = await prisma.plan.findFirstOrThrow({ where: { code: "starter" } });
+    const slug = `rollback-${Date.now()}`;
+    const response = await request(app.getHttpServer())
+      .post("/api/platform/tenants")
+      .set("Authorization", `Bearer ${platformToken}`)
+      .send({
+        name: "Rollback Tenant",
+        slug,
+        planId: plan.id,
+        admin: { name: "Broken Admin", email: "not-an-email", password: "demo1234" },
+      })
+      .expect(400);
+    expect(response.body.message).toBeDefined();
+    await expect(prisma.tenant.findUnique({ where: { slug } })).resolves.toBeNull();
+  });
+
+  it("blocks high-risk platform mutations while an impersonation session is active", async () => {
+    const platformToken = await login("platform@nexo.app", "demo1234");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const membership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenantId: tenant.id, status: "ACTIVE" },
+    });
+    const session = await request(app.getHttpServer())
+      .post("/api/platform/impersonation/start")
+      .set("Authorization", `Bearer ${platformToken}`)
+      .send({
+        tenantId: tenant.id,
+        membershipId: membership.id,
+        reason: "E2E high-risk guard",
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.tokens.accessToken).toEqual(expect.any(String));
+        expect(body.membership.id).toBe(membership.id);
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/platform/tenants/${tenant.id}/suspend`)
+      .set("Authorization", `Bearer ${platformToken}`)
+      .send({ reason: "Must be blocked" })
+      .expect(403)
+      .expect(({ body }) => {
+        expect(body.code).toBe("IMPERSONATION_HIGH_RISK_ACTION_BLOCKED");
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/platform/impersonation/${session.body.id}/stop`)
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(201);
+  });
+
+  it("serializes concurrent user creation at the last plan slot", async () => {
+    const { token, tenantId } = await createStarterTenant("users");
+    await request(app.getHttpServer())
+      .post("/api/users")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ email: `seed-user-${Date.now()}@nexo.app`, name: "Seed User", password: "demo1234" })
+      .expect(201);
+
+    const suffix = Date.now();
+    const responses = await Promise.all([
+      request(app.getHttpServer())
+        .post("/api/users")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ email: `limit-a-${suffix}@nexo.app`, name: "Limit A", password: "demo1234" }),
+      request(app.getHttpServer())
+        .post("/api/users")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ email: `limit-b-${suffix}@nexo.app`, name: "Limit B", password: "demo1234" }),
+    ]);
+    expect(responses.filter((response) => response.status === 201)).toHaveLength(1);
+    expect(
+      responses.some(
+        (response) => response.status === 409 && response.body.code === "PLAN_LIMIT_USERS_REACHED",
+      ),
+    ).toBe(true);
+    await expect(
+      prisma.tenantMembership.count({
+        where: { tenantId, status: "ACTIVE", user: { status: "ACTIVE" } },
+      }),
+    ).resolves.toBe(3);
+  });
+
+  it("serializes concurrent department creation at the last plan slot", async () => {
+    const { token, tenantId } = await createStarterTenant("departments");
+    await request(app.getHttpServer())
+      .post("/api/departments")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Departamento Seed", color: "#2563eb" })
+      .expect(201);
+
+    const responses = await Promise.all([
+      request(app.getHttpServer())
+        .post("/api/departments")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: `Departamento A ${Date.now()}`, color: "#2563eb" }),
+      request(app.getHttpServer())
+        .post("/api/departments")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: `Departamento B ${Date.now()}`, color: "#16a34a" }),
+    ]);
+    expect(responses.filter((response) => response.status === 201)).toHaveLength(1);
+    expect(
+      responses.some(
+        (response) =>
+          response.status === 409 && response.body.code === "PLAN_LIMIT_DEPARTMENTS_REACHED",
+      ),
+    ).toBe(true);
+    await expect(prisma.department.count({ where: { tenantId, active: true } })).resolves.toBe(2);
   });
 
   it("lists CRM data for agents but denies CRM writes without manage permission", async () => {
@@ -2243,6 +2452,46 @@ describe("Nexos API organization and RBAC", () => {
       .send(tenantSlug ? { email, password, tenantSlug } : { email, password })
       .expect(201);
     return response.body.accessToken as string;
+  }
+
+  async function ensurePlatformUser(email: string, platformRole: PlatformRole) {
+    await prisma.user.upsert({
+      where: { email },
+      update: {
+        name: email,
+        passwordHash: await hash("demo1234", 12),
+        status: "ACTIVE",
+        platformRole,
+      },
+      create: {
+        email,
+        name: email,
+        passwordHash: await hash("demo1234", 12),
+        status: "ACTIVE",
+        platformRole,
+      },
+    });
+  }
+
+  async function createStarterTenant(scope: string) {
+    const platformToken = await login("platform@nexo.app", "demo1234");
+    const plan = await prisma.plan.findFirstOrThrow({ where: { code: "starter" } });
+    const slug = `limit-${scope}-${Date.now()}`;
+    const adminEmail = `${slug}@nexo.app`;
+    const created = await request(app.getHttpServer())
+      .post("/api/platform/tenants")
+      .set("Authorization", `Bearer ${platformToken}`)
+      .send({
+        name: `Limit ${scope}`,
+        slug,
+        planId: plan.id,
+        admin: { name: `Limit ${scope} Admin`, email: adminEmail, password: "demo1234" },
+      })
+      .expect(201);
+    return {
+      tenantId: created.body.id as string,
+      token: await login(adminEmail, "demo1234", slug),
+    };
   }
 
   function webhookToken() {

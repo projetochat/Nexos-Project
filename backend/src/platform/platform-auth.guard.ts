@@ -52,6 +52,18 @@ const grants: Record<string, PlatformPermission[]> = {
   ],
 };
 
+const highRiskPermissions = new Set<PlatformPermission>([
+  "platform.tenants.suspend",
+  "platform.tenants.terminate",
+  "platform.plans.create",
+  "platform.plans.update",
+  "platform.plans.archive",
+  "platform.subscriptions.create",
+  "platform.subscriptions.update",
+  "platform.subscriptions.cancel",
+  "platform.impersonation.start",
+]);
+
 @Injectable()
 export class PlatformAuthGuard implements CanActivate {
   constructor(
@@ -84,6 +96,18 @@ export class PlatformAuthGuard implements CanActivate {
         code: "PLATFORM_PERMISSION_DENIED",
         message: "Permissao insuficiente no plano de controle.",
       });
+    }
+    if (required?.some((permission) => highRiskPermissions.has(permission))) {
+      const activeImpersonation = await this.prisma.impersonationSession.findFirst({
+        where: { actorUserId: user.id, status: "ACTIVE", expiresAt: { gt: new Date() } },
+        select: { id: true },
+      });
+      if (activeImpersonation) {
+        throw new ForbiddenException({
+          code: "IMPERSONATION_HIGH_RISK_ACTION_BLOCKED",
+          message: "A acao deve ser executada fora de uma sessao de impersonacao.",
+        });
+      }
     }
     request.user.platformRole = user.platformRole;
     return true;

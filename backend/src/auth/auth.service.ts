@@ -195,6 +195,19 @@ export class AuthService {
     ) {
       throw new UnauthorizedException("Sessao revogada.");
     }
+    if (payload.impersonationSessionId) {
+      const session = await this.prisma.impersonationSession.findFirst({
+        where: {
+          id: payload.impersonationSessionId,
+          actorUserId: payload.actorPlatformUserId,
+          tenantId: membership.tenantId,
+          impersonatedMembershipId: membership.id,
+          status: "ACTIVE",
+          expiresAt: { gt: new Date() },
+        },
+      });
+      if (!session) throw new UnauthorizedException("Sessao de impersonacao expirada.");
+    }
 
     return {
       accessToken: await this.signToken(
@@ -207,10 +220,66 @@ export class AuthService {
           platformRole: membership.user.platformRole,
           iatMs: Date.now(),
           typ: "access",
+          impersonationSessionId: payload.impersonationSessionId,
+          actorPlatformUserId: payload.actorPlatformUserId,
         },
         "JWT_SECRET",
         "15m",
       ),
+    };
+  }
+
+  async issueImpersonationTokens(input: {
+    actorPlatformUserId: string;
+    impersonationSessionId: string;
+    membershipId: string;
+  }) {
+    const membership = await this.prisma.tenantMembership.findUniqueOrThrow({
+      where: { id: input.membershipId },
+      include: {
+        user: true,
+        tenant: true,
+        role: { include: { permissions: { select: { permissionId: true } } } },
+      },
+    });
+    const permissions = membership.role.permissions.map((item) => item.permissionId);
+    const basePayload = {
+      sub: membership.userId,
+      tenantId: membership.tenantId,
+      membershipId: membership.id,
+      roleId: membership.roleId,
+      roleKey: membership.role.key,
+      platformRole: membership.user.platformRole,
+      iatMs: Date.now(),
+      impersonationSessionId: input.impersonationSessionId,
+      actorPlatformUserId: input.actorPlatformUserId,
+    };
+    return {
+      accessToken: await this.signToken({ ...basePayload, typ: "access" }, "JWT_SECRET", "15m"),
+      refreshToken: await this.signToken(
+        { ...basePayload, typ: "refresh" },
+        "JWT_REFRESH_SECRET",
+        "7d",
+      ),
+      user: {
+        id: membership.user.id,
+        email: membership.user.email,
+        name: membership.user.name,
+        roleId: membership.roleId,
+        roleKey: membership.role.key,
+        platformRole: membership.user.platformRole,
+      },
+      tenant: {
+        id: membership.tenant.id,
+        slug: membership.tenant.slug,
+        name: membership.tenant.name,
+      },
+      membership: {
+        id: membership.id,
+        role: membership.role.key,
+        roleId: membership.roleId,
+      },
+      permissions,
     };
   }
 

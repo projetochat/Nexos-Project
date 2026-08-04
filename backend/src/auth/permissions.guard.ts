@@ -58,6 +58,19 @@ export class PermissionsGuard implements CanActivate {
     ) {
       throw new UnauthorizedException("Sessao revogada.");
     }
+    if (current.impersonationSessionId) {
+      const session = await this.prisma.impersonationSession.findFirst({
+        where: {
+          id: current.impersonationSessionId,
+          actorUserId: current.actorPlatformUserId,
+          tenantId: current.tenantId,
+          impersonatedMembershipId: current.membershipId,
+          status: "ACTIVE",
+          expiresAt: { gt: new Date() },
+        },
+      });
+      if (!session) throw new UnauthorizedException("Sessao de impersonacao expirada.");
+    }
 
     const granted = new Set(membership.role.permissions.map((item) => item.permissionId));
     const allowed = required.every((permission) => granted.has(permission));

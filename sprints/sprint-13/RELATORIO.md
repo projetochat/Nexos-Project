@@ -415,29 +415,29 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 | M74 | invoice audit events | implementados | service | PASS |
 | M75 | sanitized metadata | implementado | audit service/e2e | PASS |
 | M76 | tenants API | implementada | controller | PASS |
-| M77 | plans API | parcial sem GET detalhe dedicado | controller | PARTIAL |
-| M78 | subscriptions API | parcial sem GET detalhe dedicado | controller | PARTIAL |
-| M79 | invoices API | parcial sem GET detalhe dedicado | controller | PARTIAL |
+| M77 | plans API | detalhe dedicado implementado | GET `/platform/plans/:id` | PASS |
+| M78 | subscriptions API | detalhe dedicado implementado | GET `/platform/subscriptions/:id` | PASS |
+| M79 | invoices API | detalhe dedicado implementado | GET `/platform/invoices/:id` | PASS |
 | M80 | usage API | implementada | controller | PASS |
-| M81 | audit API | parcial sem GET detalhe dedicado | controller | PARTIAL |
+| M81 | audit API | detalhe dedicado implementado | GET `/platform/audit-logs/:id` | PASS |
 | M82 | impersonation API | implementada | controller | PASS |
 | M83 | frontend dashboard | real | `/admin` | PASS |
 | M84 | frontend tenant list | real | `/admin/empresas` | PASS |
-| M85 | frontend tenant create | nao implementado | pendente | FAIL |
-| M86 | frontend tenant detail | nao implementado | pendente | FAIL |
-| M87 | frontend suspension | parcial sem confirmacao digitada | UI | PARTIAL |
-| M88 | frontend reactivation | implementada simples | UI | PASS |
-| M89 | frontend termination | nao implementada | pendente | FAIL |
+| M85 | frontend tenant create | wizard real implementado | `/admin/empresas` | PASS |
+| M86 | frontend tenant detail | rota real implementada | `/admin/empresas/$tenantId` | PASS |
+| M87 | frontend suspension | confirmacao digitada e motivo obrigatorio | UI | PASS |
+| M88 | frontend reactivation | implementada com motivo | UI | PASS |
+| M89 | frontend termination | implementada com guard operacional | UI | PASS |
 | M90 | frontend plans | lista real | `/admin/planos` | PASS |
 | M91 | frontend subscriptions | lista real | `/admin/assinaturas` | PASS |
 | M92 | frontend invoices | lista real | `/admin/financeiro` | PASS |
 | M93 | frontend usage | parcial em telas agregadas | UI | PARTIAL |
 | M94 | frontend audit | real | `/admin/auditoria` | PASS |
-| M95 | frontend impersonation | nao implementado | pendente | FAIL |
-| M96 | realtime platform | nao implementado | pendente | FAIL |
+| M95 | frontend impersonation | fluxo completo implementado | detalhe do tenant + banner | PASS |
+| M96 | realtime platform | diferido oficialmente para pos-MVP | `PLATFORM_REALTIME_DEFERRED_TO_POST_MVP` | N/A |
 | M97 | REST fallback | implementado | platformApi | PASS |
-| M98 | platform health | nao consolidado | pendente | FAIL |
-| M99 | Redis degraded | nao homologado para platform | pendente | FAIL |
+| M98 | platform health | protegido e sanitizado | GET `/platform/health` | PASS |
+| M99 | Redis degraded | readiness degradada sem expor segredo | health/admin monitor | PASS |
 | M100 | migration nexos_1300 | aplicada | migrate deploy | PASS |
 | M101 | migration nexos_0802 | aplicada sem reset | migrate deploy | PASS |
 | M102 | migration nexos_0801 | aplicada sem reset | migrate deploy | PASS |
@@ -451,13 +451,13 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 | M110 | subscription tests | criacao/lista indiretamente | app e2e | PARTIAL |
 | M111 | invoice tests | create/status coberto | app e2e | PASS |
 | M112 | entitlement tests | coberto por services/e2e parcial | test suite | PARTIAL |
-| M113 | concurrency limit tests | nao coberto | pendente | FAIL |
+| M113 | concurrency limit tests | ultimo slot coberto | usuarios/departamentos e2e | PASS |
 | M114 | suspension tests | login/token antigo cobertos | app e2e | PARTIAL |
-| M115 | impersonation tests | nao coberto em e2e amplo | pendente | PARTIAL |
+| M115 | impersonation tests | start/stop/block high-risk cobertos | e2e + frontend | PASS |
 | M116 | audit tests | sanitizacao coberta | app e2e | PASS |
 | M117 | usage tests | nao exaustivo | pendente | PARTIAL |
 | M118 | tenant isolation tests | tenant admin 403 | app e2e | PARTIAL |
-| M119 | frontend tests | typecheck/build/guard | verify | PARTIAL |
+| M119 | frontend tests | typecheck/build/guard/client API | verify + vitest focado | PASS |
 | M120 | anti-legacy test | criado e integrado | verify | PASS |
 | M121 | secret audit | sem vazamento novo | guard/testes existentes | PASS |
 | M122 | platform admin physical | nao executado | pendente | FAIL |
@@ -485,7 +485,7 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 | M144 | typecheck | passou | `bunx tsc --noEmit`/verify | PASS |
 | M145 | lint | passou baseline | `bun run lint`/verify | PASS |
 | M146 | frontend tests | security XSS passou | verify | PASS |
-| M147 | backend tests | 138 testes | verify | PASS |
+| M147 | backend tests | 145 testes | verify | PASS |
 | M148 | frontend build | passou | verify | PASS |
 | M149 | backend build | passou | verify | PASS |
 | M150 | verify #1 | passou | `bun run verify` | PASS |
@@ -501,36 +501,101 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 | M160 | final git clean | limpo para escopo rastreado; `.local-storage/` preservado fora do commit | `git status --short` | PASS |
 | M161 | gate | bloqueado | fisico pendente | FAIL |
 
-## 51. Technical debt
+## 51. Rework - Control Plane UI Completion & Safe Impersonation
 
-- Completar UI de criacao/detalhe/termination de tenants.
-- Implementar banner permanente e fluxo operacional completo de impersonacao.
-- Adicionar health administrativo detalhado.
-- Implementar realtime administrativo ou formalizar polling por refetch.
-- Expandir testes unitarios/e2e para roles SUPPORT/READONLY, invalid transitions, downgrade por consumo, concorrencia de limites e impersonacao.
-- Consolidar documentacao geral transversal.
+O rework fechou as lacunas funcionais que impediam a homologacao fisica do plano de controle:
 
-## 52. Risks
+- `/admin/empresas` agora possui wizard real de criacao de tenant, sem mock runtime e sem dialogs nativos.
+- `/admin/empresas/$tenantId` entrega detalhe completo do tenant, usuarios, departamentos, conexoes, faturas, usage, auditoria e governanca.
+- Suspensao, reativacao e terminacao exigem motivo, confirmacao explicita e exibem impacto operacional antes da acao.
+- Impersonacao passou a usar tokens emitidos pelo backend, banner persistente em rotas operacionais, stop manual, expiracao e encerramento no logout.
+- Mutacoes high-risk durante impersonacao sao bloqueadas no backend com `IMPERSONATION_HIGH_RISK_ACTION_BLOCKED`.
+- APIs de detalhe foram adicionadas para plans, subscriptions, invoices e audit logs.
+- `/api/platform/health` foi protegido por platform role, sanitizado e exposto no monitoramento administrativo.
+- Realtime administrativo foi formalmente diferido para pos-MVP com polling/refetch oficial: `PLATFORM_REALTIME_DEFERRED_TO_POST_MVP`.
+- Seeds de `ADMIN`, `SUPPORT` e `READONLY` foram consolidados para ambiente fisico.
+- Testes de concorrencia cobrem o ultimo slot de usuarios e departamentos.
 
-- Sem homologacao fisica, nao ha evidencia de comportamento multiusuario, realtime offline ou Redis offline no plano de controle.
-- Limites concorrentes ainda precisam de teste especifico de corrida no ultimo slot.
-- Impersonacao tem backend inicial, mas UX de banner/stop visivel ainda nao fecha o requisito operacional.
+## 52. M162-M193 - Rework Metrics
 
-## 53. Commits
+| ID | Meta | Resultado | Evidencia | Status |
+| --- | --- | --- | --- | --- |
+| M162 | tenant create UI | wizard real implementado | `/admin/empresas` | PASS |
+| M163 | tenant detail UI | rota de detalhe implementada | `/admin/empresas/$tenantId` | PASS |
+| M164 | safe suspension | motivo + digitacao obrigatoria | detail UI + API | PASS |
+| M165 | reactivation UI | motivo operacional | detail UI + API | PASS |
+| M166 | termination UI | somente suspenso, slug e checkbox | detail UI + API | PASS |
+| M167 | impersonation start UI | membership + motivo + tokens reais | detail UI | PASS |
+| M168 | persistent banner | ator real, tenant e expiracao visiveis | `AppShell` | PASS |
+| M169 | impersonation stop | restaura token de plataforma e encerra backend | frontend test | PASS |
+| M170 | impersonation expiration/logout | expiracao local e logout encerram sessao | frontend test | PASS |
+| M171 | high-risk block | mutacoes criticas bloqueadas durante impersonacao | e2e | PASS |
+| M172 | plan detail API | GET dedicado | `/platform/plans/:id` | PASS |
+| M173 | subscription detail API | GET dedicado | `/platform/subscriptions/:id` | PASS |
+| M174 | invoice detail API | GET dedicado | `/platform/invoices/:id` | PASS |
+| M175 | audit detail API | GET dedicado | `/platform/audit-logs/:id` | PASS |
+| M176 | platform health | protegido e sanitizado | `/platform/health` | PASS |
+| M177 | polling/refetch | estrategia oficial documentada | admin monitor + report | PASS |
+| M178 | Redis degraded | health degrada queues sem vazar segredo | `/platform/health` | PASS |
+| M179 | Redis recovery | retomada coberta pelo smoke de fila | `verify` queue-smoke | PASS |
+| M180 | user last-slot concurrency | uma criacao passa e outra falha 409 | e2e | PASS |
+| M181 | department last-slot concurrency | uma criacao passa e outra falha 409 | e2e | PASS |
+| M182 | SUPPORT seed/RBAC | leitura permitida, high-risk negado | seed + e2e | PASS |
+| M183 | READONLY seed/RBAC | leitura permitida, impersonation negada | seed + e2e | PASS |
+| M184 | tenant admin denial | sem platform role recebe 403 | e2e existente | PASS |
+| M185 | frontend client tests | 10 testes passados | `bunx vitest run src/lib/nexos-api.test.ts --environment jsdom` | PASS |
+| M186 | backend tests | 145 testes passados | `bun run --cwd backend test` | PASS |
+| M187 | verify #1 | passou | `bun run verify` | PASS |
+| M188 | verify #2 | passou | `bun run verify` | PASS |
+| M189 | docs consolidation | rework registrado e realtime diferido | este relatorio | PASS |
+| M190 | report | atualizado | `sprints/sprint-13/RELATORIO.md` | PASS |
+| M191 | commit | commit final do rework criado nesta sessao | git | PASS |
+| M192 | git clean | limpo para arquivos rastreados apos commit | git | PASS |
+| M193 | gate | pronto para homologacao fisica, nao para Sprint 14 | PO physical pending | BLOCKED |
 
-Commit principal:
+## 53. Automated Evidence
+
+Evidencias executadas apos o rework:
+
+- `bun run --cwd backend build` - PASS.
+- `bunx tsc --noEmit` - PASS.
+- `bun run --cwd backend test` com `DATABASE_URL/NEXOS_TEST_DATABASE_URL` apontando para `nexos_0801` - PASS, 23 arquivos e 145 testes.
+- `bun run build` - PASS.
+- `bun run lint` - PASS dentro do baseline legado permitido.
+- `bunx vitest run src/lib/nexos-api.test.ts --environment jsdom` - PASS, 10 testes.
+- `bun run test:platform-admin-legacy-runtime` - PASS.
+- `bun run verify` - PASS.
+- `bun run verify` - PASS.
+
+## 54. Physical Homologation Pending
+
+A automacao esta verde e o plano de controle esta pronto para nova rodada fisica, mas a liberacao de Sprint 14 depende de Product Owner executar e registrar evidencia real de:
+
+- login Super Admin, SUPPORT e READONLY;
+- criacao de tenant via wizard;
+- limites concorrentes no ultimo slot em ambiente real;
+- suspensao, reativacao e terminacao;
+- impersonacao com banner, expiracao, stop e logout;
+- negacao de tenant admin em `/api/platform/*`;
+- Redis offline/recovery e polling do monitoramento administrativo.
+
+## 55. Commits
+
+Commits de Sprint 13 nesta branch:
 
 - `a0fbc57 feat: add saas control plane`
+- `e92d7d4 docs: record sprint 13 gate`
+- commit final do rework criado nesta sessao.
 
-## 54. Final Git state
+## 56. Final Git state
 
-Estado final esperado apos commit documental:
+Estado final esperado apos commit:
 
 - Worktree limpo para arquivos rastreados.
 - `.local-storage/` preservado como untracked preexistente e fora do commit.
 
-## 55. Gate
+## 57. Gate
 
-Automacao esta verde, mas o gate fisico de Sprint 13 nao foi executado. A Sprint 13 nao pode liberar Sprint 14 ate que os testes fisicos M122-M135 sejam executados com evidencia e sem regressao.
+A Sprint 13 nao pode liberar Sprint 14 ate que os testes fisicos M122-M135 e a validacao do rework M162-M193 sejam executados pelo Product Owner com evidencia e sem regressao.
 
 NOT READY FOR SPRINT 14

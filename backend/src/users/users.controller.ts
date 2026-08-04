@@ -16,6 +16,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
+import { Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { CreateUserDto } from "./dto/create-user.dto";
@@ -123,14 +124,6 @@ export class UsersController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions("users.manage")
   async create(@Body() dto: CreateUserDto, @CurrentUser() current: AuthenticatedUser) {
-    await this.entitlements.assertTenantOperational(current.tenantId);
-    await this.entitlements.assertWithinLimit(
-      current.tenantId,
-      "maxUsers",
-      await this.prisma.tenantMembership.count({
-        where: { tenantId: current.tenantId, status: "ACTIVE", user: { status: "ACTIVE" } },
-      }),
-    );
     const roleId = dto.roleId ?? (await this.defaultRoleId(current.tenantId));
     await this.assertRoleInTenant(roleId, current.tenantId);
     await this.assertDepartmentsInTenant(dto.departmentIds ?? [], current.tenantId);
@@ -139,6 +132,17 @@ export class UsersController {
     const email = dto.email.toLowerCase().trim();
 
     const membership = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
+      );
+      await this.entitlements.assertTenantOperational(current.tenantId);
+      await this.entitlements.assertWithinLimit(
+        current.tenantId,
+        "maxUsers",
+        await tx.tenantMembership.count({
+          where: { tenantId: current.tenantId, status: "ACTIVE", user: { status: "ACTIVE" } },
+        }),
+      );
       let user = await tx.user.findUnique({ where: { email } });
       if (user) {
         const existing = await tx.tenantMembership.findUnique({

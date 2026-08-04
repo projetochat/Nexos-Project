@@ -16,6 +16,7 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
+import { Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { AssignDepartmentMemberDto } from "./dto/assign-department-member.dto";
@@ -54,20 +55,25 @@ export class DepartmentsController {
   @Post()
   @RequirePermissions("departments.manage")
   async create(@Body() dto: CreateDepartmentDto, @CurrentUser() current: AuthenticatedUser) {
-    await this.entitlements.assertTenantOperational(current.tenantId);
-    await this.entitlements.assertWithinLimit(
-      current.tenantId,
-      "maxDepartments",
-      await this.prisma.department.count({ where: { tenantId: current.tenantId, active: true } }),
-    );
-    const department = await this.prisma.department.create({
-      data: {
-        tenantId: current.tenantId,
-        name: dto.name.trim(),
-        description: dto.description?.trim() || null,
-        color: dto.color ?? "#6366f1",
-        active: dto.active ?? true,
-      },
+    const department = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
+      );
+      await this.entitlements.assertTenantOperational(current.tenantId);
+      await this.entitlements.assertWithinLimit(
+        current.tenantId,
+        "maxDepartments",
+        await tx.department.count({ where: { tenantId: current.tenantId, active: true } }),
+      );
+      return tx.department.create({
+        data: {
+          tenantId: current.tenantId,
+          name: dto.name.trim(),
+          description: dto.description?.trim() || null,
+          color: dto.color ?? "#6366f1",
+          active: dto.active ?? true,
+        },
+      });
     });
     return this.serialize(department);
   }

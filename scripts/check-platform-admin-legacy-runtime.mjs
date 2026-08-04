@@ -6,6 +6,7 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const files = [
   "src/routes/admin.index.tsx",
   "src/routes/admin.empresas.tsx",
+  "src/routes/admin.empresas.$tenantId.tsx",
   "src/routes/admin.planos.tsx",
   "src/routes/admin.assinaturas.tsx",
   "src/routes/admin.financeiro.tsx",
@@ -25,6 +26,7 @@ const forbidden = [
   /setTimeout\s*\(/gi,
   /localStorage\.(?:setItem|getItem).*imperson/gi,
   /fake|falso|simulado/gi,
+  /\b(?:alert|confirm|prompt)\s*\(/gi,
 ];
 
 const failures = [];

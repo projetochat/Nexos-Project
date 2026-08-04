@@ -1,6 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { hydrateWithNexosApi, loginWithNexosApi, logoutFromNexosApi } from "@/lib/nexos-api";
+import {
+  hydrateWithNexosApi,
+  loginWithNexosApi,
+  logoutFromNexosApi,
+  readStoredPlatformImpersonation,
+} from "@/lib/nexos-api";
 
 /* ============================================================
    Nexo Session
@@ -30,12 +35,28 @@ export const ROLE_META: Record<Role, { label: string; scope: string; home: strin
 
 type SessionState = {
   user: SessionUser | null;
-  impersonating: { empresaId: string; empresaNome: string } | null;
+  impersonating: {
+    sessionId: string;
+    empresaId: string;
+    empresaNome: string;
+    membershipId: string;
+    expiresAt: string;
+    actorName: string;
+    actorEmail: string;
+  } | null;
   hydrated: boolean;
   error: string | null;
   loginAs: (user: SessionUser) => void;
   logout: () => void;
-  impersonate: (empresaId: string, empresaNome: string) => void;
+  impersonate: (input: {
+    sessionId: string;
+    empresaId: string;
+    empresaNome: string;
+    membershipId: string;
+    expiresAt: string;
+    actorName: string;
+    actorEmail: string;
+  }) => void;
   stopImpersonation: () => void;
 };
 
@@ -48,7 +69,7 @@ export const useSession = create<SessionState>()(
       error: null,
       loginAs: (user) => set({ user, impersonating: null, hydrated: true, error: null }),
       logout: () => set({ user: null, impersonating: null, error: null }),
-      impersonate: (empresaId, empresaNome) => set({ impersonating: { empresaId, empresaNome } }),
+      impersonate: (input) => set({ impersonating: input }),
       stopImpersonation: () => set({ impersonating: null }),
     }),
     { name: "nexo.session" },
@@ -61,9 +82,25 @@ export function currentRoleHome(role: Role | undefined): string {
 }
 
 export async function hydrateSession(): Promise<void> {
+  const impersonation = readStoredPlatformImpersonation();
   try {
     const user = await hydrateWithNexosApi();
-    useSession.setState({ user, hydrated: true, error: null });
+    useSession.setState({
+      user,
+      impersonating: impersonation
+        ? {
+            sessionId: impersonation.id,
+            empresaId: impersonation.tenant.id,
+            empresaNome: impersonation.tenant.name,
+            membershipId: impersonation.membershipId,
+            expiresAt: impersonation.expiresAt,
+            actorName: impersonation.actorUser.nome,
+            actorEmail: impersonation.actorUser.email,
+          }
+        : null,
+      hydrated: true,
+      error: null,
+    });
   } catch (error) {
     useSession.setState({ user: null, hydrated: true, error: (error as Error).message });
   }

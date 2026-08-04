@@ -7,10 +7,19 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { hash } from "bcryptjs";
+import { CampaignDispatchQueue } from "../campaigns/campaign-dispatch.queue";
 import { readPositiveInteger } from "../campaigns/campaign-config";
+import { AuthService } from "../auth/auth.service";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { Prisma, SubscriptionStatus, TenantStatus } from "../generated/prisma";
+import {
+  evolutionConfigFromEnv,
+  assertEvolutionConfigured,
+} from "../messaging/evolution/evolution.config";
 import { PrismaService } from "../prisma/prisma.service";
+import { MessagingOutboundQueue } from "../queue/messaging-outbound.queue";
+import { RealtimeService } from "../realtime/realtime.service";
+import { FileStorageProvider } from "../tickets/storage/file-storage.provider";
 import { seedTenantRoles } from "./tenant-role-seed";
 import { PlatformAuditService } from "./platform-audit.service";
 import { coerceFeatures, coerceLimits, PlanEntitlementService } from "./plan-entitlement.service";
@@ -53,6 +62,11 @@ export class PlatformService {
     @Inject(PlatformAuditService) private readonly audit: PlatformAuditService,
     @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
     @Inject(ConfigService) private readonly config: ConfigService,
+    @Inject(MessagingOutboundQueue) private readonly outboundQueue: MessagingOutboundQueue,
+    @Inject(CampaignDispatchQueue) private readonly campaignQueue: CampaignDispatchQueue,
+    @Inject(RealtimeService) private readonly realtime: RealtimeService,
+    @Inject(FileStorageProvider) private readonly storage: FileStorageProvider,
+    @Inject(AuthService) private readonly auth: AuthService,
   ) {}
 
   async dashboard() {
@@ -147,7 +161,11 @@ export class PlatformService {
       where: { id },
       include: {
         subscriptions: { orderBy: { createdAt: "desc" }, take: 3, include: { plan: true } },
-        users: { include: { user: true, role: true }, take: 20, orderBy: { createdAt: "desc" } },
+        users: {
+          include: { user: true, role: true, departments: { include: { department: true } } },
+          take: 20,
+          orderBy: { createdAt: "desc" },
+        },
         departments: { take: 20, orderBy: { name: "asc" } },
         messagingConnections: { take: 20, orderBy: { createdAt: "desc" } },
         invoices: { take: 10, orderBy: { createdAt: "desc" } },
@@ -286,6 +304,22 @@ export class PlatformService {
       .then(async (items) => paginated(items, await this.prisma.plan.count(), page, pageSize));
   }
 
+  async planDetail(id: string) {
+    const plan = await this.prisma.plan.findUnique({
+      where: { id },
+      include: {
+        subscriptions: {
+          take: 20,
+          orderBy: { createdAt: "desc" },
+          include: { tenant: { select: { id: true, slug: true, name: true, status: true } } },
+        },
+        _count: { select: { subscriptions: true } },
+      },
+    });
+    if (!plan) throw new NotFoundException("Plano nao encontrado.");
+    return plan;
+  }
+
   async createPlan(dto: CreatePlanDto, current: AuthenticatedUser) {
     const data = validatePlanConfig(dto.features, dto.limits);
     const plan = await this.prisma.plan.create({
@@ -408,6 +442,20 @@ export class PlatformService {
       );
   }
 
+  async subscriptionDetail(id: string) {
+    const subscription = await this.prisma.tenantSubscription.findUnique({
+      where: { id },
+      include: {
+        tenant: true,
+        plan: true,
+        history: { orderBy: { createdAt: "desc" }, take: 50 },
+        invoices: { orderBy: { createdAt: "desc" }, take: 20 },
+      },
+    });
+    if (!subscription) throw new NotFoundException("Assinatura nao encontrada.");
+    return subscription;
+  }
+
   async updateSubscription(id: string, dto: UpdateSubscriptionDto, current: AuthenticatedUser) {
     const existing = await this.prisma.tenantSubscription.findUnique({
       where: { id },
@@ -489,6 +537,15 @@ export class PlatformService {
       .then(async (items) => paginated(items, await this.prisma.invoice.count(), page, pageSize));
   }
 
+  async invoiceDetail(id: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id },
+      include: { tenant: true, subscription: { include: { plan: true } } },
+    });
+    if (!invoice) throw new NotFoundException("Fatura nao encontrada.");
+    return invoice;
+  }
+
   async createInvoice(dto: CreateInvoiceDto, current: AuthenticatedUser) {
     const subscription = await this.prisma.tenantSubscription.findFirst({
       where: { id: dto.subscriptionId, tenantId: dto.tenantId },
@@ -553,6 +610,18 @@ export class PlatformService {
       );
   }
 
+  async auditDetail(id: string) {
+    const log = await this.prisma.platformAuditLog.findUnique({
+      where: { id },
+      include: {
+        actor: { select: { id: true, email: true, name: true } },
+        tenant: { select: { id: true, slug: true, name: true } },
+      },
+    });
+    if (!log) throw new NotFoundException("Evento de auditoria nao encontrado.");
+    return log;
+  }
+
   async startImpersonation(dto: StartImpersonationDto, current: AuthenticatedUser) {
     const membership = await this.prisma.tenantMembership.findFirst({
       where: {
@@ -565,14 +634,20 @@ export class PlatformService {
     });
     if (!membership) throw new BadRequestException("Membership invalida para impersonacao.");
     const ttl = readPositiveInteger(this.config, "NEXOS_IMPERSONATION_TTL_MINUTES", 15);
-    const session = await this.prisma.impersonationSession.create({
-      data: {
-        actorUserId: current.userId,
-        tenantId: dto.tenantId,
-        impersonatedMembershipId: dto.membershipId,
-        reason: dto.reason.trim(),
-        expiresAt: new Date(Date.now() + ttl * 60_000),
-      },
+    const session = await this.prisma.$transaction(async (tx) => {
+      await tx.impersonationSession.updateMany({
+        where: { actorUserId: current.userId, status: "ACTIVE" },
+        data: { status: "STOPPED", stoppedAt: new Date() },
+      });
+      return tx.impersonationSession.create({
+        data: {
+          actorUserId: current.userId,
+          tenantId: dto.tenantId,
+          impersonatedMembershipId: dto.membershipId,
+          reason: dto.reason.trim(),
+          expiresAt: new Date(Date.now() + ttl * 60_000),
+        },
+      });
     });
     await this.audit.record({
       actor: current,
@@ -583,12 +658,21 @@ export class PlatformService {
       impersonationSessionId: session.id,
       metadata: { reason: dto.reason },
     });
-    return { ...session, tenant: membership.tenant };
+    const tokens = await this.auth.issueImpersonationTokens({
+      actorPlatformUserId: current.userId,
+      impersonationSessionId: session.id,
+      membershipId: dto.membershipId,
+    });
+    return { ...session, tenant: membership.tenant, membership, tokens };
   }
 
   async stopImpersonation(id: string, current: AuthenticatedUser) {
+    const existing = await this.prisma.impersonationSession.findFirst({
+      where: { id, actorUserId: current.userId },
+    });
+    if (!existing) throw new NotFoundException("Sessao de impersonacao nao encontrada.");
     const session = await this.prisma.impersonationSession.update({
-      where: { id },
+      where: { id: existing.id },
       data: { status: "STOPPED", stoppedAt: new Date() },
     });
     await this.audit.record({
@@ -608,6 +692,41 @@ export class PlatformService {
       orderBy: { createdAt: "desc" },
       include: { tenant: true },
     });
+  }
+
+  async health() {
+    const database = await this.prisma.$queryRaw`SELECT 1`
+      .then(() => "up" as const)
+      .catch(() => "down" as const);
+    const outbound = await this.outboundQueue
+      .health()
+      .then((result) => ({ status: result.ok ? "up" : "down", configured: result.configured }))
+      .catch(() => ({ status: "down", configured: true }));
+    const campaign = await this.campaignQueue
+      .health()
+      .then((result) => ({ status: result.ok ? "up" : "down", configured: result.configured }))
+      .catch(() => ({ status: "down", configured: true }));
+    const realtime = this.realtime.health();
+    const evolution = evolutionConfigFromEnv();
+    return {
+      ok: database === "up",
+      database,
+      redis: outbound.status,
+      outboundQueue: outbound,
+      campaignQueue: campaign,
+      workers: {
+        outbound:
+          this.config.get<string>("NEXOS_QUEUE_WORKER_ENABLED") === "true"
+            ? "configured"
+            : "disabled",
+        campaign: this.campaignQueue.enabled() ? "configured" : "disabled",
+      },
+      realtime: { status: realtime.status, adapter: realtime.adapter },
+      evolution: { status: assertEvolutionConfigured(evolution) ? "configured" : "degraded" },
+      storage: { status: "up", provider: this.storage.provider },
+      campaignScheduler: this.campaignQueue.enabled() ? "configured" : "disabled",
+      timestamp: new Date().toISOString(),
+    };
   }
 
   private async transitionTenant(

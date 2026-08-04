@@ -43,6 +43,12 @@ export class PlatformController {
     return this.platform.dashboard();
   }
 
+  @Get("health")
+  @RequirePlatformPermissions("platform.system.health.read")
+  health() {
+    return this.platform.health();
+  }
+
   @Get("tenants")
   @RequirePlatformPermissions("platform.tenants.read")
   tenants(@Query() query: PlatformListQueryDto) {
@@ -113,6 +119,12 @@ export class PlatformController {
     return this.platform.listPlans(query);
   }
 
+  @Get("plans/:id")
+  @RequirePlatformPermissions("platform.plans.read")
+  plan(@Param("id") id: string) {
+    return this.platform.planDetail(id);
+  }
+
   @Post("plans")
   @RequirePlatformPermissions("platform.plans.create")
   createPlan(@Body() dto: CreatePlanDto, @CurrentUser() current: AuthenticatedUser) {
@@ -139,6 +151,12 @@ export class PlatformController {
   @RequirePlatformPermissions("platform.subscriptions.read")
   subscriptions(@Query() query: PlatformListQueryDto) {
     return this.platform.listSubscriptions(query);
+  }
+
+  @Get("subscriptions/:id")
+  @RequirePlatformPermissions("platform.subscriptions.read")
+  subscription(@Param("id") id: string) {
+    return this.platform.subscriptionDetail(id);
   }
 
   @Post("tenants/:tenantId/subscriptions")
@@ -183,6 +201,12 @@ export class PlatformController {
     return this.platform.listInvoices(query);
   }
 
+  @Get("invoices/:id")
+  @RequirePlatformPermissions("platform.subscriptions.read")
+  invoice(@Param("id") id: string) {
+    return this.platform.invoiceDetail(id);
+  }
+
   @Post("invoices")
   @RequirePlatformPermissions("platform.subscriptions.update")
   createInvoice(@Body() dto: CreateInvoiceDto, @CurrentUser() current: AuthenticatedUser) {
@@ -203,6 +227,12 @@ export class PlatformController {
   @RequirePlatformPermissions("platform.audit.read")
   audit(@Query() query: PlatformListQueryDto) {
     return this.platform.listAudit(query);
+  }
+
+  @Get("audit-logs/:id")
+  @RequirePlatformPermissions("platform.audit.read")
+  auditLog(@Param("id") id: string) {
+    return this.platform.auditDetail(id);
   }
 
   @Post("impersonation/start")

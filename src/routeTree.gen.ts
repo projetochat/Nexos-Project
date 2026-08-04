@@ -63,6 +63,7 @@ import { Route as AdminEmpresasRouteImport } from './routes/admin.empresas'
 import { Route as AdminConfiguracoesRouteImport } from './routes/admin.configuracoes'
 import { Route as AdminAuditoriaRouteImport } from './routes/admin.auditoria'
 import { Route as AdminAssinaturasRouteImport } from './routes/admin.assinaturas'
+import { Route as AdminEmpresasTenantIdRouteImport } from './routes/admin.empresas.$tenantId'
 
 const SimuladorRoute = SimuladorRouteImport.update({
   id: '/simulador',
@@ -335,6 +336,11 @@ const AdminAssinaturasRoute = AdminAssinaturasRouteImport.update({
   path: '/assinaturas',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminEmpresasTenantIdRoute = AdminEmpresasTenantIdRouteImport.update({
+  id: '/$tenantId',
+  path: '/$tenantId',
+  getParentRoute: () => AdminEmpresasRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -366,7 +372,7 @@ export interface FileRoutesByFullPath {
   '/admin/assinaturas': typeof AdminAssinaturasRoute
   '/admin/auditoria': typeof AdminAuditoriaRoute
   '/admin/configuracoes': typeof AdminConfiguracoesRoute
-  '/admin/empresas': typeof AdminEmpresasRoute
+  '/admin/empresas': typeof AdminEmpresasRouteWithChildren
   '/admin/financeiro': typeof AdminFinanceiroRoute
   '/admin/licencas': typeof AdminLicencasRoute
   '/admin/logs': typeof AdminLogsRoute
@@ -391,6 +397,7 @@ export interface FileRoutesByFullPath {
   '/atendimento/': typeof AtendimentoIndexRoute
   '/configuracoes/': typeof ConfiguracoesIndexRoute
   '/inbox/': typeof InboxIndexRoute
+  '/admin/empresas/$tenantId': typeof AdminEmpresasTenantIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -418,7 +425,7 @@ export interface FileRoutesByTo {
   '/admin/assinaturas': typeof AdminAssinaturasRoute
   '/admin/auditoria': typeof AdminAuditoriaRoute
   '/admin/configuracoes': typeof AdminConfiguracoesRoute
-  '/admin/empresas': typeof AdminEmpresasRoute
+  '/admin/empresas': typeof AdminEmpresasRouteWithChildren
   '/admin/financeiro': typeof AdminFinanceiroRoute
   '/admin/licencas': typeof AdminLicencasRoute
   '/admin/logs': typeof AdminLogsRoute
@@ -443,6 +450,7 @@ export interface FileRoutesByTo {
   '/atendimento': typeof AtendimentoIndexRoute
   '/configuracoes': typeof ConfiguracoesIndexRoute
   '/inbox': typeof InboxIndexRoute
+  '/admin/empresas/$tenantId': typeof AdminEmpresasTenantIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -475,7 +483,7 @@ export interface FileRoutesById {
   '/admin/assinaturas': typeof AdminAssinaturasRoute
   '/admin/auditoria': typeof AdminAuditoriaRoute
   '/admin/configuracoes': typeof AdminConfiguracoesRoute
-  '/admin/empresas': typeof AdminEmpresasRoute
+  '/admin/empresas': typeof AdminEmpresasRouteWithChildren
   '/admin/financeiro': typeof AdminFinanceiroRoute
   '/admin/licencas': typeof AdminLicencasRoute
   '/admin/logs': typeof AdminLogsRoute
@@ -500,6 +508,7 @@ export interface FileRoutesById {
   '/atendimento/': typeof AtendimentoIndexRoute
   '/configuracoes/': typeof ConfiguracoesIndexRoute
   '/inbox/': typeof InboxIndexRoute
+  '/admin/empresas/$tenantId': typeof AdminEmpresasTenantIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -558,6 +567,7 @@ export interface FileRouteTypes {
     | '/atendimento/'
     | '/configuracoes/'
     | '/inbox/'
+    | '/admin/empresas/$tenantId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -610,6 +620,7 @@ export interface FileRouteTypes {
     | '/atendimento'
     | '/configuracoes'
     | '/inbox'
+    | '/admin/empresas/$tenantId'
   id:
     | '__root__'
     | '/'
@@ -666,6 +677,7 @@ export interface FileRouteTypes {
     | '/atendimento/'
     | '/configuracoes/'
     | '/inbox/'
+    | '/admin/empresas/$tenantId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1077,14 +1089,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAssinaturasRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/empresas/$tenantId': {
+      id: '/admin/empresas/$tenantId'
+      path: '/$tenantId'
+      fullPath: '/admin/empresas/$tenantId'
+      preLoaderRoute: typeof AdminEmpresasTenantIdRouteImport
+      parentRoute: typeof AdminEmpresasRoute
+    }
   }
 }
+
+interface AdminEmpresasRouteChildren {
+  AdminEmpresasTenantIdRoute: typeof AdminEmpresasTenantIdRoute
+}
+
+const AdminEmpresasRouteChildren: AdminEmpresasRouteChildren = {
+  AdminEmpresasTenantIdRoute: AdminEmpresasTenantIdRoute,
+}
+
+const AdminEmpresasRouteWithChildren = AdminEmpresasRoute._addFileChildren(
+  AdminEmpresasRouteChildren,
+)
 
 interface AdminRouteChildren {
   AdminAssinaturasRoute: typeof AdminAssinaturasRoute
   AdminAuditoriaRoute: typeof AdminAuditoriaRoute
   AdminConfiguracoesRoute: typeof AdminConfiguracoesRoute
-  AdminEmpresasRoute: typeof AdminEmpresasRoute
+  AdminEmpresasRoute: typeof AdminEmpresasRouteWithChildren
   AdminFinanceiroRoute: typeof AdminFinanceiroRoute
   AdminLicencasRoute: typeof AdminLicencasRoute
   AdminLogsRoute: typeof AdminLogsRoute
@@ -1098,7 +1129,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminAssinaturasRoute: AdminAssinaturasRoute,
   AdminAuditoriaRoute: AdminAuditoriaRoute,
   AdminConfiguracoesRoute: AdminConfiguracoesRoute,
-  AdminEmpresasRoute: AdminEmpresasRoute,
+  AdminEmpresasRoute: AdminEmpresasRouteWithChildren,
   AdminFinanceiroRoute: AdminFinanceiroRoute,
   AdminLicencasRoute: AdminLicencasRoute,
   AdminLogsRoute: AdminLogsRoute,

@@ -37,6 +37,7 @@ import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
 import { useTheme } from "./theme-provider";
 import { useSession, ROLE_META, signOut } from "@/lib/session";
+import { stopStoredPlatformImpersonation } from "@/lib/nexos-api";
 
 /* ============================================================
    Nexo · App Shell (Painel Administrativo da Empresa)
@@ -76,7 +77,6 @@ const principalNav: NavItem[] = [
   { to: "/mensagens-rapidas", label: "Mensagens rápidas", icon: Zap },
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
 ];
-
 
 // Itens exibidos no topo da sidebar (sem agrupador) para administradores.
 const topNav: NavItem[] = [
@@ -119,9 +119,7 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
   },
   {
     title: "GLPI",
-    items: [
-      { to: "/chamados", label: "Chamados", icon: Ticket },
-    ],
+    items: [{ to: "/chamados", label: "Chamados", icon: Ticket }],
   },
 ];
 
@@ -133,8 +131,6 @@ const sistemaNav: NavItem[] = [
   { to: "/configuracoes", label: "Configurações", icon: Settings },
   { to: "/ajuda", label: "Central de Ajuda", icon: LifeBuoy },
 ];
-
-
 
 /* ---------- Breadcrumb labels ---------- */
 const LABELS: Record<string, string> = {
@@ -154,7 +150,7 @@ const LABELS: Record<string, string> = {
   instancias: "Instâncias",
   ajuda: "Central de Ajuda",
   filas: "Filas",
-  
+
   chatbot: "Fluxo de Bot",
   automacoes: "Automações",
   empresa: "Empresa",
@@ -190,7 +186,11 @@ function useSidebarState() {
   const isInbox = pathname.startsWith("/inbox");
   const [collapsed, setCollapsed] = React.useState(() => {
     if (sidebarCollapsedMemory !== undefined) return sidebarCollapsedMemory;
-    if (typeof document !== "undefined" && document.documentElement.dataset.sidebarCollapsed === "1") return true;
+    if (
+      typeof document !== "undefined" &&
+      document.documentElement.dataset.sidebarCollapsed === "1"
+    )
+      return true;
     if (isInbox && isOperator) {
       sidebarCollapsedMemory = true;
       if (typeof document !== "undefined") document.documentElement.dataset.sidebarCollapsed = "1";
@@ -272,7 +272,9 @@ function NavLink({
   const role = useSession((s) => s.user?.role);
   const isOperator = role === "operator";
   const isActive =
-    (exact ?? item.to === "/") ? pathname === item.to : pathname === item.to || pathname.startsWith(item.to + "/");
+    (exact ?? item.to === "/")
+      ? pathname === item.to
+      : pathname === item.to || pathname.startsWith(item.to + "/");
   return (
     <Link
       to={item.to}
@@ -283,11 +285,9 @@ function NavLink({
         if (!isOperator || collapsed || isActive) return;
         requestAnimationFrame(() => requestAnimationFrame(() => collapse()));
       }}
-
       className={`group relative flex items-center rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground data-[status=active]:bg-surface-2 data-[status=active]:text-foreground ${
         collapsed ? "h-9 w-9 justify-center" : "gap-3 pl-7 pr-3 py-2"
       }`}
-
     >
       <span
         className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-primary opacity-0 transition-opacity group-data-[status=active]:opacity-100 ${
@@ -324,12 +324,15 @@ function NavSection({
   flush?: boolean;
 }) {
   return (
-    <div className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}>
+    <div
+      className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}
+    >
       {!collapsed && (
-        <p className={`mb-1 ${flush ? "pl-2" : "pl-7"} pr-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground`}>
+        <p
+          className={`mb-1 ${flush ? "pl-2" : "pl-7"} pr-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground`}
+        >
           {title}
         </p>
-
       )}
       {collapsed && <div className="my-2 h-px w-6 bg-border" />}
       {items.map((item) => (
@@ -339,9 +342,16 @@ function NavSection({
   );
 }
 
-
 /* ---------- Sidebar bottom actions ---------- */
-function SidebarBottomActions({ collapsed, onToggle, toggleOnly = false }: { collapsed: boolean; onToggle: () => void; toggleOnly?: boolean }) {
+function SidebarBottomActions({
+  collapsed,
+  onToggle,
+  toggleOnly = false,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  toggleOnly?: boolean;
+}) {
   const { resolved, toggle: toggleTheme } = useTheme();
   return (
     <div
@@ -491,9 +501,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       >
         <Link to={isOperator ? "/inbox" : "/"} className="flex items-center gap-2">
           <LogoMark size={24} />
-          {!collapsed && (
-            <span className="text-sm font-semibold tracking-tight">Nexo</span>
-          )}
+          {!collapsed && <span className="text-sm font-semibold tracking-tight">Nexo</span>}
         </Link>
       </div>
 
@@ -504,10 +512,11 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           !isOperator ? (collapsed ? "sidebar-scroll-hover" : "sidebar-scroll overflow-y-auto") : ""
         }`}
       >
-
         {isOperator ? (
           mainNav.length > 0 && (
-            <div className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}>
+            <div
+              className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}
+            >
               {mainNav.map((item) => (
                 <NavLink key={item.to} item={item} collapsed={collapsed} />
               ))}
@@ -515,13 +524,21 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           )
         ) : (
           <>
-            <div className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}>
+            <div
+              className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}
+            >
               {topNav.map((item) => (
                 <NavLink key={item.to} item={item} collapsed={collapsed} />
               ))}
             </div>
             {adminGroups.map((g) => (
-              <NavSection key={g.title} title={g.title} items={g.items} collapsed={collapsed} flush />
+              <NavSection
+                key={g.title}
+                title={g.title}
+                items={g.items}
+                collapsed={collapsed}
+                flush
+              />
             ))}
           </>
         )}
@@ -541,12 +558,9 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           </div>
         )}
       </div>
-
-
     </aside>
   );
 }
-
 
 /* ---------- User menu ---------- */
 function UserMenu() {
@@ -770,30 +784,44 @@ function useAuthGate(expected: "app" | "admin" | "operator") {
   return user;
 }
 
-
-
 /* ---------- Impersonation banner ---------- */
 function ImpersonationBanner() {
   const imp = useSession((s) => s.impersonating);
   const stop = useSession((s) => s.stopImpersonation);
-  const user = useSession((s) => s.user);
+  const loginAs = useSession((s) => s.loginAs);
   const navigate = useNavigate();
-  if (!imp || user?.role !== "super_admin") return null;
+  const expired = imp ? new Date(imp.expiresAt).getTime() <= Date.now() : false;
+  React.useEffect(() => {
+    if (!imp) return;
+    const delay = Math.max(0, new Date(imp.expiresAt).getTime() - Date.now());
+    const timer = window.setTimeout(async () => {
+      const restored = await stopStoredPlatformImpersonation();
+      if (restored) loginAs(restored);
+      stop();
+      navigate({ to: "/admin" });
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [imp, loginAs, navigate, stop]);
+  if (!imp) return null;
   return (
     <div className="flex items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning-foreground md:px-6">
       <Zap className="h-4 w-4 text-warning" />
       <span className="flex-1">
-        Você está visualizando o ambiente da empresa{" "}
-        <strong>{imp.empresaNome}</strong>. Todas as ações ficam registradas em auditoria.
+        Você está acessando o tenant <strong>{imp.empresaNome}</strong> como suporte. Ator real:{" "}
+        <strong>{imp.actorEmail}</strong>. Expiração:{" "}
+        <strong>{new Date(imp.expiresAt).toLocaleString("pt-BR")}</strong>.
       </span>
       <button
-        onClick={() => {
+        disabled={expired}
+        onClick={async () => {
+          const restored = await stopStoredPlatformImpersonation();
+          if (restored) loginAs(restored);
           stop();
           navigate({ to: "/admin" });
         }}
         className="rounded-md border border-warning/50 bg-background/40 px-2.5 py-1 text-xs font-medium hover:bg-background/60"
       >
-        Sair da impersonação
+        Encerrar acesso
       </button>
     </div>
   );

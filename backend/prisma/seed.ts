@@ -101,15 +101,16 @@ async function seedPlatformPlans() {
 }
 
 async function seedPlatformAdmin() {
-  const email = seedPlatformAdminEmail();
   const password = seedPlatformAdminPassword();
-  const user = await seedUser(
-    email,
-    "Platform Admin",
-    await hash(password, 12),
-    PlatformRole.ADMIN,
+  const passwordHash = await hash(password, 12);
+  const users = await Promise.all([
+    seedUser(seedPlatformAdminEmail(), "Platform Admin", passwordHash, PlatformRole.ADMIN),
+    seedUser(seedPlatformSupportEmail(), "Platform Support", passwordHash, PlatformRole.SUPPORT),
+    seedUser(seedPlatformReadonlyEmail(), "Platform Readonly", passwordHash, PlatformRole.READONLY),
+  ]);
+  console.info(
+    `Platform seed completed. Users configured: ${users.map((user) => user.email).join(", ")}.`,
   );
-  console.info(`Platform seed completed. Admin configured: ${user.email}.`);
 }
 
 async function seedHomologationMinimum() {
@@ -862,6 +863,26 @@ function seedPlatformAdminPassword() {
     throw new Error("NEXOS_PLATFORM_ADMIN_PASSWORD must be configured in production.");
   }
   return "demo1234";
+}
+
+function seedPlatformSupportEmail() {
+  const email =
+    process.env.NEXOS_PLATFORM_SUPPORT_EMAIL ?? process.env.NEXOS_PLATFORM_ADMIN_SUPPORT_EMAIL;
+  if (email) return email.toLowerCase().trim();
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("NEXOS_PLATFORM_SUPPORT_EMAIL must be configured in production.");
+  }
+  return "platform-support@nexo.app";
+}
+
+function seedPlatformReadonlyEmail() {
+  const email =
+    process.env.NEXOS_PLATFORM_READONLY_EMAIL ?? process.env.NEXOS_PLATFORM_ADMIN_READONLY_EMAIL;
+  if (email) return email.toLowerCase().trim();
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("NEXOS_PLATFORM_READONLY_EMAIL must be configured in production.");
+  }
+  return "platform-readonly@nexo.app";
 }
 
 function starterFeatures() {
