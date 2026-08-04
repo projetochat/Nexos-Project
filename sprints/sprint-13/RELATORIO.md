@@ -680,3 +680,118 @@ Estado final esperado apos commit:
 A Sprint 13 nao pode liberar Sprint 14 ate que os testes fisicos M122-M135, a validacao do rework M162-M193 e o checklist restante apos M194-M220 sejam executados pelo Product Owner com evidencia e sem regressao.
 
 NOT READY FOR SPRINT 14
+
+## 60. Rework Final - Platform API Runtime Recovery
+
+Falha fisica reproduzida em 2026-08-04:
+
+- Primeiro endpoint com 500: `GET /api/platform/tenants?page=1&pageSize=20`.
+- Endpoints afetados pelo mesmo padrao: tenants, plans, subscriptions, invoices e audit-logs.
+- Endpoints ja saudaveis antes da correcao: dashboard e platform health.
+- Classificacao: `PAGINATION_PARSE`.
+- Causa raiz: `PlatformService.pagination()` confiava em `PlatformListQueryDto` como numero em runtime. A querystring fisica entregou `pageSize` como string e o Prisma recebeu `take: "20"`.
+- Arquivo/linha: `backend/src/platform/platform.service.ts:139`, metodo `listTenants`.
+
+Stack original sanitizado:
+
+```text
+PrismaClientValidationError:
+Invalid `this.prisma.tenant.findMany()` invocation in
+C:\Users\Rabel\Downloads\Nexos Project\backend\src\platform\platform.service.ts:139:26
+
+take: "20"
+Argument `take`: Invalid value provided. Expected Int, provided String.
+    at Nn (...\backend\src\generated\prisma\runtime\library.js:33:1363)
+    at ei.handleRequestError (...\backend\src\generated\prisma\runtime\library.js:125:6911)
+    at ei.handleAndLogRequestError (...\backend\src\generated\prisma\runtime\library.js:125:6593)
+    at ei.request (...\backend\src\generated\prisma\runtime\library.js:125:6300)
+```
+
+Correcao aplicada:
+
+- `platform-query.ts` adiciona parser seguro para `page`, `pageSize`, `q/search`, `status`, `planId` e `tenantId`.
+- Listas de tenants, plans, subscriptions, invoices e audit logs usam `platformPagination()` antes de chamar Prisma.
+- Plans serializam `features/limits` por `coerceFeatures/coerceLimits`.
+- Tenants sem assinatura retornam `plan=null` e `subscriptionStatus=null`.
+- Subscriptions com plano arquivado continuam listaveis.
+- `PlatformExceptionFilter` foi aplicado ao `PlatformController` para mapear erros conhecidos e registrar logs sanitizados com `requestId`, rota, papel, query params, classe e codigo.
+- `PlatformAuthGuard` agora anexa `context=platform` e `platformPermissions`, sem exigir `TenantMembership`.
+
+Auditoria fisica de processo:
+
+- Antes da correcao havia um unico listener em `0.0.0.0:3001`, PID `31996`, `node ... tsx ... src/main.ts`.
+- Apos a correcao, a porta foi revalidada com um unico listener em `0.0.0.0:3001`, PID `34228`, `node ... tsx ... src/main.ts`.
+
+Migration `nexos_0802`:
+
+- `bun run --cwd backend prisma migrate status` retornou `Database schema is up to date!`.
+- Migration `20260804130000_saas_control_plane` aplicada.
+- Tabelas auditadas presentes: `plans`, `tenant_subscriptions`, `subscription_history`, `invoices`, `invoice_counters`, `platform_audit_logs`, `impersonation_sessions`, `tenant_usage_snapshots`.
+- Colunas auditadas presentes: `tenants.status`, `tenants.authRevokedAt`, `users.platformRole`.
+
+HTTP fisico na porta 3001 com usuario real `platform@nexo.app` (`platformRole=ADMIN`) e token platform:
+
+| Endpoint                          | Resultado |
+| --------------------------------- | --------- |
+| `GET /api/platform/dashboard`     | 200       |
+| `GET /api/platform/tenants`       | 200       |
+| `GET /api/platform/plans`         | 200       |
+| `GET /api/platform/subscriptions` | 200       |
+| `GET /api/platform/invoices`      | 200       |
+| `GET /api/platform/audit-logs`    | 200       |
+| `GET /api/platform/health`        | 200       |
+
+Observacao fisica:
+
+- `platform@nexo.app` existe em `nexos_0802` como `platformRole=ADMIN` e `status=ACTIVE`.
+- Login com senha padrao `demo1234` retornou 401, coerente com credenciais fisicas redefinidas por seed via ambiente no rework anterior.
+- O teste HTTP protegido usou token platform assinado para o usuario real, sem imprimir segredo, senha, hash ou JWT.
+- Dashboard retornou tenants reais; tenants retornou `Homologacao Nexos`; plans retornou `Professional`; subscriptions retornou assinatura real; invoices/audit retornaram empty state canonico.
+- Validacao visual no navegador permanece pendente do Product Owner, mas a causa dos `Internal server error` das telas reais foi removida na API.
+
+Evidencias automatizadas:
+
+- `bun run --cwd backend build` - PASS.
+- `bun run --cwd backend test -- platform-query.spec.ts platform.service.spec.ts` - PASS, 7 testes.
+- `bunx vitest run src/lib/nexos-api.test.ts src/routes/-instancias.test.ts --environment jsdom` - PASS, 16 testes.
+- `bun run --cwd backend test -- app.e2e-spec.ts` - PASS, 63 testes.
+- `bun run --cwd backend test` - PASS, 24 arquivos e 159 testes.
+- `bun run verify` - PASS.
+- Uma tentativa intermediaria de `bun run verify` teve falha transitoria em `backend:test` com code 5 sem falha reproduzivel; `bun run --cwd backend test` imediatamente depois passou, e a nova execucao final de `bun run verify` passou.
+
+## 61. M221-M250 - Rework Final Metrics
+
+| ID   | Meta                                | Resultado                                | Evidencia                         | Status  |
+| ---- | ----------------------------------- | ---------------------------------------- | --------------------------------- | ------- |
+| M221 | platform tenants failure reproduced | primeiro 500 reproduzido                 | stack `take: "20"`                | PASS    |
+| M222 | platform plans failure reproduced   | 500 fisico antes da correcao             | smoke porta 3001                  | PASS    |
+| M223 | subscriptions failure reproduced    | 500 fisico antes da correcao             | smoke porta 3001                  | PASS    |
+| M224 | backend process audit               | unico listener auditado                  | PID 31996 antes, PID 34228 depois | PASS    |
+| M225 | migration nexos_0802 audit          | schema atualizado                        | migrate status + tabela/coluna    | PASS    |
+| M226 | platform controller DI audit        | `@Inject(PlatformService)` confirmado    | controller                        | PASS    |
+| M227 | platform module audit               | providers/imports resolvidos             | bootstrap e2e                     | PASS    |
+| M228 | platform auth context audit         | `context=platform` e permissoes anexadas | guard + e2e                       | PASS    |
+| M229 | pagination parsing                  | string vira numero antes do Prisma       | helper + testes                   | PASS    |
+| M230 | tenant null relation handling       | tenant sem assinatura retorna null       | e2e                               | PASS    |
+| M231 | plan JSON handling                  | features/limits coercidos                | service + e2e                     | PASS    |
+| M232 | subscription relation handling      | plano arquivado suportado                | e2e                               | PASS    |
+| M233 | canonical error mapping             | 400/403/Prisma mapeados com code seguro  | filter + e2e                      | PASS    |
+| M234 | bootstrap real                      | App/Platform/Services resolvidos         | e2e                               | PASS    |
+| M235 | dashboard physical                  | HTTP 200                                 | porta 3001                        | PASS    |
+| M236 | tenants physical                    | HTTP 200                                 | porta 3001                        | PASS    |
+| M237 | plans physical                      | HTTP 200                                 | porta 3001                        | PASS    |
+| M238 | subscriptions physical              | HTTP 200                                 | porta 3001                        | PASS    |
+| M239 | invoices physical                   | HTTP 200                                 | porta 3001                        | PASS    |
+| M240 | audit physical                      | HTTP 200                                 | porta 3001                        | PASS    |
+| M241 | health physical                     | HTTP 200                                 | porta 3001                        | PASS    |
+| M242 | frontend recovery                   | empty/error preservados no client        | vitest jsdom                      | PASS    |
+| M243 | backend tests                       | 159 testes                               | backend test                      | PASS    |
+| M244 | frontend tests                      | 16 testes focados                        | vitest jsdom                      | PASS    |
+| M245 | verify #1                           | passou                                   | `bun run verify`                  | PASS    |
+| M246 | verify #2                           | passou apos repeticao final                | `bun run verify`                  | PASS    |
+| M247 | report                              | atualizado                               | este arquivo                      | PASS    |
+| M248 | commit                              | commit final do rework criado nesta sessao | git                            | PASS    |
+| M249 | git clean                           | limpo para arquivos rastreados apos commit | git                            | PASS    |
+| M250 | physical gate readiness             | API pronta; visual PO pendente           | HTTP 200 nos sete endpoints       | BLOCKED |
+
+NOT READY FOR SPRINT 14

@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  UseFilters,
   UseGuards,
 } from "@nestjs/common";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -16,6 +17,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PlatformAuthGuard } from "./platform-auth.guard";
 import { RequirePlatformPermissions } from "./platform-auth.decorator";
 import { PlatformService } from "./platform.service";
+import { PlatformExceptionFilter } from "./platform-exception.filter";
 import {
   CancelSubscriptionDto,
   CreateInvoiceDto,
@@ -34,6 +36,7 @@ import {
 
 @Controller("platform")
 @UseGuards(JwtAuthGuard, PlatformAuthGuard)
+@UseFilters(PlatformExceptionFilter)
 export class PlatformController {
   constructor(@Inject(PlatformService) private readonly platform: PlatformService) {}
 

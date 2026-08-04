@@ -6,6 +6,7 @@ import {
   clearNexosApiSession,
   loginWithNexosApi,
   logoutFromNexosApi,
+  platformApi,
   readStoredPlatformImpersonation,
   connectionsApi,
   stopStoredPlatformImpersonation,
@@ -350,6 +351,77 @@ describe("nexos-api auth client", () => {
       status: "removed",
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads platform tenants with the platform token", async () => {
+    localStorage.setItem("nexo.api.accessToken", "platform-access");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://localhost:3001/api/platform/tenants?pageSize=20");
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer platform-access");
+      return responseJson(200, {
+        items: [
+          {
+            id: "tenant-a",
+            name: "Tenant A",
+            slug: "tenant-a",
+            status: "ACTIVE",
+            plan: null,
+            subscriptionStatus: null,
+            activeUsers: 0,
+            connections: 0,
+            createdAt: "2026-08-04T00:00:00.000Z",
+            updatedAt: "2026-08-04T00:00:00.000Z",
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+        totalPages: 1,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(platformApi.tenants({ pageSize: 20 })).resolves.toMatchObject({
+      total: 1,
+      items: [{ slug: "tenant-a", plan: null }],
+    });
+  });
+
+  it("preserves platform empty states instead of treating them as errors", async () => {
+    localStorage.setItem("nexo.api.accessToken", "platform-access");
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          responseJson(200, { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 }),
+        ),
+    );
+
+    await expect(platformApi.tenants({ page: 1, pageSize: 20 })).resolves.toMatchObject({
+      items: [],
+      total: 0,
+    });
+  });
+
+  it("surfaces canonical platform errors without converting them to empty lists", async () => {
+    localStorage.setItem("nexo.api.accessToken", "platform-access");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseJson(500, {
+          requestId: "request-a",
+          code: "PLATFORM_UNEXPECTED_ERROR",
+          message: "Erro seguro no plano de controle. Informe o requestId ao suporte.",
+        }),
+      ),
+    );
+
+    await expect(platformApi.plans()).rejects.toMatchObject({
+      status: 500,
+      code: "PLATFORM_UNEXPECTED_ERROR",
+      message: "Erro seguro no plano de controle. Informe o requestId ao suporte.",
+    });
   });
 });
 

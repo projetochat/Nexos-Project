@@ -20,6 +20,8 @@ export type AuthenticatedUser = {
   roleId: string;
   roleKey: string;
   platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
+  context?: "tenant" | "platform";
+  platformPermissions?: string[];
   permissions?: PermissionKey[];
   iatMs?: number;
   impersonationSessionId?: string;

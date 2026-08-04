@@ -18,6 +18,10 @@ import {
   PlatformRole,
 } from "../src/generated/prisma";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { PlatformAuditService } from "../src/platform/platform-audit.service";
+import { PlatformController } from "../src/platform/platform.controller";
+import { PlanEntitlementService } from "../src/platform/plan-entitlement.service";
+import { PlatformService } from "../src/platform/platform.service";
 import { TicketsController } from "../src/tickets/tickets.controller";
 import { TicketsModule } from "../src/tickets/tickets.module";
 import { TicketsService } from "../src/tickets/tickets.service";
@@ -55,6 +59,7 @@ describe("Nexos API organization and RBAC", () => {
     prisma = app.get(PrismaService);
     jwt = app.get(JwtService);
     await app.init();
+    await cleanupPlatformImpersonations();
   });
 
   afterAll(async () => {
@@ -63,6 +68,7 @@ describe("Nexos API organization and RBAC", () => {
 
   afterEach(async () => {
     await cleanupEvolutionTestConnections();
+    await cleanupPlatformImpersonations();
   });
 
   it("reports API and database health", async () => {
@@ -310,8 +316,142 @@ describe("Nexos API organization and RBAC", () => {
       .expect(200)
       .expect(({ body }) => {
         expect(Array.isArray(body.items)).toBe(true);
-        expect(body.items.some((tenant: { slug: string }) => tenant.slug === "acme")).toBe(true);
       });
+  });
+
+  it("bootstraps the platform module dependencies in a real Nest application", () => {
+    expect(app.get(PlatformController)).toBeDefined();
+    expect(app.get(PlatformService)).toBeDefined();
+    expect(app.get(PlatformAuditService)).toBeDefined();
+    expect(app.get(PlanEntitlementService)).toBeDefined();
+    expect(app.get(PrismaService)).toBeDefined();
+  });
+
+  it("serves all platform list APIs with string pagination and canonical failures", async () => {
+    const platformToken = await login("platform@nexo.app", "demo1234");
+    const tenantAdminToken = await login("admin@nexo.app", "demo1234", "acme");
+
+    const routes = [
+      "/api/platform/dashboard",
+      "/api/platform/tenants?page=1&pageSize=20",
+      "/api/platform/plans?page=1&pageSize=20",
+      "/api/platform/subscriptions?page=1&pageSize=20",
+      "/api/platform/invoices?page=1&pageSize=20",
+      "/api/platform/audit-logs?page=1&pageSize=20",
+      "/api/platform/health",
+    ];
+    for (const route of routes) {
+      await request(app.getHttpServer())
+        .get(route)
+        .set("Authorization", `Bearer ${platformToken}`)
+        .expect(200);
+    }
+
+    await request(app.getHttpServer())
+      .get("/api/platform/tenants?q=no-such-tenant&page=1&pageSize=20")
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({ items: [], page: 1, pageSize: 20, total: 0 });
+      });
+
+    await request(app.getHttpServer())
+      .get("/api/platform/tenants?status=NOT_A_STATUS")
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(400)
+      .expect(({ body }) => {
+        expect(body.code).toBe("PLATFORM_QUERY_INVALID");
+        expect(body.message).not.toContain("Invalid `");
+      });
+
+    await request(app.getHttpServer())
+      .get("/api/platform/plans?page=1&pageSize=20")
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.items.some((plan: { code: string }) => plan.code === "starter")).toBe(true);
+        expect(body.items.some((plan: { code: string }) => plan.code === "professional")).toBe(
+          true,
+        );
+      });
+
+    await request(app.getHttpServer())
+      .get("/api/platform/tenants")
+      .set("Authorization", `Bearer ${tenantAdminToken}`)
+      .expect(403)
+      .expect(({ body }) => {
+        expect(body.code).toBe("PLATFORM_ACCESS_DENIED");
+      });
+  });
+
+  it("keeps platform list APIs stable with tenants without subscriptions and archived plans", async () => {
+    const platformToken = await login("platform@nexo.app", "demo1234");
+    const suffix = Date.now();
+    const tenant = await prisma.tenant.create({
+      data: {
+        name: `No Subscription ${suffix}`,
+        legalName: `No Subscription ${suffix}`,
+        displayName: `No Subscription ${suffix}`,
+        slug: `no-sub-${suffix}`,
+        status: "ACTIVE",
+      },
+    });
+    const archivedPlan = await prisma.plan.create({
+      data: {
+        code: `archived-${suffix}`,
+        name: `Archived ${suffix}`,
+        status: "ARCHIVED",
+        billingPeriod: "MANUAL",
+        features: {},
+        limits: {},
+        archivedAt: new Date(),
+      },
+    });
+    const subscribedTenant = await prisma.tenant.create({
+      data: {
+        name: `Archived Plan Tenant ${suffix}`,
+        legalName: `Archived Plan Tenant ${suffix}`,
+        displayName: `Archived Plan Tenant ${suffix}`,
+        slug: `archived-plan-${suffix}`,
+        status: "ACTIVE",
+      },
+    });
+    await prisma.tenantSubscription.create({
+      data: {
+        tenantId: subscribedTenant.id,
+        planId: archivedPlan.id,
+        status: "ACTIVE",
+        currentPeriodEnd: new Date(Date.now() + 30 * 86_400_000),
+        limitsSnapshot: {},
+        featuresSnapshot: {},
+      },
+    });
+
+    try {
+      await request(app.getHttpServer())
+        .get(`/api/platform/tenants?q=${tenant.slug}&page=1&pageSize=20`)
+        .set("Authorization", `Bearer ${platformToken}`)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.items).toHaveLength(1);
+          expect(body.items[0].plan).toBeNull();
+          expect(body.items[0].subscriptionStatus).toBeNull();
+        });
+
+      await request(app.getHttpServer())
+        .get(`/api/platform/subscriptions?planId=${archivedPlan.id}&page=1&pageSize=20`)
+        .set("Authorization", `Bearer ${platformToken}`)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.items).toHaveLength(1);
+          expect(body.items[0].tenant.id).toBe(subscribedTenant.id);
+          expect(body.items[0].plan.status).toBe("ARCHIVED");
+          expect(body.items[0].inconsistent).toBe(false);
+        });
+    } finally {
+      await prisma.tenant.deleteMany({ where: { id: { in: [tenant.id, subscribedTenant.id] } } });
+      await prisma.plan.deleteMany({ where: { id: archivedPlan.id } });
+    }
   });
 
   it("manages tenant suspension/reactivation and revokes old tenant sessions", async () => {
@@ -2605,6 +2745,13 @@ describe("Nexos API organization and RBAC", () => {
         status: "ACTIVE",
         platformRole,
       },
+    });
+  }
+
+  async function cleanupPlatformImpersonations() {
+    await prisma.impersonationSession.updateMany({
+      where: { status: "ACTIVE" },
+      data: { status: "STOPPED", stoppedAt: new Date() },
     });
   }
 

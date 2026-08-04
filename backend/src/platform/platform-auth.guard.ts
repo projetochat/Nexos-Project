@@ -110,6 +110,8 @@ export class PlatformAuthGuard implements CanActivate {
       }
     }
     request.user.platformRole = user.platformRole;
+    request.user.platformPermissions = permissions;
+    request.user.context = "platform";
     return true;
   }
 }

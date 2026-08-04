@@ -22,17 +22,26 @@ export class PlatformListQueryDto {
   q?: string;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number;
+  @IsString()
+  search?: string;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  pageSize?: number;
+  page?: string | number;
+
+  @IsOptional()
+  pageSize?: string | number;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  planId?: string;
+
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
 }
 
 export class InitialAdminDto {

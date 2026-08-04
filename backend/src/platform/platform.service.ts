@@ -23,6 +23,14 @@ import { FileStorageProvider } from "../tickets/storage/file-storage.provider";
 import { seedTenantRoles } from "./tenant-role-seed";
 import { PlatformAuditService } from "./platform-audit.service";
 import { coerceFeatures, coerceLimits, PlanEntitlementService } from "./plan-entitlement.service";
+import {
+  optionalPlanStatus,
+  optionalSubscriptionStatus,
+  optionalTenantStatus,
+  optionalUuidLike,
+  platformPagination,
+  trimmedSearch,
+} from "./platform-query";
 import type {
   CancelSubscriptionDto,
   CreateInvoiceDto,
@@ -125,16 +133,20 @@ export class PlatformService {
   }
 
   async listTenants(query: PlatformListQueryDto) {
-    const { page, pageSize, skip } = pagination(query);
-    const q = query.q?.trim();
-    const where: Prisma.TenantWhereInput = q
-      ? {
-          OR: [
-            { name: { contains: q, mode: "insensitive" } },
-            { slug: { contains: q, mode: "insensitive" } },
-          ],
-        }
-      : {};
+    const { page, pageSize, skip } = platformPagination(query);
+    const q = trimmedSearch(query);
+    const status = optionalTenantStatus(query.status);
+    const where: Prisma.TenantWhereInput = {
+      ...(status ? { status } : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              { slug: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.tenant.findMany({
         where,
@@ -293,15 +305,36 @@ export class PlatformService {
   }
 
   listPlans(query: PlatformListQueryDto) {
-    const { page, pageSize, skip } = pagination(query);
+    const { page, pageSize, skip } = platformPagination(query);
+    const q = trimmedSearch(query);
+    const status = optionalPlanStatus(query.status);
+    const where: Prisma.PlanWhereInput = {
+      ...(status ? { status } : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              { code: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
     return this.prisma.plan
       .findMany({
+        where,
         skip,
         take: pageSize,
         orderBy: { name: "asc" },
         include: { _count: { select: { subscriptions: true } } },
       })
-      .then(async (items) => paginated(items, await this.prisma.plan.count(), page, pageSize));
+      .then(async (items) =>
+        paginated(
+          items.map((plan) => serializePlan(plan)),
+          await this.prisma.plan.count({ where }),
+          page,
+          pageSize,
+        ),
+      );
   }
 
   async planDetail(id: string) {
@@ -429,16 +462,33 @@ export class PlatformService {
   }
 
   listSubscriptions(query: PlatformListQueryDto) {
-    const { page, pageSize, skip } = pagination(query);
+    const { page, pageSize, skip } = platformPagination(query);
+    const status = optionalSubscriptionStatus(query.status);
+    const planId = optionalUuidLike(query.planId, "planId");
+    const tenantId = optionalUuidLike(query.tenantId, "tenantId");
+    const where: Prisma.TenantSubscriptionWhereInput = {
+      ...(status ? { status } : {}),
+      ...(planId ? { planId } : {}),
+      ...(tenantId ? { tenantId } : {}),
+    };
     return this.prisma.tenantSubscription
       .findMany({
+        where,
         skip,
         take: pageSize,
         orderBy: { createdAt: "desc" },
-        include: { tenant: true, plan: true },
+        include: {
+          tenant: { select: { id: true, name: true, slug: true, status: true } },
+          plan: { select: { id: true, code: true, name: true, status: true, archivedAt: true } },
+        },
       })
       .then(async (items) =>
-        paginated(items, await this.prisma.tenantSubscription.count(), page, pageSize),
+        paginated(
+          items.map((subscription) => serializeSubscription(subscription)),
+          await this.prisma.tenantSubscription.count({ where }),
+          page,
+          pageSize,
+        ),
       );
   }
 
@@ -526,15 +576,32 @@ export class PlatformService {
   }
 
   listInvoices(query: PlatformListQueryDto) {
-    const { page, pageSize, skip } = pagination(query);
+    const { page, pageSize, skip } = platformPagination(query);
+    const tenantId = optionalUuidLike(query.tenantId, "tenantId");
+    const where: Prisma.InvoiceWhereInput = {
+      ...(tenantId ? { tenantId } : {}),
+    };
     return this.prisma.invoice
       .findMany({
+        where,
         skip,
         take: pageSize,
         orderBy: { createdAt: "desc" },
-        include: { tenant: true, subscription: { include: { plan: true } } },
+        include: {
+          tenant: { select: { id: true, name: true, slug: true } },
+          subscription: {
+            include: { plan: { select: { id: true, code: true, name: true, status: true } } },
+          },
+        },
       })
-      .then(async (items) => paginated(items, await this.prisma.invoice.count(), page, pageSize));
+      .then(async (items) =>
+        paginated(
+          items.map((invoice) => serializeInvoice(invoice)),
+          await this.prisma.invoice.count({ where }),
+          page,
+          pageSize,
+        ),
+      );
   }
 
   async invoiceDetail(id: string) {
@@ -594,9 +661,23 @@ export class PlatformService {
   }
 
   listAudit(query: PlatformListQueryDto) {
-    const { page, pageSize, skip } = pagination(query);
+    const { page, pageSize, skip } = platformPagination(query);
+    const q = trimmedSearch(query);
+    const tenantId = optionalUuidLike(query.tenantId, "tenantId");
+    const where: Prisma.PlatformAuditLogWhereInput = {
+      ...(tenantId ? { tenantId } : {}),
+      ...(q
+        ? {
+            OR: [
+              { action: { contains: q, mode: "insensitive" } },
+              { targetType: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
     return this.prisma.platformAuditLog
       .findMany({
+        where,
         skip,
         take: pageSize,
         orderBy: { createdAt: "desc" },
@@ -606,7 +687,7 @@ export class PlatformService {
         },
       })
       .then(async (items) =>
-        paginated(items, await this.prisma.platformAuditLog.count(), page, pageSize),
+        paginated(items, await this.prisma.platformAuditLog.count({ where }), page, pageSize),
       );
   }
 
@@ -805,12 +886,6 @@ function validatePlanConfig(features: unknown, limits: unknown) {
   return { features: coerceFeatures(features), limits: coerceLimits(limits) };
 }
 
-function pagination(query: PlatformListQueryDto) {
-  const page = query.page ?? 1;
-  const pageSize = query.pageSize ?? 25;
-  return { page, pageSize, skip: (page - 1) * pageSize };
-}
-
 function paginated<T>(items: T[], total: number, page: number, pageSize: number) {
   return { items, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
 }
@@ -835,7 +910,10 @@ function serializeTenant(tenant: {
   status: string;
   createdAt: Date;
   updatedAt: Date;
-  subscriptions?: Array<{ status: string; plan: { id: string; code: string; name: string } }>;
+  subscriptions?: Array<{
+    status: string;
+    plan: { id: string; code: string; name: string } | null;
+  }>;
   _count?: { users?: number; messagingConnections?: number };
 }) {
   const subscription = tenant.subscriptions?.[0] ?? null;
@@ -850,5 +928,92 @@ function serializeTenant(tenant: {
     connections: tenant._count?.messagingConnections ?? 0,
     createdAt: tenant.createdAt,
     updatedAt: tenant.updatedAt,
+  };
+}
+
+function serializePlan(plan: {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  status: string;
+  billingPeriod: string;
+  priceCents: number | null;
+  currency: string;
+  trialDays: number;
+  features: unknown;
+  limits: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+  archivedAt: Date | null;
+  _count?: { subscriptions?: number };
+}) {
+  return {
+    ...plan,
+    features: coerceFeatures(plan.features),
+    limits: coerceLimits(plan.limits),
+  };
+}
+
+function serializeSubscription(subscription: {
+  id: string;
+  tenantId: string;
+  planId: string;
+  status: string;
+  startsAt: Date;
+  trialEndsAt: Date | null;
+  currentPeriodStart: Date;
+  currentPeriodEnd: Date;
+  cancelAtPeriodEnd: boolean;
+  cancelledAt: Date | null;
+  limitsSnapshot: unknown;
+  featuresSnapshot: unknown;
+  createdByUserId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  tenant: { id: string; name: string; slug: string; status: string } | null;
+  plan: { id: string; code: string; name: string; status: string; archivedAt: Date | null } | null;
+}) {
+  return {
+    ...subscription,
+    tenant: subscription.tenant,
+    plan: subscription.plan,
+    limitsSnapshot: coerceLimits(subscription.limitsSnapshot),
+    featuresSnapshot: coerceFeatures(subscription.featuresSnapshot),
+    inconsistent: !subscription.tenant || !subscription.plan,
+  };
+}
+
+function serializeInvoice(invoice: {
+  id: string;
+  tenantId: string;
+  subscriptionId: string;
+  number: string;
+  status: string;
+  currency: string;
+  subtotalCents: number;
+  discountCents: number;
+  totalCents: number;
+  dueAt: Date;
+  paidAt: Date | null;
+  cancelledAt: Date | null;
+  externalReference: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  tenant: { id: string; name: string; slug: string } | null;
+  subscription:
+    | ({ plan: { id: string; code: string; name: string; status: string } | null } & {
+        id: string;
+        tenantId: string;
+        planId: string;
+        status: string;
+      })
+    | null;
+}) {
+  return {
+    ...invoice,
+    tenant: invoice.tenant,
+    subscription: invoice.subscription,
+    inconsistent: !invoice.tenant || !invoice.subscription || !invoice.subscription.plan,
   };
 }
