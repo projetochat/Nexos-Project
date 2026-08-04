@@ -293,6 +293,92 @@ export type ApiTicketAttachment = {
   deletedAt: string | null;
 };
 
+export type ApiCampaignStatus =
+  | "DRAFT"
+  | "SCHEDULED"
+  | "QUEUED"
+  | "RUNNING"
+  | "PAUSED"
+  | "CANCELLING"
+  | "CANCELLED"
+  | "COMPLETED"
+  | "FAILED";
+
+export type ApiCampaignAudience = {
+  type: "ALL" | "TAGS" | "CUSTOMERS" | "CONTACTS";
+  tagMatchMode?: "ANY" | "ALL" | null;
+  tagIds: string[];
+  customerIds: string[];
+  contactIds: string[];
+};
+
+export type ApiCampaignCounters = {
+  campaignId: string;
+  status: ApiCampaignStatus;
+  total: number;
+  eligible: number;
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  skipped: number;
+  cancelled: number;
+  updatedAt: string;
+};
+
+export type ApiCampaign = {
+  id: string;
+  tenantId: string;
+  name: string;
+  description: string | null;
+  status: ApiCampaignStatus;
+  messageType: "TEXT";
+  messageText: string;
+  connectionId: string;
+  connection: Pick<ApiMessagingConnection, "id" | "name" | "providerType" | "status"> | null;
+  audience: ApiCampaignAudience;
+  timezone: string;
+  scheduledAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  version: number;
+  counters: ApiCampaignCounters;
+  lastErrorCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiCampaignPreview = {
+  eligibleCount: number;
+  invalidPhoneCount: number;
+  optedOutCount: number;
+  duplicateCount: number;
+  blockedCount: number;
+  sample: Array<{
+    contactId: string;
+    contactName: string;
+    customerName: string | null;
+    phoneMasked: string;
+    renderedMessage: string;
+  }>;
+};
+
+export type ApiCampaignRecipient = {
+  id: string;
+  contactId: string;
+  contactName: string;
+  customerName: string | null;
+  phoneMasked: string;
+  status: string;
+  skipReason: string | null;
+  messageId: string | null;
+  attempts: number;
+  lastErrorCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type ListParams = {
   q?: string;
   page?: number;
@@ -754,6 +840,75 @@ export const ticketApi = {
     if (!response.ok) throw await readError(response);
     return response.blob();
   },
+};
+
+export const campaignApi = {
+  list: (
+    params: {
+      search?: string;
+      status?: ApiCampaignStatus;
+      connectionId?: string;
+      page?: number;
+      pageSize?: number;
+    } = {},
+  ) => apiRequest<PaginatedResponse<ApiCampaign>>(`/campaigns${queryString(params)}`),
+  get: (id: string) => apiRequest<ApiCampaign>(`/campaigns/${id}`),
+  create: (data: {
+    name: string;
+    description?: string | null;
+    messageText: string;
+    connectionId: string;
+    audience: ApiCampaignAudience;
+    timezone?: string;
+  }) => apiRequest<ApiCampaign>("/campaigns", { method: "POST", body: JSON.stringify(data) }),
+  update: (
+    id: string,
+    data: Partial<{
+      name: string;
+      description: string | null;
+      messageText: string;
+      connectionId: string;
+      audience: ApiCampaignAudience;
+      timezone: string;
+    }>,
+  ) => apiRequest<ApiCampaign>(`/campaigns/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  archive: (id: string) => apiRequest<ApiCampaign>(`/campaigns/${id}`, { method: "DELETE" }),
+  preview: (data: { messageText: string; audience: ApiCampaignAudience }) =>
+    apiRequest<ApiCampaignPreview>("/campaigns/audience-preview", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  start: (id: string, data: { confirm: true; expectedEligibleCount?: number }) =>
+    apiRequest<ApiCampaign>(`/campaigns/${id}/start`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  schedule: (
+    id: string,
+    data: {
+      confirm: true;
+      scheduledAt: string;
+      timezone?: string;
+      expectedEligibleCount?: number;
+    },
+  ) =>
+    apiRequest<ApiCampaign>(`/campaigns/${id}/schedule`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  pause: (id: string) => apiRequest<ApiCampaign>(`/campaigns/${id}/pause`, { method: "POST" }),
+  resume: (id: string) => apiRequest<ApiCampaign>(`/campaigns/${id}/resume`, { method: "POST" }),
+  cancel: (id: string) => apiRequest<ApiCampaign>(`/campaigns/${id}/cancel`, { method: "POST" }),
+  duplicate: (id: string) =>
+    apiRequest<ApiCampaign>(`/campaigns/${id}/duplicate`, { method: "POST" }),
+  recipients: (
+    id: string,
+    params: { status?: string; search?: string; page?: number; pageSize?: number } = {},
+  ) =>
+    apiRequest<PaginatedResponse<ApiCampaignRecipient>>(
+      `/campaigns/${id}/recipients${queryString(params)}`,
+    ),
+  stats: (id: string) => apiRequest<ApiCampaignCounters>(`/campaigns/${id}/stats`),
 };
 
 export function clearNexosApiSession() {

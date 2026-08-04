@@ -34,7 +34,8 @@ async function bootstrap() {
   app.setGlobalPrefix("api");
 
   const port = config.get<number>("PORT") ?? 3001;
-  await app.listen(port);
+  const host = config.get<string>("BACKEND_HOST") ?? config.get<string>("HOST") ?? "0.0.0.0";
+  await app.listen(port, host);
 }
 
 bootstrap();

@@ -43,6 +43,10 @@ Sprint corretiva de aceite WhatsApp real. O WIP parcial da Sprint 08 foi preserv
 
 Resultado formal desta execucao: `NOT READY FOR SPRINT 08`, pois os gates fisicos de CONNECTED, outbound real, inbound real e lifecycle conectado exigem WhatsApp de teste e nao foram reproduzidos nesta maquina.
 
+## Sprint 12
+
+Sprint 12 adicionou o dominio operacional de campanhas em NestJS/Prisma/BullMQ. A rota `/campanhas` passou a usar Nexos API, audiencia real, opt-out e dispatch por outbox. Detalhes em [CAMPAIGNS.md](./CAMPAIGNS.md).
+
 ## Tecnologias atuais
 
 | Area            | Tecnologia                                                    |
@@ -357,6 +361,7 @@ O bootstrap fisico em `nexos_0802` foi recuperado. A dependencia de indice 1 de
 O adapter Redis do Socket.io tambem foi corrigido para namespace `/realtime`, usando o servidor raiz
 quando o Nest entrega `Namespace` no `afterInit`. Health fisico confirmou `database=up`, `redis=up`,
 `queue=up`, `realtime=up` e `realtimeAdapter=redis`. Sprint 10 segue bloqueada ate gate fisico completo.
+
 # Sprint 11
 
 Chamados agora sao dominio oficial de Tickets via Nexos API. Consulte [TICKETING.md](./TICKETING.md) e [STORAGE.md](./STORAGE.md).

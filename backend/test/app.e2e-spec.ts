@@ -8,6 +8,7 @@ import helmet from "helmet";
 import { hash } from "bcryptjs";
 import { AppModule } from "../src/app.module";
 import {
+  CampaignStatus,
   ConversationStatus,
   MessageDirection,
   MessageType,
@@ -26,8 +27,8 @@ describe("Nexos API organization and RBAC", () => {
 
   beforeAll(async () => {
     process.env.DATABASE_URL =
-      process.env.DATABASE_URL ??
-      "postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public";
+      process.env.NEXOS_TEST_DATABASE_URL ??
+      "postgresql://nexos:nexos_dev_password@localhost:5432/nexos_1200?schema=public";
     process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test-access-secret-minimum-32-chars";
     process.env.JWT_REFRESH_SECRET =
       process.env.JWT_REFRESH_SECRET ?? "test-refresh-secret-minimum-32-chars";
@@ -1940,6 +1941,180 @@ describe("Nexos API organization and RBAC", () => {
       });
   });
 
+  it("creates campaigns, previews audience, snapshots recipients and blocks duplicate starts", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const staleCampaigns = await prisma.campaign.findMany({
+      where: { tenantId: tenant.id, name: "Campaign E2E" },
+      select: { id: true },
+    });
+    await prisma.message.deleteMany({
+      where: { tenantId: tenant.id, campaignId: { in: staleCampaigns.map((item) => item.id) } },
+    });
+    await prisma.campaign.deleteMany({ where: { tenantId: tenant.id, name: "Campaign E2E" } });
+    await prisma.contact.deleteMany({
+      where: { tenantId: tenant.id, normalizedPhone: "+5511999998888" },
+    });
+    await prisma.messagingConnection.deleteMany({
+      where: { tenantId: tenant.id, name: "Evolution Campaign E2E" },
+    });
+    const connection = await prisma.messagingConnection.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Evolution Campaign E2E",
+        providerType: MessagingProviderType.EVOLUTION,
+        status: MessagingConnectionStatus.CONNECTED,
+        externalReference: `campaign-e2e-${Date.now()}`,
+      },
+    });
+    const contact = await prisma.contact.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Campanha E2E",
+        phone: "11999998888",
+        normalizedPhone: "+5511999998888",
+      },
+    });
+
+    const previewPayload = {
+      messageText: "NEXOS-S12-E2E - Ola, {{contact.name}}.",
+      audience: { type: "CONTACTS", contactIds: [contact.id], tagIds: [], customerIds: [] },
+    };
+    await request(app.getHttpServer())
+      .post("/api/campaigns/audience-preview")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send(previewPayload)
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.eligibleCount).toBe(1);
+        expect(body.sample[0].renderedMessage).toContain("Campanha E2E");
+        expect(body.sample[0].phoneMasked).not.toContain("999998888");
+      });
+
+    const created = await request(app.getHttpServer())
+      .post("/api/campaigns")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        name: "Campaign E2E",
+        messageText: previewPayload.messageText,
+        connectionId: connection.id,
+        audience: previewPayload.audience,
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.status).toBe("DRAFT");
+        expect(body.connectionId).toBe(connection.id);
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/campaigns/${created.body.id}/start`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ confirm: true, expectedEligibleCount: 1 })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.status).toBe("QUEUED");
+        expect(body.counters.eligible).toBe(1);
+      });
+
+    await request(app.getHttpServer())
+      .patch(`/api/campaigns/${created.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ messageText: "Nao pode editar" })
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body.code).toBe("CAMPAIGN_IMMUTABLE_AFTER_START");
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/campaigns/${created.body.id}/start`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ confirm: true, expectedEligibleCount: 1 })
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body.code).toBe("CAMPAIGN_STATUS_TRANSITION_INVALID");
+      });
+
+    const recipients = await request(app.getHttpServer())
+      .get(`/api/campaigns/${created.body.id}/recipients`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+    expect(recipients.body.items).toHaveLength(1);
+    expect(recipients.body.items[0].phoneMasked).not.toContain("999998888");
+
+    await prisma.campaign.update({
+      where: { id: created.body.id },
+      data: { status: CampaignStatus.RUNNING },
+    });
+    await request(app.getHttpServer())
+      .post(`/api/campaigns/${created.body.id}/cancel`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.status).toBe("CANCELLING");
+      });
+
+    await prisma.message.deleteMany({
+      where: { tenantId: tenant.id, campaignId: created.body.id },
+    });
+    await prisma.conversation.deleteMany({ where: { tenantId: tenant.id, contactId: contact.id } });
+    await prisma.campaign.deleteMany({ where: { id: created.body.id } });
+    await prisma.contact.deleteMany({ where: { id: contact.id } });
+    await prisma.messagingConnection.delete({ where: { id: connection.id } });
+  });
+
+  it("excludes marketing opt-out contacts from campaign preview", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    await prisma.contact.deleteMany({
+      where: { tenantId: tenant.id, normalizedPhone: "+5511977776666" },
+    });
+    const contact = await prisma.contact.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Opt Out E2E",
+        phone: "11977776666",
+        normalizedPhone: "+5511977776666",
+        messagingPreferences: {
+          create: {
+            channel: "WHATSAPP",
+            marketingAllowed: false,
+            optedOutAt: new Date(),
+            source: "e2e",
+          },
+        },
+      },
+    });
+
+    await request(app.getHttpServer())
+      .post("/api/campaigns/audience-preview")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        messageText: "Ola, {{contact.name}}.",
+        audience: { type: "CONTACTS", contactIds: [contact.id], tagIds: [], customerIds: [] },
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.eligibleCount).toBe(0);
+        expect(body.optedOutCount).toBe(1);
+      });
+
+    await prisma.contact.deleteMany({ where: { id: contact.id } });
+  });
+
+  it("does not allow agents to create campaigns", async () => {
+    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    await request(app.getHttpServer())
+      .post("/api/campaigns")
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({
+        name: "Sem permissao",
+        messageText: "Ola",
+        connectionId: "00000000-0000-4000-8000-000000000000",
+        audience: { type: "ALL", tagIds: [], customerIds: [], contactIds: [] },
+      })
+      .expect(403);
+  });
+
   it("rejects invalid credentials", async () => {
     await request(app.getHttpServer())
       .post("/api/auth/login")
@@ -1968,6 +2143,7 @@ describe("Nexos API organization and RBAC", () => {
         providerType: MessagingProviderType.EVOLUTION,
         OR: [
           { name: { startsWith: "Evolution E2E" } },
+          { name: { startsWith: "Evolution Campaign E2E" } },
           { name: { startsWith: "Evolution Acme Cross" } },
           { name: { startsWith: "Evolution Orbit Cross" } },
           { externalReference: { startsWith: "e2e-" } },
@@ -1976,7 +2152,26 @@ describe("Nexos API organization and RBAC", () => {
       select: { id: true, tenantId: true },
     });
     for (const connection of connections) {
+      const campaigns = await prisma.campaign.findMany({
+        where: { tenantId: connection.tenantId, connectionId: connection.id },
+        select: { id: true },
+      });
       await prisma.$transaction([
+        prisma.message.deleteMany({
+          where: {
+            tenantId: connection.tenantId,
+            OR: [
+              { connectionId: connection.id },
+              { campaignId: { in: campaigns.map((campaign) => campaign.id) } },
+            ],
+          },
+        }),
+        prisma.campaign.deleteMany({
+          where: {
+            tenantId: connection.tenantId,
+            id: { in: campaigns.map((campaign) => campaign.id) },
+          },
+        }),
         prisma.message.updateMany({
           where: { tenantId: connection.tenantId, connectionId: connection.id },
           data: { connectionId: null },

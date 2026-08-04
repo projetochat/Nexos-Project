@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { MessageStatus } from "../generated/prisma";
+import type { RealtimeServerEvent } from "./realtime-events";
 import { RealtimeService } from "./realtime.service";
 
 @Injectable()
@@ -155,6 +156,19 @@ export class RealtimePublisher {
   }) {
     this.realtime.publish({ ticketId: input.ticketId }, "ticket.attachment.removed", input);
     this.realtime.publish({ tenantId: input.tenantId }, "ticket.attachment.removed", input);
+  }
+
+  publishCampaignEvent(input: {
+    tenantId: string;
+    campaignId: string;
+    event: RealtimeServerEvent;
+    status: string;
+    counters: unknown;
+    updatedAt: Date | string;
+  }) {
+    const payload = { ...input, updatedAt: dateString(input.updatedAt) };
+    this.realtime.publish({ tenantId: input.tenantId }, input.event, payload);
+    this.realtime.publish({ campaignId: input.campaignId }, input.event, payload);
   }
 }
 

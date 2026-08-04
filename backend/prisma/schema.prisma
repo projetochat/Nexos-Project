@@ -117,6 +117,60 @@ enum AttachmentScanStatus {
   BLOCKED
 }
 
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  QUEUED
+  RUNNING
+  PAUSED
+  CANCELLING
+  CANCELLED
+  COMPLETED
+  FAILED
+}
+
+enum CampaignMessageType {
+  TEXT
+}
+
+enum CampaignAudienceType {
+  ALL
+  TAGS
+  CUSTOMERS
+  CONTACTS
+}
+
+enum CampaignTagMatchMode {
+  ANY
+  ALL
+}
+
+enum CampaignRecipientStatus {
+  PENDING
+  QUEUED
+  PROCESSING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  SKIPPED
+  CANCELLED
+}
+
+enum CampaignRecipientSkipReason {
+  INVALID_PHONE
+  OPT_OUT
+  BLOCKED
+  DUPLICATE
+  ARCHIVED_CONTACT
+  TEMPLATE_RENDER_FAILED
+  CAMPAIGN_CANCELLED
+}
+
+enum MessagingPreferenceChannel {
+  WHATSAPP
+}
+
 model Tenant {
   id                          String                       @id @default(uuid())
   name                        String
@@ -140,6 +194,9 @@ model Tenant {
   ticketComments              TicketComment[]
   ticketHistory               TicketHistory[]
   ticketAttachments           TicketAttachment[]
+  campaigns                   Campaign[]
+  campaignRecipients          CampaignRecipient[]
+  contactMessagingPreferences ContactMessagingPreference[]
 
   @@map("tenants")
 }
@@ -162,26 +219,28 @@ model User {
 }
 
 model TenantMembership {
-  id                String                 @id @default(uuid())
-  tenantId          String
-  userId            String
-  roleId            String
-  status            MembershipStatus       @default(ACTIVE)
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role              Role                   @relation(fields: [tenantId, roleId], references: [tenantId, id])
-  departments       DepartmentMembership[]
-  conversations     Conversation[]
-  messages          Message[]
-  quickReplies      QuickReply[]
-  assignedTickets   Ticket[]               @relation("TicketAssignee")
-  createdTickets    Ticket[]               @relation("TicketCreator")
-  closedTickets     Ticket[]               @relation("TicketCloser")
-  ticketComments    TicketComment[]
-  ticketHistory     TicketHistory[]
-  ticketAttachments TicketAttachment[]
+  id                 String                 @id @default(uuid())
+  tenantId           String
+  userId             String
+  roleId             String
+  status             MembershipStatus       @default(ACTIVE)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  tenant             Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role               Role                   @relation(fields: [tenantId, roleId], references: [tenantId, id])
+  departments        DepartmentMembership[]
+  conversations      Conversation[]
+  messages           Message[]
+  quickReplies       QuickReply[]
+  assignedTickets    Ticket[]               @relation("TicketAssignee")
+  createdTickets     Ticket[]               @relation("TicketCreator")
+  closedTickets      Ticket[]               @relation("TicketCloser")
+  ticketComments     TicketComment[]
+  ticketHistory      TicketHistory[]
+  ticketAttachments  TicketAttachment[]
+  createdCampaigns   Campaign[]             @relation("CampaignCreator")
+  cancelledCampaigns Campaign[]             @relation("CampaignCanceller")
 
   @@unique([tenantId, userId])
   @@unique([tenantId, id])
@@ -271,19 +330,20 @@ model RolePermission {
 }
 
 model Customer {
-  id                     String    @id @default(uuid())
+  id                     String              @id @default(uuid())
   tenantId               String
   name                   String
   email                  String?
   phone                  String?
   notes                  String?
   responsibleContactName String?
-  color                  String    @default("#6366f1")
+  color                  String              @default("#6366f1")
   archivedAt             DateTime?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
-  tenant                 Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  tenant                 Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contacts               Contact[]
+  campaignRecipients     CampaignRecipient[]
   tickets                Ticket[]
 
   @@unique([tenantId, id])
@@ -293,27 +353,29 @@ model Customer {
 }
 
 model Contact {
-  id              String              @id @default(uuid())
-  tenantId        String
-  customerId      String?
-  departmentId    String?
-  name            String
-  phone           String
-  normalizedPhone String
-  email           String?
-  avatarUrl       String?
-  departmentName  String?
-  companyRole     ContactCompanyRole?
-  instance        String?
-  archivedAt      DateTime?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer        Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  department      Department?         @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  tags            ContactTag[]
-  conversations   Conversation[]
-  tickets         Ticket[]
+  id                   String                       @id @default(uuid())
+  tenantId             String
+  customerId           String?
+  departmentId         String?
+  name                 String
+  phone                String
+  normalizedPhone      String
+  email                String?
+  avatarUrl            String?
+  departmentName       String?
+  companyRole          ContactCompanyRole?
+  instance             String?
+  archivedAt           DateTime?
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+  tenant               Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer             Customer?                    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  department           Department?                  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  tags                 ContactTag[]
+  conversations        Conversation[]
+  tickets              Ticket[]
+  campaignRecipients   CampaignRecipient[]
+  messagingPreferences ContactMessagingPreference[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, normalizedPhone])
@@ -419,6 +481,8 @@ model Message {
   providerErrorCode    String?
   providerErrorMessage String?
   providerAcceptedAt   DateTime?
+  campaignId           String?
+  campaignRecipientId  String?
   sendAttempts         Int                  @default(0)
   lastAttemptAt        DateTime?
   externalMessageId    String?
@@ -429,12 +493,16 @@ model Message {
   conversation         Conversation         @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
   connection           MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
   authorMembership     TenantMembership?    @relation(fields: [authorMembershipId], references: [id], onDelete: SetNull)
+  campaign             Campaign?            @relation(fields: [tenantId, campaignId], references: [tenantId, id], onDelete: NoAction)
+  campaignRecipient    CampaignRecipient?   @relation(fields: [tenantId, campaignRecipientId], references: [tenantId, id], onDelete: NoAction)
 
   @@unique([tenantId, conversationId, clientMessageId])
   @@unique([tenantId, connectionId, externalMessageId])
   @@index([tenantId])
   @@index([tenantId, connectionId])
   @@index([tenantId, providerMessageId])
+  @@index([tenantId, campaignId])
+  @@index([tenantId, campaignRecipientId])
   @@index([tenantId, conversationId, createdAt, id])
   @@index([conversationId])
   @@map("messages")
@@ -475,6 +543,7 @@ model MessagingConnection {
   tenant               Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   conversations        Conversation[]
   messages             Message[]
+  campaigns            Campaign[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, providerType, externalReference])
@@ -631,4 +700,113 @@ model TicketAttachment {
   @@index([tenantId, ticketId, createdAt])
   @@index([tenantId, status])
   @@map("ticket_attachments")
+}
+
+model ContactMessagingPreference {
+  id               String                     @id @default(uuid())
+  tenantId         String
+  contactId        String
+  channel          MessagingPreferenceChannel @default(WHATSAPP)
+  marketingAllowed Boolean                    @default(true)
+  optedOutAt       DateTime?
+  source           String                     @default("manual")
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+  tenant           Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact          Contact                    @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, contactId, channel])
+  @@index([tenantId, marketingAllowed])
+  @@map("contact_messaging_preferences")
+}
+
+model Campaign {
+  id                      String                @id @default(uuid())
+  tenantId                String
+  name                    String
+  description             String?
+  status                  CampaignStatus        @default(DRAFT)
+  messageType             CampaignMessageType   @default(TEXT)
+  messageText             String
+  connectionId            String
+  audienceType            CampaignAudienceType
+  audienceTagMatchMode    CampaignTagMatchMode?
+  audienceTagIds          String[]              @default([])
+  audienceCustomerIds     String[]              @default([])
+  audienceContactIds      String[]              @default([])
+  timezone                String                @default("America/Sao_Paulo")
+  scheduledAt             DateTime?
+  startedAt               DateTime?
+  completedAt             DateTime?
+  cancelledAt             DateTime?
+  cancelledByMembershipId String?
+  createdByMembershipId   String
+  archivedAt              DateTime?
+  version                 Int                   @default(1)
+  totalCount              Int                   @default(0)
+  eligibleCount           Int                   @default(0)
+  invalidPhoneCount       Int                   @default(0)
+  optedOutCount           Int                   @default(0)
+  duplicateCount          Int                   @default(0)
+  blockedCount            Int                   @default(0)
+  sentCount               Int                   @default(0)
+  deliveredCount          Int                   @default(0)
+  readCount               Int                   @default(0)
+  failedCount             Int                   @default(0)
+  skippedCount            Int                   @default(0)
+  cancelledCount          Int                   @default(0)
+  lastErrorCode           String?
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  tenant                  Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection              MessagingConnection   @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
+  createdByMembership     TenantMembership      @relation("CampaignCreator", fields: [createdByMembershipId], references: [id], onDelete: Restrict)
+  cancelledByMembership   TenantMembership?     @relation("CampaignCanceller", fields: [cancelledByMembershipId], references: [id], onDelete: SetNull)
+  recipients              CampaignRecipient[]
+  messages                Message[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, status])
+  @@index([tenantId, scheduledAt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, connectionId])
+  @@map("campaigns")
+}
+
+model CampaignRecipient {
+  id                String                       @id @default(uuid())
+  tenantId          String
+  campaignId        String
+  contactId         String
+  customerId        String?
+  normalizedPhone   String
+  displayName       String?
+  renderedMessage   String?
+  status            CampaignRecipientStatus      @default(PENDING)
+  skipReason        CampaignRecipientSkipReason?
+  messageId         String?
+  externalMessageId String?
+  queuedAt          DateTime?
+  processingAt      DateTime?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  failedAt          DateTime?
+  attempts          Int                          @default(0)
+  lastErrorCode     String?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  tenant            Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign          Campaign                     @relation(fields: [tenantId, campaignId], references: [tenantId, id], onDelete: Cascade)
+  contact           Contact                      @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Restrict)
+  customer          Customer?                    @relation(fields: [tenantId, customerId], references: [tenantId, id], onDelete: NoAction)
+  messages          Message[]
+
+  @@unique([campaignId, contactId])
+  @@unique([tenantId, id])
+  @@index([campaignId, status])
+  @@index([tenantId, contactId])
+  @@index([tenantId, messageId])
+  @@index([tenantId, externalMessageId])
+  @@map("campaign_recipients")
 }
