@@ -318,6 +318,31 @@ $env:EVOLUTION_WEBHOOK_SECRET="use-um-secret-forte"
 `ensureWebhookConfigured(instanceName)` registra `enabled=true`, URL, eventos Evolution e header
 `jwt_key`. O backend valida esse header contra `EVOLUTION_WEBHOOK_SECRET`; nao publique webhook anonimo.
 
+No startup, quando Evolution esta configurada, o backend registra de forma sanitizada:
+
+```text
+EVOLUTION_WEBHOOK_SECRET configured=true
+```
+
+Se `EVOLUTION_BASE_URL`/`EVOLUTION_API_KEY` existem mas `EVOLUTION_WEBHOOK_PUBLIC_URL` ou
+`EVOLUTION_WEBHOOK_SECRET` faltam, a integracao fica `degraded` e o log informa
+`WEBHOOK_CONFIGURATION_MISSING`, sem imprimir segredo.
+
+Para recuperar uma instancia real apos troca de secret ou restart:
+
+```powershell
+$env:EVOLUTION_INSTANCE_NAME="nome-da-instancia"
+bun run --cwd backend audit:evolution-webhook -- --ensure
+```
+
+Para provar conectividade do container Evolution ate o backend Nexos:
+
+```powershell
+bun run --cwd backend audit:evolution-webhook -- --container-health --instance=nome-da-instancia
+```
+
+O resultado obrigatorio e HTTP 200 em `http://host.docker.internal:3001/api/health`.
+
 Para regressao automatizada ampla, use `nexos_0801`. Para homologacao fisica, use `nexos_0802` e nao rode
 reset enquanto houver Contact, Connection, Conversation ou Messages reais aprovados.
 
@@ -352,7 +377,16 @@ node backend/scripts/verify-backend-startup.mjs
 Resultado esperado:
 
 ```json
-{"ok":true,"health":{"database":"up","redis":"up","queue":"up","realtime":"up","realtimeAdapter":"redis"}}
+{
+  "ok": true,
+  "health": {
+    "database": "up",
+    "redis": "up",
+    "queue": "up",
+    "realtime": "up",
+    "realtimeAdapter": "redis"
+  }
+}
 ```
 
 ## Sprint 09 Rework II - Flag frontend realtime

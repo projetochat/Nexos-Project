@@ -7,6 +7,7 @@ import { RealtimeModule } from "../realtime/realtime.module";
 import { DevelopmentMessagingProvider } from "./development-messaging.provider";
 import { EvolutionClient } from "./evolution/evolution.client";
 import { EvolutionMessagingProvider } from "./evolution/evolution-messaging.provider";
+import { EvolutionStartupService } from "./evolution/evolution-startup.service";
 import { EvolutionWebhookController } from "./evolution/evolution-webhook.controller";
 import { EvolutionWebhookTranslator } from "./evolution/evolution-webhook.translator";
 import { MessagingConnectionsController } from "./messaging-connections.controller";
@@ -23,6 +24,7 @@ import { MessagingStatusService } from "./messaging-status.service";
   providers: [
     DevelopmentMessagingProvider,
     EvolutionClient,
+    EvolutionStartupService,
     EvolutionMessagingProvider,
     EvolutionWebhookTranslator,
     MessagingConnectionsService,

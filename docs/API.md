@@ -336,7 +336,11 @@ O endpoint existente `POST /conversations/:conversationId/messages` agora envia 
 
 ## Sprint 08.01 - Webhook inbound/reconnect
 
-`POST /api/webhooks/evolution` preserva JWT bearer assinado por `EVOLUTION_WEBHOOK_SECRET`. Payloads inbound `MESSAGES_UPSERT` normalizam `remoteJid` e reutilizam Contact/Conversation compativeis. Replays pelo mesmo `externalMessageId` retornam resposta OK sem criar outra Message, sem alterar unread e sem atualizar lastMessage.
+`POST /api/webhooks/evolution` aceita `jwt_key: <EVOLUTION_WEBHOOK_SECRET>` como contrato fisico da
+Evolution e preserva JWT bearer assinado por `EVOLUTION_WEBHOOK_SECRET` para compatibilidade automatizada.
+Payloads inbound `MESSAGES_UPSERT` normalizam `remoteJid` e reutilizam Contact/Conversation compativeis.
+Replays pelo mesmo `externalMessageId` retornam resposta OK sem criar outra Message, sem alterar unread e
+sem atualizar lastMessage.
 
 Eventos `CONNECTION_UPDATE` conectados atualizam owner identity e disparam ensure idempotente do webhook Evolution. Falha nesse ensure e registrada de forma sanitizada e nao transforma o callback em erro 500.
 
@@ -427,6 +431,10 @@ Catalogo de eventos e payloads em `docs/REALTIME.md`.
 
 - `jwt_key: <EVOLUTION_WEBHOOK_SECRET>`: contrato fisico configurado na Evolution;
 - `Authorization: Bearer <token>` com claims `{ app: "evolution", action: "webhook" }`: contrato de teste.
+
+`jwt_key` ausente ou divergente retorna `401`. Logs do endpoint carregam `requestId`, `event`,
+`instanceName`, `authStrategy`, `authResult` e `httpResult`; nao carregam segredo, telefone completo, payload
+completo nem conteudo da mensagem.
 
 Respostas 2xx podem indicar processamento, replay idempotente ou evento suportadamente ignorado. Motivos
 canonicos incluem `FROM_ME`, `GROUP_MESSAGE`, `UNSUPPORTED_EVENT`, `MISSING_MESSAGE_ID`,

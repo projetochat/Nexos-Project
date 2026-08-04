@@ -1,8 +1,9 @@
-import { INestApplication, ValidationPipe } from "@nestjs/common";
+import { INestApplication, Logger, ValidationPipe } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
+import { vi } from "vitest";
 import helmet from "helmet";
 import { hash } from "bcryptjs";
 import { AppModule } from "../src/app.module";
@@ -1202,6 +1203,73 @@ describe("Nexos API organization and RBAC", () => {
         },
       }),
     ).resolves.toBe(1);
+  });
+
+  it("rejects Evolution webhook requests with an incorrect jwt_key header", async () => {
+    await request(app.getHttpServer())
+      .post("/api/webhooks/evolution")
+      .set("jwt_key", "wrong-webhook-secret")
+      .send({ event: "MESSAGES_UPSERT", instance: "unknown", data: {} })
+      .expect(401);
+  });
+
+  it("accepts the compatible Evolution webhook Bearer JWT contract", async () => {
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const connection = await prisma.messagingConnection.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Evolution E2E Bearer",
+        providerType: MessagingProviderType.EVOLUTION,
+        status: MessagingConnectionStatus.CONNECTED,
+        externalReference: `e2e-bearer-${Date.now()}`,
+      },
+    });
+    const externalMessageId = `EXT-BEARER-${Date.now()}`;
+
+    await request(app.getHttpServer())
+      .post("/api/webhooks/evolution")
+      .set("Authorization", `Bearer ${webhookToken()}`)
+      .send({
+        event: "MESSAGES_UPSERT",
+        instance: connection.externalReference,
+        data: {
+          key: {
+            remoteJid: "551198887779@s.whatsapp.net",
+            fromMe: false,
+            id: externalMessageId,
+          },
+          message: { conversation: "Webhook inbound via bearer" },
+          messageTimestamp: Math.floor(Date.now() / 1000),
+          pushName: "Webhook Cliente Bearer",
+        },
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.kind).toBe("inbound");
+      });
+  });
+
+  it("does not write the Evolution webhook secret to auth failure logs", async () => {
+    const previousSecret = process.env.EVOLUTION_WEBHOOK_SECRET;
+    process.env.EVOLUTION_WEBHOOK_SECRET = "super-secret-value-never-log";
+    const warnSpy = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+    const logSpy = vi.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
+
+    try {
+      await request(app.getHttpServer())
+        .post("/api/webhooks/evolution")
+        .set("jwt_key", "wrong-webhook-secret")
+        .send({ event: "MESSAGES_UPSERT", instance: "unknown", data: {} })
+        .expect(401);
+    } finally {
+      process.env.EVOLUTION_WEBHOOK_SECRET = previousSecret;
+    }
+
+    const logged = JSON.stringify([...warnSpy.mock.calls, ...logSpy.mock.calls]);
+    expect(logged).not.toContain("super-secret-value-never-log");
+    expect(logged).toContain("invalid_jwt_key");
+    warnSpy.mockRestore();
+    logSpy.mockRestore();
   });
 
   it("deduplicates inbound messages across reconnected Evolution instances with the same owner", async () => {

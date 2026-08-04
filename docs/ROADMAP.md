@@ -200,7 +200,8 @@ presence, typing, reconnect e Redis degraded/recovery.
 
 # Sprint 10
 
-Status: consolidacao de dominio implementada e rework de RBAC/Tags/Quick Replies aplicado.
+Status: consolidacao de dominio implementada e rework de RBAC/Tags/Quick Replies aplicado. Gate fisico
+reaberto por falha real de webhook Evolution (`ECONNREFUSED` e depois `401`) durante inbound WhatsApp.
 
 Entregue:
 
@@ -209,7 +210,8 @@ Entregue:
 - agente com uso de Tags existentes e leitura de Quick Replies;
 - Tag catalog compartilhado entre `/etiquetas` e Contact modal;
 - Quick Replies exclusivamente via Nexos API;
-- `verify` duplo aprovado em `nexos_0801`.
+- `verify` duplo aprovado em `nexos_0801`;
+- recovery de conectividade/auth do webhook implementado com auditoria sanitizada.
 
-Proxima etapa: Sprint 11 pode partir do dominio Inbox consolidado, preservando os gates fisicos de
-WhatsApp/realtime/Redis como criterios recorrentes de homologacao.
+Sprint 11 permanece bloqueada ate mensagem real do WhatsApp B provar webhook 2xx autenticado por
+`jwt_key`, Message inbound persistida, mesma Conversation, Inbox atualizada sem F5 e zero duplicacao.

@@ -294,6 +294,18 @@ Webhook Evolution nao usa sessao de usuario. Ele e autenticado por segredo opera
 Falha de auth registra `evolution.webhook.auth_failed` com `authResult` e HTTP 401, sem logar segredo,
 telefone completo ou conteudo da mensagem.
 
+`EVOLUTION_WEBHOOK_SECRET` e normalizado no backend para remover espacos externos e aspas externas
+pareadas. A auditoria do contrato deve registrar somente:
+
+```text
+secretBackendConfigured=true/false
+secretEvolutionConfigured=true/false
+secretMatch=true/false
+headerJwtKeyPresent=true/false
+```
+
+Nunca registrar o valor de `jwt_key` ou do secret.
+
 ## Sprint 09 - Socket auth
 
 Realtime usa access token no handshake (`socket.auth.accessToken`). O backend valida assinatura,

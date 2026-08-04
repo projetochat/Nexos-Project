@@ -49,6 +49,48 @@ docker compose up -d evolution-api
 - Nexos `nexos_0802`: uma `messaging_connections` conectada apontando para `26293569-whatsapp-nata-cffd5f5c`, owner normalizado `+556292728679`.
 - Dados de homologacao preservados: 2 usuarios, 2 memberships, 1 contato ativo, 2 conversas, 5 mensagens, 5 outbox events.
 
+## Webhook connectivity/auth recovery
+
+Contrato fisico Evolution -> Nexos:
+
+```text
+URL: http://host.docker.internal:3001/api/webhooks/evolution
+Header: jwt_key
+Valor: EVOLUTION_WEBHOOK_SECRET normalizado no backend
+Evento minimo: MESSAGES_UPSERT
+```
+
+O backend normaliza `EVOLUTION_WEBHOOK_SECRET` removendo espacos externos e aspas externas pareadas. Logs
+mostram apenas `EVOLUTION_WEBHOOK_SECRET configured=true/false`; o valor nunca deve aparecer.
+
+Auditoria sanitizada e reconfiguracao da instancia:
+
+```powershell
+$env:EVOLUTION_INSTANCE_NAME="nome-da-instancia"
+bun run --cwd backend audit:evolution-webhook -- --ensure
+```
+
+Saida esperada:
+
+```json
+{
+  "secretBackendConfigured": true,
+  "secretEvolutionConfigured": true,
+  "secretMatch": true,
+  "headerJwtKeyPresent": true
+}
+```
+
+Smoke de conectividade a partir do container Evolution:
+
+```powershell
+bun run --cwd backend audit:evolution-webhook -- --container-health --instance=nome-da-instancia
+```
+
+O health deve retornar `ok=true`. Qualquer `ECONNREFUSED` em
+`http://host.docker.internal:3001/api/health` indica backend inacessivel para a Evolution e bloqueia inbound
+fisico.
+
 ## Instancias antigas
 
 Instancias Evolution antigas em `close` foram chamadas via `DELETE /instance/delete/:name` depois do backup. A chamada retornou sem erro e os logs posteriores marcaram as instancias como `REMOVED`. Caso alguma listagem cacheada ainda mostre registros fechados, nao forcar limpeza por volume ou Redis.

@@ -36,6 +36,7 @@ export type EvolutionInstance = {
     enabled?: boolean;
     url?: string;
     events?: string[];
+    headers?: Record<string, string | undefined> | null;
   } | null;
 };
 

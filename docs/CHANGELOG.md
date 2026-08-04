@@ -10,6 +10,15 @@
 - Testes e2e cobrem RBAC de Tags, associacao Contact x Tag, Quick Replies API-only, duplicata de atalho, archive e isolamento cross-tenant.
 - `bun run verify` passou duas vezes em `nexos_0801` com Redis local.
 
+## 2026-08-04 - Sprint 10 Webhook Connectivity & Auth Recovery
+
+- Webhook Evolution passou a logar auth de forma sanitizada com `requestId`, `authStrategy`, `authResult` e `httpResult`.
+- `EVOLUTION_WEBHOOK_SECRET` agora e normalizado para evitar divergencia por espacos/aspas externas.
+- Startup registra `EVOLUTION_WEBHOOK_SECRET configured=true/false` e marca Evolution como `degraded` quando webhook esta incompleto.
+- Adicionado script `backend/scripts/audit-evolution-webhook.mjs` para health do container, auditoria `secretMatch` e reapply de `jwt_key`.
+- Testes cobrem `jwt_key` correto/incorreto/ausente, Bearer compativel, segredo fora dos logs e reapply do secret atual.
+- Gate da Sprint 10 volta a `NOT READY FOR SPRINT 11` ate inbound WhatsApp fisico passar sem `ECONNREFUSED` e sem `401`.
+
 ## 2026-08-03 - Sprint 10 Inbox Domain Consolidation
 
 - Inbox operacional deixou de importar `@/lib/mvp` e Supabase nas rotas `/inbox`.

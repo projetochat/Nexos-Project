@@ -224,53 +224,115 @@ Commit final do rework preparado na branch `sprint/10-inbox-domain-legacy-remova
 
 ### Métricas
 
-| ID | Meta | Resultado | Evidencia | Status |
-| --- | --- | --- | --- | --- |
-| M103 | admin failure reproduced | Admin auditado; backend criava Conversation, erro generico vinha do mapeamento UI/API | Repro REST `POST /api/conversations` 201 e audit de `readError` | PASS |
-| M104 | admin role audit | `tenant_admin` ativo em `homologacao` | Seed/audit `nexos_0802` | PASS |
-| M105 | tenant admin permissions audit | 28 permissions confirmadas | Audit SQL/Prisma | PASS |
-| M106 | missing permissions identified | UI/preset nao reconhecia `chat.tags.use`; Quick Replies page usava legado | `rg` e diff | PASS |
-| M107 | seed permissions corrected | Seed idempotente aplicado; roles existentes atualizados | `bun run backend:prisma:seed` em `nexos_0802` | PASS |
-| M108 | admin create Conversation | Conversation criada | HTTP 201, protocol `000011` | PASS |
-| M109 | admin Tag manage | Admin cria/arquiva Tag | Smoke REST `nexos_0802` | PASS |
-| M110 | admin Quick Reply manage | Admin cria/edita/arquiva Quick Reply | Smoke REST e e2e | PASS |
-| M111 | Tag catalog API audit | Catalogo vem da Nexos API | `/etiquetas` usa `crmApi` | PASS |
-| M112 | Contact Tag modal audit | Modal lista catalogo do tenant | `crmApi.listTags`, key `["nexos","tags"]` | PASS |
-| M113 | catalog vs assignment fix | Catalogo separado de Contact tags | Contact detail + assign/remove endpoints | PASS |
-| M114 | Tag cache fix | Invalidacao canonica adicionada | `["nexos","tags"]` e contact queries | PASS |
-| M115 | Tag assign physical | Tag associada ao Contact | Smoke REST `tagAssigned=true` | PASS |
-| M116 | Tag remove physical | Tag removida | Smoke REST `tagRemoved=true` | PASS |
-| M117 | Quick Reply Supabase path identified | `/mensagens-rapidas` importava `QUICK_REPLIES` | `rg` inicial | PASS |
-| M118 | Supabase path removed | Rota recriada API-only | Guarda anti-legado PASS | PASS |
-| M119 | Quick Reply API client | `quickReplyApi` usado para CRUD | `src/routes/mensagens-rapidas.tsx` | PASS |
-| M120 | Quick Reply create physical | Criacao via Nexos API | Smoke REST `quickReplyCreated=true` | PASS |
-| M121 | Quick Reply list physical | Admin/agente listam | Smoke REST `agentSeesQuickReply=true` | PASS |
-| M122 | agent Quick Reply read | Agente tem leitura e manage negado | Smoke REST/e2e | PASS |
-| M123 | zero RLS error | Caminho Supabase removido | Sem `.from("quick_replies")` operacional | PASS |
-| M124 | closeConversationAfterSend rule | Controle removido da UI | Campo nao exposto sem backend real | PASS |
-| M125 | architectural legacy check | Guarda expandida | `bun run test:inbox-legacy-runtime` | PASS |
-| M126 | frontend Tag tests | Coberto por typecheck/build/guarda; sem teste component isolado | `verify` + smoke REST | PARTIAL |
-| M127 | frontend Quick Reply tests | Coberto por typecheck/build/guarda; sem teste component isolado | `verify` + smoke REST | PARTIAL |
-| M128 | admin Conversation tests | Coberto por REST/e2e existente | `backend:test` + smoke | PASS |
-| M129 | agent RBAC tests | Coberto em e2e novo | `backend:test` 103 tests | PASS |
-| M130 | cross-tenant tests | Coberto em e2e Tags/Quick Replies | `backend:test` | PASS |
-| M131 | seed idempotency | Seed reaplicado sem reset | `nexos_0802` | PASS |
-| M132 | nexos_0802 audit | Admin/agente auditados | SQL/Prisma audit | PASS |
-| M133 | realtime Tag event | Publisher preservado | `verify` regressivo | PASS |
-| M134 | inbound regression | Testes inbound preservados | `backend:test` logs `messaging.inbound.processed` | PASS |
-| M135 | outbound regression | Testes outbound preservados | `backend:test` logs `messaging.outbound.*` | PASS |
-| M136 | realtime regression | Testes realtime preservados | `verify` | PASS |
-| M137 | verify #1 | Suite completa passou | `bun run verify` em `nexos_0801` | PASS |
-| M138 | verify #2 | Suite completa passou | segunda execucao `bun run verify` | PASS |
-| M139 | frontend tests | Typecheck, build, security XSS e guarda passaram | `verify` | PASS |
-| M140 | backend tests | 19 files, 103 tests | `bun run backend:test` | PASS |
-| M141 | builds | Frontend e backend build passaram | `bun run build`, `backend:build` | PASS |
-| M142 | docs | Docs atualizados | `docs/*` Sprint 10 Rework | PASS |
-| M143 | report | Adendo adicionado | Este bloco | PASS |
-| M144 | commit | Commit final preparado | Branch atual | PARTIAL |
-| M145 | final git clean | A validar apos commit | `git status` final | PARTIAL |
-| M146 | gate | Criterios tecnicos e smoke REST passaram; browser UI nao executado nesta sessao | Ver Gate | READY |
+| ID   | Meta                                 | Resultado                                                                                                  | Evidencia                                                                      | Status    |
+| ---- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------- |
+| M103 | admin failure reproduced             | Admin auditado; backend criava Conversation, erro generico vinha do mapeamento UI/API                      | Repro REST `POST /api/conversations` 201 e audit de `readError`                | PASS      |
+| M104 | admin role audit                     | `tenant_admin` ativo em `homologacao`                                                                      | Seed/audit `nexos_0802`                                                        | PASS      |
+| M105 | tenant admin permissions audit       | 28 permissions confirmadas                                                                                 | Audit SQL/Prisma                                                               | PASS      |
+| M106 | missing permissions identified       | UI/preset nao reconhecia `chat.tags.use`; Quick Replies page usava legado                                  | `rg` e diff                                                                    | PASS      |
+| M107 | seed permissions corrected           | Seed idempotente aplicado; roles existentes atualizados                                                    | `bun run backend:prisma:seed` em `nexos_0802`                                  | PASS      |
+| M108 | admin create Conversation            | Conversation criada                                                                                        | HTTP 201, protocol `000011`                                                    | PASS      |
+| M109 | admin Tag manage                     | Admin cria/arquiva Tag                                                                                     | Smoke REST `nexos_0802`                                                        | PASS      |
+| M110 | admin Quick Reply manage             | Admin cria/edita/arquiva Quick Reply                                                                       | Smoke REST e e2e                                                               | PASS      |
+| M111 | Tag catalog API audit                | Catalogo vem da Nexos API                                                                                  | `/etiquetas` usa `crmApi`                                                      | PASS      |
+| M112 | Contact Tag modal audit              | Modal lista catalogo do tenant                                                                             | `crmApi.listTags`, key `["nexos","tags"]`                                      | PASS      |
+| M113 | catalog vs assignment fix            | Catalogo separado de Contact tags                                                                          | Contact detail + assign/remove endpoints                                       | PASS      |
+| M114 | Tag cache fix                        | Invalidacao canonica adicionada                                                                            | `["nexos","tags"]` e contact queries                                           | PASS      |
+| M115 | Tag assign physical                  | Tag associada ao Contact                                                                                   | Smoke REST `tagAssigned=true`                                                  | PASS      |
+| M116 | Tag remove physical                  | Tag removida                                                                                               | Smoke REST `tagRemoved=true`                                                   | PASS      |
+| M117 | Quick Reply Supabase path identified | `/mensagens-rapidas` importava `QUICK_REPLIES`                                                             | `rg` inicial                                                                   | PASS      |
+| M118 | Supabase path removed                | Rota recriada API-only                                                                                     | Guarda anti-legado PASS                                                        | PASS      |
+| M119 | Quick Reply API client               | `quickReplyApi` usado para CRUD                                                                            | `src/routes/mensagens-rapidas.tsx`                                             | PASS      |
+| M120 | Quick Reply create physical          | Criacao via Nexos API                                                                                      | Smoke REST `quickReplyCreated=true`                                            | PASS      |
+| M121 | Quick Reply list physical            | Admin/agente listam                                                                                        | Smoke REST `agentSeesQuickReply=true`                                          | PASS      |
+| M122 | agent Quick Reply read               | Agente tem leitura e manage negado                                                                         | Smoke REST/e2e                                                                 | PASS      |
+| M123 | zero RLS error                       | Caminho Supabase removido                                                                                  | Sem `.from("quick_replies")` operacional                                       | PASS      |
+| M124 | closeConversationAfterSend rule      | Controle removido da UI                                                                                    | Campo nao exposto sem backend real                                             | PASS      |
+| M125 | architectural legacy check           | Guarda expandida                                                                                           | `bun run test:inbox-legacy-runtime`                                            | PASS      |
+| M126 | frontend Tag tests                   | Coberto por typecheck/build/guarda; sem teste component isolado                                            | `verify` + smoke REST                                                          | PARTIAL   |
+| M127 | frontend Quick Reply tests           | Coberto por typecheck/build/guarda; sem teste component isolado                                            | `verify` + smoke REST                                                          | PARTIAL   |
+| M128 | admin Conversation tests             | Coberto por REST/e2e existente                                                                             | `backend:test` + smoke                                                         | PASS      |
+| M129 | agent RBAC tests                     | Coberto em e2e novo                                                                                        | `backend:test` 103 tests                                                       | PASS      |
+| M130 | cross-tenant tests                   | Coberto em e2e Tags/Quick Replies                                                                          | `backend:test`                                                                 | PASS      |
+| M131 | seed idempotency                     | Seed reaplicado sem reset                                                                                  | `nexos_0802`                                                                   | PASS      |
+| M132 | nexos_0802 audit                     | Admin/agente auditados                                                                                     | SQL/Prisma audit                                                               | PASS      |
+| M133 | realtime Tag event                   | Publisher preservado                                                                                       | `verify` regressivo                                                            | PASS      |
+| M134 | inbound regression                   | Testes automatizados preservados; inbound WhatsApp fisico reaberto por webhook 401/ECONNREFUSED            | `backend:test` logs `messaging.inbound.processed`; homologacao fisica pendente | PARTIAL   |
+| M135 | outbound regression                  | Testes outbound preservados                                                                                | `backend:test` logs `messaging.outbound.*`                                     | PASS      |
+| M136 | realtime regression                  | Testes realtime preservados                                                                                | `verify`                                                                       | PASS      |
+| M137 | verify #1                            | Suite completa passou                                                                                      | `bun run verify` em `nexos_0801`                                               | PASS      |
+| M138 | verify #2                            | Suite completa passou                                                                                      | segunda execucao `bun run verify`                                              | PASS      |
+| M139 | frontend tests                       | Typecheck, build, security XSS e guarda passaram                                                           | `verify`                                                                       | PASS      |
+| M140 | backend tests                        | 20 files, 110 tests                                                                                        | `bun run backend:test`                                                         | PASS      |
+| M141 | builds                               | Frontend e backend build passaram                                                                          | `bun run build`, `backend:build`                                               | PASS      |
+| M142 | docs                                 | Docs atualizados                                                                                           | `docs/*` Sprint 10 Rework                                                      | PASS      |
+| M143 | report                               | Adendo adicionado                                                                                          | Este bloco                                                                     | PASS      |
+| M144 | commit                               | Commit final preparado                                                                                     | Branch atual                                                                   | PARTIAL   |
+| M145 | final git clean                      | A validar apos commit                                                                                      | `git status` final                                                             | PARTIAL   |
+| M146 | gate                                 | Reaberto por falha fisica Evolution webhook: `ECONNREFUSED` e depois `HTTP 401` correlacionados ao inbound | Ver Gate                                                                       | NOT READY |
+
+## Complemento Obrigatorio — Webhook Connectivity & Auth Recovery
+
+### Diagnostico
+
+Falhas fisicas reais observadas na Evolution API v2.3.7:
+
+- `ECONNREFUSED` em `http://host.docker.internal:3001/api/webhooks/evolution`;
+- `HTTP 401` apos o backend ficar acessivel.
+
+Conclusao: inbound WhatsApp -> Nexos nao pode ser considerado preservado ate prova fisica sem esses erros.
+
+### Correcoes aplicadas
+
+- `EVOLUTION_WEBHOOK_SECRET` agora e normalizado no backend contra espacos externos e aspas externas
+  pareadas.
+- Startup registra configuracao sanitizada: `EVOLUTION_WEBHOOK_SECRET configured=true/false`.
+- Se Evolution esta habilitada mas webhook URL/secret estao ausentes, a integracao e marcada como
+  `degraded` nos logs, sem imprimir segredo.
+- Webhook registra `requestId`, `event`, `instanceName`, `authStrategy`, `authResult` e `httpResult`.
+- `jwt_key` incorreto, ausente ou Bearer invalido retornam `401` com log sanitizado.
+- `ensureWebhookConfigured` reaplica sempre o secret atual carregado pelo processo.
+- Regressao automatizada final aprovada: `bun run verify` em `nexos_0801` com Redis local, 20 arquivos
+  backend e 110 testes backend PASS.
+- Script operacional criado: `bun run --cwd backend audit:evolution-webhook -- --ensure`.
+- Tentativa local de auditoria/reconfigure da instancia `26293569-whatsapp-nata-cffd5f5c` carregou a
+  configuracao da Evolution, mas retornou `EVOLUTION_HTTP_ERROR` com `404 Instance not found`. Reconfigure
+  fisico permanece pendente ate confirmar a Connection/instancia real. Nao houve impressao de secrets.
+
+### Auditoria sanitizada esperada
+
+```text
+secretBackendConfigured=true
+secretEvolutionConfigured=true
+secretMatch=true
+headerJwtKeyPresent=true
+```
+
+### Smoke de conectividade
+
+Com backend ativo na porta 3001:
+
+```powershell
+bun run --cwd backend audit:evolution-webhook -- --container-health --instance=nome-da-instancia
+```
+
+Resultado obrigatorio: HTTP 200 em `http://host.docker.internal:3001/api/health` a partir do container
+Evolution.
+
+### Teste fisico pendente
+
+PASS somente quando uma mensagem real do WhatsApp B provar:
+
+- Evolution recebe;
+- zero `ECONNREFUSED` correlacionado;
+- zero `HTTP 401` correlacionado;
+- webhook retorna 2xx;
+- backend autentica por `jwt_key`;
+- Message inbound persiste;
+- mesma Conversation;
+- Inbox exibe sem F5;
+- zero duplicacao.
 
 ### Gate
 
-READY FOR SPRINT 11
+NOT READY FOR SPRINT 11

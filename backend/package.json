@@ -13,6 +13,7 @@
     "audit:homologation": "node scripts/audit-homologation-data.mjs",
     "cleanup:homologation": "node scripts/cleanup-homologation-data.mjs",
     "verify:homologation-login": "node scripts/verify-homologation-login.mjs",
+    "audit:evolution-webhook": "node scripts/audit-evolution-webhook.mjs",
     "reset:homologation": "node scripts/reset-homologation.mjs"
   },
   "dependencies": {

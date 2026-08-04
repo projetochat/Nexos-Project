@@ -41,13 +41,19 @@ export class EvolutionWebhookController {
     @Headers("authorization") authorization?: string,
     @Headers("jwt_key") jwtKey?: string,
   ) {
-    const authResult = await this.assertWebhookAuth(authorization, jwtKey, payload);
     const requestId = randomUUID();
+    const authStrategy = jwtKey
+      ? "jwt_key"
+      : authorization?.startsWith("Bearer ")
+        ? "bearer_jwt"
+        : "none";
+    const authResult = await this.assertWebhookAuth(authorization, jwtKey, payload, requestId);
     this.logger.log({
       event: "evolution.webhook.received",
       requestId,
-      instance: payload.instance ?? null,
+      instanceName: payload.instance ?? null,
       eventType: payload.event ?? null,
+      authStrategy,
       authResult,
       httpResult: 200,
     });
@@ -58,9 +64,10 @@ export class EvolutionWebhookController {
       this.logger.warn({
         event: "evolution.webhook.unknown_instance",
         requestId,
-        instance: payload.instance,
+        instanceName: payload.instance,
         eventType: payload.event ?? null,
         ignoredReason: "CONNECTION_NOT_FOUND",
+        httpResult: 200,
       });
       return { ok: true, ignored: "CONNECTION_NOT_FOUND" };
     }
@@ -69,11 +76,12 @@ export class EvolutionWebhookController {
     this.logger.log({
       event: "evolution.webhook.translated",
       requestId,
-      instance: payload.instance,
+      instanceName: payload.instance,
       connectionId: connection.id,
       tenantId: connection.tenantId,
       kind: translated.kind,
       ignoredReason: translated.kind === "ignored" ? translated.reason : null,
+      httpResult: 200,
     });
     if (translated.kind === "inbound") {
       const result = await this.inbound.process(translated.event);
@@ -116,16 +124,46 @@ export class EvolutionWebhookController {
     authorization: string | undefined,
     jwtKey: string | undefined,
     payload: EvolutionWebhookPayload,
+    requestId: string,
   ) {
     const config = evolutionConfigFromEnv();
-    if (!config.webhookSecret) throw new UnauthorizedException("Webhook secret not configured.");
-    if (jwtKey && jwtKey === config.webhookSecret) return "jwt_key";
+    if (!config.webhookSecret) {
+      this.logger.warn({
+        event: "evolution.webhook.auth_failed",
+        requestId,
+        instanceName: payload.instance ?? null,
+        eventType: payload.event ?? null,
+        authStrategy: jwtKey
+          ? "jwt_key"
+          : authorization?.startsWith("Bearer ")
+            ? "bearer_jwt"
+            : "none",
+        authResult: "secret_not_configured",
+        httpResult: 401,
+      });
+      throw new UnauthorizedException("Webhook secret not configured.");
+    }
+    if (jwtKey && jwtKey === config.webhookSecret) return "authenticated";
+    if (jwtKey && jwtKey !== config.webhookSecret) {
+      this.logger.warn({
+        event: "evolution.webhook.auth_failed",
+        requestId,
+        instanceName: payload.instance ?? null,
+        eventType: payload.event ?? null,
+        authStrategy: "jwt_key",
+        authResult: "invalid_jwt_key",
+        httpResult: 401,
+      });
+      throw new UnauthorizedException("Webhook token invalido.");
+    }
     const [scheme, token] = authorization?.split(" ") ?? [];
     if (scheme !== "Bearer" || !token) {
       this.logger.warn({
         event: "evolution.webhook.auth_failed",
-        instance: payload.instance ?? null,
+        requestId,
+        instanceName: payload.instance ?? null,
         eventType: payload.event ?? null,
+        authStrategy: "none",
         authResult: "missing_token",
         httpResult: 401,
       });
@@ -138,12 +176,14 @@ export class EvolutionWebhookController {
       if (decoded.app !== "evolution" || decoded.action !== "webhook") {
         throw new Error("Invalid claims.");
       }
-      return "bearer_jwt";
+      return "authenticated";
     } catch {
       this.logger.warn({
         event: "evolution.webhook.auth_failed",
-        instance: payload.instance ?? null,
+        requestId,
+        instanceName: payload.instance ?? null,
         eventType: payload.event ?? null,
+        authStrategy: "bearer_jwt",
         authResult: "invalid_token",
         httpResult: 401,
       });

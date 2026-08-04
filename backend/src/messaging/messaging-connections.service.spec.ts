@@ -213,6 +213,59 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
+  it("reapplies the current webhook secret on every ensure call", async () => {
+    const prisma = prismaMock();
+    const evolution = { setWebhook: vi.fn().mockResolvedValue({ ok: true }) };
+    const service = new MessagingConnectionsService(prisma as never, evolution as never);
+
+    process.env.EVOLUTION_WEBHOOK_SECRET = "secret-before-restart";
+    await service.ensureWebhookConfigured("tenant-a-suporte");
+    process.env.EVOLUTION_WEBHOOK_SECRET = "secret-after-restart";
+    await service.ensureWebhookConfigured("tenant-a-suporte");
+
+    expect(evolution.setWebhook).toHaveBeenNthCalledWith(1, {
+      instanceName: "tenant-a-suporte",
+      webhookUrl: "http://host.docker.internal:3001/api/webhooks/evolution",
+      webhookSecret: "secret-before-restart",
+    });
+    expect(evolution.setWebhook).toHaveBeenNthCalledWith(2, {
+      instanceName: "tenant-a-suporte",
+      webhookUrl: "http://host.docker.internal:3001/api/webhooks/evolution",
+      webhookSecret: "secret-after-restart",
+    });
+  });
+
+  it("audits webhook secret parity without exposing the secret value", async () => {
+    const prisma = prismaMock();
+    process.env.EVOLUTION_WEBHOOK_SECRET = "secret";
+    const evolution = {
+      findInstance: vi.fn().mockResolvedValue({
+        name: "tenant-a-suporte",
+        Webhook: {
+          enabled: true,
+          url: "http://host.docker.internal:3001/api/webhooks/evolution",
+          events: ["MESSAGES_UPSERT"],
+          headers: { jwt_key: "secret" },
+        },
+      }),
+    };
+
+    await expect(
+      new MessagingConnectionsService(
+        prisma as never,
+        evolution as never,
+      ).auditWebhookConfiguration("tenant-a-suporte"),
+    ).resolves.toEqual({
+      instanceName: "tenant-a-suporte",
+      urlCorrect: true,
+      messagesUpsertPresent: true,
+      secretBackendConfigured: true,
+      secretEvolutionConfigured: true,
+      secretMatch: true,
+      headerJwtKeyPresent: true,
+    });
+  });
+
   it("reads QR base64 from create and connect Evolution payload shapes", () => {
     expect(evolutionQrBase64({ qrcode: { base64: "create-qr" } })).toBe("create-qr");
     expect(evolutionQrBase64({ base64: "connect-qr" })).toBe("connect-qr");

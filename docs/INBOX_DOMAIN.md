@@ -25,3 +25,13 @@ Tags possuem duas operacoes separadas:
 
 Quick Replies sao API-only em `/api/quick-replies`. O uso no composer apenas insere texto; envio segue no
 endpoint oficial de mensagens e continua preservando Outbox, BullMQ, Redis e provider adapter.
+
+## Gate Fisico WhatsApp
+
+O dominio Inbox nao pode ser considerado liberado se o webhook Evolution real apresentar:
+
+- `ECONNREFUSED` para `http://host.docker.internal:3001/api/webhooks/evolution`;
+- `HTTP 401` correlacionado ao teste inbound.
+
+O gate fisico exige webhook 2xx autenticado por `jwt_key`, Message inbound persistida, mesma Conversation,
+Inbox atualizada sem F5 e zero duplicacao.

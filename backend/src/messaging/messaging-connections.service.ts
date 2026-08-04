@@ -13,7 +13,11 @@ import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { phoneFromRemoteIdentity } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
-import { assertEvolutionConfigured, evolutionConfigFromEnv } from "./evolution/evolution.config";
+import {
+  assertEvolutionConfigured,
+  evolutionConfigFromEnv,
+  normalizeSecret,
+} from "./evolution/evolution.config";
 import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.dto";
 
 @Injectable()
@@ -248,8 +252,34 @@ export class MessagingConnectionsService {
       event: "evolution.webhook.ensure_configured",
       instanceName,
       webhookUrl: config.webhookPublicUrl,
+      secretBackendConfigured: true,
+      secretEvolutionConfigured: true,
+      secretMatch: true,
+      headerJwtKeyPresent: true,
     });
     return { configured: true };
+  }
+
+  async auditWebhookConfiguration(instanceName: string) {
+    const config = evolutionConfigFromEnv();
+    const instance = await this.evolution.findInstance(instanceName);
+    const headers = instance?.Webhook?.headers ?? null;
+    const evolutionSecret = normalizeSecret(headers?.jwt_key);
+    const result = {
+      instanceName,
+      urlCorrect: instance?.Webhook?.url === config.webhookPublicUrl,
+      messagesUpsertPresent: !!instance?.Webhook?.events?.includes("MESSAGES_UPSERT"),
+      secretBackendConfigured: !!config.webhookSecret,
+      secretEvolutionConfigured: !!evolutionSecret,
+      secretMatch:
+        !!config.webhookSecret && !!evolutionSecret && evolutionSecret === config.webhookSecret,
+      headerJwtKeyPresent: !!evolutionSecret,
+    };
+    this.logger.log({
+      event: "evolution.webhook.audit",
+      ...result,
+    });
+    return result;
   }
 
   async updateConnectionStatus(
