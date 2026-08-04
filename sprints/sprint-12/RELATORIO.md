@@ -2,9 +2,7 @@
 
 ## 1. Status
 
-Sprint 12 implementada tecnicamente com automacao verde. Gate fisico de WhatsApp real ainda pendente nesta sessao.
-
-NOT READY FOR SPRINT 13
+Sprint 12 implementada tecnicamente e homologada fisicamente pelo Product Owner.
 
 ## 2. Objetivo
 
@@ -199,6 +197,35 @@ Nao foi executado nesta sessao envio fisico real via WhatsApp B para uma campanh
 
 Automacao tecnica: PASS.
 
-Homologacao fisica WhatsApp real: PENDENTE.
+Homologacao fisica WhatsApp real: PASS.
 
-NOT READY FOR SPRINT 13
+## Homologacao fisica final - Product Owner
+
+Data: 2026-08-04
+
+- Container Evolution alcanca backend: PASS
+- Campaign queue: PASS
+- Campaign worker: PASS
+- Campaign scheduler: PASS
+- DRAFT: PASS
+- Preview e dry-run: PASS
+- Opt-out: PASS
+- Envio imediato: PASS
+- WhatsApp recebe uma vez: PASS
+- Message e Conversation reais: PASS
+- Inbox sem F5: PASS
+- Agendamento: PASS
+- Pause/resume: PASS
+- Cancelamento: PASS
+- Connection indisponivel: PASS
+- Realtime: PASS
+- Fallback REST: PASS
+- Redis degraded/recovery: PASS
+- RBAC: PASS
+- Tenant isolation: PASS
+- Zero duplicacao: PASS
+- Zero erro critico: PASS
+
+Gate final:
+
+READY FOR SPRINT 13
