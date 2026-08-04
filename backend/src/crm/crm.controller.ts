@@ -20,6 +20,7 @@ import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { ContactCompanyRole, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { CreateContactDto } from "./dto/create-contact.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
@@ -44,6 +45,7 @@ export class CrmController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RealtimePublisher) private readonly realtime: RealtimePublisher,
+    @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
   ) {}
 
   @Get("customers")
@@ -249,6 +251,12 @@ export class CrmController {
   @Post("contacts")
   @RequirePermissions("crm.manage")
   async createContact(@Body() dto: CreateContactDto, @CurrentUser() current: AuthenticatedUser) {
+    await this.entitlements.assertTenantOperational(current.tenantId);
+    await this.entitlements.assertWithinLimit(
+      current.tenantId,
+      "maxContacts",
+      await this.prisma.contact.count({ where: { tenantId: current.tenantId, archivedAt: null } }),
+    );
     const links = await this.resolveContactLinks(dto, current.tenantId);
     const normalizedPhone = normalizePhone(dto.phone);
     const existing = await this.prisma.contact.findFirst({

@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { MessagingConnectionStatus, MessagingProviderType, Prisma } from "../generated/prisma";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
+import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { phoneFromRemoteIdentity } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
@@ -29,6 +30,9 @@ export class MessagingConnectionsService {
     private readonly prisma: PrismaService,
     @Inject(EvolutionClient)
     private readonly evolution: EvolutionClient,
+    @Optional()
+    @Inject(PlanEntitlementService)
+    private readonly entitlements?: PlanEntitlementService,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
   ) {}
 
@@ -46,6 +50,19 @@ export class MessagingConnectionsService {
   }
 
   async createEvolution(dto: CreateEvolutionConnectionDto, current: AuthenticatedUser) {
+    if (this.entitlements) {
+      await this.entitlements.assertTenantOperational(current.tenantId);
+      const usage = await this.entitlements.getUsage(current.tenantId);
+      const entitlement = await this.entitlements.getEntitlements(current.tenantId);
+      await this.entitlements.assertWithinLimit(
+        current.tenantId,
+        "maxConnections",
+        usage.connections,
+      );
+      if (usage.connections >= 1 && !entitlement.features.multipleConnections) {
+        throw new BadRequestException({ code: "PLAN_FEATURE_NOT_AVAILABLE" });
+      }
+    }
     const config = evolutionConfigFromEnv();
     if (!assertEvolutionConfigured(config)) {
       throw new BadRequestException("Evolution API nao configurada.");

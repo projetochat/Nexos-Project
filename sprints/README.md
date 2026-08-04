@@ -14,6 +14,7 @@ Indice permanente dos relatorios de sprint.
 | 09     | Realtime messaging, presence e live inbox                    | NOT READY          | 2026-08-03 | c5b27a3             | TBD                 | [sprint-09/RELATORIO.md](./sprint-09/RELATORIO.md)     |
 | 11     | Ticketing Domain, Secure Content & Attachments               | READY              | 2026-08-04 | 35bea7d             | e7e236f             | [sprint-11/RELATORIO.md](./sprint-11/RELATORIO.md)     |
 | 12     | Campaigns Domain, Audience Segmentation & Reliable Dispatch  | NOT READY          | 2026-08-04 | e7e236f             | TBD                 | [sprint-12/RELATORIO.md](./sprint-12/RELATORIO.md)     |
+| 13     | SaaS Control Plane, Super Admin & Tenant Governance          | NOT READY          | 2026-08-04 | 6ce8650             | TBD                 | [sprint-13/RELATORIO.md](./sprint-13/RELATORIO.md)     |
 
 ## Observacao de rastreabilidade
 

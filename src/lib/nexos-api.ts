@@ -17,7 +17,7 @@ type LoginResponse = {
     name: string;
     roleId: string;
     roleKey: ApiRoleKey;
-    platformRole: "USER" | "ADMIN";
+    platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   };
   tenant: {
     id: string;
@@ -88,7 +88,7 @@ export type ApiUserMembership = {
     email: string;
     name: string;
     status: "ACTIVE" | "DISABLED";
-    platformRole: "USER" | "ADMIN";
+    platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   };
   role: {
     id: string;
@@ -436,6 +436,7 @@ type ConversationPayload = {
 };
 
 const roleMap: Record<string, Role> = {
+  platform_admin: "super_admin",
   tenant_admin: "admin",
   supervisor: "supervisor",
   agent: "operator",
@@ -909,6 +910,110 @@ export const campaignApi = {
       `/campaigns/${id}/recipients${queryString(params)}`,
     ),
   stats: (id: string) => apiRequest<ApiCampaignCounters>(`/campaigns/${id}/stats`),
+};
+
+export type PlatformDashboard = {
+  activeTenants: number;
+  trialTenants: number;
+  suspendedTenants: number;
+  activeUsers: number;
+  activeConnections: number;
+  messagesThisPeriod: number;
+  campaignsThisPeriod: number;
+  openTickets: number;
+  openInvoices: number;
+  overdueInvoices: number;
+  subscriptionsByPlan: Array<{ planId: string; code: string; name: string; subscriptions: number }>;
+};
+
+export type PlatformTenant = {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  plan: { id: string; code: string; name: string } | null;
+  subscriptionStatus: string | null;
+  activeUsers: number;
+  connections: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PlatformPlan = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  status: string;
+  billingPeriod: string;
+  priceCents: number | null;
+  currency: string;
+  trialDays: number;
+  features: Record<string, boolean>;
+  limits: Record<string, number>;
+  _count?: { subscriptions: number };
+};
+
+export type PlatformSubscription = {
+  id: string;
+  tenant: { id: string; name: string; slug: string };
+  plan: { id: string; code: string; name: string };
+  status: string;
+  currentPeriodEnd: string;
+  cancelAtPeriodEnd: boolean;
+};
+
+export type PlatformInvoice = {
+  id: string;
+  number: string;
+  status: string;
+  totalCents: number;
+  currency: string;
+  dueAt: string;
+  tenant: { id: string; name: string; slug: string };
+};
+
+export type PlatformAuditLog = {
+  id: string;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  actor: { id: string; email: string; name: string } | null;
+  tenant: { id: string; slug: string; name: string } | null;
+  createdAt: string;
+};
+
+export const platformApi = {
+  dashboard: () => apiRequest<PlatformDashboard>("/platform/dashboard"),
+  tenants: (params: ListParams = {}) =>
+    apiRequest<PaginatedResponse<PlatformTenant>>(`/platform/tenants${queryString(params)}`),
+  suspendTenant: (id: string, reason: string) =>
+    apiRequest<PlatformTenant>(`/platform/tenants/${id}/suspend`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+  reactivateTenant: (id: string, reason: string) =>
+    apiRequest<PlatformTenant>(`/platform/tenants/${id}/reactivate`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+  plans: (params: ListParams = {}) =>
+    apiRequest<PaginatedResponse<PlatformPlan>>(`/platform/plans${queryString(params)}`),
+  subscriptions: (params: ListParams = {}) =>
+    apiRequest<PaginatedResponse<PlatformSubscription>>(
+      `/platform/subscriptions${queryString(params)}`,
+    ),
+  invoices: (params: ListParams = {}) =>
+    apiRequest<PaginatedResponse<PlatformInvoice>>(`/platform/invoices${queryString(params)}`),
+  auditLogs: (params: ListParams = {}) =>
+    apiRequest<PaginatedResponse<PlatformAuditLog>>(`/platform/audit-logs${queryString(params)}`),
+  startImpersonation: (data: { tenantId: string; membershipId: string; reason: string }) =>
+    apiRequest<{ id: string; tenant: { id: string; name: string; slug: string } }>(
+      "/platform/impersonation/start",
+      { method: "POST", body: JSON.stringify(data) },
+    ),
+  stopImpersonation: (id: string) =>
+    apiRequest<{ id: string }>(`/platform/impersonation/${id}/stop`, { method: "POST" }),
 };
 
 export function clearNexosApiSession() {

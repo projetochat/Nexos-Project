@@ -52,8 +52,47 @@ export class AuthService {
     const validPassword = await compare(dto.password, user.passwordHash);
     if (!validPassword) throw this.invalidCredentials(email);
 
-    const activeMemberships = user.memberships.filter((item) => item.status === "ACTIVE");
     const requestedTenantSlug = dto.tenantSlug?.trim().toLowerCase();
+    if (!requestedTenantSlug && user.platformRole !== "USER") {
+      const basePayload = {
+        sub: user.id,
+        tenantId: "",
+        membershipId: "",
+        roleId: "",
+        roleKey: "platform_admin",
+        platformRole: user.platformRole,
+        iatMs: Date.now(),
+      };
+      return {
+        accessToken: await this.signToken({ ...basePayload, typ: "access" }, "JWT_SECRET", "15m"),
+        refreshToken: await this.signToken(
+          { ...basePayload, typ: "refresh" },
+          "JWT_REFRESH_SECRET",
+          "7d",
+        ),
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          roleId: "",
+          roleKey: "platform_admin",
+          platformRole: user.platformRole,
+        },
+        tenant: {
+          id: "platform",
+          slug: "platform",
+          name: "Nexos Platform",
+        },
+        membership: {
+          id: "",
+          role: "platform_admin",
+          roleId: "",
+        },
+        permissions: [],
+      };
+    }
+
+    const activeMemberships = user.memberships.filter((item) => item.status === "ACTIVE");
     const membership = requestedTenantSlug
       ? activeMemberships.find((item) => item.tenant.slug === requestedTenantSlug)
       : activeMemberships.length === 1
@@ -65,6 +104,12 @@ export class AuthService {
         message: "Seu usuario nao possui acesso a nenhuma organizacao ativa.",
       });
     }
+    if (!["ACTIVE", "TRIAL"].includes(membership.tenant.status)) {
+      throw new ForbiddenException({
+        code: "TENANT_INACTIVE",
+        message: "Organizacao suspensa ou encerrada.",
+      });
+    }
     const permissions = membership.role.permissions.map((item) => item.permissionId);
 
     const basePayload = {
@@ -74,6 +119,7 @@ export class AuthService {
       roleId: membership.roleId,
       roleKey: membership.role.key,
       platformRole: user.platformRole,
+      iatMs: Date.now(),
     };
 
     return {
@@ -109,12 +155,45 @@ export class AuthService {
     const payload = await this.verifyToken(refreshToken, "JWT_REFRESH_SECRET");
     if (payload.typ !== "refresh") throw new UnauthorizedException("Refresh token invalido.");
 
+    if (!payload.membershipId && payload.platformRole !== "USER") {
+      const user = await this.prisma.user.findFirst({
+        where: { id: payload.sub, status: "ACTIVE", platformRole: { not: "USER" } },
+      });
+      if (!user) throw new UnauthorizedException("Sessao expirada.");
+      return {
+        accessToken: await this.signToken(
+          {
+            sub: user.id,
+            tenantId: "",
+            membershipId: "",
+            roleId: "",
+            roleKey: "platform_admin",
+            platformRole: user.platformRole,
+            iatMs: Date.now(),
+            typ: "access",
+          },
+          "JWT_SECRET",
+          "15m",
+        ),
+      };
+    }
+
     const membership = await this.prisma.tenantMembership.findUnique({
       where: { id: payload.membershipId },
       include: { user: true, tenant: true, role: true },
     });
     if (!membership || membership.status !== "ACTIVE" || membership.user.status !== "ACTIVE") {
       throw new UnauthorizedException("Sessao expirada.");
+    }
+    if (!["ACTIVE", "TRIAL"].includes(membership.tenant.status)) {
+      throw new UnauthorizedException("Tenant inativo.");
+    }
+    if (
+      membership.tenant.authRevokedAt &&
+      payload.iatMs &&
+      payload.iatMs < membership.tenant.authRevokedAt.getTime()
+    ) {
+      throw new UnauthorizedException("Sessao revogada.");
     }
 
     return {
@@ -126,6 +205,7 @@ export class AuthService {
           roleId: membership.roleId,
           roleKey: membership.role.key,
           platformRole: membership.user.platformRole,
+          iatMs: Date.now(),
           typ: "access",
         },
         "JWT_SECRET",
@@ -135,6 +215,12 @@ export class AuthService {
   }
 
   async me(membershipId: string) {
+    if (!membershipId) {
+      throw new ForbiddenException({
+        code: "PLATFORM_CONTEXT_REQUIRES_PLATFORM_API",
+        message: "Use /api/platform para plano de controle.",
+      });
+    }
     const membership = await this.prisma.tenantMembership.findUniqueOrThrow({
       where: { id: membershipId },
       include: {

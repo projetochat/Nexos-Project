@@ -19,6 +19,7 @@ import {
   TicketStatus,
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { AttachmentSecurityScanner } from "./attachment-security-scanner";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
@@ -59,6 +60,7 @@ export class TicketsService {
     @Inject(FileStorageProvider) private readonly storage: FileStorageProvider,
     @Inject(AttachmentSecurityScanner) private readonly scanner: AttachmentSecurityScanner,
     @Inject(RealtimePublisher) private readonly realtime: RealtimePublisher,
+    @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
   ) {}
 
   async list(query: ListTicketsQueryDto, current: AuthenticatedUser) {
@@ -90,6 +92,7 @@ export class TicketsService {
   }
 
   async create(dto: CreateTicketDto, current: AuthenticatedUser) {
+    await this.entitlements.assertFeature(current.tenantId, "tickets");
     const departmentId = await this.resolveDepartment(dto.departmentId, current);
     const assignedMembershipId = dto.assignedMembershipId
       ? await this.resolveAssignee(dto.assignedMembershipId, departmentId, current)
@@ -310,6 +313,7 @@ export class TicketsService {
   }
 
   async uploadAttachment(id: string, req: Request, current: AuthenticatedUser) {
+    await this.entitlements.assertFeature(current.tenantId, "storage");
     const ticket = await this.findVisibleTicket(id, current);
     const originalName = decodeHeader(req.headers["x-file-name"]) ?? "arquivo";
     const declaredMimeType = String(req.headers["content-type"] ?? "application/octet-stream")
@@ -318,6 +322,13 @@ export class TicketsService {
       .toLowerCase();
     const declaredSize = Number(req.headers["x-file-size"] ?? req.headers["content-length"] ?? 0);
     this.validateAttachment(declaredMimeType, Number.isFinite(declaredSize) ? declaredSize : 0);
+    const usage = await this.entitlements.getUsage(current.tenantId);
+    await this.entitlements.assertWithinLimit(
+      current.tenantId,
+      "maxStorageBytes",
+      usage.storageBytes,
+      Number.isFinite(declaredSize) ? declaredSize : 0,
+    );
     const body = await readLimitedRequest(req, this.maxAttachmentSizeBytes());
     this.validateAttachment(declaredMimeType, body.byteLength);
     const detectedMimeType = detectMimeType(body, declaredMimeType);

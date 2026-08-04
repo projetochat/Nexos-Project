@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { AuthModule } from "../auth/auth.module";
 import { PrismaModule } from "../prisma/prisma.module";
+import { PlatformModule } from "../platform/platform.module";
 import { QueueModule } from "../queue/queue.module";
 import { RealtimeModule } from "../realtime/realtime.module";
 import { DevelopmentMessagingProvider } from "./development-messaging.provider";
@@ -19,7 +20,14 @@ import { MessagingProviderRegistry } from "./messaging-provider.registry";
 import { MessagingStatusService } from "./messaging-status.service";
 
 @Module({
-  imports: [AuthModule, PrismaModule, QueueModule, RealtimeModule, JwtModule.register({})],
+  imports: [
+    AuthModule,
+    PrismaModule,
+    QueueModule,
+    RealtimeModule,
+    PlatformModule,
+    JwtModule.register({}),
+  ],
   controllers: [MessagingConnectionsController, EvolutionWebhookController],
   providers: [
     DevelopmentMessagingProvider,

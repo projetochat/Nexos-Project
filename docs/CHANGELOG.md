@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-04 - Sprint 13 SaaS Control Plane
+
+- Adicionado plano de controle `/api/platform/*` com guard server-side para `PlatformRole`.
+- Criados modelos de Tenant lifecycle, Plan, TenantSubscription, SubscriptionHistory, Invoice, UsageSnapshot, ImpersonationSession e PlatformAuditLog.
+- Adicionado `PlanEntitlementService` e enforcement server-side para usuarios, departamentos, connections, contatos, tickets/storage e campanhas.
+- Super Admin `/admin/*` passou a consumir Nexos Platform API nas telas principais e ganhou guard anti-legado contra mocks em runtime.
+- Seeds idempotentes criam platform admin configuravel e planos Starter/Professional de homologacao.
+- Migrations aplicadas em `nexos_0801`, `nexos_0802` e banco isolado `nexos_1300`.
+- Gate fisico completo permanece `NOT READY FOR SPRINT 14`.
+
 ## 2026-08-04 - Sprint 10 Rework RBAC, Tags & Quick Replies
 
 - `/etiquetas` foi migrada para Nexos API e passou a gerenciar o mesmo catalogo usado no modal de Contact.

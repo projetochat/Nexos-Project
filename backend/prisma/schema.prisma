@@ -22,6 +22,52 @@ enum MembershipStatus {
 enum PlatformRole {
   USER
   ADMIN
+  SUPPORT
+  READONLY
+}
+
+enum TenantStatus {
+  PROVISIONING
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  TERMINATED
+}
+
+enum PlanStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum PlanBillingPeriod {
+  MONTHLY
+  YEARLY
+  MANUAL
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  OVERDUE
+}
+
+enum ImpersonationStatus {
+  ACTIVE
+  STOPPED
+  EXPIRED
 }
 
 enum ContactCompanyRole {
@@ -175,6 +221,19 @@ model Tenant {
   id                          String                       @id @default(uuid())
   name                        String
   slug                        String                       @unique
+  legalName                   String?
+  displayName                 String?
+  status                      TenantStatus                 @default(ACTIVE)
+  timezone                    String                       @default("America/Sao_Paulo")
+  locale                      String                       @default("pt-BR")
+  document                    String?
+  billingEmail                String?
+  technicalEmail              String?
+  authRevokedAt               DateTime?
+  activatedAt                 DateTime?
+  suspendedAt                 DateTime?
+  terminatedAt                DateTime?
+  suspensionReason            String?
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
   users                       TenantMembership[]
@@ -197,25 +256,196 @@ model Tenant {
   campaigns                   Campaign[]
   campaignRecipients          CampaignRecipient[]
   contactMessagingPreferences ContactMessagingPreference[]
+  subscriptions               TenantSubscription[]
+  invoices                    Invoice[]
+  usageSnapshots              TenantUsageSnapshot[]
+  auditLogs                   PlatformAuditLog[]
+  impersonationSessions       ImpersonationSession[]
 
+  @@index([status])
   @@map("tenants")
 }
 
 model User {
-  id               String             @id @default(uuid())
-  email            String             @unique
-  name             String
-  passwordHash     String
-  status           UserStatus         @default(ACTIVE)
-  platformRole     PlatformRole       @default(USER)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  memberships      TenantMembership[]
-  requestedTickets Ticket[]
+  id                    String                 @id @default(uuid())
+  email                 String                 @unique
+  name                  String
+  passwordHash          String
+  status                UserStatus             @default(ACTIVE)
+  platformRole          PlatformRole           @default(USER)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  memberships           TenantMembership[]
+  requestedTickets      Ticket[]
+  subscriptions         TenantSubscription[]
+  platformAuditLogs     PlatformAuditLog[]
+  impersonationSessions ImpersonationSession[]
 
   @@index([status])
   @@index([platformRole])
   @@map("users")
+}
+
+model Plan {
+  id              String                @id @default(uuid())
+  code            String                @unique
+  name            String
+  description     String?
+  status          PlanStatus            @default(DRAFT)
+  billingPeriod   PlanBillingPeriod     @default(MANUAL)
+  priceCents      Int?
+  currency        String                @default("BRL")
+  trialDays       Int                   @default(0)
+  features        Json
+  limits          Json
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  archivedAt      DateTime?
+  subscriptions   TenantSubscription[]
+  historyPrevious SubscriptionHistory[] @relation("PreviousPlan")
+  historyNext     SubscriptionHistory[] @relation("NextPlan")
+
+  @@index([status])
+  @@map("plans")
+}
+
+model TenantSubscription {
+  id                 String                @id @default(uuid())
+  tenantId           String
+  planId             String
+  status             SubscriptionStatus    @default(ACTIVE)
+  startsAt           DateTime              @default(now())
+  trialEndsAt        DateTime?
+  currentPeriodStart DateTime              @default(now())
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean               @default(false)
+  cancelledAt        DateTime?
+  limitsSnapshot     Json
+  featuresSnapshot   Json
+  createdByUserId    String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan               Plan                  @relation(fields: [planId], references: [id], onDelete: Restrict)
+  createdByUser      User?                 @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  history            SubscriptionHistory[]
+  invoices           Invoice[]
+
+  @@index([tenantId, status])
+  @@index([planId, status])
+  @@map("tenant_subscriptions")
+}
+
+model SubscriptionHistory {
+  id             String              @id @default(uuid())
+  subscriptionId String
+  tenantId       String
+  previousPlanId String?
+  nextPlanId     String?
+  previousStatus SubscriptionStatus?
+  nextStatus     SubscriptionStatus?
+  startsAt       DateTime?
+  endsAt         DateTime?
+  actorUserId    String?
+  reason         String
+  createdAt      DateTime            @default(now())
+  subscription   TenantSubscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  previousPlan   Plan?               @relation("PreviousPlan", fields: [previousPlanId], references: [id], onDelete: SetNull)
+  nextPlan       Plan?               @relation("NextPlan", fields: [nextPlanId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([subscriptionId, createdAt])
+  @@map("subscription_history")
+}
+
+model Invoice {
+  id                String             @id @default(uuid())
+  tenantId          String
+  subscriptionId    String
+  number            String             @unique
+  status            InvoiceStatus      @default(DRAFT)
+  currency          String             @default("BRL")
+  subtotalCents     Int                @default(0)
+  discountCents     Int                @default(0)
+  totalCents        Int                @default(0)
+  dueAt             DateTime
+  paidAt            DateTime?
+  cancelledAt       DateTime?
+  externalReference String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription      TenantSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([dueAt, status])
+  @@map("invoices")
+}
+
+model InvoiceCounter {
+  year       Int      @id
+  lastNumber Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@map("invoice_counters")
+}
+
+model TenantUsageSnapshot {
+  id          String   @id @default(uuid())
+  tenantId    String
+  periodStart DateTime
+  periodEnd   DateTime
+  metric      String
+  value       BigInt
+  updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, periodStart, periodEnd, metric])
+  @@index([tenantId, periodStart, periodEnd])
+  @@map("tenant_usage_snapshots")
+}
+
+model ImpersonationSession {
+  id                       String              @id @default(uuid())
+  actorUserId              String
+  tenantId                 String
+  impersonatedMembershipId String
+  reason                   String
+  status                   ImpersonationStatus @default(ACTIVE)
+  expiresAt                DateTime
+  stoppedAt                DateTime?
+  createdAt                DateTime            @default(now())
+  actor                    User                @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+  tenant                   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  auditLogs                PlatformAuditLog[]
+
+  @@index([actorUserId, status, expiresAt])
+  @@index([tenantId, status])
+  @@map("impersonation_sessions")
+}
+
+model PlatformAuditLog {
+  id                     String                @id @default(uuid())
+  actorUserId            String?
+  actorPlatformRole      PlatformRole?
+  action                 String
+  targetType             String
+  targetId               String?
+  tenantId               String?
+  impersonationSessionId String?
+  requestId              String?
+  ipHash                 String?
+  userAgentHash          String?
+  metadataJson           Json?
+  createdAt              DateTime              @default(now())
+  actor                  User?                 @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  tenant                 Tenant?               @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  impersonationSession   ImpersonationSession? @relation(fields: [impersonationSessionId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([action, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("platform_audit_logs")
 }
 
 model TenantMembership {

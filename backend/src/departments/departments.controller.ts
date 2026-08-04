@@ -17,6 +17,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { PrismaService } from "../prisma/prisma.service";
+import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { AssignDepartmentMemberDto } from "./dto/assign-department-member.dto";
 import { CreateDepartmentDto } from "./dto/create-department.dto";
 import { UpdateDepartmentDto } from "./dto/update-department.dto";
@@ -24,7 +25,10 @@ import { UpdateDepartmentDto } from "./dto/update-department.dto";
 @Controller("departments")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class DepartmentsController {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
+  ) {}
 
   @Get()
   @RequirePermissions("departments.read")
@@ -50,6 +54,12 @@ export class DepartmentsController {
   @Post()
   @RequirePermissions("departments.manage")
   async create(@Body() dto: CreateDepartmentDto, @CurrentUser() current: AuthenticatedUser) {
+    await this.entitlements.assertTenantOperational(current.tenantId);
+    await this.entitlements.assertWithinLimit(
+      current.tenantId,
+      "maxDepartments",
+      await this.prisma.department.count({ where: { tenantId: current.tenantId, active: true } }),
+    );
     const department = await this.prisma.department.create({
       data: {
         tenantId: current.tenantId,

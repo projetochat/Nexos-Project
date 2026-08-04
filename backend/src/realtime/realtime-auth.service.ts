@@ -23,7 +23,7 @@ export type RealtimeSocketContext = {
   membershipId: string;
   roleId: string;
   roleKey: string;
-  platformRole: "USER" | "ADMIN";
+  platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   departmentIds: string[];
   permissions: string[];
 };

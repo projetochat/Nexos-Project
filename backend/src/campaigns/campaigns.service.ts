@@ -31,6 +31,7 @@ import {
 import { OUTBOX_MESSAGING_OUTBOUND_REQUESTED } from "../queue/messaging-outbound.queue";
 import { OutboxDispatcherService } from "../queue/outbox-dispatcher.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import type { RealtimeServerEvent } from "../realtime/realtime-events";
 import { positiveDelayMs, readCampaignRuntimeConfig } from "./campaign-config";
@@ -76,6 +77,7 @@ export class CampaignsService {
     @Inject(ConfigService) private readonly config: ConfigService,
     @Inject(CampaignDispatchQueue) private readonly campaignQueue: CampaignDispatchQueue,
     @Inject(OutboxDispatcherService) private readonly outboxDispatcher: OutboxDispatcherService,
+    @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
   ) {}
 
@@ -120,6 +122,7 @@ export class CampaignsService {
   }
 
   async create(dto: CreateCampaignDto, current: AuthenticatedUser) {
+    await this.entitlements.assertFeature(current.tenantId, "campaigns");
     const audience = this.normalizeAudience(dto.audience);
     await this.assertConnection(dto.connectionId, current.tenantId);
     await this.assertAudienceReferences(audience, current.tenantId);
@@ -212,6 +215,7 @@ export class CampaignsService {
   }
 
   async preview(dto: AudiencePreviewDto, current: AuthenticatedUser) {
+    await this.entitlements.assertFeature(current.tenantId, "campaigns");
     const audience = this.normalizeAudience(dto.audience);
     await this.assertAudienceReferences(audience, current.tenantId);
     const result = await this.resolveAudience(
@@ -229,6 +233,7 @@ export class CampaignsService {
         "Confirmacao explicita obrigatoria.",
       );
     await this.assertQueueAvailable();
+    await this.entitlements.assertFeature(current.tenantId, "campaigns");
     const campaign = await this.findCampaign(id, current.tenantId);
     if (campaign.status !== CampaignStatus.DRAFT && campaign.status !== CampaignStatus.PAUSED) {
       throw invalidTransition(campaign.status, CampaignStatus.QUEUED);
@@ -238,6 +243,12 @@ export class CampaignsService {
       this.audienceFromCampaign(campaign),
       campaign.messageText,
       current.tenantId,
+    );
+    await this.entitlements.assertWithinLimit(
+      current.tenantId,
+      "maxCampaignRecipients",
+      0,
+      snapshot.eligibleCount,
     );
     this.assertStartCounts(snapshot, dto.expectedEligibleCount);
     const queued = await this.createSnapshotAndQueue(
@@ -261,6 +272,7 @@ export class CampaignsService {
         "Confirmacao explicita obrigatoria.",
       );
     await this.assertQueueAvailable();
+    await this.entitlements.assertFeature(current.tenantId, "campaigns");
     const scheduledAt = new Date(dto.scheduledAt);
     if (!Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) {
       throw canonicalBadRequest(
@@ -276,6 +288,12 @@ export class CampaignsService {
       this.audienceFromCampaign(campaign),
       campaign.messageText,
       current.tenantId,
+    );
+    await this.entitlements.assertWithinLimit(
+      current.tenantId,
+      "maxCampaignRecipients",
+      0,
+      snapshot.eligibleCount,
     );
     this.assertStartCounts(snapshot, dto.expectedEligibleCount);
     const scheduled = await this.createSnapshotAndQueue(

@@ -38,6 +38,7 @@ describe("Nexos API organization and RBAC", () => {
     process.env.NEXOS_CAMPAIGN_MESSAGES_PER_MINUTE = "5";
     process.env.NEXOS_CAMPAIGN_BATCH_SIZE = "5";
     process.env.NEXOS_CAMPAIGN_MAX_RECIPIENTS = "5";
+    process.env.NEXOS_QUEUE_WORKER_ENABLED = "false";
 
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true }), AppModule],
@@ -288,6 +289,116 @@ describe("Nexos API organization and RBAC", () => {
         password: "demo1234",
       })
       .expect(403);
+  });
+
+  it("protects platform API with server-side platform role", async () => {
+    const tenantAdminToken = await login("admin@nexo.app", "demo1234", "acme");
+    await request(app.getHttpServer())
+      .get("/api/platform/tenants")
+      .set("Authorization", `Bearer ${tenantAdminToken}`)
+      .expect(403)
+      .expect(({ body }) => {
+        expect(body.code).toBe("PLATFORM_ACCESS_DENIED");
+      });
+
+    const platformToken = await login("platform@nexo.app", "demo1234");
+    await request(app.getHttpServer())
+      .get("/api/platform/tenants")
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(Array.isArray(body.items)).toBe(true);
+        expect(body.items.some((tenant: { slug: string }) => tenant.slug === "acme")).toBe(true);
+      });
+  });
+
+  it("manages tenant suspension/reactivation and revokes old tenant sessions", async () => {
+    const platformToken = await login("platform@nexo.app", "demo1234");
+    const tenantToken = await login("admin-orbit@nexo.app", "demo1234", "orbit");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "orbit" } });
+
+    await request(app.getHttpServer())
+      .post(`/api/platform/tenants/${tenant.id}/suspend`)
+      .set("Authorization", `Bearer ${platformToken}`)
+      .send({ reason: "E2E platform suspension" })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.status).toBe("SUSPENDED");
+      });
+
+    await request(app.getHttpServer())
+      .get("/api/departments")
+      .set("Authorization", `Bearer ${tenantToken}`)
+      .expect(401);
+    await request(app.getHttpServer())
+      .post("/api/auth/login")
+      .send({ email: "admin-orbit@nexo.app", password: "demo1234", tenantSlug: "orbit" })
+      .expect(403)
+      .expect(({ body }) => {
+        expect(body.code).toBe("TENANT_INACTIVE");
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/platform/tenants/${tenant.id}/reactivate`)
+      .set("Authorization", `Bearer ${platformToken}`)
+      .send({ reason: "E2E platform reactivation" })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.status).toBe("ACTIVE");
+      });
+  });
+
+  it("lists plans, creates manual invoices and writes sanitized audit logs", async () => {
+    const platformToken = await login("platform@nexo.app", "demo1234");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const subscription = await prisma.tenantSubscription.findFirstOrThrow({
+      where: { tenantId: tenant.id, status: { in: ["ACTIVE", "TRIALING"] } },
+    });
+
+    await request(app.getHttpServer())
+      .get("/api/platform/plans")
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.items.some((plan: { code: string }) => plan.code === "professional")).toBe(
+          true,
+        );
+      });
+
+    const invoice = await request(app.getHttpServer())
+      .post("/api/platform/invoices")
+      .set("Authorization", `Bearer ${platformToken}`)
+      .send({
+        tenantId: tenant.id,
+        subscriptionId: subscription.id,
+        subtotalCents: 12345,
+        discountCents: 345,
+        dueAt: new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString(),
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.number).toMatch(/^INV-\d{4}-\d{6}$/);
+        expect(body.totalCents).toBe(12000);
+      });
+
+    await request(app.getHttpServer())
+      .patch(`/api/platform/invoices/${invoice.body.id}/status`)
+      .set("Authorization", `Bearer ${platformToken}`)
+      .send({ status: "PAID" })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe("PAID");
+      });
+
+    await request(app.getHttpServer())
+      .get("/api/platform/audit-logs")
+      .set("Authorization", `Bearer ${platformToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        const serialized = JSON.stringify(body);
+        expect(serialized).toContain("invoice.created");
+        expect(serialized).not.toContain("demo1234");
+      });
   });
 
   it("lists CRM data for agents but denies CRM writes without manage permission", async () => {
@@ -2126,10 +2237,10 @@ describe("Nexos API organization and RBAC", () => {
       .expect(401);
   });
 
-  async function login(email: string, password: string, tenantSlug: string) {
+  async function login(email: string, password: string, tenantSlug?: string) {
     const response = await request(app.getHttpServer())
       .post("/api/auth/login")
-      .send({ email, password, tenantSlug })
+      .send(tenantSlug ? { email, password, tenantSlug } : { email, password })
       .expect(201);
     return response.body.accessToken as string;
   }

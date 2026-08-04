@@ -39,8 +39,10 @@ export class PermissionsGuard implements CanActivate {
         userId: current.userId,
         status: "ACTIVE",
         user: { status: "ACTIVE" },
+        tenant: { status: { in: ["ACTIVE", "TRIAL"] } },
       },
       include: {
+        tenant: true,
         role: {
           include: {
             permissions: { select: { permissionId: true } },
@@ -49,6 +51,13 @@ export class PermissionsGuard implements CanActivate {
       },
     });
     if (!membership) throw new UnauthorizedException("Membership inativa ou invalida.");
+    if (
+      membership.tenant.authRevokedAt &&
+      current.iatMs &&
+      current.iatMs < membership.tenant.authRevokedAt.getTime()
+    ) {
+      throw new UnauthorizedException("Sessao revogada.");
+    }
 
     const granted = new Set(membership.role.permissions.map((item) => item.permissionId));
     const allowed = required.every((permission) => granted.has(permission));

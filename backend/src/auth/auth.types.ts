@@ -6,8 +6,9 @@ export type JwtPayload = {
   membershipId: string;
   roleId: string;
   roleKey: string;
-  platformRole: "USER" | "ADMIN";
+  platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   typ: "access" | "refresh";
+  iatMs?: number;
 };
 
 export type AuthenticatedUser = {
@@ -16,6 +17,7 @@ export type AuthenticatedUser = {
   membershipId: string;
   roleId: string;
   roleKey: string;
-  platformRole: "USER" | "ADMIN";
+  platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   permissions?: PermissionKey[];
+  iatMs?: number;
 };

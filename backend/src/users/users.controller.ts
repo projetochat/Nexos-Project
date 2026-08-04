@@ -17,6 +17,7 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { PrismaService } from "../prisma/prisma.service";
+import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 
@@ -51,7 +52,10 @@ type MembershipWithRelations = {
 @Controller()
 @UseGuards(JwtAuthGuard)
 export class UsersController {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
+  ) {}
 
   @Get("me")
   async me(@CurrentUser() current: AuthenticatedUser) {
@@ -119,6 +123,14 @@ export class UsersController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions("users.manage")
   async create(@Body() dto: CreateUserDto, @CurrentUser() current: AuthenticatedUser) {
+    await this.entitlements.assertTenantOperational(current.tenantId);
+    await this.entitlements.assertWithinLimit(
+      current.tenantId,
+      "maxUsers",
+      await this.prisma.tenantMembership.count({
+        where: { tenantId: current.tenantId, status: "ACTIVE", user: { status: "ACTIVE" } },
+      }),
+    );
     const roleId = dto.roleId ?? (await this.defaultRoleId(current.tenantId));
     await this.assertRoleInTenant(roleId, current.tenantId);
     await this.assertDepartmentsInTenant(dto.departmentIds ?? [], current.tenantId);

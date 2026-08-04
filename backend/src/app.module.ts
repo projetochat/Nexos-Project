@@ -7,6 +7,7 @@ import { CrmModule } from "./crm/crm.module";
 import { DepartmentsModule } from "./departments/departments.module";
 import { HealthModule } from "./health/health.module";
 import { MessagingModule } from "./messaging/messaging.module";
+import { PlatformModule } from "./platform/platform.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { QuickRepliesModule } from "./quick-replies/quick-replies.module";
 import { QueueModule } from "./queue/queue.module";
@@ -28,6 +29,7 @@ import { UsersModule } from "./users/users.module";
     QueueModule,
     RealtimeModule,
     MessagingModule,
+    PlatformModule,
     ConversationsModule,
     TicketsModule,
     CampaignsModule,

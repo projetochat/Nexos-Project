@@ -43,6 +43,8 @@ const SYSTEM_ROLES = [
 
 async function main() {
   await seedPermissionCatalog();
+  await seedPlatformPlans();
+  await seedPlatformAdmin();
   const seedMode =
     process.env.SEED_MODE ?? (process.env.SEED_DEMO_DATA === "true" ? "demo" : "homologation");
   if (seedMode === "demo") {
@@ -55,6 +57,61 @@ async function main() {
   await seedHomologationMinimum();
 }
 
+async function seedPlatformPlans() {
+  await Promise.all([
+    prisma.plan.upsert({
+      where: { code: "starter" },
+      update: {
+        name: "Starter",
+        status: "ACTIVE",
+        features: starterFeatures(),
+        limits: starterLimits(),
+      },
+      create: {
+        id: "plan_starter_homologation",
+        code: "starter",
+        name: "Starter",
+        description: "Plano de homologacao para tenants pequenos.",
+        status: "ACTIVE",
+        billingPeriod: "MANUAL",
+        features: starterFeatures(),
+        limits: starterLimits(),
+      },
+    }),
+    prisma.plan.upsert({
+      where: { code: "professional" },
+      update: {
+        name: "Professional",
+        status: "ACTIVE",
+        features: professionalFeatures(),
+        limits: professionalLimits(),
+      },
+      create: {
+        id: "plan_professional_homologation",
+        code: "professional",
+        name: "Professional",
+        description: "Plano de homologacao para operacao completa.",
+        status: "ACTIVE",
+        billingPeriod: "MANUAL",
+        features: professionalFeatures(),
+        limits: professionalLimits(),
+      },
+    }),
+  ]);
+}
+
+async function seedPlatformAdmin() {
+  const email = seedPlatformAdminEmail();
+  const password = seedPlatformAdminPassword();
+  const user = await seedUser(
+    email,
+    "Platform Admin",
+    await hash(password, 12),
+    PlatformRole.ADMIN,
+  );
+  console.info(`Platform seed completed. Admin configured: ${user.email}.`);
+}
+
 async function seedHomologationMinimum() {
   const adminEmail = seedAdminEmail();
   const adminPassword = seedAdminPassword();
@@ -62,8 +119,15 @@ async function seedHomologationMinimum() {
   const agentPassword = seedAgentPassword();
   const tenant = await prisma.tenant.upsert({
     where: { slug: "homologacao" },
-    update: { name: "Homologacao Nexos" },
-    create: { name: "Homologacao Nexos", slug: "homologacao" },
+    update: { name: "Homologacao Nexos", status: "ACTIVE" },
+    create: {
+      name: "Homologacao Nexos",
+      slug: "homologacao",
+      status: "ACTIVE",
+      legalName: "Homologacao Nexos",
+      displayName: "Homologacao Nexos",
+      activatedAt: new Date(),
+    },
   });
   const roles = await seedRoles(tenant.id);
   const department = await seedDepartment(
@@ -78,6 +142,7 @@ async function seedHomologationMinimum() {
   const agent = await seedUser(agentEmail, "Atendente Homologacao", agentPasswordHash);
   await seedMembership(tenant.id, admin.id, roles.tenant_admin.id, [department.id]);
   await seedMembership(tenant.id, agent.id, roles.agent.id, [department.id]);
+  await seedTenantSubscription(tenant.id, "plan_professional_homologation");
   console.info(
     `Seed completed. Mode: homologation. Tenant: homologacao. Admin: ${adminEmail}. Agent: ${agentEmail}.`,
   );
@@ -87,14 +152,32 @@ async function seedDemoData() {
   const [acme, orbit] = await Promise.all([
     prisma.tenant.upsert({
       where: { slug: "acme" },
-      update: { name: "Acme Corp" },
-      create: { name: "Acme Corp", slug: "acme" },
+      update: { name: "Acme Corp", status: "ACTIVE" },
+      create: {
+        name: "Acme Corp",
+        slug: "acme",
+        status: "ACTIVE",
+        legalName: "Acme Corp",
+        displayName: "Acme Corp",
+        activatedAt: new Date(),
+      },
     }),
     prisma.tenant.upsert({
       where: { slug: "orbit" },
-      update: { name: "Orbit Labs" },
-      create: { name: "Orbit Labs", slug: "orbit" },
+      update: { name: "Orbit Labs", status: "ACTIVE" },
+      create: {
+        name: "Orbit Labs",
+        slug: "orbit",
+        status: "ACTIVE",
+        legalName: "Orbit Labs",
+        displayName: "Orbit Labs",
+        activatedAt: new Date(),
+      },
     }),
+  ]);
+  await Promise.all([
+    seedTenantSubscription(acme.id, "plan_professional_homologation"),
+    seedTenantSubscription(orbit.id, "plan_professional_homologation"),
   ]);
 
   const acmeRoles = await seedRoles(acme.id);
@@ -266,6 +349,25 @@ async function seedMembership(
     skipDuplicates: true,
   });
   return membership;
+}
+
+async function seedTenantSubscription(tenantId: string, planId: string) {
+  const existing = await prisma.tenantSubscription.findFirst({
+    where: { tenantId, status: { in: ["TRIALING", "ACTIVE", "PAST_DUE", "SUSPENDED"] } },
+  });
+  if (existing) return existing;
+  const plan = await prisma.plan.findUniqueOrThrow({ where: { id: planId } });
+  return prisma.tenantSubscription.create({
+    data: {
+      id: `sub_${tenantId}`,
+      tenantId,
+      planId: plan.id,
+      status: "ACTIVE",
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60_000),
+      limitsSnapshot: plan.limits ?? professionalLimits(),
+      featuresSnapshot: plan.features ?? professionalFeatures(),
+    },
+  });
 }
 
 async function seedCrm(tenantId: string, departments: { id: string; name: string }[]) {
@@ -742,6 +844,66 @@ function seedAgentPassword() {
     throw new Error("SEED_AGENT_PASSWORD must be configured in production.");
   }
   return "demo1234";
+}
+
+function seedPlatformAdminEmail() {
+  const email = process.env.NEXOS_PLATFORM_ADMIN_EMAIL;
+  if (email) return email.toLowerCase().trim();
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("NEXOS_PLATFORM_ADMIN_EMAIL must be configured in production.");
+  }
+  return "platform@nexo.app";
+}
+
+function seedPlatformAdminPassword() {
+  const password = process.env.NEXOS_PLATFORM_ADMIN_PASSWORD;
+  if (password) return password;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("NEXOS_PLATFORM_ADMIN_PASSWORD must be configured in production.");
+  }
+  return "demo1234";
+}
+
+function starterFeatures() {
+  return {
+    campaigns: false,
+    tickets: true,
+    multipleConnections: false,
+    storage: true,
+    realtime: true,
+  };
+}
+
+function professionalFeatures() {
+  return {
+    campaigns: true,
+    tickets: true,
+    multipleConnections: true,
+    storage: true,
+    realtime: true,
+  };
+}
+
+function starterLimits() {
+  return {
+    maxUsers: 3,
+    maxDepartments: 2,
+    maxConnections: 1,
+    maxContacts: 1000,
+    maxCampaignRecipients: 0,
+    maxStorageBytes: 50 * 1024 * 1024,
+  };
+}
+
+function professionalLimits() {
+  return {
+    maxUsers: 20,
+    maxDepartments: 10,
+    maxConnections: 3,
+    maxContacts: 10000,
+    maxCampaignRecipients: 500,
+    maxStorageBytes: 512 * 1024 * 1024,
+  };
 }
 
 main()
