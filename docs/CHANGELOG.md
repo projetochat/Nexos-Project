@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-04 - Sprint 10 Rework RBAC, Tags & Quick Replies
+
+- `/etiquetas` foi migrada para Nexos API e passou a gerenciar o mesmo catalogo usado no modal de Contact.
+- `/mensagens-rapidas` foi migrada para `quickReplyApi`, removendo caminho Supabase/RLS de create/update/archive.
+- Modal de Tags na Inbox agora separa `chat.tags.use` de `chat.tags.manage`: agente aplica Tags existentes, admin gerencia catalogo.
+- Preset de perfil de atendente inclui `chat.tags.use` e o mapa client-side de permissions reconhece essa chave.
+- Erros operacionais `403` preservam a mensagem do backend quando disponivel.
+- Testes e2e cobrem RBAC de Tags, associacao Contact x Tag, Quick Replies API-only, duplicata de atalho, archive e isolamento cross-tenant.
+- `bun run verify` passou duas vezes em `nexos_0801` com Redis local.
+
 ## 2026-08-03 - Sprint 10 Inbox Domain Consolidation
 
 - Inbox operacional deixou de importar `@/lib/mvp` e Supabase nas rotas `/inbox`.

@@ -1442,6 +1442,163 @@ describe("Nexos API organization and RBAC", () => {
       .expect(404);
   });
 
+  it("allows tenant admin to manage tags while agents only use existing catalog tags", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const orbitToken = await login("admin-orbit@nexo.app", "demo1234", "orbit");
+    const suffix = Date.now();
+    const acmeContact = await prisma.contact.findFirstOrThrow({
+      where: { tenant: { slug: "acme" }, archivedAt: null },
+    });
+    const orbitContact = await prisma.contact.findFirstOrThrow({
+      where: { tenant: { slug: "orbit" }, archivedAt: null },
+    });
+
+    const created = await request(app.getHttpServer())
+      .post("/api/tags")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: `E2E Prioritario ${suffix}`, color: "#2563eb" })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post("/api/tags")
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({ name: `E2E Agent Denied ${suffix}`, color: "#2563eb" })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .get("/api/tags")
+      .set("Authorization", `Bearer ${agentToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.some((tag: { id: string }) => tag.id === created.body.id)).toBe(true);
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/contacts/${acmeContact.id}/tags/${created.body.id}`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.some((tag: { id: string }) => tag.id === created.body.id)).toBe(true);
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/contacts/${acmeContact.id}/tags/${created.body.id}`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/contacts/${orbitContact.id}/tags/${created.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .post(`/api/contacts/${acmeContact.id}/tags/${created.body.id}`)
+      .set("Authorization", `Bearer ${orbitToken}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .delete(`/api/contacts/${acmeContact.id}/tags/${created.body.id}`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.some((tag: { id: string }) => tag.id === created.body.id)).toBe(false);
+      });
+
+    await request(app.getHttpServer())
+      .delete(`/api/tags/${created.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get("/api/tags")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.some((tag: { id: string }) => tag.id === created.body.id)).toBe(false);
+      });
+  });
+
+  it("enforces quick reply API RBAC, tenant scope, duplicate shortcuts and archive", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const orbitToken = await login("admin-orbit@nexo.app", "demo1234", "orbit");
+    const suffix = Date.now();
+    const shortcut = `s10${suffix}`;
+
+    const created = await request(app.getHttpServer())
+      .post("/api/quick-replies")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ title: "Sprint 10 E2E", shortcut, content: "Resposta Sprint 10." })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.atalho).toBe(`/${shortcut}`);
+        expect(body.texto).toBe("Resposta Sprint 10.");
+        expect(body.close_on_send).toBe(false);
+      });
+
+    await request(app.getHttpServer())
+      .post("/api/quick-replies")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ title: "Sprint 10 Dup", shortcut, content: "Duplicada." })
+      .expect(409);
+
+    await request(app.getHttpServer())
+      .get("/api/quick-replies?q=Sprint%2010")
+      .set("Authorization", `Bearer ${agentToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.some((reply: { id: string }) => reply.id === created.body.id)).toBe(true);
+      });
+
+    await request(app.getHttpServer())
+      .post("/api/quick-replies")
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({ title: "Agent denied", shortcut: `agent${suffix}`, content: "Denied." })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .patch(`/api/quick-replies/${created.body.id}`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({ content: "Denied." })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .patch(`/api/quick-replies/${created.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ content: "Resposta editada Sprint 10." })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.texto).toBe("Resposta editada Sprint 10.");
+      });
+
+    await request(app.getHttpServer())
+      .get("/api/quick-replies")
+      .set("Authorization", `Bearer ${orbitToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.some((reply: { id: string }) => reply.id === created.body.id)).toBe(false);
+      });
+
+    await request(app.getHttpServer())
+      .delete(`/api/quick-replies/${created.body.id}`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .delete(`/api/quick-replies/${created.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get("/api/quick-replies")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.some((reply: { id: string }) => reply.id === created.body.id)).toBe(false);
+      });
+  });
+
   it("rejects invalid credentials", async () => {
     await request(app.getHttpServer())
       .post("/api/auth/login")

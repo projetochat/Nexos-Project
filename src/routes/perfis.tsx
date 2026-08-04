@@ -19,6 +19,7 @@ const PERM_FIELDS = [
   { id: "roles.manage", label: "Gerenciar perfis" },
   { id: "chat.contacts.edit", label: "Pode editar contato" },
   { id: "chat.customer_link.edit", label: "Pode editar vinculo de cliente" },
+  { id: "chat.tags.use", label: "Pode usar etiquetas" },
   { id: "chat.tags.manage", label: "Pode gerenciar etiquetas" },
   { id: "chat.leads.read", label: "Visualiza leads" },
   { id: "chat.contacts.read", label: "Visualiza contatos" },
@@ -26,6 +27,7 @@ const PERM_FIELDS = [
   { id: "chat.messages.delete", label: "Excluir mensagem" },
   { id: "chat.messages.edit", label: "Editar mensagem" },
   { id: "chat.quick_replies.read", label: "Acessa mensagens rapidas" },
+  { id: "chat.quick_replies.manage", label: "Gerenciar mensagens rapidas" },
   { id: "chat.contacts.block", label: "Bloquear contatos" },
   { id: "chat.audio.send", label: "Enviar audio" },
   { id: "chat.agent_name.show", label: "Apresentar nome do atendente na conversa" },
@@ -280,7 +282,7 @@ function PerfilForm({
         : {
             name: "",
             description: "",
-            permissionIds: ["departments.read", "chat.contacts.read", "chat.quick_replies.read"],
+            permissionIds: ["departments.read", "chat.contacts.read", "chat.tags.use", "chat.quick_replies.read"],
             departmentIds: [],
           },
     );

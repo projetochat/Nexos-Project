@@ -168,3 +168,15 @@ Somente regras comprovadas no codigo.
 - Reconnect preserva a Connection local e reexecuta ensure de webhook de forma idempotente.
 - Webhook recebido sem contrato valido nao e aceito anonimamente.
 - Evento ignorado deve ter `ignoredReason` canonico e observavel.
+
+## Sprint 10 Rework - Tags e Quick Replies
+
+- O catalogo de Tags e tenant-scoped e gerenciado em `/etiquetas` via Nexos API.
+- A associacao de Tag em Contact e separada do catalogo: agentes com `chat.tags.use` podem aplicar ou
+  remover Tags existentes, mas nao criar/editar/arquivar Tags.
+- `tenant_admin` e `supervisor` com `chat.tags.manage` podem manter o catalogo de Tags.
+- Quick Replies sao tenant-scoped, podem ser globais ou por departamento e usam atalho normalizado unico.
+- `/mensagens-rapidas` nao usa Supabase/RLS; cria, edita e arquiva somente por `/api/quick-replies`.
+- Agentes podem ler Quick Replies e inserir conteudo no composer, mas nao gerenciar o catalogo.
+- Rotas operacionais da Inbox, Tags e Quick Replies nao podem voltar a `@/lib/mvp`, Supabase, mock store ou
+  aliases legados.

@@ -202,8 +202,18 @@ REMOVIDO das superficies migradas:
 AINDA LEGADO:
 
 - `src/start.ts` ainda anexa sessao Supabase para server functions legadas.
-- `src/lib/mvp.ts`, inbox, chamados, instancias, simulador, historico e filtros de relatorio ainda usam Supabase para fluxos operacionais nao migrados.
+- `src/lib/mvp.ts`, chamados, simulador, historico e filtros de relatorio ainda usam Supabase para fluxos operacionais nao migrados.
 - `ensureDemoUsers` permanece protegido por `ALLOW_DEMO_USER_PROVISIONING=true` e nao e chamado pelo login.
+
+## Sprint 10 Rework - RBAC operacional
+
+`tenant_admin` tem acesso completo ao tenant operacional, incluindo criar Conversation, gerenciar catalogo
+de Tags e gerenciar Quick Replies. O escopo de departamento continua aplicado a supervisor/agente, mas nao
+bloqueia o tenant admin.
+
+Agentes recebem `chat.tags.use` e `chat.quick_replies.read`: podem aplicar/remover Tags existentes em
+Contacts e inserir Quick Replies no composer, sem criar/editar/arquivar o catalogo. A UI usa as mesmas
+permission keys que o backend e mensagens `403` preservam o motivo operacional retornado pela API.
 
 ## Sprint 06 - Messaging
 

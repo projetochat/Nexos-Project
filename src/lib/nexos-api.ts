@@ -592,10 +592,12 @@ async function readError(response: Response) {
       message?: string | string[];
       error?: string;
     };
+    if (Array.isArray(data.message)) return data.message.join(", ");
+    if (data.message) return data.message;
+    if (data.error) return data.error;
     const mapped = authMessageFromStatus(response.status, data.code);
     if (mapped) return mapped;
-    if (Array.isArray(data.message)) return data.message.join(", ");
-    return data.message ?? data.error ?? "Erro na API Nexos.";
+    return "Erro na API Nexos.";
   } catch {
     return "Erro na API Nexos.";
   }

@@ -3,7 +3,9 @@ import { useSession } from "@/lib/session";
 export type ChatPerms = {
   pode_editar_contato: boolean;
   pode_editar_vinculo_cliente: boolean;
+  pode_usar_etiquetas: boolean;
   pode_editar_etiquetas: boolean;
+  pode_gerenciar_respostas_rapidas: boolean;
   visualiza_leads: boolean;
   visualiza_contatos: boolean;
   visualiza_numero: boolean;
@@ -18,7 +20,9 @@ export type ChatPerms = {
 export const DEFAULT_PERMS: ChatPerms = {
   pode_editar_contato: true,
   pode_editar_vinculo_cliente: true,
+  pode_usar_etiquetas: true,
   pode_editar_etiquetas: true,
+  pode_gerenciar_respostas_rapidas: true,
   visualiza_leads: true,
   visualiza_contatos: true,
   visualiza_numero: true,
@@ -33,7 +37,9 @@ export const DEFAULT_PERMS: ChatPerms = {
 const CHAT_PERMISSION_MAP: Record<keyof ChatPerms, string> = {
   pode_editar_contato: "chat.contacts.edit",
   pode_editar_vinculo_cliente: "chat.customer_link.edit",
+  pode_usar_etiquetas: "chat.tags.use",
   pode_editar_etiquetas: "chat.tags.manage",
+  pode_gerenciar_respostas_rapidas: "chat.quick_replies.manage",
   visualiza_leads: "chat.leads.read",
   visualiza_contatos: "chat.contacts.read",
   visualiza_numero: "chat.phone.read",

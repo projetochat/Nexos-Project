@@ -374,3 +374,17 @@ $env:VITE_NEXOS_REALTIME_ENABLED="false"
 Com a flag frontend em `false`, o browser nao instancia Socket.io e a Inbox deve abrir por REST/polling.
 Nao dependa apenas de `NEXOS_REALTIME_ENABLED=false` no backend para desligar tentativas de conexao no
 cliente.
+
+## Sprint 10 Rework - Smoke operacional
+
+Homologacao fisica preservada usa `nexos_0802`; regressao automatizada ampla usa `nexos_0801`.
+
+```powershell
+$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0801?schema=public"
+$env:REDIS_URL="redis://localhost:6379"
+bun run verify
+```
+
+O `verify` executa a guarda `scripts/check-inbox-legacy-runtime.mjs`, que bloqueia retorno de
+`@/lib/mvp`, Supabase, `.from("tags")`, `.from("quick_replies")` e aliases legados nas rotas operacionais
+de Inbox, `/etiquetas` e `/mensagens-rapidas`.

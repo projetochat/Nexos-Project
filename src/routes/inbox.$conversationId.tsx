@@ -1037,9 +1037,9 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
               Etiquetas
             </p>
-            {perms.pode_editar_etiquetas && (
+            {perms.pode_usar_etiquetas && (
               <Button variant="ghost" size="sm" onClick={tagsModal.show}>
-                <TagIcon className="h-3 w-3" /> Gerenciar
+                <TagIcon className="h-3 w-3" /> Etiquetas
               </Button>
             )}
           </div>
@@ -1114,6 +1114,7 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
         onClose={tagsModal.hide}
         contactId={contactId}
         current={contactTags}
+        canManageCatalog={perms.pode_editar_etiquetas}
         onChanged={() => qc.invalidateQueries({ queryKey: ["nexos", "contacts", contactId] })}
       />
       <RenameContactModal
@@ -1315,12 +1316,14 @@ function TagsModal({
   onClose,
   contactId,
   current,
+  canManageCatalog,
   onChanged,
 }: {
   open: boolean;
   onClose: () => void;
   contactId: string;
   current: Tag[];
+  canManageCatalog: boolean;
   onChanged: () => void;
 }) {
   const qc = useQueryClient();
@@ -1364,7 +1367,7 @@ function TagsModal({
       open={open}
       onClose={onClose}
       title="Etiquetas do contato"
-      description="Selecione as etiquetas ou crie novas."
+      description="Selecione as etiquetas cadastradas para este contato."
       footer={
         <Button variant="ghost" size="sm" onClick={onClose}>
           Fechar
@@ -1398,11 +1401,11 @@ function TagsModal({
         )}
       </div>
 
-      {!creating ? (
+      {canManageCatalog && !creating ? (
         <Button variant="ghost" size="sm" className="mt-3" onClick={() => setCreating(true)}>
           <Plus className="h-3 w-3" /> Nova etiqueta
         </Button>
-      ) : (
+      ) : canManageCatalog && creating ? (
         <div className="mt-3 space-y-2 rounded-lg border border-border p-3">
           <Field label="Nome">
             <Input value={newName} onChange={(e) => setNewName(e.target.value)} />
@@ -1424,7 +1427,7 @@ function TagsModal({
             </Button>
           </div>
         </div>
-      )}
+      ) : null}
     </Modal>
   );
 }

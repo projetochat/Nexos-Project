@@ -124,8 +124,9 @@ Base local validada: `http://localhost:3001/api`.
 
 Base local validada: `http://localhost:3001/api`.
 
-A Inbox operacional usa Nexos API como fonte unica. As rotas `/inbox`, `/inbox/` e
-`/inbox/$conversationId` nao importam `@/lib/mvp`, Supabase ou aliases legados de runtime.
+A Inbox operacional usa Nexos API como fonte unica. As rotas `/inbox`, `/inbox/`,
+`/inbox/$conversationId`, `/etiquetas` e `/mensagens-rapidas` nao importam `@/lib/mvp`, Supabase ou
+aliases legados de runtime.
 
 | Metodo   | Endpoint                         | Permission                  | Descricao                                      |
 | -------- | -------------------------------- | --------------------------- | ---------------------------------------------- |
@@ -141,14 +142,20 @@ A Inbox operacional usa Nexos API como fonte unica. As rotas `/inbox`, `/inbox/`
 | `DELETE` | `/quick-replies/:id`             | `chat.quick_replies.manage` | Arquiva resposta rapida                        |
 | `GET`    | `/conversations/:id`             | `conversations.read`        | Inclui contact tags/customer e connection      |
 
-Quick Reply selecionada no frontend apenas insere o texto no composer; envio continua separado em
-`POST /api/conversations/:conversationId/messages`.
+`/etiquetas` gerencia o catalogo tenant-scoped de Tags pela Nexos API. O modal de Contact na Inbox lista o
+mesmo catalogo e grava apenas a associacao Contact x Tag em `/contacts/:id/tags/:tagId`.
+
+`/mensagens-rapidas` gerencia Quick Replies pela Nexos API. Quick Reply selecionada no frontend apenas
+insere o texto no composer; envio continua separado em `POST /api/conversations/:conversationId/messages`.
 
 RBAC:
 
 - `tenant_admin`: gerencia e usa Tags, gerencia e le Quick Replies.
 - `supervisor`: gerencia e usa Tags, gerencia e le Quick Replies.
 - `agent`: usa Tags existentes e le Quick Replies; nao cria/edita/arquiva.
+
+Erros `403` retornam a mensagem operacional do backend quando houver `message` no payload, em vez de
+serem convertidos sempre para erro generico de ambiente/autenticacao.
 
 Resposta esperada apos persistencia:
 

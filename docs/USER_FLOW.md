@@ -4,22 +4,22 @@
 
 | Rota                     | Tela                   | Layout                 | Origem principal dos dados                |
 | ------------------------ | ---------------------- | ---------------------- | ----------------------------------------- |
-| `/login`                 | Login                  | Sem shell              | Supabase Auth, demo server function       |
+| `/login`                 | Login                  | Sem shell              | Nexos API                                 |
 | `/`                      | Dashboard              | AppShell               | Supabase via `REPORTS`, realtime          |
-| `/inbox`                 | Lista de conversas     | AppShellFull           | Supabase + localStorage prefs             |
-| `/inbox/$conversationId` | Conversa               | AppShellFull           | Supabase + media local/data URL           |
+| `/inbox`                 | Lista de conversas     | AppShellFull           | Nexos API + realtime/polling              |
+| `/inbox/$conversationId` | Conversa               | AppShellFull           | Nexos API + realtime/polling              |
 | `/clientes`              | Clientes               | AppShell               | Supabase via `CUSTOMERS`                  |
 | `/contatos`              | Contatos               | AppShell               | Supabase via `CONTACTS/CUSTOMERS/CATALOG` |
 | `/historico`             | Historico              | AppShellFull           | Supabase via `CONV/CATALOG`               |
 | `/simulador`             | Simulador              | AppShell               | Supabase + ghosts hardcoded               |
-| `/mensagens-rapidas`     | Quick replies          | AppShell               | Supabase via `QUICK_REPLIES`              |
+| `/mensagens-rapidas`     | Quick replies          | AppShell               | Nexos API                                 |
 | `/relatorios`            | Relatorios             | AppShell               | Supabase via `REPORTS`                    |
 | `/chamados`              | Chamados               | AppShell               | Supabase + HTML local                     |
 | `/instancias`            | Instancias             | AppShell               | Nexos API                                 |
 | `/perfis`                | Perfis de acesso       | AppShell               | Supabase                                  |
 | `/atendentes`            | Atendentes             | AppShell               | Mock store + Supabase perfis              |
 | `/departamentos`         | Departamentos          | AppShell               | Mock store + Supabase escopos             |
-| `/etiquetas`             | Etiquetas              | AppShell               | Mock store                                |
+| `/etiquetas`             | Etiquetas              | AppShell               | Nexos API                                 |
 | `/empresas`              | Empresas legado        | AppShell               | Mock store                                |
 | `/campanhas`             | Campanhas              | AppShell               | Mock store                                |
 | `/filas`                 | Filas admin            | AppShell               | Mock store                                |
@@ -193,3 +193,15 @@ instancia socket, nao cria subscriptions e mantem polling REST.
 A causa do crash era o snapshot instavel de `useSyncExternalStore` em `src/lib/realtime/client.ts`.
 `realtimeSnapshot()` retornava um objeto novo a cada chamada mesmo sem mudanca de estado, retroalimentando
 render em `InboxLayout`. O snapshot agora e cacheado e so muda quando `status` ou `lastEventId` mudam.
+
+## Sprint 10 Rework - Tags e Quick Replies
+
+```text
+/etiquetas -> GET/POST/PATCH/DELETE /api/tags -> catalogo tenant-scoped
+Inbox Contact panel -> GET /api/crm/tags -> POST/DELETE /api/contacts/:id/tags/:tagId
+/mensagens-rapidas -> GET/POST/PATCH/DELETE /api/quick-replies
+Composer -> seleciona Quick Reply -> insere texto -> usuario envia mensagem separadamente
+```
+
+Admin gerencia catalogos e cria Conversation no tenant inteiro. Agente usa Tags existentes e le Quick
+Replies, sem botoes de criacao/edicao de catalogo quando nao possui as permissions de manage.

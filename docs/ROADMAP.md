@@ -197,3 +197,19 @@ Rework II Sprint 09 recuperou a estabilidade runtime da Inbox: snapshot realtime
 `VITE_NEXOS_REALTIME_ENABLED`, subscriptions idempotentes e refresh single-flight. A liberacao da Sprint 10
 continua condicionada ao gate fisico completo em browser real com admin/agente, WhatsApp inbound/outbound,
 presence, typing, reconnect e Redis degraded/recovery.
+
+# Sprint 10
+
+Status: consolidacao de dominio implementada e rework de RBAC/Tags/Quick Replies aplicado.
+
+Entregue:
+
+- Inbox, `/etiquetas` e `/mensagens-rapidas` sem runtime Supabase/MVP/mock;
+- admin com acesso tenant-wide para criar Conversation e gerenciar catalogos;
+- agente com uso de Tags existentes e leitura de Quick Replies;
+- Tag catalog compartilhado entre `/etiquetas` e Contact modal;
+- Quick Replies exclusivamente via Nexos API;
+- `verify` duplo aprovado em `nexos_0801`.
+
+Proxima etapa: Sprint 11 pode partir do dominio Inbox consolidado, preservando os gates fisicos de
+WhatsApp/realtime/Redis como criterios recorrentes de homologacao.
