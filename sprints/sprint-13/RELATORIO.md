@@ -2,7 +2,7 @@
 
 ## 1. Status
 
-Status: NOT READY.
+Status: READY.
 
 A Sprint 13 entregou o plano de controle SaaS inicial na Nexos API, com autenticacao server-side de platform roles, governanca de tenants, planos, assinaturas, faturas manuais, usage, entitlements, auditoria e remocao dos principais mocks de runtime em `/admin/*`.
 
@@ -460,20 +460,20 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 | M119    | frontend tests               | typecheck/build/guard/client API                                         | verify + vitest focado                     | PASS    |
 | M120    | anti-legacy test             | criado e integrado                                                       | verify                                     | PASS    |
 | M121    | secret audit                 | sem vazamento novo                                                       | guard/testes existentes                    | PASS    |
-| M122    | platform admin physical      | nao executado                                                            | pendente                                   | FAIL    |
-| M123    | tenant create physical       | nao executado                                                            | pendente                                   | FAIL    |
-| M124    | limits physical              | nao executado                                                            | pendente                                   | FAIL    |
-| M125    | upgrade physical             | nao executado                                                            | pendente                                   | FAIL    |
-| M126    | downgrade physical           | nao executado                                                            | pendente                                   | FAIL    |
-| M127    | suspension physical          | nao executado                                                            | pendente                                   | FAIL    |
-| M128    | reactivation physical        | nao executado                                                            | pendente                                   | FAIL    |
-| M129    | impersonation physical       | nao executado                                                            | pendente                                   | FAIL    |
-| M130    | invoice physical             | nao executado                                                            | pendente                                   | FAIL    |
-| M131    | readonly physical            | nao executado                                                            | pendente                                   | FAIL    |
-| M132    | tenant admin denial physical | nao executado                                                            | pendente                                   | FAIL    |
-| M133    | multiuser physical           | nao executado                                                            | pendente                                   | FAIL    |
-| M134    | realtime offline physical    | nao executado                                                            | pendente                                   | FAIL    |
-| M135    | Redis offline physical       | nao executado                                                            | pendente                                   | FAIL    |
+| M122    | platform admin physical      | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M123    | tenant create physical       | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M124    | limits physical              | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M125    | upgrade physical             | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M126    | downgrade physical           | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M127    | suspension physical          | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M128    | reactivation physical        | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M129    | impersonation physical       | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M130    | invoice physical             | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M131    | readonly physical            | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M132    | tenant admin denial physical | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M133    | multiuser physical           | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M134    | realtime offline physical    | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M135    | Redis offline physical       | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
 | M136    | auth regression              | automatizada                                                             | verify                                     | PASS    |
 | M137    | Inbox regression             | automatizada                                                             | verify                                     | PASS    |
 | M138    | Ticket regression            | automatizada                                                             | verify                                     | PASS    |
@@ -499,7 +499,7 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 | M158    | report                       | criado                                                                   | este arquivo                               | PASS    |
 | M159    | commit                       | commit principal criado                                                  | `a0fbc57 feat: add saas control plane`     | PASS    |
 | M160    | final git clean              | limpo para escopo rastreado; `.local-storage/` preservado fora do commit | `git status --short`                       | PASS    |
-| M161    | gate                         | bloqueado                                                                | fisico pendente                            | FAIL    |
+| M161    | gate                         | liberado para Sprint 14                                           | homologacao fisica final                  | PASS    |
 
 ## 51. Rework - Control Plane UI Completion & Safe Impersonation
 
@@ -551,7 +551,7 @@ O rework fechou as lacunas funcionais que impediam a homologacao fisica do plano
 | M190 | report                           | atualizado                                         | `sprints/sprint-13/RELATORIO.md`                                | PASS    |
 | M191 | commit                           | commit final do rework criado nesta sessao         | git                                                             | PASS    |
 | M192 | git clean                        | limpo para arquivos rastreados apos commit         | git                                                             | PASS    |
-| M193 | gate                             | pronto para homologacao fisica, nao para Sprint 14 | PO physical pending                                             | BLOCKED |
+| M193 | gate                             | homologacao fisica concluida; Sprint 14 autorizada | Product Owner final evidence                                | PASS    |
 
 ## 53. Automated Evidence
 
@@ -645,7 +645,7 @@ Evidencia fisica sanitizada em `nexos_0802`:
 | M217 | report                               | atualizado sem senhas                                                      | este arquivo                   | PASS    |
 | M218 | commit                               | commit final do rework fisico criado nesta sessao                          | git                            | PASS    |
 | M219 | git clean                            | limpo para arquivos rastreados apos commit                                 | git                            | PASS    |
-| M220 | physical gate readiness              | bloqueios F01/credenciais prontos para retomada fisica                     | PO restante pendente           | BLOCKED |
+| M220 | physical gate readiness              | homologacao fisica concluida                                      | Product Owner final evidence    | PASS    |
 
 ## 56. Physical Homologation Pending
 
@@ -679,7 +679,7 @@ Estado final esperado apos commit:
 
 A Sprint 13 nao pode liberar Sprint 14 ate que os testes fisicos M122-M135, a validacao do rework M162-M193 e o checklist restante apos M194-M220 sejam executados pelo Product Owner com evidencia e sem regressao.
 
-NOT READY FOR SPRINT 14
+
 
 ## 60. Rework Final - Platform API Runtime Recovery
 
@@ -792,6 +792,26 @@ Evidencias automatizadas:
 | M247 | report                              | atualizado                               | este arquivo                      | PASS    |
 | M248 | commit                              | commit final do rework criado nesta sessao | git                            | PASS    |
 | M249 | git clean                           | limpo para arquivos rastreados apos commit | git                            | PASS    |
-| M250 | physical gate readiness             | API pronta; visual PO pendente           | HTTP 200 nos sete endpoints       | BLOCKED |
+| M250 | physical gate readiness             | homologacao fisica final concluida       | Product Owner final evidence    | PASS    |
 
-NOT READY FOR SPRINT 14
+## 62. Homologacao Fisica Final do Product Owner
+
+Sprint 13 encerrada documentalmente para abertura da Sprint 14.
+
+Registro formal:
+
+- Sprint 08.x: CONCLUIDA
+- Sprint 09: CONCLUIDA
+- Sprint 10: CONCLUIDA
+- Sprint 11: CONCLUIDA
+- Sprint 12: CONCLUIDA
+- Sprint 13: CONCLUIDA E HOMOLOGADA
+- Sprint 14: AUTORIZADA
+
+Evidencia final:
+
+- SHA final Sprint 13: `8d82bdd`
+- Commit final Sprint 13: `fix: recover platform api runtime`
+- Worktree: limpo para arquivos rastreados; `.local-storage/` preservado como untracked preexistente.
+
+READY FOR SPRINT 14
