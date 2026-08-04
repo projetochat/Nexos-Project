@@ -665,7 +665,8 @@ Commits de Sprint 13 nesta branch:
 
 - `a0fbc57 feat: add saas control plane`
 - `e92d7d4 docs: record sprint 13 gate`
-- commit final do rework criado nesta sessao.
+- `6434174 feat: complete control plane rework`
+- `88406e6 fix: archive messaging connection removal`
 
 ## 58. Final Git state
 
