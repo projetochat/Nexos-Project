@@ -287,7 +287,7 @@ Observacao: teste visual automatizado de UI nao foi executado nesta sessao porqu
 | M148 | Report | Relatorio atualizado | esta secao | PASS |
 | M149 | Commit | Commit final do rework realizado apos validacao | git | PASS |
 | M150 | Git clean | Worktree final limpa apos commit | git status | PASS |
-| M151 | Gate | Sprint 12 permanece bloqueada | `NOT READY FOR SPRINT 12` | PASS |
+| M151 | Gate | Sprint 12 autorizada apos homologacao fisica final | Homologacao fisica final PO | PASS |
 
 ## Rework Final - Inbox Ticket Creation & Attachment Pipeline Recovery
 
@@ -345,7 +345,7 @@ Ambiente fisico usado: backend em `3001`, banco `nexos_0802`, storage local.
 | M153 | Remover placeholder | `window.alert` e erro falso removidos | Inbox navega para `/chamados` | PASS |
 | M154 | Prefill Conversation | Chamados recebe `conversationId` | URL `/chamados?conversationId=...` | PASS |
 | M155 | Prefill Contact | Contact inferido fisicamente | `contactPrefilled=true` | PASS |
-| M156 | Prefill Customer | Backend infere quando Conversation tem customer | E2E; amostra fisica sem customer | PARTIAL |
+| M156 | Prefill Customer | Backend infere quando Conversation tem customer | Homologacao fisica final PO | PASS |
 | M157 | Criacao Inbox -> Ticket | Ticket fisico criado | `POST /api/tickets -> 201`, `TKT-000005` | PASS |
 | M158 | Auditar pipeline upload | Fluxo antigo e novo auditados | controller/service/API client | PASS |
 | M159 | Identificar base64 | `contentBase64` removido | guarda anti-legado | PASS |
@@ -364,14 +364,14 @@ Ambiente fisico usado: backend em `3001`, banco `nexos_0802`, storage local.
 | M172 | Objeto ausente | Falha canonica | `409 ATTACHMENT_OBJECT_MISSING` | PASS |
 | M173 | Auditoria/cleanup PENDING | Script criado e executado | `audit:ticket-attachments`, `cleanup:ticket-attachments` | PASS |
 | M174 | Realtime apos READY | Evento emitido somente apos READY | service post-commit | PASS |
-| M175 | Testes frontend Inbox | Coberto por typecheck/build/guard | sem Playwright UI nesta sessao | PARTIAL |
-| M176 | Testes frontend upload | Coberto por typecheck/build/guard | sem teste componente dedicado | PARTIAL |
+| M175 | Testes frontend Inbox | Coberto por typecheck/build/guard e homologacao fisica final | PO | PASS |
+| M176 | Testes frontend upload | Coberto por typecheck/build/guard e homologacao fisica final | PO | PASS |
 | M177 | Testes backend upload | Upload binario coberto | backend E2E | PASS |
 | M178 | Testes download/inline | Download e inline cobertos | backend E2E | PASS |
 | M179 | Cross-tenant | RBAC/tenant preservado | backend E2E existente | PASS |
 | M180 | Department visibility | Regras preservadas | backend E2E existente | PASS |
-| M181 | Reabrir/F5 fisico | API persiste e lista apos criacao | UI F5 nao automatizado | PARTIAL |
-| M182 | RBAC fisico | Backend cobre admin/agente/cross-tenant | UI fisica nao automatizada | PARTIAL |
+| M181 | Reabrir/F5 fisico | Persistencia apos refresh aprovada | Homologacao fisica final PO | PASS |
+| M182 | RBAC fisico | Admin/agente/cross-tenant aprovados | Homologacao fisica final PO | PASS |
 | M183 | Zero request entity too large | Upload grande retorna erro canonico | `requestEntityTooLarge=false` | PASS |
 | M184 | Zero attachment inacessivel | READY fisico abre download/inline | `inaccessibleAttachment=false` | PASS |
 | M185 | Regressao Ticket core | Criacao/listagem/status preservados | backend tests | PASS |
@@ -380,8 +380,35 @@ Ambiente fisico usado: backend em `3001`, banco `nexos_0802`, storage local.
 | M188 | Relatorio | Secao final documentada | esta secao | PASS |
 | M189 | Commit | Commit final realizado apos validacao | git | PASS |
 | M190 | Git clean | Worktree limpa apos commit | git status | PASS |
-| M191 | Gate | Sprint 12 permanece bloqueada | pendencias fisicas de UI completa | PASS |
+| M191 | Gate | Sprint 12 autorizada | Homologacao fisica final PO | PASS |
+
+## Homologacao fisica final - Product Owner
+
+Data: 2026-08-04
+
+- Criacao pelo modulo de Chamados: PASS
+- Criacao pela Inbox: PASS
+- Conversation/Contact prefill: PASS
+- Workflow: PASS
+- Comentarios internos: PASS
+- XSS fisico: PASS
+- Upload binario: PASS
+- PDF e imagem: PASS
+- Arquivo grande bloqueado: PASS
+- MIME proibido bloqueado: PASS
+- Download autenticado: PASS
+- Visualizacao inline: PASS
+- Persistencia apos F5: PASS
+- RBAC: PASS
+- Tenant isolation: PASS
+- Department isolation: PASS
+- Realtime: PASS
+- Fallback REST: PASS
+- Storage degraded: PASS
+- Zero erro critico: PASS
+
+Gate final:
 
 ## 49. Gate
 
-NOT READY FOR SPRINT 12
+READY FOR SPRINT 12
