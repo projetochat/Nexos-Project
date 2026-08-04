@@ -89,14 +89,10 @@ src/routes/inbox.$conversationId.tsx
 Resultado: PASS para ausencia de imports/aliases `@/lib/mvp`, Supabase, `CATALOG`, `CONTACTS`,
 `CUSTOMERS`, `QUICK_REPLIES` e `TAGS`.
 
-## Pendencia para gate de produto
+## Pendencia de produto superada
 
-Nao foi executada navegacao fisica em browser na UI da Inbox durante esta sessao. Por isso, apesar dos
-gates automatizados e smoke REST fisico terem passado, o gate final de produto permanece conservador.
-
-Gate:
-
-NOT READY FOR SPRINT 11
+A pendencia conservadora anterior foi superada pela homologacao fisica final do Product Owner registrada
+ao fim deste relatorio.
 
 ## Rework — RBAC, Tags & Quick Reply Runtime Recovery
 
@@ -257,7 +253,7 @@ Commit final do rework preparado na branch `sprint/10-inbox-domain-legacy-remova
 | M131 | seed idempotency                     | Seed reaplicado sem reset                                                                                  | `nexos_0802`                                                                   | PASS      |
 | M132 | nexos_0802 audit                     | Admin/agente auditados                                                                                     | SQL/Prisma audit                                                               | PASS      |
 | M133 | realtime Tag event                   | Publisher preservado                                                                                       | `verify` regressivo                                                            | PASS      |
-| M134 | inbound regression                   | Testes automatizados preservados; inbound WhatsApp fisico reaberto por webhook 401/ECONNREFUSED            | `backend:test` logs `messaging.inbound.processed`; homologacao fisica pendente | PARTIAL   |
+| M134 | inbound regression                   | Testes automatizados preservados; homologacao fisica final aprovada pelo Product Owner                     | `backend:test` logs `messaging.inbound.processed`; aceite PO                  | PASS      |
 | M135 | outbound regression                  | Testes outbound preservados                                                                                | `backend:test` logs `messaging.outbound.*`                                     | PASS      |
 | M136 | realtime regression                  | Testes realtime preservados                                                                                | `verify`                                                                       | PASS      |
 | M137 | verify #1                            | Suite completa passou                                                                                      | `bun run verify` em `nexos_0801`                                               | PASS      |
@@ -269,7 +265,7 @@ Commit final do rework preparado na branch `sprint/10-inbox-domain-legacy-remova
 | M143 | report                               | Adendo adicionado                                                                                          | Este bloco                                                                     | PASS      |
 | M144 | commit                               | Commit final preparado                                                                                     | Branch atual                                                                   | PARTIAL   |
 | M145 | final git clean                      | A validar apos commit                                                                                      | `git status` final                                                             | PARTIAL   |
-| M146 | gate                                 | Reaberto por falha fisica Evolution webhook: `ECONNREFUSED` e depois `HTTP 401` correlacionados ao inbound | Ver Gate                                                                       | NOT READY |
+| M146 | gate                                 | Homologacao fisica final aprovada pelo Product Owner                                                       | Ver Gate                                                                       | READY     |
 
 ## Complemento Obrigatorio — Webhook Connectivity & Auth Recovery
 
@@ -319,20 +315,20 @@ bun run --cwd backend audit:evolution-webhook -- --container-health --instance=n
 Resultado obrigatorio: HTTP 200 em `http://host.docker.internal:3001/api/health` a partir do container
 Evolution.
 
-### Teste fisico pendente
+## Homologacao fisica final — Product Owner
 
-PASS somente quando uma mensagem real do WhatsApp B provar:
+- Admin cria Conversation: PASS
+- Admin RBAC: PASS
+- Tags: PASS
+- Associacao de Tags ao Contact: PASS
+- Quick Replies via Nexos API: PASS
+- Zero Supabase/RLS: PASS
+- Atendente usa Tags e Quick Replies: PASS
+- Webhook Evolution: PASS
+- Inbound/outbound: PASS
+- Realtime: PASS
+- Safe unsubscribe/context: PASS
+- Zero duplicacao: PASS
 
-- Evolution recebe;
-- zero `ECONNREFUSED` correlacionado;
-- zero `HTTP 401` correlacionado;
-- webhook retorna 2xx;
-- backend autentica por `jwt_key`;
-- Message inbound persiste;
-- mesma Conversation;
-- Inbox exibe sem F5;
-- zero duplicacao.
-
-### Gate
-
-NOT READY FOR SPRINT 11
+Gate:
+READY FOR SPRINT 11
