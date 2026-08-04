@@ -497,8 +497,8 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 | M156 | docs general | parcial | changelog + docs dedicados | PARTIAL |
 | M157 | changelog | atualizado | `docs/CHANGELOG.md` | PASS |
 | M158 | report | criado | este arquivo | PASS |
-| M159 | commit | pendente ate commit final | git | PARTIAL |
-| M160 | final git clean | pendente ate commit final | git | PARTIAL |
+| M159 | commit | commit principal criado | `a0fbc57 feat: add saas control plane` | PASS |
+| M160 | final git clean | limpo para escopo rastreado; `.local-storage/` preservado fora do commit | `git status --short` | PASS |
 | M161 | gate | bloqueado | fisico pendente | FAIL |
 
 ## 51. Technical debt
@@ -518,11 +518,16 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 
 ## 53. Commits
 
-Pendente no momento de criacao do relatorio. O commit final deve ser registrado apos consolidacao do worktree.
+Commit principal:
+
+- `a0fbc57 feat: add saas control plane`
 
 ## 54. Final Git state
 
-Pendente no momento de criacao do relatorio. `.local-storage/` deve permanecer fora do commit.
+Estado final esperado apos commit documental:
+
+- Worktree limpo para arquivos rastreados.
+- `.local-storage/` preservado como untracked preexistente e fora do commit.
 
 ## 55. Gate
 
