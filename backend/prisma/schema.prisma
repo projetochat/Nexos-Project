@@ -125,6 +125,7 @@ enum MessagingConnectionStatus {
   CONNECTING
   CONNECTED
   ERROR
+  REMOVED
 }
 
 enum TicketStatus {
@@ -768,6 +769,7 @@ model MessagingConnection {
   externalReference    String?
   ownerExternalId      String?
   ownerPhoneNormalized String?
+  archivedAt           DateTime?
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
   tenant               Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -779,6 +781,7 @@ model MessagingConnection {
   @@unique([tenantId, providerType, externalReference])
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([tenantId, archivedAt])
   @@index([tenantId, ownerPhoneNormalized])
   @@map("messaging_connections")
 }

@@ -1,6 +1,7 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MessagingConnectionStatus, MessagingProviderType } from "../generated/prisma";
+import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 import { evolutionQrBase64, MessagingConnectionsService } from "./messaging-connections.service";
 
 const current = {
@@ -118,22 +119,128 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
-  it("removes orphaned local connections without requiring an Evolution instance", async () => {
+  it("archives a connected connection after Evolution delete returns 204", async () => {
     const prisma = prismaMock();
-    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
-    const evolution = { findInstance: vi.fn().mockResolvedValue(null), deleteInstance: vi.fn() };
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.CONNECTED,
+    });
+    prisma.messagingConnection.update.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.REMOVED,
+      externalReference: null,
+      archivedAt: new Date("2026-08-04T00:00:00.000Z"),
+    });
+    const evolution = { deleteInstance: vi.fn().mockResolvedValue({}) };
 
     await expect(
       new MessagingConnectionsService(prisma as never, evolution as never).remove(
         "connection-a",
         current as never,
       ),
-    ).resolves.toMatchObject({ removed: true, providerInstanceExisted: false });
+    ).resolves.toMatchObject({
+      removed: true,
+      archived: true,
+      status: "removed",
+      providerInstanceExisted: true,
+      idempotent: false,
+    });
+
+    expect(evolution.deleteInstance).toHaveBeenCalledWith("tenant-a-suporte");
+    expect(prisma.message.updateMany).not.toHaveBeenCalled();
+    expect(prisma.conversation.updateMany).not.toHaveBeenCalled();
+    expect(prisma.messagingConnection.delete).not.toHaveBeenCalled();
+    expect(prisma.messagingConnection.update).toHaveBeenCalledWith({
+      where: { tenantId_id: { tenantId: "tenant-a", id: "connection-a" } },
+      data: {
+        status: MessagingConnectionStatus.REMOVED,
+        externalReference: null,
+        ownerExternalId: null,
+        ownerPhoneNormalized: null,
+        archivedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it("treats Evolution 404 as an idempotent archive success", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.messagingConnection.update.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.REMOVED,
+      externalReference: null,
+      archivedAt: new Date("2026-08-04T00:00:00.000Z"),
+    });
+    const evolution = {
+      deleteInstance: vi
+        .fn()
+        .mockRejectedValue(
+          new MessagingProviderError(
+            MessagingErrorCode.PROVIDER_UNAVAILABLE,
+            "Instance not found",
+            false,
+            404,
+          ),
+        ),
+    };
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, evolution as never).remove(
+        "connection-a",
+        current as never,
+      ),
+    ).resolves.toMatchObject({
+      removed: true,
+      providerInstanceExisted: false,
+      idempotent: true,
+    });
+    expect(prisma.messagingConnection.update).toHaveBeenCalled();
+  });
+
+  it("maps temporary Evolution failures to canonical 503 without archiving locally", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    const evolution = {
+      deleteInstance: vi
+        .fn()
+        .mockRejectedValue(
+          new MessagingProviderError(
+            MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+            "Evolution unavailable",
+            true,
+            503,
+          ),
+        ),
+    };
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, evolution as never).remove(
+        "connection-a",
+        current as never,
+      ),
+    ).rejects.toThrow(ServiceUnavailableException);
+    expect(prisma.messagingConnection.update).not.toHaveBeenCalled();
+    expect(prisma.messagingConnection.delete).not.toHaveBeenCalled();
+  });
+
+  it("returns success for duplicate remove requests when the connection is already archived", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.REMOVED,
+      archivedAt: new Date("2026-08-04T00:00:00.000Z"),
+    });
+    const evolution = { deleteInstance: vi.fn() };
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, evolution as never).remove(
+        "connection-a",
+        current as never,
+      ),
+    ).resolves.toMatchObject({ removed: true, archived: true, idempotent: true });
 
     expect(evolution.deleteInstance).not.toHaveBeenCalled();
-    expect(prisma.message.updateMany).toHaveBeenCalled();
-    expect(prisma.conversation.updateMany).toHaveBeenCalled();
-    expect(prisma.messagingConnection.delete).toHaveBeenCalled();
+    expect(prisma.messagingConnection.update).not.toHaveBeenCalled();
   });
 
   it("ensures webhook again when QR reconnect is requested", async () => {
@@ -281,6 +388,7 @@ function connection() {
     providerType: MessagingProviderType.EVOLUTION,
     status: MessagingConnectionStatus.CONNECTING,
     externalReference: "tenant-a-suporte",
+    archivedAt: null,
     createdAt: new Date("2026-07-30T00:00:00.000Z"),
     updatedAt: new Date("2026-07-30T00:00:00.000Z"),
   };
@@ -295,9 +403,13 @@ function prismaMock() {
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      count: vi.fn().mockResolvedValue(0),
     },
-    message: { updateMany: vi.fn() },
-    conversation: { updateMany: vi.fn() },
+    message: { updateMany: vi.fn(), count: vi.fn().mockResolvedValue(0) },
+    conversation: { updateMany: vi.fn(), count: vi.fn().mockResolvedValue(0) },
+    campaign: { count: vi.fn().mockResolvedValue(0) },
+    campaignRecipient: { count: vi.fn().mockResolvedValue(0) },
+    ticket: { count: vi.fn().mockResolvedValue(0) },
     $transaction: vi.fn(async (callback) => callback(prisma)),
   };
   return prisma;

@@ -78,7 +78,7 @@ export class EvolutionClient {
         error instanceof MessagingProviderError &&
         error.code === MessagingErrorCode.PROVIDER_UNAVAILABLE &&
         !error.retryable &&
-        error.message.toLowerCase().includes("not found")
+        (error.httpStatus === 404 || error.message.toLowerCase().includes("not found"))
       ) {
         return [];
       }
@@ -179,16 +179,31 @@ async function readJson(response: Response) {
 function toProviderError(status: number, data: unknown) {
   const message = sanitizedErrorMessage(data);
   if (status === 401 || status === 403) {
-    return new MessagingProviderError(MessagingErrorCode.AUTHENTICATION_FAILURE, message);
+    return new MessagingProviderError(
+      MessagingErrorCode.AUTHENTICATION_FAILURE,
+      message,
+      false,
+      status,
+    );
   }
   if (status === 400)
-    return new MessagingProviderError(MessagingErrorCode.INVALID_RECIPIENT, message);
+    return new MessagingProviderError(MessagingErrorCode.INVALID_RECIPIENT, message, false, status);
   if (status === 404) {
-    return new MessagingProviderError(MessagingErrorCode.PROVIDER_UNAVAILABLE, message);
+    return new MessagingProviderError(
+      MessagingErrorCode.PROVIDER_UNAVAILABLE,
+      message,
+      false,
+      status,
+    );
   }
   if (status === 429)
-    return new MessagingProviderError(MessagingErrorCode.RATE_LIMITED, message, true);
-  return new MessagingProviderError(MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE, message, true);
+    return new MessagingProviderError(MessagingErrorCode.RATE_LIMITED, message, true, status);
+  return new MessagingProviderError(
+    MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+    message,
+    true,
+    status,
+  );
 }
 
 function sanitizedErrorMessage(data: unknown) {

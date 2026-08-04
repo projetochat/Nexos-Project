@@ -101,15 +101,35 @@ async function seedPlatformPlans() {
 }
 
 async function seedPlatformAdmin() {
-  const password = seedPlatformAdminPassword();
-  const passwordHash = await hash(password, 12);
-  const users = await Promise.all([
-    seedUser(seedPlatformAdminEmail(), "Platform Admin", passwordHash, PlatformRole.ADMIN),
-    seedUser(seedPlatformSupportEmail(), "Platform Support", passwordHash, PlatformRole.SUPPORT),
-    seedUser(seedPlatformReadonlyEmail(), "Platform Readonly", passwordHash, PlatformRole.READONLY),
+  const [admin, support, readonly] = await Promise.all([
+    seedPlatformUser({
+      email: seedPlatformEmail("NEXOS_PLATFORM_ADMIN_EMAIL"),
+      name: "Platform Admin",
+      password: process.env.NEXOS_PLATFORM_ADMIN_PASSWORD,
+      passwordKey: "NEXOS_PLATFORM_ADMIN_PASSWORD",
+      platformRole: PlatformRole.ADMIN,
+    }),
+    seedPlatformUser({
+      email: seedPlatformEmail("NEXOS_PLATFORM_SUPPORT_EMAIL"),
+      name: "Platform Support",
+      password: process.env.NEXOS_PLATFORM_SUPPORT_PASSWORD,
+      passwordKey: "NEXOS_PLATFORM_SUPPORT_PASSWORD",
+      platformRole: PlatformRole.SUPPORT,
+    }),
+    seedPlatformUser({
+      email: seedPlatformEmail("NEXOS_PLATFORM_READONLY_EMAIL"),
+      name: "Platform Readonly",
+      password: process.env.NEXOS_PLATFORM_READONLY_PASSWORD,
+      passwordKey: "NEXOS_PLATFORM_READONLY_PASSWORD",
+      platformRole: PlatformRole.READONLY,
+    }),
   ]);
+  console.info(`platformAdminEmail=${admin.email}`);
+  console.info(`platformSupportEmail=${support.email}`);
+  console.info(`platformReadonlyEmail=${readonly.email}`);
+  console.info("passwordSource=environment");
   console.info(
-    `Platform seed completed. Users configured: ${users.map((user) => user.email).join(", ")}.`,
+    `seedResult=${summarizePlatformSeed([admin.result, support.result, readonly.result])}`,
   );
 }
 
@@ -144,9 +164,6 @@ async function seedHomologationMinimum() {
   await seedMembership(tenant.id, admin.id, roles.tenant_admin.id, [department.id]);
   await seedMembership(tenant.id, agent.id, roles.agent.id, [department.id]);
   await seedTenantSubscription(tenant.id, "plan_professional_homologation");
-  console.info(
-    `Seed completed. Mode: homologation. Tenant: homologacao. Admin: ${adminEmail}. Agent: ${agentEmail}.`,
-  );
 }
 
 async function seedDemoData() {
@@ -325,6 +342,49 @@ async function seedUser(
     update: { name, passwordHash, status: "ACTIVE", platformRole },
     create: { email, name, passwordHash, platformRole },
   });
+}
+
+async function seedPlatformUser(input: {
+  email: string;
+  name: string;
+  password?: string;
+  passwordKey: string;
+  platformRole: PlatformRole;
+}) {
+  const existing = await prisma.user.findUnique({ where: { email: input.email } });
+  if (!existing && !input.password) {
+    throw new Error(`${input.passwordKey} must be configured to create ${input.email}.`);
+  }
+  const passwordHash = input.password ? await hash(input.password, 12) : undefined;
+  if (!existing) {
+    const user = await prisma.user.create({
+      data: {
+        email: input.email,
+        name: input.name,
+        passwordHash: passwordHash!,
+        status: "ACTIVE",
+        platformRole: input.platformRole,
+      },
+    });
+    return { email: user.email, result: "created" as const };
+  }
+  const needsProfileUpdate =
+    existing.name !== input.name ||
+    existing.status !== "ACTIVE" ||
+    existing.platformRole !== input.platformRole;
+  if (!needsProfileUpdate && !passwordHash) {
+    return { email: existing.email, result: "unchanged" as const };
+  }
+  const user = await prisma.user.update({
+    where: { id: existing.id },
+    data: {
+      name: input.name,
+      status: "ACTIVE",
+      platformRole: input.platformRole,
+      passwordHash,
+    },
+  });
+  return { email: user.email, result: "updated" as const };
 }
 
 async function seedMembership(
@@ -847,42 +907,16 @@ function seedAgentPassword() {
   return "demo1234";
 }
 
-function seedPlatformAdminEmail() {
-  const email = process.env.NEXOS_PLATFORM_ADMIN_EMAIL;
-  if (email) return email.toLowerCase().trim();
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("NEXOS_PLATFORM_ADMIN_EMAIL must be configured in production.");
-  }
-  return "platform@nexo.app";
+function seedPlatformEmail(key: string) {
+  const email = process.env[key];
+  if (!email?.trim()) throw new Error(`${key} must be configured.`);
+  return email.toLowerCase().trim();
 }
 
-function seedPlatformAdminPassword() {
-  const password = process.env.NEXOS_PLATFORM_ADMIN_PASSWORD;
-  if (password) return password;
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("NEXOS_PLATFORM_ADMIN_PASSWORD must be configured in production.");
-  }
-  return "demo1234";
-}
-
-function seedPlatformSupportEmail() {
-  const email =
-    process.env.NEXOS_PLATFORM_SUPPORT_EMAIL ?? process.env.NEXOS_PLATFORM_ADMIN_SUPPORT_EMAIL;
-  if (email) return email.toLowerCase().trim();
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("NEXOS_PLATFORM_SUPPORT_EMAIL must be configured in production.");
-  }
-  return "platform-support@nexo.app";
-}
-
-function seedPlatformReadonlyEmail() {
-  const email =
-    process.env.NEXOS_PLATFORM_READONLY_EMAIL ?? process.env.NEXOS_PLATFORM_ADMIN_READONLY_EMAIL;
-  if (email) return email.toLowerCase().trim();
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("NEXOS_PLATFORM_READONLY_EMAIL must be configured in production.");
-  }
-  return "platform-readonly@nexo.app";
+function summarizePlatformSeed(results: Array<"created" | "updated" | "unchanged">) {
+  if (results.includes("created")) return "created";
+  if (results.includes("updated")) return "updated";
+  return "unchanged";
 }
 
 function starterFeatures() {

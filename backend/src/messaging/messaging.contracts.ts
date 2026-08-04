@@ -26,6 +26,7 @@ export class MessagingProviderError extends Error {
     public readonly code: MessagingErrorCode,
     message: string,
     public readonly retryable = false,
+    public readonly httpStatus?: number,
   ) {
     super(message);
   }

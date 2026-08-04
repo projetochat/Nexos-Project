@@ -7,6 +7,7 @@ import { vi } from "vitest";
 import helmet from "helmet";
 import { hash } from "bcryptjs";
 import { AppModule } from "../src/app.module";
+import { EvolutionClient } from "../src/messaging/evolution/evolution.client";
 import {
   CampaignStatus,
   ConversationStatus,
@@ -1836,6 +1837,140 @@ describe("Nexos API organization and RBAC", () => {
       .delete(`/api/messaging/connections/${orbitConnection.id}`)
       .set("Authorization", `Bearer ${acmeToken}`)
       .expect(404);
+  });
+
+  it("archives messaging connections with historical relations and keeps delete idempotent", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const membership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenantId: tenant.id, user: { email: "admin@nexo.app" } },
+    });
+    const contact = await prisma.contact.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Connection Delete E2E",
+        phone: "11912345678",
+        normalizedPhone: `+551191234${String(Date.now()).slice(-4)}`,
+      },
+    });
+    const connection = await prisma.messagingConnection.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Connection Delete E2E",
+        providerType: MessagingProviderType.EVOLUTION,
+        status: MessagingConnectionStatus.CONNECTED,
+        externalReference: `delete-e2e-${Date.now()}`,
+      },
+    });
+    const conversation = await prisma.conversation.create({
+      data: {
+        tenantId: tenant.id,
+        contactId: contact.id,
+        connectionId: connection.id,
+        status: ConversationStatus.ABERTA,
+      },
+    });
+    const campaign = await prisma.campaign.create({
+      data: {
+        tenantId: tenant.id,
+        name: "Connection Delete Campaign E2E",
+        messageText: "Historico preservado",
+        connectionId: connection.id,
+        audienceType: "CONTACTS",
+        audienceContactIds: [contact.id],
+        createdByMembershipId: membership.id,
+      },
+    });
+    const message = await prisma.message.create({
+      data: {
+        tenantId: tenant.id,
+        conversationId: conversation.id,
+        connectionId: connection.id,
+        direction: MessageDirection.OUTBOUND,
+        type: MessageType.TEXT,
+        status: "CREATED",
+        content: "Historico preservado",
+        campaignId: campaign.id,
+      },
+    });
+    const deleteSpy = vi.spyOn(app.get(EvolutionClient), "deleteInstance").mockResolvedValue({});
+
+    try {
+      await request(app.getHttpServer())
+        .delete(`/api/messaging/connections/${connection.id}`)
+        .set("Authorization", `Bearer ${agentToken}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .delete(`/api/messaging/connections/${connection.id}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body).toMatchObject({
+            id: connection.id,
+            removed: true,
+            archived: true,
+            status: "removed",
+            providerInstanceExisted: true,
+            idempotent: false,
+          });
+        });
+
+      await expect(
+        prisma.messagingConnection.findUniqueOrThrow({ where: { id: connection.id } }),
+      ).resolves.toMatchObject({
+        status: MessagingConnectionStatus.REMOVED,
+        archivedAt: expect.any(Date),
+        externalReference: null,
+      });
+      await expect(
+        prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } }),
+      ).resolves.toMatchObject({ connectionId: connection.id });
+      await expect(
+        prisma.message.findUniqueOrThrow({ where: { id: message.id } }),
+      ).resolves.toMatchObject({ connectionId: connection.id });
+      await expect(
+        prisma.campaign.findUniqueOrThrow({ where: { id: campaign.id } }),
+      ).resolves.toMatchObject({ connectionId: connection.id });
+
+      await request(app.getHttpServer())
+        .post("/api/campaigns")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({
+          name: "Campaign with removed connection",
+          messageText: "Nao deve iniciar",
+          connectionId: connection.id,
+          audience: { type: "CONTACTS", contactIds: [contact.id], tagIds: [], customerIds: [] },
+        })
+        .expect(400)
+        .expect(({ body }) => {
+          expect(body.code).toBe("CAMPAIGN_CONNECTION_UNAVAILABLE");
+        });
+
+      await request(app.getHttpServer())
+        .delete(`/api/messaging/connections/${connection.id}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.idempotent).toBe(true);
+        });
+      await request(app.getHttpServer())
+        .get("/api/messaging/connections")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.some((item: { id: string }) => item.id === connection.id)).toBe(false);
+        });
+      expect(deleteSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      deleteSpy.mockRestore();
+      await prisma.message.deleteMany({ where: { id: message.id } });
+      await prisma.campaign.deleteMany({ where: { id: campaign.id } });
+      await prisma.conversation.deleteMany({ where: { id: conversation.id } });
+      await prisma.contact.deleteMany({ where: { id: contact.id } });
+      await prisma.messagingConnection.deleteMany({ where: { id: connection.id } });
+    }
   });
 
   it("allows tenant admin to manage tags while agents only use existing catalog tags", async () => {

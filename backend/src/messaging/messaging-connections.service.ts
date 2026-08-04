@@ -5,8 +5,9 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { MessagingConnectionStatus, MessagingProviderType, Prisma } from "../generated/prisma";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
@@ -20,6 +21,7 @@ import {
   normalizeSecret,
 } from "./evolution/evolution.config";
 import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.dto";
+import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 
 @Injectable()
 export class MessagingConnectionsService {
@@ -38,7 +40,11 @@ export class MessagingConnectionsService {
 
   async list(current: AuthenticatedUser) {
     const connections = await this.prisma.messagingConnection.findMany({
-      where: { tenantId: current.tenantId, providerType: MessagingProviderType.EVOLUTION },
+      where: {
+        tenantId: current.tenantId,
+        providerType: MessagingProviderType.EVOLUTION,
+        archivedAt: null,
+      },
       orderBy: [{ providerType: "asc" }, { createdAt: "asc" }],
     });
     return connections.map((connection) => this.serialize(connection));
@@ -209,6 +215,31 @@ export class MessagingConnectionsService {
 
   async remove(id: string, current: AuthenticatedUser) {
     const connection = await this.findTenantConnection(id, current.tenantId);
+    const references = await this.connectionReferenceCounts(connection.tenantId, connection.id);
+    const baseLog = {
+      event: "messaging.connection.remove",
+      connectionId: connection.id,
+      tenantId: connection.tenantId,
+      instanceName: sanitizeInstanceName(connection.externalReference),
+      connectionStatus: connection.status,
+      references,
+    };
+    if (connection.archivedAt || connection.status === MessagingConnectionStatus.REMOVED) {
+      this.logger.log({
+        ...baseLog,
+        authResult: "allowed",
+        providerResult: "skipped_already_removed",
+        httpResult: 200,
+      });
+      return {
+        id: connection.id,
+        removed: true,
+        archived: true,
+        status: "removed",
+        providerInstanceExisted: false,
+        idempotent: true,
+      };
+    }
     if (
       connection.providerType !== MessagingProviderType.EVOLUTION ||
       !connection.externalReference
@@ -216,33 +247,42 @@ export class MessagingConnectionsService {
       throw new BadRequestException("Connection nao e Evolution.");
     }
 
-    const instance = await this.evolution.findInstance(connection.externalReference);
-    if (instance) await this.evolution.deleteInstance(connection.externalReference);
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.message.updateMany({
-        where: { tenantId: current.tenantId, connectionId: connection.id },
-        data: { connectionId: null },
-      });
-      await tx.conversation.updateMany({
-        where: { tenantId: current.tenantId, connectionId: connection.id },
-        data: { connectionId: null },
-      });
-      await tx.messagingConnection.delete({
-        where: { tenantId_id: { tenantId: current.tenantId, id: connection.id } },
-      });
+    const providerDelete = await this.deleteEvolutionInstanceForRemoval(
+      connection.externalReference,
+      baseLog,
+    );
+    const archivedAt = new Date();
+    const updated = await this.prisma.messagingConnection.update({
+      where: { tenantId_id: { tenantId: current.tenantId, id: connection.id } },
+      data: {
+        status: MessagingConnectionStatus.REMOVED,
+        externalReference: null,
+        ownerExternalId: null,
+        ownerPhoneNormalized: null,
+        archivedAt,
+      },
     });
 
     this.realtime?.publishConnectionStatusUpdated({
       tenantId: connection.tenantId,
       connectionId: connection.id,
       status: "removed",
-      updatedAt: new Date(),
+      updatedAt: updated.updatedAt,
+    });
+    this.logger.log({
+      ...baseLog,
+      providerResult: providerDelete.result,
+      evolutionHttpStatus: providerDelete.httpStatus,
+      httpResult: 200,
+      archivedAt,
     });
     return {
       id: connection.id,
       removed: true,
-      providerInstanceExisted: !!instance,
+      archived: true,
+      status: "removed",
+      providerInstanceExisted: providerDelete.instanceExisted,
+      idempotent: providerDelete.idempotent,
     };
   }
 
@@ -392,8 +432,64 @@ export class MessagingConnectionsService {
     });
   }
 
+  private async connectionReferenceCounts(tenantId: string, connectionId: string) {
+    const [conversations, messages, campaigns, campaignRecipients, tickets] = await Promise.all([
+      this.prisma.conversation.count({ where: { tenantId, connectionId } }),
+      this.prisma.message.count({ where: { tenantId, connectionId } }),
+      this.prisma.campaign.count({ where: { tenantId, connectionId } }),
+      this.prisma.campaignRecipient.count({ where: { tenantId, campaign: { connectionId } } }),
+      this.prisma.ticket.count({ where: { tenantId, conversation: { connectionId } } }),
+    ]);
+    return { conversations, messages, campaigns, campaignRecipients, tickets };
+  }
+
+  private async deleteEvolutionInstanceForRemoval(
+    instanceName: string,
+    baseLog: Record<string, unknown>,
+  ) {
+    const endpoint = `/instance/delete/${sanitizeInstanceName(instanceName)}`;
+    try {
+      await this.evolution.deleteInstance(instanceName);
+      return {
+        result: "deleted",
+        endpoint,
+        httpStatus: 204,
+        instanceExisted: true,
+        idempotent: false,
+      };
+    } catch (error) {
+      if (isProviderNotFound(error)) {
+        this.logger.log({
+          ...baseLog,
+          evolutionEndpoint: endpoint,
+          evolutionHttpStatus: providerHttpStatus(error),
+          providerResult: "not_found_idempotent",
+        });
+        return {
+          result: "not_found_idempotent",
+          endpoint,
+          httpStatus: providerHttpStatus(error) ?? 404,
+          instanceExisted: false,
+          idempotent: true,
+        };
+      }
+      this.logger.warn({
+        ...baseLog,
+        evolutionEndpoint: endpoint,
+        evolutionHttpStatus: providerHttpStatus(error),
+        providerResult: "provider_unavailable",
+        providerError: sanitizeProviderError(error),
+        httpResult: 503,
+      });
+      throw new ServiceUnavailableException({
+        code: "EVOLUTION_PROVIDER_UNAVAILABLE",
+        message: "Evolution temporariamente indisponivel para remover a instancia.",
+      });
+    }
+  }
+
   private serialize(
-    connection: Prisma.MessagingConnectionGetPayload<object>,
+    connection: ConnectionWithArchive,
     provider?: { existsInProvider?: boolean; webhookUrl?: string | null; reason?: string },
   ) {
     return {
@@ -404,12 +500,17 @@ export class MessagingConnectionsService {
       status: connection.status.toLowerCase(),
       externalReference: connection.externalReference,
       ownerPhoneMasked: maskPhone(connection.ownerPhoneNormalized),
+      archivedAt: connection.archivedAt,
       provider,
       createdAt: connection.createdAt,
       updatedAt: connection.updatedAt,
     };
   }
 }
+
+type ConnectionWithArchive = Prisma.MessagingConnectionGetPayload<object> & {
+  archivedAt?: Date | null;
+};
 
 export function evolutionQrBase64(response: { base64?: string; qrcode?: { base64?: string } }) {
   return response.qrcode?.base64 ?? response.base64 ?? null;
@@ -461,4 +562,38 @@ function normalizeOwnerPhone(value: string | null) {
 function sanitizeEnsureError(error: unknown) {
   if (error instanceof Error) return error.message.slice(0, 200);
   return "webhook ensure failed";
+}
+
+function sanitizeInstanceName(value: string | null | undefined) {
+  if (!value) return null;
+  const hash = createHash("sha256").update(value).digest("hex").slice(0, 12);
+  return `${value.slice(0, 8)}...${value.slice(-4)}#${hash}`;
+}
+
+function isProviderNotFound(error: unknown) {
+  if (error instanceof MessagingProviderError) {
+    return (
+      error.httpStatus === 404 ||
+      (!error.retryable &&
+        error.code === MessagingErrorCode.PROVIDER_UNAVAILABLE &&
+        error.message.toLowerCase().includes("not found"))
+    );
+  }
+  return false;
+}
+
+function providerHttpStatus(error: unknown) {
+  return error instanceof MessagingProviderError ? error.httpStatus : undefined;
+}
+
+function sanitizeProviderError(error: unknown) {
+  if (error instanceof MessagingProviderError) {
+    return {
+      code: error.code,
+      retryable: error.retryable,
+      message: error.message.slice(0, 200),
+    };
+  }
+  if (error instanceof Error) return { message: error.message.slice(0, 200) };
+  return { message: "provider error" };
 }

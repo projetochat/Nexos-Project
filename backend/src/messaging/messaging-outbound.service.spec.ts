@@ -219,6 +219,38 @@ describe("MessagingOutboundService", () => {
     expect(provider.send).not.toHaveBeenCalled();
   });
 
+  it("fails removed connections without provider fallback", async () => {
+    const provider = { send: vi.fn() };
+    const prisma = prismaMock();
+    prisma.message.findFirst.mockResolvedValue(
+      message({
+        status: MessageStatus.QUEUED,
+        connection: { ...connection(), status: MessagingConnectionStatus.REMOVED },
+      }),
+    );
+
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock(provider) as never,
+      dispatcherMock() as never,
+    );
+
+    await expect(
+      service.dispatchQueuedMessage({
+        tenantId: "tenant-a",
+        messageId: "message-a",
+        attempt: 1,
+        finalAttempt: false,
+      }),
+    ).rejects.toMatchObject({ retryable: false });
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(prisma.message.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: MessageStatus.FAILED }),
+      }),
+    );
+  });
+
   it("guards same-conversation ordering when a predecessor is pending", async () => {
     const provider = { send: vi.fn() };
     const prisma = prismaMock();

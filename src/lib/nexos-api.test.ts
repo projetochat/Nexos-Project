@@ -7,6 +7,7 @@ import {
   loginWithNexosApi,
   logoutFromNexosApi,
   readStoredPlatformImpersonation,
+  connectionsApi,
   stopStoredPlatformImpersonation,
 } from "./nexos-api";
 
@@ -325,6 +326,30 @@ describe("nexos-api auth client", () => {
     ]);
     expect(localStorage.getItem("nexo.api.accessToken")).toBeNull();
     expect(readStoredPlatformImpersonation()).toBeNull();
+  });
+
+  it("calls the canonical DELETE endpoint for connection removal", async () => {
+    localStorage.setItem("nexo.api.accessToken", "tenant-access");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://localhost:3001/api/messaging/connections/connection-a");
+      expect(init?.method).toBe("DELETE");
+      return responseJson(200, {
+        id: "connection-a",
+        removed: true,
+        archived: true,
+        status: "removed",
+        providerInstanceExisted: false,
+        idempotent: true,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(connectionsApi.remove("connection-a")).resolves.toMatchObject({
+      removed: true,
+      archived: true,
+      status: "removed",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

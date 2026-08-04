@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Badge, Button, Card, Field, Input, SectionHeader } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
+import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { connectionsApi, type ApiMessagingConnection } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/instancias")({ component: Page });
@@ -27,12 +28,14 @@ const STATUS_TONE: Record<
   connecting: "warning",
   error: "destructive",
   disconnected: "default",
+  removed: "default",
 };
 
 function Page() {
   const qc = useQueryClient();
   const novo = useDisclosure();
   const [qr, setQr] = React.useState<{ name: string; value: string | null } | null>(null);
+  const [removing, setRemoving] = React.useState<ApiMessagingConnection | null>(null);
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["nexos", "messaging-connections"],
     queryFn: connectionsApi.list,
@@ -75,12 +78,13 @@ function Page() {
     onError: (e) => toast.error((e as Error).message),
   });
   const remove = useMutation({
-    mutationFn: connectionsApi.remove,
+    mutationFn: (connection: ApiMessagingConnection) => connectionsApi.remove(connection.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
+      setRemoving(null);
       toast.success("Conexao removida");
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(connectionRemoveErrorMessage(e)),
   });
 
   return (
@@ -171,7 +175,7 @@ function Page() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => remove.mutate(connection.id)}
+                    onClick={() => setRemoving(connection)}
                     disabled={remove.isPending}
                   >
                     <Trash2 className="h-3.5 w-3.5" /> Remover
@@ -189,6 +193,12 @@ function Page() {
           onSubmit={(data) => create.mutate(data)}
         />
         <QrModal qr={qr} onClose={() => setQr(null)} />
+        <RemoveConnectionModal
+          connection={removing}
+          busy={remove.isPending}
+          onClose={() => setRemoving(null)}
+          onConfirm={(connection) => remove.mutate(connection)}
+        />
       </PageContainer>
     </AppShell>
   );
@@ -279,10 +289,68 @@ function QrModal({
   );
 }
 
+function RemoveConnectionModal({
+  connection,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  connection: ApiMessagingConnection | null;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: (connection: ApiMessagingConnection) => void;
+}) {
+  const [confirmation, setConfirmation] = React.useState("");
+  React.useEffect(() => {
+    if (!connection) setConfirmation("");
+  }, [connection]);
+  const canConfirm = confirmation.trim().toUpperCase() === "REMOVER";
+  return (
+    <Modal
+      open={!!connection}
+      onClose={onClose}
+      title="Remover conexao"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+            Cancelar
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => connection && onConfirm(connection)}
+            disabled={busy || !canConfirm}
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Remover
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-medium">{connection?.name}</p>
+          <p className="mt-1">
+            A conexao sera indisponibilizada para novos envios e campanhas. O historico de
+            conversas, mensagens e campanhas sera preservado.
+          </p>
+        </div>
+        <Field label='Digite "REMOVER" para confirmar'>
+          <Input
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            placeholder="REMOVER"
+          />
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
 function statusIcon(status: ApiMessagingConnection["status"]) {
   if (status === "connected") return <CheckCircle2 className="h-3 w-3" />;
   if (status === "connecting") return <QrCode className="h-3 w-3" />;
   if (status === "error") return <AlertTriangle className="h-3 w-3" />;
+  if (status === "removed") return <Trash2 className="h-3 w-3" />;
   return <Plug className="h-3 w-3" />;
 }
 
@@ -292,6 +360,7 @@ function statusLabel(status: ApiMessagingConnection["status"]) {
     connecting: "Conectando",
     disconnected: "Desconectada",
     error: "Erro",
+    removed: "Removida",
   } as const;
   return labels[status];
 }

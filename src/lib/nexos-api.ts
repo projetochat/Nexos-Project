@@ -226,9 +226,10 @@ export type ApiMessagingConnection = {
   tenantId: string;
   name: string;
   providerType: "development" | "evolution" | "meta_cloud";
-  status: "disconnected" | "connecting" | "connected" | "error";
+  status: "disconnected" | "connecting" | "connected" | "error" | "removed";
   externalReference: string | null;
   ownerPhoneMasked?: string | null;
+  archivedAt?: string | null;
   provider?: {
     existsInProvider?: boolean;
     webhookUrl?: string | null;
