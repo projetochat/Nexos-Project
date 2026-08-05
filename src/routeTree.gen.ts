@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SimuladorRouteImport } from './routes/simulador'
 import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as PerfisRouteImport } from './routes/perfis'
 import { Route as PerfilRouteImport } from './routes/perfil'
@@ -65,11 +64,6 @@ import { Route as AdminAuditoriaRouteImport } from './routes/admin.auditoria'
 import { Route as AdminAssinaturasRouteImport } from './routes/admin.assinaturas'
 import { Route as AdminEmpresasTenantIdRouteImport } from './routes/admin.empresas.$tenantId'
 
-const SimuladorRoute = SimuladorRouteImport.update({
-  id: '/simulador',
-  path: '/simulador',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const RelatoriosRoute = RelatoriosRouteImport.update({
   id: '/relatorios',
   path: '/relatorios',
@@ -368,7 +362,6 @@ export interface FileRoutesByFullPath {
   '/perfil': typeof PerfilRoute
   '/perfis': typeof PerfisRoute
   '/relatorios': typeof RelatoriosRoute
-  '/simulador': typeof SimuladorRoute
   '/admin/assinaturas': typeof AdminAssinaturasRoute
   '/admin/auditoria': typeof AdminAuditoriaRoute
   '/admin/configuracoes': typeof AdminConfiguracoesRoute
@@ -421,7 +414,6 @@ export interface FileRoutesByTo {
   '/perfil': typeof PerfilRoute
   '/perfis': typeof PerfisRoute
   '/relatorios': typeof RelatoriosRoute
-  '/simulador': typeof SimuladorRoute
   '/admin/assinaturas': typeof AdminAssinaturasRoute
   '/admin/auditoria': typeof AdminAuditoriaRoute
   '/admin/configuracoes': typeof AdminConfiguracoesRoute
@@ -479,7 +471,6 @@ export interface FileRoutesById {
   '/perfil': typeof PerfilRoute
   '/perfis': typeof PerfisRoute
   '/relatorios': typeof RelatoriosRoute
-  '/simulador': typeof SimuladorRoute
   '/admin/assinaturas': typeof AdminAssinaturasRoute
   '/admin/auditoria': typeof AdminAuditoriaRoute
   '/admin/configuracoes': typeof AdminConfiguracoesRoute
@@ -538,7 +529,6 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/perfis'
     | '/relatorios'
-    | '/simulador'
     | '/admin/assinaturas'
     | '/admin/auditoria'
     | '/admin/configuracoes'
@@ -591,7 +581,6 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/perfis'
     | '/relatorios'
-    | '/simulador'
     | '/admin/assinaturas'
     | '/admin/auditoria'
     | '/admin/configuracoes'
@@ -648,7 +637,6 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/perfis'
     | '/relatorios'
-    | '/simulador'
     | '/admin/assinaturas'
     | '/admin/auditoria'
     | '/admin/configuracoes'
@@ -706,18 +694,10 @@ export interface RootRouteChildren {
   PerfilRoute: typeof PerfilRoute
   PerfisRoute: typeof PerfisRoute
   RelatoriosRoute: typeof RelatoriosRoute
-  SimuladorRoute: typeof SimuladorRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/simulador': {
-      id: '/simulador'
-      path: '/simulador'
-      fullPath: '/simulador'
-      preLoaderRoute: typeof SimuladorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/relatorios': {
       id: '/relatorios'
       path: '/relatorios'
@@ -1229,7 +1209,6 @@ const rootRouteChildren: RootRouteChildren = {
   PerfilRoute: PerfilRoute,
   PerfisRoute: PerfisRoute,
   RelatoriosRoute: RelatoriosRoute,
-  SimuladorRoute: SimuladorRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

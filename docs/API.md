@@ -2,13 +2,9 @@
 
 ## Estado atual
 
-Nao ha endpoints REST customizados implementados em `src/routes/api`. O MVP usa:
-
-- Supabase Auth.
-- Supabase PostgREST via `supabase.from(...)`.
-- Supabase Realtime em dashboard, inbox e simulador.
-- Server function `ensureDemoUsers`.
-- Mock store e arrays hardcoded em telas nao migradas.
+A operacao principal usa a Nexos API NestJS em `http://localhost:3001/api`, com Prisma/PostgreSQL,
+JWT tenant-scoped e realtime Socket.IO. Dashboard, historico, relatorios e filas foram consolidados
+em `/operations/*` na RC Sprint 15.
 
 ## Chamadas reais existentes
 
@@ -29,20 +25,36 @@ Nao ha endpoints REST customizados implementados em `src/routes/api`. O MVP usa:
 
 ## Requisitos de dados ainda sem contrato de API
 
-| Funcionalidade      | Necessidade futura                                                     |
-| ------------------- | ---------------------------------------------------------------------- |
-| Auth/usuarios       | autenticar, listar, criar, atualizar, atribuir roles/perfis            |
-| Conversas           | listar, assumir, transferir, encerrar, reabrir, marcar leitura         |
-| Mensagens           | enviar texto/audio/imagem, listar historico, status de leitura         |
-| Contatos/clientes   | CRUD, vinculos, tags, busca e paginacao                                |
-| Departamentos/filas | CRUD, configuracao e roteamento                                        |
-| Instancias/canais   | CRUD, conectar canal, QR/status, mensagens automaticas                 |
-| Chamados            | criar, editar, listar e anexar midia                                   |
-| Relatorios          | agregacoes por periodo, agente, departamento, cliente, instancia e tag |
-| Campanhas           | CRUD, segmentacao, disparo, metricas e retry                           |
-| Super Admin         | tenants, planos, assinaturas, financeiro, logs e auditoria             |
+| Funcionalidade      | Necessidade futura                                             |
+| ------------------- | -------------------------------------------------------------- |
+| Auth/usuarios       | autenticar, listar, criar, atualizar, atribuir roles/perfis    |
+| Conversas           | listar, assumir, transferir, encerrar, reabrir, marcar leitura |
+| Mensagens           | enviar texto/audio/imagem, listar historico, status de leitura |
+| Contatos/clientes   | CRUD, vinculos, tags, busca e paginacao                        |
+| Departamentos/filas | CRUD, configuracao e roteamento                                |
+| Instancias/canais   | CRUD, conectar canal, QR/status, mensagens automaticas         |
+| Chamados            | criar, editar, listar e anexar midia                           |
+| Relatorios          | extensao de formatos binarios nativos para Excel/PDF           |
+| Campanhas           | CRUD, segmentacao, disparo, metricas e retry                   |
+| Super Admin         | tenants, planos, assinaturas, financeiro, logs e auditoria     |
 
 Na Sprint 00 nao foram definidos URL, metodo HTTP, DTO, controller ou schema definitivo.
+
+## RC Sprint 15 - Operacao
+
+Todas as rotas abaixo usam `Authorization: Bearer <accessToken>`.
+
+| Metodo | Endpoint                                         | Permission           | Descricao                                       |
+| ------ | ------------------------------------------------ | -------------------- | ----------------------------------------------- |
+| `GET`  | `/operations/dashboard`                          | `conversations.read` | KPIs comparativos, graficos e atividade recente |
+| `GET`  | `/operations/history/conversations`              | `conversations.read` | Historico paginado com periodo, busca e filtros |
+| `GET`  | `/operations/history/conversations/:id/timeline` | `conversations.read` | Timeline da conversa, lead, mensagens e tickets |
+| `GET`  | `/operations/reports/attendance`                 | `conversations.read` | Relatorio operacional consolidado               |
+| `GET`  | `/operations/reports/attendance/export`          | `conversations.read` | Exportacao CSV dos dados filtrados              |
+| `GET`  | `/operations/queues`                             | `chat.leads.read`    | Filas por departamento com leads, SLA e tempos  |
+
+Filtros aceitos: `period=today|yesterday|7d|30d|custom`, `start`, `end`, `q`, `departmentId`,
+`assignedMembershipId`, `status`, `customerId`, `contactId`, `page`, `pageSize`.
 
 ## Sprint 01 - API NestJS
 
@@ -128,19 +140,19 @@ A Inbox operacional usa Nexos API como fonte unica. As rotas `/inbox`, `/inbox/`
 `/inbox/$conversationId`, `/etiquetas` e `/mensagens-rapidas` nao importam `@/lib/mvp`, Supabase ou
 aliases legados de runtime.
 
-| Metodo   | Endpoint                         | Permission                  | Descricao                                      |
-| -------- | -------------------------------- | --------------------------- | ---------------------------------------------- |
-| `GET`    | `/tags`                          | `crm.read`                  | Lista Tags ativas do tenant                    |
-| `POST`   | `/tags`                          | `chat.tags.manage`          | Cria Tag tenant-scoped com nome normalizado    |
-| `PATCH`  | `/tags/:id`                      | `chat.tags.manage`          | Edita nome/cor da Tag ativa                    |
-| `DELETE` | `/tags/:id`                      | `chat.tags.manage`          | Arquiva Tag                                    |
-| `POST`   | `/contacts/:id/tags/:tagId`      | `chat.tags.use`             | Aplica Tag existente a Contact do tenant       |
-| `DELETE` | `/contacts/:id/tags/:tagId`      | `chat.tags.use`             | Remove Tag de Contact                          |
-| `GET`    | `/quick-replies`                 | `chat.quick_replies.read`   | Lista respostas rapidas globais/departamento   |
-| `POST`   | `/quick-replies`                 | `chat.quick_replies.manage` | Cria resposta rapida                           |
-| `PATCH`  | `/quick-replies/:id`             | `chat.quick_replies.manage` | Edita resposta rapida ativa                    |
-| `DELETE` | `/quick-replies/:id`             | `chat.quick_replies.manage` | Arquiva resposta rapida                        |
-| `GET`    | `/conversations/:id`             | `conversations.read`        | Inclui contact tags/customer e connection      |
+| Metodo   | Endpoint                    | Permission                  | Descricao                                    |
+| -------- | --------------------------- | --------------------------- | -------------------------------------------- |
+| `GET`    | `/tags`                     | `crm.read`                  | Lista Tags ativas do tenant                  |
+| `POST`   | `/tags`                     | `chat.tags.manage`          | Cria Tag tenant-scoped com nome normalizado  |
+| `PATCH`  | `/tags/:id`                 | `chat.tags.manage`          | Edita nome/cor da Tag ativa                  |
+| `DELETE` | `/tags/:id`                 | `chat.tags.manage`          | Arquiva Tag                                  |
+| `POST`   | `/contacts/:id/tags/:tagId` | `chat.tags.use`             | Aplica Tag existente a Contact do tenant     |
+| `DELETE` | `/contacts/:id/tags/:tagId` | `chat.tags.use`             | Remove Tag de Contact                        |
+| `GET`    | `/quick-replies`            | `chat.quick_replies.read`   | Lista respostas rapidas globais/departamento |
+| `POST`   | `/quick-replies`            | `chat.quick_replies.manage` | Cria resposta rapida                         |
+| `PATCH`  | `/quick-replies/:id`        | `chat.quick_replies.manage` | Edita resposta rapida ativa                  |
+| `DELETE` | `/quick-replies/:id`        | `chat.quick_replies.manage` | Arquiva resposta rapida                      |
+| `GET`    | `/conversations/:id`        | `conversations.read`        | Inclui contact tags/customer e connection    |
 
 `/etiquetas` gerencia o catalogo tenant-scoped de Tags pela Nexos API. O modal de Contact na Inbox lista o
 mesmo catalogo e grava apenas a associacao Contact x Tag em `/contacts/:id/tags/:tagId`.
@@ -439,6 +451,7 @@ completo nem conteudo da mensagem.
 Respostas 2xx podem indicar processamento, replay idempotente ou evento suportadamente ignorado. Motivos
 canonicos incluem `FROM_ME`, `GROUP_MESSAGE`, `UNSUPPORTED_EVENT`, `MISSING_MESSAGE_ID`,
 `MISSING_REMOTE_IDENTITY`, `INVALID_PAYLOAD` e `CONNECTION_NOT_FOUND`.
+
 # Tickets
 
 O dominio de Chamados usa `/api/tickets` com JWT e RBAC `tickets.*`.

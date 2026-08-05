@@ -10,6 +10,7 @@ import { HealthModule } from "./health/health.module";
 import { LeadsModule } from "./leads/leads.module";
 import { MessagingModule } from "./messaging/messaging.module";
 import { NotificationsModule } from "./notifications/notifications.module";
+import { OperationsModule } from "./operations/operations.module";
 import { PlatformModule } from "./platform/platform.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { QuickRepliesModule } from "./quick-replies/quick-replies.module";
@@ -31,6 +32,7 @@ import { UsersModule } from "./users/users.module";
     LeadsModule,
     NotificationsModule,
     AutomationsModule,
+    OperationsModule,
     QuickRepliesModule,
     QueueModule,
     RealtimeModule,

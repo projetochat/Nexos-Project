@@ -2,35 +2,34 @@
 
 ## Rotas reais
 
-| Rota                     | Tela                   | Layout                 | Origem principal dos dados                |
-| ------------------------ | ---------------------- | ---------------------- | ----------------------------------------- |
-| `/login`                 | Login                  | Sem shell              | Nexos API                                 |
-| `/`                      | Dashboard              | AppShell               | Supabase via `REPORTS`, realtime          |
-| `/inbox`                 | Lista de conversas     | AppShellFull           | Nexos API + realtime/polling              |
-| `/inbox/$conversationId` | Conversa               | AppShellFull           | Nexos API + realtime/polling              |
-| `/clientes`              | Clientes               | AppShell               | Supabase via `CUSTOMERS`                  |
-| `/contatos`              | Contatos               | AppShell               | Supabase via `CONTACTS/CUSTOMERS/CATALOG` |
-| `/historico`             | Historico              | AppShellFull           | Supabase via `CONV/CATALOG`               |
-| `/simulador`             | Simulador              | AppShell               | Supabase + ghosts hardcoded               |
-| `/mensagens-rapidas`     | Quick replies          | AppShell               | Nexos API                                 |
-| `/relatorios`            | Relatorios             | AppShell               | Supabase via `REPORTS`                    |
-| `/chamados`              | Chamados               | AppShell               | Supabase + HTML local                     |
-| `/instancias`            | Instancias             | AppShell               | Nexos API                                 |
-| `/perfis`                | Perfis de acesso       | AppShell               | Supabase                                  |
-| `/atendentes`            | Atendentes             | AppShell               | Mock store + Supabase perfis              |
-| `/departamentos`         | Departamentos          | AppShell               | Mock store + Supabase escopos             |
-| `/etiquetas`             | Etiquetas              | AppShell               | Nexos API                                 |
-| `/empresas`              | Empresas legado        | AppShell               | Mock store                                |
-| `/campanhas`             | Campanhas              | AppShell               | Mock store                                |
-| `/filas`                 | Filas admin            | AppShell               | Mock store                                |
-| `/chatbot`               | Fluxo de Bot           | AppShell               | Arrays hardcoded                          |
-| `/automacoes`            | Automacoes             | AppShell               | Arrays hardcoded                          |
-| `/agente-ia`             | Agente IA              | AppShell               | UI hardcoded                              |
-| `/ajuda`                 | Ajuda                  | AppShell               | Arrays hardcoded                          |
-| `/perfil`                | Perfil                 | AppShell               | Session store/local UI                    |
-| `/configuracoes/*`       | Configuracoes          | AppShell               | Local UI, localStorage e hardcodes        |
-| `/atendimento/*`         | Rotas legadas operador | OperatorShell/redirect | Mock store/session                        |
-| `/admin/*`               | Super Admin            | AdminShell             | Mock SaaS/hardcodes                       |
+| Rota                     | Tela                   | Layout                 | Origem principal dos dados                   |
+| ------------------------ | ---------------------- | ---------------------- | -------------------------------------------- |
+| `/login`                 | Login                  | Sem shell              | Nexos API                                    |
+| `/`                      | Dashboard              | AppShell               | Nexos API `/operations/dashboard` + realtime |
+| `/inbox`                 | Lista de conversas     | AppShellFull           | Nexos API + realtime/polling                 |
+| `/inbox/$conversationId` | Conversa               | AppShellFull           | Nexos API + realtime/polling                 |
+| `/clientes`              | Clientes               | AppShell               | Nexos API CRM                                |
+| `/contatos`              | Contatos               | AppShell               | Nexos API CRM + Connections reais            |
+| `/historico`             | Historico              | AppShellFull           | Nexos API `/operations/history/*`            |
+| `/mensagens-rapidas`     | Quick replies          | AppShell               | Nexos API                                    |
+| `/relatorios`            | Relatorios             | AppShell               | Nexos API `/operations/reports/*`            |
+| `/chamados`              | Chamados               | AppShell               | Nexos API Tickets                            |
+| `/instancias`            | Instancias             | AppShell               | Nexos API                                    |
+| `/perfis`                | Perfis de acesso       | AppShell               | Supabase                                     |
+| `/atendentes`            | Atendentes             | AppShell               | Mock store + Supabase perfis                 |
+| `/departamentos`         | Departamentos          | AppShell               | Mock store + Supabase escopos                |
+| `/etiquetas`             | Etiquetas              | AppShell               | Nexos API                                    |
+| `/empresas`              | Empresas legado        | AppShell               | Mock store                                   |
+| `/campanhas`             | Campanhas              | AppShell               | Nexos API Campaigns                          |
+| `/filas`                 | Filas admin            | AppShell               | Nexos API `/operations/queues`               |
+| `/chatbot`               | Fluxo de Bot           | AppShell               | Arrays hardcoded                             |
+| `/automacoes`            | Automacoes             | AppShell               | Nexos API Automations                        |
+| `/agente-ia`             | Agente IA              | AppShell               | UI hardcoded                                 |
+| `/ajuda`                 | Ajuda                  | AppShell               | Arrays hardcoded                             |
+| `/perfil`                | Perfil                 | AppShell               | Session store/local UI                       |
+| `/configuracoes/*`       | Configuracoes          | AppShell               | Local UI, localStorage e hardcodes           |
+| `/atendimento/*`         | Rotas legadas operador | OperatorShell/redirect | Mock store/session                           |
+| `/admin/*`               | Super Admin            | AdminShell             | Mock SaaS/hardcodes                          |
 
 ## Fluxos principais
 
@@ -50,19 +49,13 @@ Submit -> LoginPage -> POST /api/auth/login -> tokens + tenant -> useSession.log
 Atendimento:
 
 ```text
-Abrir inbox -> CONV.list/messages -> Supabase -> assumir/responder/transferir/encerrar -> mutacoes Supabase -> query invalidate/realtime -> UI atualizada
-```
-
-Simulador:
-
-```text
-Selecionar contato/ghost -> SIMULATOR.sendContactMessage -> cria/reusa conversa -> insere message contact -> realtime -> Inbox
+Abrir inbox -> Nexos API -> assumir/responder/transferir/encerrar -> Prisma -> realtime/polling -> UI atualizada
 ```
 
 Chamado:
 
 ```text
-Abrir modal -> preencher campos/editor HTML -> sanitizeRichTextHtml -> supabase.from("chamados").insert/update -> lista atualizada
+Abrir modal -> preencher campos -> Tickets API -> sanitizacao server-side -> lista atualizada
 ```
 
 Contexto autenticado novo:
@@ -205,6 +198,7 @@ Composer -> seleciona Quick Reply -> insere texto -> usuario envia mensagem sepa
 
 Admin gerencia catalogos e cria Conversation no tenant inteiro. Agente usa Tags existentes e le Quick
 Replies, sem botoes de criacao/edicao de catalogo quando nao possui as permissions de manage.
+
 # Fluxo de Chamados
 
 Usuario autorizado cria Ticket, seleciona Department, prioridade, categoria e vinculos opcionais de Contact/Customer/Conversation. Comentarios ficam internos ao time. Anexos sao baixados por endpoint autenticado.

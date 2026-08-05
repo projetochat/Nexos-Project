@@ -390,6 +390,8 @@ export class ConversationsController {
         conversation.id,
         current,
         statusSystemNote(target),
+        new Date(),
+        { updateConversation: false },
       );
       return tx.conversation.findUniqueOrThrow({
         where: { id: updated.id },

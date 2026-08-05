@@ -23,6 +23,7 @@
     "test:ticket-legacy-runtime": "node scripts/check-ticket-legacy-runtime.mjs",
     "test:campaign-legacy-runtime": "node scripts/check-campaign-legacy-runtime.mjs",
     "test:platform-admin-legacy-runtime": "node scripts/check-platform-admin-legacy-runtime.mjs",
+    "test:operational-runtime": "vitest run src/lib/operational-runtime-rules.test.ts",
     "test:security": "vitest run src/lib/sanitize-html.test.ts --environment jsdom",
     "typecheck": "tsc --noEmit",
     "verify": "node scripts/verify.mjs",

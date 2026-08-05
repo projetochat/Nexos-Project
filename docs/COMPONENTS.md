@@ -6,10 +6,10 @@ As paginas ficam em `src/routes` e usam TanStack Router. `routeTree.gen.ts` e ge
 
 Categorias:
 
-- Atendimento real/parcial: inbox, historico, simulador, mensagens rapidas.
+- Atendimento real: inbox, historico, dashboard, relatorios, filas e mensagens rapidas.
 - CRM: clientes, contatos.
 - Operacao/admin empresa: atendentes, perfis, departamentos, etiquetas, instancias, chamados, configuracoes.
-- Produto simulado: campanhas, filas, chatbot, automacoes, agente IA.
+- Produto em consolidacao: campanhas, chatbot, automacoes, agente IA.
 - Super Admin simulado: `/admin/*`.
 - Legado operador: `/atendimento/*`.
 
@@ -41,7 +41,7 @@ Categorias:
 
 ## Servicos
 
-- `mvp.ts`: Supabase real do MVP operacional.
+- `mvp.ts`: legado residual; nao deve ser importado por rotas operacionais migradas.
 - `api/index.ts`: camada mock legado.
 - `demo.functions.ts`: server function para usuarios demo.
 - `integrations/supabase/*`: clientes e middlewares Supabase.
@@ -114,15 +114,15 @@ Polling existente continua responsavel pela atualizacao visual.
 `InboxLayout` tambem usa Connections reais para o filtro de instancia, evitando listas vindas de opções de
 contato ou fontes legadas.
 
-No rework da Sprint 08.04, `Contatos` e `ReportFiltersBar` tambem passaram para
-`useConnectedMessagingConnections`. O modal de contato mostra o nome real da Connection como label e grava
-a referencia operacional da Connection como valor.
+Na RC Sprint 15, `ReportFiltersBar` passou a consumir clientes e departamentos pela Nexos API. Dashboard,
+Historico, Relatorios e Filas usam `operationsApi`, sem Supabase direto e sem simulador.
 
 ## Sprint 09 - Inbox realtime
 
 Inbox exibe indicador discreto de realtime. Quando conectado, polling agressivo e reduzido; quando
 offline/degradado, a UI mantém fallback periódico por REST. A camada visual usa `src/lib/realtime` como
 singleton, sem abrir sockets por componente.
+
 # Chamados
 
 A tela `/chamados` usa lista paginada, filtros, modal de criacao, detalhe, comentarios internos e anexos privados. O editor operacional e textarea seguro; nao usa `contentEditable` nem renderizacao HTML perigosa.

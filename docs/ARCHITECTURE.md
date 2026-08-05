@@ -16,7 +16,7 @@ src/routes
 src/components
   Shells, UI kit, feedback, modais e filtros
 src/lib/mvp.ts
-  Camada Supabase real do MVP operacional
+  Camada legado residual; nao deve alimentar rotas operacionais migradas
 src/lib/session.ts
   Sessao, roles de UI, login/logout e contas demo
 src/lib/perms.ts
@@ -338,6 +338,16 @@ sem envio automatico.
 
 Eventos realtime novos (`contact.updated`, `contact.tags.updated`) servem apenas para atualizar a UI; o
 estado final continua vindo das queries REST.
+
+## RC Sprint 15 - Operacao sem simulador
+
+As superficies `/`, `/historico`, `/relatorios` e `/filas` passaram a consumir `operationsApi`, que chama
+`OperationsModule` no backend NestJS. O modulo consolida dados a partir de Prisma/PostgreSQL e aplica
+tenant scope pelo JWT atual.
+
+`/simulador` foi removido do runtime, da navegacao e da arvore TanStack Router. Qualquer fluxo de conversa
+deve nascer de WhatsApp/Evolution real ou das APIs oficiais de Conversation/Lead, nunca de ghosts locais.
+
 # Ticketing
 
 Fluxo: Frontend `/chamados` -> Nexos API -> NestJS -> Prisma/PostgreSQL -> Storage Provider -> Realtime Publisher -> Socket.io. Supabase/MVP nao fazem parte do runtime operacional de Chamados.

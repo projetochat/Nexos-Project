@@ -17,7 +17,7 @@ Estas diretrizes refletem o estado atual do projeto.
 - Primitivas de UI em `src/components/ui`.
 - Dominio e utilitarios em `src/lib`.
 - Integracao Supabase em `src/integrations/supabase`.
-- Migrations sempre em `supabase/migrations`.
+- Migrations novas do backend em `backend/prisma/migrations`; migrations Supabase permanecem legado.
 
 ## Componentes
 
@@ -28,8 +28,8 @@ Estas diretrizes refletem o estado atual do projeto.
 
 ## Dados e APIs
 
-- Preferir `src/lib/mvp.ts` para dominio operacional ja migrado.
-- Evitar espalhar novas queries Supabase por rotas quando houver chance de reuso.
+- Preferir `src/lib/nexos-api.ts` para dominio operacional migrado.
+- Nao adicionar novas queries Supabase em rotas operacionais.
 - Nao usar `supabaseAdmin` em codigo client-side.
 - Server functions privilegiadas devem importar `client.server.ts` dentro do handler.
 

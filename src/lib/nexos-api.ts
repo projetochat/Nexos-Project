@@ -428,6 +428,79 @@ export type ApiCampaignRecipient = {
   updatedAt: string;
 };
 
+export type OperationalPeriod = "today" | "yesterday" | "7d" | "30d" | "custom";
+
+export type OperationalFilters = {
+  period: OperationalPeriod;
+  start?: string;
+  end?: string;
+  q?: string;
+  departmentId?: string;
+  assignedMembershipId?: string;
+  status?: ApiConversationStatus;
+  customerId?: string;
+  contactId?: string;
+};
+
+export type ApiOperationalKpi = {
+  value: number | null;
+  previous: number | null;
+  changePercent: number | null;
+};
+
+export type ApiOperationsChartItem = {
+  nome: string;
+  cor?: string;
+  total: number;
+  resolvidas?: number;
+};
+
+export type ApiOperationsDashboard = {
+  range: { start: string; end: string };
+  kpis: Record<string, ApiOperationalKpi>;
+  charts: {
+    byDepartment: ApiOperationsChartItem[];
+    byAgent: ApiOperationsChartItem[];
+    byCustomer: ApiOperationsChartItem[];
+    byConnection: ApiOperationsChartItem[];
+  };
+  recent: ApiConversation[];
+};
+
+export type ApiOperationsReport = {
+  range: { start: string; end: string };
+  kpis: Record<string, number | null>;
+  charts: ApiOperationsDashboard["charts"];
+  conversations: PaginatedResponse<ApiConversation>;
+};
+
+export type ApiConversationTimeline = {
+  conversation: ApiConversation;
+  items: Array<{
+    at: string;
+    event: string;
+    origin: string;
+    user: string | null;
+    description: string;
+  }>;
+};
+
+export type ApiOperationalQueue = {
+  id: string;
+  nome: string;
+  cor: string;
+  prioridade: "alta" | "normal" | "baixa";
+  quantidade: number;
+  leads: number;
+  conversasAtivas: number;
+  conversasEncerradas: number;
+  transferencias: number;
+  atendentes: number;
+  capacidade: number;
+  sla: number;
+  tempoMedioMinutos: number | null;
+};
+
 type ListParams = {
   q?: string;
   page?: number;
@@ -810,6 +883,41 @@ export const messageApi = {
       `/conversations/${conversationId}/messages/read`,
       { method: "PATCH" },
     ),
+};
+
+export const operationsApi = {
+  dashboard: (params: Partial<OperationalFilters> = {}) =>
+    apiRequest<ApiOperationsDashboard>(`/operations/dashboard${queryString(params)}`),
+  history: (params: Partial<OperationalFilters> & { page?: number; pageSize?: number } = {}) =>
+    apiRequest<PaginatedResponse<ApiConversation>>(
+      `/operations/history/conversations${queryString(params)}`,
+    ),
+  timeline: (conversationId: string) =>
+    apiRequest<ApiConversationTimeline>(
+      `/operations/history/conversations/${conversationId}/timeline`,
+    ),
+  report: (params: Partial<OperationalFilters> & { page?: number; pageSize?: number } = {}) =>
+    apiRequest<ApiOperationsReport>(`/operations/reports/attendance${queryString(params)}`),
+  exportAttendance: async (
+    params: Partial<OperationalFilters> & { format?: "csv" | "xlsx" | "pdf" } = {},
+  ) => {
+    let response = await fetchNexos(
+      `/operations/reports/attendance/export${queryString(params)}`,
+      {},
+      true,
+    );
+    if (response.status === 401 && (await refreshAccessToken())) {
+      response = await fetchNexos(
+        `/operations/reports/attendance/export${queryString(params)}`,
+        {},
+        true,
+      );
+    }
+    if (!response.ok) throw await readError(response);
+    return response.blob();
+  },
+  queues: (params: Partial<OperationalFilters> = {}) =>
+    apiRequest<{ items: ApiOperationalQueue[] }>(`/operations/queues${queryString(params)}`),
 };
 
 export const connectionsApi = {

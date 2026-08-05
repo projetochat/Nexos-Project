@@ -26,7 +26,7 @@ PLANEJADO: modelagem definitiva em PostgreSQL + Prisma em Sprint posterior. Nao 
 | Departamento/Fila       | `departments`, filas derivadas, transferencia | Confirmado |
 | Cliente                 | `customers`, `/clientes`                      | Confirmado |
 | Contato                 | `contacts`, `/contatos`, inbox                | Confirmado |
-| Conversa                | `conversations`, inbox/historico/simulador    | Confirmado |
+| Conversa                | `conversations`, inbox/historico/relatorios   | Confirmado |
 | Mensagem                | `messages`, chat, midia                       | Confirmado |
 | Tag                     | `tags`, `contact_tags`                        | Confirmado |
 | Instancia/Canal         | `instancias`, `/instancias`                   | Confirmado |
@@ -385,6 +385,7 @@ Validacao fisica:
 - `nexos_1000`: drop/create, `prisma migrate deploy`, seed e smoke SQL de duplicata global.
 - `nexos_0802`: `prisma migrate deploy` e seed idempotente sem reset.
 - `nexos_0801`: migration aplicada para suite regressiva automatizada.
+
 # Sprint 11 - Ticketing
 
 Migration `20260804030000_ticketing_secure_attachments` cria `tickets`, `ticket_comments`, `ticket_history`, `ticket_attachments` e `ticket_protocol_counters`, alem dos enums de status, prioridade, categoria e anexos.

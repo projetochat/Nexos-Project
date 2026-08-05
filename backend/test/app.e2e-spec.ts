@@ -2634,6 +2634,26 @@ describe("Nexos API organization and RBAC", () => {
       where: { tenantId: tenant.id, campaignId: { in: staleCampaigns.map((item) => item.id) } },
     });
     await prisma.campaign.deleteMany({ where: { tenantId: tenant.id, name: "Campaign E2E" } });
+    const staleContacts = await prisma.contact.findMany({
+      where: { tenantId: tenant.id, normalizedPhone: "+5511999998888" },
+      select: { id: true },
+    });
+    const staleConversations = await prisma.conversation.findMany({
+      where: { tenantId: tenant.id, contactId: { in: staleContacts.map((item) => item.id) } },
+      select: { id: true },
+    });
+    await prisma.message.deleteMany({
+      where: {
+        tenantId: tenant.id,
+        conversationId: { in: staleConversations.map((item) => item.id) },
+      },
+    });
+    await prisma.lead.deleteMany({
+      where: { tenantId: tenant.id, contactId: { in: staleContacts.map((item) => item.id) } },
+    });
+    await prisma.conversation.deleteMany({
+      where: { tenantId: tenant.id, id: { in: staleConversations.map((item) => item.id) } },
+    });
     await prisma.contact.deleteMany({
       where: { tenantId: tenant.id, normalizedPhone: "+5511999998888" },
     });
@@ -2795,6 +2815,287 @@ describe("Nexos API organization and RBAC", () => {
         audience: { type: "ALL", tagIds: [], customerIds: [], contactIds: [] },
       })
       .expect(403);
+  });
+
+  it("serves operational dashboard, history, timeline, queues and report exports from Prisma data", async () => {
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const membership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenantId: tenant.id, user: { email: "atendente@nexo.app" } },
+    });
+    const department = await prisma.department.findFirstOrThrow({
+      where: {
+        tenantId: tenant.id,
+        active: true,
+        members: { some: { membershipId: membership.id } },
+      },
+    });
+    const suffix = Date.now().toString(36);
+    const contact = await prisma.contact.create({
+      data: {
+        tenantId: tenant.id,
+        name: `Operacao RC15 ${suffix}`,
+        phone: `1198${suffix.slice(-6).padStart(6, "0")}`,
+        normalizedPhone: `+551198${suffix.slice(-6).padStart(6, "0")}`,
+      },
+    });
+    const conversation = await prisma.conversation.create({
+      data: {
+        tenantId: tenant.id,
+        contactId: contact.id,
+        departmentId: department.id,
+        assignedMembershipId: membership.id,
+        status: ConversationStatus.FECHADA,
+        protocol: `RC15-${suffix}`,
+        lastMessagePreview: "Atendimento operacional RC15",
+        lastMessageAt: new Date(),
+        closedAt: new Date(),
+      },
+    });
+    const activeConversation = await prisma.conversation.create({
+      data: {
+        tenantId: tenant.id,
+        contactId: contact.id,
+        departmentId: department.id,
+        assignedMembershipId: membership.id,
+        status: ConversationStatus.ABERTA,
+        protocol: `RC15-ACTIVE-${suffix}`,
+        lastMessagePreview: "Conversa ativa nao deve ir para historico",
+        lastMessageAt: new Date(),
+      },
+    });
+    const closeViaEndpoint = await prisma.conversation.create({
+      data: {
+        tenantId: tenant.id,
+        contactId: contact.id,
+        departmentId: department.id,
+        assignedMembershipId: membership.id,
+        status: ConversationStatus.EM_ANDAMENTO,
+        protocol: `RC15-CLOSE-${suffix}`,
+        lastMessagePreview: "Encerramento via endpoint",
+        lastMessageAt: new Date(Date.now() - 60_000),
+      },
+    });
+    const ghostLeadConversation = await prisma.conversation.create({
+      data: {
+        tenantId: tenant.id,
+        contactId: contact.id,
+        departmentId: department.id,
+        assignedMembershipId: membership.id,
+        status: ConversationStatus.FECHADA,
+        protocol: `RC15-GHOST-${suffix}`,
+        lastMessagePreview: "Lead ativo preso em conversa encerrada",
+        lastMessageAt: new Date(),
+        closedAt: new Date(),
+      },
+    });
+    const dashboardBeforeGhostLead = await request(app.getHttpServer())
+      .get("/api/operations/dashboard?period=30d")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+
+    try {
+      await prisma.lead.create({
+        data: {
+          tenantId: tenant.id,
+          contactId: contact.id,
+          conversationId: conversation.id,
+          departmentId: department.id,
+          assignedMembershipId: membership.id,
+          source: "WHATSAPP",
+          status: "CONVERTED",
+          convertedAt: new Date(),
+          firstMessagePreview: "Lead RC15",
+        },
+      });
+      await prisma.lead.create({
+        data: {
+          tenantId: tenant.id,
+          contactId: contact.id,
+          conversationId: ghostLeadConversation.id,
+          departmentId: department.id,
+          assignedMembershipId: membership.id,
+          source: "WHATSAPP",
+          status: "NEW",
+          firstMessagePreview: "Lead fantasma em conversa encerrada",
+        },
+      });
+      await prisma.message.createMany({
+        data: [
+          {
+            tenantId: tenant.id,
+            conversationId: conversation.id,
+            direction: MessageDirection.INBOUND,
+            type: MessageType.TEXT,
+            content: "Mensagem inbound RC15",
+            status: "DELIVERED",
+          },
+          {
+            tenantId: tenant.id,
+            conversationId: conversation.id,
+            direction: MessageDirection.OUTBOUND,
+            type: MessageType.TEXT,
+            authorMembershipId: membership.id,
+            content: "Resposta operacional RC15",
+            status: "SENT",
+          },
+        ],
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/conversations/${closeViaEndpoint.id}/status`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ status: "fechada" })
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.status).toBe("fechada");
+        });
+      const closedViaEndpoint = await prisma.conversation.findUniqueOrThrow({
+        where: { id: closeViaEndpoint.id },
+      });
+      expect(closedViaEndpoint.closedAt).toBeTruthy();
+      expect(closedViaEndpoint.lastMessageAt?.toISOString()).toBe(
+        closeViaEndpoint.lastMessageAt?.toISOString(),
+      );
+
+      await request(app.getHttpServer())
+        .get("/api/operations/dashboard?period=30d")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.kpis.conversasEncerradas.value).toBeGreaterThanOrEqual(1);
+          expect(body.kpis.leadsAtivos.value).toBe(
+            dashboardBeforeGhostLead.body.kpis.leadsAtivos.value,
+          );
+          expect(body.kpis.conversasEncerradas.changePercent).toEqual(expect.any(Number));
+          expect(body.semantics.conversasEncerradas).toContain("FECHADA");
+          expect(
+            body.charts.byDepartment.some(
+              (item: { nome: string }) => item.nome === department.name,
+            ),
+          ).toBe(true);
+          expect(Array.isArray(body.recent)).toBe(true);
+        });
+
+      await request(app.getHttpServer())
+        .get(
+          `/api/operations/history/conversations?period=30d&status=fechada&q=${conversation.protocol}&page=1&pageSize=10`,
+        )
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.total).toBe(1);
+          expect(body.items[0].id).toBe(conversation.id);
+          expect(body.items[0].protocolo).toBe(conversation.protocol);
+        });
+
+      await request(app.getHttpServer())
+        .get(
+          `/api/operations/history/conversations?period=30d&status=aberta&q=${activeConversation.protocol}&page=1&pageSize=10`,
+        )
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.total).toBe(0);
+          expect(body.items).toHaveLength(0);
+        });
+
+      await request(app.getHttpServer())
+        .get(`/api/operations/history/conversations/${conversation.id}/timeline`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.items.map((item: { event: string }) => item.event)).toContain("lead.created");
+          expect(body.items.map((item: { event: string }) => item.event)).toContain(
+            "message.inbound",
+          );
+          expect(body.items.map((item: { event: string }) => item.event)).toContain(
+            "message.outbound",
+          );
+        });
+
+      await request(app.getHttpServer())
+        .get("/api/operations/queues?period=30d")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200)
+        .expect(({ body }) => {
+          const queue = body.items.find((item: { id: string }) => item.id === department.id);
+          expect(queue).toBeDefined();
+          expect(queue.conversasEncerradas).toBeGreaterThanOrEqual(1);
+          expect(queue.sla).toEqual(expect.any(Number));
+        });
+
+      await request(app.getHttpServer())
+        .get(`/api/operations/reports/attendance?period=30d&q=${conversation.protocol}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.conversations.total).toBe(1);
+          expect(body.conversations.items[0].id).toBe(conversation.id);
+          expect(body.semantics.conversasEncerradas).toContain("closedAt");
+        });
+
+      await request(app.getHttpServer())
+        .get(
+          `/api/operations/reports/attendance/export?period=30d&q=${conversation.protocol}&format=csv`,
+        )
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200)
+        .expect("Content-Type", /text\/csv/)
+        .expect((response) => {
+          expect(response.text).toContain(conversation.protocol);
+          expect(response.text).toContain("Operacao RC15");
+        });
+
+      await request(app.getHttpServer())
+        .get("/api/operations/history/conversations?status=nao-existe")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(400)
+        .expect(({ body }) => {
+          expect(body.code).toBe("OPERATIONS_STATUS_INVALID");
+        });
+    } finally {
+      await prisma.message.deleteMany({
+        where: {
+          tenantId: tenant.id,
+          conversationId: {
+            in: [
+              conversation.id,
+              activeConversation.id,
+              closeViaEndpoint.id,
+              ghostLeadConversation.id,
+            ],
+          },
+        },
+      });
+      await prisma.lead.deleteMany({
+        where: {
+          tenantId: tenant.id,
+          conversationId: {
+            in: [
+              conversation.id,
+              activeConversation.id,
+              closeViaEndpoint.id,
+              ghostLeadConversation.id,
+            ],
+          },
+        },
+      });
+      await prisma.conversation.deleteMany({
+        where: {
+          tenantId: tenant.id,
+          id: {
+            in: [
+              conversation.id,
+              activeConversation.id,
+              closeViaEndpoint.id,
+              ghostLeadConversation.id,
+            ],
+          },
+        },
+      });
+      await prisma.contact.deleteMany({ where: { tenantId: tenant.id, id: contact.id } });
+    }
   });
 
   it("rejects invalid credentials", async () => {

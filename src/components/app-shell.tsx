@@ -21,7 +21,6 @@ import {
   Moon,
   LogOut,
   Zap,
-  MessageSquareText,
   Bot,
   Workflow,
   Sparkles,
@@ -57,7 +56,6 @@ const OPERATOR_ALLOWED = new Set<string>([
   "/",
   "/inbox",
   "/contatos",
-  "/simulador",
   "/mensagens-rapidas",
   "/historico",
   "/perfil",
@@ -73,7 +71,6 @@ const principalNav: NavItem[] = [
   { to: "/inbox", label: "Chat", icon: Inbox },
   { to: "/contatos", label: "Contatos", icon: Users },
   { to: "/historico", label: "Histórico de conversa", icon: History },
-  { to: "/simulador", label: "Simulador de conversa", icon: MessageSquareText },
   { to: "/mensagens-rapidas", label: "Mensagens rápidas", icon: Zap },
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
 ];
@@ -93,7 +90,6 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
       { to: "/clientes", label: "Clientes", icon: Building2 },
       { to: "/contatos", label: "Contatos", icon: Users },
       { to: "/historico", label: "Histórico de conversa", icon: History },
-      { to: "/simulador", label: "Simulador de conversa", icon: MessageSquareText },
     ],
   },
   {
@@ -121,10 +117,6 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
     title: "GLPI",
     items: [{ to: "/chamados", label: "Chamados", icon: Ticket }],
   },
-];
-
-const simuladoresNav: NavItem[] = [
-  { to: "/simulador", label: "Simulador de conversa", icon: MessageSquareText },
 ];
 
 const sistemaNav: NavItem[] = [
@@ -486,7 +478,6 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   const role = useSession((s) => s.user?.role);
   const isOperator = role === "operator";
   const mainNav = isOperator ? filterForOperator(principalNav) : principalNav;
-  const simNav = isOperator ? filterForOperator(simuladoresNav) : simuladoresNav;
   const sysNav = isOperator ? filterForOperator(sistemaNav) : sistemaNav;
   return (
     <aside
@@ -541,10 +532,6 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
               />
             ))}
           </>
-        )}
-
-        {isOperator && simNav.length > 0 && (
-          <NavSection title="Simuladores" items={simNav} collapsed={collapsed} />
         )}
       </nav>
       <div className={`shrink-0 border-t border-border ${collapsed ? "px-2" : "px-3"} py-3`}>
@@ -726,7 +713,7 @@ function MobileNav() {
       ? [
           { to: "/inbox", label: "Inbox", icon: Inbox },
           { to: "/mensagens-rapidas", label: "Rápidas", icon: Zap },
-          { to: "/simulador", label: "Simulador", icon: MessageSquareText },
+          { to: "/historico", label: "Histórico", icon: History },
           { to: "/perfil", label: "Perfil", icon: Users },
           { to: "/ajuda", label: "Ajuda", icon: LifeBuoy },
         ]
@@ -735,7 +722,7 @@ function MobileNav() {
           { to: "/inbox", label: "Inbox", icon: Inbox },
           { to: "/clientes", label: "Clientes", icon: Users },
           { to: "/configuracoes", label: "Ajustes", icon: Settings },
-          { to: "/perfil", label: "Perfil", icon: MessageSquareText },
+          { to: "/perfil", label: "Perfil", icon: Users },
         ];
   return (
     <nav className="sticky bottom-0 z-30 grid grid-cols-5 border-t border-border bg-background/95 backdrop-blur-xl lg:hidden">

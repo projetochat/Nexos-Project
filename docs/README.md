@@ -47,6 +47,12 @@ Resultado formal desta execucao: `NOT READY FOR SPRINT 08`, pois os gates fisico
 
 Sprint 12 adicionou o dominio operacional de campanhas em NestJS/Prisma/BullMQ. A rota `/campanhas` passou a usar Nexos API, audiencia real, opt-out e dispatch por outbox. Detalhes em [CAMPAIGNS.md](./CAMPAIGNS.md).
 
+## RC Sprint 15
+
+RC Sprint 15 consolidou atendimento operacional em Nexos API/Prisma. O rework de 2026-08-05 corrigiu
+historico encerrado, consistencia Dashboard/Relatorios, lead fantasma, realtime de relatorios e adicionou
+`backend/scripts/cleanup-operational-residue.mjs`. Gate atual: `REWORK REQUIRED` ate homologacao fisica.
+
 ## Tecnologias atuais
 
 | Area            | Tecnologia                                                    |
@@ -164,7 +170,7 @@ bun run build
 1. Abrir `/login`.
 2. Validar alternancia de tema e credenciais demo preenchidas.
 3. Fazer login demo se o Supabase e a service role estiverem configurados.
-4. Abrir `/`, `/inbox`, `/clientes`, `/contatos`, `/historico`, `/simulador`, `/mensagens-rapidas`, `/relatorios`.
+4. Abrir `/`, `/inbox`, `/clientes`, `/contatos`, `/historico`, `/mensagens-rapidas`, `/relatorios` e `/filas`.
 5. Validar busca, filtros, modais e estados vazios onde existirem.
 6. Abrir `/chamados` e validar modal de chamado sem salvar dados reais indevidos.
 7. Abrir `/instancias` e `/perfis` como administrador.

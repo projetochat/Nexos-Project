@@ -142,6 +142,7 @@ export class MessagesService {
     current: AuthenticatedUser,
     content: string,
     createdAt = new Date(),
+    options: { updateConversation?: boolean } = {},
   ) {
     const clean = cleanSystemContent(content);
     await tx.message.create({
@@ -155,6 +156,7 @@ export class MessagesService {
         createdAt,
       },
     });
+    if (options.updateConversation === false) return;
     await this.updateConversationFromMessage(
       tx,
       conversationId,

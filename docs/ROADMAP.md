@@ -18,6 +18,21 @@
 - Definir eventos Socket.io e jobs BullMQ.
 - Criar testes e CI/CD.
 
+## RC Sprint 15 - Atendimento operacional
+
+Entregue:
+
+- Dashboard, historico, relatorios e filas em Nexos API/Prisma.
+- Remocao fisica da rota `/simulador` e do servico `SIMULATOR`.
+- Teste E2E para contrato operacional de dashboard, historico, timeline, filas e export.
+- Rework tecnico: historico `FECHADA + closedAt`, `OperationsMetricsService` unico, relatorios por realtime e cleanup operacional.
+
+Ainda pendente para piloto:
+
+- Homologacao fisica completa do fluxo WhatsApp real em ambiente de atendimento.
+- Formatos binarios nativos para Excel/PDF; export atual e CSV oficial.
+- Gate atual: `REWORK REQUIRED` ate aprovacao fisica de Historico, Dashboard, Relatorios e Fila.
+
 ## Sprint 01 executada
 
 Entregue:
@@ -215,6 +230,7 @@ Entregue:
 
 Sprint 11 permanece bloqueada ate mensagem real do WhatsApp B provar webhook 2xx autenticado por
 `jwt_key`, Message inbound persistida, mesma Conversation, Inbox atualizada sem F5 e zero duplicacao.
+
 # Sprint 11 - Ticketing Domain
 
 Status: implementacao tecnica inicial concluida; gate fisico pendente.

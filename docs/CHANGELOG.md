@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-08-05 - RC Sprint 15 Rework Operational Runtime
+
+- Historico operacional passou a listar somente conversas `FECHADA` com `closedAt` preenchido.
+- `OperationsMetricsService` centraliza KPIs e graficos usados por Dashboard e Relatorios.
+- Relatorios removeram polling e passaram a invalidar dados por realtime.
+- Encerramento de conversa preserva `lastMessageAt` ao registrar evento de sistema.
+- Adicionada rotina `backend/scripts/cleanup-operational-residue.mjs` para auditar residuos e departamento `Teste`.
+- Gate permanece `REWORK REQUIRED` ate homologacao fisica completa.
+
+## 2026-08-04 - RC Sprint 15 Atendimento Operacional
+
+- Criado `OperationsModule` com endpoints `/api/operations/dashboard`, historico, timeline, relatorios e filas.
+- Dashboard, Historico, Relatorios e Filas passaram a consumir Nexos API/Prisma, sem Supabase direto e sem `@/lib/mvp`.
+- Removida rota `/simulador`, menu lateral/mobile e servico `SIMULATOR` legado.
+- Adicionado teste E2E cobrindo dashboard, historico paginado, timeline, filas e export CSV.
+- Gate permanece `NOT READY FOR PRODUCTION PILOT` ate homologacao fisica operacional completa.
+
 ## 2026-08-04 - Sprint 13 SaaS Control Plane
 
 - Adicionado plano de controle `/api/platform/*` com guard server-side para `PlatformRole`.
@@ -258,11 +275,12 @@
 
 ## Sprint 08.04 Rework
 
-- Removidos `ENORE`, `FLOWID` e `ZYVO` dos seletores runtime de Contatos, Inbox, filtros de relatorio e simulador.
+- Removidos `ENORE`, `FLOWID` e `ZYVO` dos seletores runtime de Contatos, Inbox e filtros de relatorio.
 - Adicionado hook canonico `useConnectedMessagingConnections` com query key unica.
 - Modal de Novo/Editar contato passa a exibir somente Connections Evolution conectadas.
 - Seed de homologacao cria Admin e Atendente idempotentes.
 - Reconcile de status da Connection Evolution persiste owner identity quando a Evolution informa `ownerJid`.
+
 # 2026-08-04 - Sprint 11 Ticketing Domain, Secure Content & Attachments
 
 - Criado dominio oficial `Ticket`/`TicketComment`/`TicketHistory`/`TicketAttachment` no Prisma e NestJS.

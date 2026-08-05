@@ -235,7 +235,7 @@ function EmpresasSaaS() {
               <Input
                 value={form.name}
                 onChange={(e) => update("name", e.target.value)}
-                placeholder="Tenant Sprint 13"
+                placeholder="Nome da empresa"
               />
             </Field>
           )}
@@ -244,7 +244,7 @@ function EmpresasSaaS() {
               <Input
                 value={form.slug}
                 onChange={(e) => update("slug", e.target.value)}
-                placeholder="tenant-sprint-13"
+                placeholder="slug da empresa"
               />
             </Field>
           )}

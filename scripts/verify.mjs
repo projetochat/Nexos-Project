@@ -9,8 +9,7 @@ const env = {
     "postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public",
   NEXOS_TEST_DATABASE_URL:
     process.env.NEXOS_TEST_DATABASE_URL ??
-    process.env.DATABASE_URL ??
-    "postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public",
+    "postgresql://nexos:nexos_dev_password@localhost:5432/nexos_1200?schema=public",
   JWT_SECRET: process.env.JWT_SECRET ?? "local-access-secret-minimum-32-chars",
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? "local-refresh-secret-minimum-32-chars",
 };
@@ -26,6 +25,7 @@ const gates = bunAvailable
       ["ticket:legacy-runtime", bun(), ["run", "test:ticket-legacy-runtime"]],
       ["campaign:legacy-runtime", bun(), ["run", "test:campaign-legacy-runtime"]],
       ["platform-admin:legacy-runtime", bun(), ["run", "test:platform-admin-legacy-runtime"]],
+      ["operational:runtime", bun(), ["run", "test:operational-runtime"]],
       ["backend:build", bun(), ["run", "backend:build"]],
       ["backend:test", bun(), ["run", "backend:test"]],
       ["redis:queue-smoke", bun(), ["backend/scripts/verify-redis-queue.mjs"]],
@@ -43,6 +43,7 @@ const gates = bunAvailable
         process.execPath,
         ["scripts/check-platform-admin-legacy-runtime.mjs"],
       ],
+      ["operational:runtime", bin("vitest"), ["run", "src/lib/operational-runtime-rules.test.ts"]],
       ["backend:build:tsc", backendBin("tsc"), ["-p", "backend/tsconfig.build.json"]],
       ["backend:build:copy-prisma", process.execPath, ["backend/scripts/copy-prisma-client.mjs"]],
       ["backend:test", backendBin("vitest"), ["run"], { cwd: resolve(root, "backend") }],

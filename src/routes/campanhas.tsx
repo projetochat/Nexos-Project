@@ -511,7 +511,7 @@ function CampaignEditor({
   const [form, setForm] = React.useState({
     name: "",
     description: "",
-    messageText: "NEXOS-S12-CAMPAIGN-SMOKE-001 - Ola, {{contact.name}}.",
+    messageText: "Ola, {{contact.name}}.",
     connectionId: "",
     audienceType: "ALL" as ApiCampaignAudience["type"],
     tagMatchMode: "ANY" as "ANY" | "ALL",

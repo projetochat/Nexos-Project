@@ -20,14 +20,20 @@ export type Contact = {
   instancia?: string | null;
 };
 export type Department = { id: string; nome: string; cor: string; descricao: string | null };
-export type AgentRow = { id: string; nome: string; email: string; department_id: string | null; status: string };
+export type AgentRow = {
+  id: string;
+  nome: string;
+  email: string;
+  department_id: string | null;
+  status: string;
+};
 export type Tag = { id: string; nome: string; cor: string };
 export type Customer = {
   id: string;
   nome: string;
   email: string | null;
   telefone: string | null;
-  
+
   notas: string | null;
   contato_responsavel?: string | null;
   cor?: string | null;
@@ -69,7 +75,12 @@ export type ConversationRow = {
 
 export const CATALOG = {
   async contacts(): Promise<Contact[]> {
-    const { data, error } = await supabase.from("contacts").select("id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia").order("nome");
+    const { data, error } = await supabase
+      .from("contacts")
+      .select(
+        "id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia",
+      )
+      .order("nome");
     if (error) throw error;
     return (data as Contact[]) ?? [];
   },
@@ -79,7 +90,10 @@ export const CATALOG = {
     return data ?? [];
   },
   async agents(): Promise<AgentRow[]> {
-    const { data, error } = await supabase.from("agents").select("id, nome, department_id, status").order("nome");
+    const { data, error } = await supabase
+      .from("agents")
+      .select("id, nome, department_id, status")
+      .order("nome");
     if (error) throw error;
     return (data as AgentRow[]) ?? [];
   },
@@ -104,25 +118,39 @@ export const CUSTOMERS = {
     return (data as Customer) ?? null;
   },
   async create(input: Partial<Customer> & { nome: string }): Promise<Customer> {
-    const { data, error } = await supabase.from("customers").insert(input as never).select("*").single();
+    const { data, error } = await supabase
+      .from("customers")
+      .insert(input as never)
+      .select("*")
+      .single();
     if (error) throw error;
     return data as Customer;
   },
   async update(id: string, patch: Partial<Customer>): Promise<Customer> {
-    const { data, error } = await supabase.from("customers").update(patch as never).eq("id", id).select("*").single();
+    const { data, error } = await supabase
+      .from("customers")
+      .update(patch as never)
+      .eq("id", id)
+      .select("*")
+      .single();
     if (error) throw error;
     return data as Customer;
   },
   async remove(id: string): Promise<void> {
     // Desvincula contatos antes de excluir
-    await supabase.from("contacts").update({ customer_id: null } as never).eq("customer_id", id);
+    await supabase
+      .from("contacts")
+      .update({ customer_id: null } as never)
+      .eq("customer_id", id);
     const { error } = await supabase.from("customers").delete().eq("id", id);
     if (error) throw error;
   },
   async contactsOf(customerId: string): Promise<Contact[]> {
     const { data, error } = await supabase
       .from("contacts")
-      .select("id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia")
+      .select(
+        "id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia",
+      )
       .eq("customer_id", customerId)
       .order("nome");
     if (error) throw error;
@@ -130,13 +158,17 @@ export const CUSTOMERS = {
   },
 };
 
-export type ContactWithCustomer = Contact & { customer: Pick<Customer, "id" | "nome" | "cor"> | null };
+export type ContactWithCustomer = Contact & {
+  customer: Pick<Customer, "id" | "nome" | "cor"> | null;
+};
 
 export const CONTACTS = {
   async list(q?: string): Promise<ContactWithCustomer[]> {
     let query = supabase
       .from("contacts")
-      .select("id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia, customer:customers(id, nome, cor)")
+      .select(
+        "id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia, customer:customers(id, nome, cor)",
+      )
       .order("nome")
       .limit(500);
     if (q) query = query.or(`nome.ilike.%${q}%,telefone.ilike.%${q}%`);
@@ -144,13 +176,34 @@ export const CONTACTS = {
     if (error) throw error;
     return (data as unknown as ContactWithCustomer[]) ?? [];
   },
-  async create(input: { nome: string; telefone: string; customer_id?: string | null; email?: string | null; departamento?: string | null; nivel_gerencia?: "Colaborador" | "Supervisor" | "Gerente" | "Diretoria" | null; instancia?: string | null }): Promise<Contact> {
-    const { data, error } = await supabase.from("contacts").insert(input as never).select("id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia").single();
+  async create(input: {
+    nome: string;
+    telefone: string;
+    customer_id?: string | null;
+    email?: string | null;
+    departamento?: string | null;
+    nivel_gerencia?: "Colaborador" | "Supervisor" | "Gerente" | "Diretoria" | null;
+    instancia?: string | null;
+  }): Promise<Contact> {
+    const { data, error } = await supabase
+      .from("contacts")
+      .insert(input as never)
+      .select(
+        "id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia",
+      )
+      .single();
     if (error) throw error;
     return data as Contact;
   },
   async update(id: string, patch: Partial<Contact>): Promise<Contact> {
-    const { data, error } = await supabase.from("contacts").update(patch as never).eq("id", id).select("id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia").single();
+    const { data, error } = await supabase
+      .from("contacts")
+      .update(patch as never)
+      .eq("id", id)
+      .select(
+        "id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia",
+      )
+      .single();
     if (error) throw error;
     return data as Contact;
   },
@@ -159,7 +212,10 @@ export const CONTACTS = {
     if (error) throw error;
   },
   async setCustomer(contactId: string, customerId: string | null): Promise<void> {
-    const { error } = await supabase.from("contacts").update({ customer_id: customerId } as never).eq("id", contactId);
+    const { error } = await supabase
+      .from("contacts")
+      .update({ customer_id: customerId } as never)
+      .eq("id", contactId);
     if (error) throw error;
   },
   async tags(contactId: string): Promise<Tag[]> {
@@ -168,21 +224,31 @@ export const CONTACTS = {
       .select("tags(id, nome, cor)")
       .eq("contact_id", contactId);
     if (error) throw error;
-    return ((data ?? []).map((r: { tags: Tag | null }) => r.tags).filter(Boolean) as Tag[]);
+    return (data ?? []).map((r: { tags: Tag | null }) => r.tags).filter(Boolean) as Tag[];
   },
   async addTag(contactId: string, tagId: string): Promise<void> {
-    const { error } = await supabase.from("contact_tags").insert({ contact_id: contactId, tag_id: tagId } as never);
+    const { error } = await supabase
+      .from("contact_tags")
+      .insert({ contact_id: contactId, tag_id: tagId } as never);
     if (error && !`${error.message}`.includes("duplicate")) throw error;
   },
   async removeTag(contactId: string, tagId: string): Promise<void> {
-    const { error } = await supabase.from("contact_tags").delete().eq("contact_id", contactId).eq("tag_id", tagId);
+    const { error } = await supabase
+      .from("contact_tags")
+      .delete()
+      .eq("contact_id", contactId)
+      .eq("tag_id", tagId);
     if (error) throw error;
   },
 };
 
 export const TAGS = {
   async create(input: { nome: string; cor: string }): Promise<Tag> {
-    const { data, error } = await supabase.from("tags").insert(input as never).select("*").single();
+    const { data, error } = await supabase
+      .from("tags")
+      .insert(input as never)
+      .select("*")
+      .single();
     if (error) throw error;
     return data as Tag;
   },
@@ -201,11 +267,18 @@ export const QUICK_REPLIES = {
     return (data as QuickReply[]) ?? [];
   },
   async listAll(): Promise<QuickReply[]> {
-    const { data, error } = await supabase.from("quick_replies").select("id, atalho, texto, agent_id, department_id, close_on_send").order("atalho");
+    const { data, error } = await supabase
+      .from("quick_replies")
+      .select("id, atalho, texto, agent_id, department_id, close_on_send")
+      .order("atalho");
     if (error) throw error;
     return (data as QuickReply[]) ?? [];
   },
-  async create(input: { atalho: string; texto: string; close_on_send?: boolean }): Promise<QuickReply> {
+  async create(input: {
+    atalho: string;
+    texto: string;
+    close_on_send?: boolean;
+  }): Promise<QuickReply> {
     const { data: userData } = await supabase.auth.getUser();
     const uid = userData.user?.id ?? null;
     const { data, error } = await supabase
@@ -216,8 +289,14 @@ export const QUICK_REPLIES = {
     if (error) throw error;
     return data as QuickReply;
   },
-  async update(id: string, patch: Partial<Pick<QuickReply, "atalho" | "texto" | "close_on_send">>): Promise<void> {
-    const { error } = await supabase.from("quick_replies").update(patch as never).eq("id", id);
+  async update(
+    id: string,
+    patch: Partial<Pick<QuickReply, "atalho" | "texto" | "close_on_send">>,
+  ): Promise<void> {
+    const { error } = await supabase
+      .from("quick_replies")
+      .update(patch as never)
+      .eq("id", id);
     if (error) throw error;
   },
   async remove(id: string): Promise<void> {
@@ -231,7 +310,7 @@ export const CONV = {
     const { data, error } = await supabase
       .from("conversations")
       .select(
-        "id, contact_id, department_id, agent_id, status, is_group, created_at, last_message_at, protocolo, contact:contacts(id,nome,telefone,avatar_url,customer_id,instancia,customer:customers(id,nome,cor)), department:departments(id,nome,cor,descricao), agent:agents(id,nome)"
+        "id, contact_id, department_id, agent_id, status, is_group, created_at, last_message_at, protocolo, contact:contacts(id,nome,telefone,avatar_url,customer_id,instancia,customer:customers(id,nome,cor)), department:departments(id,nome,cor,descricao), agent:agents(id,nome)",
       )
       .order("last_message_at", { ascending: false });
     if (error) throw error;
@@ -240,7 +319,9 @@ export const CONV = {
   async messages(conversationId: string): Promise<Message[]> {
     const { data, error } = await supabase
       .from("messages")
-      .select("id, conversation_id, sender, author_id, content, created_at, read_at, type, media_data, duration_ms")
+      .select(
+        "id, conversation_id, sender, author_id, content, created_at, read_at, type, media_data, duration_ms",
+      )
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true });
     if (error) throw error;
@@ -328,7 +409,12 @@ export const CONV = {
     if (!convId) {
       let deptId = input.departmentId ?? null;
       if (!deptId) {
-        const { data: dep } = await supabase.from("departments").select("id").order("created_at").limit(1).maybeSingle();
+        const { data: dep } = await supabase
+          .from("departments")
+          .select("id")
+          .order("created_at")
+          .limit(1)
+          .maybeSingle();
         deptId = (dep?.id as string | undefined) ?? null;
       }
       const { data, error } = await supabase
@@ -357,7 +443,10 @@ export const CONV = {
       type: "text",
     } as never);
     if (mErr) throw mErr;
-    await supabase.rpc("assign_conversation_protocolo" as never, { _conversation_id: convId } as never);
+    await supabase.rpc(
+      "assign_conversation_protocolo" as never,
+      { _conversation_id: convId } as never,
+    );
     return convId!;
   },
   async assume(conversationId: string, agentId: string): Promise<void> {
@@ -366,9 +455,16 @@ export const CONV = {
       .update({ agent_id: agentId, status: "em_andamento" as ConvStatus } as never)
       .eq("id", conversationId);
     if (error) throw error;
-    await supabase.rpc("assign_conversation_protocolo" as never, { _conversation_id: conversationId } as never);
+    await supabase.rpc(
+      "assign_conversation_protocolo" as never,
+      { _conversation_id: conversationId } as never,
+    );
   },
-  async transferAgent(conversationId: string, agentId: string, systemNote?: { authorId: string; text: string }): Promise<void> {
+  async transferAgent(
+    conversationId: string,
+    agentId: string,
+    systemNote?: { authorId: string; text: string },
+  ): Promise<void> {
     const { error } = await supabase
       .from("conversations")
       .update({ agent_id: agentId, status: "em_andamento" as ConvStatus } as never)
@@ -379,68 +475,29 @@ export const CONV = {
     }
   },
   async moveDepartment(conversationId: string, departmentId: string): Promise<void> {
-    const { error } = await supabase.from("conversations").update({ department_id: departmentId } as never).eq("id", conversationId);
+    const { error } = await supabase
+      .from("conversations")
+      .update({ department_id: departmentId } as never)
+      .eq("id", conversationId);
     if (error) throw error;
   },
-  async close(conversationId: string, systemNote?: { authorId: string; text: string }): Promise<void> {
-    const { error } = await supabase.from("conversations").update({ status: "fechada" as ConvStatus } as never).eq("id", conversationId);
+  async close(
+    conversationId: string,
+    systemNote?: { authorId: string; text: string },
+  ): Promise<void> {
+    const { error } = await supabase
+      .from("conversations")
+      .update({ status: "fechada" as ConvStatus } as never)
+      .eq("id", conversationId);
     if (error) throw error;
     if (systemNote) await CONV.sendSystem(conversationId, systemNote.authorId, systemNote.text);
   },
   async setStatus(conversationId: string, status: ConvStatus): Promise<void> {
-    const { error } = await supabase.from("conversations").update({ status } as never).eq("id", conversationId);
-    if (error) throw error;
-  },
-};
-
-export const SIMULATOR = {
-  async ensureOpenConversation(contactId: string): Promise<string> {
-    const { data: existing } = await supabase
-      .from("conversations")
-      .select("id")
-      .eq("contact_id", contactId)
-      .neq("status", "fechada")
-      .order("last_message_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (existing?.id) return existing.id as string;
-    const { data: dep } = await supabase.from("departments").select("id").order("created_at").limit(1).maybeSingle();
-    const { data, error } = await supabase
-      .from("conversations")
-      .insert({ contact_id: contactId, department_id: dep?.id ?? null, status: "aberta" as ConvStatus } as never)
-      .select("id")
-      .single();
-    if (error) throw error;
-    return data.id as string;
-  },
-  async sendContactMessage(contactId: string, content: string): Promise<{ conversationId: string }> {
-    const conversationId = await SIMULATOR.ensureOpenConversation(contactId);
-    const { count } = await supabase
-      .from("messages")
-      .select("id", { head: true, count: "exact" })
-      .eq("conversation_id", conversationId);
-    if ((count ?? 0) === 0) {
-      await supabase
-        .from("messages")
-        .insert({ conversation_id: conversationId, sender: "agent", content: "Novo lead", type: "system" } as never);
-    }
     const { error } = await supabase
-      .from("messages")
-      .insert({ conversation_id: conversationId, sender: "contact", content, type: "text" } as never);
+      .from("conversations")
+      .update({ status } as never)
+      .eq("id", conversationId);
     if (error) throw error;
-    return { conversationId };
-  },
-  async messagesForContact(contactId: string): Promise<Message[]> {
-    const { data: convs } = await supabase.from("conversations").select("id").eq("contact_id", contactId);
-    const ids = (convs ?? []).map((c) => c.id);
-    if (ids.length === 0) return [];
-    const { data, error } = await supabase
-      .from("messages")
-      .select("id, conversation_id, sender, author_id, content, created_at, read_at, type, media_data, duration_ms")
-      .in("conversation_id", ids)
-      .order("created_at", { ascending: true });
-    if (error) throw error;
-    return (data as Message[]) ?? [];
   },
 };
 
@@ -461,25 +518,38 @@ export const DEFAULT_REPORT_FILTERS: ReportFilters = {
 
 export function periodRange(p: PeriodKey): { from: Date | null; to: Date | null } {
   const now = new Date();
-  const s = new Date(now); s.setHours(0, 0, 0, 0);
-  const e = new Date(now); e.setHours(23, 59, 59, 999);
+  const s = new Date(now);
+  s.setHours(0, 0, 0, 0);
+  const e = new Date(now);
+  e.setHours(23, 59, 59, 999);
   switch (p) {
-    case "hoje": return { from: s, to: e };
-    case "ontem": s.setDate(s.getDate() - 1); e.setDate(e.getDate() - 1); return { from: s, to: e };
+    case "hoje":
+      return { from: s, to: e };
+    case "ontem":
+      s.setDate(s.getDate() - 1);
+      e.setDate(e.getDate() - 1);
+      return { from: s, to: e };
     case "semana": {
       const day = s.getDay();
       const diff = day === 0 ? 6 : day - 1;
       s.setDate(s.getDate() - diff);
       return { from: s, to: e };
     }
-    case "mes": s.setDate(1); return { from: s, to: e };
+    case "mes":
+      s.setDate(1);
+      return { from: s, to: e };
     case "mes_passado": {
-      s.setDate(1); s.setMonth(s.getMonth() - 1);
+      s.setDate(1);
+      s.setMonth(s.getMonth() - 1);
       const end = new Date(s.getFullYear(), s.getMonth() + 1, 0, 23, 59, 59, 999);
       return { from: s, to: end };
     }
-    case "ano": s.setMonth(0); s.setDate(1); return { from: s, to: e };
-    case "geral": return { from: null, to: null };
+    case "ano":
+      s.setMonth(0);
+      s.setDate(1);
+      return { from: s, to: e };
+    case "geral":
+      return { from: null, to: null };
   }
 }
 
@@ -492,7 +562,7 @@ export const REPORTS = {
       .select(
         needsContactFilter
           ? "id,status,department_id,agent_id,contact_id,created_at,last_message_at,contact:contacts!inner(id, customer_id, instancia)"
-          : "id,status,department_id,agent_id,contact_id,created_at,last_message_at,contact:contacts(id, customer_id, instancia)"
+          : "id,status,department_id,agent_id,contact_id,created_at,last_message_at,contact:contacts(id, customer_id, instancia)",
       );
     if (from) q = q.gte("created_at", from.toISOString());
     if (to) q = q.lte("created_at", to.toISOString());
@@ -506,7 +576,10 @@ export const REPORTS = {
     let totalMsg = 0;
     const msgCountByConv = new Map<string, number>();
     if (ids.length > 0) {
-      let msgQ = supabase.from("messages").select("*", { head: true, count: "exact" }).in("conversation_id", ids);
+      let msgQ = supabase
+        .from("messages")
+        .select("*", { head: true, count: "exact" })
+        .in("conversation_id", ids);
       if (from) msgQ = msgQ.gte("created_at", from.toISOString());
       if (to) msgQ = msgQ.lte("created_at", to.toISOString());
       const { count } = await msgQ;
@@ -524,16 +597,17 @@ export const REPORTS = {
     const isLead = (id: string) => (msgCountByConv.get(id) ?? 0) <= 1;
 
     const contactIds = Array.from(new Set(convs.map((c) => c.contact_id).filter(Boolean)));
-    const [{ data: deps }, { data: ags }, { data: custs }, { data: insts }, { data: tags }, ctRes] = await Promise.all([
-      supabase.from("departments").select("id, nome, cor"),
-      supabase.from("agents").select("id, nome"),
-      supabase.from("customers").select("id, nome, cor"),
-      supabase.from("instancias").select("id, nome, cor, tipo"),
-      supabase.from("tags").select("id, nome, cor"),
-      contactIds.length > 0
-        ? supabase.from("contact_tags").select("contact_id, tag_id").in("contact_id", contactIds)
-        : Promise.resolve({ data: [] as { contact_id: string; tag_id: string }[] }),
-    ]);
+    const [{ data: deps }, { data: ags }, { data: custs }, { data: insts }, { data: tags }, ctRes] =
+      await Promise.all([
+        supabase.from("departments").select("id, nome, cor"),
+        supabase.from("agents").select("id, nome"),
+        supabase.from("customers").select("id, nome, cor"),
+        supabase.from("instancias").select("id, nome, cor, tipo"),
+        supabase.from("tags").select("id, nome, cor"),
+        contactIds.length > 0
+          ? supabase.from("contact_tags").select("contact_id, tag_id").in("contact_id", contactIds)
+          : Promise.resolve({ data: [] as { contact_id: string; tag_id: string }[] }),
+      ]);
     const ct = (ctRes as any).data ?? [];
     const tagCounts = new Map<string, number>();
     for (const row of ct as { contact_id: string; tag_id: string }[]) {
@@ -548,7 +622,9 @@ export const REPORTS = {
         aguardando: convs.filter((c) => c.status === "aguardando").length,
         fechadas: convs.filter((c) => c.status === "fechada").length,
         // Espelham os filtros da Inbox
-        ativas: convs.filter((c) => c.agent_id && c.status !== "fechada" && c.status !== "aguardando").length,
+        ativas: convs.filter(
+          (c) => c.agent_id && c.status !== "fechada" && c.status !== "aguardando",
+        ).length,
         standby: convs.filter((c) => c.status === "aguardando").length,
         fila: convs.filter((c) => c.status === "aberta" && !c.agent_id && !isLead(c.id)).length,
         leads: convs.filter((c) => !c.agent_id && c.status !== "fechada" && isLead(c.id)).length,
@@ -587,5 +663,3 @@ export const REPORTS = {
     };
   },
 };
-
-

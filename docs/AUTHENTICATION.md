@@ -202,7 +202,8 @@ REMOVIDO das superficies migradas:
 AINDA LEGADO:
 
 - `src/start.ts` ainda anexa sessao Supabase para server functions legadas.
-- `src/lib/mvp.ts`, chamados, simulador, historico e filtros de relatorio ainda usam Supabase para fluxos operacionais nao migrados.
+- `src/lib/mvp.ts` permanece legado residual, mas dashboard, historico, relatorios, filas, inbox,
+  tags e quick replies usam API Nexos nos fluxos operacionais atuais.
 - `ensureDemoUsers` permanece protegido por `ALLOW_DEMO_USER_PROVISIONING=true` e nao e chamado pelo login.
 
 ## Sprint 10 Rework - RBAC operacional
@@ -348,6 +349,7 @@ Esse fluxo impede o ciclo:
 
 de virar uma rajada infinita de requests. O socket nao e fonte de identidade; a sessao continua vindo de
 `/api/auth/me` durante bootstrap.
+
 # RBAC de Tickets
 
 Permissoes adicionadas: `tickets.read`, `tickets.create`, `tickets.update`, `tickets.assign`, `tickets.status.update`, `tickets.comment`, `tickets.attachments.upload`, `tickets.attachments.delete`, `tickets.manage`.
