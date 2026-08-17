@@ -6,11 +6,14 @@ import {
   NotFoundException,
   Optional,
 } from "@nestjs/common";
+import type { Request } from "express";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import {
   ConversationStatus,
+  ConversationType,
   MembershipStatus,
   MessageDirection,
+  MessageReactionActorType,
   MessageType,
   Prisma,
 } from "../generated/prisma";
@@ -19,11 +22,27 @@ import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { ListMessagesQueryDto } from "./dto/list-messages-query.dto";
 import { SendMessageDto } from "./dto/send-message.dto";
 import { MessagingOutboundService } from "../messaging/messaging-outbound.service";
+import { MessagingMediaStorageService } from "../messaging/media/messaging-media-storage.service";
 
 const messageInclude = {
   authorMembership: {
     include: {
       user: { select: { id: true, email: true, name: true } },
+    },
+  },
+  reactions: true,
+  quotedMessage: {
+    select: {
+      mediaStorageKey: true,
+      mediaMimeType: true,
+      mediaFileName: true,
+      mediaSize: true,
+      mediaCaption: true,
+      mediaWidth: true,
+      mediaHeight: true,
+      mediaChecksum: true,
+      mediaState: true,
+      mediaDurationMs: true,
     },
   },
 } satisfies Prisma.MessageInclude;
@@ -38,6 +57,8 @@ export class MessagesService {
     private readonly prisma: PrismaService,
     @Inject(MessagingOutboundService)
     private readonly outbound: MessagingOutboundService,
+    @Inject(MessagingMediaStorageService)
+    private readonly mediaStorage: MessagingMediaStorageService,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
   ) {}
 
@@ -80,6 +101,38 @@ export class MessagesService {
 
   async sendText(conversationId: string, dto: SendMessageDto, current: AuthenticatedUser) {
     return this.outbound.sendText(conversationId, dto, current);
+  }
+
+  async sendMedia(conversationId: string, req: Request, current: AuthenticatedUser) {
+    return this.outbound.sendMedia(conversationId, req, current);
+  }
+
+  async react(
+    conversationId: string,
+    messageId: string,
+    emoji: string | null,
+    current: AuthenticatedUser,
+  ) {
+    await this.findVisibleConversation(this.prisma, conversationId, current);
+    return this.outbound.react(conversationId, messageId, emoji, current);
+  }
+
+  async downloadMedia(conversationId: string, messageId: string, current: AuthenticatedUser) {
+    await this.findVisibleConversation(this.prisma, conversationId, current);
+    const message = await this.prisma.message.findFirst({
+      where: { tenantId: current.tenantId, conversationId, id: messageId },
+      select: {
+        mediaStorageKey: true,
+        mediaMimeType: true,
+        mediaFileName: true,
+      },
+    });
+    if (!message?.mediaStorageKey) throw new NotFoundException("Midia nao encontrada.");
+    return {
+      body: await this.mediaStorage.readObject(message.mediaStorageKey),
+      mimeType: message.mediaMimeType ?? "application/octet-stream",
+      fileName: message.mediaFileName ?? "media",
+    };
   }
 
   async markRead(conversationId: string, current: AuthenticatedUser) {
@@ -231,7 +284,11 @@ export class MessagesService {
     db: DbClient,
     current: AuthenticatedUser,
   ): Promise<Prisma.ConversationWhereInput> {
-    if (current.roleKey === "tenant_admin") return {};
+    if (
+      current.roleKey === "tenant_admin" ||
+      current.permissions?.includes("chat.conversations.view_all_active")
+    )
+      return {};
     const departmentIds = await this.allowedDepartmentIds(db, current);
     return {
       OR: [
@@ -244,20 +301,25 @@ export class MessagesService {
   }
 
   private assertCanSend(
-    conversation: { assignedMembershipId: string | null; status: ConversationStatus },
+    conversation: {
+      assignedMembershipId: string | null;
+      status: ConversationStatus;
+      conversationType?: ConversationType;
+    },
     current: AuthenticatedUser,
   ) {
-    if (!conversation.assignedMembershipId) {
-      throw new BadRequestException("Conversa precisa estar assumida antes do envio.");
-    }
-    if (conversation.assignedMembershipId !== current.membershipId) {
-      throw new ForbiddenException("Apenas o atendente responsavel pode enviar mensagens.");
-    }
     if (conversation.status === ConversationStatus.FECHADA) {
       throw new BadRequestException("Conversa encerrada nao aceita novas mensagens.");
     }
     if (conversation.status === ConversationStatus.AGUARDANDO) {
       throw new BadRequestException("Retome a conversa antes de enviar mensagem.");
+    }
+    if (conversation.conversationType === ConversationType.GROUP) return;
+    if (!conversation.assignedMembershipId) {
+      throw new BadRequestException("Conversa precisa estar assumida antes do envio.");
+    }
+    if (conversation.assignedMembershipId !== current.membershipId) {
+      throw new ForbiddenException("Apenas o atendente responsavel pode enviar mensagens.");
     }
   }
 
@@ -292,8 +354,73 @@ export class MessagesService {
       read_at: message.readAt,
       type: serializeType(message.type),
       status: message.status.toLowerCase(),
-      media_data: null,
-      duration_ms: null,
+      provider_message_id: message.providerMessageId,
+      provider_chat_id: message.providerChatId,
+      participant: {
+        external_id: message.providerParticipantId,
+        name: message.participantName,
+        phone: message.participantPhone,
+        lid: message.participantLid,
+      },
+      quoted: message.quotedProviderMessageId
+        ? {
+            message_id: message.quotedMessageId,
+            provider_message_id: message.quotedProviderMessageId,
+            content_preview: message.quotedContentPreview,
+            type: message.quotedMessageType ? serializeType(message.quotedMessageType) : null,
+            media_data: message.quotedMessage?.mediaStorageKey
+              ? {
+                  state: message.quotedMessage.mediaState?.toLowerCase() ?? "ready",
+                  mime_type: message.quotedMessage.mediaMimeType,
+                  file_name: message.quotedMessage.mediaFileName,
+                  size: message.quotedMessage.mediaSize,
+                  caption: message.quotedMessage.mediaCaption,
+                  width: message.quotedMessage.mediaWidth,
+                  height: message.quotedMessage.mediaHeight,
+                  checksum: message.quotedMessage.mediaChecksum,
+                  duration_ms: message.quotedMessage.mediaDurationMs,
+                  download_url: message.quotedMessageId
+                    ? `/conversations/${message.conversationId}/messages/${message.quotedMessageId}/media/download`
+                    : null,
+                  inline_url: message.quotedMessageId
+                    ? `/conversations/${message.conversationId}/messages/${message.quotedMessageId}/media/inline`
+                    : null,
+                }
+              : null,
+          }
+        : null,
+      media_data: message.mediaStorageKey
+        ? {
+            state: message.mediaState?.toLowerCase() ?? "ready",
+            mime_type: message.mediaMimeType,
+            file_name: message.mediaFileName,
+            size: message.mediaSize,
+            caption: message.mediaCaption,
+            width: message.mediaWidth,
+            height: message.mediaHeight,
+            checksum: message.mediaChecksum,
+            download_url: `/conversations/${message.conversationId}/messages/${message.id}/media/download`,
+            inline_url: `/conversations/${message.conversationId}/messages/${message.id}/media/inline`,
+          }
+        : message.mediaState
+          ? { state: message.mediaState.toLowerCase() }
+          : null,
+      duration_ms: message.mediaDurationMs,
+      reactions: message.reactions
+        .filter((reaction) => !reaction.removedAt)
+        .map((reaction) => ({
+          id: reaction.id,
+          emoji: reaction.emoji,
+          actor_type: reaction.actorType.toLowerCase(),
+          actor_membership_id: reaction.actorMembershipId,
+          external_participant_id: reaction.externalParticipantId,
+          external_participant_name: reaction.externalParticipantName,
+          created_at: reaction.createdAt,
+        })),
+      queued_at: message.queuedAt,
+      sent_at: message.sentAt,
+      delivered_at: message.deliveredAt,
+      failed_at: message.failedAt,
     };
   }
 }
@@ -331,6 +458,9 @@ function serializeType(type: MessageType) {
     TEXT: "text",
     IMAGE: "image",
     AUDIO: "audio",
+    VOICE: "voice",
+    VIDEO: "video",
+    DOCUMENT: "document",
     SYSTEM: "system",
   } as const;
   return map[type];

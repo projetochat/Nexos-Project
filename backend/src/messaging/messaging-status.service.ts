@@ -5,6 +5,7 @@ import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { MessageStatusEvent } from "./messaging.contracts";
 
 const STATUS_RANK: Record<MessageStatus, number> = {
+  PENDING: 0,
   CREATED: 0,
   QUEUED: 1,
   SENDING: 2,
@@ -44,7 +45,18 @@ export class MessagingStatusService {
         providerStatus: event.status.toLowerCase(),
         providerErrorCode: event.errorCode ?? null,
         providerErrorMessage: event.errorMessage ?? null,
+        sentAt:
+          event.status === MessageStatus.SENT ||
+          event.status === MessageStatus.DELIVERED ||
+          event.status === MessageStatus.READ
+            ? (message.sentAt ?? event.occurredAt)
+            : message.sentAt,
+        deliveredAt:
+          event.status === MessageStatus.DELIVERED || event.status === MessageStatus.READ
+            ? (message.deliveredAt ?? event.occurredAt)
+            : message.deliveredAt,
         readAt: event.status === MessageStatus.READ ? event.occurredAt : message.readAt,
+        failedAt: event.status === MessageStatus.FAILED ? event.occurredAt : message.failedAt,
       },
     });
 

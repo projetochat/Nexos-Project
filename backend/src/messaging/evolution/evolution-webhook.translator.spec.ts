@@ -95,20 +95,216 @@ describe("EvolutionWebhookTranslator", () => {
     });
   });
 
-  it("ignores group messages because groups are outside the current product scope", () => {
+  it("normalizes group messages with group chat and participant identity", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          key: {
+            remoteJid: "120363123456789@g.us",
+            participant: "551188887777@s.whatsapp.net",
+            fromMe: false,
+            id: "GROUP-1",
+          },
+          pushName: "Cliente Grupo",
+          groupSubject: "Grupo Suporte",
+          message: { conversation: "Grupo" },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        externalChatId: "120363123456789@g.us",
+        conversationType: "GROUP",
+        participantExternalId: "551188887777@s.whatsapp.net",
+        participantPhone: "551188887777",
+        participantName: "Cliente Grupo",
+        metadata: { displayName: "Grupo Suporte" },
+      },
+    });
+  });
+
+  it("does not use group participant pushName as the group display name", () => {
     expect(
       translator.translate(
         {
           event: "MESSAGES_UPSERT",
           instance: "tenant-support",
           data: {
-            key: { remoteJid: "120363123456789@g.us", fromMe: false, id: "GROUP-1" },
+            key: {
+              remoteJid: "120363123456789@g.us",
+              participant: "551188887777@s.whatsapp.net",
+              fromMe: false,
+              id: "GROUP-1",
+            },
+            pushName: "Cliente Grupo",
             message: { conversation: "Grupo" },
           },
         },
         connection,
       ),
-    ).toMatchObject({ kind: "ignored", reason: "GROUP_MESSAGE" });
+    ).toMatchObject({
+      kind: "inbound",
+      event: {
+        externalChatId: "120363123456789@g.us",
+        conversationType: "GROUP",
+        participantExternalId: "551188887777@s.whatsapp.net",
+        participantPhone: "551188887777",
+        participantName: "Cliente Grupo",
+        metadata: { displayName: null },
+      },
+    });
+  });
+
+  it("normalizes wrapped inbound replies with quoted provider ids and previews", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: false, id: "REPLY-1" },
+          pushName: "Cliente",
+          message: {
+            ephemeralMessage: {
+              message: {
+                extendedTextMessage: {
+                  text: "Respondendo agora",
+                  contextInfo: {
+                    stanzaId: "ORIGINAL-1",
+                    quotedMessage: { imageMessage: { caption: "Foto anterior" } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        externalMessageId: "REPLY-1",
+        content: "Respondendo agora",
+        quotedProviderMessageId: "ORIGINAL-1",
+        quotedContentPreview: "Foto anterior",
+        quotedMessageType: "IMAGE",
+      },
+    });
+  });
+
+  it("normalizes direct inbound replies when Evolution puts contextInfo at data root", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: false, id: "REPLY-ROOT" },
+          pushName: "Cliente",
+          message: {
+            messageContextInfo: { messageSecret: [] },
+            conversation: "Teste",
+          },
+          contextInfo: {
+            stanzaId: "ORIGINAL-ROOT",
+            quotedMessage: { imageMessage: { caption: "Foto citada" } },
+          },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        externalMessageId: "REPLY-ROOT",
+        content: "Teste",
+        quotedProviderMessageId: "ORIGINAL-ROOT",
+        quotedContentPreview: "Foto citada",
+        quotedMessageType: "IMAGE",
+      },
+    });
+  });
+
+  it("normalizes stickers as inbound image media", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: false, id: "STICKER-1" },
+          pushName: "Cliente",
+          message: {
+            stickerMessage: {
+              url: "https://mmg.whatsapp.net/sticker.enc",
+              mimetype: "image/webp",
+              fileSha256: "sha-sticker",
+            },
+          },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        externalMessageId: "STICKER-1",
+        type: "IMAGE",
+        content: "[figurinha]",
+        media: {
+          url: "https://mmg.whatsapp.net/sticker.enc",
+          mimetype: "image/webp",
+          sha256: "sha-sticker",
+        },
+      },
+    });
+  });
+
+  it("normalizes wrapped inbound media and preserves raw message for Evolution download", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: false, id: "IMG-1" },
+          pushName: "Cliente",
+          message: {
+            viewOnceMessageV2: {
+              message: {
+                imageMessage: {
+                  mimetype: "image/jpeg",
+                  caption: "Imagem inbound",
+                  directPath: "/v/t62.7118/media-path",
+                  fileSha256: "sha256-a",
+                },
+              },
+            },
+          },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        externalMessageId: "IMG-1",
+        type: "IMAGE",
+        content: "Imagem inbound",
+        media: {
+          url: "/v/t62.7118/media-path",
+          mimetype: "image/jpeg",
+          sha256: "sha256-a",
+        },
+      },
+    });
+    expect(result.kind === "inbound" ? result.event.media?.rawMessage : null).toBeTruthy();
   });
 
   it("normalizes status updates into canonical status events", () => {
@@ -129,6 +325,45 @@ describe("EvolutionWebhookTranslator", () => {
       event: {
         providerMessageId: "MSG1",
         status: MessageStatus.READ,
+      },
+    });
+  });
+
+  it("normalizes reaction messages into canonical reaction events", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          key: {
+            remoteJid: "5511999999999@s.whatsapp.net",
+            fromMe: false,
+            id: "REACTION-1",
+          },
+          pushName: "Cliente",
+          message: {
+            reactionMessage: {
+              key: {
+                remoteJid: "5511999999999@s.whatsapp.net",
+                fromMe: true,
+                id: "MSG-TARGET",
+              },
+              text: "\u{1f44d}",
+            },
+          },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "reaction",
+      event: {
+        providerMessageId: "MSG-TARGET",
+        providerReactionId: "REACTION-1",
+        emoji: "\u{1f44d}",
+        actorExternalId: "5511999999999@s.whatsapp.net",
+        actorName: "Cliente",
       },
     });
   });

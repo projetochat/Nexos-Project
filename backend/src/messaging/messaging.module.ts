@@ -11,12 +11,14 @@ import { EvolutionMessagingProvider } from "./evolution/evolution-messaging.prov
 import { EvolutionStartupService } from "./evolution/evolution-startup.service";
 import { EvolutionWebhookController } from "./evolution/evolution-webhook.controller";
 import { EvolutionWebhookTranslator } from "./evolution/evolution-webhook.translator";
+import { MessagingMediaStorageService } from "./media/messaging-media-storage.service";
 import { MessagingConnectionsController } from "./messaging-connections.controller";
 import { MessagingConnectionsService } from "./messaging-connections.service";
 import { MessagingInboundService } from "./messaging-inbound.service";
 import { MessagingOutboundService } from "./messaging-outbound.service";
 import { MessagingOutboundWorker } from "./messaging-outbound.worker";
 import { MessagingProviderRegistry } from "./messaging-provider.registry";
+import { MessagingReactionService } from "./messaging-reaction.service";
 import { MessagingStatusService } from "./messaging-status.service";
 
 @Module({
@@ -37,16 +39,20 @@ import { MessagingStatusService } from "./messaging-status.service";
     EvolutionWebhookTranslator,
     MessagingConnectionsService,
     MessagingProviderRegistry,
+    MessagingMediaStorageService,
     MessagingOutboundService,
     MessagingOutboundWorker,
     MessagingInboundService,
+    MessagingReactionService,
     MessagingStatusService,
   ],
   exports: [
     MessagingOutboundService,
     MessagingInboundService,
+    MessagingReactionService,
     MessagingStatusService,
     MessagingConnectionsService,
+    MessagingMediaStorageService,
   ],
 })
 export class MessagingModule {}

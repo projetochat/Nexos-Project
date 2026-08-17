@@ -112,3 +112,30 @@ Antes e depois do upgrade, logs reais mostraram falhas de decriptacao Signal/Bai
 - JIDs `@lid` acompanhados de `senderPn`/`participantPn`
 
 Nao registrar buffers, chaves ou material de sessao em docs, commits ou tickets. A camada Nexos so deve alterar traducao de payload quando houver `MESSAGES_UPSERT` valido chegando ao webhook. Se payload valido vier com `remoteJid @lid` e `senderPn @s.whatsapp.net`, usar a identidade PN; nunca tratar LID como telefone.
+
+## Outbound error contract
+
+O provider Evolution usa a imagem fixa `evoapicloud/evolution-api:v2.3.7`. O hotfix de outbound nao altera payloads funcionais; ele normaliza falhas reais de transporte e HTTP para impedir queda do worker e preservar retries BullMQ.
+
+Classificacao canonica:
+- `400` e `422`: `INVALID_RECIPIENT`, permanente.
+- `401` e `403`: `AUTHENTICATION_FAILURE`, permanente.
+- `404`: `PROVIDER_UNAVAILABLE`, permanente.
+- `429`: `RATE_LIMITED`, retryable.
+- `408`, `500`, `502`, `503`, `504`: `TEMPORARY_PROVIDER_FAILURE`, retryable.
+- `ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `EAI_AGAIN`: `TEMPORARY_PROVIDER_FAILURE`, retryable.
+- Timeout, `ECONNRESET` e `ETIMEDOUT`: marcados como `unknownOutcome=true`.
+
+Logs nunca devem imprimir `apikey`, `api_key`, `secret`, `token`, `authorization`, `jwt_key`, Bearer token ou `data:*;base64`. Diagnosticos sao truncados e sanitizados antes de chegarem ao log, ao erro canonico ou ao outbox.
+
+## Evolution v2.3.7 outbound message contract
+
+Contrato confirmado na instalacao local `evoapicloud/evolution-api:v2.3.7`, arquivo `/evolution/dist/validate/message.schema.js`:
+
+- Texto: `POST /message/sendText/:instanceName`, JSON root `number` e `text`.
+- Reply: campo `quoted.key` com `id`; Nexos tambem envia `remoteJid`, `fromMe` e `participant` quando disponiveis.
+- Reacao: `POST /message/sendReaction/:instanceName`, JSON root `key` e `reaction`.
+- Imagem/documento: `POST /message/sendMedia/:instanceName`, multipart com `number`, `mediatype` e arquivo no campo `file`.
+- Audio/voice/PTT: `POST /message/sendWhatsAppAudio/:instanceName`, multipart com `number` e arquivo no campo `file`.
+
+Smokes diretos contra a instancia aberta `7c776a09-homologacao-whats-nata-a2250ad4` passaram para texto, reacao add/remove, imagem, documento e audio. O teste completo via Nexos/Outbox permanece pendente.

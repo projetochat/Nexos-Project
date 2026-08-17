@@ -20,10 +20,12 @@ import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Badge, Button, Field, Input } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
+import { TipoBadge, type TipoInstancia } from "@/components/instancia-tipos";
 import { connectionDisplayLabel, connectionInstanceValue } from "@/lib/connection-options";
 import {
   conversationApi,
   crmApi,
+  type ApiConversation,
   type ApiContact,
   messageApi,
   type ApiConversationStatus as ConvStatus,
@@ -36,7 +38,7 @@ import { useChatPerms } from "@/lib/perms";
 import { useRealtimeInbox } from "@/lib/realtime/hooks";
 
 type TabId = "ativas" | "standby" | "fila" | "leads";
-type SourceId = "todos" | "humano" | "bots";
+type SourceId = "todos" | "arquivados" | "humano" | "bots";
 
 const TAB_ICONS: Record<TabId, React.ComponentType<{ className?: string }>> = {
   ativas: Play,
@@ -47,6 +49,7 @@ const TAB_ICONS: Record<TabId, React.ComponentType<{ className?: string }>> = {
 
 const SOURCES: { id: SourceId; label: string; hint: string }[] = [
   { id: "todos", label: "Todos", hint: "Todos os chats" },
+  { id: "arquivados", label: "Arquivados", hint: "Somente conversas arquivadas" },
   { id: "humano", label: "Humano", hint: "Atendimento feito por atendentes" },
   { id: "bots", label: "Agente IA", hint: "Atendimento feito por Agente IA" },
 ];
@@ -65,6 +68,11 @@ const STATUS_LABEL: Record<ConvStatus, string> = {
   fechada: "fechada",
 };
 
+const inboxListMemory: { tab: TabId; source: SourceId } = {
+  tab: "ativas",
+  source: "todos",
+};
+
 export function InboxLayout({ children }: { children: React.ReactNode }) {
   const params = useParams({ strict: false }) as { conversationId?: string };
   const activeId = params.conversationId;
@@ -76,14 +84,22 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
     () => queuePrefs.filter((p) => p.enabled && (perms.visualiza_leads || p.id !== "leads")),
     [queuePrefs, perms.visualiza_leads],
   );
-  const [tab, setTab] = React.useState<TabId>("ativas");
+  const [tab, setTabState] = React.useState<TabId>(inboxListMemory.tab);
+  const setTab = React.useCallback((next: TabId) => {
+    inboxListMemory.tab = next;
+    setTabState(next);
+  }, []);
   React.useEffect(() => {
     if (activeTabs.length && !activeTabs.find((t) => t.id === tab)) {
       setTab(activeTabs[0].id);
     }
-  }, [activeTabs, tab]);
+  }, [activeTabs, setTab, tab]);
   const [refreshing, setRefreshing] = React.useState(false);
-  const [source, setSource] = React.useState<SourceId>("todos");
+  const [source, setSourceState] = React.useState<SourceId>(inboxListMemory.source);
+  const setSource = React.useCallback((next: SourceId) => {
+    inboxListMemory.source = next;
+    setSourceState(next);
+  }, []);
   const [onlyUnread, setOnlyUnread] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [selectedInstancias, setSelectedInstancias] = React.useState<Set<string>>(new Set());
@@ -123,13 +139,20 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const customers = React.useMemo(() => customersPage?.items ?? [], [customersPage?.items]);
 
   const { connectedConnections: filterConnections } = useConnectedMessagingConnections();
-  const instanciasList = React.useMemo(
+  const instanciaOptions = React.useMemo(
     () =>
       filterConnections
-        .map((connection) => connectionInstanceValue(connection))
-        .filter(Boolean)
-        .sort(),
+        .map((connection) => ({
+          id: connectionInstanceValue(connection),
+          label: connection.name || connectionDisplayLabel(connection),
+        }))
+        .filter((option) => option.id)
+        .sort((a, b) => a.label.localeCompare(b.label)),
     [filterConnections],
+  );
+  const instanciaLabelByValue = React.useMemo(
+    () => Object.fromEntries(instanciaOptions.map((option) => [option.id, option.label])),
+    [instanciaOptions],
   );
 
   // Clientes distintos para o filtro "Cliente" (nome do cliente cadastrado).
@@ -223,7 +246,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
               <MultiSelect
                 label="Instância"
                 placeholder="Todas"
-                options={instanciasList.map((nome) => ({ id: nome, label: nome }))}
+                options={instanciaOptions}
                 selected={selectedInstancias}
                 onChange={setSelectedInstancias}
               />
@@ -310,6 +333,12 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
               list.map((c) => {
                 const active = activeId === c.id;
                 const u = unread[c.id] ?? 0;
+                const instanceLabel =
+                  c.connection?.name ||
+                  (c.contact?.instancia ? instanciaLabelByValue[c.contact.instancia] : null) ||
+                  c.contact?.instancia;
+                const customerName = (c.contact as unknown as { customer?: { nome?: string } })
+                  ?.customer?.nome;
                 return (
                   <li key={c.id}>
                     <Link
@@ -318,7 +347,11 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                       className={`flex gap-3 border-b border-border/60 px-4 py-3 transition ${active ? "bg-surface-2" : "hover:bg-surface-1"}`}
                     >
                       <div className="relative">
-                        <Avatar name={c.contact?.nome ?? "?"} size={38} />
+                        <Avatar
+                          name={c.contact?.nome ?? "?"}
+                          size={38}
+                          src={c.contact?.avatar_url}
+                        />
                         {u > 0 && (
                           <span
                             aria-label={`${u} mensagens não lidas`}
@@ -346,18 +379,26 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                             {relativeTime(new Date(c.last_message_at).getTime())}
                           </span>
                         </div>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {[
-                            c.contact?.instancia,
-                            (c.contact as unknown as { customer?: { nome?: string } })?.customer
-                              ?.nome,
-                            c.department?.nome,
-                          ]
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {[customerName, c.contact?.departamento, c.contact?.nivel_gerencia]
                             .filter(Boolean)
                             .join(" - ") || "—"}
                         </p>
+                        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                          <span className="truncate">
+                            {[instanceLabel || "Sem instância", c.department?.nome]
+                              .filter(Boolean)
+                              .join(" - ")}
+                          </span>
+                          <TipoBadge tipo={instanceTipo(c)} size={16} />
+                        </div>
                         <p className="mt-0.5 truncate text-xs text-muted-foreground">
                           {c.agent?.nome ?? "sem atendente"}
+                        </p>
+                        <p
+                          className={`mt-0.5 truncate text-xs ${u > 0 ? "font-medium text-foreground" : "text-muted-foreground"}`}
+                        >
+                          {messagePreviewLabel(c.lastMessagePreview)}
                         </p>
                       </div>
                     </Link>
@@ -381,6 +422,33 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
 }
 
 export const Route = createFileRoute("/inbox/")({ component: InboxIndex });
+
+function messagePreviewLabel(value: string | null | undefined) {
+  const clean = (value ?? "").trim();
+  if (!clean) return "Sem mensagens";
+  const normalized = clean.toLowerCase();
+  if (normalized.includes("[imagem]") || normalized === "imagem") return "Foto";
+  if (
+    normalized.includes("[audio]") ||
+    normalized.includes("[áudio]") ||
+    normalized === "audio" ||
+    normalized === "áudio"
+  )
+    return "Áudio";
+  if (normalized.includes("[video]") || normalized.includes("[vídeo]")) return "Vídeo";
+  if (normalized.includes("[documento]") || normalized === "documento") return "Documento";
+  if (normalized.includes("[figurinha]") || normalized === "figurinha") return "Figurinha";
+  return clean;
+}
+
+function instanceTipo(conversation: ApiConversation): TipoInstancia {
+  const label = `${conversation.connection?.name ?? ""} ${conversation.contact?.instancia ?? ""}`
+    .trim()
+    .toLowerCase();
+  if (label.includes("instagram")) return "instagram";
+  if (label.includes("telegram")) return "telegram";
+  return "whatsapp";
+}
 
 function InboxIndex() {
   return (

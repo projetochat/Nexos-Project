@@ -162,6 +162,7 @@ export type ApiConversation = {
   protocolo: string | null;
   unreadCount: number;
   lastMessagePreview: string | null;
+  inbox_archived_at: string | null;
   is_lead: boolean;
   contact: ApiContact | null;
   department: { id: string; nome: string; cor: string; descricao: string | null } | null;
@@ -203,10 +204,62 @@ export type ApiMessage = {
   created_at: string;
   updated_at: string;
   read_at: string | null;
-  type: "text" | "image" | "audio" | "system";
-  status: "created" | "queued" | "sending" | "sent" | "failed" | "delivered" | "read";
-  media_data: null;
-  duration_ms: null;
+  type: "text" | "image" | "audio" | "voice" | "video" | "document" | "system";
+  status: "pending" | "created" | "queued" | "sending" | "sent" | "failed" | "delivered" | "read";
+  provider_message_id?: string | null;
+  provider_chat_id?: string | null;
+  participant?: {
+    external_id: string | null;
+    name: string | null;
+    phone: string | null;
+    lid: string | null;
+  } | null;
+  quoted?: {
+    message_id: string | null;
+    provider_message_id: string;
+    content_preview: string | null;
+    type: ApiMessage["type"] | null;
+    media_data?: {
+      state?: "pending" | "downloading" | "ready" | "failed";
+      mime_type: string | null;
+      file_name: string | null;
+      size: number | null;
+      caption: string | null;
+      width: number | null;
+      height: number | null;
+      checksum: string | null;
+      duration_ms?: number | null;
+      download_url?: string | null;
+      inline_url?: string | null;
+    } | null;
+  } | null;
+  media_data: {
+    state?: "pending" | "downloading" | "ready" | "failed";
+    mime_type: string | null;
+    file_name: string | null;
+    size: number | null;
+    caption: string | null;
+    width: number | null;
+    height: number | null;
+    checksum: string | null;
+    download_url?: string;
+    inline_url?: string;
+  } | null;
+  duration_ms: number | null;
+  reactions?: Array<{
+    id: string;
+    emoji: string;
+    actor_type: string;
+    actor_membership_id: string | null;
+    external_participant_id: string | null;
+    external_participant_name: string | null;
+    created_at: string;
+    removed_at?: string | null;
+  }>;
+  queued_at?: string | null;
+  sent_at?: string | null;
+  delivered_at?: string | null;
+  failed_at?: string | null;
 };
 
 export type MessagePage = {
@@ -537,7 +590,7 @@ type ContactPayload = {
 
 type ListConversationsParams = ListParams & {
   tab?: "ativas" | "standby" | "fila" | "leads";
-  source?: "todos" | "humano" | "bots";
+  source?: "todos" | "arquivados" | "humano" | "bots";
   onlyUnread?: boolean;
   customerId?: string;
   instance?: string;
@@ -815,6 +868,11 @@ export const conversationApi = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
+  updateInboxArchive: (id: string, archived: boolean) =>
+    apiRequest<ApiConversation>(`/conversations/${id}/inbox-archive`, {
+      method: "PATCH",
+      body: JSON.stringify({ archived }),
+    }),
 };
 
 export const leadApi = {
@@ -873,16 +931,82 @@ export const automationApi = {
 export const messageApi = {
   list: (conversationId: string, params: { limit?: number; cursor?: string } = {}) =>
     apiRequest<MessagePage>(`/conversations/${conversationId}/messages${queryString(params)}`),
-  sendText: (conversationId: string, content: string, clientMessageId = crypto.randomUUID()) =>
+  sendText: (
+    conversationId: string,
+    content: string,
+    clientMessageId = crypto.randomUUID(),
+    quotedMessageId?: string | null,
+    mentions?: string[],
+  ) =>
     apiRequest<ApiMessage>(`/conversations/${conversationId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content, clientMessageId }),
+      body: JSON.stringify({ content, clientMessageId, quotedMessageId, mentions }),
     }),
   markRead: (conversationId: string) =>
     apiRequest<{ unreadCount: number; readAt: string }>(
       `/conversations/${conversationId}/messages/read`,
       { method: "PATCH" },
     ),
+  sendMedia: async (
+    conversationId: string,
+    file: File | Blob,
+    options: {
+      fileName: string;
+      mimeType: string;
+      mediaType?: "image" | "audio" | "voice" | "video" | "document";
+      caption?: string | null;
+      durationMs?: number | null;
+      quotedMessageId?: string | null;
+      clientMessageId?: string;
+    },
+  ) => {
+    const headers: Record<string, string> = {
+      "Content-Type": options.mimeType || "application/octet-stream",
+      "X-File-Name": encodeURIComponent(options.fileName),
+      "X-File-Size": String(file.size),
+      "X-Client-Message-Id": options.clientMessageId ?? crypto.randomUUID(),
+    };
+    if (options.mediaType) headers["X-Media-Type"] = options.mediaType;
+    if (options.caption) headers["X-Caption"] = encodeURIComponent(options.caption);
+    if (options.durationMs) headers["X-Duration-Ms"] = String(options.durationMs);
+    if (options.quotedMessageId) headers["X-Quoted-Message-Id"] = options.quotedMessageId;
+    let response = await fetchNexos(
+      `/conversations/${conversationId}/messages/media`,
+      { method: "POST", headers, body: file },
+      true,
+    );
+    if (response.status === 401 && (await refreshAccessToken())) {
+      response = await fetchNexos(
+        `/conversations/${conversationId}/messages/media`,
+        { method: "POST", headers, body: file },
+        true,
+      );
+    }
+    if (!response.ok) throw await readError(response);
+    return response.json() as Promise<ApiMessage>;
+  },
+  react: (conversationId: string, messageId: string, emoji: string | null) =>
+    apiRequest(`/conversations/${conversationId}/messages/${messageId}/reactions`, {
+      method: "POST",
+      body: JSON.stringify({ emoji }),
+    }),
+  downloadMedia: async (conversationId: string, messageId: string, inline = false) => {
+    const suffix = inline ? "inline" : "download";
+    let response = await fetchNexos(
+      `/conversations/${conversationId}/messages/${messageId}/media/${suffix}`,
+      {},
+      true,
+    );
+    if (response.status === 401 && (await refreshAccessToken())) {
+      response = await fetchNexos(
+        `/conversations/${conversationId}/messages/${messageId}/media/${suffix}`,
+        {},
+        true,
+      );
+    }
+    if (!response.ok) throw await readError(response);
+    return response.blob();
+  },
 };
 
 export const operationsApi = {

@@ -51,6 +51,7 @@ export const PERMISSIONS = [
   "chat.contacts.block",
   "chat.audio.send",
   "chat.agent_name.show",
+  "chat.conversations.view_all_active",
 ] as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[number];
@@ -101,6 +102,7 @@ export const SUPERVISOR_PERMISSIONS: PermissionKey[] = [
   "campaigns.duplicate",
   "chat.audio.send",
   "chat.agent_name.show",
+  "chat.conversations.view_all_active",
 ];
 
 export const AGENT_PERMISSIONS: PermissionKey[] = [

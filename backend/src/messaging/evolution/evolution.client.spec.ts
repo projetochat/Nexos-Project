@@ -22,8 +22,7 @@ describe("EvolutionClient", () => {
 
     await new EvolutionClient().sendText({
       instanceName: "instance-a",
-      number: "5511999990000",
-      text: "Ola",
+      payload: { number: "5511999990000", text: "Ola" },
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -32,6 +31,30 @@ describe("EvolutionClient", () => {
         method: "POST",
         headers: expect.objectContaining({ apikey: "test-key" }),
         body: JSON.stringify({ number: "5511999990000", text: "Ola" }),
+      }),
+    );
+  });
+
+  it("sends reactions with Evolution v2.3.7 root key/reaction payload", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ key: { id: "MSG1" }, status: "SENT" }));
+    globalThis.fetch = fetchMock;
+
+    await new EvolutionClient().sendReaction({
+      instanceName: "instance-a",
+      payload: {
+        key: { id: "MSG1", remoteJid: "5511999990000@s.whatsapp.net", fromMe: false },
+        reaction: "",
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://evolution.local/message/sendReaction/instance-a",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          key: { id: "MSG1", remoteJid: "5511999990000@s.whatsapp.net", fromMe: false },
+          reaction: "",
+        }),
       }),
     );
   });
@@ -71,6 +94,53 @@ describe("EvolutionClient", () => {
     );
   });
 
+  it("downloads inbound media through Evolution getBase64FromMediaMessage", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({
+        mimetype: "image/jpeg",
+        fileName: "foto.jpg",
+        base64: "data:image/jpeg;base64,aGVsbG8=",
+      }),
+    );
+    globalThis.fetch = fetchMock;
+
+    const result = await new EvolutionClient().getBase64FromMediaMessage({
+      instanceName: "instance-a",
+      message: { key: { id: "IMG-1" }, message: { imageMessage: { directPath: "/media" } } },
+    });
+
+    expect(result.body.toString("utf8")).toBe("hello");
+    expect(result.mimeType).toBe("image/jpeg");
+    expect(result.fileName).toBe("foto.jpg");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://evolution.local/chat/getBase64FromMediaMessage/instance-a",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ apikey: "test-key" }),
+        body: JSON.stringify({
+          message: { key: { id: "IMG-1" }, message: { imageMessage: { directPath: "/media" } } },
+        }),
+      }),
+    );
+  });
+
+  it("fetches group info with Evolution v2.3.7 query contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ subject: "Como treinar seu dragao" }));
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      new EvolutionClient().findGroupInfo({
+        instanceName: "instance-a",
+        groupJid: "120363428119237023@g.us",
+      }),
+    ).resolves.toMatchObject({ subject: "Como treinar seu dragao" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://evolution.local/group/findGroupInfos/instance-a?groupJid=120363428119237023%40g.us",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("fetches and deletes Evolution instances", async () => {
     const fetchMock = vi
       .fn()
@@ -105,7 +175,7 @@ describe("EvolutionClient", () => {
     globalThis.fetch = vi.fn().mockResolvedValue(response({ message: "bad key" }, 401));
 
     await expect(
-      new EvolutionClient().sendText({ instanceName: "i", number: "1", text: "x" }),
+      new EvolutionClient().sendText({ instanceName: "i", payload: { number: "1", text: "x" } }),
     ).rejects.toMatchObject({ code: MessagingErrorCode.AUTHENTICATION_FAILURE });
   });
 

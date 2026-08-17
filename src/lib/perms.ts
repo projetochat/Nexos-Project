@@ -15,6 +15,7 @@ export type ChatPerms = {
   bloquear_contatos: boolean;
   enviar_audio: boolean;
   mostrar_nome_atendente: boolean;
+  visualiza_todas_conversas_ativas: boolean;
 };
 
 export const DEFAULT_PERMS: ChatPerms = {
@@ -32,6 +33,7 @@ export const DEFAULT_PERMS: ChatPerms = {
   bloquear_contatos: true,
   enviar_audio: true,
   mostrar_nome_atendente: true,
+  visualiza_todas_conversas_ativas: true,
 };
 
 const CHAT_PERMISSION_MAP: Record<keyof ChatPerms, string> = {
@@ -49,6 +51,7 @@ const CHAT_PERMISSION_MAP: Record<keyof ChatPerms, string> = {
   bloquear_contatos: "chat.contacts.block",
   enviar_audio: "chat.audio.send",
   mostrar_nome_atendente: "chat.agent_name.show",
+  visualiza_todas_conversas_ativas: "chat.conversations.view_all_active",
 };
 
 export function useChatPerms(): ChatPerms {

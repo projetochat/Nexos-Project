@@ -19,6 +19,7 @@ import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import {
   ConversationStatus,
+  ConversationType,
   MembershipStatus,
   MessagingConnectionStatus,
   MessagingProviderType,
@@ -418,18 +419,50 @@ export class ConversationsController {
     return this.serialize(updated);
   }
 
+  @Patch(":id/inbox-archive")
+  @RequirePermissions("conversations.manage")
+  async updateInboxArchive(
+    @Param("id") id: string,
+    @Body() dto: { archived?: boolean },
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const conversation = await this.findVisibleConversation(id, current);
+    const archived = dto.archived !== false;
+    const updated = await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { inboxArchivedAt: archived ? new Date() : null },
+      include: conversationInclude,
+    });
+    this.realtime.publishConversationUpdated({
+      tenantId: current.tenantId,
+      conversationId: updated.id,
+      conversation: this.serialize(updated),
+      reason: archived ? "inbox.archived" : "inbox.unarchived",
+    });
+    return this.serialize(updated);
+  }
+
   private async buildWhere(
     current: AuthenticatedUser,
     query: ListConversationsQueryDto,
-    options: { omitTab?: boolean } = {},
+    options: { omitTab?: boolean; includeInboxArchived?: boolean } = {},
   ) {
+    const archivedOnly = query.source === "arquivados";
     const filters: Prisma.ConversationWhereInput[] = [
-      { tenantId: current.tenantId, archivedAt: null },
+      {
+        tenantId: current.tenantId,
+        archivedAt: null,
+        ...(archivedOnly
+          ? { inboxArchivedAt: { not: null } }
+          : options.includeInboxArchived
+            ? {}
+            : { inboxArchivedAt: null }),
+      },
       await this.visibilityWhere(current),
       this.searchWhere(query),
     ];
 
-    if (!options.omitTab) filters.push(tabWhere(query.tab, current.membershipId));
+    if (!options.omitTab && !archivedOnly) filters.push(tabWhere(query.tab, current));
     if (query.source === "humano") filters.push({ assignedMembershipId: { not: null } });
     if (query.source === "bots") filters.push({ assignedMembershipId: null });
     if (query.onlyUnread === "true") filters.push({ unreadCount: { gt: 0 } });
@@ -445,7 +478,11 @@ export class ConversationsController {
   private async visibilityWhere(
     current: AuthenticatedUser,
   ): Promise<Prisma.ConversationWhereInput> {
-    if (current.roleKey === "tenant_admin") return {};
+    if (
+      current.roleKey === "tenant_admin" ||
+      current.permissions?.includes("chat.conversations.view_all_active")
+    )
+      return {};
     const departmentIds = await this.allowedDepartmentIds(current);
     return {
       OR: [
@@ -476,26 +513,32 @@ export class ConversationsController {
     return this.prisma
       .$transaction([
         this.prisma.conversation.count({
-          where: { AND: [baseWhere, tabWhere("ativas", current.membershipId)] },
+          where: { AND: [baseWhere, tabWhere("ativas", current)] },
         }),
         this.prisma.conversation.count({
-          where: { AND: [baseWhere, tabWhere("standby", current.membershipId)] },
+          where: { AND: [baseWhere, tabWhere("standby", current)] },
         }),
         this.prisma.conversation.count({
-          where: { AND: [baseWhere, tabWhere("fila", current.membershipId)] },
+          where: { AND: [baseWhere, tabWhere("fila", current)] },
         }),
         this.prisma.conversation.count({
-          where: { AND: [baseWhere, tabWhere("leads", current.membershipId)] },
+          where: { AND: [baseWhere, tabWhere("leads", current)] },
         }),
       ])
       .then(([ativas, standby, fila, leads]) => ({ ativas, standby, fila, leads }));
   }
 
   private async findVisibleConversation(id: string, current: AuthenticatedUser) {
-    const where = await this.buildWhere(current, {
-      page: 1,
-      pageSize: 1,
-    } as ListConversationsQueryDto);
+    const where = await this.buildWhere(
+      current,
+      {
+        page: 1,
+        pageSize: 1,
+      } as ListConversationsQueryDto,
+      {
+        includeInboxArchived: true,
+      },
+    );
     const conversation = await this.prisma.conversation.findFirst({
       where: { AND: [where, { id }] },
       include: conversationInclude,
@@ -642,7 +685,9 @@ export class ConversationsController {
       protocolo: conversation.protocol,
       unreadCount: conversation.unreadCount,
       lastMessagePreview: conversation.lastMessagePreview,
+      inbox_archived_at: conversation.inboxArchivedAt,
       is_lead:
+        !conversation.isGroup &&
         !conversation.assignedMembershipId &&
         conversation.status !== ConversationStatus.FECHADA &&
         !conversation.protocol,
@@ -724,11 +769,22 @@ function orderBy(sort: "lastMessageAt" | "createdAt" | "status", direction: "asc
 
 function tabWhere(
   tab: ListConversationsQueryDto["tab"],
-  membershipId: string,
+  current: AuthenticatedUser,
 ): Prisma.ConversationWhereInput {
   if (tab === "ativas") {
+    const canViewAllActive =
+      current.roleKey === "tenant_admin" ||
+      current.permissions?.includes("chat.conversations.view_all_active");
     return {
-      assignedMembershipId: membershipId,
+      OR: canViewAllActive
+        ? [
+            { assignedMembershipId: { not: null } },
+            { conversationType: ConversationType.GROUP, protocol: { not: null } },
+          ]
+        : [
+            { assignedMembershipId: current.membershipId },
+            { conversationType: ConversationType.GROUP, protocol: { not: null } },
+          ],
       status: { notIn: [ConversationStatus.FECHADA, ConversationStatus.AGUARDANDO] },
     };
   }

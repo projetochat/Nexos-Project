@@ -84,6 +84,11 @@ enum ConversationStatus {
   FECHADA
 }
 
+enum ConversationType {
+  DIRECT
+  GROUP
+}
+
 enum MessageDirection {
   INBOUND
   OUTBOUND
@@ -94,10 +99,14 @@ enum MessageType {
   TEXT
   IMAGE
   AUDIO
+  VOICE
+  VIDEO
+  DOCUMENT
   SYSTEM
 }
 
 enum MessageStatus {
+  PENDING
   CREATED
   QUEUED
   SENDING
@@ -105,6 +114,20 @@ enum MessageStatus {
   FAILED
   DELIVERED
   READ
+}
+
+enum MessageReactionActorType {
+  NEXOS_USER
+  EXTERNAL_PARTICIPANT
+  CONTACT
+  SYSTEM
+}
+
+enum MessageMediaState {
+  PENDING
+  DOWNLOADING
+  READY
+  FAILED
 }
 
 enum OutboxEventStatus {
@@ -292,7 +315,9 @@ model Tenant {
   tags                        Tag[]
   quickReplies                QuickReply[]
   conversations               Conversation[]
+  conversationParticipants    ConversationParticipant[]
   messages                    Message[]
+  messageReactions            MessageReaction[]
   messagingConnections        MessagingConnection[]
   outboxEvents                OutboxEvent[]
   conversationProtocolCounter ConversationProtocolCounter?
@@ -515,6 +540,7 @@ model TenantMembership {
   departments        DepartmentMembership[]
   conversations      Conversation[]
   messages           Message[]
+  messageReactions   MessageReaction[]
   quickReplies       QuickReply[]
   assignedTickets    Ticket[]               @relation("TicketAssignee")
   createdTickets     Ticket[]               @relation("TicketCreator")
@@ -731,9 +757,17 @@ model Conversation {
   status               ConversationStatus   @default(ABERTA)
   protocol             String?
   isGroup              Boolean              @default(false)
+  conversationType     ConversationType     @default(DIRECT)
+  externalChatId       String?
+  externalGroupId      String?
+  groupName            String?
+  groupImageUrl        String?
+  groupSubjectUpdatedAt DateTime?
+  groupMetadataJson    Json?
   unreadCount          Int                  @default(0)
   lastMessagePreview   String?
   lastMessageAt        DateTime?
+  inboxArchivedAt      DateTime?
   archivedAt           DateTime?
   closedAt             DateTime?
   createdAt            DateTime             @default(now())
@@ -744,15 +778,18 @@ model Conversation {
   assignedMembership   TenantMembership?    @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
   connection           MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
   messages             Message[]
+  participants         ConversationParticipant[]
   tickets              Ticket[]
   lead                 Lead?
 
   @@unique([tenantId, id])
   @@unique([tenantId, protocol])
   @@index([tenantId, status, archivedAt])
+  @@index([tenantId, inboxArchivedAt])
   @@index([tenantId, departmentId])
   @@index([tenantId, assignedMembershipId])
   @@index([tenantId, connectionId])
+  @@index([tenantId, connectionId, externalChatId])
   @@index([tenantId, contactId])
   @@index([tenantId, lastMessageAt])
   @@map("conversations")
@@ -770,10 +807,35 @@ model Message {
   content              String?
   clientMessageId      String?
   providerMessageId    String?
+  providerChatId       String?
+  providerParticipantId String?
+  participantName      String?
+  participantPhone     String?
+  participantLid       String?
+  quotedMessageId      String?
+  quotedProviderMessageId String?
+  quotedContentPreview String?
+  quotedMessageType    MessageType?
+  mediaStorageKey      String?
+  mediaMimeType        String?
+  mediaFileName        String?
+  mediaSize            Int?
+  mediaCaption         String?
+  mediaWidth           Int?
+  mediaHeight          Int?
+  mediaDurationMs      Int?
+  mediaChecksum        String?
+  mediaSha256          String?
+  mediaProviderUrl     String?
+  mediaState           MessageMediaState?
   providerStatus       String?
   providerErrorCode    String?
   providerErrorMessage String?
   providerAcceptedAt   DateTime?
+  queuedAt             DateTime?
+  sentAt               DateTime?
+  deliveredAt          DateTime?
+  failedAt             DateTime?
   campaignId           String?
   campaignRecipientId  String?
   sendAttempts         Int                  @default(0)
@@ -786,19 +848,75 @@ model Message {
   conversation         Conversation         @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
   connection           MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
   authorMembership     TenantMembership?    @relation(fields: [authorMembershipId], references: [id], onDelete: SetNull)
+  quotedMessage        Message?             @relation("MessageReplies", fields: [quotedMessageId], references: [id], onDelete: SetNull)
+  replies              Message[]            @relation("MessageReplies")
+  reactions            MessageReaction[]
   campaign             Campaign?            @relation(fields: [tenantId, campaignId], references: [tenantId, id], onDelete: NoAction)
   campaignRecipient    CampaignRecipient?   @relation(fields: [tenantId, campaignRecipientId], references: [tenantId, id], onDelete: NoAction)
 
   @@unique([tenantId, conversationId, clientMessageId])
+  @@unique([tenantId, id])
   @@unique([tenantId, connectionId, externalMessageId])
+  @@unique([tenantId, connectionId, providerMessageId])
   @@index([tenantId])
   @@index([tenantId, connectionId])
   @@index([tenantId, providerMessageId])
+  @@index([tenantId, providerChatId])
+  @@index([tenantId, conversationId, status])
+  @@index([tenantId, quotedMessageId])
   @@index([tenantId, campaignId])
   @@index([tenantId, campaignRecipientId])
   @@index([tenantId, conversationId, createdAt, id])
   @@index([conversationId])
   @@map("messages")
+}
+
+model ConversationParticipant {
+  id                    String       @id @default(uuid())
+  tenantId              String
+  conversationId        String
+  externalParticipantId String
+  phone                 String?
+  lid                   String?
+  displayName           String?
+  isAdmin               Boolean      @default(false)
+  isSuperAdmin          Boolean      @default(false)
+  active                Boolean      @default(true)
+  firstSeenAt           DateTime     @default(now())
+  lastSeenAt            DateTime     @default(now())
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  tenant                Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation          Conversation @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, conversationId, externalParticipantId])
+  @@index([tenantId, conversationId])
+  @@index([tenantId, phone])
+  @@index([tenantId, lid])
+  @@map("conversation_participants")
+}
+
+model MessageReaction {
+  id                         String                   @id @default(uuid())
+  tenantId                   String
+  messageId                  String
+  emoji                      String
+  actorType                  MessageReactionActorType
+  actorMembershipId          String?
+  externalParticipantId      String?
+  externalParticipantName    String?
+  providerReactionId         String?
+  removedAt                  DateTime?
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
+  tenant                     Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  message                    Message                  @relation(fields: [tenantId, messageId], references: [tenantId, id], onDelete: Cascade)
+  actorMembership            TenantMembership?        @relation(fields: [actorMembershipId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, messageId, actorType, actorMembershipId, externalParticipantId])
+  @@index([tenantId, messageId, removedAt])
+  @@index([tenantId, providerReactionId])
+  @@map("message_reactions")
 }
 
 model OutboxEvent {

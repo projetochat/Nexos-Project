@@ -75,8 +75,8 @@ export class OperationsService {
         where,
         include: conversationInclude,
         orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        skip: Number((page - 1) * pageSize),
+        take: Number(pageSize),
       }),
       this.prisma.conversation.count({ where }),
     ]);

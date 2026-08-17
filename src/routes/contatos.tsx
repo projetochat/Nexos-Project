@@ -482,7 +482,7 @@ function ContactFormModal({
             <span className="mt-1 block text-[11px] text-destructive">{errors.telefone}</span>
           )}
         </Field>
-        <Field label="Departamento *">
+        <Field label="Departamento do Contato *">
           <Input
             value={departamento}
             onChange={(e) => setDepartamento(e.target.value)}
@@ -526,7 +526,7 @@ function ContactFormModal({
             </span>
           ) : null}
         </Field>
-        <Field label="Perfil na Empresa">
+        <Field label="Perfil do Contato">
           <Select
             value={nivelGerencia}
             onChange={(e) => setNivelGerencia(e.target.value as "" | RoleLabel)}

@@ -53,7 +53,7 @@ describe("MessagingInboundService", () => {
       data: expect.objectContaining({
         conversationId: "conversation-a",
         direction: MessageDirection.INBOUND,
-        status: MessageStatus.DELIVERED,
+        status: MessageStatus.CREATED,
         externalMessageId: "inbound-1",
       }),
     });
@@ -145,6 +145,133 @@ describe("MessagingInboundService", () => {
           entityId: "lead-a",
         }),
       ],
+    });
+  });
+
+  it("downloads inbound media through Evolution before falling back to encrypted provider URLs", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.create.mockResolvedValue({
+      id: "message-media",
+      conversationId: "conversation-a",
+    });
+    prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 1 }));
+    const mediaStorage = {
+      storeDownloaded: vi.fn().mockResolvedValue({
+        objectKey: "tenants/t/messages/media.jpg",
+        mimeType: "image/jpeg",
+        fileName: "media.jpg",
+        sizeBytes: 5,
+        checksum: "checksum",
+      }),
+    };
+    const evolution = {
+      getBase64FromMediaMessage: vi.fn().mockResolvedValue({
+        body: Buffer.from("plain"),
+        mimeType: "image/jpeg",
+        fileName: "media.jpg",
+      }),
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await new MessagingInboundService(
+      prisma as never,
+      mediaStorage as never,
+      undefined,
+      evolution as never,
+    ).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "image-1",
+      externalChatId: "5511999999999@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
+      sender: { phone: "5511999999999", normalizedPhone: "+5511999999999" },
+      type: MessageType.IMAGE,
+      content: "Foto",
+      media: {
+        url: "https://mmg.whatsapp.net/v/media.enc",
+        mimetype: "image/jpeg",
+        rawMessage: { key: { id: "image-1" } },
+      },
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(evolution.getBase64FromMediaMessage).toHaveBeenCalledWith({
+      instanceName: "tenant-a-suporte",
+      message: { key: { id: "image-1" } },
+    });
+    expect(fetchSpy).not.toHaveBeenCalledWith("https://mmg.whatsapp.net/v/media.enc");
+    expect(prisma.message.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        mediaStorageKey: "tenants/t/messages/media.jpg",
+        mediaState: "READY",
+      }),
+    });
+  });
+
+  it("accepts downloaded WhatsApp voice audio with opus codec MIME parameters", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.create.mockResolvedValue({
+      id: "message-audio",
+      conversationId: "conversation-a",
+    });
+    prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 1 }));
+    const mediaStorage = {
+      storeDownloaded: vi.fn().mockImplementation(async (input) => ({
+        objectKey: "tenants/t/messages/audio.oga",
+        mimeType: input.mimeType.split(";")[0],
+        fileName: "audio.oga",
+        sizeBytes: input.body.byteLength,
+        checksum: "checksum",
+      })),
+    };
+    const evolution = {
+      getBase64FromMediaMessage: vi.fn().mockResolvedValue({
+        body: Buffer.from("OggSvoice"),
+        mimeType: "audio/ogg; codecs=opus",
+        fileName: "audio.oga",
+      }),
+    };
+
+    await new MessagingInboundService(
+      prisma as never,
+      mediaStorage as never,
+      undefined,
+      evolution as never,
+    ).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "voice-1",
+      externalChatId: "5511999999999@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
+      sender: { phone: "5511999999999", normalizedPhone: "+5511999999999" },
+      type: MessageType.VOICE,
+      media: {
+        url: "https://mmg.whatsapp.net/v/audio.enc",
+        mimetype: "audio/ogg; codecs=opus",
+        rawMessage: { key: { id: "voice-1" } },
+      },
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(prisma.message.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: MessageType.VOICE,
+        mediaStorageKey: "tenants/t/messages/audio.oga",
+        mediaMimeType: "audio/ogg",
+        mediaState: "READY",
+      }),
     });
   });
 });

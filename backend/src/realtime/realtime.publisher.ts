@@ -36,6 +36,19 @@ export class RealtimePublisher {
     });
   }
 
+  publishMessageReactionUpdated(input: {
+    tenantId: string;
+    conversationId: string;
+    messageId: string;
+    reaction: unknown;
+  }) {
+    this.realtime.publish(
+      { conversationId: input.conversationId },
+      "message.reaction.updated",
+      input,
+    );
+  }
+
   publishConversationCreated(input: {
     tenantId: string;
     conversationId: string;

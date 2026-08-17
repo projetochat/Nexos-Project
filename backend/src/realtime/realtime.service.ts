@@ -124,7 +124,8 @@ export class RealtimeService {
         tenantId: context.tenantId,
         archivedAt: null,
         OR:
-          context.roleKey === "tenant_admin"
+          context.roleKey === "tenant_admin" ||
+          context.permissions.includes("chat.conversations.view_all_active")
             ? undefined
             : [
                 { assignedMembershipId: context.membershipId },

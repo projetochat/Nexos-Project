@@ -6,6 +6,7 @@ export const REALTIME_PATH = "/socket.io";
 export type RealtimeServerEvent =
   | "message.created"
   | "message.status.updated"
+  | "message.reaction.updated"
   | "conversation.created"
   | "conversation.updated"
   | "conversation.assignment.updated"

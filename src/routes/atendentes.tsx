@@ -16,12 +16,28 @@ import {
   Select,
 } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
-import type { Atendente } from "@/lib/mock/types";
 import { organizationApi, type ApiUserMembership } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/atendentes")({ component: AtendentesPage });
 
 const TONE = { online: "success", ausente: "warning", offline: "default" } as const;
+
+type Atendente = {
+  id: string;
+  nome: string;
+  email: string;
+  cargo: string;
+  departamentoId: string;
+  perfilId: string;
+  status: keyof typeof TONE;
+  csat: number;
+  emAtendimento: number;
+  resolvidas: number;
+  admissao: number;
+  ativo: boolean;
+  senha?: string;
+  avatarUrl?: string;
+};
 
 function AtendentesPage() {
   const qc = useQueryClient();

@@ -31,6 +31,7 @@ const PERM_FIELDS = [
   { id: "chat.contacts.block", label: "Bloquear contatos" },
   { id: "chat.audio.send", label: "Enviar audio" },
   { id: "chat.agent_name.show", label: "Apresentar nome do atendente na conversa" },
+  { id: "chat.conversations.view_all_active", label: "Ver todas conversas ativas" },
 ] as const;
 
 type PerfilFormData = {

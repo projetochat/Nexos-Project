@@ -1,12 +1,14 @@
 import { Injectable } from "@nestjs/common";
 import { MessagingErrorCode, MessagingProviderError } from "../messaging.contracts";
 import { assertEvolutionConfigured, evolutionConfigFromEnv } from "./evolution.config";
+import { classifyEvolutionProviderError } from "./evolution-provider-error.classifier";
 import {
   EvolutionConnectionStateResponse,
   EvolutionCreateInstanceResponse,
   EvolutionInstance,
   EvolutionSendTextResponse,
 } from "./evolution.types";
+import type { EvolutionMediaKind, EvolutionQuotedKey } from "./evolution-outbound-payload.factory";
 
 type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "DELETE";
@@ -113,17 +115,126 @@ export class EvolutionClient {
     });
   }
 
-  sendText(input: { instanceName: string; number: string; text: string }) {
+  sendText(input: {
+    instanceName: string;
+    payload: {
+      number?: string;
+      text?: string;
+      quoted?: { key: EvolutionQuotedKey };
+    };
+  }) {
     return this.request<EvolutionSendTextResponse>(`/message/sendText/${input.instanceName}`, {
       method: "POST",
-      body: {
-        number: input.number,
-        text: input.text,
-      },
+      body: input.payload,
     });
   }
 
+  sendMedia(input: {
+    instanceName: string;
+    payload: {
+      number?: string;
+      mediatype?: EvolutionMediaKind;
+      mimetype?: string;
+      fileName?: string;
+      caption?: string;
+      quoted?: { key: EvolutionQuotedKey };
+    };
+    media: Buffer;
+    mimeType: string;
+    fileName: string;
+  }) {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(input.payload)) {
+      if (value === undefined) continue;
+      form.set(key, typeof value === "object" ? JSON.stringify(value) : String(value));
+    }
+    form.set("file", new Blob([input.media], { type: input.mimeType }), input.fileName);
+    return this.requestForm<EvolutionSendTextResponse>(
+      `/message/sendMedia/${input.instanceName}`,
+      form,
+    );
+  }
+
+  sendAudio(input: {
+    instanceName: string;
+    payload: { number?: string; quoted?: { key: EvolutionQuotedKey } };
+    media: Buffer;
+    mimeType: string;
+    fileName: string;
+  }) {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(input.payload)) {
+      if (value === undefined) continue;
+      form.set(key, typeof value === "object" ? JSON.stringify(value) : String(value));
+    }
+    form.set("file", new Blob([input.media], { type: input.mimeType }), input.fileName);
+    return this.requestForm<EvolutionSendTextResponse>(
+      `/message/sendWhatsAppAudio/${input.instanceName}`,
+      form,
+    );
+  }
+
+  sendReaction(input: {
+    instanceName: string;
+    payload: { key?: EvolutionQuotedKey; reaction?: string };
+  }) {
+    return this.request<EvolutionSendTextResponse>(`/message/sendReaction/${input.instanceName}`, {
+      method: "POST",
+      body: input.payload,
+    });
+  }
+
+  async findGroupInfo(input: { instanceName: string; groupJid: string }) {
+    const response = await this.request<unknown>(
+      `/group/findGroupInfos/${input.instanceName}?groupJid=${encodeURIComponent(input.groupJid)}`,
+    );
+    return extractGroupInfo(response);
+  }
+
+  async getBase64FromMediaMessage(input: {
+    instanceName: string;
+    message: unknown;
+  }): Promise<{ body: Buffer; mimeType?: string | null; fileName?: string | null }> {
+    const endpoint = `/chat/getBase64FromMediaMessage/${input.instanceName}`;
+    const payloads = [
+      { message: input.message },
+      { message: input.message, convertToMp4: false },
+      input.message,
+    ];
+    let lastError: unknown;
+    for (const payload of payloads) {
+      try {
+        const response = await this.request<unknown>(endpoint, { method: "POST", body: payload });
+        const extracted = extractBase64Media(response);
+        if (extracted) return extracted;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (lastError instanceof Error) throw lastError;
+    throw new MessagingProviderError(
+      MessagingErrorCode.MEDIA_DOWNLOAD_FAILED,
+      "Evolution did not return downloadable media.",
+      true,
+    );
+  }
+
   private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    return this.fetchJson(path, {
+      method: options.method ?? "GET",
+      headers: { "Content-Type": "application/json" },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+  }
+
+  private async requestForm<T>(path: string, body: FormData): Promise<T> {
+    return this.fetchJson(path, { method: "POST", body });
+  }
+
+  private async fetchJson<T>(
+    path: string,
+    options: { method: string; headers?: Record<string, string>; body?: RequestInit["body"] },
+  ): Promise<T> {
     const config = evolutionConfigFromEnv();
     if (!assertEvolutionConfigured(config)) {
       throw new MessagingProviderError(
@@ -136,32 +247,41 @@ export class EvolutionClient {
     const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
     try {
       const response = await fetch(`${config.baseUrl}${path}`, {
-        method: options.method ?? "GET",
+        method: options.method,
         headers: {
-          "Content-Type": "application/json",
           apikey: config.apiKey,
+          ...(options.headers ?? {}),
         },
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body: options.body,
         signal: controller.signal,
       });
 
       const data = await readJson(response);
-      if (!response.ok) throw toProviderError(response.status, data);
+      if (!response.ok) {
+        throw classifyEvolutionProviderError({
+          status: response.status,
+          statusText: response.statusText,
+          data,
+          endpointPath: path,
+          method: options.method,
+        });
+      }
       return data as T;
     } catch (error) {
       if (error instanceof MessagingProviderError) throw error;
       if ((error as { name?: string }).name === "AbortError") {
-        throw new MessagingProviderError(
-          MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
-          "Evolution API request timed out.",
-          true,
-        );
+        throw classifyEvolutionProviderError({
+          timeout: true,
+          endpointPath: path,
+          method: options.method,
+        });
       }
-      throw new MessagingProviderError(
-        MessagingErrorCode.PROVIDER_UNAVAILABLE,
-        "Evolution API is unavailable.",
-        true,
-      );
+      throw classifyEvolutionProviderError({
+        code: (error as { code?: string }).code,
+        cause: error,
+        endpointPath: path,
+        method: options.method,
+      });
     } finally {
       clearTimeout(timeout);
     }
@@ -169,48 +289,91 @@ export class EvolutionClient {
 }
 
 async function readJson(response: Response) {
+  if (typeof response.text !== "function") {
+    try {
+      return (await response.json()) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  const text = await response.text();
+  if (!text) return null;
   try {
-    return (await response.json()) as unknown;
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+function extractGroupInfo(
+  value: unknown,
+): { subject?: string | null; name?: string | null } | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const subject =
+    stringField(record, "subject") ??
+    stringField(record, "name") ??
+    stringField(record, "groupName") ??
+    stringField(record, "title");
+  if (subject) return { subject, name: subject };
+  for (const nested of Object.values(record)) {
+    const info = extractGroupInfo(nested);
+    if (info) return info;
+  }
+  return null;
+}
+
+function extractBase64Media(
+  value: unknown,
+): { body: Buffer; mimeType?: string | null; fileName?: string | null } | null {
+  if (typeof value === "string") return decodeBase64Media(value);
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const mimeType =
+    stringField(record, "mimetype") ??
+    stringField(record, "mimeType") ??
+    stringField(record, "contentType");
+  const fileName = stringField(record, "fileName") ?? stringField(record, "filename");
+  for (const key of ["base64", "media", "data"]) {
+    const decoded = decodeBase64Media(record[key], mimeType, fileName);
+    if (decoded) return decoded;
+  }
+  for (const nested of Object.values(record)) {
+    const decoded = extractBase64Media(nested);
+    if (decoded) {
+      return {
+        body: decoded.body,
+        mimeType: decoded.mimeType ?? mimeType,
+        fileName: decoded.fileName ?? fileName,
+      };
+    }
+  }
+  return null;
+}
+
+function decodeBase64Media(
+  value: unknown,
+  fallbackMimeType?: string | null,
+  fallbackFileName?: string | null,
+) {
+  if (typeof value !== "string" || value.length < 16) return null;
+  const dataUri = /^data:([^;]+);base64,(.+)$/i.exec(value);
+  const base64 = dataUri ? dataUri[2] : value;
+  if (!/^[A-Za-z0-9+/=\r\n]+$/.test(base64)) return null;
+  try {
+    const body = Buffer.from(base64.replace(/\s+/g, ""), "base64");
+    if (body.length === 0) return null;
+    return {
+      body,
+      mimeType: dataUri?.[1] ?? fallbackMimeType ?? null,
+      fileName: fallbackFileName ?? null,
+    };
   } catch {
     return null;
   }
 }
 
-function toProviderError(status: number, data: unknown) {
-  const message = sanitizedErrorMessage(data);
-  if (status === 401 || status === 403) {
-    return new MessagingProviderError(
-      MessagingErrorCode.AUTHENTICATION_FAILURE,
-      message,
-      false,
-      status,
-    );
-  }
-  if (status === 400)
-    return new MessagingProviderError(MessagingErrorCode.INVALID_RECIPIENT, message, false, status);
-  if (status === 404) {
-    return new MessagingProviderError(
-      MessagingErrorCode.PROVIDER_UNAVAILABLE,
-      message,
-      false,
-      status,
-    );
-  }
-  if (status === 429)
-    return new MessagingProviderError(MessagingErrorCode.RATE_LIMITED, message, true, status);
-  return new MessagingProviderError(
-    MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
-    message,
-    true,
-    status,
-  );
-}
-
-function sanitizedErrorMessage(data: unknown) {
-  if (!data || typeof data !== "object") return "Evolution API request failed.";
-  const value =
-    (data as { message?: unknown; error?: unknown }).message ?? (data as { error?: unknown }).error;
-  if (Array.isArray(value)) return value.join(", ").slice(0, 500);
-  if (typeof value === "string") return value.slice(0, 500);
-  return "Evolution API request failed.";
+function stringField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value : null;
 }

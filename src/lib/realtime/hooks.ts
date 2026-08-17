@@ -44,6 +44,7 @@ export function useRealtimeInbox(conversationId?: string | null) {
       if (
         event.event === "message.created" ||
         event.event === "message.status.updated" ||
+        event.event === "message.reaction.updated" ||
         event.event === "conversation.updated" ||
         event.event === "conversation.created" ||
         event.event === "conversation.assignment.updated" ||
@@ -54,6 +55,7 @@ export function useRealtimeInbox(conversationId?: string | null) {
       if (
         event.event === "message.created" ||
         event.event === "message.status.updated" ||
+        event.event === "message.reaction.updated" ||
         event.event === "conversation.unread.updated"
       ) {
         const data = event.data as { conversationId?: string };

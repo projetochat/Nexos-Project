@@ -12,6 +12,7 @@ const env = {
     "postgresql://nexos:nexos_dev_password@localhost:5432/nexos_1200?schema=public",
   JWT_SECRET: process.env.JWT_SECRET ?? "local-access-secret-minimum-32-chars",
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? "local-refresh-secret-minimum-32-chars",
+  SEED_MODE: "test",
 };
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,6 +26,7 @@ const gates = bunAvailable
       ["ticket:legacy-runtime", bun(), ["run", "test:ticket-legacy-runtime"]],
       ["campaign:legacy-runtime", bun(), ["run", "test:campaign-legacy-runtime"]],
       ["platform-admin:legacy-runtime", bun(), ["run", "test:platform-admin-legacy-runtime"]],
+      ["prc02:legacy-surface-runtime", bun(), ["run", "test:prc02-legacy-surface-runtime"]],
       ["operational:runtime", bun(), ["run", "test:operational-runtime"]],
       ["backend:build", bun(), ["run", "backend:build"]],
       ["backend:test", bun(), ["run", "backend:test"]],
@@ -42,6 +44,11 @@ const gates = bunAvailable
         "platform-admin:legacy-runtime",
         process.execPath,
         ["scripts/check-platform-admin-legacy-runtime.mjs"],
+      ],
+      [
+        "prc02:legacy-surface-runtime",
+        process.execPath,
+        ["scripts/check-prc02-legacy-surface-runtime.mjs"],
       ],
       ["operational:runtime", bin("vitest"), ["run", "src/lib/operational-runtime-rules.test.ts"]],
       ["backend:build:tsc", backendBin("tsc"), ["-p", "backend/tsconfig.build.json"]],

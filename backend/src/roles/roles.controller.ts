@@ -17,6 +17,7 @@ import { isPermissionKey, PERMISSIONS } from "../auth/permissions.constants";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
+import type { Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { UpdateRoleDto } from "./dto/update-role.dto";
@@ -63,19 +64,23 @@ export class RolesController {
       .replace(/^_+|_+$/g, "");
     if (!key) throw new BadRequestException("Key de role invalida.");
 
-    const role = await this.prisma.role.create({
-      data: {
-        tenantId: current.tenantId,
-        key,
-        name: dto.name.trim(),
-        description: dto.description?.trim() || null,
-        metadata: dto.metadata === undefined ? undefined : JSON.parse(JSON.stringify(dto.metadata)),
-        system: false,
-        permissions: {
-          create: [...new Set(dto.permissionIds)].map((permissionId) => ({ permissionId })),
+    const role = await this.prisma.$transaction(async (tx) => {
+      await this.ensurePermissions(tx, dto.permissionIds);
+      return tx.role.create({
+        data: {
+          tenantId: current.tenantId,
+          key,
+          name: dto.name.trim(),
+          description: dto.description?.trim() || null,
+          metadata:
+            dto.metadata === undefined ? undefined : JSON.parse(JSON.stringify(dto.metadata)),
+          system: false,
+          permissions: {
+            create: [...new Set(dto.permissionIds)].map((permissionId) => ({ permissionId })),
+          },
         },
-      },
-      include: { permissions: true },
+        include: { permissions: true },
+      });
     });
     return this.serialize(role);
   }
@@ -91,6 +96,7 @@ export class RolesController {
     if (dto.permissionIds) this.assertPermissions(dto.permissionIds);
     const role = await this.prisma.$transaction(async (tx) => {
       if (dto.permissionIds) {
+        await this.ensurePermissions(tx, dto.permissionIds);
         await tx.rolePermission.deleteMany({ where: { roleId: existing.id } });
         await tx.rolePermission.createMany({
           data: [...new Set(dto.permissionIds)].map((permissionId) => ({
@@ -139,6 +145,18 @@ export class RolesController {
   private assertPermissions(permissionIds: string[]) {
     const invalid = permissionIds.find((permissionId) => !isPermissionKey(permissionId));
     if (invalid) throw new BadRequestException(`Permission invalida: ${invalid}`);
+  }
+
+  private async ensurePermissions(tx: Prisma.TransactionClient, permissionIds: string[]) {
+    await Promise.all(
+      [...new Set(permissionIds)].map((permissionId) =>
+        tx.permission.upsert({
+          where: { id: permissionId },
+          update: {},
+          create: { id: permissionId, description: permissionId },
+        }),
+      ),
+    );
   }
 
   private serialize(role: {

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MessageType } from "../generated/prisma";
 import { DevelopmentMessagingProvider } from "./development-messaging.provider";
-import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 
 describe("DevelopmentMessagingProvider", () => {
   it("accepts canonical text commands without simulating delivery", async () => {
@@ -24,7 +23,7 @@ describe("DevelopmentMessagingProvider", () => {
     });
   });
 
-  it("returns a canonical unsupported type error", async () => {
+  it("accepts canonical media commands for local outbox smoke tests", async () => {
     const provider = new DevelopmentMessagingProvider();
 
     await expect(
@@ -35,10 +34,14 @@ describe("DevelopmentMessagingProvider", () => {
         connectionId: "connection-a",
         providerType: provider.type,
         recipient: { phone: "(11) 99999-0000", normalizedPhone: "+5511999990000" },
-        content: { type: MessageType.IMAGE, mediaRef: "media-key" },
+        content: {
+          type: MessageType.IMAGE,
+          mediaRef: "media-key",
+          mediaBuffer: Buffer.from("image"),
+          mimeType: "image/jpeg",
+          fileName: "image.jpg",
+        },
       }),
-    ).rejects.toMatchObject<Partial<MessagingProviderError>>({
-      code: MessagingErrorCode.UNSUPPORTED_MESSAGE_TYPE,
-    });
+    ).resolves.toMatchObject({ accepted: true });
   });
 });

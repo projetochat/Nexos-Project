@@ -6,11 +6,13 @@ import {
   OnModuleDestroy,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Job, UnrecoverableError, Worker } from "bullmq";
+import { Job, MetricsTime, UnrecoverableError, Worker } from "bullmq";
+import { OutboxEventStatus } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   MESSAGING_OUTBOUND_QUEUE,
   MessagingOutboundJob,
+  OUTBOX_MESSAGING_OUTBOUND_REQUESTED,
   OUTBOUND_JOB_OPTIONS,
   RedisConnectionFactory,
 } from "../queue/messaging-outbound.queue";
@@ -43,37 +45,11 @@ export class MessagingOutboundWorker implements OnApplicationBootstrap, OnModule
       {
         connection: this.redis.createConnection("nexos-outbound-worker", { blocking: true }),
         concurrency: this.concurrency(),
+        metrics: { maxDataPoints: MetricsTime.ONE_WEEK * 2 },
       },
     );
 
-    this.worker.on("completed", (job) => {
-      this.logger.log({
-        event: "messaging.outbound.job_completed",
-        jobId: job.id,
-        tenantId: job.data.tenantId,
-        messageId: job.data.messageId,
-        attempt: job.attemptsMade,
-        result: "completed",
-      });
-    });
-    this.worker.on("failed", (job, error) => {
-      this.logger.warn({
-        event: "messaging.outbound.job_failed",
-        jobId: job?.id,
-        tenantId: job?.data.tenantId,
-        messageId: job?.data.messageId,
-        attempt: job?.attemptsMade,
-        result: "failed",
-        error: error.message,
-      });
-    });
-    this.worker.on("error", (error) => {
-      this.logger.warn({
-        event: "messaging.outbound.worker_error",
-        result: "error",
-        error: error.message,
-      });
-    });
+    this.registerWorkerListeners(this.worker);
   }
 
   async onModuleDestroy() {
@@ -90,7 +66,16 @@ export class MessagingOutboundWorker implements OnApplicationBootstrap, OnModule
     }
 
     const finalAttempt = job.attemptsMade + 1 >= Number(job.opts.attempts ?? 1);
-    return this.withConversationLock(message.conversationId, async () => {
+    this.safeLog("log", {
+      event: "messaging.outbound.started",
+      jobId: job.id,
+      tenantId: job.data.tenantId,
+      messageId: job.data.messageId,
+      conversationId: message.conversationId,
+      attempt: job.attemptsMade + 1,
+      maxAttempts: job.opts.attempts,
+    });
+    return await this.withConversationLock(message.conversationId, async () => {
       try {
         return await this.outbound.dispatchQueuedMessage({
           tenantId: job.data.tenantId,
@@ -100,6 +85,15 @@ export class MessagingOutboundWorker implements OnApplicationBootstrap, OnModule
         });
       } catch (error) {
         if (error instanceof OutboundDispatchError && !error.retryable) {
+          await this.markOutboxFinalFailure(job, error).catch((handlerError) => {
+            this.safeLog("error", {
+              event: "messaging.outbound.worker_final_failure_mark_failed",
+              jobId: job.id,
+              tenantId: job.data.tenantId,
+              messageId: job.data.messageId,
+              error: sanitizeError(handlerError),
+            });
+          });
           throw new UnrecoverableError(error.message);
         }
         throw error;
@@ -112,7 +106,7 @@ export class MessagingOutboundWorker implements OnApplicationBootstrap, OnModule
     const next = previous.catch(() => undefined).then(action);
     const tracked = next.finally(() => this.release(conversationId, tracked));
     this.locks.set(conversationId, tracked);
-    return next;
+    return tracked;
   }
 
   private release(conversationId: string, promise: Promise<unknown>) {
@@ -123,6 +117,115 @@ export class MessagingOutboundWorker implements OnApplicationBootstrap, OnModule
     const value = Number(this.config.get<string>("NEXOS_OUTBOUND_WORKER_CONCURRENCY") ?? 5);
     return Number.isFinite(value) && value > 0 ? value : 5;
   }
+
+  private registerWorkerListeners(worker: Worker<MessagingOutboundJob>) {
+    worker.on("active", (job) => {
+      this.safeLog("log", {
+        event: "messaging.outbound.worker_active",
+        jobId: job.id,
+        tenantId: job.data.tenantId,
+        messageId: job.data.messageId,
+        attempt: job.attemptsMade + 1,
+      });
+    });
+    worker.on("completed", (job, result) => {
+      this.safeLog("log", {
+        event: "messaging.outbound.worker_completed",
+        jobId: job.id,
+        tenantId: job.data.tenantId,
+        messageId: job.data.messageId,
+        attempt: job.attemptsMade,
+        result,
+      });
+    });
+    worker.on("failed", (job, error) => {
+      void this.handleFailedJob(job ?? null, error).catch((handlerError) => {
+        this.safeLog("error", {
+          event: "messaging.outbound.worker_failed_listener_error",
+          jobId: job?.id,
+          tenantId: job?.data.tenantId,
+          messageId: job?.data.messageId,
+          error: sanitizeError(handlerError),
+        });
+      });
+    });
+    worker.on("error", (error) => {
+      this.safeLog("warn", {
+        event: "messaging.outbound.worker_error",
+        result: "error",
+        error: sanitizeError(error),
+      });
+    });
+    worker.on("stalled", (jobId) => {
+      this.safeLog("warn", {
+        event: "messaging.outbound.worker_stalled",
+        jobId,
+        result: "stalled",
+      });
+    });
+    worker.on("progress", (job, progress) => {
+      this.safeLog("log", {
+        event: "messaging.outbound.worker_progress",
+        jobId: job.id,
+        tenantId: job.data.tenantId,
+        messageId: job.data.messageId,
+        progress,
+      });
+    });
+    worker.on("closing", () => {
+      this.safeLog("log", { event: "messaging.outbound.worker_closing" });
+    });
+    worker.on("closed", () => {
+      this.safeLog("log", { event: "messaging.outbound.worker_closed" });
+    });
+  }
+
+  private async handleFailedJob(job: Job<MessagingOutboundJob> | null, error: Error) {
+    const attemptsMade = job?.attemptsMade ?? 0;
+    const maxAttempts = Number(job?.opts.attempts ?? OUTBOUND_JOB_OPTIONS.attempts ?? 1);
+    const retryScheduled =
+      !!job && attemptsMade < maxAttempts && !(error instanceof UnrecoverableError);
+    this.safeLog("warn", {
+      event: retryScheduled
+        ? "messaging.outbound.retry_scheduled"
+        : "messaging.outbound.worker_failed",
+      jobId: job?.id,
+      tenantId: job?.data.tenantId,
+      messageId: job?.data.messageId,
+      attempt: attemptsMade,
+      maxAttempts,
+      retryable: retryScheduled,
+      error: sanitizeError(error),
+    });
+    if (!retryScheduled && job) await this.markOutboxFinalFailure(job, error);
+  }
+
+  private async markOutboxFinalFailure(job: Job<MessagingOutboundJob>, error: Error) {
+    await this.prisma.outboxEvent.updateMany({
+      where: {
+        tenantId: job.data.tenantId,
+        type: OUTBOX_MESSAGING_OUTBOUND_REQUESTED,
+        aggregateId: job.data.messageId,
+      },
+      data: {
+        status: OutboxEventStatus.FAILED,
+        lastError: sanitizeError(error),
+      },
+    });
+  }
+
+  private safeLog(level: "log" | "warn" | "error", payload: Record<string, unknown>) {
+    try {
+      this.logger[level](payload);
+    } catch {
+      // Worker listeners must never propagate logging failures to the process.
+    }
+  }
 }
 
 export const OUTBOUND_WORKER_ATTEMPTS = OUTBOUND_JOB_OPTIONS.attempts;
+
+function sanitizeError(error: unknown) {
+  if (error instanceof Error) return error.message.slice(0, 500);
+  return "Messaging outbound worker error.";
+}

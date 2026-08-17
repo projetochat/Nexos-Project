@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-08-06 - RC Sprint 15.2 Outbound Dispatcher Hotfix
+
+- Corrigido o lock por conversa do worker outbound para retornar a promise rastreada pelo proprio lock, eliminando rejeicao orfa apos falha retryable do provider.
+- Adicionado classificador canonico para erros Evolution HTTP/rede com status, codigo, endpoint, metodo e `unknownOutcome`.
+- Falhas permanentes agora viram `UnrecoverableError` e marcam o outbox como `FAILED`; falhas retryable preservam retries BullMQ.
+- Adicionados logs estruturados de request/response provider, retry, final failure e lifecycle do worker.
+- Adicionados testes de regressao para classificacao Evolution e ausencia de `unhandledRejection` no dispatcher.
+- Gate permanece `OUTBOUND DISPATCHER HOTFIX REQUIRED` ate homologacao fisica de outage/recovery, inbound paralelo e zero duplicidade.
+
+## 2026-08-06 - RC Sprint 15.2 Evolution Contract Normalization
+
+- Criados `EvolutionRecipientNormalizer` e `EvolutionOutboundPayloadFactory`.
+- Corrigido texto Evolution v2.3.7 para `number` e `text` no root.
+- Corrigida reacao Evolution v2.3.7 para `key` e `reaction` no root.
+- Corrigido upload de imagem/documento para multipart `file` em `/message/sendMedia/:instanceName`.
+- Corrigido audio/voice/PTT para `/message/sendWhatsAppAudio/:instanceName`.
+- Reply outbound passa a carregar provider key com `id`, `remoteJid`, `fromMe` e `participant`.
+- Erros `requires property` da Evolution agora sao `INVALID_PROVIDER_PAYLOAD` com `providerCode=VALIDATION_ERROR`.
+- Smokes diretos Evolution passaram; gate Nexos ponta a ponta permanece `EVOLUTION CONTRACT REWORK REQUIRED`.
+
 ## 2026-08-05 - RC Sprint 15 Rework Operational Runtime
 
 - Historico operacional passou a listar somente conversas `FECHADA` com `closedAt` preenchido.
@@ -280,6 +300,13 @@
 - Modal de Novo/Editar contato passa a exibir somente Connections Evolution conectadas.
 - Seed de homologacao cria Admin e Atendente idempotentes.
 - Reconcile de status da Connection Evolution persiste owner identity quando a Evolution informa `ownerJid`.
+
+# 2026-08-06 - RC Sprint 15.2 Messaging Core Completion partial
+
+- Added schema-backed DIRECT/GROUP conversation identity, group participants, reply metadata, media metadata placeholders, message status timestamps, and message reactions model.
+- Evolution webhook translator now normalizes group inbound messages instead of ignoring them.
+- Inbox UI can send and render text replies using persisted quote metadata.
+- Automated verify passed; physical WhatsApp homologation remains pending, so the sprint gate is `MESSAGING CORE REWORK REQUIRED`.
 
 # 2026-08-04 - Sprint 11 Ticketing Domain, Secure Content & Attachments
 

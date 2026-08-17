@@ -28,7 +28,8 @@ describe("MessagingProviderRegistry", () => {
     const registry = new MessagingProviderRegistry(provider, evolution);
 
     expect(() => registry.assertSupports(provider, MessageType.TEXT)).not.toThrow();
-    expect(() => registry.assertSupports(provider, MessageType.AUDIO)).toThrow(
+    expect(() => registry.assertSupports(provider, MessageType.AUDIO)).not.toThrow();
+    expect(() => registry.assertSupports(provider, MessageType.VIDEO)).toThrow(
       expect.objectContaining({ code: MessagingErrorCode.UNSUPPORTED_MESSAGE_TYPE }),
     );
   });

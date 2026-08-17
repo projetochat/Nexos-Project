@@ -1491,11 +1491,12 @@ describe("Nexos API organization and RBAC", () => {
       .send({ content, clientMessageId })
       .expect(201);
 
+    const contentWithAgentName = `*Camila Duarte:*\n\n${content}`;
     expect(created.body).toMatchObject({
       conversation_id: activeConversation,
       sender: "agent",
       type: "text",
-      content,
+      content: contentWithAgentName,
     });
 
     await request(app.getHttpServer())
@@ -1510,7 +1511,7 @@ describe("Nexos API organization and RBAC", () => {
     const conversation = await prisma.conversation.findUniqueOrThrow({
       where: { id: activeConversation },
     });
-    expect(conversation.lastMessagePreview).toBe(content);
+    expect(conversation.lastMessagePreview).toBe(contentWithAgentName);
     expect(conversation.lastMessageAt?.toISOString()).toBe(created.body.created_at);
   });
 

@@ -17,6 +17,7 @@
     "audit:evolution-webhook": "node scripts/audit-evolution-webhook.mjs",
     "audit:ticket-attachments": "node scripts/audit-ticket-attachments.mjs",
     "cleanup:ticket-attachments": "node scripts/audit-ticket-attachments.mjs --clean",
+    "cleanup:homologation-queues": "node scripts/cleanup-homologation-queues.mjs",
     "reset:homologation": "node scripts/reset-homologation.mjs"
   },
   "dependencies": {

@@ -15,6 +15,7 @@ import type { EvolutionWebhookPayload } from "./evolution.types";
 import { EvolutionWebhookTranslator } from "./evolution-webhook.translator";
 import { MessagingConnectionsService } from "../messaging-connections.service";
 import { MessagingInboundService } from "../messaging-inbound.service";
+import { MessagingReactionService } from "../messaging-reaction.service";
 import { MessagingStatusService } from "../messaging-status.service";
 
 @Controller("webhooks/evolution")
@@ -30,6 +31,8 @@ export class EvolutionWebhookController {
     private readonly translator: EvolutionWebhookTranslator,
     @Inject(MessagingInboundService)
     private readonly inbound: MessagingInboundService,
+    @Inject(MessagingReactionService)
+    private readonly reactions: MessagingReactionService,
     @Inject(MessagingStatusService)
     private readonly status: MessagingStatusService,
   ) {}
@@ -98,6 +101,10 @@ export class EvolutionWebhookController {
       });
     } else if (translated.kind === "status") {
       await this.status.process(translated.event);
+    } else if (translated.kind === "edit") {
+      await this.inbound.processEdit(translated.event);
+    } else if (translated.kind === "reaction") {
+      await this.reactions.process(translated.event);
     } else if (translated.kind === "connection") {
       await this.connections.updateConnectionStatus(connection.id, translated.status, {
         ownerExternalId: translated.ownerExternalId,

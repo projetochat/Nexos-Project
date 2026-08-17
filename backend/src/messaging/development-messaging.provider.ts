@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { MessageType, MessagingProviderType } from "../generated/prisma";
+import { MessagingProviderType } from "../generated/prisma";
 import {
   MessagingCapability,
   MessagingErrorCode,
@@ -12,7 +12,12 @@ import {
 @Injectable()
 export class DevelopmentMessagingProvider implements MessagingProvider {
   readonly type = MessagingProviderType.DEVELOPMENT;
-  readonly capabilities = [MessagingCapability.TEXT] as const;
+  readonly capabilities = [
+    MessagingCapability.TEXT,
+    MessagingCapability.IMAGE,
+    MessagingCapability.AUDIO,
+    MessagingCapability.DOCUMENT,
+  ] as const;
 
   async send(command: SendMessageCommand): Promise<SendMessageResult> {
     if (process.env.NODE_ENV === "production") {
@@ -21,13 +26,6 @@ export class DevelopmentMessagingProvider implements MessagingProvider {
         "Development messaging provider is disabled in production.",
       );
     }
-    if (command.content.type !== MessageType.TEXT) {
-      throw new MessagingProviderError(
-        MessagingErrorCode.UNSUPPORTED_MESSAGE_TYPE,
-        "Development provider supports only text messages.",
-      );
-    }
-
     return {
       accepted: true,
       providerMessageId: `dev_${command.messageId}`,

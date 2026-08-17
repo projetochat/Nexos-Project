@@ -27,13 +27,55 @@ describe("EvolutionMessagingProvider", () => {
 
     expect(client.sendText).toHaveBeenCalledWith({
       instanceName: "tenant-support",
-      number: "5511999990000",
-      text: "Ola",
+      payload: { number: "5511999990000", text: "Ola" },
     });
     expect(result).toMatchObject({
       accepted: true,
       providerMessageId: "EVMSG1",
       providerStatus: "SENT",
+    });
+  });
+
+  it("maps group replies to Evolution quoted key without changing the group recipient", async () => {
+    const client = {
+      sendText: vi.fn().mockResolvedValue({
+        key: { id: "EVMSG2" },
+        messageTimestamp: 1_709_550_600,
+        status: "SENT",
+      }),
+    } as unknown as EvolutionClient;
+    const provider = new EvolutionMessagingProvider(client);
+
+    await provider.send({
+      tenantId: "tenant",
+      conversationId: "conversation",
+      messageId: "message",
+      connectionId: "connection",
+      providerConnectionRef: "tenant-support",
+      providerType: MessagingProviderType.EVOLUTION,
+      recipient: { phone: "", normalizedPhone: "" },
+      externalChatId: "120363123456789@g.us",
+      content: { type: MessageType.TEXT, text: "Reply" },
+      quotedProviderMessageId: "ORIGINAL",
+      quotedProviderChatId: "120363123456789@g.us",
+      quotedFromMe: false,
+      quotedParticipant: "5511999990000@s.whatsapp.net",
+    });
+
+    expect(client.sendText).toHaveBeenCalledWith({
+      instanceName: "tenant-support",
+      payload: {
+        number: "120363123456789@g.us",
+        text: "Reply",
+        quoted: {
+          key: {
+            id: "ORIGINAL",
+            remoteJid: "120363123456789@g.us",
+            fromMe: false,
+            participant: "5511999990000@s.whatsapp.net",
+          },
+        },
+      },
     });
   });
 });

@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { MessagingErrorCode } from "./messaging.contracts";
+import { OutboundDispatchError } from "./messaging-outbound.service";
 import { MessagingOutboundWorker } from "./messaging-outbound.worker";
 
 describe("MessagingOutboundWorker ordering", () => {
@@ -44,6 +46,31 @@ describe("MessagingOutboundWorker ordering", () => {
     await a;
 
     expect(processed).toEqual(["a-start", "b", "a-end"]);
+  });
+
+  it("returns worker rejections without leaving the lock promise unhandled", async () => {
+    const unhandled: unknown[] = [];
+    const listener = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", listener);
+    try {
+      const worker = workerWith({
+        conversations: { a: "conversation-1" },
+        dispatch: async () => {
+          throw new OutboundDispatchError(
+            MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+            "Evolution temporary failure.",
+            true,
+          );
+        },
+      });
+
+      await expect(processJob(worker, "a")).rejects.toMatchObject({ retryable: true });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", listener);
+    }
   });
 });
 

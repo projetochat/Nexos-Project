@@ -18,6 +18,10 @@ import {
   Plus,
   Pencil,
   Ticket,
+  Reply,
+  Download,
+  SmilePlus,
+  Archive,
 } from "lucide-react";
 // Notificações desativadas nesta tela — nenhum toast deve aparecer no chat.
 const toast = {
@@ -49,6 +53,7 @@ import { startTyping, stopTyping } from "@/lib/realtime/client";
 export const Route = createFileRoute("/inbox/$conversationId")({ component: ConversationPage });
 
 type Message = ApiMessage;
+type MentionOption = { id: string; label: string; phone: string };
 
 const STATUS_TONE: Record<ConvStatus, "warning" | "info" | "success" | "default"> = {
   aberta: "warning",
@@ -113,29 +118,49 @@ function ConversationPage() {
 
   const perms = useChatPerms();
   const showAgentName = perms.mostrar_nome_atendente;
-
-  React.useEffect(() => {
-    if (!conv?.id || conv.unreadCount <= 0) return;
-    void messageApi.markRead(conv.id).then(() => {
-      qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-      qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
-      qc.invalidateQueries({ queryKey: ["nexos", "messages", conv.id] });
-    });
-  }, [conv?.id, conv?.unreadCount, qc]);
+  const mentionOptions = React.useMemo(() => {
+    const byPhone = new Map<string, MentionOption>();
+    for (const message of mensagens) {
+      const phone = message.participant?.phone?.replace(/\D/g, "");
+      if (!phone) continue;
+      byPhone.set(phone, {
+        id: message.participant?.external_id ?? `${phone}@s.whatsapp.net`,
+        label: message.participant?.name || phone,
+        phone,
+      });
+    }
+    return Array.from(byPhone.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [mensagens]);
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const messageRefs = React.useRef(new Map<string, HTMLDivElement>());
+  const [highlightedMessageId, setHighlightedMessageId] = React.useState<string | null>(null);
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [mensagens.length]);
 
+  const scrollToMessage = React.useCallback((messageId: string | null | undefined) => {
+    if (!messageId) return;
+    const node = messageRefs.current.get(messageId);
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedMessageId(messageId);
+    window.setTimeout(
+      () => setHighlightedMessageId((current) => (current === messageId ? null : current)),
+      1800,
+    );
+  }, []);
+
   const transferModal = useDisclosure();
   const [panelOpen, setPanelOpen] = React.useState(false);
+  const [replyTo, setReplyTo] = React.useState<Message | null>(null);
   const queuePrefs = useQueuePrefs();
   const filaLabel = queuePrefs.find((p) => p.id === "fila")?.label ?? "Fila";
   const standbyLabel = queuePrefs.find((p) => p.id === "standby")?.label ?? "Stand By";
 
   const [closing, setClosing] = React.useState(false);
   const [gerando, setGerando] = React.useState(false);
+  const [archivingInbox, setArchivingInbox] = React.useState(false);
 
   if (!conv) {
     return (
@@ -147,11 +172,15 @@ function ConversationPage() {
     );
   }
 
-  const isStarted = !!conv.protocolo && !!conv.agent_id;
+  const isStarted = conv.is_group ? !!conv.protocolo : !!conv.protocolo && !!conv.agent_id;
   const isStandby = conv.status === "aguardando";
   const isMine = !!user && conv.agent_id === user.id;
-  const canSend = isStarted && isMine && conv.status !== "fechada" && !isStandby;
-  const showStart = conv.status !== "fechada" && (!conv.agent_id || isStandby);
+  const canSend =
+    (conv.is_group && !!conv.protocolo && conv.status !== "fechada" && !isStandby) ||
+    (isStarted && isMine && conv.status !== "fechada" && !isStandby);
+  const showStart =
+    conv.status !== "fechada" &&
+    (conv.is_group ? !conv.protocolo || isStandby : !conv.agent_id || isStandby);
   const wasStarted = !!conv.protocolo;
   const startLabel = isStandby || (!conv.agent_id && wasStarted) ? "Retomar" : "Iniciar";
 
@@ -201,6 +230,21 @@ function ConversationPage() {
     }
   };
 
+  const handleArchiveInbox = async () => {
+    if (!conv) return;
+    setArchivingInbox(true);
+    try {
+      await conversationApi.updateInboxArchive(conv.id, true);
+      await qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+      await qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
+      navigate({ to: "/inbox" });
+    } catch (e) {
+      toast.error((e as Error).message || "Não foi possível arquivar a conversa.");
+    } finally {
+      setArchivingInbox(false);
+    }
+  };
+
   return (
     <InboxLayout>
       <div className="flex h-full min-h-0">
@@ -213,7 +257,7 @@ function ConversationPage() {
               aria-label="Abrir informações do contato"
               className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1 py-0.5 text-left transition hover:bg-surface-2/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
             >
-              <Avatar name={conv.contact?.nome ?? "?"} size={38} />
+              <Avatar name={conv.contact?.nome ?? "?"} size={38} src={conv.contact?.avatar_url} />
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-semibold">
@@ -244,6 +288,15 @@ function ConversationPage() {
                   <Button variant="ghost" size="sm" onClick={transferModal.show}>
                     <ArrowRightLeft className="h-3.5 w-3.5" />{" "}
                     <span className="hidden lg:inline">Transferir</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleArchiveInbox}
+                    disabled={archivingInbox}
+                  >
+                    <Archive className="h-3.5 w-3.5" />{" "}
+                    <span className="hidden lg:inline">Arquivar</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => setClosing(true)}>
                     <CheckCircle2 className="h-3.5 w-3.5" />{" "}
@@ -287,6 +340,15 @@ function ConversationPage() {
                     m={m}
                     agents={messageAgents}
                     showAgentName={showAgentName}
+                    onReply={() => setReplyTo(m)}
+                    onQuotedClick={scrollToMessage}
+                    highlighted={highlightedMessageId === m.id}
+                    contactName={conv.contact?.nome ?? "Contato"}
+                    contactAvatarUrl={conv.contact?.avatar_url ?? null}
+                    setMessageRef={(node) => {
+                      if (node) messageRefs.current.set(m.id, node);
+                      else messageRefs.current.delete(m.id);
+                    }}
                   />
                 ))}
               {mensagens.length === 0 && (
@@ -314,7 +376,11 @@ function ConversationPage() {
               onStart={showStart ? handleAssume : undefined}
               allowQuickReplies={perms.acessa_mensagens_rapidas}
               allowAudio={perms.enviar_audio}
+              mentionOptions={conv.is_group ? mentionOptions : []}
+              replyTo={replyTo}
+              onCancelReply={() => setReplyTo(null)}
               onSent={() => {
+                setReplyTo(null);
                 qc.invalidateQueries({ queryKey: ["nexos", "messages", conv.id] });
                 qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
                 qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
@@ -413,11 +479,63 @@ function MessageBubble({
   m,
   agents,
   showAgentName = true,
+  onReply,
+  onQuotedClick,
+  highlighted,
+  contactName,
+  contactAvatarUrl,
+  setMessageRef,
 }: {
   m: Message;
   agents: { id: string; nome: string }[];
   showAgentName?: boolean;
+  onReply?: () => void;
+  onQuotedClick?: (messageId: string | null | undefined) => void;
+  highlighted?: boolean;
+  contactName: string;
+  contactAvatarUrl?: string | null;
+  setMessageRef?: (node: HTMLDivElement | null) => void;
 }) {
+  const qc = useQueryClient();
+  const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
+  const [mediaError, setMediaError] = React.useState(false);
+  const mediaState = m.media_data?.state ?? null;
+  const mediaReady = !!m.media_data && (!mediaState || mediaState === "ready");
+  React.useEffect(() => {
+    if (!m.media_data || !mediaReady || m.type === "document") return;
+    let alive = true;
+    setMediaError(false);
+    void messageApi
+      .downloadMedia(m.conversation_id, m.id, true)
+      .then((blob) => {
+        if (!alive) return;
+        setMediaUrl(URL.createObjectURL(blob));
+      })
+      .catch(() => setMediaError(true));
+    return () => {
+      alive = false;
+      setMediaUrl((url) => {
+        if (url) URL.revokeObjectURL(url);
+        return null;
+      });
+    };
+  }, [m.conversation_id, m.id, m.media_data, m.type, mediaReady]);
+
+  const react = async (emoji: string | null) => {
+    await messageApi.react(m.conversation_id, m.id, emoji);
+    qc.invalidateQueries({ queryKey: ["nexos", "messages", m.conversation_id] });
+  };
+
+  const download = async () => {
+    const blob = await messageApi.downloadMedia(m.conversation_id, m.id);
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = m.media_data?.file_name ?? "media";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (m.type === "system") {
     const ts = new Date(m.created_at).getTime();
     const isClosing = /encerra/i.test(m.content);
@@ -450,8 +568,34 @@ function MessageBubble({
     showAgentName && mine && m.author_id
       ? (agents.find((a) => a.id === m.author_id)?.nome ?? null)
       : null;
+  const avatarName = mine ? (authorName ?? "Atendente") : (m.participant?.name ?? contactName);
   return (
-    <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+    <div
+      ref={setMessageRef}
+      data-message-id={m.id}
+      className={`group flex items-end gap-1.5 scroll-mt-24 transition ${
+        mine ? "justify-end" : "justify-start"
+      } ${highlighted ? "rounded-xl ring-2 ring-primary/60 ring-offset-2 ring-offset-background" : ""}`}
+    >
+      {!mine && onReply && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Responder"
+          className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+          onClick={onReply}
+        >
+          <Reply className="h-3.5 w-3.5" />
+        </Button>
+      )}
+      {!mine && (
+        <Avatar
+          name={avatarName}
+          size={30}
+          src={contactAvatarUrl}
+          className="mb-5 ring-1 ring-border/70"
+        />
+      )}
       <div
         className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-card ${
           mine
@@ -466,14 +610,85 @@ function MessageBubble({
             {authorName}
           </p>
         )}
-        {m.type === "image" && m.media_data && (
-          <img src={m.media_data} alt="imagem" className="mb-1 max-h-72 rounded-lg object-cover" />
+        {m.participant?.name && !mine && (
+          <p className="mb-1 text-[11px] font-semibold text-primary">{m.participant.name}</p>
         )}
-        {m.type === "audio" && m.media_data && (
-          <AudioPlayer src={m.media_data} durationMs={m.duration_ms} mine={mine} />
+        {m.quoted && (
+          <QuotedPreview
+            conversationId={m.conversation_id}
+            quoted={m.quoted}
+            mine={mine}
+            onClick={() => onQuotedClick?.(m.quoted?.message_id)}
+          />
+        )}
+        {m.type === "image" && m.media_data && (
+          <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
+            {mediaUrl ? (
+              <img
+                src={mediaUrl}
+                alt={m.media_data.file_name ?? "imagem"}
+                className="max-h-72 max-w-full object-contain"
+              />
+            ) : mediaError || mediaState === "failed" ? (
+              <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>
+            ) : mediaReady ? (
+              <div className="px-3 py-2 text-xs opacity-80">Carregando imagem...</div>
+            ) : (
+              <div className="px-3 py-2 text-xs opacity-80">Imagem em processamento...</div>
+            )}
+          </div>
+        )}
+        {m.type === "video" && m.media_data && (
+          <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
+            {mediaUrl ? (
+              <video src={mediaUrl} controls className="max-h-72 max-w-full" />
+            ) : mediaError || mediaState === "failed" ? (
+              <div className="px-3 py-2 text-xs opacity-80">Video indisponivel.</div>
+            ) : mediaReady ? (
+              <div className="px-3 py-2 text-xs opacity-80">Carregando video...</div>
+            ) : (
+              <div className="px-3 py-2 text-xs opacity-80">Video em processamento...</div>
+            )}
+          </div>
+        )}
+        {(m.type === "audio" || m.type === "voice") &&
+          m.media_data &&
+          (mediaUrl ? (
+            <AudioPlayer src={mediaUrl} durationMs={m.duration_ms} mine={mine} />
+          ) : (
+            <div
+              className={`mb-2 rounded-lg px-3 py-2 text-xs ${
+                mine ? "bg-white/15" : "bg-surface-2"
+              }`}
+            >
+              {mediaError || mediaState === "failed"
+                ? "Audio indisponivel."
+                : mediaReady
+                  ? "Carregando audio..."
+                  : "Audio em processamento..."}
+            </div>
+          ))}
+        {m.type === "document" && m.media_data && (
+          <button
+            type="button"
+            onClick={mediaReady ? download : undefined}
+            disabled={!mediaReady}
+            className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
+              mine ? "border-white/30 bg-white/10" : "border-border/60 bg-surface-2"
+            } ${mediaReady ? "" : "opacity-70"}`}
+          >
+            <Download className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">
+              {mediaState === "failed"
+                ? "Documento indisponivel"
+                : mediaReady
+                  ? (m.media_data.file_name ?? "Documento")
+                  : "Documento em processamento..."}
+            </span>
+          </button>
         )}
         {m.content && m.content !== "[áudio]" && m.content !== "[imagem]" && (
-          <span className="break-words">{m.content.replace(/\s+/g, " ").trim()}</span>
+          <span className="whitespace-pre-wrap break-words">{m.content.trim()}</span>
         )}
         <p
           className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
@@ -481,13 +696,130 @@ function MessageBubble({
           {fmtHM(new Date(m.created_at).getTime())}
           {mine && <span className="ml-2">{messageStatusLabel(m.status)}</span>}
         </p>
+        {m.reactions && m.reactions.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {m.reactions.map((reaction) => (
+              <span
+                key={reaction.id}
+                className="rounded-full bg-black/10 px-1.5 py-0.5 text-[11px]"
+              >
+                {reaction.emoji}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className={`mt-1 flex gap-1 ${mine ? "justify-end" : "justify-start"}`}>
+          {["👍", "❤️", "😂"].map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => react(emoji)}
+              className="rounded-full px-1 text-[12px] opacity-70 hover:bg-black/10 hover:opacity-100"
+            >
+              {emoji}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => react(null)}
+            className="rounded-full px-1 text-[12px] opacity-70 hover:bg-black/10 hover:opacity-100"
+            aria-label="Remover reacao"
+          >
+            <SmilePlus className="h-3 w-3" />
+          </button>
+        </div>
       </div>
+      {mine && <Avatar name={avatarName} size={30} className="mb-5 ring-1 ring-border/70" />}
+      {mine && onReply && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Responder"
+          className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+          onClick={onReply}
+        >
+          <Reply className="h-3.5 w-3.5" />
+        </Button>
+      )}
     </div>
+  );
+}
+
+function QuotedPreview({
+  conversationId,
+  quoted,
+  mine,
+  onClick,
+}: {
+  conversationId: string;
+  quoted: NonNullable<Message["quoted"]>;
+  mine: boolean;
+  onClick?: () => void;
+}) {
+  const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
+  const canPreview =
+    !!quoted.message_id &&
+    quoted.media_data?.state !== "failed" &&
+    (quoted.type === "image" || quoted.type === "video");
+
+  React.useEffect(() => {
+    if (!canPreview || !quoted.message_id) return;
+    let active = true;
+    let objectUrl: string | null = null;
+    void messageApi
+      .downloadMedia(conversationId, quoted.message_id, true)
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setMediaUrl(objectUrl);
+      })
+      .catch(() => {
+        if (active) setMediaUrl(null);
+      });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [canPreview, conversationId, quoted.message_id]);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`mb-2 flex w-full items-center gap-2 border-l-2 px-2 py-1 text-left text-xs ${
+        mine ? "border-white/60 bg-white/10 text-white/85" : "border-primary/60 bg-card"
+      } ${
+        quoted.message_id
+          ? "cursor-pointer transition hover:opacity-85"
+          : "cursor-default"
+      }`}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">{messageTypeLabel(quoted.type)}</p>
+        <p className="line-clamp-2 break-words opacity-80">
+          {quoted.content_preview ?? "Mensagem citada"}
+        </p>
+      </div>
+      {canPreview && (
+        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md bg-black/10">
+          {mediaUrl ? (
+            quoted.type === "video" ? (
+              <video src={mediaUrl} className="h-full w-full object-cover" muted />
+            ) : (
+              <img src={mediaUrl} alt="" className="h-full w-full object-cover" />
+            )
+          ) : (
+            <div className="h-full w-full animate-pulse bg-black/10" />
+          )}
+        </div>
+      )}
+    </button>
   );
 }
 
 function messageStatusLabel(status: Message["status"]) {
   const labels: Record<Message["status"], string> = {
+    pending: "pendente",
     created: "criada",
     queued: "fila",
     sending: "enviando",
@@ -497,6 +829,19 @@ function messageStatusLabel(status: Message["status"]) {
     read: "lida",
   };
   return labels[status];
+}
+
+function messageTypeLabel(type: Message["type"] | null) {
+  const labels: Record<Message["type"], string> = {
+    text: "Texto",
+    image: "Imagem",
+    audio: "Audio",
+    voice: "Voz",
+    video: "Video",
+    document: "Documento",
+    system: "Sistema",
+  };
+  return type ? labels[type] : "Mensagem";
 }
 
 function AudioPlayer({
@@ -548,8 +893,11 @@ function Composer({
   disabledReason,
   onStart,
   onSent,
+  replyTo,
+  onCancelReply,
   allowQuickReplies = true,
   allowAudio = true,
+  mentionOptions = [],
 }: {
   conversationId: string;
   authorId: string | null;
@@ -557,15 +905,23 @@ function Composer({
   disabledReason?: DisabledReason;
   onStart?: () => void;
   onSent: () => void;
+  replyTo?: Message | null;
+  onCancelReply?: () => void;
   allowQuickReplies?: boolean;
   allowAudio?: boolean;
+  mentionOptions?: MentionOption[];
 }) {
   const qc = useQueryClient();
   const [text, setText] = React.useState("");
 
-  const [pendingImage, setPendingImage] = React.useState<string | null>(null);
+  const [pendingFile, setPendingFile] = React.useState<{
+    file: File;
+    previewUrl: string | null;
+    mediaType: "image" | "video" | "document";
+  } | null>(null);
   const [showQR, setShowQR] = React.useState(false);
   const [qrFilter, setQrFilter] = React.useState("");
+  const [mentionFilter, setMentionFilter] = React.useState<string | null>(null);
   const [pendingCloseAfter, setPendingCloseAfter] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
@@ -588,6 +944,18 @@ function Composer({
       setShowQR(false);
     }
   }, [text, allowQuickReplies]);
+
+  React.useEffect(() => {
+    if (!mentionOptions.length) {
+      setMentionFilter(null);
+      return;
+    }
+    const value = text;
+    const cursor = textareaRef.current?.selectionStart ?? value.length;
+    const beforeCursor = value.slice(0, cursor);
+    const match = beforeCursor.match(/(?:^|\s)@([\p{L}\p{N}_+-]*)$/u);
+    setMentionFilter(match ? match[1].toLowerCase() : null);
+  }, [mentionOptions.length, text]);
 
   // Auto-resize textarea up to 5 lines
   React.useEffect(() => {
@@ -612,10 +980,43 @@ function Composer({
     setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
+  const filteredMentions = React.useMemo(() => {
+    if (mentionFilter === null) return [];
+    return mentionOptions
+      .filter((item) => {
+        const haystack = `${item.label} ${item.phone}`.toLowerCase();
+        return haystack.includes(mentionFilter);
+      })
+      .slice(0, 6);
+  }, [mentionFilter, mentionOptions]);
+
+  const applyMention = (mention: MentionOption) => {
+    const el = textareaRef.current;
+    const cursor = el?.selectionStart ?? text.length;
+    const beforeCursor = text.slice(0, cursor);
+    const afterCursor = text.slice(cursor);
+    const replaced = beforeCursor.replace(/(?:^|\s)@([\p{L}\p{N}_+-]*)$/u, (token) => {
+      const prefix = token.startsWith("@") ? "" : " ";
+      return `${prefix}@${mentionToken(mention.label, mention.phone)} `;
+    });
+    setText(`${replaced}${afterCursor}`);
+    setMentionFilter(null);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  };
+
+  const mentionToken = (label: string, fallbackPhone: string) => {
+    const normalized = label
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    return normalized || fallbackPhone;
+  };
+
   const handleSend = async () => {
     if (disabled || !authorId) return;
     emitTypingStop();
-    let t = text.replace(/\s+/g, " ").trim();
+    let t = text.trim();
     let closeAfter = pendingCloseAfter;
     // Expand quick reply shortcut like "/bd" → full text
     if (allowQuickReplies && t.startsWith("/")) {
@@ -628,16 +1029,34 @@ function Composer({
         closeAfter = closeAfter || !!match.close_on_send;
       }
     }
-    if (pendingImage) {
-      toast.error("Envio de mídia ainda não está disponível no core Nexos.");
-      return;
+    if (pendingFile) {
+      try {
+        await messageApi.sendMedia(conversationId, pendingFile.file, {
+          fileName: pendingFile.file.name,
+          mimeType: pendingFile.file.type || "application/octet-stream",
+          mediaType: pendingFile.mediaType,
+          caption: t || null,
+          quotedMessageId: replyTo?.id ?? null,
+        });
+        if (pendingFile.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
+        setPendingFile(null);
+        setText("");
+        void messageApi
+          .markRead(conversationId)
+          .then(() => qc.invalidateQueries({ queryKey: ["nexos", "conversations"] }));
+        onSent();
+        return;
+      } catch (e) {
+        toast.error((e as Error).message);
+        return;
+      }
     }
     if (!t) {
       toast.error("Escreva uma mensagem.");
       return;
     }
     try {
-      await messageApi.sendText(conversationId, t);
+      await messageApi.sendText(conversationId, t, crypto.randomUUID(), replyTo?.id ?? null);
       setText("");
       setShowQR(false);
       setQrFilter("");
@@ -682,22 +1101,37 @@ function Composer({
     const imageItem = items.find((it) => it.type.startsWith("image/"));
     if (imageItem) {
       e.preventDefault();
-      toast.error("Envio de mídia ainda não está disponível no core Nexos.");
+      const file = imageItem.getAsFile();
+      if (file) {
+        setPendingFile({ file, previewUrl: URL.createObjectURL(file), mediaType: "image" });
+      }
     }
   };
 
   const onFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    toast.error("Envio de mídia ainda não está disponível no core Nexos.");
+    const mediaType = file.type.startsWith("image/")
+      ? "image"
+      : file.type.startsWith("video/")
+        ? "video"
+        : "document";
+    setPendingFile({
+      file,
+      previewUrl: mediaType === "image" || mediaType === "video" ? URL.createObjectURL(file) : null,
+      mediaType,
+    });
     e.target.value = "";
   };
 
   /* --- audio recording --- */
   const [recording, setRecording] = React.useState(false);
-  const [pendingAudio, setPendingAudio] = React.useState<{ url: string; duration: number } | null>(
-    null,
-  );
+  const [pendingAudio, setPendingAudio] = React.useState<{
+    blob: Blob;
+    url: string;
+    duration: number;
+    mimeType: string;
+  } | null>(null);
   const recRef = React.useRef<{ rec: MediaRecorder; chunks: Blob[]; startedAt: number } | null>(
     null,
   );
@@ -713,12 +1147,13 @@ function Composer({
       rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dur = Date.now() - (recRef.current?.startedAt ?? Date.now());
-          setPendingAudio({ url: String(reader.result), duration: dur });
-        };
-        reader.readAsDataURL(blob);
+        const dur = Date.now() - (recRef.current?.startedAt ?? Date.now());
+        setPendingAudio({
+          blob,
+          url: URL.createObjectURL(blob),
+          duration: dur,
+          mimeType: blob.type || "audio/webm",
+        });
       };
       rec.start();
       recRef.current = { rec, chunks, startedAt: Date.now() };
@@ -735,23 +1170,54 @@ function Composer({
 
   const sendAudio = async () => {
     if (!pendingAudio || !authorId) return;
-    toast.error("Envio de áudio ainda não está disponível no core Nexos.");
+    try {
+      await messageApi.sendMedia(conversationId, pendingAudio.blob, {
+        fileName: `audio-${Date.now()}.webm`,
+        mimeType: pendingAudio.mimeType,
+        mediaType: "voice",
+        durationMs: pendingAudio.duration,
+        quotedMessageId: replyTo?.id ?? null,
+      });
+      URL.revokeObjectURL(pendingAudio.url);
+      setPendingAudio(null);
+      void messageApi
+        .markRead(conversationId)
+        .then(() => qc.invalidateQueries({ queryKey: ["nexos", "conversations"] }));
+      onSent();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
 
   return (
     <div className="border-t border-border bg-surface-1 p-3">
       <div className="mx-auto max-w-3xl">
-        {pendingImage && (
+        {pendingFile && (
           <div className="mb-2 flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
-            <img src={pendingImage} alt="preview" className="h-16 w-16 rounded object-cover" />
-            <p className="flex-1 text-xs text-muted-foreground">
-              Imagem anexada. Envie para incluir na conversa.
-            </p>
+            {pendingFile.previewUrl ? (
+              pendingFile.mediaType === "video" ? (
+                <video src={pendingFile.previewUrl} className="h-16 w-16 rounded object-cover" />
+              ) : (
+                <img
+                  src={pendingFile.previewUrl}
+                  alt="preview"
+                  className="h-16 w-16 rounded object-cover"
+                />
+              )
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded bg-surface-2">
+                <Paperclip className="h-5 w-5" />
+              </div>
+            )}
+            <p className="flex-1 text-xs text-muted-foreground">{pendingFile.file.name}</p>
             <Button
               variant="ghost"
               size="icon"
               aria-label="Remover"
-              onClick={() => setPendingImage(null)}
+              onClick={() => {
+                if (pendingFile.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
+                setPendingFile(null);
+              }}
             >
               <X className="h-4 w-4" />
             </Button>
@@ -766,7 +1232,10 @@ function Composer({
               variant="ghost"
               size="icon"
               aria-label="Descartar"
-              onClick={() => setPendingAudio(null)}
+              onClick={() => {
+                URL.revokeObjectURL(pendingAudio.url);
+                setPendingAudio(null);
+              }}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -791,6 +1260,47 @@ function Composer({
                 <span className="flex-1 text-xs text-foreground/80 line-clamp-1">{qr.texto}</span>
               </button>
             ))}
+          </div>
+        )}
+
+        {filteredMentions.length > 0 && (
+          <div className="mb-2 max-h-48 overflow-y-auto rounded-lg border border-border bg-card shadow-card">
+            {filteredMentions.map((mention) => (
+              <button
+                key={mention.id}
+                type="button"
+                onClick={() => applyMention(mention)}
+                className="flex w-full items-center gap-3 border-b border-border/60 px-3 py-2 text-left hover:bg-surface-1"
+              >
+                <Avatar name={mention.label} size={28} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-semibold">{mention.label}</span>
+                  <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                    @{mention.phone}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {replyTo && (
+          <div className="mb-2 flex items-start gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
+            <Reply className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold">Respondendo {messageTypeLabel(replyTo.type)}</p>
+              <p className="line-clamp-2 text-xs text-muted-foreground">
+                {replyTo.content || replyTo.quoted?.content_preview || "Mensagem citada"}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Cancelar resposta"
+              onClick={onCancelReply}
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
         )}
 
@@ -819,7 +1329,7 @@ function Composer({
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
+              accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
               className="hidden"
               onChange={onFilePick}
             />
@@ -986,13 +1496,15 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
             </dd>
           </div>
           <div className="flex items-start justify-between gap-2">
-            <dt className="uppercase tracking-wide text-muted-foreground">Departamento</dt>
+            <dt className="uppercase tracking-wide text-muted-foreground">
+              Departamento do Contato
+            </dt>
             <dd className="truncate text-right text-foreground/90">
               {contact?.departamento ?? "—"}
             </dd>
           </div>
           <div className="flex items-start justify-between gap-2">
-            <dt className="uppercase tracking-wide text-muted-foreground">Perfil na Empresa</dt>
+            <dt className="uppercase tracking-wide text-muted-foreground">Perfil do Contato</dt>
             <dd className="truncate text-right text-foreground/90">
               {contact?.nivel_gerencia ?? "—"}
             </dd>
@@ -1244,14 +1756,14 @@ function RenameContactModal({
             </Select>
           </Field>
         )}
-        <Field label="Departamento">
+        <Field label="Departamento do Contato">
           <Input
             value={departamento}
             onChange={(e) => setDepartamento(e.target.value)}
             placeholder="Ex.: Financeiro"
           />
         </Field>
-        <Field label="Perfil na Empresa">
+        <Field label="Perfil do Contato">
           <Select
             value={nivel}
             onChange={(e) =>

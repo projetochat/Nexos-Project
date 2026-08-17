@@ -14,6 +14,17 @@ const roles = [
 ] as const;
 
 export async function seedTenantRoles(tx: Tx, tenantId: string) {
+  const permissionIds = [...new Set(roles.flatMap(([, , permissions]) => permissions))];
+  await Promise.all(
+    permissionIds.map((permissionId) =>
+      tx.permission.upsert({
+        where: { id: permissionId },
+        update: {},
+        create: { id: permissionId, description: permissionId },
+      }),
+    ),
+  );
+
   const entries = await Promise.all(
     roles.map(async ([key, name, permissions]) => {
       const role = await tx.role.upsert({

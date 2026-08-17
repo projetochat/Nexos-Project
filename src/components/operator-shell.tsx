@@ -1,17 +1,6 @@
 import * as React from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import {
-  Inbox,
-  Users,
-  Star,
-  Clock,
-  Search,
-  Bell,
-  User,
-  LogOut,
-  Headphones,
-  MessageCircleMore,
-} from "lucide-react";
+import { Inbox, Users, Clock, Search, Bell, User, LogOut, MessageCircleMore } from "lucide-react";
 import { LogoMark, Avatar } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
@@ -32,10 +21,10 @@ type NavItem = {
 
 const nav: NavItem[] = [
   { to: "/inbox", label: "Inbox", icon: Inbox },
-  { to: "/atendimento/favoritos", label: "Favoritos", icon: Star },
-  { to: "/atendimento/historico", label: "Histórico", icon: Clock },
-  { to: "/atendimento/clientes", label: "Clientes", icon: Users },
-  { to: "/atendimento/perfil", label: "Perfil", icon: User },
+  { to: "/mensagens-rapidas", label: "Rápidas", icon: MessageCircleMore },
+  { to: "/historico", label: "Histórico", icon: Clock },
+  { to: "/clientes", label: "Clientes", icon: Users },
+  { to: "/perfil", label: "Perfil", icon: User },
 ];
 
 function UserMenu() {
@@ -178,18 +167,29 @@ function useOperatorGate() {
   return user;
 }
 
-export function OperatorShell({ children, full = false }: { children: React.ReactNode; full?: boolean }) {
+export function OperatorShell({
+  children,
+  full = false,
+}: {
+  children: React.ReactNode;
+  full?: boolean;
+}) {
   useOperatorGate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   return (
-    <div className={`flex ${full ? "h-dvh overflow-hidden" : "min-h-dvh"} bg-background text-foreground`}>
+    <div
+      className={`flex ${full ? "h-dvh overflow-hidden" : "min-h-dvh"} bg-background text-foreground`}
+    >
       <TopProgress active={isNavigating} />
       <RailNav />
       <div className="flex min-w-0 flex-1 flex-col">
         <OfflineBanner />
         <Topbar />
-        <main key={pathname} className={`min-w-0 flex-1 animate-fade-in-soft ${full ? "overflow-hidden" : ""}`}>
+        <main
+          key={pathname}
+          className={`min-w-0 flex-1 animate-fade-in-soft ${full ? "overflow-hidden" : ""}`}
+        >
           {children}
         </main>
         <BottomNav />
@@ -205,5 +205,9 @@ export function OperatorContainer({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <div className={`mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8 ${className}`}>{children}</div>;
+  return (
+    <div className={`mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8 ${className}`}>
+      {children}
+    </div>
+  );
 }
