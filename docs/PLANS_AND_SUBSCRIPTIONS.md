@@ -43,3 +43,17 @@ Downgrade valida consumo atual e retorna `PLAN_DOWNGRADE_LIMIT_EXCEEDED` quando 
 
 Faturas sao manuais. Nao ha checkout, cartao, boleto automatico ou webhook financeiro nesta sprint.
 
+## PRC-06 - Limites de Plano
+
+A troca de assinatura deve consultar o consumo real antes de aplicar um plano menor. Se qualquer limite atual for excedido, a Platform API retorna `PLAN_DOWNGRADE_LIMIT_EXCEEDED` e preserva a assinatura existente.
+
+Limites protegidos:
+
+- Usuarios ativos.
+- Departamentos.
+- Connections.
+- Contatos.
+- Destinatarios de campanha no periodo.
+- Storage.
+
+Esse contrato e coberto por teste e2e e pelo guard `test:prc06-platform-admin-final-contract`.

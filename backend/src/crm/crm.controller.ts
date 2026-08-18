@@ -181,6 +181,17 @@ export class CrmController {
       ...(query.customerId ? { customerId: query.customerId } : {}),
       ...(query.instance ? { instance: query.instance } : {}),
       ...(query.department ? { departmentName: query.department } : {}),
+      ...(query.tagId
+        ? {
+            tags: {
+              some: {
+                tenantId: current.tenantId,
+                tagId: query.tagId,
+                tag: { archivedAt: null },
+              },
+            },
+          }
+        : {}),
       ...(q
         ? {
             OR: [

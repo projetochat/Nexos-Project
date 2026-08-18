@@ -9,6 +9,8 @@ import { hash } from "bcryptjs";
 import { AppModule } from "../src/app.module";
 import { EvolutionClient } from "../src/messaging/evolution/evolution.client";
 import {
+  AutomationActionType,
+  AutomationRuleStatus,
   CampaignStatus,
   ConversationStatus,
   MessageDirection,
@@ -39,9 +41,13 @@ describe("Nexos API organization and RBAC", () => {
   }
 
   beforeAll(async () => {
-    process.env.DATABASE_URL =
+    process.env.SEED_MODE = "test";
+    const testDatabaseUrl = normalizeLocalPostgresUrl(
       process.env.NEXOS_TEST_DATABASE_URL ??
-      "postgresql://nexos:nexos_dev_password@localhost:5432/nexos_1200?schema=public";
+        "postgresql://nexos:nexos_dev_password@127.0.0.1:5432/nexos_1200?schema=public",
+    );
+    process.env.DATABASE_URL = testDatabaseUrl;
+    process.env.NEXOS_TEST_DATABASE_URL = testDatabaseUrl;
     process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test-access-secret-minimum-32-chars";
     process.env.JWT_REFRESH_SECRET =
       process.env.JWT_REFRESH_SECRET ?? "test-refresh-secret-minimum-32-chars";
@@ -698,6 +704,54 @@ describe("Nexos API organization and RBAC", () => {
       .expect(201);
   });
 
+  it("blocks subscription downgrade when current tenant usage exceeds plan limits", async () => {
+    const platformToken = await login("platform@nexo.app", "demo1234");
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const subscription = await prisma.tenantSubscription.findFirstOrThrow({
+      where: { tenantId: tenant.id, status: { in: ["ACTIVE", "TRIALING"] } },
+    });
+    const suffix = Date.now();
+    const limitedPlan = await request(app.getHttpServer())
+      .post("/api/platform/plans")
+      .set("Authorization", `Bearer ${platformToken}`)
+      .send({
+        code: `prc06-limited-${suffix}`,
+        name: `PRC06 Limited ${suffix}`,
+        status: "ACTIVE",
+        billingPeriod: "MANUAL",
+        features: {
+          campaigns: true,
+          tickets: true,
+          multipleConnections: true,
+          storage: true,
+          realtime: true,
+        },
+        limits: {
+          maxUsers: 0,
+          maxDepartments: 0,
+          maxConnections: 0,
+          maxContacts: 0,
+          maxCampaignRecipients: 0,
+          maxStorageBytes: 0,
+        },
+      })
+      .expect(201);
+
+    try {
+      await request(app.getHttpServer())
+        .patch(`/api/platform/subscriptions/${subscription.id}`)
+        .set("Authorization", `Bearer ${platformToken}`)
+        .send({ planId: limitedPlan.body.id, reason: "PRC-06 downgrade guard" })
+        .expect(409)
+        .expect(({ body }) => {
+          expect(body.code).toBe("PLAN_DOWNGRADE_LIMIT_EXCEEDED");
+          expect(body.details.length).toBeGreaterThan(0);
+        });
+    } finally {
+      await prisma.plan.deleteMany({ where: { id: limitedPlan.body.id } });
+    }
+  });
+
   it("serializes concurrent user creation at the last plan slot", async () => {
     const { token, tenantId } = await createStarterTenant("users");
     await request(app.getHttpServer())
@@ -792,6 +846,13 @@ describe("Nexos API organization and RBAC", () => {
       .expect(201);
 
     const customerId = customerResponse.body.id as string;
+    const tagResponse = await request(app.getHttpServer())
+      .post("/api/tags")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: `PRC03 Etiqueta ${suffix}`, color: "#0ea5e9" })
+      .expect(201);
+    const tagId = tagResponse.body.id as string;
+
     const contactResponse = await request(app.getHttpServer())
       .post("/api/crm/contacts")
       .set("Authorization", `Bearer ${token}`)
@@ -803,12 +864,16 @@ describe("Nexos API organization and RBAC", () => {
         departmentName: "Suporte",
         companyRole: "GERENTE",
         instance: "FLOWID",
+        tagIds: [tagId],
       })
       .expect(201);
 
     const contactId = contactResponse.body.id as string;
     expect(contactResponse.body.customer_id).toBe(customerId);
     expect(contactResponse.body.normalizedPhone).toMatch(/^\+55/);
+    expect(contactResponse.body.tags).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: tagId })]),
+    );
 
     await request(app.getHttpServer())
       .get(`/api/crm/contacts?q=Sprint%20${suffix}&linked=linked`)
@@ -816,6 +881,20 @@ describe("Nexos API organization and RBAC", () => {
       .expect(200)
       .expect(({ body }) => {
         expect(body.total).toBeGreaterThanOrEqual(1);
+        expect(body.items.some((item: { id: string }) => item.id === contactId)).toBe(true);
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/crm/contacts?tagId=${tagId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.total).toBeGreaterThanOrEqual(1);
+        expect(
+          body.items.every((item: { tags: Array<{ id: string }> }) =>
+            item.tags.some((tag) => tag.id === tagId),
+          ),
+        ).toBe(true);
         expect(body.items.some((item: { id: string }) => item.id === contactId)).toBe(true);
       });
 
@@ -2622,6 +2701,28 @@ describe("Nexos API organization and RBAC", () => {
       .expect(({ body }) => {
         expect(body.code).toBe("ATTACHMENT_OBJECT_MISSING");
       });
+
+    await request(app.getHttpServer())
+      .delete(`/api/tickets/${created.body.id}/attachments/${pdf.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe("DELETED");
+        expect(body.deletedAt).toBeTruthy();
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/tickets/${created.body.id}/attachments`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.some((item: { id: string }) => item.id === pdf.body.id)).toBe(false);
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/tickets/${created.body.id}/attachments/${pdf.body.id}/download`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(404);
   });
 
   it("creates campaigns, previews audience, snapshots recipients and blocks duplicate starts", async () => {
@@ -2816,6 +2917,149 @@ describe("Nexos API organization and RBAC", () => {
         audience: { type: "ALL", tagIds: [], customerIds: [], contactIds: [] },
       })
       .expect(403);
+  });
+
+  it("manages automation rules with action types, permissions and tenant scope", async () => {
+    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const orbitTenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "orbit" } });
+    const adminMembership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenantId: tenant.id, user: { email: "admin@nexo.app" } },
+    });
+    const orbitAdminMembership = await prisma.tenantMembership.findFirstOrThrow({
+      where: { tenantId: orbitTenant.id, user: { email: "admin-orbit@nexo.app" } },
+    });
+    await prisma.rolePermission.createMany({
+      data: [
+        { roleId: adminMembership.roleId, permissionId: "automations.read" },
+        { roleId: adminMembership.roleId, permissionId: "automations.manage" },
+        { roleId: orbitAdminMembership.roleId, permissionId: "automations.read" },
+      ],
+      skipDuplicates: true,
+    });
+
+    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const orbitToken = await login("admin-orbit@nexo.app", "demo1234", "orbit");
+    const department = await prisma.department.findFirstOrThrow({
+      where: { tenantId: tenant.id, active: true, name: "Suporte" },
+    });
+    const suffix = Date.now().toString(36);
+    const names = [`PRC05 Bot ${suffix}`, `PRC05 Assign ${suffix}`, `PRC05 Notify ${suffix}`];
+
+    await prisma.automationRule.deleteMany({
+      where: { tenantId: tenant.id, name: { in: names } },
+    });
+
+    await request(app.getHttpServer())
+      .post("/api/automations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        name: `PRC05 Invalid ${suffix}`,
+        matchText: "sem resposta",
+        actionType: AutomationActionType.BOT_REPLY,
+      })
+      .expect(400);
+
+    const bot = await request(app.getHttpServer())
+      .post("/api/automations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        name: names[0],
+        matchText: "  OlA Bot  ",
+        responseText: "Resposta automatica PRC-05",
+        actionType: AutomationActionType.BOT_REPLY,
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.status).toBe("active");
+        expect(body.actionType).toBe("bot_reply");
+        expect(body.matchText).toBe("ola bot");
+        expect(body.responseText).toBe("Resposta automatica PRC-05");
+      });
+
+    const assign = await request(app.getHttpServer())
+      .post("/api/automations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        name: names[1],
+        matchText: "financeiro",
+        actionType: AutomationActionType.ASSIGN_DEPARTMENT,
+        departmentId: department.id,
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.actionType).toBe("assign_department");
+        expect(body.department.id).toBe(department.id);
+      });
+
+    await request(app.getHttpServer())
+      .post("/api/automations")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        name: names[2],
+        matchText: "urgente",
+        responseText: "Avisar time",
+        actionType: AutomationActionType.NOTIFY_TEAM,
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.actionType).toBe("notify_team");
+      });
+
+    await request(app.getHttpServer())
+      .get("/api/automations?pageSize=100")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(
+          body.items.filter((item: { name: string }) => names.includes(item.name)),
+        ).toHaveLength(3);
+      });
+
+    await request(app.getHttpServer())
+      .get("/api/automations?pageSize=100")
+      .set("Authorization", `Bearer ${orbitToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.items.some((item: { id: string }) => item.id === bot.body.id)).toBe(false);
+      });
+
+    await request(app.getHttpServer())
+      .patch(`/api/automations/${bot.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ status: AutomationRuleStatus.DISABLED })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe("disabled");
+      });
+
+    await request(app.getHttpServer())
+      .post("/api/automations")
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({
+        name: `PRC05 Agent Blocked ${suffix}`,
+        matchText: "agent",
+        responseText: "blocked",
+        actionType: AutomationActionType.BOT_REPLY,
+      })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .delete(`/api/automations/${assign.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get("/api/automations?status=ACTIVE&pageSize=100")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.items.some((item: { id: string }) => item.id === assign.body.id)).toBe(false);
+      });
+
+    await prisma.automationRule.deleteMany({
+      where: { tenantId: tenant.id, name: { in: names } },
+    });
   });
 
   it("serves operational dashboard, history, timeline, queues and report exports from Prisma data", async () => {
@@ -3049,6 +3293,41 @@ describe("Nexos API organization and RBAC", () => {
         });
 
       await request(app.getHttpServer())
+        .get(
+          `/api/operations/reports/attendance/export?period=30d&q=${conversation.protocol}&format=xlsx`,
+        )
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200)
+        .expect(
+          "Content-Type",
+          /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/,
+        )
+        .expect("Content-Disposition", /nexos-atendimento\.xlsx/)
+        .expect((response) => {
+          const payload =
+            Buffer.isBuffer(response.body) && response.body.length
+              ? response.body
+              : Buffer.from(response.text ?? "", "binary");
+          expect(payload.subarray(0, 2).toString()).toBe("PK");
+        });
+
+      await request(app.getHttpServer())
+        .get(
+          `/api/operations/reports/attendance/export?period=30d&q=${conversation.protocol}&format=pdf`,
+        )
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200)
+        .expect("Content-Type", /application\/pdf/)
+        .expect("Content-Disposition", /nexos-atendimento\.pdf/)
+        .expect((response) => {
+          const payload =
+            Buffer.isBuffer(response.body) && response.body.length
+              ? response.body.toString("utf8")
+              : response.text;
+          expect(payload.startsWith("%PDF-1.4")).toBe(true);
+        });
+
+      await request(app.getHttpServer())
         .get("/api/operations/history/conversations?status=nao-existe")
         .set("Authorization", `Bearer ${adminToken}`)
         .expect(400)
@@ -3218,3 +3497,7 @@ describe("Nexos API organization and RBAC", () => {
     }
   }
 });
+
+function normalizeLocalPostgresUrl(value: string) {
+  return value.replace("@localhost:", "@127.0.0.1:");
+}

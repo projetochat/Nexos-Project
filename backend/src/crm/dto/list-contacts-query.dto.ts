@@ -17,4 +17,8 @@ export class ListContactsQueryDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   customerId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  tagId?: string;
 }

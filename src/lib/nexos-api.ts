@@ -565,6 +565,7 @@ type ListContactsParams = ListParams & {
   instance?: string;
   department?: string;
   customerId?: string;
+  tagId?: string;
 };
 
 type CustomerPayload = {

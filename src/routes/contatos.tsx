@@ -54,6 +54,7 @@ function ContatosPage() {
   const [instanciaFilter, setInstanciaFilter] = React.useState("");
   const [departamentoFilter, setDepartamentoFilter] = React.useState("");
   const [clienteFilter, setClienteFilter] = React.useState("");
+  const [tagFilter, setTagFilter] = React.useState("");
   const [page, setPage] = React.useState(1);
   const [total, setTotal] = React.useState(0);
   const [totalPages, setTotalPages] = React.useState(1);
@@ -85,6 +86,7 @@ function ContatosPage() {
           instance: instanciaFilter,
           department: departamentoFilter,
           customerId: clienteFilter,
+          tagId: tagFilter,
         }),
         crmApi.listCustomers({ pageSize: 100 }),
         crmApi.contactOptions(),
@@ -100,7 +102,7 @@ function ContatosPage() {
     } finally {
       setLoading(false);
     }
-  }, [clienteFilter, departamentoFilter, filter, instanciaFilter, page, query]);
+  }, [clienteFilter, departamentoFilter, filter, instanciaFilter, page, query, tagFilter]);
 
   React.useEffect(() => {
     void load();
@@ -108,7 +110,7 @@ function ContatosPage() {
 
   React.useEffect(() => {
     setPage(1);
-  }, [query, filter, instanciaFilter, departamentoFilter, clienteFilter]);
+  }, [query, filter, instanciaFilter, departamentoFilter, clienteFilter, tagFilter]);
 
   const pageSafe = Math.min(page, totalPages);
 
@@ -126,7 +128,7 @@ function ContatosPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_repeat(4,180px)]">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_repeat(5,160px)]">
             <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
               <Search className="h-4 w-4 text-muted-foreground" />
               <input
@@ -163,6 +165,14 @@ function ContatosPage() {
                 </option>
               ))}
             </Select>
+            <Select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}>
+              <option value="">Etiqueta: Todas</option>
+              {tags.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nome}
+                </option>
+              ))}
+            </Select>
             <Select value={filter} onChange={(e) => setFilter(e.target.value as FilterMode)}>
               <option value="all">Vinculo: Todos</option>
               <option value="linked">Vinculados</option>
@@ -180,13 +190,14 @@ function ContatosPage() {
                 <th className="px-4 py-3 font-medium">Instancia</th>
                 <th className="px-4 py-3 font-medium">Departamento</th>
                 <th className="px-4 py-3 font-medium">Cliente</th>
+                <th className="px-4 py-3 font-medium">Etiquetas</th>
                 <th className="px-4 py-3 font-medium text-right">Acoes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {loading && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     Carregando...
                   </td>
                 </tr>
@@ -238,6 +249,32 @@ function ContatosPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
+                      {c.tags.length ? (
+                        <div className="flex max-w-48 flex-wrap gap-1">
+                          {c.tags.slice(0, 3).map((tag) => (
+                            <span
+                              key={tag.id}
+                              className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                              style={{
+                                backgroundColor: `${tag.cor}1f`,
+                                borderColor: `${tag.cor}66`,
+                                color: tag.cor,
+                              }}
+                            >
+                              {tag.nome}
+                            </span>
+                          ))}
+                          {c.tags.length > 3 && (
+                            <span className="text-[11px] text-muted-foreground">
+                              +{c.tags.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex justify-end gap-1">
                         <Button
                           variant="ghost"
@@ -261,7 +298,7 @@ function ContatosPage() {
                 ))}
               {!loading && contacts.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     Nenhum contato encontrado.
                   </td>
                 </tr>

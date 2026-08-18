@@ -422,8 +422,14 @@ bun run verify
 O `verify` executa a guarda `scripts/check-inbox-legacy-runtime.mjs`, que bloqueia retorno de
 `@/lib/mvp`, Supabase, `.from("tags")`, `.from("quick_replies")` e aliases legados nas rotas operacionais
 de Inbox, `/etiquetas` e `/mensagens-rapidas`.
+
 # Storage de Tickets
 
-Configure `NEXOS_STORAGE_PROVIDER=local|r2`. Em homologacao local, use `NEXOS_STORAGE_LOCAL_PATH` fora do repositorio. Em producao, configure R2 por `R2_BUCKET`, endpoint e credenciais, sem imprimir secrets.
+Configure `NEXOS_STORAGE_PROVIDER=local` para homologacao local e deploy single-host controlado. Use
+`NEXOS_STORAGE_LOCAL_PATH` fora do repositorio e inclua esse diretorio no backup operacional.
+
+`NEXOS_STORAGE_PROVIDER=r2` permanece como boundary reservado para o ciclo de deploy; nesta base ele nao deve ser
+considerado provider final de upload/download de anexos. Para producao multi-instancia ou ambiente efemero,
+implementar e validar R2/S3-compatible antes de habilitar anexos de tickets.
 
 O health retorna `storage` e `storageProvider` de forma sanitizada, sem fazer upload em cada request.

@@ -49,11 +49,21 @@ Tenant admin enxerga todo o tenant. Supervisor/agente enxergam tickets do depart
 - `PATCH /api/tickets/:id/department`
 - `DELETE /api/tickets/:id`
 - `GET|POST /api/tickets/:id/comments`
-- `POST /api/tickets/:id/attachments/init`
-- `POST /api/tickets/:id/attachments/:attachmentId/complete`
+- `POST /api/tickets/:id/attachments`
 - `GET /api/tickets/:id/attachments`
+- `GET /api/tickets/:id/attachments/:attachmentId/inline`
 - `GET /api/tickets/:id/attachments/:attachmentId/download`
 - `DELETE /api/tickets/:id/attachments/:attachmentId`
+
+Upload de anexo e feito por corpo binario autenticado, sem base64 e sem URL publica:
+
+- `Content-Type`: MIME real permitido.
+- `X-File-Name`: nome original codificado com `encodeURIComponent`.
+- `X-File-Size`: tamanho declarado em bytes.
+
+O backend valida tenant, visibilidade do ticket, permissao `tickets.attachments.upload`, allowlist de MIME,
+tamanho maximo, assinatura basica do arquivo e existencia do objeto privado antes de marcar o anexo como
+`READY`.
 
 ## Realtime
 

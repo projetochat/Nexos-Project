@@ -1,11 +1,25 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Plus, Workflow, Zap } from "lucide-react";
+import { ArrowRight, Plus, Trash2, Workflow, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { Badge, Button, Card, Field, Input, SectionHeader, Textarea } from "@/components/ui-kit";
-import { automationApi, type ApiAutomationRule } from "@/lib/nexos-api";
+import {
+  Badge,
+  Button,
+  Card,
+  Field,
+  Input,
+  SectionHeader,
+  Select,
+  Textarea,
+} from "@/components/ui-kit";
+import {
+  automationApi,
+  organizationApi,
+  type ApiAutomationRule,
+  type ApiDepartment,
+} from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/automacoes")({
   head: () => ({ meta: [{ title: "Automacoes - Nexo" }] }),
@@ -13,6 +27,15 @@ export const Route = createFileRoute("/automacoes")({
 });
 
 const automationQueryKey = ["nexos", "automations"] as const;
+const departmentsQueryKey = ["nexos", "departments"] as const;
+
+type AutomationActionInput = "BOT_REPLY" | "ASSIGN_DEPARTMENT" | "NOTIFY_TEAM";
+
+const ACTION_LABEL: Record<ApiAutomationRule["actionType"], string> = {
+  bot_reply: "Resposta do bot",
+  assign_department: "Atribuir departamento",
+  notify_team: "Notificar equipe",
+};
 
 function Page() {
   const qc = useQueryClient();
@@ -20,6 +43,10 @@ function Page() {
   const { data, isLoading } = useQuery({
     queryKey: automationQueryKey,
     queryFn: () => automationApi.list({ pageSize: 100 }),
+  });
+  const { data: departments = [] } = useQuery({
+    queryKey: departmentsQueryKey,
+    queryFn: organizationApi.listDepartments,
   });
   const rules = data?.items ?? [];
   const refresh = () => qc.invalidateQueries({ queryKey: automationQueryKey });
@@ -39,6 +66,7 @@ function Page() {
 
         {creating && (
           <AutomationForm
+            departments={departments.filter((department) => department.active)}
             onCancel={() => setCreating(false)}
             onSubmit={async (payload) => {
               await automationApi.create(payload);
@@ -62,6 +90,11 @@ function Page() {
                   toast.success("Automacao atualizada");
                   refresh();
                 }}
+                onArchive={async () => {
+                  await automationApi.archive(rule.id);
+                  toast.success("Automacao arquivada");
+                  refresh();
+                }}
               />
             ))}
             {isLoading && (
@@ -79,7 +112,15 @@ function Page() {
   );
 }
 
-function AutomationRow({ rule, onToggle }: { rule: ApiAutomationRule; onToggle: () => void }) {
+function AutomationRow({
+  rule,
+  onToggle,
+  onArchive,
+}: {
+  rule: ApiAutomationRule;
+  onToggle: () => void;
+  onArchive: () => void;
+}) {
   return (
     <div className="flex items-center gap-4 p-4">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
@@ -96,33 +137,47 @@ function AutomationRow({ rule, onToggle }: { rule: ApiAutomationRule; onToggle: 
           </span>
           <ArrowRight className="h-3 w-3" />
           <span className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5">
-            {rule.actionType.replaceAll("_", " ")}
+            {ACTION_LABEL[rule.actionType]}
           </span>
+          {rule.department && <span>{rule.department.nome}</span>}
+          {rule.responseText && <span className="truncate">{rule.responseText}</span>}
         </div>
       </div>
-      <Button variant="outline" size="sm" onClick={onToggle}>
-        {rule.status === "active" ? "Pausar" : "Ativar"}
-      </Button>
+      <div className="flex shrink-0 items-center gap-2">
+        <Button variant="outline" size="sm" onClick={onToggle}>
+          {rule.status === "active" ? "Pausar" : "Ativar"}
+        </Button>
+        <Button variant="ghost" size="icon" onClick={onArchive} aria-label="Arquivar automacao">
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }
 
 function AutomationForm({
+  departments,
   onCancel,
   onSubmit,
 }: {
+  departments: ApiDepartment[];
   onCancel: () => void;
   onSubmit: (payload: {
     name: string;
     matchText: string;
-    responseText: string;
-    actionType: "BOT_REPLY";
+    responseText?: string;
+    actionType: AutomationActionInput;
+    departmentId?: string;
   }) => Promise<void>;
 }) {
   const [name, setName] = React.useState("");
   const [matchText, setMatchText] = React.useState("");
   const [responseText, setResponseText] = React.useState("");
+  const [actionType, setActionType] = React.useState<AutomationActionInput>("BOT_REPLY");
+  const [departmentId, setDepartmentId] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const requiresResponse = actionType === "BOT_REPLY";
+  const requiresDepartment = actionType === "ASSIGN_DEPARTMENT";
 
   return (
     <Card className="mb-4">
@@ -134,7 +189,31 @@ function AutomationForm({
           <Input value={matchText} onChange={(event) => setMatchText(event.target.value)} />
         </Field>
       </div>
-      <Field label="Resposta">
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <Field label="Acao">
+          <Select
+            value={actionType}
+            onChange={(event) => setActionType(event.target.value as AutomationActionInput)}
+          >
+            <option value="BOT_REPLY">Resposta do bot</option>
+            <option value="ASSIGN_DEPARTMENT">Atribuir departamento</option>
+            <option value="NOTIFY_TEAM">Notificar equipe</option>
+          </Select>
+        </Field>
+        {requiresDepartment && (
+          <Field label="Departamento">
+            <Select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
+              <option value="">Selecione</option>
+              {departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+      </div>
+      <Field label={requiresResponse ? "Resposta" : "Mensagem interna opcional"}>
         <Textarea value={responseText} onChange={(event) => setResponseText(event.target.value)} />
       </Field>
       <div className="mt-3 flex justify-end gap-2">
@@ -146,8 +225,16 @@ function AutomationForm({
           size="sm"
           disabled={busy}
           onClick={async () => {
-            if (!name.trim() || !matchText.trim() || !responseText.trim()) {
-              toast.error("Preencha nome, disparo e resposta.");
+            if (!name.trim() || !matchText.trim()) {
+              toast.error("Preencha nome e texto de disparo.");
+              return;
+            }
+            if (requiresResponse && !responseText.trim()) {
+              toast.error("Preencha a resposta do bot.");
+              return;
+            }
+            if (requiresDepartment && !departmentId) {
+              toast.error("Selecione o departamento.");
               return;
             }
             setBusy(true);
@@ -155,8 +242,9 @@ function AutomationForm({
               await onSubmit({
                 name: name.trim(),
                 matchText: matchText.trim(),
-                responseText: responseText.trim(),
-                actionType: "BOT_REPLY",
+                responseText: responseText.trim() || undefined,
+                actionType,
+                departmentId: requiresDepartment ? departmentId : undefined,
               });
             } finally {
               setBusy(false);

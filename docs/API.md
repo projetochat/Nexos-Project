@@ -458,7 +458,7 @@ O dominio de Chamados usa `/api/tickets` com JWT e RBAC `tickets.*`.
 
 Listagem suporta `search`, `status`, `priority`, `departmentId`, `assignedMembershipId`, `requesterContactId`, `customerId`, `page`, `pageSize` e `sort`.
 
-HTML recebido em `descriptionHtml` e comentarios e sempre sanitizado no backend. Anexos usam init/complete e download autenticado; object key e URL assinada nao sao expostos como contrato publico.
+HTML recebido em `descriptionHtml` e comentarios e sempre sanitizado no backend. Anexos usam upload binario direto em `POST /api/tickets/:id/attachments`, preview autenticado em `GET /api/tickets/:id/attachments/:attachmentId/inline` e download autenticado em `GET /api/tickets/:id/attachments/:attachmentId/download`; object key e URL assinada nao sao expostos como contrato publico.
 
 ## Sprint 14 - Product completion foundation
 

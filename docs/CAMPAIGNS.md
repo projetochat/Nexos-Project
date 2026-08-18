@@ -109,3 +109,16 @@ Para declarar uma campanha fisica aprovada, validar com uma conexao Evolution re
 - duplicacao nao duplica recipients nem outbox;
 - Inbox recebe atualizacao sem F5;
 - zero mocks, zero Supabase e zero progresso artificial em `/campanhas`.
+
+## PRC-05
+
+Contrato aprovado para readiness automatizado:
+
+- audiencia por contatos, tags, customers e todos;
+- preview dry-run sem criar recipients, messages, outbox events ou jobs;
+- agendamento com snapshot e reconciliacao do scheduler;
+- cancelamento por job `campaign.cancel`;
+- retry BullMQ com backoff exponencial e jobs falhos retidos;
+- limites de plano por `maxCampaignRecipients`;
+- logs operacionais com `campaign.worker.config` e `campaign.job.failed`;
+- health com `campaignQueue`, `campaignWorker` e `campaignScheduler`.
