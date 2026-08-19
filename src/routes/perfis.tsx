@@ -10,29 +10,90 @@ import { organizationApi, type ApiRole } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/perfis")({ component: Page });
 
-const PERM_FIELDS = [
-  { id: "users.read", label: "Ver usuarios" },
-  { id: "users.manage", label: "Gerenciar usuarios" },
-  { id: "departments.read", label: "Ver departamentos" },
-  { id: "departments.manage", label: "Gerenciar departamentos" },
-  { id: "roles.read", label: "Ver perfis" },
-  { id: "roles.manage", label: "Gerenciar perfis" },
-  { id: "chat.contacts.edit", label: "Pode editar contato" },
-  { id: "chat.customer_link.edit", label: "Pode editar vinculo de cliente" },
-  { id: "chat.tags.use", label: "Pode usar etiquetas" },
-  { id: "chat.tags.manage", label: "Pode gerenciar etiquetas" },
-  { id: "chat.leads.read", label: "Visualiza leads" },
-  { id: "chat.contacts.read", label: "Visualiza contatos" },
-  { id: "chat.phone.read", label: "Visualiza numero" },
-  { id: "chat.messages.delete", label: "Excluir mensagem" },
-  { id: "chat.messages.edit", label: "Editar mensagem" },
-  { id: "chat.quick_replies.read", label: "Acessa mensagens rapidas" },
-  { id: "chat.quick_replies.manage", label: "Gerenciar mensagens rapidas" },
-  { id: "chat.contacts.block", label: "Bloquear contatos" },
-  { id: "chat.audio.send", label: "Enviar audio" },
-  { id: "chat.agent_name.show", label: "Apresentar nome do atendente na conversa" },
-  { id: "chat.conversations.view_all_active", label: "Ver todas conversas ativas" },
-] as const;
+type PermissionField = { id: string; label: string };
+
+const PERMISSION_GROUPS: Array<{ title: string; items: PermissionField[] }> = [
+  {
+    title: "Administracao",
+    items: [
+      { id: "users.read", label: "Ver usuarios" },
+      { id: "users.manage", label: "Gerenciar usuarios" },
+      { id: "departments.read", label: "Ver departamentos" },
+      { id: "departments.manage", label: "Gerenciar departamentos" },
+      { id: "roles.read", label: "Ver perfis" },
+      { id: "roles.manage", label: "Gerenciar perfis" },
+    ],
+  },
+  {
+    title: "CRM e leads",
+    items: [
+      { id: "crm.read", label: "Ver CRM" },
+      { id: "crm.manage", label: "Gerenciar CRM" },
+      { id: "chat.contacts.read", label: "Visualizar contatos" },
+      { id: "chat.contacts.edit", label: "Editar contato" },
+      { id: "chat.contacts.block", label: "Bloquear contatos" },
+      { id: "chat.customer_link.edit", label: "Editar vinculo de cliente" },
+      { id: "chat.phone.read", label: "Visualizar numero" },
+      { id: "chat.leads.read", label: "Visualizar leads" },
+      { id: "leads.manage", label: "Gerenciar leads" },
+    ],
+  },
+  {
+    title: "Atendimento e mensagens",
+    items: [
+      { id: "conversations.read", label: "Ver conversas" },
+      { id: "conversations.assign", label: "Atribuir conversas" },
+      { id: "conversations.manage", label: "Gerenciar conversas" },
+      { id: "messages.send", label: "Enviar mensagens" },
+      { id: "chat.messages.edit", label: "Editar mensagem" },
+      { id: "chat.messages.delete", label: "Excluir mensagem" },
+      { id: "chat.audio.send", label: "Enviar audio" },
+      { id: "chat.agent_name.show", label: "Apresentar nome do atendente" },
+      { id: "chat.conversations.view_all_active", label: "Ver todas conversas ativas" },
+    ],
+  },
+  {
+    title: "Catalogos e canais",
+    items: [
+      { id: "connections.read", label: "Ver instancias" },
+      { id: "connections.manage", label: "Gerenciar instancias" },
+      { id: "chat.tags.use", label: "Usar etiquetas" },
+      { id: "chat.tags.manage", label: "Gerenciar etiquetas" },
+      { id: "chat.quick_replies.read", label: "Acessar mensagens rapidas" },
+      { id: "chat.quick_replies.manage", label: "Gerenciar mensagens rapidas" },
+      { id: "notifications.read", label: "Ver notificacoes" },
+      { id: "notifications.manage", label: "Gerenciar notificacoes" },
+    ],
+  },
+  {
+    title: "Automacoes, chamados e campanhas",
+    items: [
+      { id: "automations.read", label: "Ver automacoes" },
+      { id: "automations.manage", label: "Gerenciar automacoes" },
+      { id: "tickets.read", label: "Ver chamados" },
+      { id: "tickets.create", label: "Criar chamados" },
+      { id: "tickets.update", label: "Atualizar chamados" },
+      { id: "tickets.assign", label: "Atribuir chamados" },
+      { id: "tickets.status.update", label: "Alterar status de chamados" },
+      { id: "tickets.comment", label: "Comentar chamados" },
+      { id: "tickets.attachments.upload", label: "Anexar em chamados" },
+      { id: "tickets.attachments.delete", label: "Excluir anexos de chamados" },
+      { id: "tickets.manage", label: "Gerenciar chamados" },
+      { id: "campaigns.read", label: "Ver campanhas" },
+      { id: "campaigns.create", label: "Criar campanhas" },
+      { id: "campaigns.update", label: "Editar campanhas" },
+      { id: "campaigns.schedule", label: "Agendar campanhas" },
+      { id: "campaigns.start", label: "Iniciar campanhas" },
+      { id: "campaigns.pause", label: "Pausar campanhas" },
+      { id: "campaigns.cancel", label: "Cancelar campanhas" },
+      { id: "campaigns.duplicate", label: "Duplicar campanhas" },
+      { id: "campaigns.recipients.read", label: "Ver recipients de campanhas" },
+      { id: "campaigns.manage", label: "Gerenciar campanhas" },
+    ],
+  },
+];
+
+const PERM_FIELDS = PERMISSION_GROUPS.flatMap((group) => group.items);
 
 type PerfilFormData = {
   name: string;
@@ -373,14 +434,23 @@ function PerfilForm({
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Permissoes
           </h3>
-          <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-            {PERM_FIELDS.map((permission) => (
-              <CheckField
-                key={permission.id}
-                label={permission.label}
-                checked={form.permissionIds.includes(permission.id)}
-                onChange={(checked) => togglePermission(permission.id, checked)}
-              />
+          <div className="space-y-4">
+            {PERMISSION_GROUPS.map((group) => (
+              <div key={group.title}>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  {group.title}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                  {group.items.map((permission) => (
+                    <CheckField
+                      key={permission.id}
+                      label={permission.label}
+                      checked={form.permissionIds.includes(permission.id)}
+                      onChange={(checked) => togglePermission(permission.id, checked)}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </section>

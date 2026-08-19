@@ -122,20 +122,18 @@ export class ConversationsController {
     const now = new Date();
 
     const result = await this.prisma.$transaction(async (tx) => {
-      if (connection) {
-        const existing = await tx.conversation.findFirst({
-          where: {
-            tenantId: current.tenantId,
-            contactId: contact.id,
-            connectionId: connection.id,
-            archivedAt: null,
-            status: { not: ConversationStatus.FECHADA },
-          },
-          orderBy: { updatedAt: "desc" },
-          include: conversationInclude,
-        });
-        if (existing) return { conversation: existing, created: false };
-      }
+      const existing = await tx.conversation.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          contactId: contact.id,
+          ...(connection ? { connectionId: connection.id } : {}),
+          archivedAt: null,
+          status: { not: ConversationStatus.FECHADA },
+        },
+        orderBy: { updatedAt: "desc" },
+        include: conversationInclude,
+      });
+      if (existing) return { conversation: existing, created: false };
 
       const protocol = assignToSelf ? await this.nextProtocol(tx, current.tenantId) : null;
       const created = await tx.conversation.create({

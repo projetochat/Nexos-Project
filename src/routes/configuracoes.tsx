@@ -4,9 +4,7 @@ import {
   Users,
   Shield,
   Clock,
-  MessageSquare,
   Plug,
-  Lock,
   SlidersHorizontal,
 } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
@@ -22,9 +20,7 @@ const TABS = [
   { to: "/configuracoes/usuarios", label: "Usuários", icon: Users },
   { to: "/configuracoes/permissoes", label: "Permissões", icon: Shield },
   { to: "/configuracoes/horarios", label: "Horários", icon: Clock },
-  { to: "/configuracoes/mensagens", label: "Mensagens automáticas", icon: MessageSquare },
   { to: "/configuracoes/integracoes", label: "Integrações", icon: Plug },
-  { to: "/configuracoes/seguranca", label: "Segurança", icon: Lock },
 ] as const;
 
 function ConfiguracoesLayout() {

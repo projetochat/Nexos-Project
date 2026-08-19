@@ -143,9 +143,9 @@ function Page() {
   });
 
   const invalidateCampaigns = () => {
-    queryClient.invalidateQueries({ queryKey: ["campaigns.list"] });
-    queryClient.invalidateQueries({ queryKey: ["campaigns.detail"] });
-    queryClient.invalidateQueries({ queryKey: ["campaigns.recipients"] });
+    queryClient.invalidateQueries({
+      predicate: (query) => String(query.queryKey[0]).startsWith("campaigns."),
+    });
   };
 
   const actionMutation = useMutation({
@@ -281,6 +281,7 @@ function Page() {
           connections={connectionsQuery.data ?? []}
           onCreated={(campaign) => {
             createModal.hide();
+            setFilters({ search: "", status: "ALL", connectionId: "" });
             setSelectedId(campaign.id);
             invalidateCampaigns();
           }}

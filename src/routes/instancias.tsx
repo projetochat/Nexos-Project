@@ -34,7 +34,12 @@ const STATUS_TONE: Record<
 function Page() {
   const qc = useQueryClient();
   const novo = useDisclosure();
-  const [qr, setQr] = React.useState<{ name: string; value: string | null } | null>(null);
+  const [qr, setQr] = React.useState<{
+    connectionId: string;
+    name: string;
+    value: string | null;
+    status?: string;
+  } | null>(null);
   const [removing, setRemoving] = React.useState<ApiMessagingConnection | null>(null);
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["nexos", "messaging-connections"],
@@ -43,12 +48,33 @@ function Page() {
   });
   const evolutionItems = items.filter((item) => item.providerType === "evolution");
 
+  React.useEffect(() => {
+    if (!qr) return;
+    const current = items.find((item) => item.id === qr.connectionId);
+    if (current?.status === "connected") {
+      setQr(null);
+      toast.success(`${current.name} conectada`);
+    }
+  }, [items, qr]);
+
   const create = useMutation({
     mutationFn: connectionsApi.createEvolution,
     onSuccess: (connection) => {
       qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
-      if (connection.qrCodeBase64) setQr({ name: connection.name, value: connection.qrCodeBase64 });
-      toast.success("Conexao criada");
+      if (connection.status === "connected") {
+        setQr(null);
+        toast.success(`${connection.name} conectada`);
+      } else if (connection.qrCodeBase64) {
+        setQr({
+          connectionId: connection.id,
+          name: connection.name,
+          value: connection.qrCodeBase64,
+          status: connection.status,
+        });
+        toast.success("Conexao criada. Leia o QR Code para concluir.");
+      } else {
+        toast.success("Conexao criada");
+      }
       novo.hide();
     },
     onError: (e) => toast.error((e as Error).message),
@@ -64,7 +90,17 @@ function Page() {
       result: await connectionsApi.qr(connection.id),
     }),
     onSuccess: ({ connection, result }) => {
-      setQr({ name: connection.name, value: result.qrCodeBase64 });
+      if (result.status.toLowerCase() === "connected") {
+        setQr(null);
+        toast.success(`${connection.name} conectada`);
+      } else {
+        setQr({
+          connectionId: connection.id,
+          name: connection.name,
+          value: result.qrCodeBase64,
+          status: result.status,
+        });
+      }
       qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
     },
     onError: (e) => toast.error((e as Error).message),
@@ -157,9 +193,19 @@ function Page() {
                     variant="secondary"
                     size="sm"
                     onClick={() => qrCode.mutate(connection)}
-                    disabled={connection.providerType !== "evolution"}
+                    disabled={
+                      connection.providerType !== "evolution" || connection.status === "connected"
+                    }
                   >
-                    <QrCode className="h-3.5 w-3.5" /> QR
+                    {connection.status === "connected" ? (
+                      <>
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Conectada
+                      </>
+                    ) : (
+                      <>
+                        <QrCode className="h-3.5 w-3.5" /> QR
+                      </>
+                    )}
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => refresh.mutate(connection.id)}>
                     <RefreshCw className="h-3.5 w-3.5" /> Status
@@ -267,7 +313,7 @@ function QrModal({
   qr,
   onClose,
 }: {
-  qr: { name: string; value: string | null } | null;
+  qr: { connectionId: string; name: string; value: string | null; status?: string } | null;
   onClose: () => void;
 }) {
   return (

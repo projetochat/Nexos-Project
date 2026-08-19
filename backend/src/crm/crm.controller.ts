@@ -173,6 +173,7 @@ export class CrmController {
   ) {
     const { page, pageSize, skip } = pagination(query);
     const q = query.q?.trim();
+    const qDigits = q?.replace(/\D/g, "") ?? "";
     const where: Prisma.ContactWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,
@@ -197,7 +198,9 @@ export class CrmController {
             OR: [
               { name: { contains: q, mode: "insensitive" } },
               { phone: { contains: q, mode: "insensitive" } },
-              { normalizedPhone: { contains: q.replace(/\D/g, ""), mode: "insensitive" } },
+              ...(qDigits
+                ? [{ normalizedPhone: { contains: qDigits, mode: "insensitive" } } as const]
+                : []),
               { email: { contains: q, mode: "insensitive" } },
               { customer: { name: { contains: q, mode: "insensitive" } } },
             ],

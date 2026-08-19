@@ -11,47 +11,57 @@ import {
   Avatar,
   Badge,
 } from "@/components/ui-kit";
+import { ROLE_META, useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/perfil")({
   component: PerfilPage,
 });
 
 function PerfilPage() {
+  const user = useSession((state) => state.user);
+  const roleMeta = user ? ROLE_META[user.role] : null;
+  const displayName = user?.nome ?? "Usuario";
+  const initialsScope = user?.empresaNome ?? roleMeta?.scope ?? "Nexo";
+
   return (
     <AppShell>
       <PageContainer>
         <SectionHeader
           title="Seu perfil"
-          subtitle="Informações que aparecem para clientes e colegas."
+          subtitle="Informacoes do usuario autenticado nesta sessao."
         />
 
         <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
           <Card className="flex flex-col items-center text-center">
             <div className="relative">
-              <Avatar name="Ana Ribeiro" size={96} />
+              <Avatar name={displayName} src={user?.avatarUrl} size={96} />
               <button className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:text-foreground">
                 <Camera className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-4 text-base font-semibold">Ana Ribeiro</p>
-            <p className="text-xs text-muted-foreground">Supervisora · Suporte</p>
+            <p className="mt-4 text-base font-semibold">{displayName}</p>
+            <p className="text-xs text-muted-foreground">
+              {roleMeta?.label ?? "Perfil"} · {initialsScope}
+            </p>
             <div className="mt-3 flex flex-wrap justify-center gap-1.5">
               <Badge tone="success">Online</Badge>
-              <Badge tone="brand" dot={false}>Admin</Badge>
+              <Badge tone="brand" dot={false}>
+                {roleMeta?.label ?? "Usuario"}
+              </Badge>
             </div>
             <div className="mt-6 w-full border-t border-border pt-4 text-left">
               <dl className="space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Conversas hoje</dt>
-                  <dd className="font-mono font-semibold">42</dd>
+                  <dt className="text-muted-foreground">Empresa</dt>
+                  <dd className="text-right font-medium">{user?.empresaNome ?? "Nexo"}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-muted-foreground">CSAT médio</dt>
-                  <dd className="font-mono font-semibold">4.9</dd>
+                  <dt className="text-muted-foreground">Permissoes</dt>
+                  <dd className="font-mono font-semibold">{user?.permissions?.length ?? 0}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Desde</dt>
-                  <dd>jan/2024</dd>
+                  <dt className="text-muted-foreground">E-mail</dt>
+                  <dd className="truncate pl-3 text-right">{user?.email ?? "-"}</dd>
                 </div>
               </dl>
             </div>
@@ -60,19 +70,28 @@ function PerfilPage() {
           <Card>
             <p className="text-sm font-semibold">Dados pessoais</p>
             <div className="mt-6 grid gap-4 md:grid-cols-2">
-              <Field label="Nome completo"><Input defaultValue="Ana Ribeiro" /></Field>
-              <Field label="Cargo"><Input defaultValue="Supervisora" /></Field>
-              <Field label="E-mail"><Input defaultValue="ana@nexo.com" /></Field>
-              <Field label="Telefone"><Input defaultValue="+55 11 98765-4321" /></Field>
+              <Field label="Nome completo">
+                <Input value={displayName} readOnly />
+              </Field>
+              <Field label="Perfil">
+                <Input value={roleMeta?.label ?? "Usuario"} readOnly />
+              </Field>
+              <Field label="E-mail">
+                <Input value={user?.email ?? ""} readOnly />
+              </Field>
+              <Field label="Empresa">
+                <Input value={user?.empresaNome ?? ""} readOnly />
+              </Field>
               <div className="md:col-span-2">
-                <Field label="Assinatura de mensagem" hint="Aparece ao final de respostas manuais.">
-                  <Textarea rows={2} defaultValue="Att., Ana · Nexo" />
+                <Field label="Escopo operacional">
+                  <Textarea rows={2} value={roleMeta?.scope ?? ""} readOnly />
                 </Field>
               </div>
             </div>
             <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
-              <Button variant="ghost">Cancelar</Button>
-              <Button variant="primary">Salvar</Button>
+              <Button variant="primary" disabled>
+                Dados sincronizados pela sessao
+              </Button>
             </div>
           </Card>
         </div>

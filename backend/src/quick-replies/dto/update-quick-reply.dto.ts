@@ -3,12 +3,12 @@ import { IsOptional, IsString, IsUUID, Length } from "class-validator";
 export class UpdateQuickReplyDto {
   @IsOptional()
   @IsString()
-  @Length(2, 120)
+  @Length(1, 120)
   title?: string;
 
   @IsOptional()
   @IsString()
-  @Length(2, 40)
+  @Length(1, 40)
   shortcut?: string;
 
   @IsOptional()
