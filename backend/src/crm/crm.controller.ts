@@ -413,8 +413,31 @@ export class CrmController {
     const tags = await this.prisma.tag.findMany({
       where: { tenantId: current.tenantId, archivedAt: null },
       orderBy: { name: "asc" },
+      include: {
+        contacts: {
+          where: { contact: { archivedAt: null } },
+          include: { contact: { select: { id: true, customerId: true } } },
+        },
+      },
     });
-    return tags.map((tag) => this.serializeTag(tag));
+    return Promise.all(
+      tags.map(async (tag) => {
+        const contactIds = tag.contacts.map((item) => item.contactId);
+        const conversationCount = contactIds.length
+          ? await this.prisma.conversation.count({
+              where: {
+                tenantId: current.tenantId,
+                archivedAt: null,
+                contactId: { in: contactIds },
+              },
+            })
+          : 0;
+        const customerCount = new Set(
+          tag.contacts.map((item) => item.contact.customerId).filter(Boolean),
+        ).size;
+        return this.serializeTag(tag, { conversationCount, customerCount });
+      }),
+    );
   }
 
   private async findCustomerOrThrow(id: string, tenantId: string) {
@@ -516,8 +539,17 @@ export class CrmController {
     };
   }
 
-  private serializeTag(tag: { id: string; name: string; color: string }) {
-    return { id: tag.id, nome: tag.name, cor: tag.color };
+  private serializeTag(
+    tag: { id: string; name: string; color: string },
+    counts?: { conversationCount?: number; customerCount?: number },
+  ) {
+    return {
+      id: tag.id,
+      nome: tag.name,
+      cor: tag.color,
+      conversationCount: counts?.conversationCount,
+      customerCount: counts?.customerCount,
+    };
   }
 }
 

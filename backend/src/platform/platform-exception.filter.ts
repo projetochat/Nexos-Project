@@ -50,6 +50,7 @@ export class PlatformExceptionFilter implements ExceptionFilter {
       requestId,
       code: mapped.code,
       message: mapped.message,
+      ...(mapped.details === undefined ? {} : { details: mapped.details }),
     });
   }
 }
@@ -58,6 +59,7 @@ function mapPlatformError(error: unknown): {
   status: number;
   code: PlatformErrorCode;
   message: string;
+  details?: unknown;
 } {
   if (error instanceof HttpException) {
     const status = error.getStatus();
@@ -73,6 +75,7 @@ function mapPlatformError(error: unknown): {
           body.message,
           "Nao foi possivel processar a requisicao de plataforma.",
         ),
+        details: body.details,
       };
     }
     if (status === HttpStatus.NOT_FOUND) {

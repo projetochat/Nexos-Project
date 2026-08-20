@@ -16,7 +16,7 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
-import { Prisma } from "../generated/prisma";
+import { ConversationStatus, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { AssignDepartmentMemberDto } from "./dto/assign-department-member.dto";
@@ -37,11 +37,18 @@ export class DepartmentsController {
     const departments = await this.prisma.department.findMany({
       where: { tenantId: current.tenantId },
       orderBy: { name: "asc" },
-      include: { members: true },
+      include: {
+        members: true,
+        conversations: {
+          where: { status: { not: ConversationStatus.FECHADA }, archivedAt: null },
+          select: { id: true },
+        },
+      },
     });
     return departments.map((department) => ({
       ...this.serialize(department),
       memberCount: department.members.length,
+      openConversationCount: department.conversations.length,
     }));
   }
 

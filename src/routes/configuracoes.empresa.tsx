@@ -1,11 +1,14 @@
+import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Card, Field, Input, Textarea, Button, Select } from "@/components/ui-kit";
+import { maskCnpj } from "@/lib/input-masks";
 
 export const Route = createFileRoute("/configuracoes/empresa")({
   component: EmpresaSettings,
 });
 
 function EmpresaSettings() {
+  const [cnpj, setCnpj] = React.useState("12.345.678/0001-90");
   return (
     <Card>
       <p className="text-sm font-semibold">Perfil da empresa</p>
@@ -17,7 +20,7 @@ function EmpresaSettings() {
           <Input defaultValue="Acme Atendimento LTDA" />
         </Field>
         <Field label="CNPJ">
-          <Input defaultValue="12.345.678/0001-90" />
+          <Input value={cnpj} onChange={(event) => setCnpj(maskCnpj(event.target.value))} />
         </Field>
         <Field label="Fuso horário">
           <Select defaultValue="br">

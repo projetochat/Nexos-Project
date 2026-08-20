@@ -973,6 +973,7 @@ model QuickReply {
   shortcut              String
   normalizedShortcut    String
   content               String
+  closeOnSend           Boolean           @default(false)
   departmentId          String?
   createdByMembershipId String?
   archivedAt            DateTime?

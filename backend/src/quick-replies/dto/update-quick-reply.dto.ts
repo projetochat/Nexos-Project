@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID, Length } from "class-validator";
+import { IsBoolean, IsOptional, IsString, IsUUID, Length } from "class-validator";
 
 export class UpdateQuickReplyDto {
   @IsOptional()
@@ -19,4 +19,8 @@ export class UpdateQuickReplyDto {
   @IsOptional()
   @IsUUID()
   departmentId?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  closeOnSend?: boolean;
 }

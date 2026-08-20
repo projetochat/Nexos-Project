@@ -39,6 +39,7 @@ import {
   type ApiContact,
   type ApiCustomer,
   type ApiMessagingConnection,
+  type PaginatedResponse,
   type ApiTag,
 } from "@/lib/nexos-api";
 import { fmtDate, num } from "@/lib/format";
@@ -57,6 +58,12 @@ type CampaignFilters = {
   search: string;
   status: "ALL" | ApiCampaignStatus;
   connectionId: string;
+};
+
+const DEFAULT_CAMPAIGN_FILTERS: CampaignFilters = {
+  search: "",
+  status: "ALL",
+  connectionId: "",
 };
 
 const STATUS_LABEL: Record<ApiCampaignStatus, string> = {
@@ -89,11 +96,7 @@ const STATUS_TONE: Record<
 function Page() {
   const queryClient = useQueryClient();
   const createModal = useDisclosure();
-  const [filters, setFilters] = React.useState<CampaignFilters>({
-    search: "",
-    status: "ALL",
-    connectionId: "",
-  });
+  const [filters, setFilters] = React.useState<CampaignFilters>(DEFAULT_CAMPAIGN_FILTERS);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [confirming, setConfirming] = React.useState<null | {
     action: "start" | "cancel";
@@ -281,7 +284,30 @@ function Page() {
           connections={connectionsQuery.data ?? []}
           onCreated={(campaign) => {
             createModal.hide();
-            setFilters({ search: "", status: "ALL", connectionId: "" });
+            setFilters(DEFAULT_CAMPAIGN_FILTERS);
+            queryClient.setQueryData<PaginatedResponse<ApiCampaign>>(
+              queryKeys.list(DEFAULT_CAMPAIGN_FILTERS),
+              (current) => {
+                if (!current) {
+                  return {
+                    items: [campaign],
+                    total: 1,
+                    page: 1,
+                    pageSize: 50,
+                    totalPages: 1,
+                  };
+                }
+                const items = [
+                  campaign,
+                  ...current.items.filter((item) => item.id !== campaign.id),
+                ];
+                return {
+                  ...current,
+                  items,
+                  total: Math.max(current.total, items.length),
+                };
+              },
+            );
             setSelectedId(campaign.id);
             invalidateCampaigns();
           }}

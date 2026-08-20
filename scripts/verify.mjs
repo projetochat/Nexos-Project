@@ -45,6 +45,12 @@ const gates = bunAvailable
       ],
       ["operational:runtime", bun(), ["run", "test:operational-runtime"]],
       ["backend:build", bun(), ["run", "backend:build"]],
+      [
+        "backend:test-db:migrate",
+        bunx(),
+        ["prisma", "migrate", "deploy", "--schema", "backend/prisma/schema.prisma"],
+        { env: { ...env, DATABASE_URL: env.NEXOS_TEST_DATABASE_URL } },
+      ],
       ["backend:test", bun(), ["run", "backend:test"]],
       ["redis:queue-smoke", bun(), ["backend/scripts/verify-redis-queue.mjs"]],
       ["security:xss", bun(), ["run", "test:security"]],
@@ -89,6 +95,12 @@ const gates = bunAvailable
       ["operational:runtime", bin("vitest"), ["run", "src/lib/operational-runtime-rules.test.ts"]],
       ["backend:build:tsc", backendBin("tsc"), ["-p", "backend/tsconfig.build.json"]],
       ["backend:build:copy-prisma", process.execPath, ["backend/scripts/copy-prisma-client.mjs"]],
+      [
+        "backend:test-db:migrate",
+        bin("prisma"),
+        ["migrate", "deploy", "--schema", "backend/prisma/schema.prisma"],
+        { env: { ...env, DATABASE_URL: env.NEXOS_TEST_DATABASE_URL } },
+      ],
       ["backend:test", backendBin("vitest"), ["run"], { cwd: resolve(root, "backend") }],
       ["redis:queue-smoke", process.execPath, ["backend/scripts/verify-redis-queue.mjs"]],
       [
@@ -101,7 +113,7 @@ const gates = bunAvailable
 for (const [name, command, args, options = {}] of gates) {
   console.log(`\n==> ${name}`);
   const result = spawnSync(command, args, {
-    env,
+    env: options.env ?? env,
     cwd: options.cwd ?? root,
     stdio: "inherit",
   });

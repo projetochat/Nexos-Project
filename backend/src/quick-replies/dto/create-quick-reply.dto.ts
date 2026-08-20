@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID, Length } from "class-validator";
+import { IsBoolean, IsOptional, IsString, IsUUID, Length } from "class-validator";
 
 export class CreateQuickReplyDto {
   @IsString()
@@ -16,4 +16,8 @@ export class CreateQuickReplyDto {
   @IsOptional()
   @IsUUID()
   departmentId?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  closeOnSend?: boolean;
 }

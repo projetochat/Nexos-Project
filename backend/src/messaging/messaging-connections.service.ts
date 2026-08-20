@@ -500,6 +500,7 @@ export class MessagingConnectionsService {
       status: connection.status.toLowerCase(),
       externalReference: connection.externalReference,
       ownerPhoneMasked: maskPhone(connection.ownerPhoneNormalized),
+      ownerPhone: connection.ownerPhoneNormalized,
       archivedAt: connection.archivedAt,
       provider,
       createdAt: connection.createdAt,

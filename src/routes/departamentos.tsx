@@ -77,7 +77,7 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Departamentos"
-          subtitle={`${departamentos.filter((d) => d.active).length} departamentos ativos.`}
+          subtitle={`${departamentos.length} departamentos cadastrados.`}
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>
               <Plus className="h-3.5 w-3.5" /> Criar departamento
@@ -134,8 +134,8 @@ function Page() {
                 <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{d.description}</p>
                 <div className="mt-4 flex items-center justify-between border-t border-border pt-3 font-mono text-xs">
                   <span className="text-muted-foreground">{d.memberCount ?? 0} membros</span>
-                  <span className={d.active ? "text-primary" : "text-muted-foreground"}>
-                    {d.active ? "ativo" : "inativo"}
+                  <span className="text-primary">
+                    {d.openConversationCount ?? 0} conversas abertas
                   </span>
                 </div>
               </Card>

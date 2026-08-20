@@ -10,11 +10,13 @@ import { organizationApi, type ApiRole } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/perfis")({ component: Page });
 
+type PermissionTab = "chat" | "chamados";
 type PermissionField = { id: string; label: string };
 
-const PERMISSION_GROUPS: Array<{ title: string; items: PermissionField[] }> = [
+const PERMISSION_GROUPS: Array<{ title: string; tab: PermissionTab; items: PermissionField[] }> = [
   {
     title: "Administracao",
+    tab: "chat",
     items: [
       { id: "users.read", label: "Ver usuarios" },
       { id: "users.manage", label: "Gerenciar usuarios" },
@@ -26,6 +28,7 @@ const PERMISSION_GROUPS: Array<{ title: string; items: PermissionField[] }> = [
   },
   {
     title: "CRM e leads",
+    tab: "chat",
     items: [
       { id: "crm.read", label: "Ver CRM" },
       { id: "crm.manage", label: "Gerenciar CRM" },
@@ -40,6 +43,7 @@ const PERMISSION_GROUPS: Array<{ title: string; items: PermissionField[] }> = [
   },
   {
     title: "Atendimento e mensagens",
+    tab: "chat",
     items: [
       { id: "conversations.read", label: "Ver conversas" },
       { id: "conversations.assign", label: "Atribuir conversas" },
@@ -54,6 +58,7 @@ const PERMISSION_GROUPS: Array<{ title: string; items: PermissionField[] }> = [
   },
   {
     title: "Catalogos e canais",
+    tab: "chat",
     items: [
       { id: "connections.read", label: "Ver instancias" },
       { id: "connections.manage", label: "Gerenciar instancias" },
@@ -66,19 +71,11 @@ const PERMISSION_GROUPS: Array<{ title: string; items: PermissionField[] }> = [
     ],
   },
   {
-    title: "Automacoes, chamados e campanhas",
+    title: "Automacoes e campanhas",
+    tab: "chat",
     items: [
       { id: "automations.read", label: "Ver automacoes" },
       { id: "automations.manage", label: "Gerenciar automacoes" },
-      { id: "tickets.read", label: "Ver chamados" },
-      { id: "tickets.create", label: "Criar chamados" },
-      { id: "tickets.update", label: "Atualizar chamados" },
-      { id: "tickets.assign", label: "Atribuir chamados" },
-      { id: "tickets.status.update", label: "Alterar status de chamados" },
-      { id: "tickets.comment", label: "Comentar chamados" },
-      { id: "tickets.attachments.upload", label: "Anexar em chamados" },
-      { id: "tickets.attachments.delete", label: "Excluir anexos de chamados" },
-      { id: "tickets.manage", label: "Gerenciar chamados" },
       { id: "campaigns.read", label: "Ver campanhas" },
       { id: "campaigns.create", label: "Criar campanhas" },
       { id: "campaigns.update", label: "Editar campanhas" },
@@ -91,15 +88,54 @@ const PERMISSION_GROUPS: Array<{ title: string; items: PermissionField[] }> = [
       { id: "campaigns.manage", label: "Gerenciar campanhas" },
     ],
   },
+  {
+    title: "Chamados",
+    tab: "chamados",
+    items: [
+      { id: "tickets.read", label: "Ver chamados" },
+      { id: "tickets.create", label: "Criar chamados" },
+      { id: "tickets.update", label: "Atualizar chamados" },
+      { id: "tickets.assign", label: "Atribuir chamados" },
+      { id: "tickets.status.update", label: "Alterar status de chamados" },
+      { id: "tickets.comment", label: "Comentar chamados" },
+      { id: "tickets.attachments.upload", label: "Anexar em chamados" },
+      { id: "tickets.attachments.delete", label: "Excluir anexos de chamados" },
+      { id: "tickets.manage", label: "Gerenciar chamados" },
+    ],
+  },
 ];
 
 const PERM_FIELDS = PERMISSION_GROUPS.flatMap((group) => group.items);
+const WEEK_DAYS = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"] as const;
+const SHIFT_LABELS = {
+  morning: "Turno manha",
+  afternoon: "Turno tarde",
+  night: "Turno noite",
+} as const;
+type WeekDay = (typeof WEEK_DAYS)[number];
+type ShiftKey = keyof typeof SHIFT_LABELS;
+type WorkShift = { active: boolean; start: string; end: string };
+type WorkSchedule = { noSchedule: boolean; days: Record<WeekDay, Record<ShiftKey, WorkShift>> };
+
+function defaultWorkSchedule(): WorkSchedule {
+  const days = {} as WorkSchedule["days"];
+  for (const day of WEEK_DAYS) {
+    const weekday = !["Sabado", "Domingo"].includes(day);
+    days[day] = {
+      morning: { active: weekday, start: "08:00", end: "12:00" },
+      afternoon: { active: weekday, start: "13:00", end: "18:00" },
+      night: { active: false, start: "19:00", end: "22:00" },
+    };
+  }
+  return { noSchedule: false, days };
+}
 
 type PerfilFormData = {
   name: string;
   description: string;
   permissionIds: string[];
   departmentIds: string[];
+  workSchedule: WorkSchedule;
 };
 
 function CheckField({
@@ -151,7 +187,7 @@ function Page() {
 
   const save = useMutation({
     mutationFn: async ({ id, data }: { id?: string; data: PerfilFormData }) => {
-      const metadata = { departmentIds: data.departmentIds };
+      const metadata = { departmentIds: data.departmentIds, workSchedule: data.workSchedule };
       if (id) {
         return organizationApi.updateRole(id, {
           name: data.name,
@@ -327,12 +363,17 @@ function PerfilForm({
     description: "",
     permissionIds: [],
     departmentIds: [],
+    workSchedule: defaultWorkSchedule(),
   });
   const [error, setError] = React.useState("");
+  const [activeTab, setActiveTab] = React.useState<PermissionTab>("chat");
 
   React.useEffect(() => {
     if (!open) return;
-    const metadata = (initial?.metadata ?? {}) as { departmentIds?: string[] };
+    const metadata = (initial?.metadata ?? {}) as {
+      departmentIds?: string[];
+      workSchedule?: WorkSchedule;
+    };
     setForm(
       initial
         ? {
@@ -340,15 +381,23 @@ function PerfilForm({
             description: initial.description ?? "",
             permissionIds: initial.permissionIds,
             departmentIds: metadata.departmentIds ?? [],
+            workSchedule: metadata.workSchedule ?? defaultWorkSchedule(),
           }
         : {
             name: "",
             description: "",
-            permissionIds: ["departments.read", "chat.contacts.read", "chat.tags.use", "chat.quick_replies.read"],
+            permissionIds: [
+              "departments.read",
+              "chat.contacts.read",
+              "chat.tags.use",
+              "chat.quick_replies.read",
+            ],
             departmentIds: [],
+            workSchedule: defaultWorkSchedule(),
           },
     );
     setError("");
+    setActiveTab("chat");
   }, [initial, open]);
 
   const submit = () => {
@@ -411,6 +460,26 @@ function PerfilForm({
           />
         </Field>
 
+        <div className="flex border-b border-border">
+          {[
+            { id: "chat" as const, label: "Chat" },
+            { id: "chamados" as const, label: "Chamados" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`border-b-2 px-4 py-2 text-sm transition ${
+                activeTab === tab.id
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         <section>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Departamentos
@@ -435,26 +504,144 @@ function PerfilForm({
             Permissoes
           </h3>
           <div className="space-y-4">
-            {PERMISSION_GROUPS.map((group) => (
-              <div key={group.title}>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  {group.title}
-                </p>
-                <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-                  {group.items.map((permission) => (
-                    <CheckField
-                      key={permission.id}
-                      label={permission.label}
-                      checked={form.permissionIds.includes(permission.id)}
-                      onChange={(checked) => togglePermission(permission.id, checked)}
-                    />
-                  ))}
+            {PERMISSION_GROUPS.map((group) =>
+              group.tab === activeTab ? (
+                <div key={group.title}>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    {group.title}
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                    {group.items.map((permission) => (
+                      <CheckField
+                        key={permission.id}
+                        label={permission.label}
+                        checked={form.permissionIds.includes(permission.id)}
+                        onChange={(checked) => togglePermission(permission.id, checked)}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ) : null,
+            )}
           </div>
         </section>
+
+        <WorkScheduleEditor
+          value={form.workSchedule}
+          onChange={(workSchedule) => setForm((current) => ({ ...current, workSchedule }))}
+        />
       </div>
     </Modal>
+  );
+}
+
+function WorkScheduleEditor({
+  value,
+  onChange,
+}: {
+  value: WorkSchedule;
+  onChange: (value: WorkSchedule) => void;
+}) {
+  const updateShift = (day: WeekDay, shift: ShiftKey, patch: Partial<WorkShift>) => {
+    onChange({
+      ...value,
+      days: {
+        ...value.days,
+        [day]: {
+          ...value.days[day],
+          [shift]: { ...value.days[day][shift], ...patch },
+        },
+      },
+    });
+  };
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Jornada de trabalho
+        </h3>
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={value.noSchedule}
+            onChange={(event) => onChange({ ...value, noSchedule: event.target.checked })}
+            className="h-4 w-4 accent-primary"
+          />
+          Sem jornada
+        </label>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-[820px] w-full text-sm">
+          <thead className="bg-surface-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 text-left">Dia</th>
+              {Object.values(SHIFT_LABELS).map((label) => (
+                <th key={label} className="px-3 py-2 text-left" colSpan={3}>
+                  {label}
+                </th>
+              ))}
+            </tr>
+            <tr>
+              <th />
+              {Object.keys(SHIFT_LABELS).flatMap((shift) => [
+                <th key={`${shift}-active`} className="px-3 py-2 text-left">
+                  Ativo
+                </th>,
+                <th key={`${shift}-start`} className="px-3 py-2 text-left">
+                  Inicio
+                </th>,
+                <th key={`${shift}-end`} className="px-3 py-2 text-left">
+                  Fim
+                </th>,
+              ])}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {WEEK_DAYS.map((day) => (
+              <tr key={day}>
+                <td className="px-3 py-2 font-medium">{day}</td>
+                {(Object.keys(SHIFT_LABELS) as ShiftKey[]).map((shift) => {
+                  const item = value.days[day][shift];
+                  return (
+                    <React.Fragment key={`${day}-${shift}`}>
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={item.active}
+                          disabled={value.noSchedule}
+                          onChange={(event) =>
+                            updateShift(day, shift, { active: event.target.checked })
+                          }
+                          className="h-4 w-4 accent-primary"
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <Input
+                          type="time"
+                          value={item.start}
+                          disabled={value.noSchedule || !item.active}
+                          onChange={(event) =>
+                            updateShift(day, shift, { start: event.target.value })
+                          }
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <Input
+                          type="time"
+                          value={item.end}
+                          disabled={value.noSchedule || !item.active}
+                          onChange={(event) => updateShift(day, shift, { end: event.target.value })}
+                        />
+                      </td>
+                    </React.Fragment>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

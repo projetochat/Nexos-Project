@@ -68,6 +68,7 @@ export type ApiDepartment = {
   color: string;
   active: boolean;
   memberCount?: number;
+  openConversationCount?: number;
 };
 
 export type ApiRole = {
@@ -124,6 +125,8 @@ export type ApiTag = {
   nome: string;
   cor: string;
   archivedAt?: string | null;
+  conversationCount?: number;
+  customerCount?: number;
 };
 
 export type ApiContact = {
@@ -189,7 +192,8 @@ export type ApiQuickReply = {
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  close_on_send: false;
+  close_on_send: boolean;
+  closeOnSend?: boolean;
 };
 
 export type ApiMessage = {
@@ -329,6 +333,7 @@ export type ApiMessagingConnection = {
   status: "disconnected" | "connecting" | "connected" | "error" | "removed";
   externalReference: string | null;
   ownerPhoneMasked?: string | null;
+  ownerPhone?: string | null;
   archivedAt?: string | null;
   provider?: {
     existsInProvider?: boolean;
@@ -828,10 +833,17 @@ export const quickReplyApi = {
     shortcut: string;
     content: string;
     departmentId?: string | null;
+    closeOnSend?: boolean;
   }) => apiRequest<ApiQuickReply>("/quick-replies", { method: "POST", body: JSON.stringify(data) }),
   update: (
     id: string,
-    data: { title?: string; shortcut?: string; content?: string; departmentId?: string | null },
+    data: {
+      title?: string;
+      shortcut?: string;
+      content?: string;
+      departmentId?: string | null;
+      closeOnSend?: boolean;
+    },
   ) =>
     apiRequest<ApiQuickReply>(`/quick-replies/${id}`, {
       method: "PATCH",

@@ -603,13 +603,6 @@ function MessageBubble({
             : "rounded-bl-sm border border-border bg-surface-1"
         }`}
       >
-        {authorName && (
-          <p
-            className={`mb-1 text-[11px] font-semibold ${mine ? "text-white/90" : "text-foreground"}`}
-          >
-            {authorName}
-          </p>
-        )}
         {m.participant?.name && !mine && (
           <p className="mb-1 text-[11px] font-semibold text-primary">{m.participant.name}</p>
         )}

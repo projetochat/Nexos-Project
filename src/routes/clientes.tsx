@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import { Avatar, Button, Card, Field, Input, SectionHeader, Textarea } from "@/components/ui-kit";
+import { isValidEmail, maskBrazilPhone } from "@/lib/input-masks";
 import { crmApi, type ApiContact, type ApiCustomer } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/clientes")({ component: ClientesPage });
@@ -267,6 +268,7 @@ function CustomerFormModal({
   const handle = () => {
     const errs: Record<string, string> = {};
     if (!form.nome || form.nome.trim().length < 2) errs.nome = "Informe o nome.";
+    if (form.email?.trim() && !isValidEmail(form.email)) errs.email = "E-mail invalido.";
     if (Object.keys(errs).length) {
       setErrors(errs);
       toast.error("Verifique os campos destacados.");
@@ -309,6 +311,24 @@ function CustomerFormModal({
             onChange={(e) => setForm({ ...form, contato_responsavel: e.target.value })}
             placeholder="Nome do responsavel"
           />
+        </Field>
+        <Field label="Telefone">
+          <Input
+            value={form.telefone ?? ""}
+            onChange={(e) => setForm({ ...form, telefone: maskBrazilPhone(e.target.value) })}
+            placeholder="(11) 90000-0000"
+          />
+        </Field>
+        <Field label="E-mail">
+          <Input
+            type="email"
+            value={form.email ?? ""}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            placeholder="nome@empresa.com"
+          />
+          {errors.email && (
+            <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
+          )}
         </Field>
         <Field label="Cor">
           <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1.5">
@@ -497,6 +517,8 @@ function customerPayload(data: CustomerFormData) {
   return {
     name: data.nome,
     responsibleContactName: data.contato_responsavel?.trim() || null,
+    phone: data.telefone?.trim() || null,
+    email: data.email?.trim() || null,
     color: data.cor || "#3b82f6",
     notes: data.notas?.trim() || null,
   };

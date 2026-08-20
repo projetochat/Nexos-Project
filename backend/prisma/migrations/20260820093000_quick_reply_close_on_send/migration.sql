@@ -1,0 +1,2 @@
+ALTER TABLE "quick_replies"
+ADD COLUMN IF NOT EXISTS "closeOnSend" BOOLEAN NOT NULL DEFAULT false;

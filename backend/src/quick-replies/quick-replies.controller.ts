@@ -56,6 +56,7 @@ export class QuickRepliesController {
           shortcut: normalizeShortcutDisplay(dto.shortcut),
           normalizedShortcut,
           content: dto.content.trim(),
+          closeOnSend: dto.closeOnSend ?? false,
           departmentId,
           createdByMembershipId: current.membershipId,
         },
@@ -97,6 +98,7 @@ export class QuickRepliesController {
           shortcut: dto.shortcut ? normalizeShortcutDisplay(dto.shortcut) : undefined,
           normalizedShortcut: dto.shortcut ? normalizedShortcut : undefined,
           content: dto.content?.trim(),
+          closeOnSend: dto.closeOnSend,
           departmentId,
         },
         include: quickReplyInclude,
@@ -228,7 +230,8 @@ function serializeQuickReply(reply: QuickReplyWithRelations) {
     archivedAt: reply.archivedAt,
     createdAt: reply.createdAt,
     updatedAt: reply.updatedAt,
-    close_on_send: false,
+    close_on_send: reply.closeOnSend,
+    closeOnSend: reply.closeOnSend,
   };
 }
 

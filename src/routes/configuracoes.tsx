@@ -1,12 +1,5 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import {
-  Building2,
-  Users,
-  Shield,
-  Clock,
-  Plug,
-  SlidersHorizontal,
-} from "lucide-react";
+import { Building2, Users, Shield, Clock, Plug, SlidersHorizontal } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { SectionHeader } from "@/components/ui-kit";
 
@@ -38,7 +31,9 @@ function ConfiguracoesLayout() {
             <nav className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface-1 p-1 lg:flex-col lg:overflow-visible lg:p-2">
               {TABS.map((t) => {
                 const Icon = t.icon;
-                const active = pathname === t.to || (pathname === "/configuracoes" && t.to === "/configuracoes/empresa");
+                const active =
+                  pathname === t.to ||
+                  (pathname === "/configuracoes" && t.to === "/configuracoes/empresa");
                 return (
                   <Link
                     key={t.to}

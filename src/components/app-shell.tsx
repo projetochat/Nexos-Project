@@ -114,10 +114,50 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
     ],
   },
   {
-    title: "GLPI",
+    title: "Chamados",
     items: [{ to: "/chamados", label: "Chamados", icon: Ticket }],
   },
 ];
+
+const NAV_PERMISSIONS: Record<string, string[]> = {
+  "/inbox": ["conversations.read", "messages.send"],
+  "/clientes": ["crm.read", "crm.manage"],
+  "/contatos": ["chat.contacts.read", "crm.read"],
+  "/historico": ["conversations.read"],
+  "/atendentes": ["users.read", "users.manage"],
+  "/perfis": ["roles.read", "roles.manage"],
+  "/departamentos": ["departments.read", "departments.manage"],
+  "/etiquetas": ["chat.tags.use", "chat.tags.manage"],
+  "/mensagens-rapidas": ["chat.quick_replies.read", "chat.quick_replies.manage"],
+  "/campanhas": ["campaigns.read", "campaigns.manage"],
+  "/filas": ["conversations.manage"],
+  "/instancias": ["connections.read", "connections.manage"],
+  "/chatbot": ["automations.read", "automations.manage"],
+  "/automacoes": ["automations.read", "automations.manage"],
+  "/agente-ia": ["automations.read", "automations.manage"],
+  "/chamados": ["tickets.read", "tickets.create", "tickets.manage"],
+  "/relatorios": ["crm.read", "conversations.read", "campaigns.read", "tickets.read"],
+};
+
+function canSeeNavItem(item: NavItem, permissions?: string[]) {
+  const required = NAV_PERMISSIONS[item.to];
+  if (!required || !permissions?.length) return true;
+  const granted = new Set(permissions);
+  return required.some((permission) => granted.has(permission));
+}
+
+function filterAdminGroupsByPermissions(
+  groups: { title: string; items: NavItem[] }[],
+  permissions?: string[],
+) {
+  if (!permissions?.length) return groups;
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canSeeNavItem(item, permissions)),
+    }))
+    .filter((group) => group.items.length > 0);
+}
 
 const sistemaNav: NavItem[] = [
   { to: "/configuracoes", label: "Configurações", icon: Settings },
@@ -476,9 +516,12 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
 /* ---------- Sidebar ---------- */
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const role = useSession((s) => s.user?.role);
+  const permissions = useSession((s) => s.user?.permissions);
   const isOperator = role === "operator";
   const mainNav = isOperator ? filterForOperator(principalNav) : principalNav;
   const sysNav = isOperator ? filterForOperator(sistemaNav) : sistemaNav;
+  const visibleTopNav = topNav.filter((item) => canSeeNavItem(item, permissions));
+  const visibleAdminGroups = filterAdminGroupsByPermissions(adminGroups, permissions);
   return (
     <aside
       className={`hidden shrink-0 border-r border-border bg-surface-1 transition-[width] duration-200 ease-out lg:flex lg:flex-col ${
@@ -518,11 +561,11 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
             <div
               className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}
             >
-              {topNav.map((item) => (
+              {visibleTopNav.map((item) => (
                 <NavLink key={item.to} item={item} collapsed={collapsed} />
               ))}
             </div>
-            {adminGroups.map((g) => (
+            {visibleAdminGroups.map((g) => (
               <NavSection
                 key={g.title}
                 title={g.title}

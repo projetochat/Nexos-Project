@@ -38,11 +38,11 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Etiquetas"
-          subtitle={`${etiquetas.length} etiquetas para classificar contatos.`}
+          subtitle={`${etiquetas.length} etiquetas para classificar contatos e conversas.`}
           actions={
             canManageCatalog ? (
               <Button variant="primary" size="sm" onClick={nova.show}>
-              <Plus className="h-3.5 w-3.5" /> Nova etiqueta
+                <Plus className="h-3.5 w-3.5" /> Nova etiqueta
               </Button>
             ) : null
           }
@@ -73,7 +73,8 @@ function Page() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{etiqueta.nome}</p>
                   <p className="mt-0.5 text-[11px] uppercase tracking-widest text-muted-foreground">
-                    catálogo do tenant
+                    {etiqueta.conversationCount ?? 0} conversas · {etiqueta.customerCount ?? 0}{" "}
+                    clientes
                   </p>
                 </div>
                 {canManageCatalog && (

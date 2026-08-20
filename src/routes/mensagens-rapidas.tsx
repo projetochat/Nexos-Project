@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { CheckCircle2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { Button, Card, EmptyState, Field, Input, SectionHeader } from "@/components/ui-kit";
@@ -111,6 +111,7 @@ function QuickRepliesPage() {
                     </p>
                     <p className="mt-2 text-[10px] uppercase tracking-widest text-muted-foreground">
                       {reply.department?.nome ?? "compartilhada"}
+                      {reply.close_on_send ? " · encerra conversa" : ""}
                     </p>
                   </div>
                   {canManageCatalog && (
@@ -192,12 +193,14 @@ function QuickReplyEditor({
 }) {
   const [atalho, setAtalho] = React.useState("");
   const [texto, setTexto] = React.useState("");
+  const [closeOnSend, setCloseOnSend] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
     setAtalho(initial?.atalho.replace(/^\//, "") ?? "");
     setTexto(initial?.texto ?? "");
+    setCloseOnSend(initial?.close_on_send ?? false);
   }, [open, initial]);
 
   const save = async () => {
@@ -213,9 +216,16 @@ function QuickReplyEditor({
           shortcut,
           content,
           departmentId: initial.departmentId,
+          closeOnSend,
         });
       } else {
-        await quickReplyApi.create({ title: shortcut, shortcut, content, departmentId: null });
+        await quickReplyApi.create({
+          title: shortcut,
+          shortcut,
+          content,
+          departmentId: null,
+          closeOnSend,
+        });
       }
       toast.success("Salvo");
       onSaved();
@@ -260,6 +270,22 @@ function QuickReplyEditor({
             placeholder="Bom dia! Como posso ajudar?"
           />
         </Field>
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm transition hover:bg-surface-2">
+          <input
+            type="checkbox"
+            checked={closeOnSend}
+            onChange={(event) => setCloseOnSend(event.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-primary"
+          />
+          <span>
+            <span className="flex items-center gap-1 font-medium">
+              <CheckCircle2 className="h-4 w-4 text-primary" /> Encerrar conversa
+            </span>
+            <span className="mt-1 block text-xs text-muted-foreground">
+              Ao enviar este atalho no chat, a conversa será encerrada automaticamente.
+            </span>
+          </span>
+        </label>
       </div>
     </Modal>
   );

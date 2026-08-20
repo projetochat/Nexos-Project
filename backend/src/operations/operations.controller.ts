@@ -100,12 +100,12 @@ export class OperationsController {
   async export(
     @Query() query: ExportQueryDto,
     @CurrentUser() current: AuthenticatedUser,
-    @Res({ passthrough: true }) response: Response,
+    @Res() response: Response,
   ) {
     const exported = await this.operations.exportReport(current, query);
     response.setHeader("Content-Type", exported.contentType);
     response.setHeader("Content-Disposition", `attachment; filename="${exported.filename}"`);
-    return exported.body;
+    response.send(exported.body);
   }
 
   @Get("queues")

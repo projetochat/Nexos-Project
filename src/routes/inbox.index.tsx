@@ -22,6 +22,7 @@ import { Avatar, Badge, Button, Field, Input } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
 import { TipoBadge, type TipoInstancia } from "@/components/instancia-tipos";
 import { connectionDisplayLabel, connectionInstanceValue } from "@/lib/connection-options";
+import { maskBrazilPhone } from "@/lib/input-masks";
 import {
   conversationApi,
   crmApi,
@@ -627,8 +628,8 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
           <Field label="Telefone">
             <Input
               value={newPhone}
-              onChange={(e) => setNewPhone(e.target.value)}
-              placeholder="+55…"
+              onChange={(e) => setNewPhone(maskBrazilPhone(e.target.value))}
+              placeholder="(11) 90000-0000"
             />
           </Field>
         </div>
