@@ -33,6 +33,7 @@ const toast = {
 import { InboxLayout } from "./inbox.index";
 import { Avatar, Badge, Button, Field, Input, Select } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
+import { maskBrazilPhone } from "@/lib/input-masks";
 import {
   conversationApi,
   crmApi,
@@ -269,7 +270,9 @@ function ConversationPage() {
                   <Badge tone={STATUS_TONE[conv.status]}>{conv.status.replace("_", " ")}</Badge>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
-                  {perms.visualiza_numero && <span>{conv.contact?.telefone}</span>}
+                  {perms.visualiza_numero && conv.contact?.telefone && (
+                    <span>{maskBrazilPhone(conv.contact.telefone)}</span>
+                  )}
                 </div>
               </div>
             </button>
@@ -1467,7 +1470,11 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
 
         <p className="mt-2 truncate text-sm font-semibold">{contact?.nome ?? "—"}</p>
         <p className="truncate text-xs text-muted-foreground">
-          {perms.visualiza_numero ? (contact?.telefone ?? "—") : "•••"}
+          {perms.visualiza_numero
+            ? contact?.telefone
+              ? maskBrazilPhone(contact.telefone)
+              : "—"
+            : "•••"}
           {contact?.email ? ` - ${contact.email}` : ""}
         </p>
 

@@ -609,7 +609,9 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
                     <Avatar name={c.nome} size={30} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate">{c.nome}</p>
-                      <p className="truncate text-[11px] text-muted-foreground">{c.telefone}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">
+                        {maskBrazilPhone(c.telefone)}
+                      </p>
                     </div>
                   </button>
                 </li>

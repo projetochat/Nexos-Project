@@ -16,6 +16,7 @@ import {
 } from "@/components/ui-kit";
 import type { ConnectedConnectionOption } from "@/lib/connection-options";
 import { connectionPrimaryLabel, hasExampleInstanceName } from "@/lib/connection-options";
+import { maskBrazilPhone } from "@/lib/input-masks";
 import { crmApi, type ApiContact, type ApiCustomer, type ApiTag } from "@/lib/nexos-api";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 
@@ -36,12 +37,6 @@ const ROLE_TO_API: Record<RoleLabel, RoleCode> = {
   Gerente: "GERENTE",
   Diretoria: "DIRETORIA",
 };
-
-function maskPhone(v: string) {
-  const d = v.replace(/\D/g, "").slice(0, 11);
-  if (d.length <= 10) return d.replace(/(\d{2})(\d{4})(\d{0,4}).*/, "($1) $2-$3").replace(/-$/, "");
-  return d.replace(/(\d{2})(\d{5})(\d{0,4}).*/, "($1) $2-$3").replace(/-$/, "");
-}
 
 function ContatosPage() {
   const [contacts, setContacts] = React.useState<Contact[]>([]);
@@ -211,7 +206,9 @@ function ContatosPage() {
                         <p className="truncate font-medium">{c.nome}</p>
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs">{c.telefone}</td>
+                    <td className="px-4 py-3 font-mono text-xs">
+                      {maskBrazilPhone(c.telefone)}
+                    </td>
                     <td className="px-4 py-3">
                       {c.instancia ? (
                         <Badge tone="default" dot={false}>
@@ -442,7 +439,7 @@ function ContactFormModal({
   React.useEffect(() => {
     if (!open) return;
     setNome(initial?.nome ?? "");
-    setTelefone(initial?.telefone ?? "");
+    setTelefone(initial?.telefone ? maskBrazilPhone(initial.telefone) : "");
     setCustomerId(initial?.customer_id ?? "");
     setEmail(initial?.email ?? "");
     setDepartamento(initial?.departamento ?? "");
@@ -512,7 +509,7 @@ function ContactFormModal({
         <Field label="Telefone *">
           <Input
             value={telefone}
-            onChange={(e) => setTelefone(maskPhone(e.target.value))}
+            onChange={(e) => setTelefone(maskBrazilPhone(e.target.value))}
             placeholder="(11) 90000-0000"
           />
           {errors.telefone && (

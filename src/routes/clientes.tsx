@@ -261,7 +261,14 @@ function CustomerFormModal({
   const [errors, setErrors] = React.useState<Record<string, string>>({});
 
   React.useEffect(() => {
-    setForm(initial ? { ...initial } : {});
+    setForm(
+      initial
+        ? {
+            ...initial,
+            telefone: initial.telefone ? maskBrazilPhone(initial.telefone) : initial.telefone,
+          }
+        : {},
+    );
     setErrors({});
   }, [initial, open]);
 
@@ -455,7 +462,7 @@ function LinkedContactsModal({
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{c.nome}</p>
                     <p className="truncate font-mono text-[11px] text-muted-foreground">
-                      {c.telefone}
+                      {maskBrazilPhone(c.telefone)}
                     </p>
                   </div>
                 </div>
@@ -491,7 +498,7 @@ function LinkedContactsModal({
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{c.nome}</p>
                     <p className="truncate font-mono text-[11px] text-muted-foreground">
-                      {c.telefone}
+                      {maskBrazilPhone(c.telefone)}
                     </p>
                   </div>
                 </div>

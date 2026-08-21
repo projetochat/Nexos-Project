@@ -28,6 +28,7 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
+import { maskBrazilPhone } from "@/lib/input-masks";
 import {
   campaignApi,
   connectionsApi,
@@ -39,7 +40,6 @@ import {
   type ApiContact,
   type ApiCustomer,
   type ApiMessagingConnection,
-  type PaginatedResponse,
   type ApiTag,
 } from "@/lib/nexos-api";
 import { fmtDate, num } from "@/lib/format";
@@ -285,29 +285,6 @@ function Page() {
           onCreated={(campaign) => {
             createModal.hide();
             setFilters(DEFAULT_CAMPAIGN_FILTERS);
-            queryClient.setQueryData<PaginatedResponse<ApiCampaign>>(
-              queryKeys.list(DEFAULT_CAMPAIGN_FILTERS),
-              (current) => {
-                if (!current) {
-                  return {
-                    items: [campaign],
-                    total: 1,
-                    page: 1,
-                    pageSize: 50,
-                    totalPages: 1,
-                  };
-                }
-                const items = [
-                  campaign,
-                  ...current.items.filter((item) => item.id !== campaign.id),
-                ];
-                return {
-                  ...current,
-                  items,
-                  total: Math.max(current.total, items.length),
-                };
-              },
-            );
             setSelectedId(campaign.id);
             invalidateCampaigns();
           }}
@@ -899,7 +876,10 @@ function ContactSelector({
 }) {
   return (
     <CheckGrid
-      items={items.map((item) => ({ id: item.id, label: `${item.nome} · ${item.telefone}` }))}
+      items={items.map((item) => ({
+        id: item.id,
+        label: `${item.nome} · ${maskBrazilPhone(item.telefone)}`,
+      }))}
       selected={selected}
       onChange={onChange}
     />

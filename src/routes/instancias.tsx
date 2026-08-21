@@ -18,6 +18,7 @@ import { AppShell, PageContainer } from "@/components/app-shell";
 import { Badge, Button, Card, Field, Input, SectionHeader } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
+import { maskBrazilPhone } from "@/lib/input-masks";
 import { connectionsApi, type ApiMessagingConnection } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/instancias")({ component: Page });
@@ -164,7 +165,7 @@ function Page() {
                           {providerLabel(connection.providerType)}
                         </p>
                         <p className="mt-1 font-mono text-xs text-muted-foreground">
-                          {connection.ownerPhone ?? "Sem numero"}
+                          {connection.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : "Sem numero"}
                         </p>
                       </div>
                     </div>
@@ -181,7 +182,7 @@ function Page() {
                     {connection.ownerPhone && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">WhatsApp</span>
-                        <span>{connection.ownerPhone}</span>
+                        <span>{maskBrazilPhone(connection.ownerPhone)}</span>
                       </div>
                     )}
                     <div className="flex justify-between gap-3">

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Badge, Button, Select } from "@/components/ui-kit";
 import { fmtDate, fmtHM } from "@/lib/format";
+import { maskBrazilPhone } from "@/lib/input-masks";
 import {
   conversationApi,
   messageApi,
@@ -170,7 +171,9 @@ function HistoricoPage() {
                           </span>
                         </div>
                         <p className="truncate text-[11px] text-muted-foreground">
-                          {conversation.contact?.telefone}
+                          {conversation.contact?.telefone
+                            ? maskBrazilPhone(conversation.contact.telefone)
+                            : ""}
                         </p>
                         <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
                           <span className="font-mono">{conversation.protocolo ?? "-"}</span>
@@ -231,7 +234,7 @@ function HistoricoPage() {
                           </Badge>
                         </div>
                         <p className="truncate text-[11px] text-muted-foreground">
-                          {active.contact?.telefone}
+                          {active.contact?.telefone ? maskBrazilPhone(active.contact.telefone) : ""}
                           {active.protocolo ? ` - #${active.protocolo}` : ""}
                           {active.department?.nome ? ` - ${active.department.nome}` : ""}
                           {active.agent?.nome ? ` - ${active.agent.nome}` : ""}
