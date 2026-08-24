@@ -75,26 +75,50 @@ export class MessagingConnectionsService {
     }
 
     const instanceName = cleanInstanceName(dto.name, current.tenantId, { unique: true });
-    const response = await this.evolution.createInstance({
-      instanceName,
-    });
+    let response: Awaited<ReturnType<EvolutionClient["createInstance"]>>;
+    try {
+      response = await this.evolution.createInstance({
+        instanceName,
+      });
+    } catch (error) {
+      this.logger.warn({
+        event: "messaging.connection.create_failed",
+        tenantId: current.tenantId,
+        instanceName: sanitizeInstanceName(instanceName),
+        providerError: sanitizeProviderError(error),
+      });
+      throw providerUnavailableForUi(error, "Nao foi possivel criar a instancia na Evolution.");
+    }
     if (!config.webhookPublicUrl || !config.webhookSecret) {
       await this.evolution.deleteInstance(instanceName).catch(() => undefined);
       throw new BadRequestException("Webhook Evolution nao configurado.");
     }
-    await this.ensureWebhookConfigured(instanceName);
+    await this.ensureWebhookConfiguredSafely(instanceName, "pending-create");
 
-    const connection = await this.prisma.messagingConnection.create({
-      data: {
-        tenantId: current.tenantId,
-        name: dto.name.trim(),
-        providerType: MessagingProviderType.EVOLUTION,
-        status: translateInitialStatus(
-          response.instance?.status ?? response.instance?.connectionStatus,
-        ),
-        externalReference: instanceName,
-      },
-    });
+    let connection: Awaited<ReturnType<PrismaService["messagingConnection"]["create"]>>;
+    try {
+      connection = await this.prisma.messagingConnection.create({
+        data: {
+          tenantId: current.tenantId,
+          name: dto.name.trim(),
+          providerType: MessagingProviderType.EVOLUTION,
+          status: translateInitialStatus(
+            response.instance?.status ?? response.instance?.connectionStatus,
+          ),
+          externalReference: instanceName,
+        },
+      });
+    } catch (error) {
+      await this.evolution.deleteInstance(instanceName).catch((cleanupError) => {
+        this.logger.warn({
+          event: "messaging.connection.create_cleanup_failed",
+          tenantId: current.tenantId,
+          instanceName: sanitizeInstanceName(instanceName),
+          providerError: sanitizeProviderError(cleanupError),
+        });
+      });
+      throw error;
+    }
     this.realtime?.publishConnectionStatusUpdated({
       tenantId: connection.tenantId,
       connectionId: connection.id,
@@ -122,7 +146,7 @@ export class MessagingConnectionsService {
       state.instance?.state ?? state.instance?.status,
     );
     if (translatedStatus === MessagingConnectionStatus.CONNECTED) {
-      await this.ensureWebhookConfigured(connection.externalReference);
+      await this.ensureWebhookConfiguredSafely(connection.externalReference, connection.id);
     }
     const ownerExternalId = instance.ownerJid ?? null;
     const ownerPhoneNormalized = normalizeOwnerPhone(ownerExternalId);
@@ -159,7 +183,7 @@ export class MessagingConnectionsService {
       throw new BadRequestException("INSTANCE_NOT_FOUND: instance Evolution nao encontrada.");
     }
     const response = await this.evolution.connect(connection.externalReference);
-    await this.ensureWebhookConfigured(connection.externalReference);
+    await this.ensureWebhookConfiguredSafely(connection.externalReference, connection.id);
     const updated = await this.prisma.messagingConnection.update({
       where: { id: connection.id },
       data: { status: MessagingConnectionStatus.CONNECTING },
@@ -185,7 +209,21 @@ export class MessagingConnectionsService {
     ) {
       throw new BadRequestException("Connection nao e Evolution.");
     }
-    await this.evolution.logout(connection.externalReference);
+    if (connection.status === MessagingConnectionStatus.DISCONNECTED) {
+      return this.serialize(connection);
+    }
+    try {
+      await this.evolution.logout(connection.externalReference);
+    } catch (error) {
+      this.logger.warn({
+        event: "messaging.connection.logout_provider_failed",
+        connectionId: connection.id,
+        tenantId: connection.tenantId,
+        instanceName: sanitizeInstanceName(connection.externalReference),
+        providerError: sanitizeProviderError(error),
+        httpResult: 200,
+      });
+    }
     const updated = await this.prisma.messagingConnection.update({
       where: { id: connection.id },
       data: { status: MessagingConnectionStatus.DISCONNECTED },
@@ -477,14 +515,18 @@ export class MessagingConnectionsService {
         ...baseLog,
         evolutionEndpoint: endpoint,
         evolutionHttpStatus: providerHttpStatus(error),
-        providerResult: "provider_unavailable",
+        providerResult: "provider_unavailable_cleanup_pending",
         providerError: sanitizeProviderError(error),
-        httpResult: 503,
+        httpResult: 200,
       });
-      throw new ServiceUnavailableException({
-        code: "EVOLUTION_PROVIDER_UNAVAILABLE",
-        message: "Evolution temporariamente indisponivel para remover a instancia.",
-      });
+      return {
+        result: "provider_unavailable_cleanup_pending",
+        endpoint,
+        httpStatus: providerHttpStatus(error) ?? 503,
+        instanceExisted: true,
+        idempotent: false,
+        cleanupPending: true,
+      };
     }
   }
 
@@ -597,4 +639,27 @@ function sanitizeProviderError(error: unknown) {
   }
   if (error instanceof Error) return { message: error.message.slice(0, 200) };
   return { message: "provider error" };
+}
+
+function providerUnavailableForUi(error: unknown, fallbackMessage: string) {
+  if (error instanceof MessagingProviderError) {
+    return new ServiceUnavailableException({
+      code: error.code,
+      message: error.message || fallbackMessage,
+      retryable: error.retryable,
+      providerHttpStatus: error.httpStatus,
+    });
+  }
+  if (error instanceof Error) {
+    return new ServiceUnavailableException({
+      code: MessagingErrorCode.PROVIDER_UNAVAILABLE,
+      message: error.message || fallbackMessage,
+      retryable: true,
+    });
+  }
+  return new ServiceUnavailableException({
+    code: MessagingErrorCode.PROVIDER_UNAVAILABLE,
+    message: fallbackMessage,
+    retryable: true,
+  });
 }

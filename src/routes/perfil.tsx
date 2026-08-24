@@ -1,5 +1,7 @@
+import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Camera } from "lucide-react";
+import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
   SectionHeader,
@@ -11,6 +13,7 @@ import {
   Avatar,
   Badge,
 } from "@/components/ui-kit";
+import { organizationApi } from "@/lib/nexos-api";
 import { ROLE_META, useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/perfil")({
@@ -19,9 +22,43 @@ export const Route = createFileRoute("/perfil")({
 
 function PerfilPage() {
   const user = useSession((state) => state.user);
+  const [savingAvatar, setSavingAvatar] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
   const roleMeta = user ? ROLE_META[user.role] : null;
   const displayName = user?.nome ?? "Usuario";
   const initialsScope = user?.empresaNome ?? roleMeta?.scope ?? "Nexo";
+
+  const saveAvatar = async (file: File | undefined) => {
+    if (!file || !user) return;
+    if (!/^image\/(png|jpe?g|webp)$/i.test(file.type)) {
+      toast.error("Use uma imagem PNG, JPG ou WebP.");
+      return;
+    }
+    if (file.size > 250 * 1024) {
+      toast.error("A imagem deve ter até 250 KB.");
+      return;
+    }
+    setSavingAvatar(true);
+    try {
+      const avatarUrl = await readFileAsDataUrl(file);
+      const updated = await organizationApi.updateMyProfile({ avatarUrl });
+      useSession.setState((state) => ({
+        user: state.user
+          ? {
+              ...state.user,
+              nome: updated.user.name,
+              avatarUrl: updated.user.avatarUrl ?? undefined,
+            }
+          : state.user,
+      }));
+      toast.success("Foto de perfil atualizada.");
+    } catch (error) {
+      toast.error((error as Error).message || "Não foi possível salvar a foto.");
+    } finally {
+      setSavingAvatar(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
 
   return (
     <AppShell>
@@ -35,9 +72,23 @@ function PerfilPage() {
           <Card className="flex flex-col items-center text-center">
             <div className="relative">
               <Avatar name={displayName} src={user?.avatarUrl} size={96} />
-              <button className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:text-foreground">
+              <button
+                type="button"
+                disabled={savingAvatar}
+                onClick={() => inputRef.current?.click()}
+                className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:text-foreground disabled:opacity-60"
+                title="Alterar foto"
+                aria-label="Alterar foto"
+              >
                 <Camera className="h-4 w-4" />
               </button>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(event) => saveAvatar(event.target.files?.[0])}
+              />
             </div>
             <p className="mt-4 text-base font-semibold">{displayName}</p>
             <p className="text-xs text-muted-foreground">
@@ -98,4 +149,13 @@ function PerfilPage() {
       </PageContainer>
     </AppShell>
   );
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+    reader.readAsDataURL(file);
+  });
 }

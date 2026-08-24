@@ -500,6 +500,7 @@ function MessageBubble({
   setMessageRef?: (node: HTMLDivElement | null) => void;
 }) {
   const qc = useQueryClient();
+  const user = useSession((state) => state.user);
   const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
   const [mediaError, setMediaError] = React.useState(false);
   const mediaState = m.media_data?.state ?? null;
@@ -684,7 +685,7 @@ function MessageBubble({
           </button>
         )}
         {m.content && m.content !== "[áudio]" && m.content !== "[imagem]" && (
-          <span className="whitespace-pre-wrap break-words">{m.content.trim()}</span>
+          <MessageText content={m.content} />
         )}
         <p
           className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
@@ -725,7 +726,14 @@ function MessageBubble({
           </button>
         </div>
       </div>
-      {mine && <Avatar name={avatarName} size={30} className="mb-5 ring-1 ring-border/70" />}
+      {mine && (
+        <Avatar
+          name={avatarName}
+          src={user?.avatarUrl}
+          size={30}
+          className="mb-5 ring-1 ring-border/70"
+        />
+      )}
       {mine && onReply && (
         <Button
           variant="ghost"
@@ -738,6 +746,21 @@ function MessageBubble({
         </Button>
       )}
     </div>
+  );
+}
+
+function MessageText({ content }: { content: string }) {
+  const text = content.trim();
+  const match =
+    text.match(/^\*\*(.+?):\*\*(?:\r?\n){1,2}([\s\S]*)$/) ??
+    text.match(/^\*(.+?):\*(?:\r?\n){1,2}([\s\S]*)$/);
+  if (!match) return <span className="whitespace-pre-wrap break-words">{text}</span>;
+  return (
+    <span className="whitespace-pre-wrap break-words">
+      <strong>{match[1]}:</strong>
+      {"\n\n"}
+      {match[2]}
+    </span>
   );
 }
 
@@ -784,11 +807,7 @@ function QuotedPreview({
       onClick={onClick}
       className={`mb-2 flex w-full items-center gap-2 border-l-2 px-2 py-1 text-left text-xs ${
         mine ? "border-white/60 bg-white/10 text-white/85" : "border-primary/60 bg-card"
-      } ${
-        quoted.message_id
-          ? "cursor-pointer transition hover:opacity-85"
-          : "cursor-default"
-      }`}
+      } ${quoted.message_id ? "cursor-pointer transition hover:opacity-85" : "cursor-default"}`}
     >
       <div className="min-w-0 flex-1">
         <p className="font-medium">{messageTypeLabel(quoted.type)}</p>

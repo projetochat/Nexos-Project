@@ -387,15 +387,12 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                         </p>
                         <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                           <span className="truncate">
-                            {[instanceLabel || "Sem instância", c.department?.nome]
+                            {[instanceLabel || "Sem instância", c.department?.nome, c.agent?.nome || "sem atendente"]
                               .filter(Boolean)
                               .join(" - ")}
                           </span>
                           <TipoBadge tipo={instanceTipo(c)} size={16} />
                         </div>
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {c.agent?.nome ?? "sem atendente"}
-                        </p>
                         <p
                           className={`mt-0.5 truncate text-xs ${u > 0 ? "font-medium text-foreground" : "text-muted-foreground"}`}
                         >

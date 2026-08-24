@@ -60,7 +60,9 @@ export class PlanEntitlementService {
         where: { tenantId, status: "ACTIVE", user: { status: "ACTIVE" } },
       }),
       this.prisma.department.count({ where: { tenantId, active: true } }),
-      this.prisma.messagingConnection.count({ where: { tenantId } }),
+      this.prisma.messagingConnection.count({
+        where: { tenantId, archivedAt: null, status: { not: "REMOVED" } },
+      }),
       this.prisma.contact.count({ where: { tenantId, archivedAt: null } }),
       this.prisma.customer.count({ where: { tenantId, archivedAt: null } }),
       this.prisma.conversation.count({ where: { tenantId, archivedAt: null } }),

@@ -32,6 +32,7 @@ export type RealtimeServerEvent =
   | "ticket.comment.created"
   | "ticket.attachment.created"
   | "ticket.attachment.removed"
+  | "notification.created"
   | "presence.updated"
   | "typing.started"
   | "typing.stopped";

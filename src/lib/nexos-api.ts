@@ -16,6 +16,7 @@ type LoginResponse = {
     id: string;
     email: string;
     name: string;
+    avatarUrl?: string | null;
     roleId: string;
     roleKey: ApiRoleKey;
     platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
@@ -89,6 +90,7 @@ export type ApiUserMembership = {
     id: string;
     email: string;
     name: string;
+    avatarUrl?: string | null;
     status: "ACTIVE" | "DISABLED";
     platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   };
@@ -668,6 +670,7 @@ export async function hydrateWithNexosApi() {
     role: roleMap[data.user.roleKey] ?? "operator",
     empresaId: data.tenant.id,
     empresaNome: data.tenant.name,
+    avatarUrl: data.user.avatarUrl ?? undefined,
     permissions: data.permissions,
   } satisfies SessionUser;
 }
@@ -782,6 +785,11 @@ export const organizationApi = {
     apiRequest<ApiUserMembership>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deactivateUser: (id: string) =>
     apiRequest<ApiUserMembership>(`/users/${id}/deactivate`, { method: "PATCH" }),
+  updateMyProfile: (data: { name?: string; avatarUrl?: string | null }) =>
+    apiRequest<ApiUserMembership>("/me/profile", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
 };
 
 export const crmApi = {
@@ -1645,6 +1653,7 @@ function loginResponseToSessionUser(data: LoginResponse): SessionUser {
     role: roleMap[data.user.roleKey] ?? "operator",
     empresaId: data.tenant.id,
     empresaNome: data.tenant.name,
+    avatarUrl: data.user.avatarUrl ?? undefined,
     permissions: data.permissions,
   };
 }

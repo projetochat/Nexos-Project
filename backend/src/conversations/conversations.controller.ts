@@ -465,7 +465,15 @@ export class ConversationsController {
     if (query.source === "bots") filters.push({ assignedMembershipId: null });
     if (query.onlyUnread === "true") filters.push({ unreadCount: { gt: 0 } });
     if (query.customerId) filters.push({ contact: { customerId: query.customerId } });
-    if (query.instance) filters.push({ contact: { instance: query.instance } });
+    if (query.instance) {
+      filters.push({
+        OR: [
+          { contact: { instance: query.instance } },
+          { connection: { externalReference: query.instance } },
+          { connectionId: query.instance },
+        ],
+      });
+    }
     if (query.contactId) filters.push({ contactId: query.contactId });
     if (query.status) filters.push({ status: parseStatus(query.status) });
     if (query.departmentId) filters.push({ departmentId: query.departmentId });
@@ -495,15 +503,25 @@ export class ConversationsController {
   private searchWhere(query: ListConversationsQueryDto): Prisma.ConversationWhereInput {
     const q = query.q?.trim();
     if (!q) return {};
+    const digits = q.replace(/\D/g, "");
+    const or: Prisma.ConversationWhereInput[] = [
+      { protocol: { contains: q, mode: "insensitive" } },
+      { groupName: { contains: q, mode: "insensitive" } },
+      { lastMessagePreview: { contains: q, mode: "insensitive" } },
+      { contact: { name: { contains: q, mode: "insensitive" } } },
+      { contact: { phone: { contains: q, mode: "insensitive" } } },
+      { contact: { departmentName: { contains: q, mode: "insensitive" } } },
+      { department: { name: { contains: q, mode: "insensitive" } } },
+      { connection: { name: { contains: q, mode: "insensitive" } } },
+      { connection: { externalReference: { contains: q, mode: "insensitive" } } },
+      { assignedMembership: { user: { name: { contains: q, mode: "insensitive" } } } },
+      { contact: { customer: { name: { contains: q, mode: "insensitive" } } } },
+    ];
+    if (digits) {
+      or.push({ contact: { normalizedPhone: { contains: digits, mode: "insensitive" } } });
+    }
     return {
-      OR: [
-        { protocol: { contains: q, mode: "insensitive" } },
-        { lastMessagePreview: { contains: q, mode: "insensitive" } },
-        { contact: { name: { contains: q, mode: "insensitive" } } },
-        { contact: { phone: { contains: q, mode: "insensitive" } } },
-        { contact: { normalizedPhone: { contains: q.replace(/\D/g, ""), mode: "insensitive" } } },
-        { contact: { customer: { name: { contains: q, mode: "insensitive" } } } },
-      ],
+      OR: or,
     };
   }
 

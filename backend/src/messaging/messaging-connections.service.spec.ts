@@ -46,6 +46,62 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
+  it("keeps the created instance when webhook registration fails temporarily", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.create.mockResolvedValue(connection());
+    const evolution = {
+      createInstance: vi.fn().mockResolvedValue({ instance: { status: "connecting" } }),
+      setWebhook: vi
+        .fn()
+        .mockRejectedValue(
+          new MessagingProviderError(
+            MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+            "Evolution webhook unavailable",
+            true,
+            503,
+          ),
+        ),
+      deleteInstance: vi.fn(),
+    };
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, evolution as never).createEvolution(
+        { name: "Suporte" },
+        current as never,
+      ),
+    ).resolves.toMatchObject({ id: "connection-a", status: "connecting" });
+
+    expect(prisma.messagingConnection.create).toHaveBeenCalled();
+    expect(evolution.deleteInstance).not.toHaveBeenCalled();
+  });
+
+  it("returns a controlled provider error when Evolution create fails", async () => {
+    const prisma = prismaMock();
+    const evolution = {
+      createInstance: vi
+        .fn()
+        .mockRejectedValue(
+          new MessagingProviderError(
+            MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+            "Evolution unavailable",
+            true,
+            503,
+          ),
+        ),
+      setWebhook: vi.fn(),
+      deleteInstance: vi.fn(),
+    };
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, evolution as never).createEvolution(
+        { name: "Suporte" },
+        current as never,
+      ),
+    ).rejects.toThrow(ServiceUnavailableException);
+
+    expect(prisma.messagingConnection.create).not.toHaveBeenCalled();
+  });
+
   it("returns a business error for QR when the Evolution instance is missing", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
@@ -65,6 +121,42 @@ describe("MessagingConnectionsService", () => {
     expect(prisma.messagingConnection.update).toHaveBeenCalledWith({
       where: { id: "connection-a" },
       data: { status: MessagingConnectionStatus.ERROR },
+    });
+  });
+
+  it("marks the connection disconnected even when Evolution logout is already unavailable", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.CONNECTED,
+    });
+    prisma.messagingConnection.update.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.DISCONNECTED,
+    });
+    const evolution = {
+      logout: vi
+        .fn()
+        .mockRejectedValue(
+          new MessagingProviderError(
+            MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+            "Evolution unavailable",
+            true,
+            503,
+          ),
+        ),
+    };
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, evolution as never).logout(
+        "connection-a",
+        current as never,
+      ),
+    ).resolves.toMatchObject({ status: "disconnected" });
+
+    expect(prisma.messagingConnection.update).toHaveBeenCalledWith({
+      where: { id: "connection-a" },
+      data: { status: MessagingConnectionStatus.DISCONNECTED },
     });
   });
 
@@ -197,9 +289,15 @@ describe("MessagingConnectionsService", () => {
     expect(prisma.messagingConnection.update).toHaveBeenCalled();
   });
 
-  it("maps temporary Evolution failures to canonical 503 without archiving locally", async () => {
+  it("archives locally when Evolution is temporarily unavailable and marks provider cleanup pending", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.messagingConnection.update.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.REMOVED,
+      externalReference: null,
+      archivedAt: new Date("2026-08-04T00:00:00.000Z"),
+    });
     const evolution = {
       deleteInstance: vi
         .fn()
@@ -218,8 +316,23 @@ describe("MessagingConnectionsService", () => {
         "connection-a",
         current as never,
       ),
-    ).rejects.toThrow(ServiceUnavailableException);
-    expect(prisma.messagingConnection.update).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({
+      removed: true,
+      archived: true,
+      status: "removed",
+      providerInstanceExisted: true,
+      idempotent: false,
+    });
+    expect(prisma.messagingConnection.update).toHaveBeenCalledWith({
+      where: { tenantId_id: { tenantId: "tenant-a", id: "connection-a" } },
+      data: {
+        status: MessagingConnectionStatus.REMOVED,
+        externalReference: null,
+        ownerExternalId: null,
+        ownerPhoneNormalized: null,
+        archivedAt: expect.any(Date),
+      },
+    });
     expect(prisma.messagingConnection.delete).not.toHaveBeenCalled();
   });
 

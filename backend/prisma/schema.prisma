@@ -344,10 +344,11 @@ model Tenant {
 }
 
 model User {
-  id                    String                 @id @default(uuid())
-  email                 String                 @unique
-  name                  String
-  passwordHash          String
+    id                    String                 @id @default(uuid())
+    email                 String                 @unique
+    name                  String
+    avatarUrl             String?                @map("avatar_url")
+    passwordHash          String
   status                UserStatus             @default(ACTIVE)
   platformRole          PlatformRole           @default(USER)
   createdAt             DateTime               @default(now())

@@ -18,10 +18,12 @@ import { Modal, useDisclosure } from "@/components/modal";
 import {
   conversationApi,
   crmApi,
+  messageApi,
   organizationApi,
   ticketApi,
   type ApiContact,
   type ApiConversation,
+  type ApiMessage,
   type ApiCustomer,
   type ApiDepartment,
   type ApiTicket,
@@ -32,6 +34,7 @@ import {
   type ApiUserMembership,
 } from "@/lib/nexos-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
+import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/chamados")({
   validateSearch: (search) => ({
@@ -246,9 +249,16 @@ function TicketEditor({
   initialConversationId?: string;
 }) {
   const options = useTicketOptions(open);
+  const currentUser = useSessionUserName();
   const initialConversation = useQuery({
     queryKey: ["tickets", "prefill-conversation", initialConversationId],
     queryFn: () => conversationApi.get(initialConversationId!),
+    enabled: open && !!initialConversationId,
+  });
+  const initialMessages = useQuery({
+    queryKey: ["tickets", "prefill-conversation-messages", initialConversationId],
+    queryFn: () =>
+      messageApi.list(initialConversationId!, { limit: 100 }).then((page) => page.items),
     enabled: open && !!initialConversationId,
   });
   const [title, setTitle] = React.useState("");
@@ -283,7 +293,15 @@ function TicketEditor({
     setCustomerId(conversation.contact?.customer_id ?? conversation.contact?.customer?.id ?? "");
     setDepartmentId(conversation.department_id ?? options.departments[0]?.id ?? "");
     setAssignedMembershipId(conversation.assigned_membership_id ?? "");
+    setTitle(`Chamado aberto pelo Chat - ${conversation.protocolo ?? conversation.id.slice(0, 8)}`);
   }, [initialConversation.data, open, options.departments]);
+
+  React.useEffect(() => {
+    const conversation = initialConversation.data;
+    const messages = initialMessages.data;
+    if (!open || !conversation || !messages?.length) return;
+    setDescription(buildConversationTicketDescription(conversation, messages));
+  }, [initialConversation.data, initialMessages.data, open]);
 
   const submit = async () => {
     if (!title.trim()) return toast.error("Informe o título.");
@@ -329,10 +347,13 @@ function TicketEditor({
       }
     >
       <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Título *">
-          <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={180} />
+        <Field label="ID chamado">
+          <Input value="Será gerado ao abrir" readOnly />
         </Field>
-        <Field label="Categoria">
+        <Field label="Status *">
+          <Input value="Novo" readOnly />
+        </Field>
+        <Field label="Tipo *">
           <Select
             value={category}
             onChange={(event) => setCategory(event.target.value as ApiTicketCategory)}
@@ -343,6 +364,39 @@ function TicketEditor({
               </option>
             ))}
           </Select>
+        </Field>
+        <Field label="Cliente *">
+          <Select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+            <option value="">Selecione...</option>
+            {options.customers.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.nome}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Solicitante *">
+          <Select value={contactId} onChange={(event) => setContactId(event.target.value)}>
+            <option value="">Selecione...</option>
+            {options.contacts.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.nome}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Departamento *">
+          <Select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
+            <option value="">Selecione...</option>
+            {options.departments.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Data/hora de abertura">
+          <Input value={new Date().toLocaleString("pt-BR")} readOnly />
         </Field>
         <Field label="Prioridade">
           <Select
@@ -356,35 +410,13 @@ function TicketEditor({
             ))}
           </Select>
         </Field>
-        <Field label="Departamento *">
-          <Select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
-            <option value="">Selecione</option>
-            {options.departments.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Contact">
-          <Select value={contactId} onChange={(event) => setContactId(event.target.value)}>
-            <option value="">Sem contact</option>
-            {options.contacts.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.nome}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Customer">
-          <Select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
-            <option value="">Inferir/sem customer</option>
-            {options.customers.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.nome}
-              </option>
-            ))}
-          </Select>
+        <div className="md:col-span-2">
+          <Field label="Usuário de abertura">
+            <Input value={currentUser} readOnly />
+          </Field>
+        </div>
+        <Field label="Título *">
+          <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={180} />
         </Field>
         <Field label="Conversation">
           <Select
@@ -717,6 +749,52 @@ function useTicketOptions(enabled: boolean) {
     customers: customers.data?.items ?? ([] as ApiCustomer[]),
     conversations: conversations.data?.items ?? [],
   };
+}
+
+function useSessionUserName() {
+  return useSession((state) => state.user?.nome ?? "Usuário atual");
+}
+
+function buildConversationTicketDescription(conversation: ApiConversation, messages: ApiMessage[]) {
+  const header = [
+    `Histórico importado da conversa ${conversation.protocolo ?? conversation.id}`,
+    `Contato: ${conversation.contact?.nome ?? "Sem contato"}`,
+    conversation.contact?.telefone ? `Telefone: ${conversation.contact.telefone}` : null,
+    conversation.department?.nome ? `Departamento: ${conversation.department.nome}` : null,
+  ].filter(Boolean);
+  const ordered = [...messages].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+  const lines = ordered.map((message) => {
+    const author =
+      message.direction === "inbound"
+        ? (message.participant?.name ?? conversation.contact?.nome ?? "Contato")
+        : message.sender === "agent"
+          ? "Atendente"
+          : "Sistema";
+    const type = messageTypeLabel(message.type);
+    const content =
+      message.content && !message.content.startsWith("[")
+        ? message.content
+        : message.media_data?.file_name
+          ? `${type}: ${message.media_data.file_name}`
+          : type;
+    return `${author} [${formatDate(message.created_at)}]: ${content}`;
+  });
+  return [...header, "", ...lines].join("\n");
+}
+
+function messageTypeLabel(type: ApiMessage["type"]) {
+  const labels: Record<ApiMessage["type"], string> = {
+    text: "Texto",
+    image: "Imagem",
+    audio: "Áudio",
+    voice: "Voz",
+    video: "Vídeo",
+    document: "Documento",
+    system: "Sistema",
+  };
+  return labels[type] ?? "Mensagem";
 }
 
 function textToHtml(value: string) {

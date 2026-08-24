@@ -1,5 +1,6 @@
 ﻿import * as React from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   Inbox,
@@ -36,7 +37,8 @@ import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
 import { useTheme } from "./theme-provider";
 import { useSession, ROLE_META, signOut } from "@/lib/session";
-import { stopStoredPlatformImpersonation } from "@/lib/nexos-api";
+import { notificationApi, stopStoredPlatformImpersonation } from "@/lib/nexos-api";
+import { onRealtimeEvent } from "@/lib/realtime/client";
 
 /* ============================================================
    Nexo · App Shell (Painel Administrativo da Empresa)
@@ -393,14 +395,7 @@ function SidebarBottomActions({
     >
       {!toggleOnly && (
         <>
-          <button
-            className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
-            aria-label="Notificações"
-            title="Notificações"
-          >
-            <Bell className="h-4 w-4" />
-            <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-primary animate-pulse-ring" />
-          </button>
+          <NotificationsButton compact />
           <button
             onClick={toggleTheme}
             className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
@@ -456,7 +451,7 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
           collapsed ? "h-9 w-9 justify-center p-0" : "gap-2 px-2 py-1.5"
         }`}
       >
-        <Avatar name={user?.nome ?? "?"} size={26} />
+        <Avatar name={user?.nome ?? "?"} src={user?.avatarUrl} size={26} />
         {!collapsed && (
           <div className="min-w-0 flex-1 text-left">
             <div className="truncate text-xs font-medium">{user?.nome ?? "Convidado"}</div>
@@ -614,7 +609,7 @@ function UserMenu() {
         onClick={() => setOpen((v) => !v)}
         className="flex shrink-0 items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1 pr-3 transition hover:bg-surface-2"
       >
-        <Avatar name={user?.nome ?? "?"} size={26} />
+        <Avatar name={user?.nome ?? "?"} src={user?.avatarUrl} size={26} />
         <span className="hidden text-sm font-medium sm:inline">
           {user?.nome?.split(" ")[0] ?? "Convidado"}
         </span>
@@ -735,16 +730,119 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
 
       <ThemeToggle />
 
-      <button
-        className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
-        aria-label="Notificações"
-      >
-        <Bell className="h-4 w-4" />
-        <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-primary animate-pulse-ring" />
-      </button>
+      <NotificationsButton />
 
       <UserMenu />
     </header>
+  );
+}
+
+function NotificationsButton({ compact = false }: { compact?: boolean }) {
+  const qc = useQueryClient();
+  const user = useSession((s) => s.user);
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const enabled = !!user?.permissions?.includes("notifications.read");
+  const notifications = useQuery({
+    queryKey: ["nexos", "notifications", "unread"],
+    queryFn: () => notificationApi.list({ status: "UNREAD", pageSize: 10 }),
+    enabled,
+    refetchInterval: enabled ? 60_000 : false,
+  });
+  const unread = notifications.data?.unread ?? 0;
+
+  React.useEffect(() => {
+    if (!enabled) return;
+    return onRealtimeEvent((event) => {
+      if (
+        event.event.startsWith("message.") ||
+        event.event.startsWith("conversation.") ||
+        event.event.startsWith("ticket.") ||
+        event.event === "notification.created"
+      ) {
+        qc.invalidateQueries({ queryKey: ["nexos", "notifications"] });
+      }
+    });
+  }, [enabled, qc]);
+
+  React.useEffect(() => {
+    function onClick(event: MouseEvent) {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  if (!enabled) return null;
+
+  const markAllRead = async () => {
+    await notificationApi.markAllRead();
+    await qc.invalidateQueries({ queryKey: ["nexos", "notifications"] });
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+        aria-label="Notificações"
+        title="Notificações"
+      >
+        <Bell className="h-4 w-4" />
+        {unread > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] font-semibold leading-4 text-primary-foreground">
+            {unread > 9 ? "9+" : unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
+          className={`absolute z-[120] mt-2 w-80 rounded-xl border border-border bg-popover p-2 shadow-elevated ${
+            compact ? "bottom-11 left-0" : "right-0 top-9"
+          }`}
+        >
+          <div className="flex items-center justify-between border-b border-border px-2 pb-2">
+            <p className="text-sm font-semibold">Notificações</p>
+            <button
+              type="button"
+              onClick={markAllRead}
+              disabled={unread === 0}
+              className="text-xs text-primary disabled:text-muted-foreground"
+            >
+              Marcar lidas
+            </button>
+          </div>
+          <div className="max-h-80 overflow-y-auto py-1">
+            {notifications.isLoading ? (
+              <p className="px-2 py-3 text-sm text-muted-foreground">Carregando...</p>
+            ) : notifications.data?.items.length ? (
+              notifications.data.items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={async () => {
+                    await notificationApi.markRead(item.id);
+                    await qc.invalidateQueries({ queryKey: ["nexos", "notifications"] });
+                  }}
+                  className="w-full rounded-lg px-2 py-2 text-left transition hover:bg-surface-2"
+                >
+                  <p className="text-sm font-medium">{item.title}</p>
+                  {item.body && (
+                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{item.body}</p>
+                  )}
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {new Date(item.createdAt).toLocaleString("pt-BR")}
+                  </p>
+                </button>
+              ))
+            ) : (
+              <p className="px-2 py-3 text-sm text-muted-foreground">Nenhuma notificação nova.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

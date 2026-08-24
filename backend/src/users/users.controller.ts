@@ -12,7 +12,7 @@ import {
 } from "@nestjs/common";
 import { createHash, randomBytes } from "crypto";
 import { hash } from "bcryptjs";
-import { IsArray, IsEmail, IsOptional, IsString } from "class-validator";
+import { IsArray, IsEmail, IsOptional, IsString, MaxLength } from "class-validator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -41,6 +41,18 @@ class CreateInvitationDto {
   name?: string;
 }
 
+class UpdateMyProfileDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300_000)
+  avatarUrl?: string | null;
+}
+
 type MembershipWithRelations = {
   id: string;
   tenantId: string;
@@ -50,6 +62,7 @@ type MembershipWithRelations = {
     id: string;
     email: string;
     name: string;
+    avatarUrl?: string | null;
     status: string;
     platformRole: string;
   };
@@ -95,6 +108,7 @@ export class UsersController {
         id: membership.user.id,
         email: membership.user.email,
         name: membership.user.name,
+        avatarUrl: membership.user.avatarUrl,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         roleName: membership.role.name,
@@ -112,6 +126,35 @@ export class UsersController {
         canOperateInbox: permissions.some((permission) => permission.startsWith("chat.")),
       },
     };
+  }
+
+  @Patch("me/profile")
+  async updateMyProfile(
+    @Body() dto: UpdateMyProfileDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const avatarUrl = normalizeAvatarUrl(dto.avatarUrl);
+    const membership = await this.prisma.tenantMembership.findUniqueOrThrow({
+      where: { id: current.membershipId },
+      include: {
+        user: true,
+        tenant: true,
+        role: true,
+        departments: { include: { department: true } },
+      },
+    });
+    await this.prisma.user.update({
+      where: { id: membership.userId },
+      data: {
+        name: dto.name?.trim() || undefined,
+        ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
+      },
+    });
+    const updated = await this.prisma.tenantMembership.findUniqueOrThrow({
+      where: { id: current.membershipId },
+      include: { user: true, role: true, departments: { include: { department: true } } },
+    });
+    return this.serializeMembership(updated);
   }
 
   @Get("users")
@@ -384,6 +427,7 @@ export class UsersController {
         id: membership.user.id,
         email: membership.user.email,
         name: membership.user.name,
+        avatarUrl: membership.user.avatarUrl,
         status: membership.user.status,
         platformRole: membership.user.platformRole,
       },
@@ -423,4 +467,14 @@ function exposeLocalTokens() {
 
 function publicAppUrl() {
   return (process.env.NEXOS_PUBLIC_APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
+}
+
+function normalizeAvatarUrl(value: string | null | undefined) {
+  if (value === undefined) return undefined;
+  if (value === null || value.trim() === "") return null;
+  const trimmed = value.trim();
+  if (!/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(trimmed)) {
+    throw new BadRequestException("Imagem de perfil invalida.");
+  }
+  return trimmed;
 }
