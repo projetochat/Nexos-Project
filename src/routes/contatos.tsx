@@ -210,8 +210,8 @@ function ContatosPage() {
                 <th className="px-4 py-3 font-medium">Contato</th>
                 <th className="px-4 py-3 font-medium">Telefone</th>
                 <th className="px-4 py-3 font-medium">Instancia</th>
-                <th className="px-4 py-3 font-medium">Departamento</th>
                 <th className="px-4 py-3 font-medium">Cliente</th>
+                <th className="px-4 py-3 font-medium">Departamento</th>
                 <th className="px-4 py-3 font-medium">Etiquetas</th>
                 <th className="px-4 py-3 font-medium text-right">Acoes</th>
               </tr>
@@ -245,9 +245,6 @@ function ContatosPage() {
                         <span className="text-xs text-muted-foreground">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs">
-                      {c.departamento || <span className="text-muted-foreground">-</span>}
-                    </td>
                     <td className="px-4 py-3">
                       {c.customer ? (
                         c.customer.cor ? (
@@ -271,6 +268,9 @@ function ContatosPage() {
                       ) : (
                         <span className="text-xs text-muted-foreground">Nao vinculado</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {c.departamento || <span className="text-muted-foreground">-</span>}
                     </td>
                     <td className="px-4 py-3">
                       {c.tags.length ? (
@@ -527,7 +527,7 @@ function ContactFormModal({
       onClose={onClose}
       title={initial ? "Editar contato" : "Novo contato"}
       description="Contato e a pessoa que conversa pelo WhatsApp. Voce pode vincular a um cliente ja cadastrado."
-      size="xl"
+      size="lg"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -604,6 +604,16 @@ function ContactFormModal({
             >
               <Plus className="h-3.5 w-3.5" />
             </Button>
+            {departamento && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setDepartamento("")}
+                title="Remover departamento"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
         </Field>
         <Field label="E-mail">
@@ -637,6 +647,16 @@ function ContactFormModal({
             >
               <Plus className="h-3.5 w-3.5" />
             </Button>
+            {nivelGerencia && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setNivelGerencia("")}
+                title="Remover perfil"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
         </Field>
         <Field label="Instancia">
@@ -740,6 +760,11 @@ function CustomersManagerModal({
     setPage(1);
   }, [query]);
 
+  const selectCustomer = (customer: Customer) => {
+    onCustomerSelected(customer);
+    onClose();
+  };
+
   const pageSafe = Math.min(page, totalPages);
 
   const saveCustomer = async (data: CustomerFormData) => {
@@ -809,6 +834,7 @@ function CustomersManagerModal({
               <tr>
                 <th className="px-4 py-3 font-medium">Cliente</th>
                 <th className="px-4 py-3 font-medium">Contato responsavel</th>
+                <th className="px-4 py-3 font-medium">E-mail</th>
                 <th className="px-4 py-3 font-medium">Telefone</th>
                 <th className="px-4 py-3 font-medium text-right">Acoes</th>
               </tr>
@@ -816,7 +842,7 @@ function CustomersManagerModal({
             <tbody className="divide-y divide-border">
               {loading && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">
+                  <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
                     Carregando...
                   </td>
                 </tr>
@@ -836,6 +862,9 @@ function CustomersManagerModal({
                     <td className="px-4 py-3 text-muted-foreground">
                       {customer.contato_responsavel ?? "-"}
                     </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {customer.email ?? "-"}
+                    </td>
                     <td className="px-4 py-3 font-mono text-xs">
                       {customer.telefone ? maskBrazilPhone(customer.telefone) : "-"}
                     </td>
@@ -844,7 +873,7 @@ function CustomersManagerModal({
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => onCustomerSelected(customer)}
+                          onClick={() => selectCustomer(customer)}
                         >
                           Selecionar
                         </Button>
@@ -870,7 +899,7 @@ function CustomersManagerModal({
                 ))}
               {!loading && customers.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">
+                  <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
                     Nenhum cliente encontrado.
                   </td>
                 </tr>
@@ -969,6 +998,11 @@ function DepartmentsManagerModal({
     });
   }, [departments, query]);
 
+  const selectDepartment = (department: Department) => {
+    onDepartmentSelected(department);
+    onClose();
+  };
+
   const saveDepartment = async (data: DepartamentoFormData) => {
     try {
       const department = editing
@@ -1052,7 +1086,7 @@ function DepartmentsManagerModal({
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => onDepartmentSelected(department)}
+                  onClick={() => selectDepartment(department)}
                 >
                   Selecionar
                 </Button>
@@ -1194,6 +1228,10 @@ function ContactProfilePickerModal({
   onSelect: (profile: RoleLabel) => void;
 }) {
   const profiles = Object.keys(ROLE_TO_API) as RoleLabel[];
+  const selectProfile = (profile: RoleLabel) => {
+    onSelect(profile);
+    onClose();
+  };
 
   return (
     <Modal
@@ -1213,7 +1251,7 @@ function ContactProfilePickerModal({
           <button
             key={profile}
             type="button"
-            onClick={() => onSelect(profile)}
+            onClick={() => selectProfile(profile)}
             className="flex items-center justify-between rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm transition hover:bg-surface-2"
           >
             <span>{profile}</span>
@@ -1266,7 +1304,7 @@ function TagMultiSelect({
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute z-50 mt-2 max-h-56 w-full overflow-auto rounded-lg border border-border bg-surface-0 p-1 shadow-xl">
+        <div className="absolute bottom-full z-50 mb-2 max-h-56 w-full overflow-auto rounded-lg border border-border bg-surface-0 p-1 shadow-xl">
           {tags.map((tag) => {
             const active = selectedIds.includes(tag.id);
             return (
