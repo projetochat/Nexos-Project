@@ -86,7 +86,6 @@ export class CampaignsService {
     const pageSize = Math.min(Math.max(Number(query.pageSize ?? 20), 1), 100);
     const where: Prisma.CampaignWhereInput = {
       tenantId: current.tenantId,
-      archivedAt: null,
       ...(query.status ? { status: query.status } : {}),
       ...(query.connectionId ? { connectionId: query.connectionId } : {}),
       ...(query.search

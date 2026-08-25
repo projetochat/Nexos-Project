@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { SectionHeader, Card, Button, Field, Input, Textarea } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
-import { organizationApi, type ApiRole } from "@/lib/nexos-api";
+import { connectionsApi, organizationApi, type ApiMessagingConnection, type ApiRole } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/perfis")({ component: Page });
 
@@ -135,6 +135,7 @@ type PerfilFormData = {
   description: string;
   permissionIds: string[];
   departmentIds: string[];
+  connectionIds: string[];
   workSchedule: WorkSchedule;
 };
 
@@ -170,6 +171,10 @@ function Page() {
     queryKey: ["nexos", "departments"],
     queryFn: organizationApi.listDepartments,
   });
+  const { data: connections = [] } = useQuery({
+    queryKey: ["nexos", "messaging-connections"],
+    queryFn: connectionsApi.list,
+  });
 
   const [editing, setEditing] = React.useState<ApiRole | null>(null);
   const [deleting, setDeleting] = React.useState<ApiRole | null>(null);
@@ -187,7 +192,11 @@ function Page() {
 
   const save = useMutation({
     mutationFn: async ({ id, data }: { id?: string; data: PerfilFormData }) => {
-      const metadata = { departmentIds: data.departmentIds, workSchedule: data.workSchedule };
+      const metadata = {
+        departmentIds: data.departmentIds,
+        connectionIds: data.connectionIds,
+        workSchedule: data.workSchedule,
+      };
       if (id) {
         return organizationApi.updateRole(id, {
           name: data.name,
@@ -321,12 +330,14 @@ function Page() {
         <PerfilForm
           open={novo.open}
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
+          connections={connections}
           onClose={novo.hide}
           onSubmit={(data) => save.mutate({ data })}
         />
         <PerfilForm
           open={!!editing}
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
+          connections={connections}
           initial={editing ?? undefined}
           onClose={() => setEditing(null)}
           onSubmit={(data) => editing && save.mutate({ id: editing.id, data })}
@@ -351,27 +362,32 @@ function PerfilForm({
   onSubmit,
   initial,
   departamentos,
+  connections,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: PerfilFormData) => void;
   initial?: ApiRole;
   departamentos: { id: string; name: string }[];
+  connections: ApiMessagingConnection[];
 }) {
   const [form, setForm] = React.useState<PerfilFormData>({
     name: "",
     description: "",
     permissionIds: [],
     departmentIds: [],
+    connectionIds: [],
     workSchedule: defaultWorkSchedule(),
   });
   const [error, setError] = React.useState("");
   const [activeTab, setActiveTab] = React.useState<PermissionTab>("chat");
+  const [showSchedule, setShowSchedule] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
     const metadata = (initial?.metadata ?? {}) as {
       departmentIds?: string[];
+      connectionIds?: string[];
       workSchedule?: WorkSchedule;
     };
     setForm(
@@ -381,6 +397,7 @@ function PerfilForm({
             description: initial.description ?? "",
             permissionIds: initial.permissionIds,
             departmentIds: metadata.departmentIds ?? [],
+            connectionIds: metadata.connectionIds ?? [],
             workSchedule: metadata.workSchedule ?? defaultWorkSchedule(),
           }
         : {
@@ -393,11 +410,13 @@ function PerfilForm({
               "chat.quick_replies.read",
             ],
             departmentIds: [],
+            connectionIds: [],
             workSchedule: defaultWorkSchedule(),
           },
     );
     setError("");
     setActiveTab("chat");
+    setShowSchedule(false);
   }, [initial, open]);
 
   const submit = () => {
@@ -423,6 +442,15 @@ function PerfilForm({
       departmentIds: checked
         ? Array.from(new Set([...current.departmentIds, id]))
         : current.departmentIds.filter((departmentId) => departmentId !== id),
+    }));
+  };
+
+  const toggleConnection = (id: string, checked: boolean) => {
+    setForm((current) => ({
+      ...current,
+      connectionIds: checked
+        ? Array.from(new Set([...current.connectionIds, id]))
+        : current.connectionIds.filter((connectionId) => connectionId !== id),
     }));
   };
 
@@ -482,6 +510,25 @@ function PerfilForm({
 
         <section>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Instancias
+          </h3>
+          <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+            {connections.map((connection) => (
+              <CheckField
+                key={connection.id}
+                label={connection.name}
+                checked={form.connectionIds.includes(connection.id)}
+                onChange={(checked) => toggleConnection(connection.id, checked)}
+              />
+            ))}
+            {connections.length === 0 && (
+              <p className="text-xs text-muted-foreground">Nenhuma instancia cadastrada.</p>
+            )}
+          </div>
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Departamentos
           </h3>
           <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
@@ -526,10 +573,24 @@ function PerfilForm({
           </div>
         </section>
 
-        <WorkScheduleEditor
-          value={form.workSchedule}
-          onChange={(workSchedule) => setForm((current) => ({ ...current, workSchedule }))}
-        />
+        <section>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Jornada de trabalho
+            </h3>
+            <Button variant="outline" size="sm" onClick={() => setShowSchedule((value) => !value)}>
+              {showSchedule ? "Ocultar jornada" : "Apresentar jornada"}
+            </Button>
+          </div>
+          {showSchedule && (
+            <div className="mt-3">
+              <WorkScheduleEditor
+                value={form.workSchedule}
+                onChange={(workSchedule) => setForm((current) => ({ ...current, workSchedule }))}
+              />
+            </div>
+          )}
+        </section>
       </div>
     </Modal>
   );
@@ -558,9 +619,7 @@ function WorkScheduleEditor({
   return (
     <section>
       <div className="mb-2 flex items-center justify-between gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Jornada de trabalho
-        </h3>
+        <span />
         <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
           <input
             type="checkbox"
@@ -571,13 +630,13 @@ function WorkScheduleEditor({
           Sem jornada
         </label>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="min-w-[820px] w-full text-sm">
+      <div className="overflow-hidden rounded-lg border border-border">
+        <table className="w-full table-fixed text-xs">
           <thead className="bg-surface-2 text-[11px] uppercase tracking-widest text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 text-left">Dia</th>
+              <th className="w-20 px-2 py-2 text-left">Dia</th>
               {Object.values(SHIFT_LABELS).map((label) => (
-                <th key={label} className="px-3 py-2 text-left" colSpan={3}>
+                <th key={label} className="px-2 py-2 text-left" colSpan={3}>
                   {label}
                 </th>
               ))}
@@ -585,13 +644,13 @@ function WorkScheduleEditor({
             <tr>
               <th />
               {Object.keys(SHIFT_LABELS).flatMap((shift) => [
-                <th key={`${shift}-active`} className="px-3 py-2 text-left">
+                <th key={`${shift}-active`} className="w-12 px-2 py-2 text-left">
                   Ativo
                 </th>,
-                <th key={`${shift}-start`} className="px-3 py-2 text-left">
+                <th key={`${shift}-start`} className="px-2 py-2 text-left">
                   Inicio
                 </th>,
-                <th key={`${shift}-end`} className="px-3 py-2 text-left">
+                <th key={`${shift}-end`} className="px-2 py-2 text-left">
                   Fim
                 </th>,
               ])}
@@ -600,12 +659,12 @@ function WorkScheduleEditor({
           <tbody className="divide-y divide-border">
             {WEEK_DAYS.map((day) => (
               <tr key={day}>
-                <td className="px-3 py-2 font-medium">{day}</td>
+                <td className="px-2 py-2 font-medium">{day}</td>
                 {(Object.keys(SHIFT_LABELS) as ShiftKey[]).map((shift) => {
                   const item = value.days[day][shift];
                   return (
                     <React.Fragment key={`${day}-${shift}`}>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-2">
                         <input
                           type="checkbox"
                           checked={item.active}
@@ -616,21 +675,23 @@ function WorkScheduleEditor({
                           className="h-4 w-4 accent-primary"
                         />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-2">
                         <Input
                           type="time"
                           value={item.start}
                           disabled={value.noSchedule || !item.active}
+                          className="px-2"
                           onChange={(event) =>
                             updateShift(day, shift, { start: event.target.value })
                           }
                         />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-2">
                         <Input
                           type="time"
                           value={item.end}
                           disabled={value.noSchedule || !item.active}
+                          className="px-2"
                           onChange={(event) => updateShift(day, shift, { end: event.target.value })}
                         />
                       </td>

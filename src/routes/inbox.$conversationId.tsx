@@ -754,14 +754,40 @@ function MessageText({ content }: { content: string }) {
   const match =
     text.match(/^\*\*(.+?):\*\*(?:\r?\n){1,2}([\s\S]*)$/) ??
     text.match(/^\*(.+?):\*(?:\r?\n){1,2}([\s\S]*)$/);
-  if (!match) return <span className="whitespace-pre-wrap break-words">{text}</span>;
+  if (!match) return <span className="whitespace-pre-wrap break-words">{renderWhatsAppText(text)}</span>;
   return (
     <span className="whitespace-pre-wrap break-words">
       <strong>{match[1]}:</strong>
       {"\n\n"}
-      {match[2]}
+      {renderWhatsAppText(match[2])}
     </span>
   );
+}
+
+function renderWhatsAppText(text: string) {
+  const parts = text.split(/(\*\*[^*\n][\s\S]*?[^*\n]\*\*|\*[^*\n][^*\n]*?[^*\n]\*|_[^_\n][^_\n]*?[^_\n]_|~[^~\n][^~\n]*?[^~\n]~|```[\s\S]*?```|`[^`\n]+`)/g);
+  return parts.map((part, index) => {
+    if (!part) return null;
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return <strong key={index}>{part.slice(1, -1)}</strong>;
+    }
+    if (part.startsWith("_") && part.endsWith("_")) {
+      return <em key={index}>{part.slice(1, -1)}</em>;
+    }
+    if (part.startsWith("~") && part.endsWith("~")) {
+      return <del key={index}>{part.slice(1, -1)}</del>;
+    }
+    if (part.startsWith("```") && part.endsWith("```")) {
+      return <code key={index}>{part.slice(3, -3)}</code>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={index}>{part.slice(1, -1)}</code>;
+    }
+    return <React.Fragment key={index}>{part}</React.Fragment>;
+  });
 }
 
 function QuotedPreview({

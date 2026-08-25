@@ -15,6 +15,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.dto";
+import { UpdateMessagingConnectionDto } from "./dto/update-messaging-connection.dto";
 import { MessagingConnectionsService } from "./messaging-connections.service";
 
 @Controller("messaging/connections")
@@ -50,6 +51,16 @@ export class MessagingConnectionsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     return this.connections.createEvolution(dto, current);
+  }
+
+  @Patch(":id")
+  @RequirePermissions("connections.manage")
+  update(
+    @Param("id") id: string,
+    @Body() dto: UpdateMessagingConnectionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.connections.update(id, dto, current);
   }
 
   @Get(":id/status")

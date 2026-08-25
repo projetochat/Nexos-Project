@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Instagram,
   MessageCircle,
+  Pencil,
   Plug,
   Plus,
   QrCode,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { Badge, Button, Card, Field, Input, SectionHeader } from "@/components/ui-kit";
+import { Badge, Button, Card, Field, Input, SectionHeader, Textarea } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { maskBrazilPhone } from "@/lib/input-masks";
@@ -44,6 +45,7 @@ function Page() {
     status?: string;
   } | null>(null);
   const [removing, setRemoving] = React.useState<ApiMessagingConnection | null>(null);
+  const [editing, setEditing] = React.useState<ApiMessagingConnection | null>(null);
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["nexos", "messaging-connections"],
     queryFn: connectionsApi.list,
@@ -85,6 +87,21 @@ function Page() {
   const refresh = useMutation({
     mutationFn: connectionsApi.status,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] }),
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const update = useMutation({
+    mutationFn: ({
+      connection,
+      data,
+    }: {
+      connection: ApiMessagingConnection;
+      data: ConnectionSettingsFormData;
+    }) => connectionsApi.update(connection.id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
+      setEditing(null);
+      toast.success("Instancia atualizada");
+    },
     onError: (e) => toast.error((e as Error).message),
   });
   const qrCode = useMutation({
@@ -249,6 +266,14 @@ function Page() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      onClick={() => setEditing(connection)}
+                      disabled={connection.status === "removed"}
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Editar
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => setRemoving(connection)}
                       disabled={remove.isPending}
                     >
@@ -266,6 +291,12 @@ function Page() {
           busy={create.isPending}
           onClose={novo.hide}
           onSubmit={(data) => create.mutate(data)}
+        />
+        <ConnectionSettingsModal
+          connection={editing}
+          busy={update.isPending}
+          onClose={() => setEditing(null)}
+          onSubmit={(connection, data) => update.mutate({ connection, data })}
         />
         <QrModal qr={qr} onClose={() => setQr(null)} />
         <RemoveConnectionModal
@@ -333,6 +364,182 @@ function ConnectionForm({
             placeholder="Suporte WhatsApp"
           />
         </Field>
+      </div>
+    </Modal>
+  );
+}
+
+type ConnectionSettingsFormData = {
+  name: string;
+  color: string | null;
+  welcomeEnabled: boolean;
+  welcomeNewMessage: string | null;
+  welcomeExistingMessage: string | null;
+  notes: string | null;
+};
+
+function ConnectionSettingsModal({
+  connection,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  connection: ApiMessagingConnection | null;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (connection: ApiMessagingConnection, data: ConnectionSettingsFormData) => void;
+}) {
+  const [form, setForm] = React.useState<ConnectionSettingsFormData>({
+    name: "",
+    color: "#22c55e",
+    welcomeEnabled: false,
+    welcomeNewMessage: "",
+    welcomeExistingMessage: "",
+    notes: "",
+  });
+
+  React.useEffect(() => {
+    if (!connection) return;
+    setForm({
+      name: connection.name,
+      color: connection.color || "#22c55e",
+      welcomeEnabled: connection.welcomeEnabled ?? false,
+      welcomeNewMessage:
+        connection.welcomeNewMessage ||
+        "Ola! Seja bem-vindo(a). Poderia informar seu nome para iniciarmos o atendimento?",
+      welcomeExistingMessage: connection.welcomeExistingMessage || "Ola {{nome}},\nTudo bem?",
+      notes: connection.notes || "",
+    });
+  }, [connection]);
+
+  const save = () => {
+    if (!connection || form.name.trim().length < 2) return;
+    onSubmit(connection, {
+      ...form,
+      name: form.name.trim(),
+      color: form.color || "#22c55e",
+      welcomeNewMessage: form.welcomeNewMessage?.trim() || null,
+      welcomeExistingMessage: form.welcomeExistingMessage?.trim() || null,
+      notes: form.notes?.trim() || null,
+    });
+  };
+
+  return (
+    <Modal
+      open={!!connection}
+      onClose={onClose}
+      title="Editar instancia"
+      size="lg"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+            Cancelar
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={save}
+            disabled={busy || form.name.trim().length < 2}
+          >
+            Salvar
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4 md:grid-cols-2">
+        <Field label="Nome *">
+          <Input
+            value={form.name}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+          />
+        </Field>
+        <Field label="Telefone">
+          <Input value={connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""} readOnly />
+        </Field>
+        <Field label="Provedor">
+          <Input value="Evolution API" readOnly />
+        </Field>
+        <Field label="Referencia">
+          <Input value={connection?.externalReference ?? "sem referencia externa"} readOnly />
+        </Field>
+        <Field label="Status">
+          <Input value={connection ? statusLabel(connection.status) : ""} readOnly />
+        </Field>
+        <Field label="Cor">
+          <div className="flex gap-2">
+            <Input
+              type="color"
+              value={form.color || "#22c55e"}
+              onChange={(event) => setForm({ ...form, color: event.target.value })}
+              className="h-10 w-14 p-1"
+            />
+            <Input
+              value={form.color || ""}
+              onChange={(event) => setForm({ ...form, color: event.target.value })}
+            />
+          </div>
+        </Field>
+        <div className="rounded-lg border border-border bg-surface-1 p-3 md:col-span-2">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Variaveis disponiveis
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            {["{{nome}}", "{{telefone}}", "{{email}}", "{{departamento}}", "{{cliente}}", "{{instancia}}"].map(
+              (token) => (
+                <button
+                  key={token}
+                  type="button"
+                  className="rounded-md border border-border bg-card px-2 py-1 font-mono"
+                  onClick={() =>
+                    navigator.clipboard.writeText(token).catch(() => undefined)
+                  }
+                >
+                  {token}
+                </button>
+              ),
+            )}
+          </div>
+        </div>
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm md:col-span-2">
+          <input
+            type="checkbox"
+            checked={form.welcomeEnabled}
+            onChange={(event) => setForm({ ...form, welcomeEnabled: event.target.checked })}
+            className="h-4 w-4 accent-primary"
+          />
+          Mensagens de primeiro contato ativas
+        </label>
+        <div className="md:col-span-2">
+          <Field label="Mensagem para novo contato">
+            <Textarea
+              rows={3}
+              value={form.welcomeNewMessage ?? ""}
+              onChange={(event) => setForm({ ...form, welcomeNewMessage: event.target.value })}
+              disabled={!form.welcomeEnabled}
+            />
+          </Field>
+        </div>
+        <div className="md:col-span-2">
+          <Field label="Mensagem para contato existente">
+            <Textarea
+              rows={3}
+              value={form.welcomeExistingMessage ?? ""}
+              onChange={(event) =>
+                setForm({ ...form, welcomeExistingMessage: event.target.value })
+              }
+              disabled={!form.welcomeEnabled}
+            />
+          </Field>
+        </div>
+        <div className="md:col-span-2">
+          <Field label="Notas">
+            <Textarea
+              rows={3}
+              value={form.notes ?? ""}
+              onChange={(event) => setForm({ ...form, notes: event.target.value })}
+            />
+          </Field>
+        </div>
       </div>
     </Modal>
   );

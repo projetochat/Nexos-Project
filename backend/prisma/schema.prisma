@@ -945,6 +945,11 @@ model MessagingConnection {
   id                   String                    @id @default(uuid())
   tenantId             String
   name                 String
+  color                String?                   @default("#22c55e")
+  welcomeEnabled       Boolean                   @default(false)
+  welcomeNewMessage    String?
+  welcomeExistingMessage String?
+  notes                String?
   providerType         MessagingProviderType
   status               MessagingConnectionStatus @default(DISCONNECTED)
   externalReference    String?

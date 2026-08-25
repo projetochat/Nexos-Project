@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Copy,
   Eye,
@@ -112,6 +112,8 @@ function Page() {
         connectionId: filters.connectionId || undefined,
         pageSize: 50,
       }),
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
   });
   const connectionsQuery = useQuery({
     queryKey: ["campaigns.connections"],
@@ -256,14 +258,19 @@ function Page() {
                 }
               />
             ) : (
-              campaigns.map((campaign) => (
-                <CampaignRow
-                  key={campaign.id}
-                  campaign={campaign}
-                  selected={campaign.id === detail?.id}
-                  onSelect={() => setSelectedId(campaign.id)}
-                />
-              ))
+              <>
+                {listQuery.isFetching && (
+                  <p className="px-1 text-xs text-muted-foreground">Atualizando campanhas...</p>
+                )}
+                {campaigns.map((campaign) => (
+                  <CampaignRow
+                    key={campaign.id}
+                    campaign={campaign}
+                    selected={campaign.id === detail?.id}
+                    onSelect={() => setSelectedId(campaign.id)}
+                  />
+                ))}
+              </>
             )}
           </div>
 
@@ -526,6 +533,9 @@ function CampaignEditor({
   });
   const [preview, setPreview] = React.useState<ApiCampaignPreview | null>(null);
   const [step, setStep] = React.useState(1);
+  const [tagSearch, setTagSearch] = React.useState("");
+  const [customerSearch, setCustomerSearch] = React.useState("");
+  const [contactSearch, setContactSearch] = React.useState("");
   const tagsQuery = useQuery({
     queryKey: ["campaigns.tags"],
     queryFn: crmApi.listTags,
@@ -727,6 +737,8 @@ function CampaignEditor({
               mode={form.tagMatchMode}
               onMode={(tagMatchMode) => setForm({ ...form, tagMatchMode })}
               items={tagsQuery.data ?? []}
+              search={tagSearch}
+              onSearch={setTagSearch}
               selected={form.tagIds}
               onChange={(tagIds) => setForm({ ...form, tagIds })}
             />
@@ -734,6 +746,8 @@ function CampaignEditor({
           {form.audienceType === "CUSTOMERS" && (
             <CustomerSelector
               items={customersQuery.data?.items ?? []}
+              search={customerSearch}
+              onSearch={setCustomerSearch}
               selected={form.customerIds}
               onChange={(customerIds) => setForm({ ...form, customerIds })}
             />
@@ -741,6 +755,8 @@ function CampaignEditor({
           {form.audienceType === "CONTACTS" && (
             <ContactSelector
               items={contactsQuery.data?.items ?? []}
+              search={contactSearch}
+              onSearch={setContactSearch}
               selected={form.contactIds}
               onChange={(contactIds) => setForm({ ...form, contactIds })}
             />
@@ -815,6 +831,8 @@ function Selector({
   mode,
   onMode,
   items,
+  search,
+  onSearch,
   selected,
   onChange,
 }: {
@@ -822,6 +840,8 @@ function Selector({
   mode: "ANY" | "ALL";
   onMode: (mode: "ANY" | "ALL") => void;
   items: ApiTag[];
+  search: string;
+  onSearch: (value: string) => void;
   selected: string[];
   onChange: (ids: string[]) => void;
 }) {
@@ -838,8 +858,10 @@ function Selector({
           <option value="ALL">ALL</option>
         </Select>
       </div>
-      <CheckGrid
+      <FilterableCheckGrid
         items={items.map((item) => ({ id: item.id, label: item.nome }))}
+        search={search}
+        onSearch={onSearch}
         selected={selected}
         onChange={onChange}
       />
@@ -849,16 +871,22 @@ function Selector({
 
 function CustomerSelector({
   items,
+  search,
+  onSearch,
   selected,
   onChange,
 }: {
   items: ApiCustomer[];
+  search: string;
+  onSearch: (value: string) => void;
   selected: string[];
   onChange: (ids: string[]) => void;
 }) {
   return (
-    <CheckGrid
+    <FilterableCheckGrid
       items={items.map((item) => ({ id: item.id, label: item.nome }))}
+      search={search}
+      onSearch={onSearch}
       selected={selected}
       onChange={onChange}
     />
@@ -867,51 +895,80 @@ function CustomerSelector({
 
 function ContactSelector({
   items,
+  search,
+  onSearch,
   selected,
   onChange,
 }: {
   items: ApiContact[];
+  search: string;
+  onSearch: (value: string) => void;
   selected: string[];
   onChange: (ids: string[]) => void;
 }) {
   return (
-    <CheckGrid
+    <FilterableCheckGrid
       items={items.map((item) => ({
         id: item.id,
         label: `${item.nome} · ${maskBrazilPhone(item.telefone)}`,
       }))}
+      search={search}
+      onSearch={onSearch}
       selected={selected}
       onChange={onChange}
     />
   );
 }
 
-function CheckGrid({
+function FilterableCheckGrid({
   items,
+  search,
+  onSearch,
   selected,
   onChange,
 }: {
   items: Array<{ id: string; label: string }>;
+  search: string;
+  onSearch: (value: string) => void;
   selected: string[];
   onChange: (ids: string[]) => void;
 }) {
   const toggle = (id: string) =>
     onChange(selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id]);
+  const filtered = items.filter((item) =>
+    item.label.toLowerCase().includes(search.trim().toLowerCase()),
+  );
   return (
-    <div className="grid max-h-64 gap-2 overflow-auto md:grid-cols-2">
-      {items.map((item) => (
-        <label
-          key={item.id}
-          className="flex items-center gap-2 rounded border border-border px-3 py-2 text-sm"
-        >
-          <input
-            type="checkbox"
-            checked={selected.includes(item.id)}
-            onChange={() => toggle(item.id)}
-          />{" "}
-          <span className="truncate">{item.label}</span>
-        </label>
-      ))}
+    <div className="space-y-3">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          className="pl-9"
+          placeholder="Filtrar itens..."
+          value={search}
+          onChange={(event) => onSearch(event.target.value)}
+        />
+      </div>
+      <div className="grid max-h-64 gap-2 overflow-auto md:grid-cols-2">
+        {filtered.map((item) => (
+          <label
+            key={item.id}
+            className="flex items-center gap-2 rounded border border-border px-3 py-2 text-sm"
+          >
+            <input
+              type="checkbox"
+              checked={selected.includes(item.id)}
+              onChange={() => toggle(item.id)}
+            />{" "}
+            <span className="truncate">{item.label}</span>
+          </label>
+        ))}
+        {filtered.length === 0 && (
+          <p className="rounded border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground md:col-span-2">
+            Nenhum item encontrado.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

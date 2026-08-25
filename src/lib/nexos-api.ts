@@ -334,6 +334,11 @@ export type ApiMessagingConnection = {
   providerType: "development" | "evolution" | "meta_cloud";
   status: "disconnected" | "connecting" | "connected" | "error" | "removed";
   externalReference: string | null;
+  color?: string | null;
+  welcomeEnabled?: boolean;
+  welcomeNewMessage?: string | null;
+  welcomeExistingMessage?: string | null;
+  notes?: string | null;
   ownerPhoneMasked?: string | null;
   ownerPhone?: string | null;
   archivedAt?: string | null;
@@ -1070,6 +1075,21 @@ export const connectionsApi = {
   createEvolution: (data: { name: string; instanceName?: string }) =>
     apiRequest<ApiMessagingConnection>("/messaging/connections/evolution", {
       method: "POST",
+      body: JSON.stringify(data),
+    }),
+  update: (
+    id: string,
+    data: {
+      name?: string;
+      color?: string | null;
+      welcomeEnabled?: boolean;
+      welcomeNewMessage?: string | null;
+      welcomeExistingMessage?: string | null;
+      notes?: string | null;
+    },
+  ) =>
+    apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(data),
     }),
   status: (id: string) => apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/status`),

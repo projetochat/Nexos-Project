@@ -21,6 +21,7 @@ import {
   normalizeSecret,
 } from "./evolution/evolution.config";
 import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.dto";
+import { UpdateMessagingConnectionDto } from "./dto/update-messaging-connection.dto";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 
 @Injectable()
@@ -199,6 +200,31 @@ export class MessagingConnectionsService {
       qrCodeBase64: evolutionQrBase64(response),
       status: "connecting",
     };
+  }
+
+  async update(id: string, dto: UpdateMessagingConnectionDto, current: AuthenticatedUser) {
+    const connection = await this.findTenantConnection(id, current.tenantId);
+    if (connection.archivedAt || connection.status === MessagingConnectionStatus.REMOVED) {
+      throw new BadRequestException("Connection removida nao pode ser editada.");
+    }
+    const updated = await this.prisma.messagingConnection.update({
+      where: { tenantId_id: { tenantId: current.tenantId, id: connection.id } },
+      data: {
+        name: dto.name?.trim(),
+        color: normalizeColor(dto.color),
+        welcomeEnabled: dto.welcomeEnabled,
+        welcomeNewMessage: cleanOptionalText(dto.welcomeNewMessage),
+        welcomeExistingMessage: cleanOptionalText(dto.welcomeExistingMessage),
+        notes: cleanOptionalText(dto.notes),
+      },
+    });
+    this.realtime?.publishConnectionStatusUpdated({
+      tenantId: updated.tenantId,
+      connectionId: updated.id,
+      status: updated.status.toLowerCase(),
+      updatedAt: updated.updatedAt,
+    });
+    return this.serialize(updated);
   }
 
   async logout(id: string, current: AuthenticatedUser) {
@@ -541,6 +567,11 @@ export class MessagingConnectionsService {
       providerType: connection.providerType.toLowerCase(),
       status: connection.status.toLowerCase(),
       externalReference: connection.externalReference,
+      color: connection.color,
+      welcomeEnabled: connection.welcomeEnabled,
+      welcomeNewMessage: connection.welcomeNewMessage,
+      welcomeExistingMessage: connection.welcomeExistingMessage,
+      notes: connection.notes,
       ownerPhoneMasked: maskPhone(connection.ownerPhoneNormalized),
       ownerPhone: connection.ownerPhoneNormalized,
       archivedAt: connection.archivedAt,
@@ -595,6 +626,19 @@ function maskPhone(value: string | null | undefined) {
   const digits = value.replace(/\D/g, "");
   if (!digits) return null;
   return `******${digits.slice(-4)}`;
+}
+
+function normalizeColor(value: string | null | undefined) {
+  if (value === undefined) return undefined;
+  const trimmed = value?.trim();
+  if (!trimmed) return "#22c55e";
+  return /^#[0-9a-f]{6}$/i.test(trimmed) ? trimmed : "#22c55e";
+}
+
+function cleanOptionalText(value: string | null | undefined) {
+  if (value === undefined) return undefined;
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 function normalizeOwnerPhone(value: string | null) {

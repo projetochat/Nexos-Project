@@ -338,6 +338,7 @@ function ContatosPage() {
           tags={tags}
           connectionOptions={connectionOptions}
           connectionsError={connectionsError}
+          onCustomerCreated={(customer) => setCustomers((current) => [customer, ...current])}
           onSubmit={async (data) => {
             try {
               const contact = await crmApi.createContact(contactPayload(data));
@@ -361,6 +362,7 @@ function ContatosPage() {
           tags={tags}
           connectionOptions={connectionOptions}
           connectionsError={connectionsError}
+          onCustomerCreated={(customer) => setCustomers((current) => [customer, ...current])}
           onClose={() => setEditing(null)}
           onSubmit={async (data) => {
             if (!editing) return;
@@ -407,6 +409,7 @@ function ContactFormModal({
   tags,
   connectionOptions,
   connectionsError,
+  onCustomerCreated,
 }: {
   open: boolean;
   onClose: () => void;
@@ -414,6 +417,7 @@ function ContactFormModal({
   tags: Tag[];
   connectionOptions: ConnectedConnectionOption[];
   connectionsError: Error | null;
+  onCustomerCreated: (customer: Customer) => void;
   onSubmit: (data: {
     nome: string;
     telefone: string;
@@ -435,6 +439,7 @@ function ContactFormModal({
   const [instancia, setInstancia] = React.useState("");
   const [tagIds, setTagIds] = React.useState<string[]>([]);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const customerModal = useDisclosure();
 
   React.useEffect(() => {
     if (!open) return;
@@ -463,7 +468,6 @@ function ContactFormModal({
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
       errs.email = "E-mail invalido.";
     if (!departamento.trim()) errs.departamento = "Informe o departamento.";
-    if (!customerId) errs.customerId = "Selecione o cliente.";
     if (Object.keys(errs).length) {
       setErrors(errs);
       toast.error("Verifique os campos destacados.");
@@ -572,16 +576,24 @@ function ContactFormModal({
             <option value="Diretoria">Diretoria</option>
           </Select>
         </Field>
-        <Field label="Cliente *">
+        <Field label="Cliente">
           <div className="flex gap-2">
             <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-              <option value="">- Selecione -</option>
+              <option value="">- Sem cliente -</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.nome}
                 </option>
               ))}
             </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={customerModal.show}
+              title="Novo cliente"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
             {customerId && (
               <Button
                 variant="ghost"
@@ -593,9 +605,6 @@ function ContactFormModal({
               </Button>
             )}
           </div>
-          {errors.customerId && (
-            <span className="mt-1 block text-[11px] text-destructive">{errors.customerId}</span>
-          )}
         </Field>
         <div className="md:col-span-2">
           <Field label="Etiquetas">
@@ -631,6 +640,107 @@ function ContactFormModal({
             )}
           </Field>
         </div>
+      </div>
+      <CustomerQuickCreateModal
+        open={customerModal.open}
+        onClose={customerModal.hide}
+        onCreated={(customer) => {
+          onCustomerCreated(customer);
+          setCustomerId(customer.id);
+          customerModal.hide();
+        }}
+      />
+    </Modal>
+  );
+}
+
+function CustomerQuickCreateModal({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (customer: Customer) => void;
+}) {
+  const [name, setName] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [responsible, setResponsible] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setName("");
+    setEmail("");
+    setPhone("");
+    setResponsible("");
+  }, [open]);
+
+  const save = async () => {
+    if (name.trim().length < 2) {
+      toast.error("Informe o nome do cliente.");
+      return;
+    }
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      toast.error("E-mail invalido.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const customer = await crmApi.createCustomer({
+        name: name.trim(),
+        email: email.trim() || null,
+        phone: phone.trim() || null,
+        responsibleContactName: responsible.trim() || null,
+      });
+      toast.success("Cliente criado");
+      onCreated(customer);
+    } catch (error) {
+      toast.error("Falha ao criar cliente", { description: (error as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Novo cliente"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+            Cancelar
+          </Button>
+          <Button variant="primary" size="sm" onClick={save} disabled={busy}>
+            Salvar
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4">
+        <Field label="Nome *">
+          <Input value={name} onChange={(event) => setName(event.target.value)} />
+        </Field>
+        <Field label="Telefone">
+          <Input
+            value={phone}
+            onChange={(event) => setPhone(maskBrazilPhone(event.target.value))}
+            placeholder="(11) 90000-0000"
+          />
+        </Field>
+        <Field label="E-mail">
+          <Input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="nome@empresa.com"
+          />
+        </Field>
+        <Field label="Contato responsavel">
+          <Input value={responsible} onChange={(event) => setResponsible(event.target.value)} />
+        </Field>
       </div>
     </Modal>
   );
