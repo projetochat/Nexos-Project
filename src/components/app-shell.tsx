@@ -89,7 +89,6 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
     title: "Operação",
     items: [
       { to: "/inbox", label: "Chat", icon: Inbox },
-      { to: "/clientes", label: "Clientes", icon: Building2 },
       { to: "/contatos", label: "Contatos", icon: Users },
       { to: "/historico", label: "Histórico de conversa", icon: History },
     ],
@@ -861,7 +860,7 @@ function MobileNav() {
       : [
           { to: "/", label: "Início", icon: LayoutDashboard },
           { to: "/inbox", label: "Inbox", icon: Inbox },
-          { to: "/clientes", label: "Clientes", icon: Users },
+          { to: "/contatos", label: "Contatos", icon: Users },
           { to: "/configuracoes", label: "Ajustes", icon: Settings },
           { to: "/perfil", label: "Perfil", icon: Users },
         ];

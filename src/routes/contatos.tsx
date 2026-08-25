@@ -1,6 +1,19 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { ChevronLeft, ChevronRight, Link2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import {
+  Building2,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Link2,
+  Pencil,
+  Plus,
+  Search,
+  Tag as TagIcon,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
@@ -13,11 +26,19 @@ import {
   Input,
   SectionHeader,
   Select,
+  Textarea,
 } from "@/components/ui-kit";
 import type { ConnectedConnectionOption } from "@/lib/connection-options";
 import { connectionPrimaryLabel, hasExampleInstanceName } from "@/lib/connection-options";
-import { maskBrazilPhone } from "@/lib/input-masks";
-import { crmApi, type ApiContact, type ApiCustomer, type ApiTag } from "@/lib/nexos-api";
+import { isValidEmail, maskBrazilPhone } from "@/lib/input-masks";
+import {
+  crmApi,
+  organizationApi,
+  type ApiContact,
+  type ApiCustomer,
+  type ApiDepartment,
+  type ApiTag,
+} from "@/lib/nexos-api";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 
 export const Route = createFileRoute("/contatos")({ component: ContatosPage });
@@ -27,9 +48,15 @@ const PAGE_SIZE = 15;
 type Customer = ApiCustomer;
 type Contact = ApiContact;
 type Tag = ApiTag;
+type Department = ApiDepartment;
 type FilterMode = "all" | "linked" | "unlinked";
 type RoleLabel = "Colaborador" | "Supervisor" | "Gerente" | "Diretoria";
 type RoleCode = "COLABORADOR" | "SUPERVISOR" | "GERENTE" | "DIRETORIA";
+type DepartamentoFormData = {
+  name?: string;
+  description?: string | null;
+  color?: string;
+};
 
 const ROLE_TO_API: Record<RoleLabel, RoleCode> = {
   Colaborador: "COLABORADOR",
@@ -336,9 +363,13 @@ function ContatosPage() {
           onClose={create.hide}
           customers={customers}
           tags={tags}
+          departments={departments}
           connectionOptions={connectionOptions}
           connectionsError={connectionsError}
-          onCustomerCreated={(customer) => setCustomers((current) => [customer, ...current])}
+          onCustomerCreated={(customer) => setCustomers((current) => upsertCustomer(current, customer))}
+          onDepartmentSaved={(department) =>
+            setDepartments((current) => upsertString(current, department.name))
+          }
           onSubmit={async (data) => {
             try {
               const contact = await crmApi.createContact(contactPayload(data));
@@ -360,9 +391,13 @@ function ContatosPage() {
           initial={editing ?? undefined}
           customers={customers}
           tags={tags}
+          departments={departments}
           connectionOptions={connectionOptions}
           connectionsError={connectionsError}
-          onCustomerCreated={(customer) => setCustomers((current) => [customer, ...current])}
+          onCustomerCreated={(customer) => setCustomers((current) => upsertCustomer(current, customer))}
+          onDepartmentSaved={(department) =>
+            setDepartments((current) => upsertString(current, department.name))
+          }
           onClose={() => setEditing(null)}
           onSubmit={async (data) => {
             if (!editing) return;
@@ -407,17 +442,21 @@ function ContactFormModal({
   initial,
   customers,
   tags,
+  departments,
   connectionOptions,
   connectionsError,
   onCustomerCreated,
+  onDepartmentSaved,
 }: {
   open: boolean;
   onClose: () => void;
   customers: Customer[];
   tags: Tag[];
+  departments: string[];
   connectionOptions: ConnectedConnectionOption[];
   connectionsError: Error | null;
   onCustomerCreated: (customer: Customer) => void;
+  onDepartmentSaved: (department: Department) => void;
   onSubmit: (data: {
     nome: string;
     telefone: string;
@@ -439,7 +478,9 @@ function ContactFormModal({
   const [instancia, setInstancia] = React.useState("");
   const [tagIds, setTagIds] = React.useState<string[]>([]);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
-  const customerModal = useDisclosure();
+  const customersManager = useDisclosure();
+  const departmentsManager = useDisclosure();
+  const profilesManager = useDisclosure();
 
   React.useEffect(() => {
     if (!open) return;
@@ -456,10 +497,6 @@ function ContactFormModal({
     setErrors({});
   }, [connectionOptions, initial, open]);
 
-  const toggleTag = (id: string) => {
-    setTagIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
   const handle = () => {
     const errs: Record<string, string> = {};
     if (!nome.trim() || nome.trim().length < 2) errs.nome = "Informe o nome.";
@@ -467,7 +504,6 @@ function ContactFormModal({
     if (digits.length < 10) errs.telefone = "Telefone invalido.";
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
       errs.email = "E-mail invalido.";
-    if (!departamento.trim()) errs.departamento = "Informe o departamento.";
     if (Object.keys(errs).length) {
       setErrors(errs);
       toast.error("Verifique os campos destacados.");
@@ -491,7 +527,7 @@ function ContactFormModal({
       onClose={onClose}
       title={initial ? "Editar contato" : "Novo contato"}
       description="Contato e a pessoa que conversa pelo WhatsApp. Voce pode vincular a um cliente ja cadastrado."
-      size="lg"
+      size="xl"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -510,6 +546,36 @@ function ContactFormModal({
             <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
           )}
         </Field>
+        <Field label="Cliente">
+          <div className="flex gap-2">
+            <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+              <option value="">- Sem cliente -</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={customersManager.show}
+              title="Gerenciar clientes"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+            {customerId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCustomerId("")}
+                title="Remover vinculo"
+              >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          </div>
+        </Field>
         <Field label="Telefone *">
           <Input
             value={telefone}
@@ -520,15 +586,25 @@ function ContactFormModal({
             <span className="mt-1 block text-[11px] text-destructive">{errors.telefone}</span>
           )}
         </Field>
-        <Field label="Departamento do Contato *">
-          <Input
-            value={departamento}
-            onChange={(e) => setDepartamento(e.target.value)}
-            placeholder="Ex.: Financeiro"
-          />
-          {errors.departamento && (
-            <span className="mt-1 block text-[11px] text-destructive">{errors.departamento}</span>
-          )}
+        <Field label="Departamento do Contato">
+          <div className="flex gap-2">
+            <Select value={departamento} onChange={(e) => setDepartamento(e.target.value)}>
+              <option value="">- Sem departamento -</option>
+              {departments.map((department) => (
+                <option key={department} value={department}>
+                  {department}
+                </option>
+              ))}
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={departmentsManager.show}
+              title="Gerenciar departamentos"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </Field>
         <Field label="E-mail">
           <Input
@@ -540,6 +616,28 @@ function ContactFormModal({
           {errors.email && (
             <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
           )}
+        </Field>
+        <Field label="Perfil do Contato">
+          <div className="flex gap-2">
+            <Select
+              value={nivelGerencia}
+              onChange={(e) => setNivelGerencia(e.target.value as "" | RoleLabel)}
+            >
+              <option value="">- Selecione -</option>
+              <option value="Colaborador">Colaborador</option>
+              <option value="Supervisor">Supervisor</option>
+              <option value="Gerente">Gerente</option>
+              <option value="Diretoria">Diretoria</option>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={profilesManager.show}
+              title="Selecionar perfil do contato"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </Field>
         <Field label="Instancia">
           <Select value={instancia} onChange={(e) => setInstancia(e.target.value)}>
@@ -564,142 +662,110 @@ function ContactFormModal({
             </span>
           ) : null}
         </Field>
-        <Field label="Perfil do Contato">
-          <Select
-            value={nivelGerencia}
-            onChange={(e) => setNivelGerencia(e.target.value as "" | RoleLabel)}
-          >
-            <option value="">- Selecione -</option>
-            <option value="Colaborador">Colaborador</option>
-            <option value="Supervisor">Supervisor</option>
-            <option value="Gerente">Gerente</option>
-            <option value="Diretoria">Diretoria</option>
-          </Select>
+        <Field label="Etiquetas">
+          <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
         </Field>
-        <Field label="Cliente">
-          <div className="flex gap-2">
-            <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-              <option value="">- Sem cliente -</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nome}
-                </option>
-              ))}
-            </Select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={customerModal.show}
-              title="Novo cliente"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-            {customerId && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCustomerId("")}
-                title="Remover vinculo"
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-        </Field>
-        <div className="md:col-span-2">
-          <Field label="Etiquetas">
-            {tags.length === 0 ? (
-              <span className="text-[11px] text-muted-foreground">
-                Nenhuma etiqueta cadastrada.
-              </span>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {tags.map((t) => {
-                  const active = tagIds.includes(t.id);
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => toggleTag(t.id)}
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition ${
-                        active
-                          ? "border-transparent text-white"
-                          : "border-border bg-surface-1 text-foreground hover:bg-surface-2"
-                      }`}
-                      style={active ? { backgroundColor: t.cor } : undefined}
-                    >
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: active ? "rgba(255,255,255,0.9)" : t.cor }}
-                      />
-                      {t.nome}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </Field>
-        </div>
       </div>
-      <CustomerQuickCreateModal
-        open={customerModal.open}
-        onClose={customerModal.hide}
-        onCreated={(customer) => {
+      <CustomersManagerModal
+        open={customersManager.open}
+        onClose={customersManager.hide}
+        onCustomerSelected={(customer) => {
           onCustomerCreated(customer);
           setCustomerId(customer.id);
-          customerModal.hide();
+          customersManager.hide();
+        }}
+      />
+      <DepartmentsManagerModal
+        open={departmentsManager.open}
+        onClose={departmentsManager.hide}
+        onDepartmentSelected={(department) => {
+          onDepartmentSaved(department);
+          setDepartamento(department.name);
+          departmentsManager.hide();
+        }}
+      />
+      <ContactProfilePickerModal
+        open={profilesManager.open}
+        value={nivelGerencia}
+        onClose={profilesManager.hide}
+        onSelect={(profile) => {
+          setNivelGerencia(profile);
+          profilesManager.hide();
         }}
       />
     </Modal>
   );
 }
 
-function CustomerQuickCreateModal({
+function CustomersManagerModal({
   open,
   onClose,
-  onCreated,
+  onCustomerSelected,
 }: {
   open: boolean;
   onClose: () => void;
-  onCreated: (customer: Customer) => void;
+  onCustomerSelected: (customer: Customer) => void;
 }) {
-  const [name, setName] = React.useState("");
-  const [email, setEmail] = React.useState("");
-  const [phone, setPhone] = React.useState("");
-  const [responsible, setResponsible] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
+  const [customers, setCustomers] = React.useState<Customer[]>([]);
+  const [query, setQuery] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const [total, setTotal] = React.useState(0);
+  const [totalPages, setTotalPages] = React.useState(1);
+  const [loading, setLoading] = React.useState(false);
+  const [editing, setEditing] = React.useState<Customer | null>(null);
+  const [deleting, setDeleting] = React.useState<Customer | null>(null);
+  const create = useDisclosure();
+
+  const load = React.useCallback(async () => {
+    if (!open) return;
+    setLoading(true);
+    try {
+      const response = await crmApi.listCustomers({ q: query, page, pageSize: 8 });
+      setCustomers(response.items);
+      setTotal(response.total);
+      setTotalPages(response.totalPages);
+    } catch (error) {
+      toast.error("Falha ao carregar clientes", { description: (error as Error).message });
+    } finally {
+      setLoading(false);
+    }
+  }, [open, page, query]);
 
   React.useEffect(() => {
     if (!open) return;
-    setName("");
-    setEmail("");
-    setPhone("");
-    setResponsible("");
-  }, [open]);
+    void load();
+  }, [load, open]);
 
-  const save = async () => {
-    if (name.trim().length < 2) {
-      toast.error("Informe o nome do cliente.");
-      return;
-    }
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      toast.error("E-mail invalido.");
-      return;
-    }
-    setBusy(true);
+  React.useEffect(() => {
+    setPage(1);
+  }, [query]);
+
+  const pageSafe = Math.min(page, totalPages);
+
+  const saveCustomer = async (data: CustomerFormData) => {
     try {
-      const customer = await crmApi.createCustomer({
-        name: name.trim(),
-        email: email.trim() || null,
-        phone: phone.trim() || null,
-        responsibleContactName: responsible.trim() || null,
-      });
-      toast.success("Cliente criado");
-      onCreated(customer);
+      const customer = editing
+        ? await crmApi.updateCustomer(editing.id, customerPayload(data))
+        : await crmApi.createCustomer(customerPayload(data));
+      toast.success(editing ? "Cliente atualizado" : "Cliente criado");
+      create.hide();
+      setEditing(null);
+      await load();
+      if (!editing) onCustomerSelected(customer);
     } catch (error) {
-      toast.error("Falha ao criar cliente", { description: (error as Error).message });
-    } finally {
-      setBusy(false);
+      toast.error("Falha ao salvar cliente", { description: (error as Error).message });
+    }
+  };
+
+  const deleteCustomer = async () => {
+    if (!deleting) return;
+    try {
+      await crmApi.deleteCustomer(deleting.id);
+      toast.success("Cliente excluido");
+      setDeleting(null);
+      await load();
+    } catch (error) {
+      toast.error("Falha ao excluir cliente", { description: (error as Error).message });
     }
   };
 
@@ -707,13 +773,593 @@ function CustomerQuickCreateModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Novo cliente"
+      title="Clientes"
+      description="Cadastre, edite, exclua e selecione o cliente para este contato."
+      size="xl"
+      footer={
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Fechar
+        </Button>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold">{total} clientes cadastrados.</p>
+            <p className="text-xs text-muted-foreground">
+              O cliente selecionado sera vinculado ao contato em edicao.
+            </p>
+          </div>
+          <Button variant="primary" size="sm" onClick={create.show}>
+            <Plus className="h-3.5 w-3.5" /> Novo cliente
+          </Button>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="w-full bg-transparent py-2 text-sm outline-none"
+            placeholder="Buscar por nome..."
+          />
+        </div>
+        <div className="overflow-hidden rounded-lg border border-border">
+          <table className="w-full text-sm">
+            <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3 font-medium">Cliente</th>
+                <th className="px-4 py-3 font-medium">Contato responsavel</th>
+                <th className="px-4 py-3 font-medium">Telefone</th>
+                <th className="px-4 py-3 font-medium text-right">Acoes</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {loading && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">
+                    Carregando...
+                  </td>
+                </tr>
+              )}
+              {!loading &&
+                customers.map((customer) => (
+                  <tr key={customer.id} className="transition hover:bg-surface-1">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="h-3 w-3 rounded-full border border-border"
+                          style={{ backgroundColor: customer.cor }}
+                        />
+                        <span className="truncate font-medium">{customer.nome}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {customer.contato_responsavel ?? "-"}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs">
+                      {customer.telefone ? maskBrazilPhone(customer.telefone) : "-"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => onCustomerSelected(customer)}
+                        >
+                          Selecionar
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Editar"
+                          onClick={() => setEditing(customer)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Excluir"
+                          onClick={() => setDeleting(customer)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              {!loading && customers.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">
+                    Nenhum cliente encontrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <div className="flex items-center justify-between border-t border-border bg-surface-1 px-4 py-3 text-xs text-muted-foreground">
+            <span>
+              Mostrando {customers.length} de {total}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={pageSafe === 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <span className="font-mono">
+                {pageSafe} / {totalPages}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={pageSafe === totalPages}
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <CustomerFormModal
+        open={create.open || !!editing}
+        initial={editing ?? undefined}
+        onClose={() => {
+          create.hide();
+          setEditing(null);
+        }}
+        onSubmit={saveCustomer}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        title="Excluir cliente?"
+        description={`Esta acao arquivara ${deleting?.nome ?? ""}. Contatos vinculados serao desvinculados.`}
+        destructive
+        confirmLabel="Excluir"
+        onClose={() => setDeleting(null)}
+        onConfirm={deleteCustomer}
+      />
+    </Modal>
+  );
+}
+
+function DepartmentsManagerModal({
+  open,
+  onClose,
+  onDepartmentSelected,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onDepartmentSelected: (department: Department) => void;
+}) {
+  const [departments, setDepartments] = React.useState<Department[]>([]);
+  const [query, setQuery] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [editing, setEditing] = React.useState<Department | null>(null);
+  const [deleting, setDeleting] = React.useState<Department | null>(null);
+  const create = useDisclosure();
+
+  const load = React.useCallback(async () => {
+    if (!open) return;
+    setLoading(true);
+    try {
+      setDepartments(await organizationApi.listDepartments());
+    } catch (error) {
+      toast.error("Falha ao carregar departamentos", { description: (error as Error).message });
+    } finally {
+      setLoading(false);
+    }
+  }, [open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    void load();
+  }, [load, open]);
+
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return departments.filter((department) => {
+      if (!department.active) return false;
+      if (!q) return true;
+      return `${department.name} ${department.description ?? ""}`.toLowerCase().includes(q);
+    });
+  }, [departments, query]);
+
+  const saveDepartment = async (data: DepartamentoFormData) => {
+    try {
+      const department = editing
+        ? await organizationApi.updateDepartment(editing.id, departmentPayload(data))
+        : await organizationApi.createDepartment(departmentPayload(data));
+      toast.success(editing ? "Departamento atualizado" : "Departamento criado");
+      create.hide();
+      setEditing(null);
+      await load();
+      if (!editing) onDepartmentSelected(department);
+    } catch (error) {
+      toast.error("Falha ao salvar departamento", { description: (error as Error).message });
+    }
+  };
+
+  const deleteDepartment = async () => {
+    if (!deleting) return;
+    try {
+      await organizationApi.deleteDepartment(deleting.id);
+      toast.success("Departamento desativado");
+      setDeleting(null);
+      await load();
+    } catch (error) {
+      toast.error("Falha ao desativar departamento", { description: (error as Error).message });
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Departamentos"
+      description="Cadastre, edite, desative e selecione o departamento deste contato."
+      size="xl"
+      footer={
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Fechar
+        </Button>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-semibold">{filtered.length} departamentos ativos.</p>
+          <Button variant="primary" size="sm" onClick={create.show}>
+            <Plus className="h-3.5 w-3.5" /> Criar departamento
+          </Button>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="w-full bg-transparent py-2 text-sm outline-none"
+            placeholder="Buscar departamento..."
+          />
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {loading && (
+            <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Carregando...
+            </div>
+          )}
+          {!loading &&
+            filtered.map((department) => (
+              <div
+                key={department.id}
+                className="flex items-center gap-3 rounded-lg border border-border bg-surface-1 p-3"
+              >
+                <span
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
+                  style={{ backgroundColor: department.color }}
+                >
+                  <Building2 className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{department.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {department.description ?? "Sem descricao"}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => onDepartmentSelected(department)}
+                >
+                  Selecionar
+                </Button>
+                <Button variant="ghost" size="sm" title="Editar" onClick={() => setEditing(department)}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Desativar"
+                  onClick={() => setDeleting(department)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          {!loading && filtered.length === 0 && (
+            <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Nenhum departamento encontrado.
+            </div>
+          )}
+        </div>
+      </div>
+      <DepartmentFormModal
+        open={create.open || !!editing}
+        initial={editing ?? undefined}
+        onClose={() => {
+          create.hide();
+          setEditing(null);
+        }}
+        onSubmit={saveDepartment}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        title="Desativar departamento?"
+        description={`Esta acao desativara ${deleting?.name ?? ""}.`}
+        destructive
+        confirmLabel="Desativar"
+        onClose={() => setDeleting(null)}
+        onConfirm={deleteDepartment}
+      />
+    </Modal>
+  );
+}
+
+function DepartmentFormModal({
+  open,
+  onClose,
+  onSubmit,
+  initial,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (data: DepartamentoFormData) => void | Promise<void>;
+  initial?: Department;
+}) {
+  const [form, setForm] = React.useState<DepartamentoFormData>({});
+  const [error, setError] = React.useState("");
+
+  React.useEffect(() => {
+    if (!open) return;
+    setForm(
+      initial
+        ? { name: initial.name, description: initial.description, color: initial.color }
+        : { color: "#6366f1" },
+    );
+    setError("");
+  }, [initial, open]);
+
+  const save = async () => {
+    if (!form.name || form.name.trim().length < 2) {
+      setError("Informe o nome.");
+      toast.error("Nome obrigatorio.");
+      return;
+    }
+    await onSubmit({ ...form, name: form.name.trim() });
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={initial ? "Editar departamento" : "Criar departamento"}
+      size="md"
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Button variant="primary" size="sm" onClick={save} disabled={busy}>
+          <Button variant="primary" size="sm" onClick={save}>
+            Salvar
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Field label="Nome *">
+          <Input
+            value={form.name ?? ""}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+          />
+          {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
+        </Field>
+        <Field label="Descricao">
+          <Textarea
+            rows={3}
+            value={form.description ?? ""}
+            onChange={(event) => setForm({ ...form, description: event.target.value })}
+          />
+        </Field>
+        <Field label="Cor">
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={form.color ?? "#6366f1"}
+              onChange={(event) => setForm({ ...form, color: event.target.value })}
+              className="h-9 w-14 cursor-pointer rounded border border-border bg-transparent"
+            />
+            <Input
+              value={form.color ?? "#6366f1"}
+              onChange={(event) => setForm({ ...form, color: event.target.value })}
+            />
+          </div>
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
+function ContactProfilePickerModal({
+  open,
+  value,
+  onClose,
+  onSelect,
+}: {
+  open: boolean;
+  value: "" | RoleLabel;
+  onClose: () => void;
+  onSelect: (profile: RoleLabel) => void;
+}) {
+  const profiles = Object.keys(ROLE_TO_API) as RoleLabel[];
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Perfis do contato"
+      description="Selecione o perfil do contato na empresa."
+      size="sm"
+      footer={
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Fechar
+        </Button>
+      }
+    >
+      <div className="grid gap-2">
+        {profiles.map((profile) => (
+          <button
+            key={profile}
+            type="button"
+            onClick={() => onSelect(profile)}
+            className="flex items-center justify-between rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm transition hover:bg-surface-2"
+          >
+            <span>{profile}</span>
+            {value === profile && <Check className="h-4 w-4 text-primary" />}
+          </button>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+function TagMultiSelect({
+  tags,
+  selectedIds,
+  onChange,
+}: {
+  tags: Tag[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const selectedTags = tags.filter((tag) => selectedIds.includes(tag.id));
+
+  const toggle = (id: string) => {
+    onChange(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm outline-none transition focus:border-primary"
+      >
+        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+          {selectedTags.length === 0 ? (
+            <span className="text-muted-foreground">- Selecione -</span>
+          ) : (
+            selectedTags.map((tag) => (
+              <span
+                key={tag.id}
+                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+              >
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.cor }} />
+                {tag.nome}
+              </span>
+            ))
+          )}
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-2 max-h-56 w-full overflow-auto rounded-lg border border-border bg-surface-0 p-1 shadow-xl">
+          {tags.map((tag) => {
+            const active = selectedIds.includes(tag.id);
+            return (
+              <button
+                key={tag.id}
+                type="button"
+                onClick={() => toggle(tag.id)}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
+              >
+                <span
+                  className={`flex h-4 w-4 items-center justify-center rounded border ${
+                    active ? "border-primary bg-primary text-white" : "border-border"
+                  }`}
+                >
+                  {active && <Check className="h-3 w-3" />}
+                </span>
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.cor }} />
+                <span className="truncate">{tag.nome}</span>
+              </button>
+            );
+          })}
+          {tags.length === 0 && (
+            <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+              Nenhuma etiqueta cadastrada.
+            </div>
+          )}
+          {selectedIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-border px-2 py-2 text-xs text-muted-foreground hover:bg-surface-1"
+            >
+              <X className="h-3 w-3" /> Limpar selecao
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type CustomerFormData = Partial<Customer> & { nome: string };
+
+function CustomerFormModal({
+  open,
+  onClose,
+  onSubmit,
+  initial,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (data: CustomerFormData) => void | Promise<void>;
+  initial?: Customer;
+}) {
+  const [form, setForm] = React.useState<Partial<Customer>>({});
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
+
+  React.useEffect(() => {
+    if (!open) return;
+    setForm(
+      initial
+        ? {
+            ...initial,
+            telefone: initial.telefone ? maskBrazilPhone(initial.telefone) : initial.telefone,
+          }
+        : {},
+    );
+    setErrors({});
+  }, [initial, open]);
+
+  const save = async () => {
+    const errs: Record<string, string> = {};
+    if (!form.nome || form.nome.trim().length < 2) errs.nome = "Informe o nome.";
+    if (form.email?.trim() && !isValidEmail(form.email)) errs.email = "E-mail invalido.";
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      toast.error("Verifique os campos destacados.");
+      return;
+    }
+    void onSubmit({ ...form, nome: form.nome!.trim() });
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={initial ? "Editar cliente" : "Novo cliente"}
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" size="sm" onClick={save}>
             Salvar
           </Button>
         </>
@@ -721,29 +1367,100 @@ function CustomerQuickCreateModal({
     >
       <div className="grid gap-4">
         <Field label="Nome *">
-          <Input value={name} onChange={(event) => setName(event.target.value)} />
+          <Input
+            value={form.nome ?? ""}
+            onChange={(event) => setForm({ ...form, nome: event.target.value })}
+          />
+          {errors.nome && (
+            <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
+          )}
         </Field>
         <Field label="Telefone">
           <Input
-            value={phone}
-            onChange={(event) => setPhone(maskBrazilPhone(event.target.value))}
+            value={form.telefone ?? ""}
+            onChange={(event) => setForm({ ...form, telefone: maskBrazilPhone(event.target.value) })}
             placeholder="(11) 90000-0000"
           />
         </Field>
         <Field label="E-mail">
           <Input
             type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            value={form.email ?? ""}
+            onChange={(event) => setForm({ ...form, email: event.target.value })}
             placeholder="nome@empresa.com"
           />
+          {errors.email && (
+            <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
+          )}
         </Field>
         <Field label="Contato responsavel">
-          <Input value={responsible} onChange={(event) => setResponsible(event.target.value)} />
+          <Input
+            value={form.contato_responsavel ?? ""}
+            onChange={(event) => setForm({ ...form, contato_responsavel: event.target.value })}
+          />
+        </Field>
+        <Field label="Cor">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1.5">
+            <input
+              type="color"
+              value={form.cor ?? "#3b82f6"}
+              onChange={(event) => setForm({ ...form, cor: event.target.value })}
+              className="h-7 w-9 cursor-pointer rounded border border-border bg-transparent p-0"
+              aria-label="Selecionar cor"
+            />
+            <input
+              type="text"
+              value={form.cor ?? ""}
+              onChange={(event) => setForm({ ...form, cor: event.target.value })}
+              placeholder="#3B82F6"
+              maxLength={7}
+              className="w-24 bg-transparent font-mono text-xs uppercase outline-none"
+            />
+          </div>
+        </Field>
+        <Field label="Notas">
+          <Input
+            value={form.notas ?? ""}
+            onChange={(event) => setForm({ ...form, notas: event.target.value })}
+          />
         </Field>
       </div>
     </Modal>
   );
+}
+
+function customerPayload(data: CustomerFormData) {
+  return {
+    name: data.nome,
+    responsibleContactName: data.contato_responsavel?.trim() || null,
+    phone: data.telefone?.trim() || null,
+    email: data.email?.trim() || null,
+    color: data.cor || "#3b82f6",
+    notes: data.notas?.trim() || null,
+  };
+}
+
+function upsertCustomer(customers: Customer[], customer: Customer) {
+  const exists = customers.some((item) => item.id === customer.id);
+  return exists
+    ? customers.map((item) => (item.id === customer.id ? customer : item))
+    : [customer, ...customers];
+}
+
+function upsertString(items: string[], value: string) {
+  const normalized = value.trim();
+  if (!normalized) return items;
+  return items.some((item) => item.toLowerCase() === normalized.toLowerCase())
+    ? items
+    : [...items, normalized].sort((a, b) => a.localeCompare(b));
+}
+
+function departmentPayload(data: DepartamentoFormData) {
+  return {
+    name: data.name ?? "",
+    description: data.description?.trim() || null,
+    color: data.color || "#6366f1",
+  };
 }
 
 function contactPayload(data: {
