@@ -23,6 +23,6 @@ export class CreateUserDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(300_000)
+  @MaxLength(3_000_000)
   avatarUrl?: string | null;
 }

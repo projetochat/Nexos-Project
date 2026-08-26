@@ -75,11 +75,27 @@ function ContatosPage() {
   const [deleting, setDeleting] = React.useState<Contact | null>(null);
   const create = useDisclosure();
   const connectionLabelByValue = React.useMemo(
-    () => new Map(instances.map((option) => [option.value, option.name])),
+    () =>
+      new Map(
+        instances.flatMap((option) =>
+          [option.value, option.id, option.externalReference].filter(Boolean).map((key) => [
+            key as string,
+            option.name,
+          ]),
+        ),
+      ),
     [instances],
   );
   const connectionColorByValue = React.useMemo(
-    () => new Map(instances.map((option) => [option.value, option.color ?? "#64748b"])),
+    () =>
+      new Map(
+        instances.flatMap((option) =>
+          [option.value, option.id, option.externalReference].filter(Boolean).map((key) => [
+            key as string,
+            option.color ?? "#64748b",
+          ]),
+        ),
+      ),
     [instances],
   );
 
@@ -233,7 +249,7 @@ function ContatosPage() {
                             return (
                               <span
                                 key={instanceId}
-                                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                                className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
                                 style={{
                                   backgroundColor: `${color}1f`,
                                   borderColor: `${color}66`,
@@ -241,7 +257,9 @@ function ContatosPage() {
                                 }}
                               >
                                 <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                                {connectionLabelByValue.get(instanceId) ?? instanceId}
+                                <span className="truncate">
+                                  {connectionLabelByValue.get(instanceId) ?? instanceId}
+                                </span>
                               </span>
                             );
                           })}
@@ -1406,6 +1424,7 @@ function InstanceMultiSelect({
 
   const toggle = (id: string) => {
     onChange(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]);
+    setOpen(false);
   };
 
   return (
@@ -1436,7 +1455,7 @@ function InstanceMultiSelect({
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute z-50 mt-2 max-h-56 w-full overflow-auto rounded-lg border border-border bg-surface-0 p-1 shadow-xl">
+        <div className="absolute bottom-full z-50 mb-2 max-h-72 w-full overflow-auto rounded-lg border border-border bg-surface-0 p-1 shadow-xl">
           {instances.map((instance) => {
             const active = selectedIds.includes(instance.value);
             return (
@@ -1469,7 +1488,10 @@ function InstanceMultiSelect({
           {selectedIds.length > 0 && (
             <button
               type="button"
-              onClick={() => onChange([])}
+              onClick={() => {
+                onChange([]);
+                setOpen(false);
+              }}
               className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-border px-2 py-2 text-xs text-muted-foreground hover:bg-surface-1"
             >
               <X className="h-3 w-3" /> Limpar selecao
@@ -1495,6 +1517,7 @@ function TagMultiSelect({
 
   const toggle = (id: string) => {
     onChange(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]);
+    setOpen(false);
   };
 
   return (
@@ -1522,7 +1545,7 @@ function TagMultiSelect({
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute z-50 mt-2 max-h-56 w-full overflow-auto rounded-lg border border-border bg-surface-0 p-1 shadow-xl">
+        <div className="absolute bottom-full z-50 mb-2 max-h-72 w-full overflow-auto rounded-lg border border-border bg-surface-0 p-1 shadow-xl">
           {tags.map((tag) => {
             const active = selectedIds.includes(tag.id);
             return (
@@ -1552,7 +1575,10 @@ function TagMultiSelect({
           {selectedIds.length > 0 && (
             <button
               type="button"
-              onClick={() => onChange([])}
+              onClick={() => {
+                onChange([]);
+                setOpen(false);
+              }}
               className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-border px-2 py-2 text-xs text-muted-foreground hover:bg-surface-1"
             >
               <X className="h-3 w-3" /> Limpar selecao

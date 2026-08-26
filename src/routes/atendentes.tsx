@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, UserCog, Trash2, Search } from "lucide-react";
+import { Pencil, Plus, Trash2, Search } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -169,14 +169,13 @@ function AtendentesPage() {
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Em atendimento</th>
                 <th className="px-4 py-3 font-medium">Avaliacao</th>
-                <th className="px-4 py-3 font-medium">Registro</th>
                 <th className="px-4 py-3 font-medium text-right">Acoes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {isLoading && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     Carregando...
                   </td>
                 </tr>
@@ -201,16 +200,12 @@ function AtendentesPage() {
                       </td>
                       <td className="px-4 py-3 font-mono">{a.emAtendimento}</td>
                       <td className="px-4 py-3 font-mono">{a.csat}</td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
-                        <div>Criado: {formatDateTime(a.createdAt)}</div>
-                        <div>Editado: {formatDateTime(a.updatedAt)}</div>
-                      </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => setEditing(a)}>
-                            <UserCog className="h-3.5 w-3.5" /> Editar
+                          <Button variant="ghost" size="sm" onClick={() => setEditing(a)} title="Editar" aria-label="Editar">
+                            <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setDeleting(a)}>
+                          <Button variant="ghost" size="sm" onClick={() => setDeleting(a)} title="Remover" aria-label="Remover">
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
@@ -220,7 +215,7 @@ function AtendentesPage() {
                 })}
               {!isLoading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     Nenhum resultado.
                   </td>
                 </tr>
@@ -292,9 +287,9 @@ function AtendenteForm({
       toast.error("Imagem maior que 2MB.");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setForm((f) => ({ ...f, avatarUrl: String(reader.result) }));
-    reader.readAsDataURL(file);
+    void readImageAsCompressedDataUrl(file)
+      .then((avatarUrl) => setForm((f) => ({ ...f, avatarUrl })))
+      .catch((error) => toast.error((error as Error).message));
   };
 
   const submit = () => {
@@ -435,6 +430,12 @@ function AtendenteForm({
             </div>
           </div>
         </Field>
+        {initial && (
+          <div className="rounded-lg border border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground">
+            <span className="mr-3">Criado: {formatDateTime(initial.createdAt)}</span>
+            <span>Editado: {formatDateTime(initial.updatedAt)}</span>
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -465,4 +466,32 @@ function formatDateTime(value?: string) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function readImageAsCompressedDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const maxSize = 512;
+      const ratio = Math.min(1, maxSize / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * ratio));
+      canvas.height = Math.max(1, Math.round(img.height * ratio));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        reject(new Error("Não foi possível processar a imagem."));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Não foi possível ler a imagem."));
+    };
+    img.src = url;
+  });
 }

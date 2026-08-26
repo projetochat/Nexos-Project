@@ -268,16 +268,20 @@ function Page() {
                       size="sm"
                       onClick={() => setEditing(connection)}
                       disabled={connection.status === "removed"}
+                      title="Editar"
+                      aria-label="Editar"
                     >
-                      <Pencil className="h-3.5 w-3.5" /> Editar
+                      <Pencil className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => setRemoving(connection)}
                       disabled={remove.isPending}
+                      title="Remover"
+                      aria-label="Remover"
                     >
-                      <Trash2 className="h-3.5 w-3.5" /> Remover
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </Card>

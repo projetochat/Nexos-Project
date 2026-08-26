@@ -23,6 +23,10 @@ export const Route = createFileRoute("/perfil")({
 function PerfilPage() {
   const user = useSession((state) => state.user);
   const [savingAvatar, setSavingAvatar] = React.useState(false);
+  const [savingPassword, setSavingPassword] = React.useState(false);
+  const [currentPassword, setCurrentPassword] = React.useState("");
+  const [newPassword, setNewPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
   const roleMeta = user ? ROLE_META[user.role] : null;
   const displayName = user?.nome ?? "Usuario";
@@ -34,13 +38,13 @@ function PerfilPage() {
       toast.error("Use uma imagem PNG, JPG ou WebP.");
       return;
     }
-    if (file.size > 250 * 1024) {
-      toast.error("A imagem deve ter até 250 KB.");
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("A imagem deve ter até 2 MB.");
       return;
     }
     setSavingAvatar(true);
     try {
-      const avatarUrl = await readFileAsDataUrl(file);
+      const avatarUrl = await readImageAsCompressedDataUrl(file);
       const updated = await organizationApi.updateMyProfile({ avatarUrl });
       useSession.setState((state) => ({
         user: state.user
@@ -57,6 +61,33 @@ function PerfilPage() {
     } finally {
       setSavingAvatar(false);
       if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const savePassword = async () => {
+    if (!currentPassword || !newPassword) {
+      toast.error("Informe a senha atual e a nova senha.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("A nova senha deve ter ao menos 6 caracteres.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("A confirmação da senha não confere.");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      await organizationApi.updateMyProfile({ currentPassword, newPassword });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      toast.success("Senha atualizada.");
+    } catch (error) {
+      toast.error((error as Error).message || "Não foi possível alterar a senha.");
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -145,17 +176,71 @@ function PerfilPage() {
               </Button>
             </div>
           </Card>
+
+          <Card className="lg:col-start-2">
+            <p className="text-sm font-semibold">Alterar senha</p>
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <Field label="Senha atual *">
+                <Input
+                  type="password"
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                />
+              </Field>
+              <Field label="Nova senha *">
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                />
+              </Field>
+              <Field label="Confirmar senha *">
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="mt-6 flex justify-end border-t border-border pt-4">
+              <Button variant="primary" onClick={savePassword} disabled={savingPassword}>
+                Salvar senha
+              </Button>
+            </div>
+          </Card>
         </div>
       </PageContainer>
     </AppShell>
   );
 }
 
-function readFileAsDataUrl(file: File) {
+function readImageAsCompressedDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
-    reader.readAsDataURL(file);
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const maxSize = 512;
+      const ratio = Math.min(1, maxSize / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * ratio));
+      canvas.height = Math.max(1, Math.round(img.height * ratio));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        reject(new Error("Não foi possível processar a imagem."));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Não foi possível ler a imagem."));
+    };
+    img.src = url;
   });
 }

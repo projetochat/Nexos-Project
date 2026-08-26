@@ -11,8 +11,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { createHash, randomBytes } from "crypto";
-import { hash } from "bcryptjs";
-import { IsArray, IsEmail, IsOptional, IsString, MaxLength } from "class-validator";
+import { compare, hash } from "bcryptjs";
+import { IsArray, IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -49,8 +49,17 @@ class UpdateMyProfileDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(300_000)
+  @MaxLength(3_000_000)
   avatarUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  currentPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  newPassword?: string;
 }
 
 type MembershipWithRelations = {
@@ -145,11 +154,17 @@ export class UsersController {
         departments: { include: { department: true } },
       },
     });
+    if (dto.newPassword) {
+      if (!dto.currentPassword) throw new BadRequestException("Informe a senha atual.");
+      const validPassword = await compare(dto.currentPassword, membership.user.passwordHash);
+      if (!validPassword) throw new BadRequestException("Senha atual invalida.");
+    }
     await this.prisma.user.update({
       where: { id: membership.userId },
       data: {
         name: dto.name?.trim() || undefined,
         ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
+        ...(dto.newPassword ? { passwordHash: await hash(dto.newPassword, 12) } : {}),
       },
     });
     const updated = await this.prisma.tenantMembership.findUniqueOrThrow({

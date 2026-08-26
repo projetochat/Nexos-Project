@@ -256,7 +256,13 @@ export class CrmController {
       this.prisma.messagingConnection.findMany({
         where: { tenantId: current.tenantId, archivedAt: null, status: { not: "REMOVED" } },
         orderBy: { name: "asc" },
-        select: { id: true, name: true, color: true, ownerPhoneNormalized: true },
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          externalReference: true,
+          ownerPhoneNormalized: true,
+        },
       }),
       this.prisma.contactDepartment.findMany({
         where: { tenantId: current.tenantId, archivedAt: null },
@@ -277,6 +283,7 @@ export class CrmController {
         value: connection.id,
         name: connection.name,
         color: connection.color,
+        externalReference: connection.externalReference,
         ownerPhone: connection.ownerPhoneNormalized,
       })),
       departments: departments.map((item) => this.serializeContactCatalog(item)),

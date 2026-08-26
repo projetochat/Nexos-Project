@@ -149,6 +149,7 @@ export type ApiContactInstanceOption = {
   value: string;
   name: string;
   color: string | null;
+  externalReference?: string | null;
   ownerPhone?: string | null;
   instanceName?: string | null;
 };
@@ -822,7 +823,12 @@ export const organizationApi = {
     apiRequest<ApiUserMembership>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deactivateUser: (id: string) =>
     apiRequest<ApiUserMembership>(`/users/${id}/deactivate`, { method: "PATCH" }),
-  updateMyProfile: (data: { name?: string; avatarUrl?: string | null }) =>
+  updateMyProfile: (data: {
+    name?: string;
+    avatarUrl?: string | null;
+    currentPassword?: string;
+    newPassword?: string;
+  }) =>
     apiRequest<ApiUserMembership>("/me/profile", {
       method: "PATCH",
       body: JSON.stringify(data),
