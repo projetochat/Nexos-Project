@@ -10,7 +10,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Tag as TagIcon,
   Trash2,
   X,
 } from "lucide-react";
@@ -28,18 +27,15 @@ import {
   Select,
   Textarea,
 } from "@/components/ui-kit";
-import type { ConnectedConnectionOption } from "@/lib/connection-options";
-import { connectionPrimaryLabel, hasExampleInstanceName } from "@/lib/connection-options";
 import { isValidEmail, maskBrazilPhone } from "@/lib/input-masks";
 import {
   crmApi,
-  organizationApi,
   type ApiContact,
+  type ApiContactCatalog,
+  type ApiContactInstanceOption,
   type ApiCustomer,
-  type ApiDepartment,
   type ApiTag,
 } from "@/lib/nexos-api";
-import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 
 export const Route = createFileRoute("/contatos")({ component: ContatosPage });
 
@@ -48,28 +44,22 @@ const PAGE_SIZE = 15;
 type Customer = ApiCustomer;
 type Contact = ApiContact;
 type Tag = ApiTag;
-type Department = ApiDepartment;
+type ContactCatalog = ApiContactCatalog;
+type ContactInstanceOption = ApiContactInstanceOption;
 type FilterMode = "all" | "linked" | "unlinked";
-type RoleLabel = "Colaborador" | "Supervisor" | "Gerente" | "Diretoria";
-type RoleCode = "COLABORADOR" | "SUPERVISOR" | "GERENTE" | "DIRETORIA";
 type DepartamentoFormData = {
   name?: string;
   description?: string | null;
   color?: string;
 };
 
-const ROLE_TO_API: Record<RoleLabel, RoleCode> = {
-  Colaborador: "COLABORADOR",
-  Supervisor: "SUPERVISOR",
-  Gerente: "GERENTE",
-  Diretoria: "DIRETORIA",
-};
-
 function ContatosPage() {
   const [contacts, setContacts] = React.useState<Contact[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [tags, setTags] = React.useState<Tag[]>([]);
-  const [departments, setDepartments] = React.useState<string[]>([]);
+  const [departments, setDepartments] = React.useState<ContactCatalog[]>([]);
+  const [profiles, setProfiles] = React.useState<ContactCatalog[]>([]);
+  const [instances, setInstances] = React.useState<ContactInstanceOption[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<FilterMode>("all");
@@ -84,16 +74,13 @@ function ContatosPage() {
   const [editing, setEditing] = React.useState<Contact | null>(null);
   const [deleting, setDeleting] = React.useState<Contact | null>(null);
   const create = useDisclosure();
-  const { connectionOptions, error: connectionsError } = useConnectedMessagingConnections();
   const connectionLabelByValue = React.useMemo(
-    () =>
-      new Map(
-        connectionOptions.map((option) => [
-          option.value,
-          connectionPrimaryLabel(option.connection),
-        ]),
-      ),
-    [connectionOptions],
+    () => new Map(instances.map((option) => [option.value, option.name])),
+    [instances],
+  );
+  const connectionColorByValue = React.useMemo(
+    () => new Map(instances.map((option) => [option.value, option.color ?? "#64748b"])),
+    [instances],
   );
 
   const load = React.useCallback(async () => {
@@ -119,6 +106,8 @@ function ContatosPage() {
       setCustomers(customerResponse.items);
       setTags(options.tags);
       setDepartments(options.departments);
+      setProfiles(options.profiles);
+      setInstances(options.instances);
     } catch (e) {
       toast.error("Falha ao carregar", { description: (e as Error).message });
     } finally {
@@ -162,9 +151,9 @@ function ContatosPage() {
             </div>
             <Select value={instanciaFilter} onChange={(e) => setInstanciaFilter(e.target.value)}>
               <option value="">Instancia: Todas</option>
-              {connectionOptions.map((option) => (
+              {instances.map((option) => (
                 <option key={option.id} value={option.value}>
-                  {connectionPrimaryLabel(option.connection)}
+                  {option.name}
                 </option>
               ))}
             </Select>
@@ -174,8 +163,8 @@ function ContatosPage() {
             >
               <option value="">Departamento: Todos</option>
               {departments.map((d) => (
-                <option key={d} value={d}>
-                  {d}
+                <option key={d.id} value={d.id}>
+                  {d.nome}
                 </option>
               ))}
             </Select>
@@ -204,7 +193,7 @@ function ContatosPage() {
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Contato</th>
@@ -237,10 +226,31 @@ function ContatosPage() {
                       {maskBrazilPhone(c.telefone)}
                     </td>
                     <td className="px-4 py-3">
-                      {c.instancia ? (
-                        <Badge tone="default" dot={false}>
-                          {connectionLabelByValue.get(c.instancia) ?? c.instancia}
-                        </Badge>
+                      {c.instanceIds?.length ? (
+                        <div className="flex max-w-40 flex-wrap gap-1">
+                          {c.instanceIds.slice(0, 2).map((instanceId) => {
+                            const color = connectionColorByValue.get(instanceId) ?? "#64748b";
+                            return (
+                              <span
+                                key={instanceId}
+                                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                                style={{
+                                  backgroundColor: `${color}1f`,
+                                  borderColor: `${color}66`,
+                                  color,
+                                }}
+                              >
+                                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                                {connectionLabelByValue.get(instanceId) ?? instanceId}
+                              </span>
+                            );
+                          })}
+                          {c.instanceIds.length > 2 && (
+                            <span className="text-[11px] text-muted-foreground">
+                              +{c.instanceIds.length - 2}
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">-</span>
                       )}
@@ -270,7 +280,9 @@ function ContatosPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs">
-                      {c.departamento || <span className="text-muted-foreground">-</span>}
+                      {c.contactDepartment?.nome ?? c.departamento ?? (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       {c.tags.length ? (
@@ -364,12 +376,13 @@ function ContatosPage() {
           customers={customers}
           tags={tags}
           departments={departments}
-          connectionOptions={connectionOptions}
-          connectionsError={connectionsError}
+          profiles={profiles}
+          instances={instances}
           onCustomerCreated={(customer) => setCustomers((current) => upsertCustomer(current, customer))}
           onDepartmentSaved={(department) =>
-            setDepartments((current) => upsertString(current, department.name))
+            setDepartments((current) => upsertCatalog(current, department))
           }
+          onProfileSaved={(profile) => setProfiles((current) => upsertCatalog(current, profile))}
           onSubmit={async (data) => {
             try {
               const contact = await crmApi.createContact(contactPayload(data));
@@ -392,12 +405,13 @@ function ContatosPage() {
           customers={customers}
           tags={tags}
           departments={departments}
-          connectionOptions={connectionOptions}
-          connectionsError={connectionsError}
+          profiles={profiles}
+          instances={instances}
           onCustomerCreated={(customer) => setCustomers((current) => upsertCustomer(current, customer))}
           onDepartmentSaved={(department) =>
-            setDepartments((current) => upsertString(current, department.name))
+            setDepartments((current) => upsertCatalog(current, department))
           }
+          onProfileSaved={(profile) => setProfiles((current) => upsertCatalog(current, profile))}
           onClose={() => setEditing(null)}
           onSubmit={async (data) => {
             if (!editing) return;
@@ -443,28 +457,30 @@ function ContactFormModal({
   customers,
   tags,
   departments,
-  connectionOptions,
-  connectionsError,
+  profiles,
+  instances,
   onCustomerCreated,
   onDepartmentSaved,
+  onProfileSaved,
 }: {
   open: boolean;
   onClose: () => void;
   customers: Customer[];
   tags: Tag[];
-  departments: string[];
-  connectionOptions: ConnectedConnectionOption[];
-  connectionsError: Error | null;
+  departments: ContactCatalog[];
+  profiles: ContactCatalog[];
+  instances: ContactInstanceOption[];
   onCustomerCreated: (customer: Customer) => void;
-  onDepartmentSaved: (department: Department) => void;
+  onDepartmentSaved: (department: ContactCatalog) => void;
+  onProfileSaved: (profile: ContactCatalog) => void;
   onSubmit: (data: {
     nome: string;
     telefone: string;
     customer_id: string | null;
     email: string | null;
-    departamento: string | null;
-    nivel_gerencia: RoleLabel | null;
-    instancia: string | null;
+    contactDepartmentId: string | null;
+    contactProfileId: string | null;
+    instanceIds: string[];
     tag_ids: string[];
   }) => void | Promise<void>;
   initial?: Contact;
@@ -473,9 +489,9 @@ function ContactFormModal({
   const [telefone, setTelefone] = React.useState("");
   const [customerId, setCustomerId] = React.useState("");
   const [email, setEmail] = React.useState("");
-  const [departamento, setDepartamento] = React.useState("");
-  const [nivelGerencia, setNivelGerencia] = React.useState<"" | RoleLabel>("");
-  const [instancia, setInstancia] = React.useState("");
+  const [contactDepartmentId, setContactDepartmentId] = React.useState("");
+  const [contactProfileId, setContactProfileId] = React.useState("");
+  const [instanceIds, setInstanceIds] = React.useState<string[]>([]);
   const [tagIds, setTagIds] = React.useState<string[]>([]);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const customersManager = useDisclosure();
@@ -488,14 +504,12 @@ function ContactFormModal({
     setTelefone(initial?.telefone ? maskBrazilPhone(initial.telefone) : "");
     setCustomerId(initial?.customer_id ?? "");
     setEmail(initial?.email ?? "");
-    setDepartamento(initial?.departamento ?? "");
-    setNivelGerencia(initial?.nivel_gerencia ?? "");
-    const initialInstance = initial?.instancia ?? "";
-    const isAvailable = connectionOptions.some((option) => option.value === initialInstance);
-    setInstancia(isAvailable && !hasExampleInstanceName(initialInstance) ? initialInstance : "");
+    setContactDepartmentId(initial?.contactDepartmentId ?? "");
+    setContactProfileId(initial?.contactProfileId ?? "");
+    setInstanceIds(initial?.instanceIds ?? (initial?.instancia ? [initial.instancia] : []));
     setTagIds(initial?.tags.map((tag) => tag.id) ?? []);
     setErrors({});
-  }, [connectionOptions, initial, open]);
+  }, [initial, open]);
 
   const handle = () => {
     const errs: Record<string, string> = {};
@@ -506,7 +520,7 @@ function ContactFormModal({
       errs.email = "E-mail invalido.";
     if (Object.keys(errs).length) {
       setErrors(errs);
-      toast.error("Verifique os campos destacados.");
+      toast.error("Preencha os campos obrigatórios.");
       return;
     }
     void onSubmit({
@@ -514,9 +528,9 @@ function ContactFormModal({
       telefone,
       customer_id: customerId || null,
       email: email.trim() || null,
-      departamento: departamento.trim() || null,
-      nivel_gerencia: nivelGerencia || null,
-      instancia: instancia || null,
+      contactDepartmentId: contactDepartmentId || null,
+      contactProfileId: contactProfileId || null,
+      instanceIds,
       tag_ids: tagIds,
     });
   };
@@ -526,8 +540,8 @@ function ContactFormModal({
       open={open}
       onClose={onClose}
       title={initial ? "Editar contato" : "Novo contato"}
-      description="Contato e a pessoa que conversa pelo WhatsApp. Voce pode vincular a um cliente ja cadastrado."
-      size="lg"
+      description=""
+      size="xl"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -588,11 +602,14 @@ function ContactFormModal({
         </Field>
         <Field label="Departamento do Contato">
           <div className="flex gap-2">
-            <Select value={departamento} onChange={(e) => setDepartamento(e.target.value)}>
+            <Select
+              value={contactDepartmentId}
+              onChange={(e) => setContactDepartmentId(e.target.value)}
+            >
               <option value="">- Sem departamento -</option>
               {departments.map((department) => (
-                <option key={department} value={department}>
-                  {department}
+                <option key={department.id} value={department.id}>
+                  {department.nome}
                 </option>
               ))}
             </Select>
@@ -604,11 +621,11 @@ function ContactFormModal({
             >
               <Plus className="h-3.5 w-3.5" />
             </Button>
-            {departamento && (
+            {contactDepartmentId && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setDepartamento("")}
+                onClick={() => setContactDepartmentId("")}
                 title="Remover departamento"
               >
                 <X className="h-3.5 w-3.5" />
@@ -630,14 +647,15 @@ function ContactFormModal({
         <Field label="Perfil do Contato">
           <div className="flex gap-2">
             <Select
-              value={nivelGerencia}
-              onChange={(e) => setNivelGerencia(e.target.value as "" | RoleLabel)}
+              value={contactProfileId}
+              onChange={(e) => setContactProfileId(e.target.value)}
             >
               <option value="">- Selecione -</option>
-              <option value="Colaborador">Colaborador</option>
-              <option value="Supervisor">Supervisor</option>
-              <option value="Gerente">Gerente</option>
-              <option value="Diretoria">Diretoria</option>
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.nome}
+                </option>
+              ))}
             </Select>
             <Button
               variant="outline"
@@ -647,11 +665,11 @@ function ContactFormModal({
             >
               <Plus className="h-3.5 w-3.5" />
             </Button>
-            {nivelGerencia && (
+            {contactProfileId && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setNivelGerencia("")}
+                onClick={() => setContactProfileId("")}
                 title="Remover perfil"
               >
                 <X className="h-3.5 w-3.5" />
@@ -660,23 +678,8 @@ function ContactFormModal({
           </div>
         </Field>
         <Field label="Instancia">
-          <Select value={instancia} onChange={(e) => setInstancia(e.target.value)}>
-            <option value="">
-              {connectionOptions.length === 0
-                ? "Nenhuma instancia conectada disponivel."
-                : "- Selecione -"}
-            </option>
-            {connectionOptions.map((option) => (
-              <option key={option.id} value={option.value}>
-                {connectionPrimaryLabel(option.connection)}
-              </option>
-            ))}
-          </Select>
-          {connectionsError ? (
-            <span className="mt-1 block text-[11px] text-destructive">
-              {connectionsError.message}
-            </span>
-          ) : connectionOptions.length === 0 ? (
+          <InstanceMultiSelect instances={instances} selectedIds={instanceIds} onChange={setInstanceIds} />
+          {instances.length === 0 ? (
             <span className="mt-1 block text-[11px] text-muted-foreground">
               Conecte uma instancia antes de continuar.
             </span>
@@ -700,16 +703,16 @@ function ContactFormModal({
         onClose={departmentsManager.hide}
         onDepartmentSelected={(department) => {
           onDepartmentSaved(department);
-          setDepartamento(department.name);
+          setContactDepartmentId(department.id);
           departmentsManager.hide();
         }}
       />
-      <ContactProfilePickerModal
+      <ContactProfilesManagerModal
         open={profilesManager.open}
-        value={nivelGerencia}
         onClose={profilesManager.hide}
-        onSelect={(profile) => {
-          setNivelGerencia(profile);
+        onProfileSelected={(profile) => {
+          onProfileSaved(profile);
+          setContactProfileId(profile.id);
           profilesManager.hide();
         }}
       />
@@ -829,7 +832,7 @@ function CustomersManagerModal({
           />
         </div>
         <div className="overflow-hidden rounded-lg border border-border">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Cliente</th>
@@ -963,20 +966,20 @@ function DepartmentsManagerModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onDepartmentSelected: (department: Department) => void;
+  onDepartmentSelected: (department: ContactCatalog) => void;
 }) {
-  const [departments, setDepartments] = React.useState<Department[]>([]);
+  const [departments, setDepartments] = React.useState<ContactCatalog[]>([]);
   const [query, setQuery] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const [editing, setEditing] = React.useState<Department | null>(null);
-  const [deleting, setDeleting] = React.useState<Department | null>(null);
+  const [editing, setEditing] = React.useState<ContactCatalog | null>(null);
+  const [deleting, setDeleting] = React.useState<ContactCatalog | null>(null);
   const create = useDisclosure();
 
   const load = React.useCallback(async () => {
     if (!open) return;
     setLoading(true);
     try {
-      setDepartments(await organizationApi.listDepartments());
+      setDepartments(await crmApi.listContactDepartments());
     } catch (error) {
       toast.error("Falha ao carregar departamentos", { description: (error as Error).message });
     } finally {
@@ -992,13 +995,12 @@ function DepartmentsManagerModal({
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     return departments.filter((department) => {
-      if (!department.active) return false;
       if (!q) return true;
-      return `${department.name} ${department.description ?? ""}`.toLowerCase().includes(q);
+      return `${department.nome} ${department.descricao ?? ""}`.toLowerCase().includes(q);
     });
   }, [departments, query]);
 
-  const selectDepartment = (department: Department) => {
+  const selectDepartment = (department: ContactCatalog) => {
     onDepartmentSelected(department);
     onClose();
   };
@@ -1006,8 +1008,8 @@ function DepartmentsManagerModal({
   const saveDepartment = async (data: DepartamentoFormData) => {
     try {
       const department = editing
-        ? await organizationApi.updateDepartment(editing.id, departmentPayload(data))
-        : await organizationApi.createDepartment(departmentPayload(data));
+        ? await crmApi.updateContactDepartment(editing.id, departmentPayload(data))
+        : await crmApi.createContactDepartment(departmentPayload(data));
       toast.success(editing ? "Departamento atualizado" : "Departamento criado");
       create.hide();
       setEditing(null);
@@ -1021,7 +1023,7 @@ function DepartmentsManagerModal({
   const deleteDepartment = async () => {
     if (!deleting) return;
     try {
-      await organizationApi.deleteDepartment(deleting.id);
+      await crmApi.deleteContactDepartment(deleting.id);
       toast.success("Departamento desativado");
       setDeleting(null);
       await load();
@@ -1073,14 +1075,14 @@ function DepartmentsManagerModal({
               >
                 <span
                   className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
-                  style={{ backgroundColor: department.color }}
+                  style={{ backgroundColor: department.cor }}
                 >
                   <Building2 className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{department.name}</p>
+                  <p className="truncate text-sm font-semibold">{department.nome}</p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {department.description ?? "Sem descricao"}
+                    {department.descricao ?? "Sem descricao"}
                   </p>
                 </div>
                 <Button
@@ -1122,7 +1124,7 @@ function DepartmentsManagerModal({
       <ConfirmDialog
         open={!!deleting}
         title="Desativar departamento?"
-        description={`Esta acao desativara ${deleting?.name ?? ""}.`}
+        description={`Esta acao desativara ${deleting?.nome ?? ""}.`}
         destructive
         confirmLabel="Desativar"
         onClose={() => setDeleting(null)}
@@ -1137,11 +1139,13 @@ function DepartmentFormModal({
   onClose,
   onSubmit,
   initial,
+  title,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: DepartamentoFormData) => void | Promise<void>;
-  initial?: Department;
+  initial?: ContactCatalog;
+  title?: string;
 }) {
   const [form, setForm] = React.useState<DepartamentoFormData>({});
   const [error, setError] = React.useState("");
@@ -1150,7 +1154,7 @@ function DepartmentFormModal({
     if (!open) return;
     setForm(
       initial
-        ? { name: initial.name, description: initial.description, color: initial.color }
+        ? { name: initial.nome, description: initial.descricao, color: initial.cor }
         : { color: "#6366f1" },
     );
     setError("");
@@ -1169,7 +1173,7 @@ function DepartmentFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial ? "Editar departamento" : "Criar departamento"}
+      title={title ?? (initial ? "Editar departamento" : "Criar departamento")}
       size="md"
       footer={
         <>
@@ -1216,21 +1220,77 @@ function DepartmentFormModal({
   );
 }
 
-function ContactProfilePickerModal({
+function ContactProfilesManagerModal({
   open,
-  value,
   onClose,
-  onSelect,
+  onProfileSelected,
 }: {
   open: boolean;
-  value: "" | RoleLabel;
   onClose: () => void;
-  onSelect: (profile: RoleLabel) => void;
+  onProfileSelected: (profile: ContactCatalog) => void;
 }) {
-  const profiles = Object.keys(ROLE_TO_API) as RoleLabel[];
-  const selectProfile = (profile: RoleLabel) => {
-    onSelect(profile);
+  const [profiles, setProfiles] = React.useState<ContactCatalog[]>([]);
+  const [query, setQuery] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [editing, setEditing] = React.useState<ContactCatalog | null>(null);
+  const [deleting, setDeleting] = React.useState<ContactCatalog | null>(null);
+  const create = useDisclosure();
+
+  const load = React.useCallback(async () => {
+    if (!open) return;
+    setLoading(true);
+    try {
+      setProfiles(await crmApi.listContactProfiles());
+    } catch (error) {
+      toast.error("Falha ao carregar perfis", { description: (error as Error).message });
+    } finally {
+      setLoading(false);
+    }
+  }, [open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    void load();
+  }, [load, open]);
+
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return profiles.filter((profile) => {
+      if (!q) return true;
+      return `${profile.nome} ${profile.descricao ?? ""}`.toLowerCase().includes(q);
+    });
+  }, [profiles, query]);
+
+  const selectProfile = (profile: ContactCatalog) => {
+    onProfileSelected(profile);
     onClose();
+  };
+
+  const saveProfile = async (data: DepartamentoFormData) => {
+    try {
+      const profile = editing
+        ? await crmApi.updateContactProfile(editing.id, departmentPayload(data))
+        : await crmApi.createContactProfile(departmentPayload(data));
+      toast.success(editing ? "Perfil atualizado" : "Perfil criado");
+      create.hide();
+      setEditing(null);
+      await load();
+      if (!editing) onProfileSelected(profile);
+    } catch (error) {
+      toast.error("Falha ao salvar perfil", { description: (error as Error).message });
+    }
+  };
+
+  const deleteProfile = async () => {
+    if (!deleting) return;
+    try {
+      await crmApi.deleteContactProfile(deleting.id);
+      toast.success("Perfil desativado");
+      setDeleting(null);
+      await load();
+    } catch (error) {
+      toast.error("Falha ao desativar perfil", { description: (error as Error).message });
+    }
   };
 
   return (
@@ -1238,28 +1298,186 @@ function ContactProfilePickerModal({
       open={open}
       onClose={onClose}
       title="Perfis do contato"
-      description="Selecione o perfil do contato na empresa."
-      size="sm"
+      description="Cadastre, edite, desative e selecione o perfil deste contato."
+      size="xl"
       footer={
         <Button variant="ghost" size="sm" onClick={onClose}>
           Fechar
         </Button>
       }
     >
-      <div className="grid gap-2">
-        {profiles.map((profile) => (
-          <button
-            key={profile}
-            type="button"
-            onClick={() => selectProfile(profile)}
-            className="flex items-center justify-between rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm transition hover:bg-surface-2"
-          >
-            <span>{profile}</span>
-            {value === profile && <Check className="h-4 w-4 text-primary" />}
-          </button>
-        ))}
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-semibold">{filtered.length} perfis ativos.</p>
+          <Button variant="primary" size="sm" onClick={create.show}>
+            <Plus className="h-3.5 w-3.5" /> Criar perfil
+          </Button>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="w-full bg-transparent py-2 text-sm outline-none"
+            placeholder="Buscar perfil..."
+          />
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {loading && (
+            <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Carregando...
+            </div>
+          )}
+          {!loading &&
+            filtered.map((profile) => (
+              <div
+                key={profile.id}
+                className="flex items-center gap-3 rounded-lg border border-border bg-surface-1 p-3"
+              >
+                <span
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
+                  style={{ backgroundColor: profile.cor }}
+                >
+                  <Building2 className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{profile.nome}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {profile.descricao ?? "Sem descricao"}
+                  </p>
+                </div>
+                <Button variant="secondary" size="sm" onClick={() => selectProfile(profile)}>
+                  Selecionar
+                </Button>
+                <Button variant="ghost" size="sm" title="Editar" onClick={() => setEditing(profile)}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Desativar"
+                  onClick={() => setDeleting(profile)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          {!loading && filtered.length === 0 && (
+            <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Nenhum perfil encontrado.
+            </div>
+          )}
+        </div>
       </div>
+      <DepartmentFormModal
+        open={create.open || !!editing}
+        initial={editing ?? undefined}
+        title={editing ? "Editar perfil" : "Criar perfil"}
+        onClose={() => {
+          create.hide();
+          setEditing(null);
+        }}
+        onSubmit={saveProfile}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        title="Desativar perfil?"
+        description={`Esta acao desativara ${deleting?.nome ?? ""}.`}
+        destructive
+        confirmLabel="Desativar"
+        onClose={() => setDeleting(null)}
+        onConfirm={deleteProfile}
+      />
     </Modal>
+  );
+}
+
+function InstanceMultiSelect({
+  instances,
+  selectedIds,
+  onChange,
+}: {
+  instances: ContactInstanceOption[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const selectedInstances = instances.filter((instance) => selectedIds.includes(instance.value));
+
+  const toggle = (id: string) => {
+    onChange(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm outline-none transition focus:border-primary"
+      >
+        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+          {selectedInstances.length === 0 ? (
+            <span className="text-muted-foreground">- Selecione -</span>
+          ) : (
+            selectedInstances.map((instance) => (
+              <span
+                key={instance.value}
+                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: instance.color ?? "#64748b" }}
+                />
+                {instance.name}
+              </span>
+            ))
+          )}
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-2 max-h-56 w-full overflow-auto rounded-lg border border-border bg-surface-0 p-1 shadow-xl">
+          {instances.map((instance) => {
+            const active = selectedIds.includes(instance.value);
+            return (
+              <button
+                key={instance.value}
+                type="button"
+                onClick={() => toggle(instance.value)}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
+              >
+                <span
+                  className={`flex h-4 w-4 items-center justify-center rounded border ${
+                    active ? "border-primary bg-primary text-white" : "border-border"
+                  }`}
+                >
+                  {active && <Check className="h-3 w-3" />}
+                </span>
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: instance.color ?? "#64748b" }}
+                />
+                <span className="truncate">{instance.name}</span>
+              </button>
+            );
+          })}
+          {instances.length === 0 && (
+            <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+              Nenhuma instancia cadastrada.
+            </div>
+          )}
+          {selectedIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-border px-2 py-2 text-xs text-muted-foreground hover:bg-surface-1"
+            >
+              <X className="h-3 w-3" /> Limpar selecao
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1304,7 +1522,7 @@ function TagMultiSelect({
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute bottom-full z-50 mb-2 max-h-56 w-full overflow-auto rounded-lg border border-border bg-surface-0 p-1 shadow-xl">
+        <div className="absolute z-50 mt-2 max-h-56 w-full overflow-auto rounded-lg border border-border bg-surface-0 p-1 shadow-xl">
           {tags.map((tag) => {
             const active = selectedIds.includes(tag.id);
             return (
@@ -1381,7 +1599,7 @@ function CustomerFormModal({
     if (form.email?.trim() && !isValidEmail(form.email)) errs.email = "E-mail invalido.";
     if (Object.keys(errs).length) {
       setErrors(errs);
-      toast.error("Verifique os campos destacados.");
+      toast.error("Preencha os campos obrigatórios.");
       return;
     }
     void onSubmit({ ...form, nome: form.nome!.trim() });
@@ -1485,12 +1703,11 @@ function upsertCustomer(customers: Customer[], customer: Customer) {
     : [customer, ...customers];
 }
 
-function upsertString(items: string[], value: string) {
-  const normalized = value.trim();
-  if (!normalized) return items;
-  return items.some((item) => item.toLowerCase() === normalized.toLowerCase())
-    ? items
-    : [...items, normalized].sort((a, b) => a.localeCompare(b));
+function upsertCatalog(items: ContactCatalog[], value: ContactCatalog) {
+  const exists = items.some((item) => item.id === value.id);
+  return exists
+    ? items.map((item) => (item.id === value.id ? value : item))
+    : [value, ...items].sort((a, b) => a.nome.localeCompare(b.nome));
 }
 
 function departmentPayload(data: DepartamentoFormData) {
@@ -1506,9 +1723,9 @@ function contactPayload(data: {
   telefone: string;
   customer_id: string | null;
   email: string | null;
-  departamento: string | null;
-  nivel_gerencia: RoleLabel | null;
-  instancia: string | null;
+  contactDepartmentId: string | null;
+  contactProfileId: string | null;
+  instanceIds: string[];
   tag_ids: string[];
 }) {
   return {
@@ -1516,9 +1733,10 @@ function contactPayload(data: {
     phone: data.telefone,
     customerId: data.customer_id,
     email: data.email,
-    departmentName: data.departamento,
-    companyRole: data.nivel_gerencia ? ROLE_TO_API[data.nivel_gerencia] : null,
-    instance: data.instancia,
+    contactDepartmentId: data.contactDepartmentId,
+    contactProfileId: data.contactProfileId,
+    instanceIds: data.instanceIds,
+    instance: data.instanceIds[0] ?? null,
     tagIds: data.tag_ids,
   };
 }

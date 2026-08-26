@@ -35,6 +35,14 @@ export class UpdateContactDto {
   departmentId?: string | null;
 
   @IsOptional()
+  @IsUUID()
+  contactDepartmentId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  contactProfileId?: string | null;
+
+  @IsOptional()
   @IsString()
   @MaxLength(120)
   departmentName?: string;
@@ -47,6 +55,13 @@ export class UpdateContactDto {
   @IsString()
   @MaxLength(60)
   instance?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(120, { each: true })
+  instanceIds?: string[];
 
   @IsOptional()
   @IsArray()

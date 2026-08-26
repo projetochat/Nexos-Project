@@ -70,7 +70,7 @@ function FinanceiroAdmin() {
         </div>
         {error && <div className="mb-4 text-sm text-destructive">{error}</div>}
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-widest text-muted-foreground">
                 <th className="pb-2">Número</th>

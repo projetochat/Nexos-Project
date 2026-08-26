@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ChevronDown } from "lucide-react";
 
 /* ============================================================
    Nexo · UI Kit
@@ -130,12 +131,15 @@ export function Select({
   ...rest
 }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select
-      className={`w-full appearance-none rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-ring ${className}`}
-      {...rest}
-    >
-      {children}
-    </select>
+    <span className="relative block w-full">
+      <select
+        className={`w-full appearance-none rounded-lg border border-border bg-surface-1 px-3 py-2 pr-9 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-ring ${className}`}
+        {...rest}
+      >
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+    </span>
   );
 }
 
@@ -148,10 +152,21 @@ export function Field({
   hint?: string;
   children: React.ReactNode;
 }) {
+  const requiredMarkIndex = label.indexOf("*");
+  const hasRequiredMark = requiredMarkIndex >= 0;
+
   return (
     <label className="block">
       <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
-        {label}
+        {hasRequiredMark ? (
+          <>
+            {label.slice(0, requiredMarkIndex)}
+            <span className="text-destructive">*</span>
+            {label.slice(requiredMarkIndex + 1)}
+          </>
+        ) : (
+          label
+        )}
       </span>
       {children}
       {hint && (

@@ -467,7 +467,7 @@ function CampaignDetail({
           {loading && <span className="text-xs text-muted-foreground">Atualizando...</span>}
         </div>
         <div className="overflow-hidden rounded-lg border border-border">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead className="bg-surface-1 text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 text-left">Contato</th>
@@ -801,7 +801,7 @@ function CampaignEditor({
             <MetricCard label="Bloqueados" value={preview.blockedCount} />
           </div>
           <div className="rounded-lg border border-border">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
               <thead className="bg-surface-1 text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-left">Amostra</th>

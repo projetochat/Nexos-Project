@@ -58,6 +58,8 @@ type MembershipWithRelations = {
   tenantId: string;
   userId: string;
   status: string;
+  createdAt: Date;
+  updatedAt: Date;
   user: {
     id: string;
     email: string;
@@ -192,6 +194,7 @@ export class UsersController {
 
     const passwordHash = await hash(dto.password, 12);
     const email = dto.email.toLowerCase().trim();
+    const avatarUrl = normalizeAvatarUrl(dto.avatarUrl);
 
     const membership = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
@@ -213,11 +216,21 @@ export class UsersController {
         if (existing) throw new BadRequestException("Usuario ja pertence a este tenant.");
         user = await tx.user.update({
           where: { id: user.id },
-          data: { name: dto.name.trim(), passwordHash, status: "ACTIVE" },
+          data: {
+            name: dto.name.trim(),
+            passwordHash,
+            status: "ACTIVE",
+            ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
+          },
         });
       } else {
         user = await tx.user.create({
-          data: { email, name: dto.name.trim(), passwordHash },
+          data: {
+            email,
+            name: dto.name.trim(),
+            passwordHash,
+            ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
+          },
         });
       }
 
@@ -246,6 +259,7 @@ export class UsersController {
     if (dto.roleId) await this.assertRoleInTenant(dto.roleId, current.tenantId);
     if (dto.departmentIds)
       await this.assertDepartmentsInTenant(dto.departmentIds, current.tenantId);
+    const avatarUrl = normalizeAvatarUrl(dto.avatarUrl);
 
     const membership = await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
@@ -255,6 +269,7 @@ export class UsersController {
           name: dto.name?.trim(),
           passwordHash: dto.password ? await hash(dto.password, 12) : undefined,
           status: dto.status,
+          ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
         },
       });
       await tx.tenantMembership.update({
@@ -423,6 +438,8 @@ export class UsersController {
     return {
       id: membership.id,
       status: membership.status,
+      createdAt: membership.createdAt,
+      updatedAt: membership.updatedAt,
       user: {
         id: membership.user.id,
         email: membership.user.email,

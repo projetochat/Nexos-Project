@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
-import { Avatar, Badge, Button, Field, Input } from "@/components/ui-kit";
+import { Avatar, Badge, Button, Field, Input, Select } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
 import { TipoBadge, type TipoInstancia } from "@/components/instancia-tipos";
 import { connectionDisplayLabel, connectionInstanceValue } from "@/lib/connection-options";
@@ -636,10 +636,9 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
 
       <div className="mt-3">
         <Field label="Conexao WhatsApp">
-          <select
+          <Select
             value={selectedConnectionId}
             onChange={(e) => setSelectedConnectionId(e.target.value)}
-            className="w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring"
           >
             {availableConnections.length === 0 ? (
               <option value="">Nenhuma instancia conectada disponivel.</option>
@@ -650,7 +649,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
                 </option>
               ))
             )}
-          </select>
+          </Select>
           {connectionsError ? (
             <p className="mt-1 text-xs text-destructive">{(connectionsError as Error).message}</p>
           ) : availableConnections.length === 0 ? (

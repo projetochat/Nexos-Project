@@ -86,6 +86,8 @@ export type ApiRole = {
 export type ApiUserMembership = {
   id: string;
   status: "ACTIVE" | "DISABLED" | "INVITED";
+  createdAt?: string;
+  updatedAt?: string;
   user: {
     id: string;
     email: string;
@@ -131,6 +133,26 @@ export type ApiTag = {
   customerCount?: number;
 };
 
+export type ApiContactCatalog = {
+  id: string;
+  tenantId: string;
+  nome: string;
+  descricao: string | null;
+  cor: string;
+  archivedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ApiContactInstanceOption = {
+  id: string;
+  value: string;
+  name: string;
+  color: string | null;
+  ownerPhone?: string | null;
+  instanceName?: string | null;
+};
+
 export type ApiContact = {
   id: string;
   tenantId: string;
@@ -142,8 +164,13 @@ export type ApiContact = {
   email: string | null;
   departamento: string | null;
   departmentId: string | null;
+  contactDepartmentId: string | null;
+  contactDepartment: Pick<ApiContactCatalog, "id" | "nome" | "cor"> | null;
+  contactProfileId: string | null;
+  contactProfile: Pick<ApiContactCatalog, "id" | "nome" | "cor"> | null;
   nivel_gerencia: "Colaborador" | "Supervisor" | "Gerente" | "Diretoria" | null;
   instancia: string | null;
+  instanceIds: string[];
   customer: Pick<ApiCustomer, "id" | "nome" | "cor"> | null;
   tags: ApiTag[];
   lifecycle?: "created" | "restored";
@@ -595,9 +622,12 @@ type ContactPayload = {
   email?: string | null;
   customerId?: string | null;
   departmentId?: string | null;
+  contactDepartmentId?: string | null;
+  contactProfileId?: string | null;
   departmentName?: string | null;
   companyRole?: "COLABORADOR" | "SUPERVISOR" | "GERENTE" | "DIRETORIA" | null;
   instance?: string | null;
+  instanceIds?: string[];
   tagIds?: string[];
 };
 
@@ -774,6 +804,7 @@ export const organizationApi = {
     password: string;
     roleId?: string;
     departmentIds?: string[];
+    avatarUrl?: string | null;
   }) => apiRequest<ApiUserMembership>("/users", { method: "POST", body: JSON.stringify(data) }),
   updateUser: (
     id: string,
@@ -783,6 +814,7 @@ export const organizationApi = {
       password?: string;
       roleId?: string;
       departmentIds?: string[];
+      avatarUrl?: string | null;
       status?: "ACTIVE" | "DISABLED";
       membershipStatus?: "ACTIVE" | "DISABLED" | "INVITED";
     },
@@ -832,9 +864,46 @@ export const crmApi = {
   removeContactTag: (contactId: string, tagId: string) =>
     apiRequest<ApiTag[]>(`/contacts/${contactId}/tags/${tagId}`, { method: "DELETE" }),
   contactOptions: () =>
-    apiRequest<{ instances: string[]; departments: string[]; tags: ApiTag[] }>(
+    apiRequest<{
+      instances: ApiContactInstanceOption[];
+      departments: ApiContactCatalog[];
+      profiles: ApiContactCatalog[];
+      tags: ApiTag[];
+    }>(
       "/crm/contacts/options",
     ),
+  listContactDepartments: () => apiRequest<ApiContactCatalog[]>("/crm/contact-departments"),
+  createContactDepartment: (data: { name: string; description?: string | null; color?: string }) =>
+    apiRequest<ApiContactCatalog>("/crm/contact-departments", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateContactDepartment: (
+    id: string,
+    data: { name?: string; description?: string | null; color?: string },
+  ) =>
+    apiRequest<ApiContactCatalog>(`/crm/contact-departments/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteContactDepartment: (id: string) =>
+    apiRequest<ApiContactCatalog>(`/crm/contact-departments/${id}`, { method: "DELETE" }),
+  listContactProfiles: () => apiRequest<ApiContactCatalog[]>("/crm/contact-profiles"),
+  createContactProfile: (data: { name: string; description?: string | null; color?: string }) =>
+    apiRequest<ApiContactCatalog>("/crm/contact-profiles", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateContactProfile: (
+    id: string,
+    data: { name?: string; description?: string | null; color?: string },
+  ) =>
+    apiRequest<ApiContactCatalog>(`/crm/contact-profiles/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteContactProfile: (id: string) =>
+    apiRequest<ApiContactCatalog>(`/crm/contact-profiles/${id}`, { method: "DELETE" }),
 };
 
 export const quickReplyApi = {

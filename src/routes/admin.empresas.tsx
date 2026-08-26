@@ -162,7 +162,7 @@ function EmpresasSaaS() {
             </Button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-widest text-muted-foreground">
                   <th className="pb-2">Tenant</th>

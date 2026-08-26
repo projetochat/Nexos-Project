@@ -27,16 +27,16 @@ type Atendente = {
   nome: string;
   email: string;
   cargo: string;
-  departamentoId: string;
   perfilId: string;
   status: keyof typeof TONE;
   csat: number;
   emAtendimento: number;
   resolvidas: number;
-  admissao: number;
   ativo: boolean;
   senha?: string;
   avatarUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 function AtendentesPage() {
@@ -44,10 +44,6 @@ function AtendentesPage() {
   const { data: memberships = [], isLoading } = useQuery({
     queryKey: ["nexos", "users"],
     queryFn: organizationApi.listUsers,
-  });
-  const { data: departamentos = [] } = useQuery({
-    queryKey: ["nexos", "departments"],
-    queryFn: organizationApi.listDepartments,
   });
   const { data: perfis = [] } = useQuery({
     queryKey: ["nexos", "roles"],
@@ -57,7 +53,6 @@ function AtendentesPage() {
   const atendentes = React.useMemo(() => memberships.map(toAtendente), [memberships]);
   const [query, setQuery] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState("all");
-  const [depFilter, setDepFilter] = React.useState("all");
   const [editing, setEditing] = React.useState<Atendente | null>(null);
   const [deleting, setDeleting] = React.useState<Atendente | null>(null);
   const novo = useDisclosure();
@@ -69,7 +64,7 @@ function AtendentesPage() {
         name: data.nome ?? "",
         password: data.senha ?? "",
         roleId: data.perfilId,
-        departmentIds: data.departamentoId ? [data.departamentoId] : [],
+        avatarUrl: data.avatarUrl ?? null,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["nexos", "users"] });
@@ -86,7 +81,7 @@ function AtendentesPage() {
         name: data.nome,
         password: data.senha || undefined,
         roleId: data.perfilId,
-        departmentIds: data.departamentoId ? [data.departamentoId] : [],
+        avatarUrl: data.avatarUrl ?? null,
         membershipStatus: data.ativo === false ? "DISABLED" : "ACTIVE",
       }),
     onSuccess: () => {
@@ -109,7 +104,6 @@ function AtendentesPage() {
 
   const filtered = atendentes.filter((a) => {
     if (statusFilter !== "all" && a.status !== statusFilter) return false;
-    if (depFilter !== "all" && a.departamentoId !== depFilter) return false;
     if (query) return (a.nome + a.email + a.cargo).toLowerCase().includes(query.toLowerCase());
     return true;
   });
@@ -141,12 +135,12 @@ function AtendentesPage() {
             delta={`+${Math.floor(online / 6)}`}
             tone="success"
           />
-          <KPI label="CSAT medio" value={csat} delta="+0.1" tone="success" />
+          <KPI label="Avaliacao media" value={csat} delta="+0.1" tone="success" />
           <KPI label="Ociosos" value={String(idle)} tone="warning" />
         </div>
 
         <Card className="mb-4 p-4">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px]">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
             <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
               <Search className="h-4 w-4 text-muted-foreground" />
               <input
@@ -162,60 +156,55 @@ function AtendentesPage() {
               <option>ausente</option>
               <option>offline</option>
             </Select>
-            <Select value={depFilter} onChange={(e) => setDepFilter(e.target.value)}>
-              <option value="all">Todos os departamentos</option>
-              {departamentos.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </Select>
           </div>
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Atendente</th>
-                <th className="px-4 py-3 font-medium">Departamento</th>
+                <th className="px-4 py-3 font-medium">E-mail</th>
                 <th className="px-4 py-3 font-medium">Perfil</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Em atendimento</th>
-                <th className="px-4 py-3 font-medium">CSAT</th>
+                <th className="px-4 py-3 font-medium">Avaliacao</th>
+                <th className="px-4 py-3 font-medium">Registro</th>
                 <th className="px-4 py-3 font-medium text-right">Acoes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {isLoading && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
                     Carregando...
                   </td>
                 </tr>
               )}
               {!isLoading &&
                 filtered.map((a) => {
-                  const dep = departamentos.find((d) => d.id === a.departamentoId);
                   const perfil = perfis.find((p) => p.id === a.perfilId);
                   return (
                     <tr key={a.id} className="transition hover:bg-surface-1">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <Avatar name={a.nome} size={30} />
+                          <Avatar name={a.nome} src={a.avatarUrl} size={30} />
                           <div>
                             <p className="font-medium">{a.nome}</p>
-                            <p className="text-xs text-muted-foreground">{a.cargo}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{dep?.name ?? "-"}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{a.email}</td>
                       <td className="px-4 py-3 text-muted-foreground">{perfil?.name ?? "-"}</td>
                       <td className="px-4 py-3">
                         <Badge tone={TONE[a.status]}>{a.status}</Badge>
                       </td>
                       <td className="px-4 py-3 font-mono">{a.emAtendimento}</td>
                       <td className="px-4 py-3 font-mono">{a.csat}</td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        <div>Criado: {formatDateTime(a.createdAt)}</div>
+                        <div>Editado: {formatDateTime(a.updatedAt)}</div>
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="sm" onClick={() => setEditing(a)}>
@@ -231,7 +220,7 @@ function AtendentesPage() {
                 })}
               {!isLoading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
                     Nenhum resultado.
                   </td>
                 </tr>
@@ -243,14 +232,12 @@ function AtendentesPage() {
         <AtendenteForm
           open={novo.open}
           perfis={perfis.map((p) => ({ id: p.id, nome: p.name }))}
-          departamentos={departamentos.map((d) => ({ id: d.id, nome: d.name }))}
           onClose={novo.hide}
           onSubmit={(data) => create.mutate(data)}
         />
         <AtendenteForm
           open={!!editing}
           perfis={perfis.map((p) => ({ id: p.id, nome: p.name }))}
-          departamentos={departamentos.map((d) => ({ id: d.id, nome: d.name }))}
           initial={editing ?? undefined}
           onClose={() => setEditing(null)}
           onSubmit={(data) => editing && update.mutate({ id: editing.id, data })}
@@ -275,14 +262,12 @@ function AtendenteForm({
   onSubmit,
   initial,
   perfis,
-  departamentos,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (d: Partial<Atendente>) => void;
   initial?: Atendente;
   perfis: { id: string; nome: string }[];
-  departamentos: { id: string; nome: string }[];
 }) {
   const [form, setForm] = React.useState<Partial<Atendente>>({});
   const [errors, setErrors] = React.useState<Record<string, string>>({});
@@ -293,14 +278,13 @@ function AtendenteForm({
         ? { ...initial }
         : {
             cargo: "Atendente",
-            departamentoId: departamentos[0]?.id,
             perfilId: perfis[0]?.id,
             status: "online",
             ativo: true,
           },
     );
     setErrors({});
-  }, [initial, open, departamentos, perfis]);
+  }, [initial, open, perfis]);
 
   const onPickFile = (file?: File | null) => {
     if (!file) return;
@@ -349,15 +333,30 @@ function AtendenteForm({
       }
     >
       <div className="grid gap-4">
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="h-4 w-4 rounded border-border"
-            checked={form.ativo ?? true}
-            onChange={(e) => setForm({ ...form, ativo: e.target.checked })}
-          />
-          <span>Ativo</span>
-        </label>
+        <Field label="Status">
+          <div className="flex w-fit gap-2 rounded-lg border border-border bg-surface-1 p-1">
+            <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-sm">
+              <input
+                type="radio"
+                name="atendente-status"
+                className="h-4 w-4 accent-primary"
+                checked={form.ativo !== false}
+                onChange={() => setForm({ ...form, ativo: true })}
+              />
+              <span>Ativo</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-sm">
+              <input
+                type="radio"
+                name="atendente-status"
+                className="h-4 w-4 accent-primary"
+                checked={form.ativo === false}
+                onChange={() => setForm({ ...form, ativo: false })}
+              />
+              <span>Inativo</span>
+            </label>
+          </div>
+        </Field>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Nome *">
             <Input
@@ -383,19 +382,6 @@ function AtendenteForm({
             {errors.perfilId && (
               <span className="mt-1 block text-[11px] text-destructive">{errors.perfilId}</span>
             )}
-          </Field>
-          <Field label="Departamento">
-            <Select
-              value={form.departamentoId ?? ""}
-              onChange={(e) => setForm({ ...form, departamentoId: e.target.value || undefined })}
-            >
-              <option value="">Sem departamento</option>
-              {departamentos.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.nome}
-                </option>
-              ))}
-            </Select>
           </Field>
           <Field label="E-mail (login) *">
             <Input
@@ -461,13 +447,22 @@ function toAtendente(membership: ApiUserMembership): Atendente {
     nome: membership.user.name,
     email: membership.user.email,
     cargo: membership.role.name,
-    departamentoId: membership.departments[0]?.id ?? "",
     perfilId: membership.role.id,
     status: active ? "online" : "offline",
     csat: 0,
     emAtendimento: 0,
     resolvidas: 0,
-    admissao: Date.now(),
     ativo: active,
+    avatarUrl: membership.user.avatarUrl ?? undefined,
+    createdAt: membership.createdAt,
+    updatedAt: membership.updatedAt,
   };
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
 }

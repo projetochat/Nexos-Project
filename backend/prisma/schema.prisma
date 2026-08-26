@@ -312,6 +312,8 @@ model Tenant {
   roles                       Role[]
   customers                   Customer[]
   contacts                    Contact[]
+  contactDepartments          ContactDepartment[]
+  contactProfiles             ContactProfile[]
   tags                        Tag[]
   quickReplies                QuickReply[]
   conversations               Conversation[]
@@ -675,6 +677,8 @@ model Contact {
   tenantId             String
   customerId           String?
   departmentId         String?
+  contactDepartmentId  String?
+  contactProfileId     String?
   name                 String
   phone                String
   normalizedPhone      String
@@ -683,12 +687,15 @@ model Contact {
   departmentName       String?
   companyRole          ContactCompanyRole?
   instance             String?
+  instanceIds          String[]                     @default([])
   archivedAt           DateTime?
   createdAt            DateTime                     @default(now())
   updatedAt            DateTime                     @updatedAt
   tenant               Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customer             Customer?                    @relation(fields: [customerId], references: [id], onDelete: SetNull)
   department           Department?                  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  contactDepartment    ContactDepartment?           @relation(fields: [contactDepartmentId], references: [id], onDelete: SetNull)
+  contactProfile       ContactProfile?              @relation(fields: [contactProfileId], references: [id], onDelete: SetNull)
   tags                 ContactTag[]
   conversations        Conversation[]
   tickets              Ticket[]
@@ -701,10 +708,48 @@ model Contact {
   @@index([tenantId, name])
   @@index([tenantId, customerId])
   @@index([tenantId, departmentId])
+  @@index([tenantId, contactDepartmentId])
+  @@index([tenantId, contactProfileId])
   @@index([tenantId, departmentName])
   @@index([tenantId, instance])
   @@index([tenantId, archivedAt])
   @@map("contacts")
+}
+
+model ContactDepartment {
+  id             String    @id @default(uuid())
+  tenantId       String
+  name           String
+  normalizedName String
+  description    String?
+  color          String    @default("#6366f1")
+  archivedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts       Contact[]
+
+  @@unique([tenantId, normalizedName])
+  @@index([tenantId, archivedAt])
+  @@map("contact_departments")
+}
+
+model ContactProfile {
+  id             String    @id @default(uuid())
+  tenantId       String
+  name           String
+  normalizedName String
+  description    String?
+  color          String    @default("#6366f1")
+  archivedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts       Contact[]
+
+  @@unique([tenantId, normalizedName])
+  @@index([tenantId, archivedAt])
+  @@map("contact_profiles")
 }
 
 model Tag {

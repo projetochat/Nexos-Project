@@ -1,4 +1,4 @@
-import { IsArray, IsEmail, IsEnum, IsOptional, IsString, MinLength } from "class-validator";
+import { IsArray, IsEmail, IsEnum, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import { MembershipStatus, UserStatus } from "../../generated/prisma";
 
 export class UpdateUserDto {
@@ -32,4 +32,9 @@ export class UpdateUserDto {
   @IsArray()
   @IsString({ each: true })
   departmentIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300_000)
+  avatarUrl?: string | null;
 }

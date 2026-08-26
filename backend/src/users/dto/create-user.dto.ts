@@ -1,4 +1,4 @@
-import { IsArray, IsEmail, IsOptional, IsString, MinLength } from "class-validator";
+import { IsArray, IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 export class CreateUserDto {
   @IsEmail()
@@ -20,4 +20,9 @@ export class CreateUserDto {
   @IsArray()
   @IsString({ each: true })
   departmentIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300_000)
+  avatarUrl?: string | null;
 }

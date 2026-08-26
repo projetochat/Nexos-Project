@@ -131,7 +131,7 @@ function Page() {
               Conversas agrupadas pela atribuicao operacional atual.
             </p>
           </div>
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead className="bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
               <tr>
                 <th className="px-4 py-2 font-medium">Atendente</th>
