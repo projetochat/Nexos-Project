@@ -42,7 +42,7 @@ function Page() {
           actions={
             canManageCatalog ? (
               <Button variant="primary" size="sm" onClick={nova.show}>
-                <Plus className="h-3.5 w-3.5" /> Nova etiqueta
+                <Plus className="h-3.5 w-3.5" /> Nova Etiqueta
               </Button>
             ) : null
           }
@@ -180,7 +180,7 @@ function EtiquetaForm({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial ? "Editar etiqueta" : "Nova etiqueta"}
+      title={initial ? "Editar Etiqueta" : "Nova Etiqueta"}
       size="sm"
       footer={
         <>
@@ -212,3 +212,4 @@ function EtiquetaForm({
     </Modal>
   );
 }
+

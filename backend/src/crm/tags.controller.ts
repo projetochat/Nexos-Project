@@ -178,8 +178,9 @@ function handleUniqueTag(error: unknown): never {
   if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
     throw new ConflictException({
       code: "TAG_ALREADY_EXISTS",
-      message: "Ja existe uma etiqueta com este nome.",
+      message: "Já existe uma etiqueta com este nome.",
     });
   }
   throw error;
 }
+

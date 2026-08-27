@@ -14,7 +14,7 @@ const TABS = [
   { to: "/configuracoes/permissoes", label: "Permissões", icon: Shield },
   { to: "/configuracoes/horarios", label: "Horários", icon: Clock },
   { to: "/configuracoes/integracoes", label: "Integrações", icon: Plug },
-  { to: "/configuracoes/campos-contato", label: "Campos de contato", icon: ListPlus },
+  { to: "/configuracoes/campos-contato", label: "Campos Adicionais do Contato", icon: ListPlus },
 ] as const;
 
 function ConfiguracoesLayout() {

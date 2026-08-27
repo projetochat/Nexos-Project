@@ -130,7 +130,7 @@ export function ConfirmDialog({
             <AlertTriangle className="h-4 w-4" />
           </div>
         )}
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <p className="whitespace-pre-line text-sm text-muted-foreground">{description}</p>
       </div>
     </Modal>
   );
@@ -146,3 +146,4 @@ export function useDisclosure(initial = false) {
     set: setOpen,
   };
 }
+

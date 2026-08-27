@@ -30,7 +30,7 @@ import {
   Select,
   Textarea,
 } from "@/components/ui-kit";
-import { isValidEmail, maskBrazilPhone } from "@/lib/input-masks";
+import { isValidEmail, maskBrazilPhone, onlyDigits } from "@/lib/input-masks";
 import {
   crmApi,
   type ApiContact,
@@ -45,6 +45,16 @@ export const Route = createFileRoute("/contatos")({ component: ContatosPage });
 
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000] as const;
+const COUNTRY_CODES = [
+  { code: "55", country: "Brasil", flag: "BR" },
+  { code: "1", country: "Estados Unidos", flag: "US" },
+  { code: "351", country: "Portugal", flag: "PT" },
+  { code: "54", country: "Argentina", flag: "AR" },
+  { code: "56", country: "Chile", flag: "CL" },
+  { code: "57", country: "Colômbia", flag: "CO" },
+  { code: "52", country: "México", flag: "MX" },
+  { code: "34", country: "Espanha", flag: "ES" },
+];
 
 type Customer = ApiCustomer;
 type Contact = ApiContact;
@@ -128,8 +138,8 @@ function ContatosPage() {
     const response = await crmApi.listContacts({ q: query, page: 1, pageSize: 1000, instance: instanciaFilter, department: departamentoFilter, customerId: clienteFilter, tagId: tagFilter });
     const rows = selectedIds.length ? response.items.filter((contact) => selectedIds.includes(contact.id)) : response.items;
     const csv = toCsv([
-      ["Contato", "Telefone", "E-mail", "Empresa do contato", "Departamento", "Perfil", "Instâncias", "Etiquetas"],
-      ...rows.map((contact) => [contact.nome, maskBrazilPhone(contact.telefone), contact.email ?? "", contact.customer?.nome ?? "", contact.contactDepartment?.nome ?? contact.departamento ?? "", contact.contactProfile?.nome ?? "", (contact.instanceIds ?? []).map((id) => connectionLabelByValue.get(id) ?? id).join(", "), contact.tags.map((tag) => tag.nome).join(", ")]),
+      ["Contato", "WhatsApp", "E-mail", "Empresa do Contato", "Departamento", "Perfil", "Instâncias", "Etiquetas"],
+      ...rows.map((contact) => [contact.nome, formatPhoneWithDdi(contact.telefone), contact.email ?? "", contact.customer?.nome ?? "", contact.contactDepartment?.nome ?? contact.departamento ?? "", contact.contactProfile?.nome ?? "", (contact.instanceIds ?? []).map((id) => connectionLabelByValue.get(id) ?? id).join(", "), contact.tags.map((tag) => tag.nome).join(", ")]),
     ]);
     downloadTextFile(`contatos-${new Date().toISOString().slice(0, 10)}.csv`, csv, "text/csv;charset=utf-8");
   };
@@ -151,7 +161,7 @@ function ContatosPage() {
         // Mantem a importacao rodando quando encontra duplicados ou linhas invalidas.
       }
     }
-    toast.success("Importacao concluida", { description: `${created} contatos importados.` });
+    toast.success("Importação concluída", { description: `${created} contatos importados.` });
     await load();
   };
 
@@ -181,7 +191,7 @@ function ContatosPage() {
             <input ref={importInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importContactsFile(file); }} />
             <Button variant="secondary" size="sm" onClick={() => importInputRef.current?.click()}><FileUp className="h-3.5 w-3.5" /> Importar</Button>
             <Button variant="secondary" size="sm" onClick={() => void exportContacts()}><Download className="h-3.5 w-3.5" /> Exportar</Button>
-            <Button variant="primary" size="sm" onClick={create.show}><Plus className="h-3.5 w-3.5" /> Novo contato</Button>
+            <Button variant="primary" size="sm" onClick={create.show}><Plus className="h-3.5 w-3.5" /> Criar Contato</Button>
           </div>
         } />
 
@@ -189,11 +199,11 @@ function ContatosPage() {
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))]">
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Busca</label>
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3"><Search className="h-4 w-4 text-muted-foreground" /><input value={query} onChange={(e) => setQuery(e.target.value)} className="w-full bg-transparent py-2 text-sm outline-none" placeholder="Buscar por nome, telefone ou empresa..." /></div>
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3"><Search className="h-4 w-4 text-muted-foreground" /><input value={query} onChange={(e) => setQuery(e.target.value)} className="w-full bg-transparent py-2 text-sm outline-none" placeholder="Buscar por nome, whatsapp ou empresa..." /></div>
             </div>
             <FilterSelect label="Instância" value={instanciaFilter} onChange={setInstanciaFilter}>{[<option key="all" value="">Todas</option>, ...instances.map((option) => <option key={option.id} value={option.value}>{option.name}</option>)]}</FilterSelect>
             <FilterSelect label="Departamento" value={departamentoFilter} onChange={setDepartamentoFilter}>{[<option key="all" value="">Todos</option>, ...departments.map((department) => <option key={department.id} value={department.id}>{department.nome}</option>)]}</FilterSelect>
-            <FilterSelect label="Empresa do contato" value={clienteFilter} onChange={setClienteFilter}>{[<option key="all" value="">Todas</option>, ...customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.nome}</option>)]}</FilterSelect>
+            <FilterSelect label="Empresa do Contato" value={clienteFilter} onChange={setClienteFilter}>{[<option key="all" value="">Todas</option>, ...customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.nome}</option>)]}</FilterSelect>
             <FilterSelect label="Etiqueta" value={tagFilter} onChange={setTagFilter}>{[<option key="all" value="">Todas</option>, ...tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.nome}</option>)]}</FilterSelect>
           </div>
         </Card>
@@ -210,23 +220,24 @@ function ContatosPage() {
           </div></Card>
         )}
 
-        <Card className="overflow-hidden p-0"><table className="w-full table-fixed text-sm"><thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground"><tr><th className="w-10 px-4 py-3 font-medium"><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleSelection} aria-label="Selecionar contatos visíveis" /></th><th className="w-[26%] px-4 py-3 font-medium">Contato</th><th className="w-[13%] px-4 py-3 font-medium">Telefone</th><th className="w-[15%] px-4 py-3 font-medium">Instância</th><th className="w-[16%] px-4 py-3 font-medium">Departamento</th><th className="w-[16%] px-4 py-3 font-medium">Empresa</th><th className="w-[16%] px-4 py-3 font-medium">Etiquetas</th><th className="w-24 px-4 py-3 font-medium text-right">Ações</th></tr></thead><tbody className="divide-y divide-border">
-          {loading && <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">Carregando...</td></tr>}
-          {!loading && contacts.map((contact) => <tr key={contact.id} className="transition hover:bg-surface-1"><td className="px-4 py-3"><input type="checkbox" checked={selectedIds.includes(contact.id)} onChange={() => setSelectedIds((current) => current.includes(contact.id) ? current.filter((id) => id !== contact.id) : [...current, contact.id])} aria-label={`Selecionar ${contact.nome}`} /></td><td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={contact.nome} size={30} /><p className="truncate font-medium">{contact.nome}</p></div></td><td className="px-4 py-3 font-mono text-xs">{maskBrazilPhone(contact.telefone)}</td><td className="px-4 py-3">{contact.instanceIds?.length ? <div className="flex max-w-44 flex-wrap gap-1">{contact.instanceIds.slice(0, 2).map((instanceId) => { const color = connectionColorByValue.get(instanceId) ?? "#64748b"; return <span key={instanceId} className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium" style={{ backgroundColor: `${color}1f`, borderColor: `${color}66`, color }}><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" /><span className="truncate">{connectionLabelByValue.get(instanceId) ?? instanceId}</span></span>; })}{contact.instanceIds.length > 2 && <span className="text-[11px] text-muted-foreground">+{contact.instanceIds.length - 2}</span>}</div> : <span className="text-xs text-muted-foreground">-</span>}</td><td className="px-4 py-3 text-xs">{contact.contactDepartment?.nome ?? contact.departamento ?? <span className="text-muted-foreground">-</span>}</td><td className="px-4 py-3">{contact.customer ? <span className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium" style={{ backgroundColor: `${contact.customer.cor ?? "#3b82f6"}1f`, borderColor: `${contact.customer.cor ?? "#3b82f6"}66`, color: contact.customer.cor ?? "#3b82f6" }}><Link2 className="h-3 w-3 shrink-0" /><span className="truncate">{contact.customer.nome}</span></span> : <span className="text-xs text-muted-foreground">Nao vinculado</span>}</td><td className="px-4 py-3">{contact.tags.length ? <div className="flex max-w-48 flex-wrap gap-1">{contact.tags.slice(0, 3).map((tag) => <span key={tag.id} className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium" style={{ backgroundColor: `${tag.cor}1f`, borderColor: `${tag.cor}66`, color: tag.cor }}>{tag.nome}</span>)}{contact.tags.length > 3 && <span className="text-[11px] text-muted-foreground">+{contact.tags.length - 3}</span>}</div> : <span className="text-xs text-muted-foreground">-</span>}</td><td className="px-4 py-3"><div className="flex justify-end gap-1"><Button variant="ghost" size="sm" title="Editar" onClick={() => setEditing(contact)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="sm" title="Excluir" onClick={() => setDeleting(contact)}><Trash2 className="h-3.5 w-3.5" /></Button></div></td></tr>)}
-          {!loading && contacts.length === 0 && <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">Nenhum contato encontrado.</td></tr>}
+        <Card className="overflow-hidden p-0"><table className="w-full table-fixed text-sm"><thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground"><tr><th className="w-10 px-4 py-3 font-medium"><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleSelection} aria-label="Selecionar contatos visíveis" /></th><th className="w-[26%] px-4 py-3 font-medium">Contato</th><th className="w-[13%] px-4 py-3 font-medium">WhatsApp</th><th className="w-[15%] px-4 py-3 font-medium">Instância</th><th className="w-[16%] px-4 py-3 font-medium">Departamento</th><th className="w-[18%] px-4 py-3 font-medium">Empresa</th><th className="w-24 px-4 py-3 font-medium text-right">Ações</th></tr></thead><tbody className="divide-y divide-border">
+          {loading && <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">Carregando...</td></tr>}
+          {!loading && contacts.map((contact) => <tr key={contact.id} className="transition hover:bg-surface-1"><td className="px-4 py-3"><input type="checkbox" checked={selectedIds.includes(contact.id)} onChange={() => setSelectedIds((current) => current.includes(contact.id) ? current.filter((id) => id !== contact.id) : [...current, contact.id])} aria-label={`Selecionar ${contact.nome}`} /></td><td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={contact.nome} size={30} /><p className="truncate font-medium">{contact.nome}</p></div></td><td className="px-4 py-3 font-mono text-xs">{formatPhoneWithDdi(contact.telefone)}</td><td className="px-4 py-3">{contact.instanceIds?.length ? <div className="flex max-w-44 flex-wrap gap-1">{contact.instanceIds.slice(0, 2).map((instanceId) => { const color = connectionColorByValue.get(instanceId) ?? "#64748b"; return <span key={instanceId} className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium" style={{ backgroundColor: `${color}1f`, borderColor: `${color}66`, color }}><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" /><span className="truncate">{connectionLabelByValue.get(instanceId) ?? instanceId}</span></span>; })}{contact.instanceIds.length > 2 && <span className="text-[11px] text-muted-foreground">+{contact.instanceIds.length - 2}</span>}</div> : <span className="text-xs text-muted-foreground">-</span>}</td><td className="px-4 py-3 text-xs">{contact.contactDepartment?.nome ?? contact.departamento ?? <span className="text-muted-foreground">-</span>}</td><td className="px-4 py-3">{contact.customer ? <span className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium" style={{ backgroundColor: `${contact.customer.cor ?? "#3b82f6"}1f`, borderColor: `${contact.customer.cor ?? "#3b82f6"}66`, color: contact.customer.cor ?? "#3b82f6" }}><Link2 className="h-3 w-3 shrink-0" /><span className="truncate">{contact.customer.nome}</span></span> : <span className="text-xs text-muted-foreground">Nao vinculado</span>}</td><td className="px-4 py-3"><div className="flex justify-end gap-1"><Button variant="ghost" size="sm" title="Editar" onClick={() => setEditing(contact)}><Pencil className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="sm" title="Excluir" onClick={() => setDeleting(contact)}><Trash2 className="h-3.5 w-3.5" /></Button></div></td></tr>)}
+          {!loading && contacts.length === 0 && <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">Nenhum contato encontrado.</td></tr>}
         </tbody></table><div className="flex items-center justify-between border-t border-border bg-surface-1 px-4 py-3 text-xs text-muted-foreground"><div className="flex items-center gap-2"><span>Mostrando {contacts.length} de {total}</span><Select value={String(pageSize)} onChange={(event) => setPageSize(Number(event.target.value))} className="h-8 w-24 text-xs">{PAGE_SIZE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</Select></div><div className="flex items-center gap-2"><Button variant="ghost" size="sm" disabled={pageSafe === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><ChevronLeft className="h-3.5 w-3.5" /></Button><span className="font-mono">{pageSafe} / {totalPages}</span><Button variant="ghost" size="sm" disabled={pageSafe === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}><ChevronRight className="h-3.5 w-3.5" /></Button></div></div></Card>
 
         <ContactFormModal open={create.open} onClose={create.hide} customers={customers} tags={tags} departments={departments} profiles={profiles} instances={instances} onCustomerCreated={(customer) => setCustomers((current) => upsertCustomer(current, customer))} onDepartmentSaved={(department) => setDepartments((current) => upsertCatalog(current, department))} onProfileSaved={(profile) => setProfiles((current) => upsertCatalog(current, profile))} onSubmit={async (data) => { try { const contact = await crmApi.createContact(contactPayload(data)); toast.success(contact.lifecycle === "restored" ? "Contato restaurado" : "Contato criado"); create.hide(); await load(); } catch (e) { toast.error("Falha ao criar", { description: (e as Error).message }); } }} />
         <ContactFormModal open={!!editing} initial={editing ?? undefined} customers={customers} tags={tags} departments={departments} profiles={profiles} instances={instances} onCustomerCreated={(customer) => setCustomers((current) => upsertCustomer(current, customer))} onDepartmentSaved={(department) => setDepartments((current) => upsertCatalog(current, department))} onProfileSaved={(profile) => setProfiles((current) => upsertCatalog(current, profile))} onClose={() => setEditing(null)} onSubmit={async (data) => { if (!editing) return; try { await crmApi.updateContact(editing.id, contactPayload(data)); toast.success("Contato atualizado"); setEditing(null); await load(); } catch (e) { toast.error("Falha ao salvar", { description: (e as Error).message }); } }} />
-        <ConfirmDialog open={!!deleting} title="Excluir contato?" description={`Esta acao arquivara ${deleting?.nome ?? ""}. Conversas associadas serao preservadas para auditoria futura.`} destructive confirmLabel="Excluir" onClose={() => setDeleting(null)} onConfirm={async () => { if (!deleting) return; try { await crmApi.deleteContact(deleting.id); toast.success("Contato excluido"); setDeleting(null); await load(); } catch (e) { toast.error("Falha ao excluir", { description: (e as Error).message }); } }} />
+        <ConfirmDialog open={!!deleting} title="Excluir contato?" description={`Contato "${deleting?.nome ?? ""}" será apagado.\nDeseja continuar?\n\nHistórico de Conversas associadas a esse contato serão preservadas para auditoria.`} destructive confirmLabel="Excluir" onClose={() => setDeleting(null)} onConfirm={async () => { if (!deleting) return; try { await crmApi.deleteContact(deleting.id); toast.success("Contato excluído"); setDeleting(null); await load(); } catch (e) { toast.error("Falha ao excluir", { description: (e as Error).message }); } }} />
       </PageContainer>
     </AppShell>
   );
 }
 
-function ContactFormModal({ open, onClose, onSubmit, initial, customers, tags, departments, profiles, instances, onCustomerCreated, onDepartmentSaved, onProfileSaved }: { open: boolean; onClose: () => void; customers: Customer[]; tags: Tag[]; departments: ContactCatalog[]; profiles: ContactCatalog[]; instances: ContactInstanceOption[]; onCustomerCreated: (customer: Customer) => void; onDepartmentSaved: (department: ContactCatalog) => void; onProfileSaved: (profile: ContactCatalog) => void; onSubmit: (data: { nome: string; telefone: string; customer_id: string | null; email: string | null; contactDepartmentId: string | null; contactProfileId: string | null; instanceIds: string[]; tag_ids: string[]; customFields: Record<string, string | boolean>; }) => void | Promise<void>; initial?: Contact; }) {
+function ContactFormModal({ open, onClose, onSubmit, initial, customers, tags, departments, profiles, instances, onCustomerCreated, onDepartmentSaved, onProfileSaved }: { open: boolean; onClose: () => void; customers: Customer[]; tags: Tag[]; departments: ContactCatalog[]; profiles: ContactCatalog[]; instances: ContactInstanceOption[]; onCustomerCreated: (customer: Customer) => void; onDepartmentSaved: (department: ContactCatalog) => void; onProfileSaved: (profile: ContactCatalog) => void; onSubmit: (data: { nome: string; telefone: string; countryCode?: string; customer_id: string | null; email: string | null; contactDepartmentId: string | null; contactProfileId: string | null; instanceIds: string[]; tag_ids: string[]; customFields: Record<string, string | boolean>; }) => void | Promise<void>; initial?: Contact; }) {
   const [nome, setNome] = React.useState("");
   const [telefone, setTelefone] = React.useState("");
+  const [countryCode, setCountryCode] = React.useState("55");
   const [customerId, setCustomerId] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [contactDepartmentId, setContactDepartmentId] = React.useState("");
@@ -243,7 +254,9 @@ function ContactFormModal({ open, onClose, onSubmit, initial, customers, tags, d
   React.useEffect(() => {
     if (!open) return;
     setNome(initial?.nome ?? "");
-    setTelefone(initial?.telefone ? maskBrazilPhone(initial.telefone) : "");
+        const initialPhone = splitPhoneByCountry(initial?.telefone ?? "");
+    setCountryCode(initialPhone.countryCode);
+    setTelefone(initialPhone.localPhone ? maskBrazilPhone(initialPhone.localPhone) : "");
     setCustomerId(initial?.customer_id ?? "");
     setEmail(initial?.email ?? "");
     setContactDepartmentId(initial?.contactDepartmentId ?? "");
@@ -258,24 +271,24 @@ function ContactFormModal({ open, onClose, onSubmit, initial, customers, tags, d
   const handle = () => {
     const errs: Record<string, string> = {};
     if (!nome.trim() || nome.trim().length < 2) errs.nome = "Informe o nome.";
-    if (telefone.replace(/\D/g, "").length < 10) errs.telefone = "Telefone invalido.";
+    if (onlyDigits(telefone).length < 10) errs.telefone = "WhatsApp inválido.";
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = "E-mail invalido.";
     for (const field of customFieldDefinitions) {
       if (field.required && !String(customFields[field.id] ?? "").trim()) errs[`custom_${field.id}`] = "Campo obrigatorio.";
     }
     if (Object.keys(errs).length) { setErrors(errs); toast.error("Preencha os campos obrigatórios."); return; }
-    void onSubmit({ nome: nome.trim(), telefone, customer_id: customerId || null, email: email.trim() || null, contactDepartmentId: contactDepartmentId || null, contactProfileId: contactProfileId || null, instanceIds, tag_ids: tagIds, customFields });
+    void onSubmit({ nome: nome.trim(), telefone, countryCode, customer_id: customerId || null, email: email.trim() || null, contactDepartmentId: contactDepartmentId || null, contactProfileId: contactProfileId || null, instanceIds, tag_ids: tagIds, customFields });
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={initial ? "Editar contato" : "Novo contato"} description="" size="xl" footer={<><Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button><Button variant="primary" size="sm" onClick={handle}>Salvar</Button></>}>
+    <Modal open={open} onClose={onClose} title={initial ? "Editar Contato" : "Criar Contato"} description="" size="xl" footer={<><Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button><Button variant="primary" size="sm" onClick={handle}>Salvar</Button></>}>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Nome *"><Input value={nome} onChange={(e) => setNome(e.target.value)} />{errors.nome && <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>}</Field>
-        <Field label="Empresa do contato"><div className="flex gap-2"><Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}><option value="">- Sem empresa -</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.nome}</option>)}</Select><Button variant="outline" size="sm" onClick={customersManager.show} title="Gerenciar empresas"><Plus className="h-3.5 w-3.5" /></Button>{customerId && <Button variant="ghost" size="sm" onClick={() => setCustomerId("")} title="Remover empresa"><X className="h-3.5 w-3.5" /></Button>}</div></Field>
-        <Field label="Telefone *"><Input value={telefone} onChange={(e) => setTelefone(maskBrazilPhone(e.target.value))} placeholder="(11) 90000-0000" />{errors.telefone && <span className="mt-1 block text-[11px] text-destructive">{errors.telefone}</span>}</Field>
+        <Field label="Empresa do Contato"><div className="flex gap-2"><Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}><option value="">- Sem empresa -</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.nome}</option>)}</Select><Button variant="outline" size="sm" onClick={customersManager.show} title="Gerenciar empresas"><Plus className="h-3.5 w-3.5" /></Button>{customerId && <Button variant="ghost" size="sm" onClick={() => setCustomerId("")} title="Remover empresa"><X className="h-3.5 w-3.5" /></Button>}</div></Field>
+        <Field label="WhatsApp *"><div className="flex gap-2"><CountryCodeSelect value={countryCode} onChange={setCountryCode} /><Input value={telefone} onChange={(e) => setTelefone(maskBrazilPhone(e.target.value))} placeholder="(11) 90000-0000" /></div>{errors.telefone && <span className="mt-1 block text-[11px] text-destructive">{errors.telefone}</span>}</Field>
         <Field label="Departamento do Contato"><div className="flex gap-2"><Select value={contactDepartmentId} onChange={(e) => setContactDepartmentId(e.target.value)}><option value="">- Sem departamento -</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.nome}</option>)}</Select><Button variant="outline" size="sm" onClick={departmentsManager.show} title="Gerenciar departamentos"><Plus className="h-3.5 w-3.5" /></Button>{contactDepartmentId && <Button variant="ghost" size="sm" onClick={() => setContactDepartmentId("")} title="Remover departamento"><X className="h-3.5 w-3.5" /></Button>}</div></Field>
         <Field label="E-mail"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nome@empresa.com" />{errors.email && <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>}</Field>
-        <Field label="Perfil do Contato"><div className="flex gap-2"><Select value={contactProfileId} onChange={(e) => setContactProfileId(e.target.value)}><option value="">- Selecione -</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.nome}</option>)}</Select><Button variant="outline" size="sm" onClick={profilesManager.show} title="Gerenciar perfis"><Plus className="h-3.5 w-3.5" /></Button>{contactProfileId && <Button variant="ghost" size="sm" onClick={() => setContactProfileId("")} title="Remover perfil"><X className="h-3.5 w-3.5" /></Button>}</div></Field>
+        <Field label="Perfil do Contato"><div className="flex gap-2"><Select value={contactProfileId} onChange={(e) => setContactProfileId(e.target.value)}><option value="">- Sem perfil -</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.nome}</option>)}</Select><Button variant="outline" size="sm" onClick={profilesManager.show} title="Gerenciar perfis"><Plus className="h-3.5 w-3.5" /></Button>{contactProfileId && <Button variant="ghost" size="sm" onClick={() => setContactProfileId("")} title="Remover perfil"><X className="h-3.5 w-3.5" /></Button>}</div></Field>
         <Field label="Instância"><InstanceMultiSelect instances={instances} selectedIds={instanceIds} onChange={setInstanceIds} /></Field>
         <Field label="Etiquetas"><TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} /></Field>
         {customFieldDefinitions.map((field) => (
@@ -812,58 +825,57 @@ function InstanceMultiSelect({
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute bottom-full z-[80] mb-2 max-h-72 w-full overflow-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
-          {instances.map((instance) => {
-            const active = [instance.value, instance.id, instance.externalReference].some(
-              (key) => key && selectedIds.includes(key),
-            );
-            return (
-              <button
-                key={instance.value}
-                type="button"
-                onClick={() => toggle(instance.value)}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
-              >
-                <span
-                  className={`flex h-4 w-4 items-center justify-center rounded border ${
-                    active ? "border-primary bg-primary text-white" : "border-border"
-                  }`}
+        <div className="absolute bottom-full z-[90] mb-2 flex max-h-[min(22rem,calc(100vh-10rem))] w-full flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl">
+          <div className="min-h-0 overflow-auto p-1">
+            {instances.map((instance) => {
+              const active = [instance.value, instance.id, instance.externalReference].some(
+                (key) => key && selectedIds.includes(key),
+              );
+              return (
+                <button
+                  key={instance.value}
+                  type="button"
+                  onClick={() => toggle(instance.value)}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
                 >
-                  {active && <Check className="h-3 w-3" />}
-                </span>
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: instance.color ?? "#64748b" }}
-                />
-                <span className="truncate">{instance.name}</span>
-              </button>
-            );
-          })}
-          {instances.length === 0 && (
-            <div className="px-2 py-3 text-center text-xs text-muted-foreground">
-              Nenhuma instancia cadastrada.
-            </div>
-          )}
-          {selectedIds.length > 0 && (
+                  <span
+                    className={`flex h-4 w-4 items-center justify-center rounded border ${
+                      active ? "border-primary bg-primary text-white" : "border-border"
+                    }`}
+                  >
+                    {active && <Check className="h-3 w-3" />}
+                  </span>
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: instance.color ?? "#64748b" }}
+                  />
+                  <span className="truncate">{instance.name}</span>
+                </button>
+              );
+            })}
+            {instances.length === 0 && (
+              <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+                Nenhuma instância cadastrada.
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2 border-t border-border bg-popover p-2">
             <button
               type="button"
-              onClick={() => {
-                onChange([]);
-                setOpen(false);
-              }}
-              className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-destructive/30 bg-white px-2 py-2 text-xs font-medium text-destructive hover:bg-destructive/5"
+              onClick={() => onChange([])}
+              disabled={selectedIds.length === 0}
+              className="flex items-center justify-center gap-1 rounded-md border border-destructive/30 bg-white px-2 py-2 text-xs font-medium text-destructive hover:bg-destructive/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <X className="h-3 w-3" /> Limpar selecao
+              <X className="h-3 w-3" /> Limpar seleção
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-primary/30 bg-white px-2 py-2 text-xs font-medium text-primary hover:bg-primary/5"
-          >
-            <Check className="h-3 w-3" /> Confirmar selecao
-          </button>
-
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="flex items-center justify-center gap-1 rounded-md border border-primary/30 bg-white px-2 py-2 text-xs font-medium text-primary hover:bg-primary/5"
+            >
+              <Check className="h-3 w-3" /> Confirmar seleção
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -921,59 +933,57 @@ function TagMultiSelect({
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute bottom-full z-[80] mb-2 max-h-72 w-full overflow-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
-          {tags.map((tag) => {
-            const active = selectedIds.includes(tag.id);
-            return (
-              <button
-                key={tag.id}
-                type="button"
-                onClick={() => toggle(tag.id)}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
-              >
-                <span
-                  className={`flex h-4 w-4 items-center justify-center rounded border ${
-                    active ? "border-primary bg-primary text-white" : "border-border"
-                  }`}
+        <div className="absolute bottom-full right-0 z-[90] mb-2 flex max-h-[min(24rem,calc(100vh-10rem))] w-[min(42rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl">
+          <div className="grid min-h-0 grid-cols-1 gap-1 overflow-auto p-1 sm:grid-cols-2">
+            {tags.map((tag) => {
+              const active = selectedIds.includes(tag.id);
+              return (
+                <button
+                  key={tag.id}
+                  type="button"
+                  onClick={() => toggle(tag.id)}
+                  className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
                 >
-                  {active && <Check className="h-3 w-3" />}
-                </span>
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.cor }} />
-                <span className="truncate">{tag.nome}</span>
-              </button>
-            );
-          })}
-          {tags.length === 0 && (
-            <div className="px-2 py-3 text-center text-xs text-muted-foreground">
-              Nenhuma etiqueta cadastrada.
-            </div>
-          )}
-          {selectedIds.length > 0 && (
+                  <span
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                      active ? "border-primary bg-primary text-white" : "border-border"
+                    }`}
+                  >
+                    {active && <Check className="h-3 w-3" />}
+                  </span>
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tag.cor }} />
+                  <span className="truncate">{tag.nome}</span>
+                </button>
+              );
+            })}
+            {tags.length === 0 && (
+              <div className="col-span-full px-2 py-3 text-center text-xs text-muted-foreground">
+                Nenhuma etiqueta cadastrada.
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2 border-t border-border bg-popover p-2">
             <button
               type="button"
-              onClick={() => {
-                onChange([]);
-                setOpen(false);
-              }}
-              className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-destructive/30 bg-white px-2 py-2 text-xs font-medium text-destructive hover:bg-destructive/5"
+              onClick={() => onChange([])}
+              disabled={selectedIds.length === 0}
+              className="flex items-center justify-center gap-1 rounded-md border border-destructive/30 bg-white px-2 py-2 text-xs font-medium text-destructive hover:bg-destructive/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <X className="h-3 w-3" /> Limpar selecao
+              <X className="h-3 w-3" /> Limpar seleção
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-primary/30 bg-white px-2 py-2 text-xs font-medium text-primary hover:bg-primary/5"
-          >
-            <Check className="h-3 w-3" /> Confirmar selecao
-          </button>
-
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="flex items-center justify-center gap-1 rounded-md border border-primary/30 bg-white px-2 py-2 text-xs font-medium text-primary hover:bg-primary/5"
+            >
+              <Check className="h-3 w-3" /> Confirmar seleção
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
 }
-
 function CustomContactFieldInput({ field, value, onChange }: { field: ContactCustomField; value: string | boolean | undefined; onChange: (value: string | boolean) => void }) {
   if (field.type === "checkbox") {
     return (
@@ -1045,6 +1055,92 @@ function valueAt(row: string[], index: Map<string, number>, names: string[]) {
   }
   return "";
 }
+function splitPhoneByCountry(value: string) {
+  const digits = onlyDigits(value);
+  const match = COUNTRY_CODES
+    .slice()
+    .sort((a, b) => b.code.length - a.code.length)
+    .find((country) => digits.startsWith(country.code) && digits.length > country.code.length + 8);
+  return {
+    countryCode: match?.code ?? "55",
+    localPhone: match ? digits.slice(match.code.length) : digits,
+  };
+}
+
+function formatPhoneForSubmit(value: string, countryCode = "55") {
+  const digits = onlyDigits(value);
+  if (!digits) return value;
+  const code = onlyDigits(countryCode) || "55";
+  return digits.startsWith(code) ? `+${digits}` : `+${code}${digits}`;
+}
+
+function formatPhoneWithDdi(value: string) {
+  const parsed = splitPhoneByCountry(value);
+  const local = parsed.countryCode === "55" ? maskBrazilPhone(parsed.localPhone) : parsed.localPhone;
+  return `+${parsed.countryCode} ${local}`.trim();
+}
+
+function CountryCodeSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const selected = COUNTRY_CODES.find((country) => country.code === value) ?? COUNTRY_CODES[0];
+  const filtered = COUNTRY_CODES.filter((country) =>
+    `${country.country} ${country.code} ${country.flag}`.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  React.useEffect(() => {
+    if (!open) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    return () => document.removeEventListener("pointerdown", closeOnOutside);
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative w-32 shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 text-sm outline-none transition focus:border-primary"
+      >
+        <span>{selected.flag} +{selected.code}</span>
+        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-0 z-[100] mb-2 w-72 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl">
+          <div className="flex items-center gap-2 border-b border-border px-2">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Buscar país ou DDI..."
+              className="w-full bg-transparent py-2 text-sm outline-none"
+            />
+          </div>
+          <div className="max-h-56 overflow-auto p-1">
+            {filtered.map((country) => (
+              <button
+                key={country.code}
+                type="button"
+                onClick={() => {
+                  onChange(country.code);
+                  setOpen(false);
+                  setQuery("");
+                }}
+                className="flex w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
+              >
+                <span className="truncate">{country.flag} {country.country}</span>
+                <span className="font-mono text-xs text-muted-foreground">+{country.code}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 type CustomerFormData = Partial<Customer> & { nome: string };
 
 function CustomerFormModal({
@@ -1112,7 +1208,7 @@ function CustomerFormModal({
             <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
           )}
         </Field>
-        <Field label="Telefone">
+        <Field label="WhatsApp">
           <Input
             value={form.telefone ?? ""}
             onChange={(event) => setForm({ ...form, telefone: maskBrazilPhone(event.target.value) })}
@@ -1202,6 +1298,7 @@ function departmentPayload(data: DepartamentoFormData) {
 function contactPayload(data: {
   nome: string;
   telefone: string;
+  countryCode?: string;
   customer_id: string | null;
   email: string | null;
   contactDepartmentId: string | null;
@@ -1212,7 +1309,7 @@ function contactPayload(data: {
 }) {
   return {
     name: data.nome,
-    phone: data.telefone,
+    phone: formatPhoneForSubmit(data.telefone, data.countryCode),
     customerId: data.customer_id,
     email: data.email,
     contactDepartmentId: data.contactDepartmentId,
@@ -1223,6 +1320,12 @@ function contactPayload(data: {
     customFields: data.customFields ?? {},
   };
 }
+
+
+
+
+
+
 
 
 
