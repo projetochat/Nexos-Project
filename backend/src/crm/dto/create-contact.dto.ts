@@ -34,11 +34,13 @@ export class CreateContactDto {
   departmentId?: string | null;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @MaxLength(120)
   contactDepartmentId?: string | null;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @MaxLength(120)
   contactProfileId?: string | null;
 
   @IsOptional()

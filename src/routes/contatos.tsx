@@ -218,7 +218,7 @@ function ContatosPage() {
                 <th className="px-4 py-3 font-medium">Cliente</th>
                 <th className="px-4 py-3 font-medium">Departamento</th>
                 <th className="px-4 py-3 font-medium">Etiquetas</th>
-                <th className="px-4 py-3 font-medium text-right">Acoes</th>
+                <th className="px-4 py-3 font-medium text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -857,7 +857,7 @@ function CustomersManagerModal({
                 <th className="px-4 py-3 font-medium">Contato responsavel</th>
                 <th className="px-4 py-3 font-medium">E-mail</th>
                 <th className="px-4 py-3 font-medium">Telefone</th>
-                <th className="px-4 py-3 font-medium text-right">Acoes</th>
+                <th className="px-4 py-3 font-medium text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -1420,7 +1420,21 @@ function InstanceMultiSelect({
   onChange: (ids: string[]) => void;
 }) {
   const [open, setOpen] = React.useState(false);
-  const selectedInstances = instances.filter((instance) => selectedIds.includes(instance.value));
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const selectedInstances = instances.filter((instance) =>
+    [instance.value, instance.id, instance.externalReference].some(
+      (key) => key && selectedIds.includes(key),
+    ),
+  );
+
+  React.useEffect(() => {
+    if (!open) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    return () => document.removeEventListener("pointerdown", closeOnOutside);
+  }, [open]);
 
   const toggle = (id: string) => {
     onChange(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]);
@@ -1428,7 +1442,7 @@ function InstanceMultiSelect({
   };
 
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
@@ -1455,9 +1469,11 @@ function InstanceMultiSelect({
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute bottom-full z-50 mb-2 max-h-72 w-full overflow-auto rounded-lg border border-border bg-surface-0 p-1 shadow-xl">
+        <div className="absolute bottom-full z-[80] mb-2 max-h-72 w-full overflow-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
           {instances.map((instance) => {
-            const active = selectedIds.includes(instance.value);
+            const active = [instance.value, instance.id, instance.externalReference].some(
+              (key) => key && selectedIds.includes(key),
+            );
             return (
               <button
                 key={instance.value}
@@ -1513,7 +1529,17 @@ function TagMultiSelect({
   onChange: (ids: string[]) => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  const rootRef = React.useRef<HTMLDivElement>(null);
   const selectedTags = tags.filter((tag) => selectedIds.includes(tag.id));
+
+  React.useEffect(() => {
+    if (!open) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    return () => document.removeEventListener("pointerdown", closeOnOutside);
+  }, [open]);
 
   const toggle = (id: string) => {
     onChange(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]);
@@ -1521,7 +1547,7 @@ function TagMultiSelect({
   };
 
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
@@ -1545,7 +1571,7 @@ function TagMultiSelect({
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute bottom-full z-50 mb-2 max-h-72 w-full overflow-auto rounded-lg border border-border bg-surface-0 p-1 shadow-xl">
+        <div className="absolute bottom-full z-[80] mb-2 max-h-72 w-full overflow-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
           {tags.map((tag) => {
             const active = selectedIds.includes(tag.id);
             return (

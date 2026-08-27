@@ -73,6 +73,7 @@ type MembershipWithRelations = {
     id: string;
     email: string;
     name: string;
+    passwordHash: string;
     avatarUrl?: string | null;
     status: string;
     platformRole: string;

@@ -171,7 +171,7 @@ function EmpresasSaaS() {
                   <th className="pb-2">Usuarios</th>
                   <th className="pb-2">Connections</th>
                   <th className="pb-2">Criado</th>
-                  <th className="pb-2 text-right">Acoes</th>
+                  <th className="pb-2 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>

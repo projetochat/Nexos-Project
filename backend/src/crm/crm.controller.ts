@@ -684,15 +684,37 @@ export class CrmController {
         throw new BadRequestException("Perfil do contato inexistente para este tenant.");
     }
 
-    const instanceIds = [...new Set((dto.instanceIds ?? []).map((id) => id.trim()).filter(Boolean))];
-    if (instanceIds.length) {
-      const count = await this.prisma.messagingConnection.count({
-        where: { tenantId, id: { in: instanceIds }, archivedAt: null },
+    const requestedInstances = [
+      ...new Set((dto.instanceIds ?? []).map((id) => id.trim()).filter(Boolean)),
+    ];
+    const fallbackInstance = cleanNullable(dto.instance);
+    const instanceKeys = fallbackInstance
+      ? [...new Set([...requestedInstances, fallbackInstance])]
+      : requestedInstances;
+    let instanceIds: string[] = [];
+    if (instanceKeys.length) {
+      const connections = await this.prisma.messagingConnection.findMany({
+        where: {
+          tenantId,
+          archivedAt: null,
+          OR: [{ id: { in: instanceKeys } }, { externalReference: { in: instanceKeys } }],
+        },
+        select: { id: true, externalReference: true },
       });
-      if (count !== instanceIds.length)
+      const connectionByKey = new Map<string, string>();
+      for (const connection of connections) {
+        connectionByKey.set(connection.id, connection.id);
+        if (connection.externalReference) connectionByKey.set(connection.externalReference, connection.id);
+      }
+      instanceIds = requestedInstances.map((key) => connectionByKey.get(key)).filter(Boolean) as string[];
+      if (!requestedInstances.length && fallbackInstance) {
+        const resolvedFallback = connectionByKey.get(fallbackInstance);
+        if (resolvedFallback) instanceIds = [resolvedFallback];
+      }
+      const missing = instanceKeys.some((key) => !connectionByKey.has(key));
+      if (missing)
         throw new BadRequestException("Instancia inexistente para este tenant.");
     }
-    const fallbackInstance = cleanNullable(dto.instance);
     const instance = instanceIds[0] ?? fallbackInstance;
 
     const tagIds = [...new Set(dto.tagIds ?? [])];
