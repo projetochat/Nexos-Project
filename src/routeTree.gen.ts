@@ -47,6 +47,7 @@ import { Route as ConfiguracoesIntegracoesRouteImport } from './routes/configura
 import { Route as ConfiguracoesHorariosRouteImport } from './routes/configuracoes.horarios'
 import { Route as ConfiguracoesGeralRouteImport } from './routes/configuracoes.geral'
 import { Route as ConfiguracoesEmpresaRouteImport } from './routes/configuracoes.empresa'
+import { Route as ConfiguracoesCamposContatoRouteImport } from './routes/configuracoes.campos-contato'
 import { Route as AtendimentoPerfilRouteImport } from './routes/atendimento.perfil'
 import { Route as AtendimentoInboxRouteImport } from './routes/atendimento.inbox'
 import { Route as AtendimentoHistoricoRouteImport } from './routes/atendimento.historico'
@@ -255,6 +256,12 @@ const ConfiguracoesEmpresaRoute = ConfiguracoesEmpresaRouteImport.update({
   path: '/empresa',
   getParentRoute: () => ConfiguracoesRoute,
 } as any)
+const ConfiguracoesCamposContatoRoute =
+  ConfiguracoesCamposContatoRouteImport.update({
+    id: '/campos-contato',
+    path: '/campos-contato',
+    getParentRoute: () => ConfiguracoesRoute,
+  } as any)
 const AtendimentoPerfilRoute = AtendimentoPerfilRouteImport.update({
   id: '/perfil',
   path: '/perfil',
@@ -377,6 +384,7 @@ export interface FileRoutesByFullPath {
   '/atendimento/historico': typeof AtendimentoHistoricoRoute
   '/atendimento/inbox': typeof AtendimentoInboxRoute
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
+  '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/horarios': typeof ConfiguracoesHorariosRoute
@@ -429,6 +437,7 @@ export interface FileRoutesByTo {
   '/atendimento/historico': typeof AtendimentoHistoricoRoute
   '/atendimento/inbox': typeof AtendimentoInboxRoute
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
+  '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/horarios': typeof ConfiguracoesHorariosRoute
@@ -486,6 +495,7 @@ export interface FileRoutesById {
   '/atendimento/historico': typeof AtendimentoHistoricoRoute
   '/atendimento/inbox': typeof AtendimentoInboxRoute
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
+  '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/horarios': typeof ConfiguracoesHorariosRoute
@@ -544,6 +554,7 @@ export interface FileRouteTypes {
     | '/atendimento/historico'
     | '/atendimento/inbox'
     | '/atendimento/perfil'
+    | '/configuracoes/campos-contato'
     | '/configuracoes/empresa'
     | '/configuracoes/geral'
     | '/configuracoes/horarios'
@@ -596,6 +607,7 @@ export interface FileRouteTypes {
     | '/atendimento/historico'
     | '/atendimento/inbox'
     | '/atendimento/perfil'
+    | '/configuracoes/campos-contato'
     | '/configuracoes/empresa'
     | '/configuracoes/geral'
     | '/configuracoes/horarios'
@@ -652,6 +664,7 @@ export interface FileRouteTypes {
     | '/atendimento/historico'
     | '/atendimento/inbox'
     | '/atendimento/perfil'
+    | '/configuracoes/campos-contato'
     | '/configuracoes/empresa'
     | '/configuracoes/geral'
     | '/configuracoes/horarios'
@@ -964,6 +977,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfiguracoesEmpresaRouteImport
       parentRoute: typeof ConfiguracoesRoute
     }
+    '/configuracoes/campos-contato': {
+      id: '/configuracoes/campos-contato'
+      path: '/campos-contato'
+      fullPath: '/configuracoes/campos-contato'
+      preLoaderRoute: typeof ConfiguracoesCamposContatoRouteImport
+      parentRoute: typeof ConfiguracoesRoute
+    }
     '/atendimento/perfil': {
       id: '/atendimento/perfil'
       path: '/perfil'
@@ -1144,6 +1164,7 @@ const AtendimentoRouteWithChildren = AtendimentoRoute._addFileChildren(
 )
 
 interface ConfiguracoesRouteChildren {
+  ConfiguracoesCamposContatoRoute: typeof ConfiguracoesCamposContatoRoute
   ConfiguracoesEmpresaRoute: typeof ConfiguracoesEmpresaRoute
   ConfiguracoesGeralRoute: typeof ConfiguracoesGeralRoute
   ConfiguracoesHorariosRoute: typeof ConfiguracoesHorariosRoute
@@ -1156,6 +1177,7 @@ interface ConfiguracoesRouteChildren {
 }
 
 const ConfiguracoesRouteChildren: ConfiguracoesRouteChildren = {
+  ConfiguracoesCamposContatoRoute: ConfiguracoesCamposContatoRoute,
   ConfiguracoesEmpresaRoute: ConfiguracoesEmpresaRoute,
   ConfiguracoesGeralRoute: ConfiguracoesGeralRoute,
   ConfiguracoesHorariosRoute: ConfiguracoesHorariosRoute,

@@ -77,6 +77,13 @@ enum ContactCompanyRole {
   DIRETORIA
 }
 
+enum ContactCustomFieldType {
+  TEXT
+  NUMBER
+  CHECKBOX
+  LIST
+}
+
 enum ConversationStatus {
   ABERTA
   EM_ANDAMENTO
@@ -314,6 +321,7 @@ model Tenant {
   contacts                    Contact[]
   contactDepartments          ContactDepartment[]
   contactProfiles             ContactProfile[]
+  contactCustomFields ContactCustomField[]
   tags                        Tag[]
   quickReplies                QuickReply[]
   conversations               Conversation[]
@@ -696,6 +704,7 @@ model Contact {
   department           Department?                  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   contactDepartment    ContactDepartment?           @relation(fields: [contactDepartmentId], references: [id], onDelete: SetNull)
   contactProfile       ContactProfile?              @relation(fields: [contactProfileId], references: [id], onDelete: SetNull)
+  customFieldValues    ContactCustomFieldValue[]
   tags                 ContactTag[]
   conversations        Conversation[]
   tickets              Ticket[]
@@ -752,6 +761,43 @@ model ContactProfile {
   @@map("contact_profiles")
 }
 
+model ContactCustomField {
+  id             String                 @id @default(uuid())
+  tenantId       String
+  label          String
+  normalizedName String
+  type           ContactCustomFieldType
+  required       Boolean                @default(false)
+  mask           String?
+  note           String?
+  options        String[]               @default([])
+  position       Int                    @default(0)
+  archivedAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  values         ContactCustomFieldValue[]
+
+  @@unique([tenantId, normalizedName])
+  @@index([tenantId, archivedAt, position])
+  @@map("contact_custom_fields")
+}
+
+model ContactCustomFieldValue {
+  id        String             @id @default(uuid())
+  tenantId  String
+  contactId String
+  fieldId   String
+  value     String?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  contact   Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  field     ContactCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, fieldId])
+  @@index([tenantId, fieldId])
+  @@map("contact_custom_field_values")
+}
 model Tag {
   id             String       @id @default(uuid())
   tenantId       String
@@ -1388,3 +1434,4 @@ model CampaignRecipient {
   @@index([tenantId, externalMessageId])
   @@map("campaign_recipients")
 }
+

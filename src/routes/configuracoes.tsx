@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Building2, Users, Shield, Clock, Plug, SlidersHorizontal } from "lucide-react";
+import { Building2, Users, Shield, Clock, Plug, SlidersHorizontal, ListPlus } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { SectionHeader } from "@/components/ui-kit";
 
@@ -14,6 +14,7 @@ const TABS = [
   { to: "/configuracoes/permissoes", label: "Permissões", icon: Shield },
   { to: "/configuracoes/horarios", label: "Horários", icon: Clock },
   { to: "/configuracoes/integracoes", label: "Integrações", icon: Plug },
+  { to: "/configuracoes/campos-contato", label: "Campos de contato", icon: ListPlus },
 ] as const;
 
 function ConfiguracoesLayout() {
@@ -60,3 +61,4 @@ function ConfiguracoesLayout() {
     </AppShell>
   );
 }
+

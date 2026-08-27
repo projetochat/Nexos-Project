@@ -144,6 +144,21 @@ export type ApiContactCatalog = {
   updatedAt?: string;
 };
 
+
+export type ApiContactCustomField = {
+  id: string;
+  tenantId: string;
+  label: string;
+  type: "text" | "number" | "checkbox" | "list";
+  required: boolean;
+  mask: string | null;
+  note: string | null;
+  options: string[];
+  position: number;
+  createdAt?: string;
+  updatedAt?: string;
+  archivedAt?: string | null;
+};
 export type ApiContactInstanceOption = {
   id: string;
   value: string;
@@ -174,6 +189,8 @@ export type ApiContact = {
   instanceIds: string[];
   customer: Pick<ApiCustomer, "id" | "nome" | "cor"> | null;
   tags: ApiTag[];
+  customFields: Record<string, string>;
+  customFieldValues?: Array<{ fieldId: string; label: string; type: string; value: string | null }>;
   lifecycle?: "created" | "restored";
 };
 
@@ -859,6 +876,18 @@ export const crmApi = {
     apiRequest<ApiContact>(`/crm/contacts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteContact: (id: string) =>
     apiRequest<ApiContact>(`/crm/contacts/${id}`, { method: "DELETE" }),
+  bulkUpdateContacts: (data: {
+    contactIds: string[];
+    customerId?: string | null;
+    contactDepartmentId?: string | null;
+    contactProfileId?: string | null;
+    tagIds?: string[];
+    delete?: boolean;
+  }) =>
+    apiRequest<{ updated: number }>("/crm/contacts/bulk", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   listTags: () => apiRequest<ApiTag[]>("/crm/tags"),
   createTag: (data: { name: string; color?: string }) =>
     apiRequest<ApiTag>("/tags", { method: "POST", body: JSON.stringify(data) }),
@@ -910,6 +939,13 @@ export const crmApi = {
     }),
   deleteContactProfile: (id: string) =>
     apiRequest<ApiContactCatalog>(`/crm/contact-profiles/${id}`, { method: "DELETE" }),
+  listContactCustomFields: () => apiRequest<ApiContactCustomField[]>("/crm/contact-custom-fields"),
+  createContactCustomField: (data: { label: string; type: ApiContactCustomField["type"]; required?: boolean; mask?: string | null; note?: string | null; options?: string[] }) =>
+    apiRequest<ApiContactCustomField>("/crm/contact-custom-fields", { method: "POST", body: JSON.stringify(data) }),
+  updateContactCustomField: (id: string, data: Partial<{ label: string; type: ApiContactCustomField["type"]; required: boolean; mask: string | null; note: string | null; options: string[] }>) =>
+    apiRequest<ApiContactCustomField>(`/crm/contact-custom-fields/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteContactCustomField: (id: string) =>
+    apiRequest<ApiContactCustomField>(`/crm/contact-custom-fields/${id}`, { method: "DELETE" }),
 };
 
 export const quickReplyApi = {
@@ -1770,3 +1806,5 @@ function queryString(params: Record<string, string | number | boolean | undefine
   const serialized = search.toString();
   return serialized ? `?${serialized}` : "";
 }
+
+

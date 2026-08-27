@@ -3,6 +3,7 @@ import {
   IsArray,
   IsEmail,
   IsIn,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -69,4 +70,9 @@ export class CreateContactDto {
   @ArrayMaxSize(20)
   @IsUUID(undefined, { each: true })
   tagIds?: string[];
+
+  @IsOptional()
+  @IsObject()
+  customFields?: Record<string, string | number | boolean | null>;
 }
+

@@ -13,13 +13,13 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { IsOptional, IsString, Length, MaxLength } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsOptional, IsString, IsUUID, Length, MaxLength } from "class-validator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
-import { ContactCompanyRole, Prisma } from "../generated/prisma";
+import { ContactCompanyRole, ContactCustomFieldType, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
@@ -48,6 +48,68 @@ class ContactCatalogDto {
   color?: string;
 }
 
+class ContactCustomFieldDto {
+  @IsOptional()
+  @IsString()
+  @Length(2, 120)
+  label!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  type?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  required?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  mask?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MaxLength(120, { each: true })
+  options?: string[];
+}
+class BulkUpdateContactsDto {
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @IsUUID(undefined, { each: true })
+  contactIds!: string[];
+
+  @IsOptional()
+  @IsUUID()
+  customerId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  contactDepartmentId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  contactProfileId?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsUUID(undefined, { each: true })
+  tagIds?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  delete?: boolean;
+}
 const customerInclude = {
   contacts: { where: { archivedAt: null }, select: { id: true } },
 } satisfies Prisma.CustomerInclude;
@@ -57,6 +119,7 @@ const contactInclude = {
   contactDepartment: { select: { id: true, name: true, color: true } },
   contactProfile: { select: { id: true, name: true, color: true } },
   tags: { include: { tag: true } },
+  customFieldValues: { include: { field: true } },
 } satisfies Prisma.ContactInclude;
 
 @Controller("crm")
@@ -292,6 +355,117 @@ export class CrmController {
     };
   }
 
+  @Get("contact-custom-fields")
+  @RequirePermissions("crm.read")
+  async listContactCustomFields(@CurrentUser() current: AuthenticatedUser) {
+    const fields = await this.prisma.contactCustomField.findMany({
+      where: { tenantId: current.tenantId, archivedAt: null },
+      orderBy: [{ position: "asc" }, { label: "asc" }],
+    });
+    return fields.map((field) => this.serializeContactCustomField(field));
+  }
+
+  @Post("contact-custom-fields")
+  @RequirePermissions("crm.manage")
+  async createContactCustomField(
+    @Body() dto: ContactCustomFieldDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const data = this.prepareContactCustomField(dto);
+    const position = await this.prisma.contactCustomField.count({
+      where: { tenantId: current.tenantId, archivedAt: null },
+    });
+    const field = await this.prisma.contactCustomField.create({
+      data: {
+        tenantId: current.tenantId,
+        label: data.label!,
+        normalizedName: data.normalizedName!,
+        type: data.type!,
+        required: data.required ?? false,
+        mask: data.mask,
+        note: data.note,
+        options: data.options,
+        position,
+      },
+    });
+    return this.serializeContactCustomField(field);
+  }
+
+  @Patch("contact-custom-fields/:id")
+  @RequirePermissions("crm.manage")
+  async updateContactCustomField(
+    @Param("id") id: string,
+    @Body() dto: ContactCustomFieldDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findContactCustomFieldOrThrow(id, current.tenantId);
+    const field = await this.prisma.contactCustomField.update({
+      where: { id },
+      data: this.prepareContactCustomField(dto, true),
+    });
+    return this.serializeContactCustomField(field);
+  }
+
+  @Delete("contact-custom-fields/:id")
+  @RequirePermissions("crm.manage")
+  async deleteContactCustomField(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    await this.findContactCustomFieldOrThrow(id, current.tenantId);
+    const field = await this.prisma.contactCustomField.update({
+      where: { id },
+      data: { archivedAt: new Date() },
+    });
+    return this.serializeContactCustomField(field);
+  }
+
+  @Patch("contacts/bulk")
+  @RequirePermissions("crm.manage")
+  async bulkUpdateContacts(
+    @Body() dto: BulkUpdateContactsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const contactIds = Array.from(new Set(dto.contactIds ?? []));
+    if (!contactIds.length) throw new BadRequestException("Selecione ao menos um contato.");
+
+    const total = await this.prisma.contact.count({
+      where: { tenantId: current.tenantId, id: { in: contactIds }, archivedAt: null },
+    });
+    if (total !== contactIds.length) throw new BadRequestException("Alguns contatos nao foram encontrados.");
+
+    if (dto.delete) {
+      await this.prisma.contact.updateMany({
+        where: { tenantId: current.tenantId, id: { in: contactIds } },
+        data: { archivedAt: new Date() },
+      });
+      return { updated: total, deleted: true };
+    }
+
+    const links = await this.resolveContactLinks(dto, current.tenantId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.contact.updateMany({
+        where: { tenantId: current.tenantId, id: { in: contactIds } },
+        data: {
+          customerId: dto.customerId === undefined ? undefined : links.customerId,
+          contactDepartmentId:
+            dto.contactDepartmentId === undefined ? undefined : links.contactDepartmentId,
+          contactProfileId: dto.contactProfileId === undefined ? undefined : links.contactProfileId,
+          departmentName: dto.contactDepartmentId === undefined ? undefined : links.departmentName,
+        },
+      });
+
+      if (dto.tagIds !== undefined) {
+        await tx.contactTag.deleteMany({ where: { tenantId: current.tenantId, contactId: { in: contactIds } } });
+        if (links.tagIds.length) {
+          await tx.contactTag.createMany({
+            data: contactIds.flatMap((contactId) =>
+              links.tagIds.map((tagId) => ({ tenantId: current.tenantId, contactId, tagId })),
+            ),
+          });
+        }
+      }
+    });
+
+    return { updated: total, deleted: false };
+  }
   @Get("contacts/:id")
   @RequirePermissions("crm.read")
   async findContact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
@@ -464,6 +638,7 @@ export class CrmController {
             })),
           });
         }
+        await this.saveContactCustomFields(tx, current.tenantId, existing.id, dto.customFields);
         return tx.contact.update({
           where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
           data: {
@@ -487,8 +662,9 @@ export class CrmController {
       return this.serializeContact(contact, { lifecycle: "restored" });
     }
     try {
-      const contact = await this.prisma.contact.create({
-        data: {
+      const contact = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.contact.create({
+          data: {
           tenantId: current.tenantId,
           name: dto.name.trim(),
           phone: dto.phone.trim(),
@@ -510,7 +686,10 @@ export class CrmController {
               }
             : undefined,
         },
-        include: contactInclude,
+          include: contactInclude,
+        });
+        await this.saveContactCustomFields(tx, current.tenantId, created.id, dto.customFields);
+        return tx.contact.findUniqueOrThrow({ where: { id: created.id }, include: contactInclude });
       });
       return this.serializeContact(contact, { lifecycle: "created" });
     } catch (error) {
@@ -541,6 +720,7 @@ export class CrmController {
             });
           }
         }
+        await this.saveContactCustomFields(tx, current.tenantId, id, dto.customFields);
         return tx.contact.update({
           where: { id },
           data: {
@@ -752,6 +932,83 @@ export class CrmController {
     if (!item) throw new NotFoundException("Item nao encontrado.");
   }
 
+  private prepareContactCustomField(dto: ContactCustomFieldDto, partial = false) {
+    const label = dto.label?.trim();
+    if (!partial && !label) throw new BadRequestException("Informe o nome do campo.");
+    const type = dto.type ? parseContactCustomFieldType(dto.type) : partial ? undefined : ContactCustomFieldType.TEXT;
+    const options = type === ContactCustomFieldType.LIST ? unique((dto.options ?? []).map((item) => item.trim()).filter(Boolean)) : [];
+    if (type === ContactCustomFieldType.LIST && options.length === 0) {
+      throw new BadRequestException("Informe ao menos uma opcao para a lista.");
+    }
+    return {
+      label: label || undefined,
+      normalizedName: label ? normalizeCatalogName(label) : undefined,
+      type,
+      required: dto.required,
+      mask: type === ContactCustomFieldType.NUMBER ? cleanNullable(dto.mask) ?? "#.###,##" : null,
+      note: nullableUpdate(dto.note),
+      options,
+    };
+  }
+
+  private async findContactCustomFieldOrThrow(id: string, tenantId: string) {
+    const field = await this.prisma.contactCustomField.findFirst({ where: { id, tenantId, archivedAt: null } });
+    if (!field) throw new NotFoundException("Campo adicional nao encontrado.");
+    return field;
+  }
+
+  private async saveContactCustomFields(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    contactId: string,
+    values?: Record<string, string | number | boolean | null>,
+  ) {
+    if (values === undefined) return;
+    const fields = await tx.contactCustomField.findMany({ where: { tenantId, archivedAt: null } });
+    for (const field of fields) {
+      const raw = values[field.id];
+      const value = raw === undefined || raw === null ? "" : String(raw).trim();
+      if (field.required && !value) throw new BadRequestException(`Campo obrigatorio: ${field.label}.`);
+      if (field.type === ContactCustomFieldType.LIST && value && !field.options.includes(value)) {
+        throw new BadRequestException(`Opcao invalida para ${field.label}.`);
+      }
+      await tx.contactCustomFieldValue.upsert({
+        where: { contactId_fieldId: { contactId, fieldId: field.id } },
+        create: { tenantId, contactId, fieldId: field.id, value },
+        update: { value },
+      });
+    }
+  }
+
+  private serializeContactCustomField(field: {
+    id: string;
+    tenantId: string;
+    label: string;
+    type: ContactCustomFieldType;
+    required: boolean;
+    mask: string | null;
+    note: string | null;
+    options: string[];
+    position: number;
+    createdAt?: Date;
+    updatedAt?: Date;
+    archivedAt?: Date | null;
+  }) {
+    return {
+      id: field.id,
+      tenantId: field.tenantId,
+      label: field.label,
+      type: field.type.toLowerCase(),
+      required: field.required,
+      mask: field.mask,
+      note: field.note,
+      options: field.options,
+      position: field.position,
+      createdAt: field.createdAt,
+      updatedAt: field.updatedAt,
+      archivedAt: field.archivedAt,
+    };
+  }
   private serializeCustomer(
     customer: Prisma.CustomerGetPayload<{ include: typeof customerInclude }>,
   ) {
@@ -813,6 +1070,13 @@ export class CrmController {
         ? { id: contact.customer.id, nome: contact.customer.name, cor: contact.customer.color }
         : null,
       tags: contact.tags.map((item) => this.serializeTag(item.tag)),
+      customFields: Object.fromEntries(contact.customFieldValues.map((item) => [item.fieldId, item.value])),
+      customFieldValues: contact.customFieldValues.map((item) => ({
+        fieldId: item.fieldId,
+        label: item.field.label,
+        type: item.field.type,
+        value: item.value,
+      })),
       lifecycle: meta?.lifecycle,
       createdAt: contact.createdAt,
       updatedAt: contact.updatedAt,
@@ -855,11 +1119,22 @@ export class CrmController {
   }
 }
 
+function parseContactCustomFieldType(value: string) {
+  const normalized = value.trim().toUpperCase();
+  if (["TEXT", "NUMBER", "CHECKBOX", "LIST"].includes(normalized)) {
+    return normalized as ContactCustomFieldType;
+  }
+  throw new BadRequestException("Tipo de campo invalido.");
+}
+
+function unique<T>(items: T[]) {
+  return [...new Set(items)];
+}
 function pagination(query: PaginationDto) {
   const page = Number(query.page ?? 1);
   const pageSize = Number(query.pageSize ?? 25);
   if (!Number.isInteger(page) || page < 1) throw new BadRequestException("Pagina invalida.");
-  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 1000) {
     throw new BadRequestException("Tamanho de pagina invalido.");
   }
   return { page, pageSize, skip: (page - 1) * pageSize };
@@ -906,3 +1181,10 @@ function handlePrismaError(error: unknown): never {
 function isPrismaError(error: unknown, code: string) {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
+
+
+
+
+
+
+
