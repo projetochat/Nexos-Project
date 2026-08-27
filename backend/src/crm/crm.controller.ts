@@ -13,7 +13,16 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { ArrayMaxSize, IsArray, IsBoolean, IsOptional, IsString, IsUUID, Length, MaxLength } from "class-validator";
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  MaxLength,
+} from "class-validator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -317,7 +326,11 @@ export class CrmController {
   async contactOptions(@CurrentUser() current: AuthenticatedUser) {
     const [connections, departments, profiles, tags] = await this.prisma.$transaction([
       this.prisma.messagingConnection.findMany({
-        where: { tenantId: current.tenantId, archivedAt: null, status: { not: "REMOVED" } },
+        where: {
+          tenantId: current.tenantId,
+          archivedAt: null,
+          status: { in: ["CONNECTED", "DISCONNECTED"] },
+        },
         orderBy: { name: "asc" },
         select: {
           id: true,
@@ -325,6 +338,7 @@ export class CrmController {
           color: true,
           externalReference: true,
           ownerPhoneNormalized: true,
+          status: true,
         },
       }),
       this.prisma.contactDepartment.findMany({
@@ -348,6 +362,7 @@ export class CrmController {
         color: connection.color,
         externalReference: connection.externalReference,
         ownerPhone: connection.ownerPhoneNormalized,
+        status: connection.status,
       })),
       departments: departments.map((item) => this.serializeContactCatalog(item)),
       profiles: profiles.map((item) => this.serializeContactCatalog(item)),
@@ -408,7 +423,10 @@ export class CrmController {
 
   @Delete("contact-custom-fields/:id")
   @RequirePermissions("crm.manage")
-  async deleteContactCustomField(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+  async deleteContactCustomField(
+    @Param("id") id: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
     await this.findContactCustomFieldOrThrow(id, current.tenantId);
     const field = await this.prisma.contactCustomField.update({
       where: { id },
@@ -429,7 +447,8 @@ export class CrmController {
     const total = await this.prisma.contact.count({
       where: { tenantId: current.tenantId, id: { in: contactIds }, archivedAt: null },
     });
-    if (total !== contactIds.length) throw new BadRequestException("Alguns contatos nao foram encontrados.");
+    if (total !== contactIds.length)
+      throw new BadRequestException("Alguns contatos nao foram encontrados.");
 
     if (dto.delete) {
       await this.prisma.contact.updateMany({
@@ -453,7 +472,9 @@ export class CrmController {
       });
 
       if (dto.tagIds !== undefined) {
-        await tx.contactTag.deleteMany({ where: { tenantId: current.tenantId, contactId: { in: contactIds } } });
+        await tx.contactTag.deleteMany({
+          where: { tenantId: current.tenantId, contactId: { in: contactIds } },
+        });
         if (links.tagIds.length) {
           await tx.contactTag.createMany({
             data: contactIds.flatMap((contactId) =>
@@ -525,7 +546,10 @@ export class CrmController {
 
   @Delete("contact-departments/:id")
   @RequirePermissions("crm.manage")
-  async deleteContactDepartment(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+  async deleteContactDepartment(
+    @Param("id") id: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
     await this.assertContactCatalog("department", id, current.tenantId);
     const item = await this.prisma.contactDepartment.update({
       where: { id },
@@ -665,27 +689,27 @@ export class CrmController {
       const contact = await this.prisma.$transaction(async (tx) => {
         const created = await tx.contact.create({
           data: {
-          tenantId: current.tenantId,
-          name: dto.name.trim(),
-          phone: dto.phone.trim(),
-          normalizedPhone,
-          email: cleanNullable(dto.email),
-          customerId: links.customerId,
-          departmentId: links.departmentId,
-          contactDepartmentId: links.contactDepartmentId,
-          contactProfileId: links.contactProfileId,
-          departmentName: links.departmentName,
-          companyRole: dto.companyRole ?? null,
-          instance: links.instance,
-          instanceIds: links.instanceIds,
-          tags: links.tagIds.length
-            ? {
-                createMany: {
-                  data: links.tagIds.map((tagId) => ({ tenantId: current.tenantId, tagId })),
-                },
-              }
-            : undefined,
-        },
+            tenantId: current.tenantId,
+            name: dto.name.trim(),
+            phone: dto.phone.trim(),
+            normalizedPhone,
+            email: cleanNullable(dto.email),
+            customerId: links.customerId,
+            departmentId: links.departmentId,
+            contactDepartmentId: links.contactDepartmentId,
+            contactProfileId: links.contactProfileId,
+            departmentName: links.departmentName,
+            companyRole: dto.companyRole ?? null,
+            instance: links.instance,
+            instanceIds: links.instanceIds,
+            tags: links.tagIds.length
+              ? {
+                  createMany: {
+                    data: links.tagIds.map((tagId) => ({ tenantId: current.tenantId, tagId })),
+                  },
+                }
+              : undefined,
+          },
           include: contactInclude,
         });
         await this.saveContactCustomFields(tx, current.tenantId, created.id, dto.customFields);
@@ -734,9 +758,13 @@ export class CrmController {
               dto.contactDepartmentId === undefined ? undefined : links.contactDepartmentId,
             contactProfileId:
               dto.contactProfileId === undefined ? undefined : links.contactProfileId,
-            departmentName: dto.contactDepartmentId === undefined ? undefined : links.departmentName,
+            departmentName:
+              dto.contactDepartmentId === undefined ? undefined : links.departmentName,
             companyRole: dto.companyRole === undefined ? undefined : dto.companyRole,
-            instance: dto.instanceIds === undefined && dto.instance === undefined ? undefined : links.instance,
+            instance:
+              dto.instanceIds === undefined && dto.instance === undefined
+                ? undefined
+                : links.instance,
             instanceIds: dto.instanceIds === undefined ? undefined : links.instanceIds,
           },
           include: contactInclude,
@@ -843,9 +871,9 @@ export class CrmController {
       if (!department) throw new BadRequestException("Departamento inexistente para este tenant.");
     }
 
-    let contactDepartment:
-      | Awaited<ReturnType<typeof this.prisma.contactDepartment.findFirst>>
-      | null = null;
+    let contactDepartment: Awaited<
+      ReturnType<typeof this.prisma.contactDepartment.findFirst>
+    > | null = null;
     if (dto.contactDepartmentId) {
       contactDepartment = await this.prisma.contactDepartment.findFirst({
         where: { id: dto.contactDepartmentId, tenantId, archivedAt: null },
@@ -884,16 +912,18 @@ export class CrmController {
       const connectionByKey = new Map<string, string>();
       for (const connection of connections) {
         connectionByKey.set(connection.id, connection.id);
-        if (connection.externalReference) connectionByKey.set(connection.externalReference, connection.id);
+        if (connection.externalReference)
+          connectionByKey.set(connection.externalReference, connection.id);
       }
-      instanceIds = requestedInstances.map((key) => connectionByKey.get(key)).filter(Boolean) as string[];
+      instanceIds = requestedInstances
+        .map((key) => connectionByKey.get(key))
+        .filter(Boolean) as string[];
       if (!requestedInstances.length && fallbackInstance) {
         const resolvedFallback = connectionByKey.get(fallbackInstance);
         if (resolvedFallback) instanceIds = [resolvedFallback];
       }
       const missing = instanceKeys.some((key) => !connectionByKey.has(key));
-      if (missing)
-        throw new BadRequestException("Instancia inexistente para este tenant.");
+      if (missing) throw new BadRequestException("Instancia inexistente para este tenant.");
     }
     const instance = instanceIds[0] ?? fallbackInstance;
 
@@ -916,11 +946,7 @@ export class CrmController {
     };
   }
 
-  private async assertContactCatalog(
-    kind: "department" | "profile",
-    id: string,
-    tenantId: string,
-  ) {
+  private async assertContactCatalog(kind: "department" | "profile", id: string, tenantId: string) {
     const item =
       kind === "department"
         ? await this.prisma.contactDepartment.findFirst({
@@ -935,8 +961,15 @@ export class CrmController {
   private prepareContactCustomField(dto: ContactCustomFieldDto, partial = false) {
     const label = dto.label?.trim();
     if (!partial && !label) throw new BadRequestException("Informe o nome do campo.");
-    const type = dto.type ? parseContactCustomFieldType(dto.type) : partial ? undefined : ContactCustomFieldType.TEXT;
-    const options = type === ContactCustomFieldType.LIST ? unique((dto.options ?? []).map((item) => item.trim()).filter(Boolean)) : [];
+    const type = dto.type
+      ? parseContactCustomFieldType(dto.type)
+      : partial
+        ? undefined
+        : ContactCustomFieldType.TEXT;
+    const options =
+      type === ContactCustomFieldType.LIST
+        ? unique((dto.options ?? []).map((item) => item.trim()).filter(Boolean))
+        : [];
     if (type === ContactCustomFieldType.LIST && options.length === 0) {
       throw new BadRequestException("Informe ao menos uma opcao para a lista.");
     }
@@ -945,14 +978,16 @@ export class CrmController {
       normalizedName: label ? normalizeCatalogName(label) : undefined,
       type,
       required: dto.required,
-      mask: type === ContactCustomFieldType.NUMBER ? cleanNullable(dto.mask) ?? "#.###,##" : null,
+      mask: type === ContactCustomFieldType.NUMBER ? (cleanNullable(dto.mask) ?? "#.###,##") : null,
       note: nullableUpdate(dto.note),
       options,
     };
   }
 
   private async findContactCustomFieldOrThrow(id: string, tenantId: string) {
-    const field = await this.prisma.contactCustomField.findFirst({ where: { id, tenantId, archivedAt: null } });
+    const field = await this.prisma.contactCustomField.findFirst({
+      where: { id, tenantId, archivedAt: null },
+    });
     if (!field) throw new NotFoundException("Campo adicional nao encontrado.");
     return field;
   }
@@ -968,7 +1003,8 @@ export class CrmController {
     for (const field of fields) {
       const raw = values[field.id];
       const value = raw === undefined || raw === null ? "" : String(raw).trim();
-      if (field.required && !value) throw new BadRequestException(`Campo obrigatorio: ${field.label}.`);
+      if (field.required && !value)
+        throw new BadRequestException(`Campo obrigatorio: ${field.label}.`);
       if (field.type === ContactCustomFieldType.LIST && value && !field.options.includes(value)) {
         throw new BadRequestException(`Opcao invalida para ${field.label}.`);
       }
@@ -1070,7 +1106,9 @@ export class CrmController {
         ? { id: contact.customer.id, nome: contact.customer.name, cor: contact.customer.color }
         : null,
       tags: contact.tags.map((item) => this.serializeTag(item.tag)),
-      customFields: Object.fromEntries(contact.customFieldValues.map((item) => [item.fieldId, item.value])),
+      customFields: Object.fromEntries(
+        contact.customFieldValues.map((item) => [item.fieldId, item.value]),
+      ),
       customFieldValues: contact.customFieldValues.map((item) => ({
         fieldId: item.fieldId,
         label: item.field.label,
@@ -1181,10 +1219,3 @@ function handlePrismaError(error: unknown): never {
 function isPrismaError(error: unknown, code: string) {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
-
-
-
-
-
-
-

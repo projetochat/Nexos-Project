@@ -166,6 +166,10 @@ function Page() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {visibleItems.map((connection) => {
               const ProviderIcon = providerIcon(connection.providerType);
+              const canDisconnect =
+                connection.providerType === "evolution" &&
+                (connection.status === "connected" ||
+                  Boolean(connection.ownerPhone || connection.ownerPhoneMasked));
               return (
                 <Card key={connection.id}>
                   <div className="flex items-start justify-between gap-3">
@@ -182,7 +186,9 @@ function Page() {
                           {providerLabel(connection.providerType)}
                         </p>
                         <p className="mt-1 font-mono text-xs text-muted-foreground">
-                          {connection.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : "Sem numero"}
+                          {connection.ownerPhone
+                            ? maskBrazilPhone(connection.ownerPhone)
+                            : "Sem numero"}
                         </p>
                       </div>
                     </div>
@@ -259,7 +265,7 @@ function Page() {
                       variant="ghost"
                       size="sm"
                       onClick={() => logout.mutate(connection.id)}
-                      disabled={connection.providerType !== "evolution"}
+                      disabled={!canDisconnect}
                     >
                       <WifiOff className="h-3.5 w-3.5" /> Desconectar
                     </Button>
@@ -458,7 +464,10 @@ function ConnectionSettingsModal({
           />
         </Field>
         <Field label="Telefone">
-          <Input value={connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""} readOnly />
+          <Input
+            value={connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""}
+            readOnly
+          />
         </Field>
         <Field label="Provedor">
           <Input value="Evolution API" readOnly />
@@ -488,20 +497,23 @@ function ConnectionSettingsModal({
             Variaveis disponiveis
           </p>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            {["{{nome}}", "{{telefone}}", "{{email}}", "{{departamento}}", "{{cliente}}", "{{instancia}}"].map(
-              (token) => (
-                <button
-                  key={token}
-                  type="button"
-                  className="rounded-md border border-border bg-card px-2 py-1 font-mono"
-                  onClick={() =>
-                    navigator.clipboard.writeText(token).catch(() => undefined)
-                  }
-                >
-                  {token}
-                </button>
-              ),
-            )}
+            {[
+              "{{nome}}",
+              "{{telefone}}",
+              "{{email}}",
+              "{{departamento}}",
+              "{{cliente}}",
+              "{{instancia}}",
+            ].map((token) => (
+              <button
+                key={token}
+                type="button"
+                className="rounded-md border border-border bg-card px-2 py-1 font-mono"
+                onClick={() => navigator.clipboard.writeText(token).catch(() => undefined)}
+              >
+                {token}
+              </button>
+            ))}
           </div>
         </div>
         <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm md:col-span-2">
@@ -528,9 +540,7 @@ function ConnectionSettingsModal({
             <Textarea
               rows={3}
               value={form.welcomeExistingMessage ?? ""}
-              onChange={(event) =>
-                setForm({ ...form, welcomeExistingMessage: event.target.value })
-              }
+              onChange={(event) => setForm({ ...form, welcomeExistingMessage: event.target.value })}
               disabled={!form.welcomeEnabled}
             />
           </Field>

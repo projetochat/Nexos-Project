@@ -183,4 +183,3 @@ function handleUniqueTag(error: unknown): never {
   }
   throw error;
 }
-

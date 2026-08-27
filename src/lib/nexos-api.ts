@@ -144,7 +144,6 @@ export type ApiContactCatalog = {
   updatedAt?: string;
 };
 
-
 export type ApiContactCustomField = {
   id: string;
   tenantId: string;
@@ -167,6 +166,7 @@ export type ApiContactInstanceOption = {
   externalReference?: string | null;
   ownerPhone?: string | null;
   instanceName?: string | null;
+  status?: "CONNECTED" | "DISCONNECTED" | "CONNECTING" | "ERROR" | "REMOVED" | string;
 };
 
 export type ApiContact = {
@@ -904,9 +904,7 @@ export const crmApi = {
       departments: ApiContactCatalog[];
       profiles: ApiContactCatalog[];
       tags: ApiTag[];
-    }>(
-      "/crm/contacts/options",
-    ),
+    }>("/crm/contacts/options"),
   listContactDepartments: () => apiRequest<ApiContactCatalog[]>("/crm/contact-departments"),
   createContactDepartment: (data: { name: string; description?: string | null; color?: string }) =>
     apiRequest<ApiContactCatalog>("/crm/contact-departments", {
@@ -940,10 +938,33 @@ export const crmApi = {
   deleteContactProfile: (id: string) =>
     apiRequest<ApiContactCatalog>(`/crm/contact-profiles/${id}`, { method: "DELETE" }),
   listContactCustomFields: () => apiRequest<ApiContactCustomField[]>("/crm/contact-custom-fields"),
-  createContactCustomField: (data: { label: string; type: ApiContactCustomField["type"]; required?: boolean; mask?: string | null; note?: string | null; options?: string[] }) =>
-    apiRequest<ApiContactCustomField>("/crm/contact-custom-fields", { method: "POST", body: JSON.stringify(data) }),
-  updateContactCustomField: (id: string, data: Partial<{ label: string; type: ApiContactCustomField["type"]; required: boolean; mask: string | null; note: string | null; options: string[] }>) =>
-    apiRequest<ApiContactCustomField>(`/crm/contact-custom-fields/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  createContactCustomField: (data: {
+    label: string;
+    type: ApiContactCustomField["type"];
+    required?: boolean;
+    mask?: string | null;
+    note?: string | null;
+    options?: string[];
+  }) =>
+    apiRequest<ApiContactCustomField>("/crm/contact-custom-fields", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateContactCustomField: (
+    id: string,
+    data: Partial<{
+      label: string;
+      type: ApiContactCustomField["type"];
+      required: boolean;
+      mask: string | null;
+      note: string | null;
+      options: string[];
+    }>,
+  ) =>
+    apiRequest<ApiContactCustomField>(`/crm/contact-custom-fields/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   deleteContactCustomField: (id: string) =>
     apiRequest<ApiContactCustomField>(`/crm/contact-custom-fields/${id}`, { method: "DELETE" }),
 };
@@ -1806,5 +1827,3 @@ function queryString(params: Record<string, string | number | boolean | undefine
   const serialized = search.toString();
   return serialized ? `?${serialized}` : "";
 }
-
-

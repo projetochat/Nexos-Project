@@ -19,4 +19,3 @@ export class PaginationDto {
   @Max(1000)
   pageSize?: number = 25;
 }
-

@@ -235,6 +235,14 @@ export class MessagingConnectionsService {
     ) {
       throw new BadRequestException("Connection nao e Evolution.");
     }
+    if (
+      connection.status !== MessagingConnectionStatus.CONNECTED &&
+      !connection.ownerPhoneNormalized
+    ) {
+      throw new BadRequestException(
+        "Instancia ainda nao possui conexao concluida para desconectar.",
+      );
+    }
     if (connection.status === MessagingConnectionStatus.DISCONNECTED) {
       return this.serialize(connection);
     }

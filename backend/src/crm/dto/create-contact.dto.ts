@@ -75,4 +75,3 @@ export class CreateContactDto {
   @IsObject()
   customFields?: Record<string, string | number | boolean | null>;
 }
-

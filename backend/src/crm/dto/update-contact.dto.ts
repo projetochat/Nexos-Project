@@ -76,4 +76,3 @@ export class UpdateContactDto {
   @IsObject()
   customFields?: Record<string, string | number | boolean | null>;
 }
-
