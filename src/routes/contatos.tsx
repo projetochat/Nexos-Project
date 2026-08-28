@@ -3,7 +3,9 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import * as XLSX from "xlsx";
 import {
   AlignCenter,
+  AlignJustify,
   AlignLeft,
+  AlignRight,
   BookUser,
   Building2,
   Bold,
@@ -17,8 +19,12 @@ import {
   Italic,
   Link2,
   List,
+  ListIndentDecrease,
+  ListIndentIncrease,
+  ListOrdered,
   Maximize2,
   MessageCircle,
+  MoreVertical,
   Plug,
   Info,
   Pencil,
@@ -26,7 +32,10 @@ import {
   Search,
   Strikethrough,
   Trash2,
+  Type,
   Underline,
+  Undo2,
+  Redo2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -150,7 +159,16 @@ function ContatosPage() {
   const [totalPages, setTotalPages] = React.useState(1);
   const [editing, setEditing] = React.useState<Contact | null>(null);
   const [deleting, setDeleting] = React.useState<Contact | null>(null);
+  const [mobileActionsMenu, setMobileActionsMenu] = React.useState<{
+    contactId: string;
+    top: number;
+    left: number;
+  } | null>(null);
   const create = useDisclosure();
+  const mobileActionsContact = React.useMemo(
+    () => contacts.find((contact) => contact.id === mobileActionsMenu?.contactId) ?? null,
+    [contacts, mobileActionsMenu?.contactId],
+  );
   const visibleInstances = React.useMemo(
     () => instances.filter((instance) => isSelectableInstanceStatus(instance.status)),
     [instances],
@@ -537,6 +555,7 @@ function ContatosPage() {
         <SectionHeader
           title="Contatos"
           subtitle={`${total} contatos cadastrados.`}
+          subtitleClassName="hidden sm:block"
           actions={
             <div className="flex flex-wrap items-center gap-2">
               <div ref={exportMenuRef} className="relative">
@@ -586,8 +605,8 @@ function ContatosPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))]">
-            <div>
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))]">
+            <div className="col-span-2 xl:col-span-1">
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Busca</label>
               <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
                 <Search className="h-4 w-4 text-muted-foreground" />
@@ -778,11 +797,11 @@ function ContatosPage() {
           </Card>
         )}
 
-        <Card className="overflow-hidden p-0">
+        <Card className="overflow-visible p-0">
           <table className="w-full table-fixed text-sm">
             <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
               <tr>
-                <th className="w-10 px-4 py-3 font-medium">
+                <th className="w-10 px-3 py-3 font-medium sm:px-4">
                   <input
                     type="checkbox"
                     className="h-5 w-5"
@@ -791,11 +810,15 @@ function ContatosPage() {
                     aria-label="Selecionar contatos visíveis"
                   />
                 </th>
-                <th className="w-[34%] px-4 py-3 font-medium">Contato</th>
-                <th className="w-[21%] px-4 py-3 font-medium">WhatsApp</th>
-                <th className="w-[18%] px-4 py-3 font-medium">Empresa</th>
-                <th className="w-[15%] px-4 py-3 font-medium">Departamento</th>
-                <th className="w-28 px-4 py-3 text-center font-medium">Ações</th>
+                <th className="w-[32%] px-3 py-3 font-medium sm:px-4 md:w-[34%]">Contato</th>
+                <th className="w-[28%] px-3 py-3 font-medium sm:px-4 md:w-[21%]">WhatsApp</th>
+                <th className="hidden w-[18%] px-4 py-3 font-medium md:table-cell">Empresa</th>
+                <th className="hidden w-[15%] px-4 py-3 font-medium md:table-cell">
+                  Departamento
+                </th>
+                <th className="w-[30%] px-3 py-3 text-center font-medium sm:px-4 md:w-28">
+                  <span className="hidden md:inline">Ações</span>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -808,8 +831,11 @@ function ContatosPage() {
               )}
               {!loading &&
                 contacts.map((contact) => (
-                  <tr key={contact.id} className="transition hover:bg-surface-1">
-                    <td className="px-4 py-3">
+                  <tr
+                    key={contact.id}
+                    className="transition hover:bg-surface-1"
+                  >
+                    <td className="relative px-3 py-3 sm:px-4">
                       <input
                         type="checkbox"
                         className="h-5 w-5"
@@ -824,16 +850,18 @@ function ContatosPage() {
                         aria-label={`Selecionar ${contact.nome}`}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3 sm:px-4">
                       <div className="flex items-center gap-3">
-                        <Avatar name={contact.nome} size={30} />
+                        <span className="hidden sm:inline-flex">
+                          <Avatar name={contact.nome} size={30} />
+                        </span>
                         <p className="truncate font-medium">{contact.nome}</p>
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs">
+                    <td className="px-3 py-3 font-mono text-xs sm:px-4">
                       {formatPhoneWithDdi(contact.telefone)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="hidden px-4 py-3 md:table-cell">
                       {contact.customer ? (
                         <span
                           className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
@@ -850,13 +878,42 @@ function ContatosPage() {
                         <span className="text-xs text-muted-foreground">Não vinculado</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs">
+                    <td className="hidden px-4 py-3 text-xs md:table-cell">
                       {contact.contactDepartment?.nome ?? contact.departamento ?? (
                         <span className="text-muted-foreground">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-center gap-1">
+                    <td className="px-3 py-3 sm:px-4">
+                      <div className="relative flex justify-center md:hidden">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Ações"
+                          onClick={(event) => {
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            const menuWidth = 144;
+                            const menuHeight = 132;
+                            setMobileActionsMenu((current) =>
+                              current?.contactId === contact.id
+                                ? null
+                                : {
+                                    contactId: contact.id,
+                                    top: Math.min(
+                                      window.innerHeight - menuHeight - 12,
+                                      rect.bottom + 6,
+                                    ),
+                                    left: Math.min(
+                                      window.innerWidth - menuWidth - 12,
+                                      Math.max(12, rect.right - menuWidth),
+                                    ),
+                                  },
+                            );
+                          }}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="hidden justify-center gap-1 md:flex">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -894,15 +951,16 @@ function ContatosPage() {
               )}
             </tbody>
           </table>
-          <div className="flex items-center justify-between border-t border-border bg-surface-1 px-4 py-3 text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <span>
-                Mostrando {contacts.length} de {total}
+          <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 leading-tight sm:leading-normal">
+                <span className="block sm:inline">Mostrando</span>
+                <span className="block sm:inline"> {contacts.length} de {total}</span>
               </span>
               <Select
                 value={String(pageSize)}
                 onChange={(event) => setPageSize(Number(event.target.value))}
-                className="h-8 w-24 text-xs"
+                className="h-9 w-20 text-xs sm:h-8 sm:w-24"
               >
                 {PAGE_SIZE_OPTIONS.map((option) => (
                   <option key={option} value={option}>
@@ -911,10 +969,11 @@ function ContatosPage() {
                 ))}
               </Select>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
               <Button
                 variant="ghost"
                 size="sm"
+                className="h-8 w-8 p-0"
                 disabled={pageSafe === 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
@@ -926,6 +985,7 @@ function ContatosPage() {
               <Button
                 variant="ghost"
                 size="sm"
+                className="h-8 w-8 p-0"
                 disabled={pageSafe === totalPages}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               >
@@ -934,6 +994,52 @@ function ContatosPage() {
             </div>
           </div>
         </Card>
+
+        {mobileActionsMenu && mobileActionsContact && (
+          <>
+            <button
+              type="button"
+              aria-label="Fechar menu de ações"
+              className="fixed inset-0 z-[998] cursor-default bg-transparent md:hidden"
+              onClick={() => setMobileActionsMenu(null)}
+            />
+            <div
+              className="fixed z-[999] w-36 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl md:hidden"
+              style={{ top: mobileActionsMenu.top, left: mobileActionsMenu.left }}
+            >
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
+                onClick={() => {
+                  setMobileActionsMenu(null);
+                  void openConversation(mobileActionsContact);
+                }}
+              >
+                <MessageCircle className="h-4 w-4" /> Chat
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
+                onClick={() => {
+                  setMobileActionsMenu(null);
+                  setEditing(mobileActionsContact);
+                }}
+              >
+                <Pencil className="h-4 w-4" /> Editar
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-danger hover:bg-danger-soft"
+                onClick={() => {
+                  setMobileActionsMenu(null);
+                  setDeleting(mobileActionsContact);
+                }}
+              >
+                <Trash2 className="h-4 w-4" /> Excluir
+              </button>
+            </div>
+          </>
+        )}
 
         <ContactFormModal
           open={create.open}
@@ -1348,8 +1454,9 @@ function ContactFormModal({
     if (!nome.trim() || nome.trim().length < 2) errs.nome = "Informe o nome.";
     if (!isValidPhoneForCountry(telefone, countryCode)) errs.telefone = "WhatsApp inválido.";
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = "E-mail invalido.";
+    const normalizedCustomFields = normalizeCustomFieldValues(customFields, customFieldDefinitions);
     for (const field of customFieldDefinitions) {
-      if (field.required && !String(customFields[field.id] ?? "").trim())
+      if (field.required && !String(normalizedCustomFields[field.id] ?? "").trim())
         errs[`custom_${field.id}`] = "Campo obrigatorio.";
     }
     if (Object.keys(errs).length) {
@@ -1367,7 +1474,7 @@ function ContactFormModal({
       contactProfileId: contactProfileId || null,
       instanceIds,
       tag_ids: tagIds,
-      customFields,
+      customFields: normalizedCustomFields,
     });
   };
 
@@ -1379,13 +1486,13 @@ function ContactFormModal({
       description=""
       size="xl"
       footer={
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex w-full items-center justify-between gap-2">
           <ContactFormLog contact={initial} />
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={onClose}>
+          <div className="flex shrink-0 justify-end gap-1.5 sm:gap-2">
+            <Button variant="ghost" size="sm" className="px-2 sm:px-2.5" onClick={onClose}>
               Cancelar
             </Button>
-            <Button variant="primary" size="sm" onClick={handle}>
+            <Button variant="primary" size="sm" className="px-2.5 sm:px-2.5" onClick={handle}>
               Salvar
             </Button>
           </div>
@@ -1411,142 +1518,162 @@ function ContactFormModal({
         </div>
         {activeContactTab === "Geral" && (
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Nome *">
-              <Input value={nome} onChange={(e) => setNome(e.target.value)} />
-              {errors.nome && (
-                <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
-              )}
-            </Field>
-            <Field label="Empresa do Contato">
-              <div className="flex gap-2">
-                <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-                  <option value="">- Sem empresa -</option>
-                  {customers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.nome}
-                    </option>
-                  ))}
-                </Select>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={customersManager.show}
-                  title="Gerenciar empresas"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
-                {customerId && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setCustomerId("")}
-                    title="Remover empresa"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
+            <div className="order-1 md:order-none">
+              <Field label="Nome *">
+                <Input value={nome} onChange={(e) => setNome(e.target.value)} />
+                {errors.nome && (
+                  <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
                 )}
-              </div>
-            </Field>
-            <Field label="WhatsApp *">
-              <div className="flex gap-2">
-                <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
+              </Field>
+            </div>
+            <div className="order-4 md:order-none">
+              <Field label="Empresa do Contato">
+                <div className="flex gap-2">
+                  <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                    <option value="">- Sem empresa -</option>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.nome}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={customersManager.show}
+                    title="Gerenciar empresas"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                  {customerId && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setCustomerId("")}
+                      title="Remover empresa"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </Field>
+            </div>
+            <div className="order-2 md:order-none">
+              <Field label="WhatsApp *">
+                <div className="flex gap-2">
+                  <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
+                  <Input
+                    value={telefone}
+                    onChange={(e) =>
+                      setTelefone(maskBrazilMobilePhone(e.target.value, countryCode))
+                    }
+                    placeholder="(11) 90000-0000"
+                  />
+                </div>
+                {errors.telefone && (
+                  <span className="mt-1 block text-[11px] text-destructive">
+                    {errors.telefone}
+                  </span>
+                )}
+              </Field>
+            </div>
+            <div className="order-5 md:order-none">
+              <Field label="Departamento do Contato">
+                <div className="flex gap-2">
+                  <Select
+                    value={contactDepartmentId}
+                    onChange={(e) => setContactDepartmentId(e.target.value)}
+                  >
+                    <option value="">- Sem departamento -</option>
+                    {departments.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.nome}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={departmentsManager.show}
+                    title="Gerenciar departamentos"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                  {contactDepartmentId && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setContactDepartmentId("")}
+                      title="Remover departamento"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </Field>
+            </div>
+            <div className="order-3 md:order-none">
+              <Field label="E-mail">
                 <Input
-                  value={telefone}
-                  onChange={(e) => setTelefone(maskBrazilMobilePhone(e.target.value, countryCode))}
-                  placeholder="(11) 90000-0000"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="nome@empresa.com"
                 />
-              </div>
-              {errors.telefone && (
-                <span className="mt-1 block text-[11px] text-destructive">{errors.telefone}</span>
-              )}
-            </Field>
-            <Field label="Departamento do Contato">
-              <div className="flex gap-2">
-                <Select
-                  value={contactDepartmentId}
-                  onChange={(e) => setContactDepartmentId(e.target.value)}
-                >
-                  <option value="">- Sem departamento -</option>
-                  {departments.map((department) => (
-                    <option key={department.id} value={department.id}>
-                      {department.nome}
-                    </option>
-                  ))}
-                </Select>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={departmentsManager.show}
-                  title="Gerenciar departamentos"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
-                {contactDepartmentId && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setContactDepartmentId("")}
-                    title="Remover departamento"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
+                {errors.email && (
+                  <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
                 )}
-              </div>
-            </Field>
-            <Field label="E-mail">
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="nome@empresa.com"
-              />
-              {errors.email && (
-                <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
-              )}
-            </Field>
-            <Field label="Perfil do Contato">
-              <div className="flex gap-2">
-                <Select
-                  value={contactProfileId}
-                  onChange={(e) => setContactProfileId(e.target.value)}
-                >
-                  <option value="">- Sem perfil -</option>
-                  {profiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.nome}
-                    </option>
-                  ))}
-                </Select>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={profilesManager.show}
-                  title="Gerenciar perfis"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
-                {contactProfileId && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setContactProfileId("")}
-                    title="Remover perfil"
+              </Field>
+            </div>
+            <div className="order-6 md:order-none">
+              <Field label="Perfil do Contato">
+                <div className="flex gap-2">
+                  <Select
+                    value={contactProfileId}
+                    onChange={(e) => setContactProfileId(e.target.value)}
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <option value="">- Sem perfil -</option>
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.nome}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={profilesManager.show}
+                    title="Gerenciar perfis"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
                   </Button>
-                )}
-              </div>
-            </Field>
-            <Field label="Instância">
-              <InstanceMultiSelect
-                instances={instances}
-                selectedIds={instanceIds}
-                onChange={setInstanceIds}
-              />
-            </Field>
-            <Field label="Etiquetas">
-              <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
-            </Field>
+                  {contactProfileId && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setContactProfileId("")}
+                      title="Remover perfil"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </Field>
+            </div>
+            <div className="order-7 md:order-none">
+              <Field label="Instância">
+                <InstanceMultiSelect
+                  instances={instances}
+                  selectedIds={instanceIds}
+                  onChange={setInstanceIds}
+                />
+              </Field>
+            </div>
+            <div className="order-8 md:order-none">
+              <Field label="Etiquetas">
+                <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
+              </Field>
+            </div>
           </div>
         )}
         {groupedCustomFields.map(([group, fields]) => (
@@ -1557,32 +1684,37 @@ function ContactFormModal({
               </h3>
             )}
             <div className="grid gap-4 md:grid-cols-2">
-              {fields.map((field) => (
-                <Field key={field.id} label={field.required ? `${field.label} *` : field.label}>
-                  <div className="flex items-center gap-2">
-                    <CustomContactFieldInput
-                      field={field}
-                      value={customFields[field.id]}
-                      onChange={(value) =>
-                        setCustomFields((current) => ({ ...current, [field.id]: value }))
-                      }
-                    />
-                    {field.note && (
-                      <span
-                        title={field.note}
-                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground"
-                      >
-                        <Info className="h-4 w-4" />
-                      </span>
-                    )}
+              {fields.map((field) => {
+                const isHtmlField = field.type === "text" && contactTextVariant(field) === "html";
+                return (
+                  <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
+                    <Field label={field.required ? `${field.label} *` : field.label}>
+                      <div className={`flex gap-2 ${isHtmlField ? "items-start" : "items-center"}`}>
+                        <CustomContactFieldInput
+                          field={field}
+                          value={customFields[field.id]}
+                          onChange={(value) =>
+                            setCustomFields((current) => ({ ...current, [field.id]: value }))
+                          }
+                        />
+                        {field.note && (
+                          <span
+                            title={field.note}
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground"
+                          >
+                            <Info className="h-4 w-4" />
+                          </span>
+                        )}
+                      </div>
+                      {errors[`custom_${field.id}`] && (
+                        <span className="mt-1 block text-[11px] text-destructive">
+                          {errors[`custom_${field.id}`]}
+                        </span>
+                      )}
+                    </Field>
                   </div>
-                  {errors[`custom_${field.id}`] && (
-                    <span className="mt-1 block text-[11px] text-destructive">
-                      {errors[`custom_${field.id}`]}
-                    </span>
-                  )}
-                </Field>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}
@@ -1718,11 +1850,15 @@ function CustomersManagerModal({
           <table className="w-full table-fixed text-sm">
             <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
               <tr>
-                <th className="w-[26%] px-4 py-3 font-medium">Empresa</th>
-                <th className="w-[22%] px-4 py-3 font-medium">Contato Responsável</th>
-                <th className="w-[20%] px-4 py-3 font-medium">E-mail</th>
-                <th className="w-[14%] px-4 py-3 font-medium">Telefone</th>
-                <th className="w-44 px-4 py-3 text-center font-medium">Ações</th>
+                <th className="w-[46%] px-4 py-3 font-medium md:w-[26%]">Nome da Empresa</th>
+                <th className="hidden w-[22%] px-4 py-3 font-medium md:table-cell">
+                  Contato Responsável
+                </th>
+                <th className="hidden w-[20%] px-4 py-3 font-medium md:table-cell">E-mail</th>
+                <th className="hidden w-[14%] px-4 py-3 font-medium md:table-cell">Telefone</th>
+                <th className="w-[54%] px-3 py-3 text-center font-medium md:w-44 md:px-4">
+                  Ações
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -1745,14 +1881,16 @@ function CustomersManagerModal({
                         <span className="truncate font-medium">{customer.nome}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">
+                    <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
                       {customer.contato_responsavel ?? "-"}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{customer.email ?? "-"}</td>
-                    <td className="px-4 py-3 font-mono text-xs">
+                    <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
+                      {customer.email ?? "-"}
+                    </td>
+                    <td className="hidden px-4 py-3 font-mono text-xs md:table-cell">
                       {customer.telefone ? maskBrazilPhone(customer.telefone) : "-"}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3 md:px-4">
                       <div className="flex justify-center gap-1">
                         <Button
                           variant="secondary"
@@ -1959,7 +2097,7 @@ function DepartmentsManagerModal({
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{department.nome}</p>
-                  <p className="truncate text-xs text-muted-foreground">
+                  <p className="hidden truncate text-xs text-muted-foreground sm:block">
                     {department.descricao ?? "Sem descricao"}
                   </p>
                 </div>
@@ -2226,7 +2364,7 @@ function ContactProfilesManagerModal({
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{profile.nome}</p>
-                  <p className="truncate text-xs text-muted-foreground">
+                  <p className="hidden truncate text-xs text-muted-foreground sm:block">
                     {profile.descricao ?? "Sem descricao"}
                   </p>
                 </div>
@@ -2512,12 +2650,12 @@ function TagMultiSelect({
 function ContactFormLog({ contact }: { contact?: Contact }) {
   if (!contact) return <span aria-hidden="true" />;
   return (
-    <div className="text-left text-xs leading-5 text-muted-foreground">
-      <div>
+    <div className="min-w-0 text-left text-[11px] leading-4 text-muted-foreground sm:text-xs sm:leading-5">
+      <div className="truncate">
         <span className="font-semibold text-foreground">Criado:</span>{" "}
         {formatDateTime(contact.createdAt)}
       </div>
-      <div>
+      <div className="truncate">
         <span className="font-semibold text-foreground">Editado:</span>{" "}
         {formatDateTime(contact.updatedAt)}
       </div>
@@ -2612,6 +2750,20 @@ function HtmlTextEditor({
   const selectionRef = React.useRef<Range | null>(null);
   const lastCommandRef = React.useRef<{ name: string; at: number } | null>(null);
   const [fullscreen, setFullscreen] = React.useState(false);
+  const [alignmentCommand, setAlignmentCommand] = React.useState("justifyLeft");
+  const [fontName, setFontName] = React.useState("Arial");
+  const [fontSize, setFontSize] = React.useState("3");
+  const [fontColor, setFontColor] = React.useState("#111827");
+  const alignmentIcon =
+    alignmentCommand === "justifyCenter" ? (
+      <AlignCenter className="h-4 w-4 text-muted-foreground" />
+    ) : alignmentCommand === "justifyRight" ? (
+      <AlignRight className="h-4 w-4 text-muted-foreground" />
+    ) : alignmentCommand === "justifyFull" ? (
+      <AlignJustify className="h-4 w-4 text-muted-foreground" />
+    ) : (
+      <AlignLeft className="h-4 w-4 text-muted-foreground" />
+    );
 
   React.useEffect(() => {
     const editor = editorRef.current;
@@ -2673,82 +2825,128 @@ function HtmlTextEditor({
   };
 
   const editor = (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface-1">
-      <div className="flex flex-wrap items-center gap-1 border-b border-border bg-card px-2 py-1.5">
-        <ToolbarButton title="Negrito" onClick={() => command("bold")}>
-          <Bold className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Itálico" onClick={() => command("italic")}>
-          <Italic className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Sublinhado" onClick={() => command("underline")}>
-          <Underline className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Riscado" onClick={() => command("strikeThrough")}>
-          <Strikethrough className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Marcadores" onClick={() => command("insertUnorderedList")}>
-          <List className="h-4 w-4" />
-        </ToolbarButton>
-        <select
-          className="h-8 rounded-md border border-border bg-surface-1 px-2 text-xs outline-none"
-          defaultValue=""
-          onMouseDown={saveSelection}
-          onChange={(event) => {
-            if (event.target.value) command("fontSize", event.target.value);
-            event.target.value = "";
-          }}
-          title="Tamanho da fonte"
-        >
-          <option value="">Tamanho</option>
-          <option value="2">Pequena</option>
-          <option value="3">Normal</option>
-          <option value="5">Grande</option>
-          <option value="7">Muito grande</option>
-        </select>
-        <select
-          className="h-8 rounded-md border border-border bg-surface-1 px-2 text-xs outline-none"
-          defaultValue=""
-          onMouseDown={saveSelection}
-          onChange={(event) => {
-            if (event.target.value) command("fontName", event.target.value);
-            event.target.value = "";
-          }}
-          title="Tipo da fonte"
-        >
-          <option value="">Fonte</option>
-          <option value="Arial">Arial</option>
-          <option value="Calibri">Calibri</option>
-          <option value="Times New Roman">Times</option>
-          <option value="Verdana">Verdana</option>
-        </select>
-        <label
-          className="flex h-8 items-center gap-1 rounded-md border border-border bg-surface-1 px-2 text-xs"
-          title="Cor da fonte"
-        >
-          Cor
-          <input
-            type="color"
-            className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
+    <div className="w-full overflow-hidden rounded-lg border border-border bg-surface-1">
+      <div className="flex items-start justify-between gap-2 border-b border-border bg-card px-2 py-1.5">
+        <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-xl bg-surface-2 px-2 py-1 shadow-sm">
+          <ToolbarButton title="Desfazer" onClick={() => command("undo")}>
+            <Undo2 className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Refazer" onClick={() => command("redo")}>
+            <Redo2 className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarDivider />
+          <ToolbarSelect
+            title="Tipo da fonte"
+            value={fontName}
+            className="w-32"
             onMouseDown={saveSelection}
-            onChange={(event) => command("foreColor", event.target.value)}
-          />
-        </label>
-        <label className="flex h-8 items-center gap-1 rounded-md border border-border bg-surface-1 px-2 text-xs">
-          <AlignLeft className="h-4 w-4 text-muted-foreground" />
-          <select
-            className="h-full bg-transparent text-xs outline-none"
-            defaultValue="justifyLeft"
-            onMouseDown={saveSelection}
-            onChange={(event) => command(event.target.value)}
+            onChange={(next) => {
+              setFontName(next);
+              command("fontName", next);
+            }}
+          >
+            <option value="Arial">Sans Serif</option>
+            <option value="Times New Roman">Serif</option>
+            <option value="Courier New">Largura fixa</option>
+            <option value="Arial Black">Largo</option>
+            <option value="Arial Narrow">Estreito</option>
+            <option value="Comic Sans MS">Comic Sans MS</option>
+            <option value="Garamond">Garamond</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Tahoma">Tahoma</option>
+            <option value="Trebuchet MS">Trebuchet MS</option>
+            <option value="Verdana">Verdana</option>
+          </ToolbarSelect>
+          <ToolbarDivider />
+          <label
+            className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-foreground transition hover:bg-card"
+            title="Tamanho da fonte"
+          >
+            <Type className="h-4 w-4" />
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <select
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none"
+              value={fontSize}
+              onMouseDown={saveSelection}
+              onChange={(event) => {
+                setFontSize(event.target.value);
+                command("fontSize", event.target.value);
+              }}
+              aria-label="Tamanho da fonte"
+            >
+              <option value="2">Pequeno</option>
+              <option value="3">Normal</option>
+              <option value="5">Grande</option>
+              <option value="7">Enorme</option>
+            </select>
+          </label>
+          <ToolbarDivider />
+          <ToolbarButton title="Negrito" onClick={() => command("bold")}>
+            <Bold className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Itálico" onClick={() => command("italic")}>
+            <Italic className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Sublinhado" onClick={() => command("underline")}>
+            <Underline className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Riscado" onClick={() => command("strikeThrough")}>
+            <Strikethrough className="h-4 w-4" />
+          </ToolbarButton>
+          <label
+            className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs transition hover:bg-card"
+            title="Cor do texto"
+          >
+            <span className="font-semibold">A</span>
+            <span className="h-1 w-4 rounded-sm" style={{ backgroundColor: fontColor }} />
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              type="color"
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              value={fontColor}
+              onMouseDown={saveSelection}
+              onChange={(event) => {
+                setFontColor(event.target.value);
+                command("foreColor", event.target.value);
+              }}
+            />
+          </label>
+          <ToolbarDivider />
+          <label
+            className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs transition hover:bg-card"
             title="Alinhamento"
           >
-            <option value="justifyLeft">Esquerda</option>
-            <option value="justifyCenter">Centro</option>
-            <option value="justifyRight">Direita</option>
-            <option value="justifyFull">Justificado</option>
-          </select>
-        </label>
+            {alignmentIcon}
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <select
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none"
+              value={alignmentCommand}
+              onMouseDown={saveSelection}
+              onChange={(event) => {
+                setAlignmentCommand(event.target.value);
+                command(event.target.value);
+              }}
+              aria-label="Alinhamento"
+            >
+              <option value="justifyLeft">Esquerda</option>
+              <option value="justifyCenter">Centro</option>
+              <option value="justifyRight">Direita</option>
+              <option value="justifyFull">Justificado</option>
+            </select>
+          </label>
+          <ToolbarButton title="Lista numerada" onClick={() => command("insertOrderedList")}>
+            <ListOrdered className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Marcadores" onClick={() => command("insertUnorderedList")}>
+            <List className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Diminuir recuo" onClick={() => command("outdent")}>
+            <ListIndentDecrease className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Aumentar recuo" onClick={() => command("indent")}>
+            <ListIndentIncrease className="h-4 w-4" />
+          </ToolbarButton>
+        </div>
         {!expanded && (
           <ToolbarButton title="Maximizar" onClick={() => setFullscreen(true)}>
             <Maximize2 className="h-4 w-4" />
@@ -2808,10 +3006,48 @@ function ToolbarButton({
       title={title}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
     >
       {children}
     </button>
+  );
+}
+
+function ToolbarDivider() {
+  return <span className="mx-1 h-5 w-px bg-border" />;
+}
+
+function ToolbarSelect({
+  title,
+  value,
+  className = "",
+  onMouseDown,
+  onChange,
+  children,
+}: {
+  title: string;
+  value: string;
+  className?: string;
+  onMouseDown: () => void;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label
+      className={`relative inline-flex h-8 items-center rounded-md px-2 text-xs transition hover:bg-card ${className}`}
+      title={title}
+    >
+      <select
+        className="w-full appearance-none bg-transparent pr-5 text-xs outline-none"
+        value={value}
+        onMouseDown={onMouseDown}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={title}
+      >
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+    </label>
   );
 }
 
@@ -2827,6 +3063,9 @@ function CustomDateInput({
   const [draft, setDraft] = React.useState(() => formatDateForDisplay(value, variant));
 
   React.useEffect(() => {
+    if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.dateInput) {
+      return;
+    }
     setDraft(formatDateForDisplay(value, variant));
   }, [value, variant]);
 
@@ -2836,18 +3075,55 @@ function CustomDateInput({
       inputMode="numeric"
       value={draft}
       placeholder={variant === "datetime" ? "28/08/2026 10:08" : "28/08/2026"}
+      data-date-input="true"
+      onKeyDown={(event) => {
+        if (event.key.toLowerCase() !== "h") return;
+        event.preventDefault();
+        const parsed = dateDraftFromDate(new Date(), variant);
+        setDraft(parsed.display);
+        onChange(parsed.iso);
+      }}
       onChange={(event) => {
         setDraft(event.target.value);
-        onChange(event.target.value);
       }}
       onBlur={() => {
         const parsed = parseDateDraft(draft, variant);
-        if (!parsed) return;
+        if (!parsed) {
+          onChange(draft);
+          return;
+        }
         setDraft(parsed.display);
         onChange(parsed.iso);
       }}
     />
   );
+}
+
+function dateDraftFromDate(date: Date, variant: ContactDateVariant) {
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const displayDate = `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
+  return {
+    display:
+      variant === "datetime"
+        ? `${displayDate} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+        : displayDate,
+    iso: date.toISOString(),
+  };
+}
+
+function normalizeCustomFieldValues(
+  values: Record<string, string | boolean>,
+  fields: ContactCustomField[],
+) {
+  const normalized = { ...values };
+  for (const field of fields) {
+    if (field.type !== "date") continue;
+    const value = values[field.id];
+    if (typeof value !== "string" || !value.trim()) continue;
+    const parsed = parseDateDraft(value, contactDateVariant(field));
+    if (parsed) normalized[field.id] = parsed.iso;
+  }
+  return normalized;
 }
 
 function parseContactFieldConfig(mask?: string | null): ContactFieldConfig {

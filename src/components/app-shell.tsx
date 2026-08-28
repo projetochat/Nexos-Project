@@ -21,6 +21,8 @@ import {
   Sun,
   Moon,
   LogOut,
+  Menu,
+  X,
   Zap,
   Bot,
   Workflow,
@@ -674,7 +676,13 @@ export function ThemeToggle() {
 }
 
 /* ---------- Topbar ---------- */
-function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
+function Topbar({
+  onToggleSidebar,
+  onOpenMobileNav,
+}: {
+  onToggleSidebar: () => void;
+  onOpenMobileNav: () => void;
+}) {
   const crumbs = useBreadcrumbs();
   const conn = useConnectionStatus();
   return (
@@ -710,6 +718,15 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       </nav>
 
       <div className="flex min-w-0 flex-1 items-center gap-2 md:hidden">
+        <button
+          type="button"
+          onClick={onOpenMobileNav}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+          aria-label="Abrir menu"
+          title="Abrir menu"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
         <LogoMark size={22} />
         <span className="truncate text-sm font-semibold">Nexo</span>
       </div>
@@ -845,42 +862,107 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
   );
 }
 
-/* ---------- Mobile bottom nav ---------- */
-function MobileNav() {
+/* ---------- Mobile side nav ---------- */
+function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
   const role = useSession((s) => s.user?.role);
-  const items: NavItem[] =
-    role === "operator"
-      ? [
-          { to: "/inbox", label: "Inbox", icon: Inbox },
-          { to: "/mensagens-rapidas", label: "Rápidas", icon: Zap },
-          { to: "/historico", label: "Histórico", icon: History },
-          { to: "/perfil", label: "Perfil", icon: Users },
-          { to: "/ajuda", label: "Ajuda", icon: LifeBuoy },
-        ]
-      : [
-          { to: "/", label: "Início", icon: LayoutDashboard },
-          { to: "/inbox", label: "Inbox", icon: Inbox },
-          { to: "/contatos", label: "Contatos", icon: Users },
-          { to: "/configuracoes", label: "Ajustes", icon: Settings },
-          { to: "/perfil", label: "Perfil", icon: Users },
-        ];
+  const permissions = useSession((s) => s.user?.permissions);
+  const isOperator = role === "operator";
+  const mainNav = isOperator ? filterForOperator(principalNav) : principalNav;
+  const sysNav = isOperator ? filterForOperator(sistemaNav) : sistemaNav;
+  const visibleTopNav = topNav.filter((item) => canSeeNavItem(item, permissions));
+  const visibleAdminGroups = filterAdminGroupsByPermissions(adminGroups, permissions);
   return (
-    <nav className="sticky bottom-0 z-30 grid grid-cols-5 border-t border-border bg-background/95 backdrop-blur-xl lg:hidden">
-      {items.map((item) => {
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.to}
-            to={item.to}
-            activeOptions={{ exact: item.to === "/" }}
-            className="flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium text-muted-foreground transition data-[status=active]:text-primary"
-          >
-            <Icon className="h-4 w-4" />
-            {item.label}
+    <>
+      {open && (
+        <button
+          type="button"
+          aria-label="Fechar menu"
+          className="fixed inset-0 z-[190] bg-black/45 backdrop-blur-[1px] lg:hidden"
+          onClick={onClose}
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-[200] flex w-72 max-w-[82vw] flex-col border-r border-border bg-surface-1 shadow-2xl transition-transform duration-200 lg:hidden ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
+          <Link to={isOperator ? "/inbox" : "/"} className="flex items-center gap-2" onClick={onClose}>
+            <LogoMark size={24} />
+            <span className="text-sm font-semibold tracking-tight">Nexo</span>
           </Link>
-        );
-      })}
-    </nav>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+            aria-label="Fechar menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+          {isOperator ? (
+            <div className="space-y-0.5">
+              {mainNav.map((item) => (
+                <MobileNavLink key={item.to} item={item} onClose={onClose} />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {visibleTopNav.length > 0 && (
+                <div className="space-y-0.5">
+                  {visibleTopNav.map((item) => (
+                    <MobileNavLink key={item.to} item={item} onClose={onClose} />
+                  ))}
+                </div>
+              )}
+              {visibleAdminGroups.map((group) => (
+                <div key={group.title} className="space-y-0.5">
+                  <p className="mb-1 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    {group.title}
+                  </p>
+                  {group.items.map((item) => (
+                    <MobileNavLink key={item.to} item={item} onClose={onClose} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </nav>
+        {sysNav.length > 0 && (
+          <div className="shrink-0 border-t border-border px-3 py-3">
+            <p className="mb-1 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Sistema
+            </p>
+            <div className="space-y-0.5">
+              {sysNav.map((item) => (
+                <MobileNavLink key={item.to} item={item} onClose={onClose} />
+              ))}
+            </div>
+          </div>
+        )}
+      </aside>
+    </>
+  );
+}
+
+function MobileNavLink({ item, onClose }: { item: NavItem; onClose: () => void }) {
+  const Icon = item.icon;
+  return (
+    <Link
+      to={item.to}
+      activeOptions={{ exact: item.to === "/" }}
+      onClick={onClose}
+      className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-surface-2 hover:text-foreground data-[status=active]:bg-surface-2 data-[status=active]:text-foreground"
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      {item.badge && (
+        <Badge tone="brand" dot={false}>
+          {item.badge}
+        </Badge>
+      )}
+    </Link>
   );
 }
 
@@ -958,6 +1040,7 @@ function ImpersonationBanner() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   useAuthGate("app");
   const { collapsed, toggle, collapse } = useSidebarState();
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   const role = useSession((s) => s.user?.role);
@@ -970,11 +1053,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <ImpersonationBanner />
           <OfflineBanner />
-          {showTopbar && <Topbar onToggleSidebar={toggle} />}
+          {showTopbar && (
+            <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
+          )}
           <main key={pathname} className="min-w-0 flex-1 overflow-y-auto animate-fade-in-soft">
             {children}
           </main>
-          <MobileNav />
+          <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
         </div>
       </div>
     </SidebarCollapseContext.Provider>
@@ -984,6 +1069,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 export function AppShellFull({ children }: { children: React.ReactNode }) {
   useAuthGate("app");
   const { collapsed, toggle, collapse } = useSidebarState();
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   const role = useSession((s) => s.user?.role);
   const showTopbar = role !== "operator";
@@ -995,8 +1081,11 @@ export function AppShellFull({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-1 flex-col">
           <ImpersonationBanner />
           <OfflineBanner />
-          {showTopbar && <Topbar onToggleSidebar={toggle} />}
+          {showTopbar && (
+            <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
+          )}
           <main className="min-w-0 flex-1 overflow-hidden animate-fade-in-soft">{children}</main>
+          <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
         </div>
       </div>
     </SidebarCollapseContext.Provider>

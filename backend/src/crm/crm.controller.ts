@@ -1130,7 +1130,7 @@ export class CrmController {
     const fields = await tx.contactCustomField.findMany({ where: { tenantId, archivedAt: null } });
     for (const field of fields) {
       const raw = values[field.id];
-      const value = raw === undefined || raw === null ? "" : String(raw).trim();
+      const value = normalizeContactCustomFieldValue(field, raw);
       if (field.required && !value)
         throw new BadRequestException(`Campo obrigatorio: ${field.label}.`);
       if (field.type === ContactCustomFieldType.LIST && value && !field.options.includes(value)) {
@@ -1160,7 +1160,7 @@ export class CrmController {
     }
     for (const field of fields) {
       const raw = values[field.id];
-      const value = raw === undefined || raw === null ? "" : String(raw).trim();
+      const value = normalizeContactCustomFieldValue(field, raw);
       if (field.required && !value)
         throw new BadRequestException(`Campo obrigatorio: ${field.label}.`);
       if (field.type === ContactCustomFieldType.LIST && value && !field.options.includes(value)) {
@@ -1328,6 +1328,49 @@ function parseContactCustomFieldType(value: string) {
     return normalized as ContactCustomFieldType;
   }
   throw new BadRequestException("Tipo de campo invalido.");
+}
+
+function normalizeContactCustomFieldValue(
+  field: { type: ContactCustomFieldType; mask: string | null },
+  raw: string | number | boolean | null | undefined,
+) {
+  const value = raw === undefined || raw === null ? "" : String(raw).trim();
+  if (!value || field.type !== ContactCustomFieldType.DATE) return value;
+  return parseContactCustomDateValue(value, field.mask) ?? value;
+}
+
+function parseContactCustomDateValue(value: string, mask: string | null) {
+  const isoDate = new Date(value);
+  if (!Number.isNaN(isoDate.getTime())) return isoDate.toISOString();
+
+  const variant = contactDateVariantFromMask(mask);
+  const digits = value.replace(/\D/g, "");
+  const expectedLength = variant === "datetime" ? 12 : 8;
+  if (digits.length < expectedLength) return null;
+
+  const day = Number(digits.slice(0, 2));
+  const month = Number(digits.slice(2, 4));
+  const year = Number(digits.slice(4, 8));
+  const hour = variant === "datetime" ? Number(digits.slice(8, 10)) : 0;
+  const minute = variant === "datetime" ? Number(digits.slice(10, 12)) : 0;
+  const date = new Date(year, month - 1, day, hour, minute, 0, 0);
+  const valid =
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day &&
+    date.getHours() === hour &&
+    date.getMinutes() === minute;
+  return valid ? date.toISOString() : null;
+}
+
+function contactDateVariantFromMask(mask: string | null) {
+  if (!mask?.trim().startsWith("{")) return "date";
+  try {
+    const parsed = JSON.parse(mask) as { date?: { variant?: string } };
+    return parsed.date?.variant === "datetime" ? "datetime" : "date";
+  } catch {
+    return "date";
+  }
 }
 
 function unique<T>(items: T[]) {

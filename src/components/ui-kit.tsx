@@ -273,10 +273,12 @@ export function KPI({
 export function SectionHeader({
   title,
   subtitle,
+  subtitleClassName = "",
   actions,
 }: {
   title: string;
   subtitle?: string;
+  subtitleClassName?: string;
   actions?: React.ReactNode;
 }) {
   return (
@@ -285,9 +287,7 @@ export function SectionHeader({
         <h1 className="truncate text-2xl font-semibold tracking-tight">
           {title}
         </h1>
-        {subtitle && (
-          <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
-        )}
+        {subtitle && <p className={`mt-1 text-sm text-muted-foreground ${subtitleClassName}`}>{subtitle}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
