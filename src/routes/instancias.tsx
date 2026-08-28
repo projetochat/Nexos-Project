@@ -427,7 +427,7 @@ function ConnectionSettingsModal({
     onSubmit(connection, {
       ...form,
       name: form.name.trim(),
-      color: normalizeHexColor(form.color, "#22c55e"),
+      color: completeHexColor(form.color, "#22c55e"),
       welcomeNewMessage: form.welcomeNewMessage?.trim() || null,
       welcomeExistingMessage: form.welcomeExistingMessage?.trim() || null,
       notes: form.notes?.trim() || null,
@@ -482,7 +482,7 @@ function ConnectionSettingsModal({
           <div className="flex gap-2">
             <Input
               type="color"
-              value={form.color || "#22c55e"}
+              value={completeHexColor(form.color, "#22c55e")}
               onChange={(event) =>
                 setForm({ ...form, color: normalizeHexColor(event.target.value, "#22c55e") })
               }
@@ -685,10 +685,14 @@ function providerColor(provider: ApiMessagingConnection["providerType"]) {
   return "#22c55e";
 }
 
-function normalizeHexColor(value?: string | null, fallback = "#22c55e") {
-  const fallbackDigits = fallback.replace(/[^0-9a-fA-F]/g, "").slice(0, 6) || "22c55e";
+function normalizeHexColor(value?: string | null, _fallback = "#22c55e") {
   const digits = String(value ?? "")
     .replace(/[^0-9a-fA-F]/g, "")
     .slice(0, 6);
-  return `#${(digits || fallbackDigits).toUpperCase()}`;
+  return `#${digits.toUpperCase()}`;
+}
+
+function completeHexColor(value?: string | null, fallback = "#22c55e") {
+  const normalized = normalizeHexColor(value);
+  return normalized.length === 7 ? normalized : normalizeHexColor(fallback);
 }

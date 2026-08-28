@@ -82,6 +82,7 @@ enum ContactCustomFieldType {
   NUMBER
   CHECKBOX
   LIST
+  DATE
 }
 
 enum ConversationStatus {
@@ -770,8 +771,8 @@ model ContactCustomField {
   required       Boolean                @default(false)
   mask           String?
   note           String?
-  tabName        String                 @default("Campos adicionais") @map("tab_name")
-  groupName      String                 @default("Informações adicionais") @map("group_name")
+  tabName        String                 @default("Dados Adicionais") @map("tab_name")
+  groupName      String                 @default("") @map("group_name")
   options        String[]               @default([])
   position       Int                    @default(0)
   archivedAt     DateTime?

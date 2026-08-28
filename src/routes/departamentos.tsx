@@ -201,7 +201,7 @@ function DepartamentoForm({
       toast.error("Nome obrigatorio.");
       return;
     }
-    onSubmit(form);
+    onSubmit({ ...form, color: completeHexColor(form.color) });
   };
 
   return (
@@ -240,7 +240,7 @@ function DepartamentoForm({
           <div className="flex items-center gap-2">
             <input
               type="color"
-              value={form.color ?? "#6366f1"}
+              value={completeHexColor(form.color)}
               onChange={(e) => setForm({ ...form, color: normalizeHexColor(e.target.value) })}
               className="h-9 w-14 cursor-pointer rounded border border-border bg-transparent"
             />
@@ -255,10 +255,14 @@ function DepartamentoForm({
   );
 }
 
-function normalizeHexColor(value?: string | null, fallback = "#6366f1") {
-  const fallbackDigits = fallback.replace(/[^0-9a-fA-F]/g, "").slice(0, 6) || "6366f1";
+function normalizeHexColor(value?: string | null, _fallback = "#6366f1") {
   const digits = String(value ?? "")
     .replace(/[^0-9a-fA-F]/g, "")
     .slice(0, 6);
-  return `#${(digits || fallbackDigits).toUpperCase()}`;
+  return `#${digits.toUpperCase()}`;
+}
+
+function completeHexColor(value?: string | null, fallback = "#6366f1") {
+  const normalized = normalizeHexColor(value);
+  return normalized.length === 7 ? normalized : normalizeHexColor(fallback);
 }

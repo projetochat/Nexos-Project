@@ -11,11 +11,13 @@ export const Route = createFileRoute("/configuracoes/campos-contato")({
 });
 
 type TextVariant = "short" | "long" | "html";
+type DateVariant = "date" | "datetime";
 type NumberSymbol = "" | "R$" | "%" | "$" | "€" | "£" | "¥";
 
 type FieldConfig = {
   text?: { variant?: TextVariant };
   number?: { decimals?: number; thousands?: boolean; symbol?: NumberSymbol };
+  date?: { variant?: DateVariant };
 };
 
 type FieldForm = {
@@ -25,6 +27,7 @@ type FieldForm = {
   tabName: string;
   groupName: string;
   textVariant: TextVariant;
+  dateVariant: DateVariant;
   numberDecimals: number;
   numberThousands: boolean;
   numberSymbol: NumberSymbol;
@@ -43,6 +46,7 @@ const NUMBER_SYMBOL_OPTIONS: Array<{ value: NumberSymbol; label: string }> = [
 ];
 const RESERVED_CONTACT_TAB = "Geral";
 const RESERVED_CONTACT_GROUP = "Dados do contato";
+const DEFAULT_CONTACT_CUSTOM_TAB = "Dados Adicionais";
 
 function ContactFieldsSettings() {
   const [fields, setFields] = React.useState<ApiContactCustomField[]>([]);
@@ -135,9 +139,13 @@ function ContactFieldsSettings() {
                 <tr key={field.id} className="hover:bg-surface-1">
                   <td className="px-4 py-3 font-medium">{field.label}</td>
                   <td className="px-4 py-3 text-muted-foreground">{fieldTypeLabel(field)}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{field.tabName || "Geral"}</td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {field.groupName || "Dados do contato"}
+                    {isReservedContactTab(field.tabName)
+                      ? DEFAULT_CONTACT_CUSTOM_TAB
+                      : field.tabName}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {isReservedContactGroup(field.groupName) ? "-" : field.groupName || "-"}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {field.required ? "Sim" : "Não"}
@@ -218,23 +226,6 @@ function ContactFieldFormModal({
   fields: ApiContactCustomField[];
 }) {
   const [form, setForm] = React.useState<FieldForm>(emptyFieldForm());
-  const tabs = React.useMemo(
-    () =>
-      uniqueLabels(fields.map((field) => field.tabName)).filter(
-        (tab) => !isReservedContactTab(tab),
-      ),
-    [fields],
-  );
-  const groups = React.useMemo(
-    () =>
-      uniqueLabels(
-        fields
-          .filter((field) => (field.tabName || "") === form.tabName)
-          .map((field) => field.groupName),
-      ).filter((group) => !isReservedContactGroup(group)),
-    [fields, form.tabName],
-  );
-
   React.useEffect(() => {
     if (!open) return;
     setForm(initial ? fieldToForm(initial) : emptyFieldForm());
@@ -253,11 +244,7 @@ function ContactFieldFormModal({
       toast.error("A aba Geral é reservada para os campos padrão do contato.");
       return;
     }
-    if (form.groupName.trim().length < 2) {
-      toast.error("Informe o agrupamento do campo.");
-      return;
-    }
-    if (isReservedContactGroup(form.groupName)) {
+    if (form.groupName.trim() && isReservedContactGroup(form.groupName)) {
       toast.error("Este agrupamento é reservado para os campos padrão do contato.");
       return;
     }
@@ -291,7 +278,7 @@ function ContactFieldFormModal({
             onChange={(event) => setForm({ ...form, label: event.target.value })}
           />
         </Field>
-        <div className="grid gap-3 md:grid-cols-[1fr_7rem]">
+        <div className="grid gap-3 md:grid-cols-[1fr_8rem]">
           <Field label="Tipo *">
             <Select
               value={form.type}
@@ -305,6 +292,7 @@ function ContactFieldFormModal({
               <option value="number">Número</option>
               <option value="checkbox">Checkbox</option>
               <option value="list">Lista</option>
+              <option value="date">Data</option>
             </Select>
           </Field>
           {form.type !== "checkbox" && (
@@ -322,26 +310,6 @@ function ContactFieldFormModal({
             </label>
           )}
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <Field label="Aba *">
-            <CreatableSelect
-              value={form.tabName}
-              options={tabs}
-              placeholder="Selecione uma aba"
-              createLabel="Nova aba"
-              onChange={(value) => setForm({ ...form, tabName: value, groupName: "" })}
-            />
-          </Field>
-          <Field label="Agrupamento *">
-            <CreatableSelect
-              value={form.groupName}
-              options={groups}
-              placeholder="Selecione um agrupamento"
-              createLabel="Novo agrupamento"
-              onChange={(value) => setForm({ ...form, groupName: value })}
-            />
-          </Field>
-        </div>
         {form.type === "text" && (
           <Field label="Formato do texto *">
             <Select
@@ -353,6 +321,19 @@ function ContactFieldFormModal({
               <option value="short">Texto Curto</option>
               <option value="long">Texto Longo</option>
               <option value="html">Texto HTML</option>
+            </Select>
+          </Field>
+        )}
+        {form.type === "date" && (
+          <Field label="Formato da data *">
+            <Select
+              value={form.dateVariant}
+              onChange={(event) =>
+                setForm({ ...form, dateVariant: event.target.value as DateVariant })
+              }
+            >
+              <option value="date">Data: 28/08/2026</option>
+              <option value="datetime">Data/Hora: 28/08/2026 10:08</option>
             </Select>
           </Field>
         )}
@@ -407,6 +388,28 @@ function ContactFieldFormModal({
             />
           </Field>
         )}
+        <div className="grid gap-3 md:grid-cols-2">
+          <div>
+            <Field label="Aba *">
+              <Input
+                value={form.tabName}
+                onChange={(event) => setForm({ ...form, tabName: event.target.value })}
+                placeholder="Dados Adicionais"
+              />
+            </Field>
+            {isReservedContactTab(form.tabName) && (
+              <span className="mt-1 block text-[11px] text-destructive">
+                Campos Adicionais não podem ser vinculados na aba Geral
+              </span>
+            )}
+          </div>
+          <Field label="Agrupamento">
+            <Input
+              value={form.groupName}
+              onChange={(event) => setForm({ ...form, groupName: event.target.value })}
+            />
+          </Field>
+        </div>
         <Field label="Nota explicativa">
           <Textarea
             rows={3}
@@ -420,86 +423,15 @@ function ContactFieldFormModal({
   );
 }
 
-function CreatableSelect({
-  value,
-  options,
-  placeholder,
-  createLabel,
-  onChange,
-}: {
-  value: string;
-  options: string[];
-  placeholder: string;
-  createLabel: string;
-  onChange: (value: string) => void;
-}) {
-  const create = useDisclosure();
-  const [draft, setDraft] = React.useState("");
-  const normalizedOptions = uniqueLabels([value, ...options]);
-
-  const createOption = () => {
-    setDraft("");
-    create.show();
-  };
-
-  const saveOption = () => {
-    const trimmed = draft.trim();
-    if (!trimmed) return;
-    if (normalizedOptions.some((option) => option.toLowerCase() === trimmed.toLowerCase())) {
-      toast.error("Este item já existe.");
-      return;
-    }
-    onChange(trimmed);
-    create.hide();
-  };
-
-  return (
-    <>
-      <div className="flex gap-2">
-        <Select value={value} onChange={(event) => onChange(event.target.value)}>
-          <option value="">{placeholder}</option>
-          {normalizedOptions.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </Select>
-        <Button variant="outline" size="sm" onClick={createOption} title={createLabel}>
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-      <Modal
-        open={create.open}
-        onClose={create.hide}
-        title={createLabel}
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" size="sm" onClick={create.hide}>
-              Cancelar
-            </Button>
-            <Button variant="primary" size="sm" onClick={saveOption}>
-              Salvar
-            </Button>
-          </>
-        }
-      >
-        <Field label="Nome *">
-          <Input value={draft} onChange={(event) => setDraft(event.target.value)} autoFocus />
-        </Field>
-      </Modal>
-    </>
-  );
-}
-
 function emptyFieldForm(): FieldForm {
   return {
     label: "",
     type: "text",
     required: false,
-    tabName: "",
+    tabName: DEFAULT_CONTACT_CUSTOM_TAB,
     groupName: "",
     textVariant: "short",
+    dateVariant: "date",
     numberDecimals: 2,
     numberThousands: true,
     numberSymbol: "",
@@ -519,6 +451,7 @@ function fieldToForm(field: ApiContactCustomField): FieldForm {
     tabName: isReservedContactTab(tabName) ? "" : tabName,
     groupName: isReservedContactGroup(groupName) ? "" : groupName,
     textVariant: config.text?.variant ?? "short",
+    dateVariant: config.date?.variant ?? "date",
     numberDecimals: config.number?.decimals ?? 2,
     numberThousands: config.number?.thousands ?? true,
     numberSymbol: config.number?.symbol ?? "",
@@ -540,6 +473,9 @@ function buildFieldMask(data: FieldForm) {
       },
     });
   }
+  if (data.type === "date") {
+    return JSON.stringify({ date: { variant: data.dateVariant } });
+  }
   return null;
 }
 
@@ -550,10 +486,6 @@ function parseFieldConfig(mask?: string | null): FieldConfig {
   } catch {
     return {};
   }
-}
-
-function uniqueLabels(values: Array<string | null | undefined>) {
-  return Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean) as string[]));
 }
 
 function isReservedContactTab(value: string) {
@@ -574,6 +506,10 @@ function fieldTypeLabel(field: ApiContactCustomField) {
   if (field.type === "text") {
     const variant = parseFieldConfig(field.mask).text?.variant ?? "short";
     return { short: "Texto Curto", long: "Texto Longo", html: "Texto HTML" }[variant];
+  }
+  if (field.type === "date") {
+    const variant = parseFieldConfig(field.mask).date?.variant ?? "date";
+    return variant === "datetime" ? "Data/Hora" : "Data";
   }
   return { number: "Número", checkbox: "Checkbox", list: "Lista" }[field.type];
 }

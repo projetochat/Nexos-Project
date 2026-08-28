@@ -17,6 +17,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -89,7 +90,7 @@ class ContactCustomFieldDto {
 
   @IsOptional()
   @IsString()
-  @Length(2, 80)
+  @MaxLength(80)
   groupName?: string;
 
   @IsOptional()
@@ -124,6 +125,22 @@ class BulkUpdateContactsDto {
   @ArrayMaxSize(50)
   @IsUUID(undefined, { each: true })
   tagIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(120, { each: true })
+  instanceIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  email?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  customFields?: Record<string, string | number | boolean | null>;
 
   @IsOptional()
   @IsBoolean()
@@ -276,6 +293,9 @@ export class CrmController {
     const { page, pageSize, skip } = pagination(query);
     const q = query.q?.trim();
     const qDigits = q?.replace(/\D/g, "") ?? "";
+    const instanceKeys = query.instance
+      ? await this.resolveInstanceFilterKeys(query.instance, current.tenantId)
+      : [];
     const where: Prisma.ContactWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,
@@ -283,7 +303,16 @@ export class CrmController {
       ...(query.linked === "unlinked" ? { customerId: null } : {}),
       ...(query.customerId ? { customerId: query.customerId } : {}),
       ...(query.instance
-        ? { OR: [{ instance: query.instance }, { instanceIds: { has: query.instance } }] }
+        ? {
+            AND: [
+              {
+                OR: [
+                  { instance: { in: instanceKeys } },
+                  { instanceIds: { hasSome: instanceKeys } },
+                ],
+              },
+            ],
+          }
         : {}),
       ...(query.department ? { contactDepartmentId: query.department } : {}),
       ...(query.tagId
@@ -480,8 +509,22 @@ export class CrmController {
             dto.contactDepartmentId === undefined ? undefined : links.contactDepartmentId,
           contactProfileId: dto.contactProfileId === undefined ? undefined : links.contactProfileId,
           departmentName: dto.contactDepartmentId === undefined ? undefined : links.departmentName,
+          email: nullableUpdate(dto.email),
+          instance: dto.instanceIds === undefined ? undefined : links.instance,
+          instanceIds: dto.instanceIds === undefined ? undefined : links.instanceIds,
         },
       });
+
+      if (dto.customFields !== undefined) {
+        for (const contactId of contactIds) {
+          await this.saveProvidedContactCustomFields(
+            tx,
+            current.tenantId,
+            contactId,
+            dto.customFields,
+          );
+        }
+      }
 
       if (dto.tagIds !== undefined) {
         await tx.contactTag.deleteMany({
@@ -741,6 +784,24 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.findContactOrThrow(id, current.tenantId);
+    if (dto.phone) {
+      const normalizedPhone = normalizePhone(dto.phone);
+      const duplicate = await this.prisma.contact.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          normalizedPhone,
+          archivedAt: null,
+          id: { not: id },
+        },
+        select: { id: true },
+      });
+      if (duplicate) {
+        throw new ConflictException({
+          code: "CONTACT_PHONE_ALREADY_EXISTS",
+          message: "Já existe um contato ativo com este WhatsApp.",
+        });
+      }
+    }
     const links = await this.resolveContactLinks(dto, current.tenantId);
     try {
       const contact = await this.prisma.$transaction(async (tx) => {
@@ -985,9 +1046,9 @@ export class CrmController {
     if (type === ContactCustomFieldType.LIST && options.length === 0) {
       throw new BadRequestException("Informe ao menos uma opcao para a lista.");
     }
-    const tabName = cleanNullable(dto.tabName) ?? (partial ? undefined : "Campos adicionais");
+    const tabName = cleanNullable(dto.tabName) ?? (partial ? undefined : "Dados Adicionais");
     const groupName =
-      cleanNullable(dto.groupName) ?? (partial ? undefined : "Informações adicionais");
+      dto.groupName === undefined ? (partial ? undefined : "") : dto.groupName.trim();
     if (tabName?.toLowerCase() === "geral") {
       throw new BadRequestException("A aba Geral e reservada para os campos padrao do contato.");
     }
@@ -1004,7 +1065,7 @@ export class CrmController {
       mask:
         type === ContactCustomFieldType.NUMBER
           ? (cleanNullable(dto.mask) ?? "0,00")
-          : type === ContactCustomFieldType.TEXT
+          : type === ContactCustomFieldType.TEXT || type === ContactCustomFieldType.DATE
             ? cleanNullable(dto.mask)
             : null,
       note: nullableUpdate(dto.note),
@@ -1022,6 +1083,23 @@ export class CrmController {
     return field;
   }
 
+  private async resolveInstanceFilterKeys(instance: string, tenantId: string) {
+    const value = instance.trim();
+    const connection = await this.prisma.messagingConnection.findFirst({
+      where: {
+        tenantId,
+        archivedAt: null,
+        OR: [{ id: value }, { externalReference: value }, { name: value }],
+      },
+      select: { id: true, externalReference: true, name: true },
+    });
+    return unique(
+      [value, connection?.id, connection?.externalReference, connection?.name].filter(
+        (item): item is string => Boolean(item),
+      ),
+    );
+  }
+
   private async saveContactCustomFields(
     tx: Prisma.TransactionClient,
     tenantId: string,
@@ -1030,6 +1108,36 @@ export class CrmController {
   ) {
     if (values === undefined) return;
     const fields = await tx.contactCustomField.findMany({ where: { tenantId, archivedAt: null } });
+    for (const field of fields) {
+      const raw = values[field.id];
+      const value = raw === undefined || raw === null ? "" : String(raw).trim();
+      if (field.required && !value)
+        throw new BadRequestException(`Campo obrigatorio: ${field.label}.`);
+      if (field.type === ContactCustomFieldType.LIST && value && !field.options.includes(value)) {
+        throw new BadRequestException(`Opcao invalida para ${field.label}.`);
+      }
+      await tx.contactCustomFieldValue.upsert({
+        where: { contactId_fieldId: { contactId, fieldId: field.id } },
+        create: { tenantId, contactId, fieldId: field.id, value },
+        update: { value },
+      });
+    }
+  }
+
+  private async saveProvidedContactCustomFields(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    contactId: string,
+    values: Record<string, string | number | boolean | null>,
+  ) {
+    const fieldIds = Object.keys(values);
+    if (!fieldIds.length) return;
+    const fields = await tx.contactCustomField.findMany({
+      where: { tenantId, id: { in: fieldIds }, archivedAt: null },
+    });
+    if (fields.length !== fieldIds.length) {
+      throw new BadRequestException("Alguns campos adicionais nao foram encontrados.");
+    }
     for (const field of fields) {
       const raw = values[field.id];
       const value = raw === undefined || raw === null ? "" : String(raw).trim();
@@ -1072,12 +1180,9 @@ export class CrmController {
       note: field.note,
       tabName:
         field.tabName?.toLowerCase() === "geral"
-          ? "Campos adicionais"
-          : field.tabName || "Campos adicionais",
-      groupName:
-        field.groupName?.toLowerCase() === "dados do contato"
-          ? "Informações adicionais"
-          : field.groupName || "Informações adicionais",
+          ? "Dados Adicionais"
+          : field.tabName || "Dados Adicionais",
+      groupName: field.groupName?.toLowerCase() === "dados do contato" ? "" : field.groupName || "",
       options: field.options,
       position: field.position,
       createdAt: field.createdAt,

@@ -75,9 +75,11 @@ type DepartamentoFormData = {
 
 type ContactTextVariant = "short" | "long" | "html";
 type ContactNumberSymbol = "" | "R$" | "%" | "$" | "€" | "£" | "¥";
+type ContactDateVariant = "date" | "datetime";
 type ContactFieldConfig = {
   text?: { variant?: ContactTextVariant };
   number?: { decimals?: number; thousands?: boolean; symbol?: ContactNumberSymbol };
+  date?: { variant?: ContactDateVariant };
 };
 
 function ContatosPage() {
@@ -88,6 +90,9 @@ function ContatosPage() {
   const [departments, setDepartments] = React.useState<ContactCatalog[]>([]);
   const [profiles, setProfiles] = React.useState<ContactCatalog[]>([]);
   const [instances, setInstances] = React.useState<ContactInstanceOption[]>([]);
+  const [customFieldDefinitions, setCustomFieldDefinitions] = React.useState<ContactCustomField[]>(
+    [],
+  );
   const [loading, setLoading] = React.useState(true);
   const [query, setQuery] = React.useState("");
   const [instanciaFilter, setInstanciaFilter] = React.useState("");
@@ -97,14 +102,14 @@ function ContatosPage() {
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
-  const [bulkMode, setBulkMode] = React.useState<
-    "customer" | "department" | "profile" | "tags" | "delete" | ""
-  >("");
+  const [bulkMode, setBulkMode] = React.useState("");
   const [bulkValue, setBulkValue] = React.useState("");
   const [bulkTags, setBulkTags] = React.useState<string[]>([]);
+  const [bulkCustomValue, setBulkCustomValue] = React.useState<string | boolean>("");
   const importModal = useDisclosure();
   const exportMenu = useDisclosure();
   const exportMenuRef = React.useRef<HTMLDivElement>(null);
+  const [exportAllRecords, setExportAllRecords] = React.useState(false);
   const [total, setTotal] = React.useState(0);
   const [totalPages, setTotalPages] = React.useState(1);
   const [editing, setEditing] = React.useState<Contact | null>(null);
@@ -141,7 +146,7 @@ function ContatosPage() {
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [contactResponse, customerResponse, options] = await Promise.all([
+      const [contactResponse, customerResponse, options, customFields] = await Promise.all([
         crmApi.listContacts({
           q: query,
           page,
@@ -153,6 +158,7 @@ function ContatosPage() {
         }),
         crmApi.listCustomers({ pageSize: 100 }),
         crmApi.contactOptions(),
+        crmApi.listContactCustomFields(),
       ]);
       setContacts(contactResponse.items);
       setTotal(contactResponse.total);
@@ -164,6 +170,7 @@ function ContatosPage() {
       setInstances(
         options.instances.filter((instance) => isSelectableInstanceStatus(instance.status)),
       );
+      setCustomFieldDefinitions(customFields);
     } catch (e) {
       toast.error("Falha ao carregar", { description: (e as Error).message });
     } finally {
@@ -196,6 +203,10 @@ function ContatosPage() {
     contacts.length > 0 && contacts.every((contact) => selectedIds.includes(contact.id));
   const toggleVisibleSelection = () =>
     setSelectedIds(allVisibleSelected ? [] : contacts.map((contact) => contact.id));
+
+  const selectedBulkCustomField = bulkMode.startsWith("custom:")
+    ? customFieldDefinitions.find((field) => field.id === bulkMode.slice("custom:".length))
+    : undefined;
 
   const openConversation = async (contact: Contact) => {
     try {
@@ -231,18 +242,13 @@ function ContatosPage() {
   };
 
   const exportContacts = async (format: "csv" | "xls" = "csv") => {
-    const response = await crmApi.listContacts({
-      q: query,
-      page: 1,
-      pageSize: 1000,
-      instance: instanciaFilter,
-      department: departamentoFilter,
-      customerId: clienteFilter,
-      tagId: tagFilter,
-    });
-    const rows = selectedIds.length
-      ? response.items.filter((contact) => selectedIds.includes(contact.id))
-      : response.items;
+    if (!exportAllRecords && selectedIds.length === 0) {
+      toast.error("Selecione algum registro p/ prosseguir com a exportação");
+      return;
+    }
+    const rows = exportAllRecords
+      ? await loadContactsForExport()
+      : contacts.filter((contact) => selectedIds.includes(contact.id));
     const rowsForExport = [
       [
         "Contato",
@@ -274,26 +280,68 @@ function ContatosPage() {
     exportMenu.hide();
   };
 
+  const loadContactsForExport = async () => {
+    const all: Contact[] = [];
+    let nextPage = 1;
+    let pages = 1;
+    do {
+      const response = await crmApi.listContacts({
+        q: query,
+        page: nextPage,
+        pageSize: 1000,
+        instance: instanciaFilter,
+        department: departamentoFilter,
+        customerId: clienteFilter,
+        tagId: tagFilter,
+      });
+      all.push(...response.items);
+      pages = response.totalPages;
+      nextPage += 1;
+    } while (nextPage <= pages);
+    return all;
+  };
+
   const importContactsRows = async (rows: string[][]) => {
     const [header, ...records] = rows;
     if (!header?.length) return;
     const index = new Map(header.map((item, i) => [normalizeHeader(item), i]));
     let created = 0;
     for (const row of records) {
-      const name = valueAt(row, index, ["nome", "contato", "name"]);
-      const phone = valueAt(row, index, ["telefone", "phone", "celular", "numero", "número"]);
+      const name = valueAt(row, index, ["contato", "nome", "name"]);
+      const phone = valueAt(row, index, [
+        "whatsapp",
+        "telefone",
+        "phone",
+        "celular",
+        "numero",
+        "número",
+      ]);
       if (!name || !phone) continue;
+      const customerName = valueAt(row, index, ["empresa"]);
+      const departmentName = valueAt(row, index, ["departamento"]);
+      const profileName = valueAt(row, index, ["perfil"]);
+      const tagNames = splitImportList(valueAt(row, index, ["etiquetas"]));
+      const instanceNames = splitImportList(valueAt(row, index, ["instancias", "instâncias"]));
+      const customer = findByImportedName(customers, customerName);
+      const department = findByImportedName(departments, departmentName);
+      const profile = findByImportedName(profiles, profileName);
+      const importedTags = tagNames
+        .map((item) => findByImportedName(tags, item))
+        .filter(Boolean) as Tag[];
+      const importedInstances = instanceNames
+        .map((item) => findImportedInstance(instances, item))
+        .filter(Boolean) as ContactInstanceOption[];
       try {
         await crmApi.createContact(
           contactPayload({
             nome: name,
             telefone: phone,
-            customer_id: null,
+            customer_id: customer?.id ?? null,
             email: valueAt(row, index, ["email", "e-mail"]) || null,
-            contactDepartmentId: null,
-            contactProfileId: null,
-            instanceIds: [],
-            tag_ids: [],
+            contactDepartmentId: department?.id ?? null,
+            contactProfileId: profile?.id ?? null,
+            instanceIds: importedInstances.map((instance) => instance.value),
+            tag_ids: importedTags.map((tag) => tag.id),
           }),
         );
         created += 1;
@@ -312,6 +360,18 @@ function ContatosPage() {
       await crmApi.bulkUpdateContacts({ contactIds: selectedIds, delete: true });
     } else if (bulkMode === "tags") {
       await crmApi.bulkUpdateContacts({ contactIds: selectedIds, tagIds: bulkTags });
+    } else if (bulkMode === "instances") {
+      await crmApi.bulkUpdateContacts({
+        contactIds: selectedIds,
+        instanceIds: bulkValue ? bulkValue.split(",").filter(Boolean) : [],
+      });
+    } else if (bulkMode === "email") {
+      await crmApi.bulkUpdateContacts({ contactIds: selectedIds, email: bulkValue || null });
+    } else if (selectedBulkCustomField) {
+      await crmApi.bulkUpdateContacts({
+        contactIds: selectedIds,
+        customFields: { [selectedBulkCustomField.id]: bulkCustomValue },
+      });
     } else {
       await crmApi.bulkUpdateContacts({
         contactIds: selectedIds,
@@ -344,7 +404,7 @@ function ContatosPage() {
                   <Download className="h-3.5 w-3.5" /> Exportar
                 </Button>
                 {exportMenu.open && (
-                  <div className="absolute right-0 z-[80] mt-2 w-44 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                  <div className="absolute right-0 z-[80] mt-2 w-56 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
@@ -359,6 +419,15 @@ function ContatosPage() {
                     >
                       <FileSpreadsheet className="h-4 w-4" /> Excel
                     </button>
+                    <label className="mt-1 flex cursor-pointer items-center gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={exportAllRecords}
+                        onChange={(event) => setExportAllRecords(event.target.checked)}
+                        className="h-4 w-4 accent-primary"
+                      />
+                      Exportar todos os Registros
+                    </label>
                   </div>
                 )}
               </div>
@@ -448,6 +517,7 @@ function ContatosPage() {
                   setBulkMode(event.target.value as typeof bulkMode);
                   setBulkValue("");
                   setBulkTags([]);
+                  setBulkCustomValue("");
                 }}
                 className="w-60"
               >
@@ -455,7 +525,18 @@ function ContatosPage() {
                 <option value="customer">Atualizar empresa do contato</option>
                 <option value="department">Atualizar departamento</option>
                 <option value="profile">Atualizar perfil do contato</option>
+                <option value="email">Atualizar e-mail</option>
+                <option value="instances">Atualizar instâncias</option>
                 <option value="tags">Atualizar etiquetas</option>
+                {customFieldDefinitions.length > 0 && (
+                  <optgroup label="Campos adicionais">
+                    {customFieldDefinitions.map((field) => (
+                      <option key={field.id} value={`custom:${field.id}`}>
+                        Atualizar {field.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
                 <option value="delete">Excluir</option>
               </Select>
               {bulkMode === "customer" && (
@@ -511,6 +592,33 @@ function ContatosPage() {
                   />
                 </div>
               )}
+              {bulkMode === "email" && (
+                <Input
+                  type="email"
+                  value={bulkValue}
+                  onChange={(event) => setBulkValue(event.target.value)}
+                  placeholder="nome@empresa.com"
+                  className="w-72"
+                />
+              )}
+              {bulkMode === "instances" && (
+                <div className="min-w-72">
+                  <InstanceMultiSelect
+                    instances={visibleInstances}
+                    selectedIds={bulkValue ? bulkValue.split(",").filter(Boolean) : []}
+                    onChange={(ids) => setBulkValue(ids.join(","))}
+                  />
+                </div>
+              )}
+              {selectedBulkCustomField && (
+                <div className="min-w-72">
+                  <CustomContactFieldInput
+                    field={selectedBulkCustomField}
+                    value={bulkCustomValue}
+                    onChange={setBulkCustomValue}
+                  />
+                </div>
+              )}
               <Button
                 variant="primary"
                 size="sm"
@@ -530,7 +638,7 @@ function ContatosPage() {
                 <th className="w-10 px-4 py-3 font-medium">
                   <input
                     type="checkbox"
-                    className="h-4 w-4"
+                    className="h-5 w-5"
                     checked={allVisibleSelected}
                     onChange={toggleVisibleSelection}
                     aria-label="Selecionar contatos visíveis"
@@ -557,7 +665,7 @@ function ContatosPage() {
                     <td className="px-4 py-3">
                       <input
                         type="checkbox"
-                        className="h-4 w-4"
+                        className="h-5 w-5"
                         checked={selectedIds.includes(contact.id)}
                         onChange={() =>
                           setSelectedIds((current) =>
@@ -796,49 +904,39 @@ function ImportContactsModal({
   onImport: (rows: string[][]) => Promise<void>;
 }) {
   const [file, setFile] = React.useState<File | null>(null);
-  const [rows, setRows] = React.useState<string[][]>([]);
   const [validRows, setValidRows] = React.useState(0);
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
     setFile(null);
-    setRows([]);
     setValidRows(0);
     setBusy(false);
   }, [open]);
 
-  const selectFile = async (selected: File | null) => {
+  const selectFile = (selected: File | null) => {
     setFile(selected);
-    setRows([]);
     setValidRows(0);
-    if (!selected) return;
-    try {
-      const parsed = await parseSpreadsheetFile(selected);
-      const [header, ...records] = parsed;
-      const index = new Map((header ?? []).map((item, i) => [normalizeHeader(item), i]));
-      const valid = records.filter((row) => {
-        const name = valueAt(row, index, ["nome", "contato", "name"]);
-        const phone = valueAt(row, index, ["telefone", "whatsapp", "phone", "celular", "numero"]);
-        return Boolean(name && phone);
-      }).length;
-      setRows(parsed);
-      setValidRows(valid);
-      toast.success("Arquivo lido", { description: `${valid} contato(s) válido(s) encontrados.` });
-    } catch (error) {
-      toast.error("Falha ao ler arquivo", { description: (error as Error).message });
-    }
   };
 
   const confirm = async () => {
-    if (!rows.length) {
+    if (!file) {
       toast.error("Selecione um arquivo para importar.");
       return;
     }
     setBusy(true);
     try {
+      const rows = await parseSpreadsheetFile(file);
+      const valid = countValidImportRows(rows);
+      setValidRows(valid);
+      if (!valid) {
+        toast.error("Nenhum contato válido encontrado.");
+        return;
+      }
       await onImport(rows);
       onClose();
+    } catch (error) {
+      toast.error("Falha ao importar arquivo", { description: (error as Error).message });
     } finally {
       setBusy(false);
     }
@@ -855,37 +953,61 @@ function ImportContactsModal({
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Button variant="primary" size="sm" onClick={confirm} disabled={busy || !rows.length}>
+          <Button variant="primary" size="sm" onClick={confirm} disabled={busy || !file}>
             {busy ? "Importando..." : "Confirmar importação"}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <div className="rounded-lg border border-border bg-surface-1 p-3 text-sm text-muted-foreground">
-          Arquivos aceitos: XLSX, XLS e CSV. O modelo deve conter ao menos as colunas
-          <span className="font-medium text-foreground"> Nome</span> e
-          <span className="font-medium text-foreground"> WhatsApp</span>.
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-destructive">Templates de Importação</p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-sm font-normal text-muted-foreground underline transition hover:text-primary"
+              onClick={() => downloadImportTemplate("csv")}
+            >
+              <Download className="h-3.5 w-3.5" /> Modelo CSV
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-sm font-normal text-muted-foreground underline transition hover:text-primary"
+              onClick={() => downloadImportTemplate("xls")}
+            >
+              <Download className="h-3.5 w-3.5" /> Modelo XLS
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-sm font-normal text-muted-foreground underline transition hover:text-primary"
+              onClick={() => downloadImportTemplate("xlsx")}
+            >
+              <Download className="h-3.5 w-3.5" /> Modelo XLSX
+            </button>
+          </div>
         </div>
-        <div className="grid gap-2 sm:grid-cols-3">
-          <Button variant="secondary" size="sm" onClick={() => downloadImportTemplate("csv")}>
-            <FileUp className="h-3.5 w-3.5" /> Modelo CSV
-          </Button>
-          <Button variant="secondary" size="sm" onClick={() => downloadImportTemplate("xls")}>
-            <FileSpreadsheet className="h-3.5 w-3.5" /> Modelo XLS
-          </Button>
-          <Button variant="secondary" size="sm" onClick={() => downloadImportTemplate("xlsx")}>
-            <FileSpreadsheet className="h-3.5 w-3.5" /> Modelo XLSX
-          </Button>
-        </div>
+        <div className="border-t border-border" />
         <Field label="Arquivo *">
-          <Input
-            type="file"
-            accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            onChange={(event) => void selectFile(event.target.files?.[0] ?? null)}
-          />
+          <label className="flex min-h-20 cursor-pointer items-center gap-4 rounded-lg border border-border bg-surface-1 px-5 py-4 text-sm transition hover:border-primary">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-card text-muted-foreground">
+              <FileUp className="h-5 w-5" />
+            </span>
+            <span className="min-w-0 truncate text-base">
+              {file ? file.name : "Clique aqui para selecionar o arquivo"}
+            </span>
+            <input
+              type="file"
+              accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="sr-only"
+              onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
+            />
+          </label>
+          <p className="mt-2 text-xs italic text-muted-foreground">
+            Arquivos aceitos: XLSX, XLS e CSV. O modelo deve conter ao menos as colunas Contato e
+            WhatsApp.
+          </p>
         </Field>
-        {file && (
+        {file && validRows > 0 && (
           <div className="rounded-lg border border-border p-3 text-sm">
             <p className="font-medium">{file.name}</p>
             <p className="text-xs text-muted-foreground">
@@ -960,7 +1082,11 @@ function ContactFormModal({
     setNome(initial?.nome ?? "");
     const initialPhone = splitPhoneByCountry(initial?.telefone ?? "");
     setCountryCode(initialPhone.countryCode);
-    setTelefone(initialPhone.localPhone ? maskBrazilPhone(initialPhone.localPhone) : "");
+    setTelefone(
+      initialPhone.localPhone
+        ? maskBrazilMobilePhone(initialPhone.localPhone, initialPhone.countryCode)
+        : "",
+    );
     setCustomerId(initial?.customer_id ?? "");
     setEmail(initial?.email ?? "");
     setContactDepartmentId(initial?.contactDepartmentId ?? "");
@@ -977,8 +1103,7 @@ function ContactFormModal({
   }, [initial, open]);
 
   const contactTabs = React.useMemo(
-    () =>
-      uniqueLabels(["Geral", ...customFieldDefinitions.map(normalizeContactCustomFieldTab)]),
+    () => uniqueLabels(["Geral", ...customFieldDefinitions.map(normalizeContactCustomFieldTab)]),
     [customFieldDefinitions],
   );
   const groupedCustomFields = React.useMemo(() => {
@@ -1100,7 +1225,7 @@ function ContactFormModal({
                 <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
                 <Input
                   value={telefone}
-                  onChange={(e) => setTelefone(maskBrazilPhone(e.target.value))}
+                  onChange={(e) => setTelefone(maskBrazilMobilePhone(e.target.value, countryCode))}
                   placeholder="(11) 90000-0000"
                 />
               </div>
@@ -1199,9 +1324,11 @@ function ContactFormModal({
         )}
         {groupedCustomFields.map(([group, fields]) => (
           <div key={group} className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              {group}
-            </h3>
+            {group && (
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                {group}
+              </h3>
+            )}
             <div className="grid gap-4 md:grid-cols-2">
               {fields.map((field) => (
                 <Field key={field.id} label={field.required ? `${field.label} *` : field.label}>
@@ -1724,7 +1851,7 @@ function DepartmentFormModal({
             <div className="flex items-center gap-2">
               <input
                 type="color"
-                value={form.color ?? "#6366f1"}
+                value={completeHexColor(form.color, "#6366f1")}
                 onChange={(event) =>
                   setForm({ ...form, color: normalizeHexColor(event.target.value, "#6366f1") })
                 }
@@ -2228,6 +2355,17 @@ function CustomContactFieldInput({
     );
   }
 
+  if (field.type === "date") {
+    const variant = contactDateVariant(field);
+    return (
+      <Input
+        type={variant === "datetime" ? "datetime-local" : "date"}
+        value={toDateInputValue(String(value ?? ""), variant)}
+        onChange={(event) => onChange(fromDateInputValue(event.target.value, variant))}
+      />
+    );
+  }
+
   const numberConfig = contactNumberConfig(field);
   return (
     <Input
@@ -2261,6 +2399,27 @@ function contactNumberConfig(field: ContactCustomField) {
     thousands: config?.thousands ?? true,
     symbol: (config?.symbol ?? "") as ContactNumberSymbol,
   };
+}
+
+function contactDateVariant(field: ContactCustomField): ContactDateVariant {
+  return parseContactFieldConfig(field.mask).date?.variant ?? "date";
+}
+
+function toDateInputValue(value: string, variant: ContactDateVariant) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const base = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  if (variant === "date") return base;
+  return `${base}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function fromDateInputValue(value: string, variant: ContactDateVariant) {
+  if (!value) return "";
+  const normalized = variant === "date" ? `${value}T00:00` : value;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
 function numberPlaceholder(config: ReturnType<typeof contactNumberConfig>) {
@@ -2356,7 +2515,7 @@ function downloadTextFile(filename: string, content: string, type: string) {
 }
 
 const IMPORT_TEMPLATE_ROWS = [
-  ["Nome", "WhatsApp", "E-mail", "Empresa", "Departamento", "Perfil", "Etiquetas"],
+  ["Contato", "WhatsApp", "E-mail", "Empresa", "Departamento", "Perfil", "Instâncias", "Etiquetas"],
   [
     "Maria Exemplo",
     "+55 (11) 90000-0000",
@@ -2364,6 +2523,7 @@ const IMPORT_TEMPLATE_ROWS = [
     "FLOWID",
     "Financeiro",
     "Gerente",
+    "SMCLICK",
     "VIP",
   ],
 ];
@@ -2382,6 +2542,24 @@ async function parseSpreadsheetFile(file: File) {
     });
   }
   throw new Error("Formato inválido. Use XLSX, XLS ou CSV.");
+}
+
+function countValidImportRows(rows: string[][]) {
+  const [header, ...records] = rows;
+  if (!header?.length) return 0;
+  const index = new Map(header.map((item, i) => [normalizeHeader(item), i]));
+  return records.filter((row) => {
+    const name = valueAt(row, index, ["contato", "nome", "name"]);
+    const phone = valueAt(row, index, [
+      "whatsapp",
+      "telefone",
+      "phone",
+      "celular",
+      "numero",
+      "número",
+    ]);
+    return Boolean(name && phone);
+  }).length;
 }
 
 function downloadImportTemplate(format: "csv" | "xls" | "xlsx") {
@@ -2446,6 +2624,33 @@ function valueAt(row: string[], index: Map<string, number>, names: string[]) {
   }
   return "";
 }
+
+function splitImportList(value: string) {
+  return value
+    .split(/[,;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeImportName(value: string) {
+  return normalizeHeader(value).replace(/\s+/g, " ");
+}
+
+function findByImportedName<T extends { nome: string }>(items: T[], value: string) {
+  const normalized = normalizeImportName(value);
+  if (!normalized) return undefined;
+  return items.find((item) => normalizeImportName(item.nome) === normalized);
+}
+
+function findImportedInstance(instances: ContactInstanceOption[], value: string) {
+  const normalized = normalizeImportName(value);
+  if (!normalized) return undefined;
+  return instances.find((instance) =>
+    [instance.name, instance.id, instance.value, instance.externalReference ?? ""].some(
+      (candidate) => normalizeImportName(candidate) === normalized,
+    ),
+  );
+}
 function splitPhoneByCountry(value: string) {
   const digits = onlyDigits(value);
   const match = COUNTRY_CODES.slice()
@@ -2458,10 +2663,24 @@ function splitPhoneByCountry(value: string) {
 }
 
 function formatPhoneForSubmit(value: string, countryCode = "55") {
-  const digits = onlyDigits(value);
+  const digits = normalizeBrazilMobileDigits(onlyDigits(value), countryCode);
   if (!digits) return value;
   const code = onlyDigits(countryCode) || "55";
   return digits.startsWith(code) ? `+${digits}` : `+${code}${digits}`;
+}
+
+function maskBrazilMobilePhone(value: string, countryCode = "55") {
+  const digits = normalizeBrazilMobileDigits(onlyDigits(value), countryCode);
+  return onlyDigits(countryCode) === "55" ? maskBrazilPhone(digits) : digits;
+}
+
+function normalizeBrazilMobileDigits(digits: string, countryCode = "55") {
+  if (onlyDigits(countryCode) !== "55") return digits;
+  const local = digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;
+  if (local.length === 10) {
+    return `${local.slice(0, 2)}9${local.slice(2)}`;
+  }
+  return local;
 }
 
 function formatPhoneWithDdi(value: string) {
@@ -2506,9 +2725,7 @@ function CountryCodeSelect({
         onClick={() => setOpen((current) => !current)}
         className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 text-sm outline-none transition focus:border-primary"
       >
-        <span>
-          {selected.flag} +{selected.code}
-        </span>
+        <span>+{selected.code}</span>
         <ChevronDown className="h-4 w-4 text-muted-foreground" />
       </button>
       {open && (
@@ -2517,9 +2734,13 @@ function CountryCodeSelect({
             <Search className="h-4 w-4 text-muted-foreground" />
             <input
               ref={searchRef}
+              type="text"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Buscar país ou DDI..."
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
               className="w-full bg-transparent py-2 text-sm outline-none"
             />
           </div>
@@ -2563,14 +2784,14 @@ function uniqueLabels(values: Array<string | null | undefined>) {
 
 function normalizeContactCustomFieldTab(field: ContactCustomField) {
   const tab = field.tabName?.trim();
-  return !tab || tab.toLowerCase() === "geral" ? "Campos adicionais" : tab;
+  return !tab || tab.toLowerCase() === "geral" || tab.toLowerCase() === "campos adicionais"
+    ? "Dados Adicionais"
+    : tab;
 }
 
 function normalizeContactCustomFieldGroup(field: ContactCustomField) {
   const group = field.groupName?.trim();
-  return !group || group.toLowerCase() === "dados do contato"
-    ? "Informações adicionais"
-    : group;
+  return !group || group.toLowerCase() === "dados do contato" ? "" : group;
 }
 
 type CustomerFormData = Partial<Customer> & { nome: string };
@@ -2645,7 +2866,7 @@ function CustomerFormModal({
             <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1.5">
               <input
                 type="color"
-                value={form.cor ?? "#3b82f6"}
+                value={completeHexColor(form.cor, "#3b82f6")}
                 onChange={(event) =>
                   setForm({ ...form, cor: normalizeHexColor(event.target.value, "#3b82f6") })
                 }
@@ -2674,6 +2895,12 @@ function CustomerFormModal({
             placeholder="(11) 90000-0000"
           />
         </Field>
+        <Field label="Contato Responsável">
+          <Input
+            value={form.contato_responsavel ?? ""}
+            onChange={(event) => setForm({ ...form, contato_responsavel: event.target.value })}
+          />
+        </Field>
         <Field label="E-mail">
           <Input
             type="email"
@@ -2684,12 +2911,6 @@ function CustomerFormModal({
           {errors.email && (
             <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
           )}
-        </Field>
-        <Field label="Contato Responsável">
-          <Input
-            value={form.contato_responsavel ?? ""}
-            onChange={(event) => setForm({ ...form, contato_responsavel: event.target.value })}
-          />
         </Field>
         <Field label="Notas">
           <Textarea
@@ -2703,12 +2924,16 @@ function CustomerFormModal({
   );
 }
 
-function normalizeHexColor(value?: string | null, fallback = "#6366f1") {
-  const fallbackDigits = fallback.replace(/[^0-9a-fA-F]/g, "").slice(0, 6) || "6366f1";
+function normalizeHexColor(value?: string | null, _fallback = "#6366f1") {
   const digits = String(value ?? "")
     .replace(/[^0-9a-fA-F]/g, "")
     .slice(0, 6);
-  return `#${(digits || fallbackDigits).toUpperCase()}`;
+  return `#${digits.toUpperCase()}`;
+}
+
+function completeHexColor(value?: string | null, fallback = "#6366f1") {
+  const normalized = normalizeHexColor(value);
+  return normalized.length === 7 ? normalized : normalizeHexColor(fallback);
 }
 
 function customerPayload(data: CustomerFormData) {
@@ -2717,7 +2942,7 @@ function customerPayload(data: CustomerFormData) {
     responsibleContactName: data.contato_responsavel?.trim() || null,
     phone: data.telefone?.trim() || null,
     email: data.email?.trim() || null,
-    color: normalizeHexColor(data.cor, "#3b82f6"),
+    color: completeHexColor(data.cor, "#3b82f6"),
     notes: data.notas?.trim() || null,
   };
 }
@@ -2740,7 +2965,7 @@ function departmentPayload(data: DepartamentoFormData) {
   return {
     name: data.name ?? "",
     description: data.description?.trim() || null,
-    color: normalizeHexColor(data.color, "#6366f1"),
+    color: completeHexColor(data.color, "#6366f1"),
   };
 }
 

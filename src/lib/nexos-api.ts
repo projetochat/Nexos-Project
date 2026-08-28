@@ -148,7 +148,7 @@ export type ApiContactCustomField = {
   id: string;
   tenantId: string;
   label: string;
-  type: "text" | "number" | "checkbox" | "list";
+  type: "text" | "number" | "checkbox" | "list" | "date";
   required: boolean;
   mask: string | null;
   note: string | null;
@@ -885,7 +885,10 @@ export const crmApi = {
     customerId?: string | null;
     contactDepartmentId?: string | null;
     contactProfileId?: string | null;
+    email?: string | null;
+    instanceIds?: string[];
     tagIds?: string[];
+    customFields?: Record<string, string | number | boolean | null>;
     delete?: boolean;
   }) =>
     apiRequest<{ updated: number }>("/crm/contacts/bulk", {
