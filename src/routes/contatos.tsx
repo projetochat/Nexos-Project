@@ -3,9 +3,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import * as XLSX from "xlsx";
 import {
   AlignCenter,
-  AlignJustify,
   AlignLeft,
-  AlignRight,
+  BookUser,
   Building2,
   Bold,
   Check,
@@ -545,13 +544,13 @@ function ContatosPage() {
                   Importar / Exportar
                 </Button>
                 {exportMenu.open && (
-                  <div className="absolute right-0 z-[80] mt-2 w-64 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                  <div className="absolute left-0 z-[80] mt-2 w-64 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
                       onClick={() => void importFromAgenda()}
                     >
-                      <FileUp className="h-4 w-4" /> Importar via Agenda
+                      <BookUser className="h-4 w-4" /> Importar via Agenda
                     </button>
                     <button
                       type="button"
@@ -1020,10 +1019,10 @@ function ContatosPage() {
                 </p>
                 <div className="space-y-1 text-foreground">
                   <p>
-                    <strong>Nome: {deleting.nome}</strong>
+                    <strong>Nome: </strong> {deleting.nome}
                   </p>
                   <p>
-                    <strong>Whatsapp: {formatPhoneWithDdi(deleting.telefone)}</strong>
+                    <strong>Whatsapp: </strong> {formatPhoneWithDdi(deleting.telefone)}
                   </p>
                 </div>
                 <p className="italic">
@@ -2537,14 +2536,14 @@ function CustomContactFieldInput({
 }) {
   if (field.type === "checkbox") {
     return (
-      <label className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
+      <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
         <input
           type="checkbox"
           checked={value === true || value === "true"}
           onChange={(event) => onChange(event.target.checked)}
         />
-        Marcado
-      </label>
+        <span>Marcado</span>
+      </div>
     );
   }
   if (field.type === "list") {
@@ -2579,10 +2578,10 @@ function CustomContactFieldInput({
   if (field.type === "date") {
     const variant = contactDateVariant(field);
     return (
-      <Input
-        type={variant === "datetime" ? "datetime-local" : "date"}
-        value={toDateInputValue(String(value ?? ""), variant)}
-        onChange={(event) => onChange(fromDateInputValue(event.target.value, variant))}
+      <CustomDateInput
+        value={String(value ?? "")}
+        variant={variant}
+        onChange={(next) => onChange(next)}
       />
     );
   }
@@ -2610,6 +2609,8 @@ function HtmlTextEditor({
   expanded?: boolean;
 }) {
   const editorRef = React.useRef<HTMLDivElement>(null);
+  const selectionRef = React.useRef<Range | null>(null);
+  const lastCommandRef = React.useRef<{ name: string; at: number } | null>(null);
   const [fullscreen, setFullscreen] = React.useState(false);
 
   React.useEffect(() => {
@@ -2619,9 +2620,55 @@ function HtmlTextEditor({
   }, [value]);
 
   const sync = () => onChange(editorRef.current?.innerHTML ?? "");
+  const saveSelection = () => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection?.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (editor.contains(range.commonAncestorContainer)) {
+      selectionRef.current = range.cloneRange();
+    }
+  };
+  const restoreSelection = () => {
+    const selection = window.getSelection();
+    const range = selectionRef.current;
+    if (!selection || !range) return;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  };
+  const placeCursorAtEnd = (element: HTMLElement) => {
+    const selection = window.getSelection();
+    if (!selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    selectionRef.current = range.cloneRange();
+  };
   const command = (name: string, commandValue?: string) => {
-    editorRef.current?.focus();
+    const editor = editorRef.current;
+    if (!editor) return;
+    const now = Date.now();
+    const commandKey = `${name}:${commandValue ?? ""}`;
+    if (
+      lastCommandRef.current?.name === commandKey &&
+      now - lastCommandRef.current.at < 700
+    ) {
+      return;
+    }
+    lastCommandRef.current = { name: commandKey, at: now };
+    editor.focus();
+    restoreSelection();
+    if (name === "insertUnorderedList" && !editor.textContent?.trim()) {
+      editor.innerHTML = "<ul><li><br></li></ul>";
+      const item = editor.querySelector("li");
+      if (item instanceof HTMLElement) placeCursorAtEnd(item);
+      sync();
+      return;
+    }
     document.execCommand(name, false, commandValue);
+    saveSelection();
     sync();
   };
 
@@ -2646,6 +2693,7 @@ function HtmlTextEditor({
         <select
           className="h-8 rounded-md border border-border bg-surface-1 px-2 text-xs outline-none"
           defaultValue=""
+          onMouseDown={saveSelection}
           onChange={(event) => {
             if (event.target.value) command("fontSize", event.target.value);
             event.target.value = "";
@@ -2661,6 +2709,7 @@ function HtmlTextEditor({
         <select
           className="h-8 rounded-md border border-border bg-surface-1 px-2 text-xs outline-none"
           defaultValue=""
+          onMouseDown={saveSelection}
           onChange={(event) => {
             if (event.target.value) command("fontName", event.target.value);
             event.target.value = "";
@@ -2681,21 +2730,25 @@ function HtmlTextEditor({
           <input
             type="color"
             className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
+            onMouseDown={saveSelection}
             onChange={(event) => command("foreColor", event.target.value)}
           />
         </label>
-        <ToolbarButton title="Alinhar à esquerda" onClick={() => command("justifyLeft")}>
-          <AlignLeft className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Centralizar" onClick={() => command("justifyCenter")}>
-          <AlignCenter className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Alinhar à direita" onClick={() => command("justifyRight")}>
-          <AlignRight className="h-4 w-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Justificar" onClick={() => command("justifyFull")}>
-          <AlignJustify className="h-4 w-4" />
-        </ToolbarButton>
+        <label className="flex h-8 items-center gap-1 rounded-md border border-border bg-surface-1 px-2 text-xs">
+          <AlignLeft className="h-4 w-4 text-muted-foreground" />
+          <select
+            className="h-full bg-transparent text-xs outline-none"
+            defaultValue="justifyLeft"
+            onMouseDown={saveSelection}
+            onChange={(event) => command(event.target.value)}
+            title="Alinhamento"
+          >
+            <option value="justifyLeft">Esquerda</option>
+            <option value="justifyCenter">Centro</option>
+            <option value="justifyRight">Direita</option>
+            <option value="justifyFull">Justificado</option>
+          </select>
+        </label>
         {!expanded && (
           <ToolbarButton title="Maximizar" onClick={() => setFullscreen(true)}>
             <Maximize2 className="h-4 w-4" />
@@ -2706,10 +2759,16 @@ function HtmlTextEditor({
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
-        className={`min-h-44 w-full overflow-y-auto px-3 py-2 text-sm outline-none ${
+        className={`min-h-44 w-full overflow-y-auto px-3 py-2 text-sm outline-none [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 ${
           expanded ? "min-h-[62vh]" : ""
         }`}
-        onInput={sync}
+        onBlur={saveSelection}
+        onInput={() => {
+          saveSelection();
+          sync();
+        }}
+        onKeyUp={saveSelection}
+        onMouseUp={saveSelection}
       />
     </div>
   );
@@ -2756,6 +2815,41 @@ function ToolbarButton({
   );
 }
 
+function CustomDateInput({
+  value,
+  variant,
+  onChange,
+}: {
+  value: string;
+  variant: ContactDateVariant;
+  onChange: (value: string) => void;
+}) {
+  const [draft, setDraft] = React.useState(() => formatDateForDisplay(value, variant));
+
+  React.useEffect(() => {
+    setDraft(formatDateForDisplay(value, variant));
+  }, [value, variant]);
+
+  return (
+    <Input
+      type="text"
+      inputMode="numeric"
+      value={draft}
+      placeholder={variant === "datetime" ? "28/08/2026 10:08" : "28/08/2026"}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        onChange(event.target.value);
+      }}
+      onBlur={() => {
+        const parsed = parseDateDraft(draft, variant);
+        if (!parsed) return;
+        setDraft(parsed.display);
+        onChange(parsed.iso);
+      }}
+    />
+  );
+}
+
 function parseContactFieldConfig(mask?: string | null): ContactFieldConfig {
   if (!mask?.trim().startsWith("{")) return {};
   try {
@@ -2782,21 +2876,42 @@ function contactDateVariant(field: ContactCustomField): ContactDateVariant {
   return parseContactFieldConfig(field.mask).date?.variant ?? "date";
 }
 
-function toDateInputValue(value: string, variant: ContactDateVariant) {
+function formatDateForDisplay(value: string, variant: ContactDateVariant) {
   if (!value) return "";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
+  if (Number.isNaN(date.getTime())) {
+    const parsed = parseDateDraft(value, variant);
+    return parsed?.display ?? value;
+  }
   const pad = (part: number) => String(part).padStart(2, "0");
-  const base = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const base = `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
   if (variant === "date") return base;
-  return `${base}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${base} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function fromDateInputValue(value: string, variant: ContactDateVariant) {
-  if (!value) return "";
-  const normalized = variant === "date" ? `${value}T00:00` : value;
-  const date = new Date(normalized);
-  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+function parseDateDraft(value: string, variant: ContactDateVariant) {
+  const digits = onlyDigits(value);
+  const expectedLength = variant === "datetime" ? 12 : 8;
+  if (digits.length < expectedLength) return null;
+  const day = Number(digits.slice(0, 2));
+  const month = Number(digits.slice(2, 4));
+  const year = Number(digits.slice(4, 8));
+  const hour = variant === "datetime" ? Number(digits.slice(8, 10)) : 0;
+  const minute = variant === "datetime" ? Number(digits.slice(10, 12)) : 0;
+  const date = new Date(year, month - 1, day, hour, minute, 0, 0);
+  const valid =
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day &&
+    date.getHours() === hour &&
+    date.getMinutes() === minute;
+  if (!valid) return null;
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const displayDate = `${pad(day)}/${pad(month)}/${year}`;
+  return {
+    display: variant === "datetime" ? `${displayDate} ${pad(hour)}:${pad(minute)}` : displayDate,
+    iso: date.toISOString(),
+  };
 }
 
 function numberPlaceholder(config: ReturnType<typeof contactNumberConfig>) {
@@ -3054,11 +3169,17 @@ function maskBrazilMobilePhone(value: string, countryCode = "55") {
 function isValidPhoneForCountry(value: string, countryCode = "55") {
   const code = onlyDigits(countryCode) || "55";
   const digits = onlyDigits(value);
+  const fullDigits = digits.startsWith(code) ? digits : `${code}${digits}`;
+  if (isWhatsAppGroupPhone(fullDigits)) return true;
   if (code !== "55") return digits.length >= 6;
   const local = normalizeBrazilMobileDigits(digits, code);
   if (local.length !== 11 || local[2] !== "9") return false;
   const subscriber = local.slice(3);
   return !/^(\d)\1+$/.test(subscriber);
+}
+
+function isWhatsAppGroupPhone(digits: string) {
+  return digits.startsWith("120363") && digits.length >= 16 && digits.length <= 30;
 }
 
 function normalizeBrazilMobileDigits(digits: string, countryCode = "55") {

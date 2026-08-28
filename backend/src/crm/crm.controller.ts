@@ -39,7 +39,11 @@ import { ListContactsQueryDto } from "./dto/list-contacts-query.dto";
 import { PaginationDto } from "./dto/pagination.dto";
 import { UpdateContactDto } from "./dto/update-contact.dto";
 import { UpdateCustomerDto } from "./dto/update-customer.dto";
-import { normalizePhone } from "./phone-normalization";
+import {
+  contactPhoneDuplicateCandidates,
+  groupContactIdentityFromPhone,
+  normalizePhone,
+} from "./phone-normalization";
 
 class ContactCatalogDto {
   @IsOptional()
@@ -692,9 +696,10 @@ export class CrmController {
       await this.prisma.contact.count({ where: { tenantId: current.tenantId, archivedAt: null } }),
     );
     const links = await this.resolveContactLinks(dto, current.tenantId);
-    const normalizedPhone = normalizePhone(dto.phone);
+    const normalizedPhone = groupContactIdentityFromPhone(dto.phone) ?? normalizePhone(dto.phone);
+    const phoneCandidates = contactPhoneDuplicateCandidates(dto.phone);
     const existing = await this.prisma.contact.findFirst({
-      where: { tenantId: current.tenantId, normalizedPhone },
+      where: { tenantId: current.tenantId, normalizedPhone: { in: phoneCandidates } },
       include: contactInclude,
     });
     if (existing?.archivedAt === null) {
@@ -783,13 +788,18 @@ export class CrmController {
     @Body() dto: UpdateContactDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    await this.findContactOrThrow(id, current.tenantId);
+    const currentContact = await this.findContactOrThrow(id, current.tenantId);
+    const currentGroupIdentity = currentContact.normalizedPhone.startsWith("group:")
+      ? currentContact.normalizedPhone
+      : null;
     if (dto.phone) {
-      const normalizedPhone = normalizePhone(dto.phone);
+      const phoneCandidates = currentGroupIdentity
+        ? [currentGroupIdentity]
+        : contactPhoneDuplicateCandidates(dto.phone);
       const duplicate = await this.prisma.contact.findFirst({
         where: {
           tenantId: current.tenantId,
-          normalizedPhone,
+          normalizedPhone: { in: phoneCandidates },
           archivedAt: null,
           id: { not: id },
         },
@@ -822,8 +832,18 @@ export class CrmController {
           where: { id },
           data: {
             name: dto.name?.trim(),
-            phone: dto.phone?.trim(),
-            normalizedPhone: dto.phone ? normalizePhone(dto.phone) : undefined,
+            phone:
+              dto.phone === undefined
+                ? undefined
+                : currentGroupIdentity
+                  ? currentContact.phone
+                  : dto.phone.trim(),
+            normalizedPhone:
+              dto.phone === undefined
+                ? undefined
+                : currentGroupIdentity
+                  ? currentGroupIdentity
+                  : (groupContactIdentityFromPhone(dto.phone) ?? normalizePhone(dto.phone)),
             email: nullableUpdate(dto.email),
             customerId: dto.customerId === undefined ? undefined : links.customerId,
             departmentId: dto.departmentId === undefined ? undefined : links.departmentId,

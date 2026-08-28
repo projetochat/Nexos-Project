@@ -36,8 +36,8 @@ export class NotificationsController {
   @Get()
   @RequirePermissions("notifications.read")
   async list(@Query() query: ListNotificationsQueryDto, @CurrentUser() current: AuthenticatedUser) {
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 25;
+    const page = integerQueryValue(query.page, 1, 1);
+    const pageSize = integerQueryValue(query.pageSize, 25, 1, 100);
     const where: Prisma.NotificationWhereInput = {
       tenantId: current.tenantId,
       membershipId: current.membershipId,
@@ -89,6 +89,18 @@ export class NotificationsController {
     });
     return { ok: true, updated: result.count };
   }
+}
+
+function integerQueryValue(
+  value: number | string | undefined,
+  fallback: number,
+  min: number,
+  max?: number,
+) {
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  const boundedMin = Math.max(min, parsed);
+  return max === undefined ? boundedMin : Math.min(max, boundedMin);
 }
 
 function serializeNotification(notification: {
