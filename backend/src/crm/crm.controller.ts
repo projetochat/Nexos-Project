@@ -985,6 +985,17 @@ export class CrmController {
     if (type === ContactCustomFieldType.LIST && options.length === 0) {
       throw new BadRequestException("Informe ao menos uma opcao para a lista.");
     }
+    const tabName = cleanNullable(dto.tabName) ?? (partial ? undefined : "Campos adicionais");
+    const groupName =
+      cleanNullable(dto.groupName) ?? (partial ? undefined : "Informações adicionais");
+    if (tabName?.toLowerCase() === "geral") {
+      throw new BadRequestException("A aba Geral e reservada para os campos padrao do contato.");
+    }
+    if (groupName?.toLowerCase() === "dados do contato") {
+      throw new BadRequestException(
+        "Este agrupamento e reservado para os campos padrao do contato.",
+      );
+    }
     return {
       label: label || undefined,
       normalizedName: label ? normalizeCatalogName(label) : undefined,
@@ -997,8 +1008,8 @@ export class CrmController {
             ? cleanNullable(dto.mask)
             : null,
       note: nullableUpdate(dto.note),
-      tabName: cleanNullable(dto.tabName) ?? (partial ? undefined : "Geral"),
-      groupName: cleanNullable(dto.groupName) ?? (partial ? undefined : "Dados do contato"),
+      tabName,
+      groupName,
       options,
     };
   }
@@ -1059,8 +1070,14 @@ export class CrmController {
       required: field.required,
       mask: field.mask,
       note: field.note,
-      tabName: field.tabName || "Geral",
-      groupName: field.groupName || "Dados do contato",
+      tabName:
+        field.tabName?.toLowerCase() === "geral"
+          ? "Campos adicionais"
+          : field.tabName || "Campos adicionais",
+      groupName:
+        field.groupName?.toLowerCase() === "dados do contato"
+          ? "Informações adicionais"
+          : field.groupName || "Informações adicionais",
       options: field.options,
       position: field.position,
       createdAt: field.createdAt,

@@ -978,14 +978,14 @@ function ContactFormModal({
 
   const contactTabs = React.useMemo(
     () =>
-      uniqueLabels(["Geral", ...customFieldDefinitions.map((field) => field.tabName || "Geral")]),
+      uniqueLabels(["Geral", ...customFieldDefinitions.map(normalizeContactCustomFieldTab)]),
     [customFieldDefinitions],
   );
   const groupedCustomFields = React.useMemo(() => {
     const groups = new Map<string, ContactCustomField[]>();
     for (const field of customFieldDefinitions) {
-      if ((field.tabName || "Geral") !== activeContactTab) continue;
-      const group = field.groupName || "Dados do contato";
+      if (normalizeContactCustomFieldTab(field) !== activeContactTab) continue;
+      const group = normalizeContactCustomFieldGroup(field);
       groups.set(group, [...(groups.get(group) ?? []), field]);
     }
     return Array.from(groups.entries());
@@ -2559,6 +2559,18 @@ function isSelectableInstanceStatus(status?: string | null) {
 
 function uniqueLabels(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean) as string[]));
+}
+
+function normalizeContactCustomFieldTab(field: ContactCustomField) {
+  const tab = field.tabName?.trim();
+  return !tab || tab.toLowerCase() === "geral" ? "Campos adicionais" : tab;
+}
+
+function normalizeContactCustomFieldGroup(field: ContactCustomField) {
+  const group = field.groupName?.trim();
+  return !group || group.toLowerCase() === "dados do contato"
+    ? "Informações adicionais"
+    : group;
 }
 
 type CustomerFormData = Partial<Customer> & { nome: string };
