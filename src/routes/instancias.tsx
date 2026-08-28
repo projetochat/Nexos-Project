@@ -427,7 +427,7 @@ function ConnectionSettingsModal({
     onSubmit(connection, {
       ...form,
       name: form.name.trim(),
-      color: form.color || "#22c55e",
+      color: normalizeHexColor(form.color, "#22c55e"),
       welcomeNewMessage: form.welcomeNewMessage?.trim() || null,
       welcomeExistingMessage: form.welcomeExistingMessage?.trim() || null,
       notes: form.notes?.trim() || null,
@@ -483,12 +483,16 @@ function ConnectionSettingsModal({
             <Input
               type="color"
               value={form.color || "#22c55e"}
-              onChange={(event) => setForm({ ...form, color: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, color: normalizeHexColor(event.target.value, "#22c55e") })
+              }
               className="h-10 w-14 p-1"
             />
             <Input
               value={form.color || ""}
-              onChange={(event) => setForm({ ...form, color: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, color: normalizeHexColor(event.target.value, "#22c55e") })
+              }
             />
           </div>
         </Field>
@@ -679,4 +683,12 @@ function providerColor(provider: ApiMessagingConnection["providerType"]) {
   if (provider === "meta_cloud") return "#e11d48";
   if (provider === "development") return "#f59e0b";
   return "#22c55e";
+}
+
+function normalizeHexColor(value?: string | null, fallback = "#22c55e") {
+  const fallbackDigits = fallback.replace(/[^0-9a-fA-F]/g, "").slice(0, 6) || "22c55e";
+  const digits = String(value ?? "")
+    .replace(/[^0-9a-fA-F]/g, "")
+    .slice(0, 6);
+  return `#${(digits || fallbackDigits).toUpperCase()}`;
 }

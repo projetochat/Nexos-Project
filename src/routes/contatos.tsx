@@ -10,6 +10,7 @@ import {
   FileSpreadsheet,
   FileUp,
   Link2,
+  Plug,
   Info,
   Pencil,
   Plus,
@@ -47,14 +48,14 @@ export const Route = createFileRoute("/contatos")({ component: ContatosPage });
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000] as const;
 const COUNTRY_CODES = [
-  { code: "55", country: "Brasil", flag: "BR" },
-  { code: "1", country: "Estados Unidos", flag: "US" },
-  { code: "351", country: "Portugal", flag: "PT" },
-  { code: "54", country: "Argentina", flag: "AR" },
-  { code: "56", country: "Chile", flag: "CL" },
-  { code: "57", country: "Colômbia", flag: "CO" },
-  { code: "52", country: "México", flag: "MX" },
-  { code: "34", country: "Espanha", flag: "ES" },
+  { code: "55", country: "Brasil", flag: "🇧🇷" },
+  { code: "1", country: "Estados Unidos", flag: "🇺🇸" },
+  { code: "351", country: "Portugal", flag: "🇵🇹" },
+  { code: "54", country: "Argentina", flag: "🇦🇷" },
+  { code: "56", country: "Chile", flag: "🇨🇱" },
+  { code: "57", country: "Colômbia", flag: "🇨🇴" },
+  { code: "52", country: "México", flag: "🇲🇽" },
+  { code: "34", country: "Espanha", flag: "🇪🇸" },
 ];
 
 type Customer = ApiCustomer;
@@ -67,6 +68,13 @@ type DepartamentoFormData = {
   name?: string;
   description?: string | null;
   color?: string;
+};
+
+type ContactTextVariant = "short" | "long" | "html";
+type ContactNumberSymbol = "" | "R$" | "%" | "$" | "€" | "£" | "¥";
+type ContactFieldConfig = {
+  text?: { variant?: ContactTextVariant };
+  number?: { decimals?: number; thousands?: boolean; symbol?: ContactNumberSymbol };
 };
 
 function ContatosPage() {
@@ -503,12 +511,12 @@ function ContatosPage() {
                     aria-label="Selecionar contatos visíveis"
                   />
                 </th>
-                <th className="w-[36%] px-4 py-3 font-medium">Contato</th>
-                <th className="w-[20%] px-4 py-3 font-medium">WhatsApp</th>
+                <th className="w-[32%] px-4 py-3 font-medium">Contato</th>
+                <th className="w-[21%] px-4 py-3 font-medium">WhatsApp</th>
                 <th className="w-[10%] px-4 py-3 font-medium">Instância</th>
-                <th className="w-[11%] px-4 py-3 font-medium">Empresa</th>
-                <th className="w-[11%] px-4 py-3 font-medium">Departamento</th>
-                <th className="w-24 px-4 py-3 font-medium text-right">Ações</th>
+                <th className="w-[10%] px-4 py-3 font-medium">Empresa</th>
+                <th className="w-[15%] px-4 py-3 font-medium">Departamento</th>
+                <th className="w-24 px-4 py-3 text-center font-medium">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -561,7 +569,7 @@ function ContatosPage() {
                                   color,
                                 }}
                               >
-                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
+                                <Plug className="h-3 w-3 shrink-0" />
                                 <span className="truncate">
                                   {connectionLabelByValue.get(instanceId) ?? instanceId}
                                 </span>
@@ -601,7 +609,7 @@ function ContatosPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
+                      <div className="flex justify-center gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -731,7 +739,28 @@ function ContatosPage() {
         <ConfirmDialog
           open={!!deleting}
           title="Excluir contato?"
-          description={`Contato "${deleting?.nome ?? ""}" será apagado.\nDeseja continuar?\n\nHistórico de Conversas associadas a esse contato serão preservadas para auditoria.`}
+          description={
+            deleting ? (
+              <div className="space-y-3">
+                <p>
+                  Contato abaixo será apagado.
+                  <br />
+                  Deseja continuar?
+                </p>
+                <div className="space-y-1 text-foreground">
+                  <p>
+                    <strong>Nome: {deleting.nome}</strong>
+                  </p>
+                  <p>
+                    <strong>Whatsapp: {formatPhoneWithDdi(deleting.telefone)}</strong>
+                  </p>
+                </div>
+                <p className="italic">
+                  Histórico de Conversas associadas a esse contato serão preservadas para auditoria.
+                </p>
+              </div>
+            ) : undefined
+          }
           destructive
           confirmLabel="Excluir"
           onClose={() => setDeleting(null)}
@@ -864,14 +893,17 @@ function ContactFormModal({
       description=""
       size="xl"
       footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" size="sm" onClick={handle}>
-            Salvar
-          </Button>
-        </>
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <ContactFormLog contact={initial} />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="sm" onClick={handle}>
+              Salvar
+            </Button>
+          </div>
+        </div>
       }
     >
       <div className="grid gap-4 md:grid-cols-2">
@@ -1170,7 +1202,7 @@ function CustomersManagerModal({
                 <th className="w-[22%] px-4 py-3 font-medium">Contato Responsável</th>
                 <th className="w-[20%] px-4 py-3 font-medium">E-mail</th>
                 <th className="w-[14%] px-4 py-3 font-medium">Telefone</th>
-                <th className="w-44 px-4 py-3 font-medium text-right">Ações</th>
+                <th className="w-44 px-4 py-3 text-center font-medium">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -1201,7 +1233,7 @@ function CustomersManagerModal({
                       {customer.telefone ? maskBrazilPhone(customer.telefone) : "-"}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
+                      <div className="flex justify-center gap-1">
                         <Button
                           variant="secondary"
                           size="sm"
@@ -1533,12 +1565,16 @@ function DepartmentFormModal({
             <input
               type="color"
               value={form.color ?? "#6366f1"}
-              onChange={(event) => setForm({ ...form, color: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, color: normalizeHexColor(event.target.value, "#6366f1") })
+              }
               className="h-9 w-14 cursor-pointer rounded border border-border bg-transparent"
             />
             <Input
               value={form.color ?? "#6366f1"}
-              onChange={(event) => setForm({ ...form, color: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, color: normalizeHexColor(event.target.value, "#6366f1") })
+              }
             />
           </div>
         </Field>
@@ -1950,6 +1986,22 @@ function TagMultiSelect({
     </div>
   );
 }
+function ContactFormLog({ contact }: { contact?: Contact }) {
+  if (!contact) return <span aria-hidden="true" />;
+  return (
+    <div className="text-left text-xs leading-5 text-muted-foreground">
+      <div>
+        <span className="font-semibold text-foreground">Criado:</span>{" "}
+        {formatDateTime(contact.createdAt)}
+      </div>
+      <div>
+        <span className="font-semibold text-foreground">Editado:</span>{" "}
+        {formatDateTime(contact.updatedAt)}
+      </div>
+    </div>
+  );
+}
+
 function CustomContactFieldInput({
   field,
   value,
@@ -1983,28 +2035,99 @@ function CustomContactFieldInput({
       </Select>
     );
   }
+
+  if (field.type === "text") {
+    const variant = contactTextVariant(field);
+    const inputValue = String(value ?? "");
+    if (variant === "long") {
+      return (
+        <Textarea rows={3} value={inputValue} onChange={(event) => onChange(event.target.value)} />
+      );
+    }
+    if (variant === "html") {
+      return (
+        <Textarea
+          rows={8}
+          className="min-h-44 font-mono text-sm"
+          value={inputValue}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      );
+    }
+    return (
+      <Input type="text" value={inputValue} onChange={(event) => onChange(event.target.value)} />
+    );
+  }
+
+  const numberConfig = contactNumberConfig(field);
   return (
     <Input
       type="text"
-      inputMode={field.type === "number" ? "decimal" : undefined}
-      className={field.type === "number" ? "text-right" : undefined}
+      inputMode="decimal"
+      className="text-right"
       value={String(value ?? "")}
-      placeholder={field.type === "number" ? (field.mask ?? "#.###,##") : undefined}
-      onChange={(event) =>
-        onChange(
-          field.type === "number" ? maskAdditionalNumber(event.target.value) : event.target.value,
-        )
-      }
+      placeholder={numberPlaceholder(numberConfig)}
+      onChange={(event) => onChange(maskAdditionalNumber(event.target.value, numberConfig))}
     />
   );
 }
-function maskAdditionalNumber(value: string) {
+
+function parseContactFieldConfig(mask?: string | null): ContactFieldConfig {
+  if (!mask?.trim().startsWith("{")) return {};
+  try {
+    return JSON.parse(mask) as ContactFieldConfig;
+  } catch {
+    return {};
+  }
+}
+
+function contactTextVariant(field: ContactCustomField): ContactTextVariant {
+  return parseContactFieldConfig(field.mask).text?.variant ?? "short";
+}
+
+function contactNumberConfig(field: ContactCustomField) {
+  const config = parseContactFieldConfig(field.mask).number;
+  return {
+    decimals: clampInteger(config?.decimals ?? 2, 0, 6),
+    thousands: config?.thousands ?? true,
+    symbol: (config?.symbol ?? "") as ContactNumberSymbol,
+  };
+}
+
+function numberPlaceholder(config: ReturnType<typeof contactNumberConfig>) {
+  const decimals = config.decimals > 0 ? `,${"0".repeat(config.decimals)}` : "";
+  const base = `0${decimals}`;
+  if (!config.symbol) return base;
+  return config.symbol === "%" ? `${base}%` : `${config.symbol} ${base}`;
+}
+
+function maskAdditionalNumber(value: string, config: ReturnType<typeof contactNumberConfig>) {
   const digits = onlyDigits(value);
   if (!digits) return "";
-  const padded = digits.padStart(3, "0");
-  const integer = padded.slice(0, -2).replace(/^0+(?=\d)/, "");
-  const decimals = padded.slice(-2);
-  return `${integer.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${decimals}`;
+  const decimals = clampInteger(config.decimals, 0, 6);
+  const padded = decimals > 0 ? digits.padStart(decimals + 1, "0") : digits;
+  const integerRaw = decimals > 0 ? padded.slice(0, -decimals) : padded;
+  const decimalRaw = decimals > 0 ? padded.slice(-decimals) : "";
+  const integer = (integerRaw.replace(/^0+(?=\d)/, "") || "0").replace(
+    config.thousands ? /\B(?=(\d{3})+(?!\d))/g : /$^/g,
+    ".",
+  );
+  const formatted = decimals > 0 ? `${integer},${decimalRaw}` : integer;
+  if (!config.symbol) return formatted;
+  return config.symbol === "%" ? `${formatted}%` : `${config.symbol} ${formatted}`;
+}
+
+function clampInteger(value: string | number, min: number, max: number) {
+  const parsed = typeof value === "number" ? value : Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return min;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
 function FilterSelect({
@@ -2294,14 +2417,18 @@ function CustomerFormModal({
             <input
               type="color"
               value={form.cor ?? "#3b82f6"}
-              onChange={(event) => setForm({ ...form, cor: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, cor: normalizeHexColor(event.target.value, "#3b82f6") })
+              }
               className="h-7 w-9 cursor-pointer rounded border border-border bg-transparent p-0"
               aria-label="Selecionar cor"
             />
             <input
               type="text"
               value={form.cor ?? ""}
-              onChange={(event) => setForm({ ...form, cor: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, cor: normalizeHexColor(event.target.value, "#3b82f6") })
+              }
               placeholder="#3B82F6"
               maxLength={7}
               className="w-24 bg-transparent font-mono text-xs uppercase outline-none"
@@ -2319,13 +2446,21 @@ function CustomerFormModal({
   );
 }
 
+function normalizeHexColor(value?: string | null, fallback = "#6366f1") {
+  const fallbackDigits = fallback.replace(/[^0-9a-fA-F]/g, "").slice(0, 6) || "6366f1";
+  const digits = String(value ?? "")
+    .replace(/[^0-9a-fA-F]/g, "")
+    .slice(0, 6);
+  return `#${(digits || fallbackDigits).toUpperCase()}`;
+}
+
 function customerPayload(data: CustomerFormData) {
   return {
     name: data.nome,
     responsibleContactName: data.contato_responsavel?.trim() || null,
     phone: data.telefone?.trim() || null,
     email: data.email?.trim() || null,
-    color: data.cor || "#3b82f6",
+    color: normalizeHexColor(data.cor, "#3b82f6"),
     notes: data.notas?.trim() || null,
   };
 }
@@ -2348,7 +2483,7 @@ function departmentPayload(data: DepartamentoFormData) {
   return {
     name: data.name ?? "",
     description: data.description?.trim() || null,
-    color: data.color || "#6366f1",
+    color: normalizeHexColor(data.color, "#6366f1"),
   };
 }
 

@@ -15,7 +15,7 @@ export function Modal({
   open: boolean;
   onClose: () => void;
   title: string;
-  description?: string;
+  description?: React.ReactNode;
   children?: React.ReactNode;
   size?: "sm" | "md" | "lg" | "xl";
   footer?: React.ReactNode;
@@ -90,7 +90,7 @@ export function ConfirmDialog({
 }: {
   open: boolean;
   title: string;
-  description?: string;
+  description?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
@@ -127,7 +127,11 @@ export function ConfirmDialog({
             <AlertTriangle className="h-4 w-4" />
           </div>
         )}
-        <p className="whitespace-pre-line text-sm text-muted-foreground">{description}</p>
+        {typeof description === "string" ? (
+          <p className="whitespace-pre-line text-sm text-muted-foreground">{description}</p>
+        ) : (
+          <div className="min-w-0 text-sm text-muted-foreground">{description}</div>
+        )}
       </div>
     </Modal>
   );

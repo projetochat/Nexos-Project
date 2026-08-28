@@ -169,7 +169,7 @@ function AtendentesPage() {
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Em atendimento</th>
                 <th className="px-4 py-3 font-medium">Avaliacao</th>
-                <th className="px-4 py-3 font-medium text-right">Ações</th>
+                <th className="px-4 py-3 text-center font-medium">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -201,11 +201,23 @@ function AtendentesPage() {
                       <td className="px-4 py-3 font-mono">{a.emAtendimento}</td>
                       <td className="px-4 py-3 font-mono">{a.csat}</td>
                       <td className="px-4 py-3">
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => setEditing(a)} title="Editar" aria-label="Editar">
+                        <div className="flex justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditing(a)}
+                            title="Editar"
+                            aria-label="Editar"
+                          >
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setDeleting(a)} title="Remover" aria-label="Remover">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeleting(a)}
+                            title="Remover"
+                            aria-label="Remover"
+                          >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>

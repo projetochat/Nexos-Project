@@ -978,7 +978,12 @@ export class CrmController {
       normalizedName: label ? normalizeCatalogName(label) : undefined,
       type,
       required: dto.required,
-      mask: type === ContactCustomFieldType.NUMBER ? (cleanNullable(dto.mask) ?? "#.###,##") : null,
+      mask:
+        type === ContactCustomFieldType.NUMBER
+          ? (cleanNullable(dto.mask) ?? "0,00")
+          : type === ContactCustomFieldType.TEXT
+            ? cleanNullable(dto.mask)
+            : null,
       note: nullableUpdate(dto.note),
       options,
     };

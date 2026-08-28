@@ -171,7 +171,7 @@ function EmpresasSaaS() {
                   <th className="pb-2">Usuarios</th>
                   <th className="pb-2">Connections</th>
                   <th className="pb-2">Criado</th>
-                  <th className="pb-2 text-right">Ações</th>
+                  <th className="pb-2 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -190,7 +190,7 @@ function EmpresasSaaS() {
                     <td className="py-3 text-xs text-muted-foreground">
                       {fmtDate(new Date(tenant.createdAt).getTime())}
                     </td>
-                    <td className="py-3 text-right">
+                    <td className="py-3 text-center">
                       <Link
                         to="/admin/empresas/$tenantId"
                         params={{ tenantId: tenant.id }}

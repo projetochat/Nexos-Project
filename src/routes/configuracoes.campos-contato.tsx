@@ -10,14 +10,35 @@ export const Route = createFileRoute("/configuracoes/campos-contato")({
   component: ContactFieldsSettings,
 });
 
+type TextVariant = "short" | "long" | "html";
+type NumberSymbol = "" | "R$" | "%" | "$" | "€" | "£" | "¥";
+
+type FieldConfig = {
+  text?: { variant?: TextVariant };
+  number?: { decimals?: number; thousands?: boolean; symbol?: NumberSymbol };
+};
+
 type FieldForm = {
   label: string;
   type: ApiContactCustomField["type"];
   required: boolean;
-  mask: string;
+  textVariant: TextVariant;
+  numberDecimals: number;
+  numberThousands: boolean;
+  numberSymbol: NumberSymbol;
   note: string;
   optionsText: string;
 };
+
+const NUMBER_SYMBOL_OPTIONS: Array<{ value: NumberSymbol; label: string }> = [
+  { value: "", label: "Sem símbolo" },
+  { value: "R$", label: "R$: Real brasileiro" },
+  { value: "%", label: "%: Percentual" },
+  { value: "$", label: "$: Dólar" },
+  { value: "€", label: "€: Euro" },
+  { value: "£", label: "£: Libra" },
+  { value: "¥", label: "¥: Iene" },
+];
 
 function ContactFieldsSettings() {
   const [fields, setFields] = React.useState<ApiContactCustomField[]>([]);
@@ -46,7 +67,7 @@ function ContactFieldsSettings() {
       label: data.label.trim(),
       type: data.type,
       required: data.type === "checkbox" ? false : data.required,
-      mask: data.type === "number" ? data.mask || "#.###,##" : null,
+      mask: buildFieldMask(data),
       note: data.note.trim() || null,
       options:
         data.type === "list"
@@ -87,10 +108,10 @@ function ContactFieldsSettings() {
           <thead className="bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
             <tr>
               <th className="w-[28%] px-4 py-3">Campo</th>
-              <th className="w-28 px-4 py-3">Tipo</th>
+              <th className="w-32 px-4 py-3">Tipo</th>
               <th className="w-28 px-4 py-3">Obrigatório</th>
               <th className="px-4 py-3">Nota</th>
-              <th className="w-24 px-4 py-3 text-right">Ações</th>
+              <th className="w-24 px-4 py-3 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -105,13 +126,13 @@ function ContactFieldsSettings() {
               fields.map((field) => (
                 <tr key={field.id} className="hover:bg-surface-1">
                   <td className="px-4 py-3 font-medium">{field.label}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{fieldTypeLabel(field.type)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{fieldTypeLabel(field)}</td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {field.required ? "Sim" : "Não"}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{field.note || "-"}</td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1">
+                    <div className="flex justify-center gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -154,14 +175,14 @@ function ContactFieldsSettings() {
       <ConfirmDialog
         open={!!deleting}
         title="Excluir campo?"
-        description={`Esta acao removera ${deleting?.label ?? ""} dos novos cadastros.`}
+        description={`Esta ação removerá ${deleting?.label ?? ""} dos novos cadastros.`}
         destructive
         confirmLabel="Excluir"
         onClose={() => setDeleting(null)}
         onConfirm={async () => {
           if (!deleting) return;
           await crmApi.deleteContactCustomField(deleting.id);
-          toast.success("Campo excluido");
+          toast.success("Campo excluído");
           setDeleting(null);
           await load();
         }}
@@ -181,29 +202,13 @@ function ContactFieldFormModal({
   onSubmit: (data: FieldForm) => void | Promise<void>;
   initial?: ApiContactCustomField;
 }) {
-  const [form, setForm] = React.useState<FieldForm>({
-    label: "",
-    type: "text",
-    required: false,
-    mask: "#.###,##",
-    note: "",
-    optionsText: "",
-  });
+  const [form, setForm] = React.useState<FieldForm>(emptyFieldForm());
+
   React.useEffect(() => {
     if (!open) return;
-    setForm(
-      initial
-        ? {
-            label: initial.label,
-            type: initial.type,
-            required: initial.required,
-            mask: initial.mask ?? "#.###,##",
-            note: initial.note ?? "",
-            optionsText: initial.options.join("\n"),
-          }
-        : { label: "", type: "text", required: false, mask: "#.###,##", note: "", optionsText: "" },
-    );
+    setForm(initial ? fieldToForm(initial) : emptyFieldForm());
   }, [initial, open]);
+
   const save = () => {
     if (form.label.trim().length < 2) {
       toast.error("Informe o nome do campo.");
@@ -215,6 +220,7 @@ function ContactFieldFormModal({
     }
     void onSubmit(form);
   };
+
   return (
     <Modal
       open={open}
@@ -238,28 +244,91 @@ function ContactFieldFormModal({
             onChange={(event) => setForm({ ...form, label: event.target.value })}
           />
         </Field>
-        <Field label="Tipo *">
-          <Select
-            value={form.type}
-            onChange={(event) => {
-              const type = event.target.value as FieldForm["type"];
-              setForm({ ...form, type, required: type === "checkbox" ? false : form.required });
-            }}
-          >
-            <option value="text">Texto</option>
-            <option value="number">Número</option>
-            <option value="checkbox">Checkbox</option>
-            <option value="list">Lista</option>
-          </Select>
-        </Field>
-        {form.type === "number" && (
-          <Field label="Máscara">
-            <Input
-              value={form.mask}
-              onChange={(event) => setForm({ ...form, mask: event.target.value })}
-              placeholder="#.###,##"
-            />
+        <div className="grid gap-3 md:grid-cols-[1fr_7rem]">
+          <Field label="Tipo *">
+            <Select
+              value={form.type}
+              disabled={!!initial}
+              onChange={(event) => {
+                const type = event.target.value as FieldForm["type"];
+                setForm({ ...form, type, required: type === "checkbox" ? false : form.required });
+              }}
+            >
+              <option value="text">Texto</option>
+              <option value="number">Número</option>
+              <option value="checkbox">Checkbox</option>
+              <option value="list">Lista</option>
+            </Select>
           </Field>
+          {form.type !== "checkbox" && (
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-muted-foreground">
+                Obrigatório
+              </span>
+              <span className="flex h-10 items-center justify-center rounded-lg border border-border bg-surface-1">
+                <input
+                  type="checkbox"
+                  checked={form.required}
+                  onChange={(event) => setForm({ ...form, required: event.target.checked })}
+                />
+              </span>
+            </label>
+          )}
+        </div>
+        {form.type === "text" && (
+          <Field label="Formato do texto *">
+            <Select
+              value={form.textVariant}
+              onChange={(event) =>
+                setForm({ ...form, textVariant: event.target.value as TextVariant })
+              }
+            >
+              <option value="short">Texto Curto</option>
+              <option value="long">Texto Longo</option>
+              <option value="html">Texto HTML</option>
+            </Select>
+          </Field>
+        )}
+        {form.type === "number" && (
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label="Casas Decimais">
+              <Input
+                type="number"
+                min={0}
+                max={6}
+                value={String(form.numberDecimals)}
+                onChange={(event) =>
+                  setForm({ ...form, numberDecimals: clampInteger(event.target.value, 0, 6) })
+                }
+              />
+            </Field>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-muted-foreground">
+                Separador Milhar
+              </span>
+              <span className="flex h-10 items-center justify-center rounded-lg border border-border bg-surface-1">
+                <input
+                  type="checkbox"
+                  checked={form.numberThousands}
+                  onChange={(event) => setForm({ ...form, numberThousands: event.target.checked })}
+                />
+              </span>
+            </label>
+            <Field label="Símbolo">
+              <Select
+                value={form.numberSymbol}
+                onChange={(event) =>
+                  setForm({ ...form, numberSymbol: event.target.value as NumberSymbol })
+                }
+              >
+                {NUMBER_SYMBOL_OPTIONS.map((option) => (
+                  <option key={option.value || "empty"} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
         )}
         {form.type === "list" && (
           <Field label="Opções da lista *">
@@ -270,16 +339,6 @@ function ContactFieldFormModal({
               placeholder="Uma opção por linha"
             />
           </Field>
-        )}
-        {form.type !== "checkbox" && (
-          <label className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
-            <input
-              type="checkbox"
-              checked={form.required}
-              onChange={(event) => setForm({ ...form, required: event.target.checked })}
-            />{" "}
-            Campo obrigatório
-          </label>
         )}
         <Field label="Nota explicativa">
           <Textarea
@@ -294,6 +353,70 @@ function ContactFieldFormModal({
   );
 }
 
-function fieldTypeLabel(type: ApiContactCustomField["type"]) {
-  return { text: "Texto", number: "Número", checkbox: "Checkbox", list: "Lista" }[type];
+function emptyFieldForm(): FieldForm {
+  return {
+    label: "",
+    type: "text",
+    required: false,
+    textVariant: "short",
+    numberDecimals: 2,
+    numberThousands: true,
+    numberSymbol: "",
+    note: "",
+    optionsText: "",
+  };
+}
+
+function fieldToForm(field: ApiContactCustomField): FieldForm {
+  const config = parseFieldConfig(field.mask);
+  return {
+    label: field.label,
+    type: field.type,
+    required: field.required,
+    textVariant: config.text?.variant ?? "short",
+    numberDecimals: config.number?.decimals ?? 2,
+    numberThousands: config.number?.thousands ?? true,
+    numberSymbol: config.number?.symbol ?? "",
+    note: field.note ?? "",
+    optionsText: field.options.join("\n"),
+  };
+}
+
+function buildFieldMask(data: FieldForm) {
+  if (data.type === "text") {
+    return JSON.stringify({ text: { variant: data.textVariant } });
+  }
+  if (data.type === "number") {
+    return JSON.stringify({
+      number: {
+        decimals: clampInteger(data.numberDecimals, 0, 6),
+        thousands: data.numberThousands,
+        symbol: data.numberSymbol,
+      },
+    });
+  }
+  return null;
+}
+
+function parseFieldConfig(mask?: string | null): FieldConfig {
+  if (!mask?.trim().startsWith("{")) return {};
+  try {
+    return JSON.parse(mask) as FieldConfig;
+  } catch {
+    return {};
+  }
+}
+
+function clampInteger(value: string | number, min: number, max: number) {
+  const parsed = typeof value === "number" ? value : Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return min;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function fieldTypeLabel(field: ApiContactCustomField) {
+  if (field.type === "text") {
+    const variant = parseFieldConfig(field.mask).text?.variant ?? "short";
+    return { short: "Texto Curto", long: "Texto Longo", html: "Texto HTML" }[variant];
+  }
+  return { number: "Número", checkbox: "Checkbox", list: "Lista" }[field.type];
 }

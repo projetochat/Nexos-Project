@@ -191,6 +191,8 @@ export type ApiContact = {
   tags: ApiTag[];
   customFields: Record<string, string>;
   customFieldValues?: Array<{ fieldId: string; label: string; type: string; value: string | null }>;
+  createdAt?: string;
+  updatedAt?: string;
   lifecycle?: "created" | "restored";
 };
 

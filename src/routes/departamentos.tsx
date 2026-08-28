@@ -241,16 +241,24 @@ function DepartamentoForm({
             <input
               type="color"
               value={form.color ?? "#6366f1"}
-              onChange={(e) => setForm({ ...form, color: e.target.value })}
+              onChange={(e) => setForm({ ...form, color: normalizeHexColor(e.target.value) })}
               className="h-9 w-14 cursor-pointer rounded border border-border bg-transparent"
             />
             <Input
               value={form.color ?? "#6366f1"}
-              onChange={(e) => setForm({ ...form, color: e.target.value })}
+              onChange={(e) => setForm({ ...form, color: normalizeHexColor(e.target.value) })}
             />
           </div>
         </Field>
       </div>
     </Modal>
   );
+}
+
+function normalizeHexColor(value?: string | null, fallback = "#6366f1") {
+  const fallbackDigits = fallback.replace(/[^0-9a-fA-F]/g, "").slice(0, 6) || "6366f1";
+  const digits = String(value ?? "")
+    .replace(/[^0-9a-fA-F]/g, "")
+    .slice(0, 6);
+  return `#${(digits || fallbackDigits).toUpperCase()}`;
 }

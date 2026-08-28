@@ -202,13 +202,24 @@ function EtiquetaForm({
             <input
               type="color"
               value={color}
-              onChange={(event) => setColor(event.target.value)}
+              onChange={(event) => setColor(normalizeHexColor(event.target.value))}
               className="h-9 w-14 cursor-pointer rounded border border-border"
             />
-            <Input value={color} onChange={(event) => setColor(event.target.value)} />
+            <Input
+              value={color}
+              onChange={(event) => setColor(normalizeHexColor(event.target.value))}
+            />
           </div>
         </Field>
       </div>
     </Modal>
   );
+}
+
+function normalizeHexColor(value?: string | null, fallback = "#6366f1") {
+  const fallbackDigits = fallback.replace(/[^0-9a-fA-F]/g, "").slice(0, 6) || "6366f1";
+  const digits = String(value ?? "")
+    .replace(/[^0-9a-fA-F]/g, "")
+    .slice(0, 6);
+  return `#${(digits || fallbackDigits).toUpperCase()}`;
 }
