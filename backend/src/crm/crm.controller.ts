@@ -1304,7 +1304,7 @@ export class CrmController {
 
 function parseContactCustomFieldType(value: string) {
   const normalized = value.trim().toUpperCase();
-  if (["TEXT", "NUMBER", "CHECKBOX", "LIST"].includes(normalized)) {
+  if (["TEXT", "NUMBER", "CHECKBOX", "LIST", "DATE"].includes(normalized)) {
     return normalized as ContactCustomFieldType;
   }
   throw new BadRequestException("Tipo de campo invalido.");

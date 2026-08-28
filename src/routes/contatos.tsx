@@ -2,7 +2,12 @@ import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import * as XLSX from "xlsx";
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
   Building2,
+  Bold,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -10,14 +15,19 @@ import {
   Download,
   FileSpreadsheet,
   FileUp,
+  Italic,
   Link2,
+  List,
+  Maximize2,
   MessageCircle,
   Plug,
   Info,
   Pencil,
   Plus,
   Search,
+  Strikethrough,
   Trash2,
+  Underline,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -81,6 +91,24 @@ type ContactFieldConfig = {
   number?: { decimals?: number; thousands?: boolean; symbol?: ContactNumberSymbol };
   date?: { variant?: ContactDateVariant };
 };
+type ImportSource = "agenda" | "excel";
+type ImportProgressStatus = "idle" | "running" | "completed" | "cancelled";
+type ImportProgressState = {
+  open: boolean;
+  source: ImportSource | null;
+  current: number;
+  total: number;
+  imported: number;
+  status: ImportProgressStatus;
+};
+type ContactPickerNavigator = Navigator & {
+  contacts?: {
+    select: (
+      properties: Array<"name" | "tel" | "email">,
+      options?: { multiple?: boolean },
+    ) => Promise<Array<{ name?: string[]; tel?: string[]; email?: string[] }>>;
+  };
+};
 
 function ContatosPage() {
   const navigate = useNavigate();
@@ -110,6 +138,15 @@ function ContatosPage() {
   const exportMenu = useDisclosure();
   const exportMenuRef = React.useRef<HTMLDivElement>(null);
   const [exportAllRecords, setExportAllRecords] = React.useState(false);
+  const cancelImportRef = React.useRef(false);
+  const [importProgress, setImportProgress] = React.useState<ImportProgressState>({
+    open: false,
+    source: null,
+    current: 0,
+    total: 0,
+    imported: 0,
+    status: "idle",
+  });
   const [total, setTotal] = React.useState(0);
   const [totalPages, setTotalPages] = React.useState(1);
   const [editing, setEditing] = React.useState<Contact | null>(null);
@@ -301,12 +338,55 @@ function ContatosPage() {
     return all;
   };
 
-  const importContactsRows = async (rows: string[][]) => {
+  const reopenImportProgress = () => {
+    if (importProgress.status === "idle") return false;
+    setImportProgress((current) => ({ ...current, open: true }));
+    exportMenu.hide();
+    return true;
+  };
+
+  const openExcelImport = () => {
+    if (reopenImportProgress()) return;
+    exportMenu.hide();
+    importModal.show();
+  };
+
+  const importContactsRows = async (rows: string[][], source: ImportSource = "excel") => {
     const [header, ...records] = rows;
     if (!header?.length) return;
     const index = new Map(header.map((item, i) => [normalizeHeader(item), i]));
+    const validRecords = records.filter((row) => {
+      const name = valueAt(row, index, ["contato", "nome", "name"]);
+      const phone = valueAt(row, index, [
+        "whatsapp",
+        "telefone",
+        "phone",
+        "celular",
+        "numero",
+        "número",
+      ]);
+      return Boolean(name && phone);
+    });
+    if (!validRecords.length) {
+      toast.error("Nenhum contato válido encontrado.");
+      return;
+    }
+    cancelImportRef.current = false;
+    setImportProgress({
+      open: true,
+      source,
+      current: 0,
+      total: validRecords.length,
+      imported: 0,
+      status: "running",
+    });
     let created = 0;
-    for (const row of records) {
+    let processed = 0;
+    for (const row of validRecords) {
+      if (cancelImportRef.current) {
+        setImportProgress((current) => ({ ...current, status: "cancelled" }));
+        break;
+      }
       const name = valueAt(row, index, ["contato", "nome", "name"]);
       const phone = valueAt(row, index, [
         "whatsapp",
@@ -348,9 +428,73 @@ function ContatosPage() {
       } catch {
         // Mantem a importacao rodando quando encontra duplicados ou linhas invalidas.
       }
+      processed += 1;
+      setImportProgress((current) => ({
+        ...current,
+        current: processed,
+        imported: created,
+      }));
     }
-    toast.success("Importação concluída", { description: `${created} contatos importados.` });
+    if (!cancelImportRef.current) {
+      setImportProgress((current) => ({
+        ...current,
+        current: current.total,
+        imported: created,
+        status: "completed",
+      }));
+      toast.success("Importação concluída", { description: `${created} contatos importados.` });
+    } else {
+      toast.error("Importação cancelada", {
+        description: `${created} contato(s) importado(s) antes do cancelamento.`,
+      });
+    }
     await load();
+  };
+
+  const importFromAgenda = async () => {
+    if (reopenImportProgress()) return;
+    exportMenu.hide();
+    const contactsApi = (navigator as ContactPickerNavigator).contacts;
+    if (!contactsApi?.select) {
+      toast.error("Agenda indisponível neste navegador ou dispositivo.");
+      return;
+    }
+    try {
+      const selectedContacts = await contactsApi.select(["name", "tel", "email"], {
+        multiple: true,
+      });
+      const rows = [
+        ["Contato", "WhatsApp", "E-mail"],
+        ...selectedContacts.map((contact) => [
+          contact.name?.[0] ?? "",
+          contact.tel?.[0] ?? "",
+          contact.email?.[0] ?? "",
+        ]),
+      ];
+      await importContactsRows(rows, "agenda");
+    } catch (error) {
+      if ((error as Error).name !== "AbortError") {
+        toast.error("Falha ao acessar a agenda", { description: (error as Error).message });
+      }
+    }
+  };
+
+  const closeImportProgress = () =>
+    setImportProgress((current) => ({ ...current, open: false }));
+
+  const handleImportProgressAction = () => {
+    if (importProgress.status === "running") {
+      cancelImportRef.current = true;
+      return;
+    }
+    setImportProgress({
+      open: false,
+      source: null,
+      current: 0,
+      total: 0,
+      imported: 0,
+      status: "idle",
+    });
   };
 
   const applyBulkAction = async () => {
@@ -396,28 +540,32 @@ function ContatosPage() {
           subtitle={`${total} contatos cadastrados.`}
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="secondary" size="sm" onClick={importModal.show}>
-                <FileUp className="h-3.5 w-3.5" /> Importar
-              </Button>
               <div ref={exportMenuRef} className="relative">
                 <Button variant="secondary" size="sm" onClick={exportMenu.toggle}>
-                  <Download className="h-3.5 w-3.5" /> Exportar
+                  Importar / Exportar
                 </Button>
                 {exportMenu.open && (
-                  <div className="absolute right-0 z-[80] mt-2 w-56 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                  <div className="absolute right-0 z-[80] mt-2 w-64 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
+                      onClick={() => void importFromAgenda()}
+                    >
+                      <FileUp className="h-4 w-4" /> Importar via Agenda
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
+                      onClick={openExcelImport}
+                    >
+                      <FileSpreadsheet className="h-4 w-4" /> Importar via Excel/CSV
+                    </button>
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
                       onClick={() => void exportContacts("csv")}
                     >
-                      <FileUp className="h-4 w-4" /> CSV
-                    </button>
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
-                      onClick={() => void exportContacts("xls")}
-                    >
-                      <FileSpreadsheet className="h-4 w-4" /> Excel
+                      <Download className="h-4 w-4" /> Exportar
                     </button>
                     <label className="mt-1 flex cursor-pointer items-center gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground">
                       <input
@@ -849,6 +997,16 @@ function ContatosPage() {
           onClose={importModal.hide}
           onImport={importContactsRows}
         />
+        <ImportProgressModal
+          open={importProgress.open}
+          source={importProgress.source}
+          current={importProgress.current}
+          total={importProgress.total}
+          imported={importProgress.imported}
+          status={importProgress.status}
+          onClose={closeImportProgress}
+          onAction={handleImportProgressAction}
+        />
         <ConfirmDialog
           open={!!deleting}
           title="Excluir contato?"
@@ -1020,6 +1178,76 @@ function ImportContactsModal({
   );
 }
 
+function ImportProgressModal({
+  open,
+  source,
+  current,
+  total,
+  imported,
+  status,
+  onClose,
+  onAction,
+}: {
+  open: boolean;
+  source: ImportSource | null;
+  current: number;
+  total: number;
+  imported: number;
+  status: ImportProgressStatus;
+  onClose: () => void;
+  onAction: () => void;
+}) {
+  const percent = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+  const sourceLabel = source === "agenda" ? "agenda" : "Excel/CSV";
+  const done = status !== "running";
+  const statusText =
+    status === "completed"
+      ? "Importação concluída"
+      : status === "cancelled"
+        ? "Importação cancelada"
+        : "Importando contatos";
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Importação de Contatos"
+      size="sm"
+      footer={
+        <Button variant={done ? "primary" : "secondary"} size="sm" onClick={onAction}>
+          {done ? "Concluir" : "Cancelar importação"}
+        </Button>
+      }
+    >
+      <div className="space-y-4">
+        <div>
+          <p className="text-sm font-medium text-foreground">{statusText}</p>
+          <p className="text-sm text-muted-foreground">Origem: {sourceLabel}</p>
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-semibold text-foreground">
+              {current} de {total} Contatos
+            </span>
+            <span className="text-muted-foreground">{percent}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-surface-2">
+            <div
+              className="h-full rounded-full bg-primary transition-all"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </div>
+        {done && (
+          <p className="text-sm text-muted-foreground">
+            {imported} contato(s) importado(s).
+          </p>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function ContactFormModal({
   open,
   onClose,
@@ -1119,7 +1347,7 @@ function ContactFormModal({
   const handle = () => {
     const errs: Record<string, string> = {};
     if (!nome.trim() || nome.trim().length < 2) errs.nome = "Informe o nome.";
-    if (onlyDigits(telefone).length < 10) errs.telefone = "WhatsApp inválido.";
+    if (!isValidPhoneForCountry(telefone, countryCode)) errs.telefone = "WhatsApp inválido.";
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = "E-mail invalido.";
     for (const field of customFieldDefinitions) {
       if (field.required && !String(customFields[field.id] ?? "").trim())
@@ -2341,14 +2569,7 @@ function CustomContactFieldInput({
       );
     }
     if (variant === "html") {
-      return (
-        <Textarea
-          rows={8}
-          className="min-h-44 font-mono text-sm"
-          value={inputValue}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      );
+      return <HtmlTextEditor value={inputValue} onChange={(next) => onChange(next)} />;
     }
     return (
       <Input type="text" value={inputValue} onChange={(event) => onChange(event.target.value)} />
@@ -2376,6 +2597,162 @@ function CustomContactFieldInput({
       placeholder={numberPlaceholder(numberConfig)}
       onChange={(event) => onChange(maskAdditionalNumber(event.target.value, numberConfig))}
     />
+  );
+}
+
+function HtmlTextEditor({
+  value,
+  onChange,
+  expanded = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  expanded?: boolean;
+}) {
+  const editorRef = React.useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = React.useState(false);
+
+  React.useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || document.activeElement === editor) return;
+    if (editor.innerHTML !== value) editor.innerHTML = value;
+  }, [value]);
+
+  const sync = () => onChange(editorRef.current?.innerHTML ?? "");
+  const command = (name: string, commandValue?: string) => {
+    editorRef.current?.focus();
+    document.execCommand(name, false, commandValue);
+    sync();
+  };
+
+  const editor = (
+    <div className="overflow-hidden rounded-lg border border-border bg-surface-1">
+      <div className="flex flex-wrap items-center gap-1 border-b border-border bg-card px-2 py-1.5">
+        <ToolbarButton title="Negrito" onClick={() => command("bold")}>
+          <Bold className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Itálico" onClick={() => command("italic")}>
+          <Italic className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Sublinhado" onClick={() => command("underline")}>
+          <Underline className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Riscado" onClick={() => command("strikeThrough")}>
+          <Strikethrough className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Marcadores" onClick={() => command("insertUnorderedList")}>
+          <List className="h-4 w-4" />
+        </ToolbarButton>
+        <select
+          className="h-8 rounded-md border border-border bg-surface-1 px-2 text-xs outline-none"
+          defaultValue=""
+          onChange={(event) => {
+            if (event.target.value) command("fontSize", event.target.value);
+            event.target.value = "";
+          }}
+          title="Tamanho da fonte"
+        >
+          <option value="">Tamanho</option>
+          <option value="2">Pequena</option>
+          <option value="3">Normal</option>
+          <option value="5">Grande</option>
+          <option value="7">Muito grande</option>
+        </select>
+        <select
+          className="h-8 rounded-md border border-border bg-surface-1 px-2 text-xs outline-none"
+          defaultValue=""
+          onChange={(event) => {
+            if (event.target.value) command("fontName", event.target.value);
+            event.target.value = "";
+          }}
+          title="Tipo da fonte"
+        >
+          <option value="">Fonte</option>
+          <option value="Arial">Arial</option>
+          <option value="Calibri">Calibri</option>
+          <option value="Times New Roman">Times</option>
+          <option value="Verdana">Verdana</option>
+        </select>
+        <label
+          className="flex h-8 items-center gap-1 rounded-md border border-border bg-surface-1 px-2 text-xs"
+          title="Cor da fonte"
+        >
+          Cor
+          <input
+            type="color"
+            className="h-5 w-6 cursor-pointer border-0 bg-transparent p-0"
+            onChange={(event) => command("foreColor", event.target.value)}
+          />
+        </label>
+        <ToolbarButton title="Alinhar à esquerda" onClick={() => command("justifyLeft")}>
+          <AlignLeft className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Centralizar" onClick={() => command("justifyCenter")}>
+          <AlignCenter className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Alinhar à direita" onClick={() => command("justifyRight")}>
+          <AlignRight className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Justificar" onClick={() => command("justifyFull")}>
+          <AlignJustify className="h-4 w-4" />
+        </ToolbarButton>
+        {!expanded && (
+          <ToolbarButton title="Maximizar" onClick={() => setFullscreen(true)}>
+            <Maximize2 className="h-4 w-4" />
+          </ToolbarButton>
+        )}
+      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        className={`min-h-44 w-full overflow-y-auto px-3 py-2 text-sm outline-none ${
+          expanded ? "min-h-[62vh]" : ""
+        }`}
+        onInput={sync}
+      />
+    </div>
+  );
+
+  return (
+    <>
+      {editor}
+      <Modal
+        open={fullscreen}
+        onClose={() => setFullscreen(false)}
+        title="Editar Texto HTML"
+        size="xl"
+        footer={
+          <Button variant="primary" size="sm" onClick={() => setFullscreen(false)}>
+            Concluir
+          </Button>
+        }
+      >
+        <HtmlTextEditor value={value} onChange={onChange} expanded />
+      </Modal>
+    </>
+  );
+}
+
+function ToolbarButton({
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onClick}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -2674,6 +3051,16 @@ function maskBrazilMobilePhone(value: string, countryCode = "55") {
   return onlyDigits(countryCode) === "55" ? maskBrazilPhone(digits) : digits;
 }
 
+function isValidPhoneForCountry(value: string, countryCode = "55") {
+  const code = onlyDigits(countryCode) || "55";
+  const digits = onlyDigits(value);
+  if (code !== "55") return digits.length >= 6;
+  const local = normalizeBrazilMobileDigits(digits, code);
+  if (local.length !== 11 || local[2] !== "9") return false;
+  const subscriber = local.slice(3);
+  return !/^(\d)\1+$/.test(subscriber);
+}
+
 function normalizeBrazilMobileDigits(digits: string, countryCode = "55") {
   if (onlyDigits(countryCode) !== "55") return digits;
   const local = digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;
@@ -2886,6 +3273,12 @@ function CustomerFormModal({
             </div>
           </Field>
         </div>
+        <Field label="Contato Responsável">
+          <Input
+            value={form.contato_responsavel ?? ""}
+            onChange={(event) => setForm({ ...form, contato_responsavel: event.target.value })}
+          />
+        </Field>
         <Field label="WhatsApp">
           <Input
             value={form.telefone ?? ""}
@@ -2893,12 +3286,6 @@ function CustomerFormModal({
               setForm({ ...form, telefone: maskBrazilPhone(event.target.value) })
             }
             placeholder="(11) 90000-0000"
-          />
-        </Field>
-        <Field label="Contato Responsável">
-          <Input
-            value={form.contato_responsavel ?? ""}
-            onChange={(event) => setForm({ ...form, contato_responsavel: event.target.value })}
           />
         </Field>
         <Field label="E-mail">
