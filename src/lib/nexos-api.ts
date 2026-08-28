@@ -152,6 +152,8 @@ export type ApiContactCustomField = {
   required: boolean;
   mask: string | null;
   note: string | null;
+  tabName: string;
+  groupName: string;
   options: string[];
   position: number;
   createdAt?: string;
@@ -946,6 +948,8 @@ export const crmApi = {
     required?: boolean;
     mask?: string | null;
     note?: string | null;
+    tabName?: string;
+    groupName?: string;
     options?: string[];
   }) =>
     apiRequest<ApiContactCustomField>("/crm/contact-custom-fields", {
@@ -960,6 +964,8 @@ export const crmApi = {
       required: boolean;
       mask: string | null;
       note: string | null;
+      tabName: string;
+      groupName: string;
       options: string[];
     }>,
   ) =>

@@ -770,6 +770,8 @@ model ContactCustomField {
   required       Boolean                @default(false)
   mask           String?
   note           String?
+  tabName        String                 @default("Geral") @map("tab_name")
+  groupName      String                 @default("Dados do contato") @map("group_name")
   options        String[]               @default([])
   position       Int                    @default(0)
   archivedAt     DateTime?

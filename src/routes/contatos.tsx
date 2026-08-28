@@ -1,5 +1,6 @@
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import * as XLSX from "xlsx";
 import {
   Building2,
   Check,
@@ -10,6 +11,7 @@ import {
   FileSpreadsheet,
   FileUp,
   Link2,
+  MessageCircle,
   Plug,
   Info,
   Pencil,
@@ -34,6 +36,7 @@ import {
 } from "@/components/ui-kit";
 import { isValidEmail, maskBrazilPhone, onlyDigits } from "@/lib/input-masks";
 import {
+  conversationApi,
   crmApi,
   type ApiContact,
   type ApiContactCatalog,
@@ -78,6 +81,7 @@ type ContactFieldConfig = {
 };
 
 function ContatosPage() {
+  const navigate = useNavigate();
   const [contacts, setContacts] = React.useState<Contact[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [tags, setTags] = React.useState<Tag[]>([]);
@@ -98,7 +102,7 @@ function ContatosPage() {
   >("");
   const [bulkValue, setBulkValue] = React.useState("");
   const [bulkTags, setBulkTags] = React.useState<string[]>([]);
-  const importInputRef = React.useRef<HTMLInputElement>(null);
+  const importModal = useDisclosure();
   const exportMenu = useDisclosure();
   const exportMenuRef = React.useRef<HTMLDivElement>(null);
   const [total, setTotal] = React.useState(0);
@@ -193,6 +197,39 @@ function ContatosPage() {
   const toggleVisibleSelection = () =>
     setSelectedIds(allVisibleSelected ? [] : contacts.map((contact) => contact.id));
 
+  const openConversation = async (contact: Contact) => {
+    try {
+      const existing = await conversationApi.list({
+        contactId: contact.id,
+        page: 1,
+        pageSize: 10,
+        sort: "lastMessageAt",
+        direction: "desc",
+      });
+      const open = existing.items.find((conversation) => conversation.status !== "fechada");
+      if (open) {
+        navigate({ to: "/inbox/$conversationId", params: { conversationId: open.id } });
+        return;
+      }
+      const connectionId =
+        contact.instanceIds
+          ?.map((value) =>
+            instances.find((instance) => instance.value === value || instance.id === value),
+          )
+          .find(Boolean)?.id ??
+        contact.instanceIds?.[0] ??
+        null;
+      const conversation = await conversationApi.create({
+        contactId: contact.id,
+        connectionId,
+        assignToSelf: true,
+      });
+      navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
+    } catch (e) {
+      toast.error("Falha ao abrir conversa", { description: (e as Error).message });
+    }
+  };
+
   const exportContacts = async (format: "csv" | "xls" = "csv") => {
     const response = await crmApi.listContacts({
       q: query,
@@ -237,8 +274,7 @@ function ContatosPage() {
     exportMenu.hide();
   };
 
-  const importContactsFile = async (file: File) => {
-    const rows = parseCsv(await file.text());
+  const importContactsRows = async (rows: string[][]) => {
     const [header, ...records] = rows;
     if (!header?.length) return;
     const index = new Map(header.map((item, i) => [normalizeHeader(item), i]));
@@ -300,18 +336,7 @@ function ContatosPage() {
           subtitle={`${total} contatos cadastrados.`}
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <input
-                ref={importInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = "";
-                  if (file) void importContactsFile(file);
-                }}
-              />
-              <Button variant="secondary" size="sm" onClick={() => importInputRef.current?.click()}>
+              <Button variant="secondary" size="sm" onClick={importModal.show}>
                 <FileUp className="h-3.5 w-3.5" /> Importar
               </Button>
               <div ref={exportMenuRef} className="relative">
@@ -511,18 +536,17 @@ function ContatosPage() {
                     aria-label="Selecionar contatos visíveis"
                   />
                 </th>
-                <th className="w-[32%] px-4 py-3 font-medium">Contato</th>
+                <th className="w-[34%] px-4 py-3 font-medium">Contato</th>
                 <th className="w-[21%] px-4 py-3 font-medium">WhatsApp</th>
-                <th className="w-[10%] px-4 py-3 font-medium">Instância</th>
-                <th className="w-[10%] px-4 py-3 font-medium">Empresa</th>
+                <th className="w-[18%] px-4 py-3 font-medium">Empresa</th>
                 <th className="w-[15%] px-4 py-3 font-medium">Departamento</th>
-                <th className="w-24 px-4 py-3 text-center font-medium">Ações</th>
+                <th className="w-28 px-4 py-3 text-center font-medium">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {loading && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     Carregando...
                   </td>
                 </tr>
@@ -555,38 +579,6 @@ function ContatosPage() {
                       {formatPhoneWithDdi(contact.telefone)}
                     </td>
                     <td className="px-4 py-3">
-                      {contact.instanceIds?.length ? (
-                        <div className="flex max-w-32 flex-wrap gap-1">
-                          {contact.instanceIds.slice(0, 2).map((instanceId) => {
-                            const color = connectionColorByValue.get(instanceId) ?? "#64748b";
-                            return (
-                              <span
-                                key={instanceId}
-                                className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                                style={{
-                                  backgroundColor: `${color}1f`,
-                                  borderColor: `${color}66`,
-                                  color,
-                                }}
-                              >
-                                <Plug className="h-3 w-3 shrink-0" />
-                                <span className="truncate">
-                                  {connectionLabelByValue.get(instanceId) ?? instanceId}
-                                </span>
-                              </span>
-                            );
-                          })}
-                          {contact.instanceIds.length > 2 && (
-                            <span className="text-[11px] text-muted-foreground">
-                              +{contact.instanceIds.length - 2}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
                       {contact.customer ? (
                         <span
                           className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
@@ -613,6 +605,14 @@ function ContatosPage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          title="Abrir conversa"
+                          onClick={() => void openConversation(contact)}
+                        >
+                          <MessageCircle className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           title="Editar"
                           onClick={() => setEditing(contact)}
                         >
@@ -632,7 +632,7 @@ function ContatosPage() {
                 ))}
               {!loading && contacts.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     Nenhum contato encontrado.
                   </td>
                 </tr>
@@ -736,6 +736,11 @@ function ContatosPage() {
             }
           }}
         />
+        <ImportContactsModal
+          open={importModal.open}
+          onClose={importModal.hide}
+          onImport={importContactsRows}
+        />
         <ConfirmDialog
           open={!!deleting}
           title="Excluir contato?"
@@ -778,6 +783,118 @@ function ContatosPage() {
         />
       </PageContainer>
     </AppShell>
+  );
+}
+
+function ImportContactsModal({
+  open,
+  onClose,
+  onImport,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImport: (rows: string[][]) => Promise<void>;
+}) {
+  const [file, setFile] = React.useState<File | null>(null);
+  const [rows, setRows] = React.useState<string[][]>([]);
+  const [validRows, setValidRows] = React.useState(0);
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setFile(null);
+    setRows([]);
+    setValidRows(0);
+    setBusy(false);
+  }, [open]);
+
+  const selectFile = async (selected: File | null) => {
+    setFile(selected);
+    setRows([]);
+    setValidRows(0);
+    if (!selected) return;
+    try {
+      const parsed = await parseSpreadsheetFile(selected);
+      const [header, ...records] = parsed;
+      const index = new Map((header ?? []).map((item, i) => [normalizeHeader(item), i]));
+      const valid = records.filter((row) => {
+        const name = valueAt(row, index, ["nome", "contato", "name"]);
+        const phone = valueAt(row, index, ["telefone", "whatsapp", "phone", "celular", "numero"]);
+        return Boolean(name && phone);
+      }).length;
+      setRows(parsed);
+      setValidRows(valid);
+      toast.success("Arquivo lido", { description: `${valid} contato(s) válido(s) encontrados.` });
+    } catch (error) {
+      toast.error("Falha ao ler arquivo", { description: (error as Error).message });
+    }
+  };
+
+  const confirm = async () => {
+    if (!rows.length) {
+      toast.error("Selecione um arquivo para importar.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await onImport(rows);
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Importar Contatos"
+      size="md"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" size="sm" onClick={confirm} disabled={busy || !rows.length}>
+            {busy ? "Importando..." : "Confirmar importação"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="rounded-lg border border-border bg-surface-1 p-3 text-sm text-muted-foreground">
+          Arquivos aceitos: XLSX, XLS e CSV. O modelo deve conter ao menos as colunas
+          <span className="font-medium text-foreground"> Nome</span> e
+          <span className="font-medium text-foreground"> WhatsApp</span>.
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Button variant="secondary" size="sm" onClick={() => downloadImportTemplate("csv")}>
+            <FileUp className="h-3.5 w-3.5" /> Modelo CSV
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => downloadImportTemplate("xls")}>
+            <FileSpreadsheet className="h-3.5 w-3.5" /> Modelo XLS
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => downloadImportTemplate("xlsx")}>
+            <FileSpreadsheet className="h-3.5 w-3.5" /> Modelo XLSX
+          </Button>
+        </div>
+        <Field label="Arquivo *">
+          <Input
+            type="file"
+            accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={(event) => void selectFile(event.target.files?.[0] ?? null)}
+          />
+        </Field>
+        {file && (
+          <div className="rounded-lg border border-border p-3 text-sm">
+            <p className="font-medium">{file.name}</p>
+            <p className="text-xs text-muted-foreground">
+              {validRows} contato(s) válido(s) pronto(s) para importação.
+            </p>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -832,6 +949,7 @@ function ContactFormModal({
   const [customFieldDefinitions, setCustomFieldDefinitions] = React.useState<ContactCustomField[]>(
     [],
   );
+  const [activeContactTab, setActiveContactTab] = React.useState("Geral");
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const customersManager = useDisclosure();
   const departmentsManager = useDisclosure();
@@ -850,12 +968,28 @@ function ContactFormModal({
     setInstanceIds(initial?.instanceIds ?? (initial?.instancia ? [initial.instancia] : []));
     setTagIds(initial?.tags.map((tag) => tag.id) ?? []);
     setCustomFields(initial?.customFields ?? {});
+    setActiveContactTab("Geral");
     setErrors({});
     void crmApi
       .listContactCustomFields()
       .then(setCustomFieldDefinitions)
       .catch(() => setCustomFieldDefinitions([]));
   }, [initial, open]);
+
+  const contactTabs = React.useMemo(
+    () =>
+      uniqueLabels(["Geral", ...customFieldDefinitions.map((field) => field.tabName || "Geral")]),
+    [customFieldDefinitions],
+  );
+  const groupedCustomFields = React.useMemo(() => {
+    const groups = new Map<string, ContactCustomField[]>();
+    for (const field of customFieldDefinitions) {
+      if ((field.tabName || "Geral") !== activeContactTab) continue;
+      const group = field.groupName || "Dados do contato";
+      groups.set(group, [...(groups.get(group) ?? []), field]);
+    }
+    return Array.from(groups.entries());
+  }, [activeContactTab, customFieldDefinitions]);
 
   const handle = () => {
     const errs: Record<string, string> = {};
@@ -906,165 +1040,197 @@ function ContactFormModal({
         </div>
       }
     >
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Nome *">
-          <Input value={nome} onChange={(e) => setNome(e.target.value)} />
-          {errors.nome && (
-            <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
-          )}
-        </Field>
-        <Field label="Empresa">
-          <div className="flex gap-2">
-            <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-              <option value="">- Sem empresa -</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.nome}
-                </option>
-              ))}
-            </Select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={customersManager.show}
-              title="Gerenciar empresas"
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2 border-b border-border">
+          {contactTabs.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveContactTab(tab)}
+              className={`border-b-2 px-3 py-2 text-sm font-medium transition ${
+                activeContactTab === tab
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
             >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-            {customerId && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCustomerId("")}
-                title="Remover empresa"
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-        </Field>
-        <Field label="WhatsApp *">
-          <div className="flex gap-2">
-            <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
-            <Input
-              value={telefone}
-              onChange={(e) => setTelefone(maskBrazilPhone(e.target.value))}
-              placeholder="(11) 90000-0000"
-            />
-          </div>
-          {errors.telefone && (
-            <span className="mt-1 block text-[11px] text-destructive">{errors.telefone}</span>
-          )}
-        </Field>
-        <Field label="Departamento do Contato">
-          <div className="flex gap-2">
-            <Select
-              value={contactDepartmentId}
-              onChange={(e) => setContactDepartmentId(e.target.value)}
-            >
-              <option value="">- Sem departamento -</option>
-              {departments.map((department) => (
-                <option key={department.id} value={department.id}>
-                  {department.nome}
-                </option>
-              ))}
-            </Select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={departmentsManager.show}
-              title="Gerenciar departamentos"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-            {contactDepartmentId && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setContactDepartmentId("")}
-                title="Remover departamento"
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-        </Field>
-        <Field label="E-mail">
-          <Input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="nome@empresa.com"
-          />
-          {errors.email && (
-            <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
-          )}
-        </Field>
-        <Field label="Perfil do Contato">
-          <div className="flex gap-2">
-            <Select value={contactProfileId} onChange={(e) => setContactProfileId(e.target.value)}>
-              <option value="">- Sem perfil -</option>
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.nome}
-                </option>
-              ))}
-            </Select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={profilesManager.show}
-              title="Gerenciar perfis"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-            {contactProfileId && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setContactProfileId("")}
-                title="Remover perfil"
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-        </Field>
-        <Field label="Instância">
-          <InstanceMultiSelect
-            instances={instances}
-            selectedIds={instanceIds}
-            onChange={setInstanceIds}
-          />
-        </Field>
-        <Field label="Etiquetas">
-          <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
-        </Field>
-        {customFieldDefinitions.map((field) => (
-          <Field key={field.id} label={field.required ? `${field.label} *` : field.label}>
-            <div className="flex items-center gap-2">
-              <CustomContactFieldInput
-                field={field}
-                value={customFields[field.id]}
-                onChange={(value) =>
-                  setCustomFields((current) => ({ ...current, [field.id]: value }))
-                }
-              />
-              {field.note && (
-                <span
-                  title={field.note}
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground"
-                >
-                  <Info className="h-4 w-4" />
-                </span>
+              {tab}
+            </button>
+          ))}
+        </div>
+        {activeContactTab === "Geral" && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Nome *">
+              <Input value={nome} onChange={(e) => setNome(e.target.value)} />
+              {errors.nome && (
+                <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
               )}
+            </Field>
+            <Field label="Empresa do Contato">
+              <div className="flex gap-2">
+                <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                  <option value="">- Sem empresa -</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.nome}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={customersManager.show}
+                  title="Gerenciar empresas"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+                {customerId && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCustomerId("")}
+                    title="Remover empresa"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            </Field>
+            <Field label="WhatsApp *">
+              <div className="flex gap-2">
+                <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
+                <Input
+                  value={telefone}
+                  onChange={(e) => setTelefone(maskBrazilPhone(e.target.value))}
+                  placeholder="(11) 90000-0000"
+                />
+              </div>
+              {errors.telefone && (
+                <span className="mt-1 block text-[11px] text-destructive">{errors.telefone}</span>
+              )}
+            </Field>
+            <Field label="Departamento do Contato">
+              <div className="flex gap-2">
+                <Select
+                  value={contactDepartmentId}
+                  onChange={(e) => setContactDepartmentId(e.target.value)}
+                >
+                  <option value="">- Sem departamento -</option>
+                  {departments.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.nome}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={departmentsManager.show}
+                  title="Gerenciar departamentos"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+                {contactDepartmentId && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setContactDepartmentId("")}
+                    title="Remover departamento"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            </Field>
+            <Field label="E-mail">
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="nome@empresa.com"
+              />
+              {errors.email && (
+                <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
+              )}
+            </Field>
+            <Field label="Perfil do Contato">
+              <div className="flex gap-2">
+                <Select
+                  value={contactProfileId}
+                  onChange={(e) => setContactProfileId(e.target.value)}
+                >
+                  <option value="">- Sem perfil -</option>
+                  {profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.nome}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={profilesManager.show}
+                  title="Gerenciar perfis"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+                {contactProfileId && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setContactProfileId("")}
+                    title="Remover perfil"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            </Field>
+            <Field label="Instância">
+              <InstanceMultiSelect
+                instances={instances}
+                selectedIds={instanceIds}
+                onChange={setInstanceIds}
+              />
+            </Field>
+            <Field label="Etiquetas">
+              <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
+            </Field>
+          </div>
+        )}
+        {groupedCustomFields.map(([group, fields]) => (
+          <div key={group} className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              {group}
+            </h3>
+            <div className="grid gap-4 md:grid-cols-2">
+              {fields.map((field) => (
+                <Field key={field.id} label={field.required ? `${field.label} *` : field.label}>
+                  <div className="flex items-center gap-2">
+                    <CustomContactFieldInput
+                      field={field}
+                      value={customFields[field.id]}
+                      onChange={(value) =>
+                        setCustomFields((current) => ({ ...current, [field.id]: value }))
+                      }
+                    />
+                    {field.note && (
+                      <span
+                        title={field.note}
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground"
+                      >
+                        <Info className="h-4 w-4" />
+                      </span>
+                    )}
+                  </div>
+                  {errors[`custom_${field.id}`] && (
+                    <span className="mt-1 block text-[11px] text-destructive">
+                      {errors[`custom_${field.id}`]}
+                    </span>
+                  )}
+                </Field>
+              ))}
             </div>
-            {errors[`custom_${field.id}`] && (
-              <span className="mt-1 block text-[11px] text-destructive">
-                {errors[`custom_${field.id}`]}
-              </span>
-            )}
-          </Field>
+          </div>
         ))}
       </div>
       <CustomersManagerModal
@@ -1182,7 +1348,7 @@ function CustomersManagerModal({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
           <div></div>
           <Button variant="primary" size="sm" onClick={create.show}>
-            <Plus className="h-3.5 w-3.5" /> Nova Empresa
+            <Plus className="h-3.5 w-3.5" /> Nova Empresa do Contato
           </Button>
         </div>
         <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
@@ -1546,37 +1712,40 @@ function DepartmentFormModal({
       }
     >
       <div className="space-y-4">
-        <Field label="Nome *">
-          <Input
-            value={form.name ?? ""}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
-          />
-          {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
-        </Field>
+        <div className="grid grid-cols-[minmax(0,1fr)_10rem] gap-3">
+          <Field label="Nome *">
+            <Input
+              value={form.name ?? ""}
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+            />
+            {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
+          </Field>
+          <Field label="Cor">
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={form.color ?? "#6366f1"}
+                onChange={(event) =>
+                  setForm({ ...form, color: normalizeHexColor(event.target.value, "#6366f1") })
+                }
+                className="h-9 w-12 cursor-pointer rounded border border-border bg-transparent"
+              />
+              <Input
+                value={form.color ?? "#6366f1"}
+                onChange={(event) =>
+                  setForm({ ...form, color: normalizeHexColor(event.target.value, "#6366f1") })
+                }
+                maxLength={7}
+              />
+            </div>
+          </Field>
+        </div>
         <Field label="Nota">
           <Textarea
             rows={3}
             value={form.description ?? ""}
             onChange={(event) => setForm({ ...form, description: event.target.value })}
           />
-        </Field>
-        <Field label="Cor">
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={form.color ?? "#6366f1"}
-              onChange={(event) =>
-                setForm({ ...form, color: normalizeHexColor(event.target.value, "#6366f1") })
-              }
-              className="h-9 w-14 cursor-pointer rounded border border-border bg-transparent"
-            />
-            <Input
-              value={form.color ?? "#6366f1"}
-              onChange={(event) =>
-                setForm({ ...form, color: normalizeHexColor(event.target.value, "#6366f1") })
-              }
-            />
-          </div>
         </Field>
       </div>
     </Modal>
@@ -1660,7 +1829,7 @@ function ContactProfilesManagerModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Perfis do Contato"
+      title="Perfil do Contato"
       size="xl"
       footer={
         <Button variant="ghost" size="sm" onClick={onClose}>
@@ -2186,11 +2355,80 @@ function downloadTextFile(filename: string, content: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
+const IMPORT_TEMPLATE_ROWS = [
+  ["Nome", "WhatsApp", "E-mail", "Empresa", "Departamento", "Perfil", "Etiquetas"],
+  [
+    "Maria Exemplo",
+    "+55 (11) 90000-0000",
+    "maria@empresa.com",
+    "FLOWID",
+    "Financeiro",
+    "Gerente",
+    "VIP",
+  ],
+];
+
+async function parseSpreadsheetFile(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  if (extension === "csv") return parseCsv(await file.text());
+  if (extension === "xls" || extension === "xlsx") {
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!firstSheet) return [];
+    return XLSX.utils.sheet_to_json<string[]>(firstSheet, {
+      header: 1,
+      blankrows: false,
+      defval: "",
+    });
+  }
+  throw new Error("Formato inválido. Use XLSX, XLS ou CSV.");
+}
+
+function downloadImportTemplate(format: "csv" | "xls" | "xlsx") {
+  const filename = `modelo-importacao-contatos.${format}`;
+  if (format === "xlsx") {
+    const worksheet = XLSX.utils.aoa_to_sheet(IMPORT_TEMPLATE_ROWS);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Contatos");
+    XLSX.writeFile(workbook, filename);
+    return;
+  }
+  if (format === "xls") {
+    downloadTextFile(filename, toExcelHtml(IMPORT_TEMPLATE_ROWS), "application/vnd.ms-excel");
+    return;
+  }
+  downloadTextFile(filename, toCsv(IMPORT_TEMPLATE_ROWS), "text/csv;charset=utf-8");
+}
+
 function parseCsv(input: string) {
-  return input
-    .split(/\r?\n/)
-    .filter((line) => line.trim())
-    .map((line) => line.split(/;|,/).map((cell) => cell.trim().replace(/^"|"$/g, "")));
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+    const next = input[i + 1];
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      i += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if ((char === "," || char === ";") && !quoted) {
+      row.push(cell.trim());
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") i += 1;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
 }
 
 function normalizeHeader(value: string) {
@@ -2319,6 +2557,10 @@ function isSelectableInstanceStatus(status?: string | null) {
   );
 }
 
+function uniqueLabels(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean) as string[]));
+}
+
 type CustomerFormData = Partial<Customer> & { nome: string };
 
 function CustomerFormModal({
@@ -2377,15 +2619,40 @@ function CustomerFormModal({
       }
     >
       <div className="grid gap-4">
-        <Field label="Nome *">
-          <Input
-            value={form.nome ?? ""}
-            onChange={(event) => setForm({ ...form, nome: event.target.value })}
-          />
-          {errors.nome && (
-            <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
-          )}
-        </Field>
+        <div className="grid grid-cols-[minmax(0,1fr)_10rem] gap-3">
+          <Field label="Nome *">
+            <Input
+              value={form.nome ?? ""}
+              onChange={(event) => setForm({ ...form, nome: event.target.value })}
+            />
+            {errors.nome && (
+              <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
+            )}
+          </Field>
+          <Field label="Cor">
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1.5">
+              <input
+                type="color"
+                value={form.cor ?? "#3b82f6"}
+                onChange={(event) =>
+                  setForm({ ...form, cor: normalizeHexColor(event.target.value, "#3b82f6") })
+                }
+                className="h-7 w-9 cursor-pointer rounded border border-border bg-transparent p-0"
+                aria-label="Selecionar cor"
+              />
+              <input
+                type="text"
+                value={form.cor ?? "#3B82F6"}
+                onChange={(event) =>
+                  setForm({ ...form, cor: normalizeHexColor(event.target.value, "#3b82f6") })
+                }
+                placeholder="#3B82F6"
+                maxLength={7}
+                className="min-w-0 flex-1 bg-transparent font-mono text-xs uppercase outline-none"
+              />
+            </div>
+          </Field>
+        </div>
         <Field label="WhatsApp">
           <Input
             value={form.telefone ?? ""}
@@ -2412,31 +2679,9 @@ function CustomerFormModal({
             onChange={(event) => setForm({ ...form, contato_responsavel: event.target.value })}
           />
         </Field>
-        <Field label="Cor">
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1.5">
-            <input
-              type="color"
-              value={form.cor ?? "#3b82f6"}
-              onChange={(event) =>
-                setForm({ ...form, cor: normalizeHexColor(event.target.value, "#3b82f6") })
-              }
-              className="h-7 w-9 cursor-pointer rounded border border-border bg-transparent p-0"
-              aria-label="Selecionar cor"
-            />
-            <input
-              type="text"
-              value={form.cor ?? ""}
-              onChange={(event) =>
-                setForm({ ...form, cor: normalizeHexColor(event.target.value, "#3b82f6") })
-              }
-              placeholder="#3B82F6"
-              maxLength={7}
-              className="w-24 bg-transparent font-mono text-xs uppercase outline-none"
-            />
-          </div>
-        </Field>
         <Field label="Notas">
-          <Input
+          <Textarea
+            rows={4}
             value={form.notas ?? ""}
             onChange={(event) => setForm({ ...form, notas: event.target.value })}
           />

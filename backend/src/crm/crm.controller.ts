@@ -83,6 +83,16 @@ class ContactCustomFieldDto {
   note?: string | null;
 
   @IsOptional()
+  @IsString()
+  @Length(2, 80)
+  tabName?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(2, 80)
+  groupName?: string;
+
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(100)
   @IsString({ each: true })
@@ -399,6 +409,8 @@ export class CrmController {
         required: data.required ?? false,
         mask: data.mask,
         note: data.note,
+        tabName: data.tabName!,
+        groupName: data.groupName!,
         options: data.options,
         position,
       },
@@ -985,6 +997,8 @@ export class CrmController {
             ? cleanNullable(dto.mask)
             : null,
       note: nullableUpdate(dto.note),
+      tabName: cleanNullable(dto.tabName) ?? (partial ? undefined : "Geral"),
+      groupName: cleanNullable(dto.groupName) ?? (partial ? undefined : "Dados do contato"),
       options,
     };
   }
@@ -1029,6 +1043,8 @@ export class CrmController {
     required: boolean;
     mask: string | null;
     note: string | null;
+    tabName: string;
+    groupName: string;
     options: string[];
     position: number;
     createdAt?: Date;
@@ -1043,6 +1059,8 @@ export class CrmController {
       required: field.required,
       mask: field.mask,
       note: field.note,
+      tabName: field.tabName || "Geral",
+      groupName: field.groupName || "Dados do contato",
       options: field.options,
       position: field.position,
       createdAt: field.createdAt,

@@ -22,6 +22,8 @@ type FieldForm = {
   label: string;
   type: ApiContactCustomField["type"];
   required: boolean;
+  tabName: string;
+  groupName: string;
   textVariant: TextVariant;
   numberDecimals: number;
   numberThousands: boolean;
@@ -31,9 +33,9 @@ type FieldForm = {
 };
 
 const NUMBER_SYMBOL_OPTIONS: Array<{ value: NumberSymbol; label: string }> = [
-  { value: "", label: "Sem símbolo" },
-  { value: "R$", label: "R$: Real brasileiro" },
+  { value: "", label: "Nenhum" },
   { value: "%", label: "%: Percentual" },
+  { value: "R$", label: "R$: Real " },
   { value: "$", label: "$: Dólar" },
   { value: "€", label: "€: Euro" },
   { value: "£", label: "£: Libra" },
@@ -67,6 +69,8 @@ function ContactFieldsSettings() {
       label: data.label.trim(),
       type: data.type,
       required: data.type === "checkbox" ? false : data.required,
+      tabName: data.tabName.trim(),
+      groupName: data.groupName.trim(),
       mask: buildFieldMask(data),
       note: data.note.trim() || null,
       options:
@@ -107,8 +111,10 @@ function ContactFieldsSettings() {
         <table className="w-full table-fixed text-sm">
           <thead className="bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
             <tr>
-              <th className="w-[28%] px-4 py-3">Campo</th>
+              <th className="w-[24%] px-4 py-3">Campo</th>
               <th className="w-32 px-4 py-3">Tipo</th>
+              <th className="w-36 px-4 py-3">Aba</th>
+              <th className="w-44 px-4 py-3">Agrupamento</th>
               <th className="w-28 px-4 py-3">Obrigatório</th>
               <th className="px-4 py-3">Nota</th>
               <th className="w-24 px-4 py-3 text-center">Ações</th>
@@ -117,7 +123,7 @@ function ContactFieldsSettings() {
           <tbody className="divide-y divide-border">
             {loading && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                   Carregando...
                 </td>
               </tr>
@@ -127,6 +133,10 @@ function ContactFieldsSettings() {
                 <tr key={field.id} className="hover:bg-surface-1">
                   <td className="px-4 py-3 font-medium">{field.label}</td>
                   <td className="px-4 py-3 text-muted-foreground">{fieldTypeLabel(field)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{field.tabName || "Geral"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {field.groupName || "Dados do contato"}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {field.required ? "Sim" : "Não"}
                   </td>
@@ -155,7 +165,7 @@ function ContactFieldsSettings() {
               ))}
             {!loading && fields.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                   Nenhum campo adicional cadastrado.
                 </td>
               </tr>
@@ -171,6 +181,7 @@ function ContactFieldsSettings() {
           setEditing(null);
         }}
         onSubmit={save}
+        fields={fields}
       />
       <ConfirmDialog
         open={!!deleting}
@@ -196,13 +207,31 @@ function ContactFieldFormModal({
   onClose,
   onSubmit,
   initial,
+  fields,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: FieldForm) => void | Promise<void>;
   initial?: ApiContactCustomField;
+  fields: ApiContactCustomField[];
 }) {
   const [form, setForm] = React.useState<FieldForm>(emptyFieldForm());
+  const tabInputId = React.useId();
+  const groupInputId = React.useId();
+  const tabs = React.useMemo(
+    () => uniqueLabels(["Geral", ...fields.map((field) => field.tabName)]),
+    [fields],
+  );
+  const groups = React.useMemo(
+    () =>
+      uniqueLabels([
+        "Dados do contato",
+        ...fields
+          .filter((field) => (field.tabName || "Geral") === (form.tabName || "Geral"))
+          .map((field) => field.groupName),
+      ]),
+    [fields, form.tabName],
+  );
 
   React.useEffect(() => {
     if (!open) return;
@@ -212,6 +241,14 @@ function ContactFieldFormModal({
   const save = () => {
     if (form.label.trim().length < 2) {
       toast.error("Informe o nome do campo.");
+      return;
+    }
+    if (form.tabName.trim().length < 2) {
+      toast.error("Informe a aba do campo.");
+      return;
+    }
+    if (form.groupName.trim().length < 2) {
+      toast.error("Informe o agrupamento do campo.");
       return;
     }
     if (form.type === "list" && !form.optionsText.trim()) {
@@ -244,6 +281,34 @@ function ContactFieldFormModal({
             onChange={(event) => setForm({ ...form, label: event.target.value })}
           />
         </Field>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Aba *">
+            <Input
+              list={tabInputId}
+              value={form.tabName}
+              onChange={(event) => setForm({ ...form, tabName: event.target.value, groupName: "" })}
+              placeholder="Geral"
+            />
+            <datalist id={tabInputId}>
+              {tabs.map((tab) => (
+                <option key={tab} value={tab} />
+              ))}
+            </datalist>
+          </Field>
+          <Field label="Agrupamento *">
+            <Input
+              list={groupInputId}
+              value={form.groupName}
+              onChange={(event) => setForm({ ...form, groupName: event.target.value })}
+              placeholder="Dados do contato"
+            />
+            <datalist id={groupInputId}>
+              {groups.map((group) => (
+                <option key={group} value={group} />
+              ))}
+            </datalist>
+          </Field>
+        </div>
         <div className="grid gap-3 md:grid-cols-[1fr_7rem]">
           <Field label="Tipo *">
             <Select
@@ -358,6 +423,8 @@ function emptyFieldForm(): FieldForm {
     label: "",
     type: "text",
     required: false,
+    tabName: "Geral",
+    groupName: "Dados do contato",
     textVariant: "short",
     numberDecimals: 2,
     numberThousands: true,
@@ -373,6 +440,8 @@ function fieldToForm(field: ApiContactCustomField): FieldForm {
     label: field.label,
     type: field.type,
     required: field.required,
+    tabName: field.tabName || "Geral",
+    groupName: field.groupName || "Dados do contato",
     textVariant: config.text?.variant ?? "short",
     numberDecimals: config.number?.decimals ?? 2,
     numberThousands: config.number?.thousands ?? true,
@@ -405,6 +474,10 @@ function parseFieldConfig(mask?: string | null): FieldConfig {
   } catch {
     return {};
   }
+}
+
+function uniqueLabels(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean) as string[]));
 }
 
 function clampInteger(value: string | number, min: number, max: number) {
