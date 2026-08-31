@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Plus,
   RefreshCw,
-  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminContainer } from "@/components/admin-shell";
@@ -18,6 +17,7 @@ import {
   Card,
   Field,
   Input,
+  SearchInput,
   SectionHeader,
   Select,
 } from "@/components/ui-kit";
@@ -148,15 +148,12 @@ function EmpresasSaaS() {
       <div className="mt-4 grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <Card>
           <div className="mb-4 flex items-center gap-2">
-            <div className="relative max-w-md flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Buscar tenant..."
-                className="pl-9"
-              />
-            </div>
+            <SearchInput
+              value={q}
+              onChange={setQ}
+              placeholder="Buscar tenant..."
+              className="max-w-md flex-1"
+            />
             <Button variant="secondary" onClick={load}>
               <RefreshCw className="h-4 w-4" /> Atualizar
             </Button>

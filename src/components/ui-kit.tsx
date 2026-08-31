@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 
 /* ============================================================
    Nexo · UI Kit
@@ -110,6 +110,43 @@ export function Input({
       className={`w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
       {...rest}
     />
+  );
+}
+
+export function SearchInput({
+  value,
+  onChange,
+  placeholder,
+  className = "",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 transition focus-within:border-primary ${className}`}
+    >
+      <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-w-0 flex-1 border-0 bg-transparent py-2 text-sm outline-none ring-0 placeholder:text-muted-foreground focus:border-0 focus:outline-none focus:ring-0"
+        placeholder={placeholder}
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-destructive/30 bg-destructive/10 text-destructive transition hover:bg-destructive/15"
+          aria-label="Limpar busca"
+          title="Limpar busca"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </div>
   );
 }
 

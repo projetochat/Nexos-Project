@@ -2,7 +2,6 @@ import * as React from "react";
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Search,
   MessageSquare,
   Plus,
   Inbox as InboxIcon,
@@ -18,7 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
-import { Avatar, Badge, Button, Field, Input, Select } from "@/components/ui-kit";
+import { Avatar, Badge, Button, Field, Input, SearchInput, Select } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
 import { TipoBadge, type TipoInstancia } from "@/components/instancia-tipos";
 import { connectionDisplayLabel, connectionInstanceValue } from "@/lib/connection-options";
@@ -202,15 +201,12 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
         >
           <div className="space-y-3 border-b border-border p-4">
             <div className="flex items-center gap-2">
-              <div className="flex flex-1 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  className="w-full bg-transparent py-2 text-sm outline-none"
-                  placeholder="Buscar cliente..."
-                />
-              </div>
+              <SearchInput
+                value={query}
+                onChange={setQuery}
+                placeholder="Buscar cliente..."
+                className="flex-1"
+              />
               <Button
                 variant="outline"
                 size="icon"

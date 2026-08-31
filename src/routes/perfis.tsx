@@ -1,10 +1,10 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, ShieldCheck, Copy, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, ShieldCheck, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { SectionHeader, Card, Button, Field, Input, Textarea } from "@/components/ui-kit";
+import { SectionHeader, Card, Button, Field, Input, Textarea, SearchInput } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import { connectionsApi, organizationApi, type ApiMessagingConnection, type ApiRole } from "@/lib/nexos-api";
 
@@ -265,15 +265,7 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="w-full bg-transparent py-2 text-sm outline-none"
-              placeholder="Buscar perfil..."
-            />
-          </div>
+          <SearchInput value={query} onChange={setQuery} placeholder="Buscar perfil..." />
         </Card>
 
         {isLoading ? (

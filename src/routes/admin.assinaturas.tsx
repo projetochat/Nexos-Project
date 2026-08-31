@@ -1,8 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Search } from "lucide-react";
 import { AdminContainer } from "@/components/admin-shell";
-import { Badge, Card, Input, SectionHeader } from "@/components/ui-kit";
+import { Badge, Card, SearchInput, SectionHeader } from "@/components/ui-kit";
 import { fmtDate } from "@/lib/format";
 import { platformApi, type PlatformSubscription } from "@/lib/nexos-api";
 
@@ -34,15 +33,12 @@ function AssinaturasAdmin() {
         subtitle="Operações administrativas. Sem cobrança recorrente automática nesta sprint."
       />
       <Card>
-        <div className="relative mb-4 max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar assinatura..."
-            className="pl-9"
-          />
-        </div>
+        <SearchInput
+          value={q}
+          onChange={setQ}
+          placeholder="Buscar assinatura..."
+          className="mb-4 max-w-md"
+        />
         {error && <div className="mb-4 text-sm text-destructive">{error}</div>}
         <div className="overflow-x-auto">
           <table className="w-full table-fixed text-sm">

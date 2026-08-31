@@ -9,7 +9,6 @@ import {
   Play,
   Plus,
   RefreshCw,
-  Search,
   Square,
   Trash2,
 } from "lucide-react";
@@ -23,6 +22,7 @@ import {
   EmptyState,
   Field,
   Input,
+  SearchInput,
   Select,
   SectionHeader,
   Textarea,
@@ -207,15 +207,11 @@ function Page() {
 
         <Card className="mb-4 p-4">
           <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_180px_220px]">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="Buscar por nome ou descricao"
-                value={filters.search}
-                onChange={(event) => setFilters({ ...filters, search: event.target.value })}
-              />
-            </div>
+            <SearchInput
+              value={filters.search}
+              onChange={(search) => setFilters({ ...filters, search })}
+              placeholder="Buscar por nome ou descricao"
+            />
             <Select
               value={filters.status}
               onChange={(event) =>
@@ -940,15 +936,7 @@ function FilterableCheckGrid({
   );
   return (
     <div className="space-y-3">
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input
-          className="pl-9"
-          placeholder="Filtrar itens..."
-          value={search}
-          onChange={(event) => onSearch(event.target.value)}
-        />
-      </div>
+      <SearchInput value={search} onChange={onSearch} placeholder="Filtrar itens..." />
       <div className="grid max-h-64 gap-2 overflow-auto md:grid-cols-2">
         {filtered.map((item) => (
           <label

@@ -1,10 +1,19 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Building2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Network } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { SectionHeader, Card, Button, Field, Input, Textarea, Select } from "@/components/ui-kit";
+import {
+  SectionHeader,
+  Card,
+  Button,
+  Field,
+  Input,
+  Textarea,
+  Select,
+  SearchInput,
+} from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import { organizationApi, type ApiDepartment } from "@/lib/nexos-api";
 
@@ -87,15 +96,7 @@ function Page() {
 
         <Card className="mb-4 p-4">
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="w-full bg-transparent py-2 text-sm outline-none"
-                placeholder="Buscar departamento..."
-              />
-            </div>
+            <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
             <Select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value)}>
               <option value="active">Ativos</option>
               <option value="all">Todos</option>
@@ -119,7 +120,7 @@ function Page() {
                     className="flex h-10 w-10 items-center justify-center rounded-lg text-white"
                     style={{ background: d.color }}
                   >
-                    <Building2 className="h-5 w-5" />
+                    <Network className="h-5 w-5" />
                   </div>
                   <div className="flex gap-1">
                     <Button variant="ghost" size="sm" onClick={() => setEditing(d)}>

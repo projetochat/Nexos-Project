@@ -27,6 +27,7 @@ import { Route as ClientesRouteImport } from './routes/clientes'
 import { Route as ChatbotRouteImport } from './routes/chatbot'
 import { Route as ChamadosRouteImport } from './routes/chamados'
 import { Route as CampanhasRouteImport } from './routes/campanhas'
+import { Route as BiRouteImport } from './routes/bi'
 import { Route as AutomacoesRouteImport } from './routes/automacoes'
 import { Route as AtendimentoRouteImport } from './routes/atendimento'
 import { Route as AtendentesRouteImport } from './routes/atendentes'
@@ -153,6 +154,11 @@ const ChamadosRoute = ChamadosRouteImport.update({
 const CampanhasRoute = CampanhasRouteImport.update({
   id: '/campanhas',
   path: '/campanhas',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BiRoute = BiRouteImport.update({
+  id: '/bi',
+  path: '/bi',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutomacoesRoute = AutomacoesRouteImport.update({
@@ -351,6 +357,7 @@ export interface FileRoutesByFullPath {
   '/atendentes': typeof AtendentesRoute
   '/atendimento': typeof AtendimentoRouteWithChildren
   '/automacoes': typeof AutomacoesRoute
+  '/bi': typeof BiRoute
   '/campanhas': typeof CampanhasRoute
   '/chamados': typeof ChamadosRoute
   '/chatbot': typeof ChatbotRoute
@@ -406,6 +413,7 @@ export interface FileRoutesByTo {
   '/ajuda': typeof AjudaRoute
   '/atendentes': typeof AtendentesRoute
   '/automacoes': typeof AutomacoesRoute
+  '/bi': typeof BiRoute
   '/campanhas': typeof CampanhasRoute
   '/chamados': typeof ChamadosRoute
   '/chatbot': typeof ChatbotRoute
@@ -462,6 +470,7 @@ export interface FileRoutesById {
   '/atendentes': typeof AtendentesRoute
   '/atendimento': typeof AtendimentoRouteWithChildren
   '/automacoes': typeof AutomacoesRoute
+  '/bi': typeof BiRoute
   '/campanhas': typeof CampanhasRoute
   '/chamados': typeof ChamadosRoute
   '/chatbot': typeof ChatbotRoute
@@ -521,6 +530,7 @@ export interface FileRouteTypes {
     | '/atendentes'
     | '/atendimento'
     | '/automacoes'
+    | '/bi'
     | '/campanhas'
     | '/chamados'
     | '/chatbot'
@@ -576,6 +586,7 @@ export interface FileRouteTypes {
     | '/ajuda'
     | '/atendentes'
     | '/automacoes'
+    | '/bi'
     | '/campanhas'
     | '/chamados'
     | '/chatbot'
@@ -631,6 +642,7 @@ export interface FileRouteTypes {
     | '/atendentes'
     | '/atendimento'
     | '/automacoes'
+    | '/bi'
     | '/campanhas'
     | '/chamados'
     | '/chatbot'
@@ -689,6 +701,7 @@ export interface RootRouteChildren {
   AtendentesRoute: typeof AtendentesRoute
   AtendimentoRoute: typeof AtendimentoRouteWithChildren
   AutomacoesRoute: typeof AutomacoesRoute
+  BiRoute: typeof BiRoute
   CampanhasRoute: typeof CampanhasRoute
   ChamadosRoute: typeof ChamadosRoute
   ChatbotRoute: typeof ChatbotRoute
@@ -835,6 +848,13 @@ declare module '@tanstack/react-router' {
       path: '/campanhas'
       fullPath: '/campanhas'
       preLoaderRoute: typeof CampanhasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bi': {
+      id: '/bi'
+      path: '/bi'
+      fullPath: '/bi'
+      preLoaderRoute: typeof BiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/automacoes': {
@@ -1213,6 +1233,7 @@ const rootRouteChildren: RootRouteChildren = {
   AtendentesRoute: AtendentesRoute,
   AtendimentoRoute: AtendimentoRouteWithChildren,
   AutomacoesRoute: AutomacoesRoute,
+  BiRoute: BiRoute,
   CampanhasRoute: CampanhasRoute,
   ChamadosRoute: ChamadosRoute,
   ChatbotRoute: ChatbotRoute,

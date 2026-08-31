@@ -1,8 +1,8 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Search, ShieldAlert } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
 import { AdminContainer } from "@/components/admin-shell";
-import { Avatar, Card, Input, SectionHeader } from "@/components/ui-kit";
+import { Avatar, Card, SearchInput, SectionHeader } from "@/components/ui-kit";
 import { fmtDateTime } from "@/lib/format";
 import { platformApi, type PlatformAuditLog } from "@/lib/nexos-api";
 
@@ -42,15 +42,12 @@ function AuditoriaAdmin() {
         }
       />
       <Card>
-        <div className="relative mb-4 max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={q}
-            onChange={(event) => setQ(event.target.value)}
-            placeholder="Ação, ator ou tenant..."
-            className="pl-9"
-          />
-        </div>
+        <SearchInput
+          value={q}
+          onChange={setQ}
+          placeholder="Ação, ator ou tenant..."
+          className="mb-4 max-w-md"
+        />
         {error && <div className="mb-4 text-sm text-destructive">{error}</div>}
         <div className="divide-y divide-border">
           {filtered.map((row) => (

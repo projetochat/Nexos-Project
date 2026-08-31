@@ -1380,7 +1380,7 @@ function pagination(query: PaginationDto) {
   const page = Number(query.page ?? 1);
   const pageSize = Number(query.pageSize ?? 25);
   if (!Number.isInteger(page) || page < 1) throw new BadRequestException("Pagina invalida.");
-  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 1000) {
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 10000) {
     throw new BadRequestException("Tamanho de pagina invalido.");
   }
   return { page, pageSize, skip: (page - 1) * pageSize };

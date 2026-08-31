@@ -80,13 +80,19 @@ const principalNav: NavItem[] = [
 ];
 
 // Itens exibidos no topo da sidebar (sem agrupador) para administradores.
-const topNav: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
-];
+const topNav: NavItem[] = [];
 
 // Agrupamento exibido apenas para administradores.
 const adminGroups: { title: string; items: NavItem[] }[] = [
+  {
+    title: "Dashboard",
+    items: [
+      { to: "/", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
+      { to: "/filas", label: "Filas de atendimento", icon: ListChecks },
+      { to: "/bi", label: "BI", icon: BarChart3 },
+    ],
+  },
   {
     title: "Operação",
     items: [
@@ -104,7 +110,6 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
       { to: "/etiquetas", label: "Etiquetas", icon: Tag },
       { to: "/mensagens-rapidas", label: "Mensagens rápidas", icon: Zap },
       { to: "/campanhas", label: "Campanhas", icon: Megaphone },
-      { to: "/filas", label: "Filas", icon: ListChecks },
     ],
   },
   {
@@ -134,6 +139,7 @@ const NAV_PERMISSIONS: Record<string, string[]> = {
   "/mensagens-rapidas": ["chat.quick_replies.read", "chat.quick_replies.manage"],
   "/campanhas": ["campaigns.read", "campaigns.manage"],
   "/filas": ["conversations.manage"],
+  "/bi": ["crm.read", "conversations.read", "campaigns.read", "tickets.read"],
   "/instancias": ["connections.read", "connections.manage"],
   "/chatbot": ["automations.read", "automations.manage"],
   "/automacoes": ["automations.read", "automations.manage"],
@@ -179,12 +185,13 @@ const LABELS: Record<string, string> = {
   etiquetas: "Etiquetas",
   campanhas: "Campanhas",
   relatorios: "Relatórios",
+  bi: "BI",
   configuracoes: "Configurações",
   perfil: "Perfil",
   perfis: "Perfis de acesso",
   instancias: "Instâncias",
   ajuda: "Central de Ajuda",
-  filas: "Filas",
+  filas: "Filas de atendimento",
 
   chatbot: "Fluxo de Bot",
   automacoes: "Automações",
@@ -887,7 +894,11 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
         }`}
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-          <Link to={isOperator ? "/inbox" : "/"} className="flex items-center gap-2" onClick={onClose}>
+          <Link
+            to={isOperator ? "/inbox" : "/"}
+            className="flex items-center gap-2"
+            onClick={onClose}
+          >
             <LogoMark size={24} />
             <span className="text-sm font-semibold tracking-tight">Nexo</span>
           </Link>

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2, Search } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -13,6 +13,7 @@ import {
   KPI,
   Field,
   Input,
+  SearchInput,
   Select,
 } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
@@ -141,15 +142,7 @@ function AtendentesPage() {
 
         <Card className="mb-4 p-4">
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="w-full bg-transparent py-2 text-sm outline-none"
-                placeholder="Buscar atendente..."
-              />
-            </div>
+            <SearchInput value={query} onChange={setQuery} placeholder="Buscar atendente..." />
             <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="all">Todos os status</option>
               <option>online</option>
@@ -477,7 +470,9 @@ function formatDateTime(value?: string) {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
-  }).format(new Date(value));
+  })
+    .format(new Date(value))
+    .replace(",", "");
 }
 
 function readImageAsCompressedDataUrl(file: File) {

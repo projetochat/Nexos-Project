@@ -24,16 +24,15 @@ import {
   ListOrdered,
   Maximize2,
   MessageCircle,
-  MoreVertical,
   Network,
   Plug,
   Info,
   Pencil,
   Plus,
   Search,
-  ShieldUser,
+  ShieldCheck,
   Strikethrough,
-  Tags,
+  Tag,
   Trash2,
   Type,
   Underline,
@@ -51,6 +50,7 @@ import {
   Card,
   Field,
   Input,
+  SearchInput,
   SectionHeader,
   Select,
   Textarea,
@@ -162,16 +162,7 @@ function ContatosPage() {
   const [totalPages, setTotalPages] = React.useState(1);
   const [editing, setEditing] = React.useState<Contact | null>(null);
   const [deleting, setDeleting] = React.useState<Contact | null>(null);
-  const [mobileActionsMenu, setMobileActionsMenu] = React.useState<{
-    contactId: string;
-    top: number;
-    left: number;
-  } | null>(null);
   const create = useDisclosure();
-  const mobileActionsContact = React.useMemo(
-    () => contacts.find((contact) => contact.id === mobileActionsMenu?.contactId) ?? null,
-    [contacts, mobileActionsMenu?.contactId],
-  );
   const visibleInstances = React.useMemo(
     () => instances.filter((instance) => isSelectableInstanceStatus(instance.status)),
     [instances],
@@ -554,7 +545,7 @@ function ContatosPage() {
 
   return (
     <AppShell>
-      <PageContainer>
+      <PageContainer className="max-w-none lg:px-5 xl:px-6">
         <SectionHeader
           title="Contatos"
           subtitle={`${total} contatos cadastrados.`}
@@ -797,7 +788,82 @@ function ContatosPage() {
         )}
 
         <Card className="overflow-visible p-0">
-          <table className="w-full table-fixed text-sm">
+          <div className="space-y-3 p-3 md:hidden">
+            {loading && (
+              <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+                Carregando...
+              </div>
+            )}
+            {!loading &&
+              contacts.map((contact) => (
+                <div
+                  key={contact.id}
+                  className="rounded-lg border border-border bg-surface-1 p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 gap-2">
+                      <input
+                        type="checkbox"
+                        className="mt-1 h-4 w-4 shrink-0"
+                        checked={selectedIds.includes(contact.id)}
+                        onChange={() =>
+                          setSelectedIds((current) =>
+                            current.includes(contact.id)
+                              ? current.filter((id) => id !== contact.id)
+                              : [...current, contact.id],
+                          )
+                        }
+                        aria-label={`Selecionar ${contact.nome}`}
+                      />
+                      <div className="min-w-0">
+                        <span className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                          Nome contato
+                        </span>
+                        <p className="truncate text-sm font-semibold">{contact.nome}</p>
+                        <span className="mt-2 block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                          WhatsApp
+                        </span>
+                        <p className="truncate font-mono text-xs">
+                          {formatPhoneWithDdi(contact.telefone)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Abrir conversa"
+                        onClick={() => void openConversation(contact)}
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Editar"
+                        onClick={() => setEditing(contact)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Excluir"
+                        onClick={() => setDeleting(contact)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            {!loading && contacts.length === 0 && (
+              <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+                Nenhum contato encontrado.
+              </div>
+            )}
+          </div>
+          <table className="hidden w-full table-fixed text-sm md:table">
             <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
               <tr>
                 <th className="w-10 px-3 py-3 font-medium sm:px-4">
@@ -809,15 +875,11 @@ function ContatosPage() {
                     aria-label="Selecionar contatos visíveis"
                   />
                 </th>
-                <th className="w-[32%] px-3 py-3 font-medium sm:px-4 md:w-[34%]">Contato</th>
-                <th className="w-[28%] px-3 py-3 font-medium sm:px-4 md:w-[21%]">WhatsApp</th>
-                <th className="hidden w-[18%] px-4 py-3 font-medium md:table-cell">Empresa</th>
-                <th className="hidden w-[15%] px-4 py-3 font-medium md:table-cell">
-                  Departamento
-                </th>
-                <th className="w-[30%] px-3 py-3 text-center font-medium sm:px-4 md:w-28">
-                  <span className="hidden md:inline">Ações</span>
-                </th>
+                <th className="w-[38%] px-3 py-3 font-medium sm:px-4">Contato</th>
+                <th className="w-[16%] px-3 py-3 font-medium sm:px-4">WhatsApp</th>
+                <th className="w-[21%] px-4 py-3 font-medium">Empresa</th>
+                <th className="w-[15%] px-4 py-3 font-medium">Departamento</th>
+                <th className="w-28 px-3 py-3 text-center font-medium sm:px-4">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -860,7 +922,7 @@ function ContatosPage() {
                     <td className="px-3 py-3 font-mono text-xs sm:px-4">
                       {formatPhoneWithDdi(contact.telefone)}
                     </td>
-                    <td className="hidden px-4 py-3 md:table-cell">
+                    <td className="px-4 py-3">
                       {contact.customer ? (
                         <span
                           className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
@@ -877,42 +939,13 @@ function ContatosPage() {
                         <span className="text-xs text-muted-foreground">Não vinculado</span>
                       )}
                     </td>
-                    <td className="hidden px-4 py-3 text-xs md:table-cell">
+                    <td className="px-4 py-3 text-xs">
                       {contact.contactDepartment?.nome ?? contact.departamento ?? (
                         <span className="text-muted-foreground">-</span>
                       )}
                     </td>
                     <td className="px-3 py-3 sm:px-4">
-                      <div className="relative flex justify-center md:hidden">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title="Ações"
-                          onClick={(event) => {
-                            const rect = event.currentTarget.getBoundingClientRect();
-                            const menuWidth = 144;
-                            const menuHeight = 132;
-                            setMobileActionsMenu((current) =>
-                              current?.contactId === contact.id
-                                ? null
-                                : {
-                                    contactId: contact.id,
-                                    top: Math.min(
-                                      window.innerHeight - menuHeight - 12,
-                                      rect.bottom + 6,
-                                    ),
-                                    left: Math.min(
-                                      window.innerWidth - menuWidth - 12,
-                                      Math.max(12, rect.right - menuWidth),
-                                    ),
-                                  },
-                            );
-                          }}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div className="hidden justify-center gap-1 md:flex">
+                      <div className="flex justify-center gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -993,52 +1026,6 @@ function ContatosPage() {
             </div>
           </div>
         </Card>
-
-        {mobileActionsMenu && mobileActionsContact && (
-          <>
-            <button
-              type="button"
-              aria-label="Fechar menu de ações"
-              className="fixed inset-0 z-[998] cursor-default bg-transparent md:hidden"
-              onClick={() => setMobileActionsMenu(null)}
-            />
-            <div
-              className="fixed z-[999] w-36 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl md:hidden"
-              style={{ top: mobileActionsMenu.top, left: mobileActionsMenu.left }}
-            >
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
-                onClick={() => {
-                  setMobileActionsMenu(null);
-                  void openConversation(mobileActionsContact);
-                }}
-              >
-                <MessageCircle className="h-4 w-4" /> Chat
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
-                onClick={() => {
-                  setMobileActionsMenu(null);
-                  setEditing(mobileActionsContact);
-                }}
-              >
-                <Pencil className="h-4 w-4" /> Editar
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-danger hover:bg-danger-soft"
-                onClick={() => {
-                  setMobileActionsMenu(null);
-                  setDeleting(mobileActionsContact);
-                }}
-              >
-                <Trash2 className="h-4 w-4" /> Excluir
-              </button>
-            </div>
-          </>
-        )}
 
         <ContactFormModal
           open={create.open}
@@ -1544,16 +1531,6 @@ function ContactFormModal({
                   >
                     <Plus className="h-3.5 w-3.5" />
                   </Button>
-                  {customerId && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setCustomerId("")}
-                      title="Remover empresa"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
                 </div>
               </Field>
             </div>
@@ -1598,16 +1575,6 @@ function ContactFormModal({
                   >
                     <Plus className="h-3.5 w-3.5" />
                   </Button>
-                  {contactDepartmentId && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setContactDepartmentId("")}
-                      title="Remover departamento"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
                 </div>
               </Field>
             </div>
@@ -1646,16 +1613,6 @@ function ContactFormModal({
                   >
                     <Plus className="h-3.5 w-3.5" />
                   </Button>
-                  {contactProfileId && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setContactProfileId("")}
-                      title="Remover perfil"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
                 </div>
               </Field>
             </div>
@@ -2164,23 +2121,11 @@ function DepartmentFormModal({
             {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
           </Field>
           <Field label="Cor">
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={completeHexColor(form.color, "#6366f1")}
-                onChange={(event) =>
-                  setForm({ ...form, color: normalizeHexColor(event.target.value, "#6366f1") })
-                }
-                className="h-9 w-12 cursor-pointer rounded border border-border bg-transparent"
-              />
-              <Input
-                value={form.color ?? "#6366f1"}
-                onChange={(event) =>
-                  setForm({ ...form, color: normalizeHexColor(event.target.value, "#6366f1") })
-                }
-                maxLength={7}
-              />
-            </div>
+            <ColorField
+              value={form.color ?? "#6366f1"}
+              fallback="#6366f1"
+              onChange={(color) => setForm({ ...form, color })}
+            />
           </Field>
         </div>
         <Field label="Nota">
@@ -2303,7 +2248,7 @@ function ContactProfilesManagerModal({
                   className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
                   style={{ backgroundColor: profile.cor }}
                 >
-                  <ShieldUser className="h-4 w-4" />
+                  <ShieldCheck className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{profile.nome}</p>
@@ -2524,7 +2469,7 @@ function TagMultiSelect({
                 key={tag.id}
                 className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium text-foreground"
               >
-                <Tags className="h-3 w-3" style={{ color: tag.cor }} />
+                <Tag className="h-3 w-3" style={{ color: tag.cor }} />
                 {tag.nome}
               </span>
             ))
@@ -2551,7 +2496,7 @@ function TagMultiSelect({
                   >
                     {active && <Check className="h-3 w-3" />}
                   </span>
-                  <Tags className="h-3.5 w-3.5 shrink-0" style={{ color: tag.cor }} />
+                  <Tag className="h-3.5 w-3.5 shrink-0" style={{ color: tag.cor }} />
                   <span className="truncate">{tag.nome}</span>
                 </button>
               );
@@ -3180,7 +3125,7 @@ function formatDateTime(value?: string | null) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }).replace(",", "");
 }
 
 function FilterSelect({
@@ -3201,39 +3146,6 @@ function FilterSelect({
         {children}
       </Select>
     </label>
-  );
-}
-
-function SearchInput({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 transition focus-within:border-primary">
-      <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
-        placeholder={placeholder}
-      />
-      {value && (
-        <button
-          type="button"
-          onClick={() => onChange("")}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:bg-surface-3 hover:text-foreground"
-          aria-label="Limpar busca"
-          title="Limpar busca"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      )}
-    </div>
   );
 }
 
@@ -3521,7 +3433,7 @@ function CountryCodeSelect({
               <button
                 type="button"
                 onClick={() => setQuery("")}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:bg-surface-3 hover:text-foreground"
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-destructive/30 bg-destructive/10 text-destructive transition hover:bg-destructive/15"
                 aria-label="Limpar busca"
                 title="Limpar busca"
               >
@@ -3651,27 +3563,11 @@ function CustomerFormModal({
             )}
           </Field>
           <Field label="Cor">
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1.5">
-              <input
-                type="color"
-                value={completeHexColor(form.cor, "#3b82f6")}
-                onChange={(event) =>
-                  setForm({ ...form, cor: normalizeHexColor(event.target.value, "#3b82f6") })
-                }
-                className="h-7 w-9 cursor-pointer rounded border border-border bg-transparent p-0"
-                aria-label="Selecionar cor"
-              />
-              <input
-                type="text"
-                value={form.cor ?? "#3B82F6"}
-                onChange={(event) =>
-                  setForm({ ...form, cor: normalizeHexColor(event.target.value, "#3b82f6") })
-                }
-                placeholder="#3B82F6"
-                maxLength={7}
-                className="min-w-0 flex-1 bg-transparent font-mono text-xs uppercase outline-none"
-              />
-            </div>
+            <ColorField
+              value={form.cor ?? "#3B82F6"}
+              fallback="#3b82f6"
+              onChange={(cor) => setForm({ ...form, cor })}
+            />
           </Field>
         </div>
         <Field label="Contato Responsável">
@@ -3722,6 +3618,36 @@ function normalizeHexColor(value?: string | null, _fallback = "#6366f1") {
 function completeHexColor(value?: string | null, fallback = "#6366f1") {
   const normalized = normalizeHexColor(value);
   return normalized.length === 7 ? normalized : normalizeHexColor(fallback);
+}
+
+function ColorField({
+  value,
+  fallback,
+  onChange,
+}: {
+  value: string;
+  fallback: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
+      <input
+        type="color"
+        value={completeHexColor(value, fallback)}
+        onChange={(event) => onChange(normalizeHexColor(event.target.value, fallback))}
+        className="h-7 w-9 cursor-pointer rounded border border-border bg-transparent p-0"
+        aria-label="Selecionar cor"
+      />
+      <input
+        type="text"
+        value={value}
+        onChange={(event) => onChange(normalizeHexColor(event.target.value, fallback))}
+        placeholder={completeHexColor(fallback, fallback)}
+        maxLength={7}
+        className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+      />
+    </div>
+  );
 }
 
 function customerPayload(data: CustomerFormData) {

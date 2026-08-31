@@ -1,10 +1,10 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
-import { Avatar, Badge, Button, Select } from "@/components/ui-kit";
+import { Avatar, Badge, Button, SearchInput, Select } from "@/components/ui-kit";
 import { fmtDate, fmtHM } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import {
@@ -113,18 +113,14 @@ function HistoricoPage() {
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[380px_1fr]">
           <aside className="flex min-h-0 flex-col rounded-xl border border-border bg-card shadow-card">
             <div className="grid gap-2 border-b border-border p-3">
-              <div className="flex items-center gap-2 rounded-md border border-border bg-surface-1 px-2">
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <input
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value);
-                    setPage(1);
-                  }}
-                  placeholder="Buscar protocolo, contato..."
-                  className="w-full bg-transparent py-2.5 text-sm outline-none"
-                />
-              </div>
+              <SearchInput
+                value={search}
+                onChange={(value) => {
+                  setSearch(value);
+                  setPage(1);
+                }}
+                placeholder="Buscar protocolo, contato..."
+              />
               <div className="grid gap-2">
                 <Select
                   value={period}

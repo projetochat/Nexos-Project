@@ -1,10 +1,18 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { CheckCircle2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
-import { Button, Card, EmptyState, Field, Input, SectionHeader } from "@/components/ui-kit";
+import {
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  Input,
+  SearchInput,
+  SectionHeader,
+} from "@/components/ui-kit";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
 import { quickReplyApi, type ApiQuickReply } from "@/lib/nexos-api";
 import { useChatPerms } from "@/lib/perms";
@@ -89,15 +97,7 @@ function QuickRepliesPage() {
         ) : (
           <>
             <Card className="mb-4 p-4">
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  className="w-full bg-transparent py-2 text-sm outline-none"
-                  placeholder="Buscar atalho ou texto..."
-                />
-              </div>
+              <SearchInput value={query} onChange={setQuery} placeholder="Buscar atalho ou texto..." />
             </Card>
             <div className="grid gap-3 md:grid-cols-2">
               {filtered.map((reply) => (

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, Paperclip, Plus, Search, Ticket, Trash2 } from "lucide-react";
+import { Download, Eye, Paperclip, Plus, Ticket, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -11,6 +11,7 @@ import {
   EmptyState,
   Field,
   Input,
+  SearchInput,
   SectionHeader,
   Select,
 } from "@/components/ui-kit";
@@ -121,15 +122,11 @@ function ChamadosPage() {
 
         <Card className="mb-4 p-4">
           <div className="grid gap-3 md:grid-cols-[1fr_180px_180px]">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Buscar protocolo, título, contact ou customer"
-                className="pl-9"
-              />
-            </div>
+            <SearchInput
+              value={query}
+              onChange={setQuery}
+              placeholder="Buscar protocolo, título, contact ou customer"
+            />
             <Select
               value={status}
               onChange={(event) => setStatus(event.target.value as ApiTicketStatus | "")}

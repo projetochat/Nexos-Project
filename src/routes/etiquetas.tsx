@@ -1,10 +1,10 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Search, Tag, Trash2 } from "lucide-react";
+import { Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { Button, Card, Field, Input, SectionHeader } from "@/components/ui-kit";
+import { Button, Card, Field, Input, SectionHeader, SearchInput } from "@/components/ui-kit";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
 import { crmApi, type ApiTag } from "@/lib/nexos-api";
 import { useChatPerms } from "@/lib/perms";
@@ -49,15 +49,7 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="w-full bg-transparent py-2 text-sm outline-none"
-              placeholder="Buscar etiqueta..."
-            />
-          </div>
+          <SearchInput value={query} onChange={setQuery} placeholder="Buscar etiqueta..." />
         </Card>
 
         <Card className="overflow-hidden p-0">
