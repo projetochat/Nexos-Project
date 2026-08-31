@@ -196,7 +196,14 @@ function ContactFieldsSettings() {
       <ConfirmDialog
         open={!!deleting}
         title="Excluir campo?"
-        description={`Esta ação removerá ${deleting?.label ?? ""} dos novos cadastros.`}
+        description={
+          <p>
+            Esta ação removerá o campo adicional{" "}
+            <strong className="font-semibold text-foreground">"{deleting?.label ?? ""}"</strong>.
+            <br />
+            Deseja realmente continuar ?
+          </p>
+        }
         destructive
         confirmLabel="Excluir"
         onClose={() => setDeleting(null)}
@@ -278,7 +285,7 @@ function ContactFieldFormModal({
             onChange={(event) => setForm({ ...form, label: event.target.value })}
           />
         </Field>
-        <div className="grid gap-3 md:grid-cols-[1fr_8rem]">
+        <div className="grid grid-cols-[minmax(0,1fr)_8rem] gap-3">
           <Field label="Tipo *">
             <Select
               value={form.type}
@@ -297,7 +304,7 @@ function ContactFieldFormModal({
           </Field>
           {form.type !== "checkbox" && (
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-muted-foreground">
+              <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
                 Obrigatório
               </span>
               <span className="flex h-10 items-center justify-center rounded-lg border border-border bg-surface-1">
@@ -351,7 +358,7 @@ function ContactFieldFormModal({
               />
             </Field>
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-muted-foreground">
+              <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
                 Separador Milhar
               </span>
               <span className="flex h-10 items-center justify-center rounded-lg border border-border bg-surface-1">
@@ -415,7 +422,8 @@ function ContactFieldFormModal({
             rows={3}
             value={form.note}
             onChange={(event) => setForm({ ...form, note: event.target.value })}
-            placeholder="Explique o motivo deste campo."
+            placeholder="A descrição informada aqui, ficará disponível como nota explicativa para esse campo dentro do cadastro de contatos."
+            className="placeholder:text-xs placeholder:italic"
           />
         </Field>
       </div>

@@ -128,7 +128,7 @@ function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder="voce@empresa.com"
+                  placeholder="email@exemplo.com"
                   autoComplete="email"
                   aria-invalid={Boolean(error)}
                   aria-describedby={error ? "login-error" : undefined}

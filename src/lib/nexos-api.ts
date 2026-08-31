@@ -122,6 +122,8 @@ export type ApiCustomer = {
   contato_responsavel: string | null;
   cor: string;
   contactCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type ApiTag = {

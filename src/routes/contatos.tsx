@@ -25,12 +25,15 @@ import {
   Maximize2,
   MessageCircle,
   MoreVertical,
+  Network,
   Plug,
   Info,
   Pencil,
   Plus,
   Search,
+  ShieldUser,
   Strikethrough,
+  Tags,
   Trash2,
   Type,
   Underline,
@@ -67,7 +70,7 @@ import {
 export const Route = createFileRoute("/contatos")({ component: ContatosPage });
 
 const DEFAULT_PAGE_SIZE = 25;
-const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000] as const;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000, 10000] as const;
 const COUNTRY_CODES = [
   { code: "55", country: "Brasil", flag: "🇧🇷" },
   { code: "1", country: "Estados Unidos", flag: "🇺🇸" },
@@ -608,15 +611,11 @@ function ContatosPage() {
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))]">
             <div className="col-span-2 xl:col-span-1">
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Busca</label>
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  className="w-full bg-transparent py-2 text-sm outline-none"
-                  placeholder="Buscar por nome, WhatsApp ou empresa..."
-                />
-              </div>
+              <SearchInput
+                value={query}
+                onChange={setQuery}
+                placeholder="Buscar por nome, WhatsApp ou empresa..."
+              />
             </div>
             <FilterSelect label="Instância" value={instanciaFilter} onChange={setInstanciaFilter}>
               {[
@@ -763,7 +762,7 @@ function ContatosPage() {
                   type="email"
                   value={bulkValue}
                   onChange={(event) => setBulkValue(event.target.value)}
-                  placeholder="nome@empresa.com"
+                  placeholder="email@exemplo.com"
                   className="w-72"
                 />
               )}
@@ -1618,7 +1617,7 @@ function ContactFormModal({
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="nome@empresa.com"
+                  placeholder="email@exemplo.com"
                 />
                 {errors.email && (
                   <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
@@ -1837,98 +1836,58 @@ function CustomersManagerModal({
             <Plus className="h-3.5 w-3.5" /> Nova Empresa do Contato
           </Button>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="w-full bg-transparent py-2 text-sm outline-none"
-            placeholder="Buscar por nome..."
-          />
-        </div>
-        <div className="overflow-hidden rounded-lg border border-border">
-          <table className="w-full table-fixed text-sm">
-            <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
-              <tr>
-                <th className="w-[46%] px-4 py-3 font-medium md:w-[26%]">Nome da Empresa</th>
-                <th className="hidden w-[22%] px-4 py-3 font-medium md:table-cell">
-                  Contato Responsável
-                </th>
-                <th className="hidden w-[20%] px-4 py-3 font-medium md:table-cell">E-mail</th>
-                <th className="hidden w-[14%] px-4 py-3 font-medium md:table-cell">Telefone</th>
-                <th className="w-[54%] px-3 py-3 text-center font-medium md:w-44 md:px-4">
-                  Ações
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
-                    Carregando...
-                  </td>
-                </tr>
-              )}
-              {!loading &&
-                customers.map((customer) => (
-                  <tr key={customer.id} className="transition hover:bg-surface-1">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <span
-                          className="h-3 w-3 shrink-0 rounded-full border border-border"
-                          style={{ backgroundColor: customer.cor }}
-                        />
-                        <span className="truncate font-medium">{customer.nome}</span>
-                      </div>
-                    </td>
-                    <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
-                      {customer.contato_responsavel ?? "-"}
-                    </td>
-                    <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
-                      {customer.email ?? "-"}
-                    </td>
-                    <td className="hidden px-4 py-3 font-mono text-xs md:table-cell">
-                      {customer.telefone ? maskBrazilPhone(customer.telefone) : "-"}
-                    </td>
-                    <td className="px-3 py-3 md:px-4">
-                      <div className="flex justify-center gap-1">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => selectCustomer(customer)}
-                        >
-                          Selecionar
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title="Editar"
-                          onClick={() => setEditing(customer)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title="Excluir"
-                          onClick={() => setDeleting(customer)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              {!loading && customers.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
-                    Nenhuma empresa encontrada.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          <div className="flex items-center justify-between border-t border-border bg-surface-1 px-4 py-3 text-xs text-muted-foreground">
+        <SearchInput value={query} onChange={setQuery} placeholder="Buscar por Empresa..." />
+        <div className="space-y-3">
+          {loading && (
+            <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Carregando...
+            </div>
+          )}
+          {!loading && (
+            <div className="grid gap-3 md:grid-cols-2">
+              {customers.map((customer) => (
+                <div
+                  key={customer.id}
+                  className="flex items-center gap-3 rounded-lg border border-border bg-surface-1 p-3"
+                >
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white"
+                    style={{ backgroundColor: customer.cor }}
+                  >
+                    <Building2 className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{customer.nome}</p>
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={() => selectCustomer(customer)}>
+                    Selecionar
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Editar"
+                    onClick={() => setEditing(customer)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Excluir"
+                    onClick={() => setDeleting(customer)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+          {!loading && customers.length === 0 && (
+            <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Nenhuma empresa encontrada.
+            </div>
+          )}
+          <div className="flex items-center justify-between rounded-lg border border-border bg-surface-1 px-4 py-3 text-xs text-muted-foreground">
             <span>
               Mostrando {customers.length} de {total}
             </span>
@@ -2068,15 +2027,7 @@ function DepartmentsManagerModal({
             <Plus className="h-3.5 w-3.5" /> Novo Departamento do Contato
           </Button>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="w-full bg-transparent py-2 text-sm outline-none"
-            placeholder="Buscar departamento..."
-          />
-        </div>
+        <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
         <div className="grid gap-3 md:grid-cols-2">
           {loading && (
             <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
@@ -2093,13 +2044,10 @@ function DepartmentsManagerModal({
                   className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
                   style={{ backgroundColor: department.cor }}
                 >
-                  <Building2 className="h-4 w-4" />
+                  <Network className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{department.nome}</p>
-                  <p className="hidden truncate text-xs text-muted-foreground sm:block">
-                    {department.descricao ?? "Sem descricao"}
-                  </p>
                 </div>
                 <Button variant="secondary" size="sm" onClick={() => selectDepartment(department)}>
                   Selecionar
@@ -2193,14 +2141,17 @@ function DepartmentFormModal({
       title={title ?? (initial ? "Editar Departamento do Contato" : "Novo Departamento do Contato")}
       size="md"
       footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" size="sm" onClick={save}>
-            Salvar
-          </Button>
-        </>
+        <div className="flex w-full items-center justify-between gap-2">
+          <EntityFormLog createdAt={initial?.createdAt} updatedAt={initial?.updatedAt} />
+          <div className="flex shrink-0 justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="sm" onClick={save}>
+              Salvar
+            </Button>
+          </div>
+        </div>
       }
     >
       <div className="space-y-4">
@@ -2335,15 +2286,7 @@ function ContactProfilesManagerModal({
             <Plus className="h-3.5 w-3.5" /> Novo Perfil do Contato
           </Button>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="w-full bg-transparent py-2 text-sm outline-none"
-            placeholder="Buscar perfil..."
-          />
-        </div>
+        <SearchInput value={query} onChange={setQuery} placeholder="Buscar perfil..." />
         <div className="grid gap-3 md:grid-cols-2">
           {loading && (
             <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
@@ -2360,13 +2303,10 @@ function ContactProfilesManagerModal({
                   className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
                   style={{ backgroundColor: profile.cor }}
                 >
-                  <Building2 className="h-4 w-4" />
+                  <ShieldUser className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{profile.nome}</p>
-                  <p className="hidden truncate text-xs text-muted-foreground sm:block">
-                    {profile.descricao ?? "Sem descricao"}
-                  </p>
                 </div>
                 <Button variant="secondary" size="sm" onClick={() => selectProfile(profile)}>
                   Selecionar
@@ -2584,7 +2524,7 @@ function TagMultiSelect({
                 key={tag.id}
                 className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium text-foreground"
               >
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.cor }} />
+                <Tags className="h-3 w-3" style={{ color: tag.cor }} />
                 {tag.nome}
               </span>
             ))
@@ -2611,10 +2551,7 @@ function TagMultiSelect({
                   >
                     {active && <Check className="h-3 w-3" />}
                   </span>
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: tag.cor }}
-                  />
+                  <Tags className="h-3.5 w-3.5 shrink-0" style={{ color: tag.cor }} />
                   <span className="truncate">{tag.nome}</span>
                 </button>
               );
@@ -2658,6 +2595,26 @@ function ContactFormLog({ contact }: { contact?: Contact }) {
       <div className="truncate">
         <span className="font-semibold text-foreground">Editado:</span>{" "}
         {formatDateTime(contact.updatedAt)}
+      </div>
+    </div>
+  );
+}
+
+function EntityFormLog({
+  createdAt,
+  updatedAt,
+}: {
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}) {
+  if (!createdAt && !updatedAt) return <span aria-hidden="true" />;
+  return (
+    <div className="min-w-0 text-left text-[11px] leading-4 text-muted-foreground sm:text-xs sm:leading-5">
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Criado:</span> {formatDateTime(createdAt)}
+      </div>
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Editado:</span> {formatDateTime(updatedAt)}
       </div>
     </div>
   );
@@ -3247,6 +3204,39 @@ function FilterSelect({
   );
 }
 
+function SearchInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 transition focus-within:border-primary">
+      <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
+        placeholder={placeholder}
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:bg-surface-3 hover:text-foreground"
+          aria-label="Limpar busca"
+          title="Limpar busca"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function toCsv(rows: Array<Array<string | number | null | undefined>>) {
   return rows
     .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
@@ -3525,8 +3515,19 @@ function CountryCodeSelect({
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
-              className="w-full bg-transparent py-2 text-sm outline-none"
+              className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
             />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:bg-surface-3 hover:text-foreground"
+                aria-label="Limpar busca"
+                title="Limpar busca"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
           <div className="max-h-56 overflow-auto p-1">
             {filtered.map((country) => (
@@ -3625,14 +3626,17 @@ function CustomerFormModal({
       onClose={onClose}
       title={initial ? "Editar Empresa do Contato" : "Nova Empresa do Contato"}
       footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" size="sm" onClick={save}>
-            Salvar
-          </Button>
-        </>
+        <div className="flex w-full items-center justify-between gap-2">
+          <EntityFormLog createdAt={initial?.createdAt} updatedAt={initial?.updatedAt} />
+          <div className="flex shrink-0 justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="sm" onClick={save}>
+              Salvar
+            </Button>
+          </div>
+        </div>
       }
     >
       <div className="grid gap-4">
@@ -3690,7 +3694,7 @@ function CustomerFormModal({
             type="email"
             value={form.email ?? ""}
             onChange={(event) => setForm({ ...form, email: event.target.value })}
-            placeholder="nome@empresa.com"
+            placeholder="email@exemplo.com"
           />
           {errors.email && (
             <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>

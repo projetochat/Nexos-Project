@@ -3,10 +3,7 @@ import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
-  Inbox,
   Users,
-  Building2,
-  UserCog,
   Tag,
   Megaphone,
   BarChart3,
@@ -27,12 +24,15 @@ import {
   Bot,
   Workflow,
   Sparkles,
-  Phone,
   ListChecks,
   CheckCircle2,
   History,
   Ticket,
   Headset,
+  MessagesSquare,
+  ShieldCheck,
+  UsersRound,
+  Wifi,
 } from "lucide-react";
 import { LogoMark, Avatar, Badge } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
@@ -72,7 +72,7 @@ function filterForOperator(items: NavItem[]): NavItem[] {
 }
 
 const principalNav: NavItem[] = [
-  { to: "/inbox", label: "Chat", icon: Inbox },
+  { to: "/inbox", label: "Chat", icon: MessagesSquare },
   { to: "/contatos", label: "Contatos", icon: Users },
   { to: "/historico", label: "Histórico de conversa", icon: History },
   { to: "/mensagens-rapidas", label: "Mensagens rápidas", icon: Zap },
@@ -90,7 +90,7 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
   {
     title: "Operação",
     items: [
-      { to: "/inbox", label: "Chat", icon: Inbox },
+      { to: "/inbox", label: "Chat", icon: MessagesSquare },
       { to: "/contatos", label: "Contatos", icon: Users },
       { to: "/historico", label: "Histórico de conversa", icon: History },
     ],
@@ -99,8 +99,8 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
     title: "Administração",
     items: [
       { to: "/atendentes", label: "Atendentes", icon: Headset },
-      { to: "/perfis", label: "Perfis de acesso", icon: ListChecks },
-      { to: "/departamentos", label: "Departamentos", icon: Building2 },
+      { to: "/perfis", label: "Perfis de acesso", icon: ShieldCheck },
+      { to: "/departamentos", label: "Departamentos", icon: UsersRound },
       { to: "/etiquetas", label: "Etiquetas", icon: Tag },
       { to: "/mensagens-rapidas", label: "Mensagens rápidas", icon: Zap },
       { to: "/campanhas", label: "Campanhas", icon: Megaphone },
@@ -110,7 +110,7 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
   {
     title: "Canais",
     items: [
-      { to: "/instancias", label: "Instâncias", icon: Phone },
+      { to: "/instancias", label: "Instâncias", icon: Wifi },
       { to: "/chatbot", label: "Fluxo de Bot", icon: Bot },
       { to: "/automacoes", label: "Automações", icon: Workflow },
       { to: "/agente-ia", label: "Agente de IA", icon: Sparkles },

@@ -1829,7 +1829,7 @@ function RenameContactModal({
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="nome@empresa.com"
+            placeholder="email@exemplo.com"
           />
         </Field>
       </div>

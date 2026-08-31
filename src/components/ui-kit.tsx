@@ -38,7 +38,7 @@ export function Button({
   children: React.ReactNode;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-ring";
+    "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:border-primary";
   const sizes: Record<string, string> = {
     sm: "px-2.5 py-1.5 text-xs",
     md: "px-4 py-2 text-sm",
@@ -50,7 +50,7 @@ export function Button({
       "bg-gradient-brand text-white shadow-glow hover:brightness-110 active:brightness-95",
     secondary:
       "bg-secondary text-secondary-foreground border border-border hover:bg-surface-3",
-    ghost: "text-foreground hover:bg-surface-2",
+    ghost: "border border-border bg-surface-2 text-foreground hover:bg-surface-3",
     outline:
       "border border-border bg-transparent text-foreground hover:bg-surface-2",
     destructive:
@@ -107,7 +107,7 @@ export function Input({
 }: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={`w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-ring ${className}`}
+      className={`w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
       {...rest}
     />
   );
@@ -119,7 +119,7 @@ export function Textarea({
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-ring ${className}`}
+      className={`w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
       {...rest}
     />
   );
@@ -133,7 +133,7 @@ export function Select({
   return (
     <span className="relative block w-full">
       <select
-        className={`w-full appearance-none rounded-lg border border-border bg-surface-1 px-3 py-2 pr-9 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-ring ${className}`}
+        className={`w-full appearance-none rounded-lg border border-border bg-surface-1 px-3 py-2 pr-9 text-sm outline-none transition focus:border-primary ${className}`}
         {...rest}
       >
         {children}

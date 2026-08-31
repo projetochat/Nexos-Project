@@ -61,7 +61,7 @@ export function Modal({
           <button
             onClick={onClose}
             aria-label="Fechar"
-            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+            className="rounded-md border border-border bg-surface-2 p-1.5 text-muted-foreground transition hover:bg-surface-3 hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
