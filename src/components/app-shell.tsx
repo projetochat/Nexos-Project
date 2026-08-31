@@ -7,7 +7,7 @@ import {
   Tag,
   Megaphone,
   Settings,
-  LifeBuoy,
+  CircleQuestionMark,
   Search,
   Bell,
   ChevronRight,
@@ -159,7 +159,7 @@ function filterAdminGroupsByPermissions(
 
 const sistemaNav: NavItem[] = [
   { to: "/configuracoes", label: "Configurações", icon: Settings },
-  { to: "/ajuda", label: "Central de Ajuda", icon: LifeBuoy },
+  { to: "/ajuda", label: "Central de Ajuda", icon: CircleQuestionMark },
 ];
 
 /* ---------- Breadcrumb labels ---------- */
@@ -932,7 +932,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
           )}
         </nav>
         {sysNav.length > 0 && (
-          <div className="shrink-0 border-t border-border px-3 py-3">
+          <div className="shrink-0 border-t border-border px-3 py-2">
             <p className="mb-1 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
               Sistema
             </p>

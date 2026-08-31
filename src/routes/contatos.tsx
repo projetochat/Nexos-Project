@@ -944,7 +944,7 @@ function ContatosPage() {
           )}
         </Card>
 
-        <Card className="overflow-visible p-4 md:p-0">
+        <Card className="overflow-visible p-4 md:overflow-hidden md:rounded-lg md:p-0">
           <div className="space-y-3 md:hidden">
             {loading && (
               <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
@@ -980,7 +980,7 @@ function ContatosPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="border-transparent bg-transparent text-primary hover:bg-transparent hover:text-primary/80"
+                        className="border-transparent bg-transparent hover:bg-transparent"
                         title="Abrir conversa"
                         onClick={() => void openConversation(contact)}
                       >
@@ -989,7 +989,7 @@ function ContatosPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="border-transparent bg-transparent text-warning hover:bg-transparent hover:text-warning/80"
+                        className="border-transparent bg-transparent hover:bg-transparent"
                         title="Editar"
                         onClick={() => setEditing(contact)}
                       >
@@ -1002,7 +1002,7 @@ function ContatosPage() {
                         title="Excluir"
                         onClick={() => setDeleting(contact)}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
                     </div>
                   </div>
@@ -1014,10 +1014,10 @@ function ContatosPage() {
               </div>
             )}
           </div>
-          <table className="hidden w-full table-fixed text-sm md:table">
+          <table className="hidden w-full table-fixed overflow-hidden rounded-lg text-sm md:table">
             <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
               <tr>
-                <th className="w-10 px-3 py-3 font-medium sm:px-4">
+                <th className="w-10 rounded-tl-lg px-3 py-3 font-medium sm:px-4">
                   <input
                     type="checkbox"
                     className="h-5 w-5"
@@ -1030,7 +1030,9 @@ function ContatosPage() {
                 <th className="w-[16%] px-3 py-3 font-medium sm:px-4">WhatsApp</th>
                 <th className="w-[21%] px-4 py-3 font-medium">Empresa</th>
                 <th className="w-[15%] px-4 py-3 font-medium">Departamento</th>
-                <th className="w-28 px-3 py-3 text-center font-medium sm:px-4">Ações</th>
+                <th className="w-28 rounded-tr-lg px-3 py-3 text-center font-medium sm:px-4">
+                  Ações
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -1364,7 +1366,7 @@ function ImportContactsModal({
     >
       <div className="space-y-4">
         <div className="space-y-2">
-          <p className="text-sm font-semibold text-destructive">Templates de Importação</p>
+          <p className="text-sm font-semibold text-destructive">Templates Modelo</p>
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
@@ -1777,12 +1779,7 @@ function ContactFormModal({
             </div>
             <div className="order-8 md:order-none">
               <Field label="Etiquetas">
-                <TagMultiSelect
-                  tags={tags}
-                  selectedIds={tagIds}
-                  onChange={setTagIds}
-                  placement="down"
-                />
+                <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
               </Field>
             </div>
           </div>
@@ -1800,7 +1797,7 @@ function ContactFormModal({
                 return (
                   <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
                     <div>
-                      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium leading-none text-muted-foreground">
                         <span>
                           {field.label}
                           {field.required && <span className="text-destructive"> *</span>}
@@ -1808,7 +1805,7 @@ function ContactFormModal({
                         {field.note && (
                           <span
                             title={field.note}
-                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-primary transition hover:text-primary/80"
+                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full align-middle text-primary transition hover:text-primary/80"
                           >
                             <Info className="h-3 w-3" />
                           </span>
@@ -2485,7 +2482,7 @@ function DeleteLinkedContactCatalogMessage({
   return (
     <div className="space-y-2">
       <p>
-        Deseja realmente excluir o cadastro <strong>{selectedName}</strong>?
+        Deseja realmente excluir o cadastro <strong>"{selectedName}"</strong>?
       </p>
       <p className="text-xs italic text-muted-foreground">
         Os Contatos vinculados serão desvinculados.
