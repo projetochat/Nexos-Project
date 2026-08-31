@@ -141,6 +141,7 @@ function ContatosPage() {
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [bulkAction, setBulkAction] = React.useState("");
   const [bulkMode, setBulkMode] = React.useState("");
   const [bulkValue, setBulkValue] = React.useState("");
   const [bulkTags, setBulkTags] = React.useState<string[]>([]);
@@ -536,9 +537,11 @@ function ContatosPage() {
     }
     toast.success("Contatos atualizados");
     setSelectedIds([]);
+    setBulkAction("");
     setBulkMode("");
     setBulkValue("");
     setBulkTags([]);
+    setBulkCustomValue("");
     await load();
   };
 
@@ -667,9 +670,11 @@ function ContatosPage() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="mr-2 text-sm font-medium">{selectedIds.length} selecionado(s)</span>
               <Select
-                value={bulkMode}
+                value={bulkAction}
                 onChange={(event) => {
-                  setBulkMode(event.target.value as typeof bulkMode);
+                  const nextAction = event.target.value;
+                  setBulkAction(nextAction);
+                  setBulkMode(nextAction === "delete" ? "delete" : "");
                   setBulkValue("");
                   setBulkTags([]);
                   setBulkCustomValue("");
@@ -677,23 +682,38 @@ function ContatosPage() {
                 className="w-60"
               >
                 <option value="">Ações</option>
-                <option value="customer">Atualizar empresa do contato</option>
-                <option value="department">Atualizar departamento</option>
-                <option value="profile">Atualizar perfil do contato</option>
-                <option value="email">Atualizar e-mail</option>
-                <option value="instances">Atualizar instâncias</option>
-                <option value="tags">Atualizar etiquetas</option>
-                {customFieldDefinitions.length > 0 && (
-                  <optgroup label="Campos adicionais">
-                    {customFieldDefinitions.map((field) => (
-                      <option key={field.id} value={`custom:${field.id}`}>
-                        Atualizar {field.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                <option value="delete">Excluir</option>
+                <option value="update">Atualizar em massa</option>
+                <option value="delete">Excluir em massa</option>
               </Select>
+              {bulkAction === "update" && (
+                <Select
+                  value={bulkMode}
+                  onChange={(event) => {
+                    setBulkMode(event.target.value as typeof bulkMode);
+                    setBulkValue("");
+                    setBulkTags([]);
+                    setBulkCustomValue("");
+                  }}
+                  className="w-60"
+                >
+                  <option value="">Campo</option>
+                  <option value="customer">Empresa do contato</option>
+                  <option value="department">Departamento</option>
+                  <option value="profile">Perfil do contato</option>
+                  <option value="email">E-mail</option>
+                  <option value="instances">Instâncias</option>
+                  <option value="tags">Etiquetas</option>
+                  {customFieldDefinitions.length > 0 && (
+                    <optgroup label="Campos adicionais">
+                      {customFieldDefinitions.map((field) => (
+                        <option key={field.id} value={`custom:${field.id}`}>
+                          {field.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </Select>
+              )}
               {bulkMode === "customer" && (
                 <Select
                   value={bulkValue}
@@ -777,7 +797,7 @@ function ContatosPage() {
               <Button
                 variant="primary"
                 size="sm"
-                disabled={!bulkMode}
+                disabled={!bulkAction || (bulkAction === "update" && !bulkMode)}
                 onClick={() => void applyBulkAction()}
               >
                 <Check className="h-3.5 w-3.5" /> Aplicar
@@ -806,9 +826,11 @@ function ContatosPage() {
               </span>
               <div className="grid gap-2">
                 <Select
-                  value={bulkMode}
+                  value={bulkAction}
                   onChange={(event) => {
-                    setBulkMode(event.target.value as typeof bulkMode);
+                    const nextAction = event.target.value;
+                    setBulkAction(nextAction);
+                    setBulkMode(nextAction === "delete" ? "delete" : "");
                     setBulkValue("");
                     setBulkTags([]);
                     setBulkCustomValue("");
@@ -816,23 +838,38 @@ function ContatosPage() {
                   className="w-full"
                 >
                   <option value="">Ações</option>
-                  <option value="customer">Atualizar empresa do contato</option>
-                  <option value="department">Atualizar departamento</option>
-                  <option value="profile">Atualizar perfil do contato</option>
-                  <option value="email">Atualizar e-mail</option>
-                  <option value="instances">Atualizar instâncias</option>
-                  <option value="tags">Atualizar etiquetas</option>
-                  {customFieldDefinitions.length > 0 && (
-                    <optgroup label="Campos adicionais">
-                      {customFieldDefinitions.map((field) => (
-                        <option key={field.id} value={`custom:${field.id}`}>
-                          Atualizar {field.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  <option value="delete">Excluir</option>
+                  <option value="update">Atualizar em massa</option>
+                  <option value="delete">Excluir em massa</option>
                 </Select>
+                {bulkAction === "update" && (
+                  <Select
+                    value={bulkMode}
+                    onChange={(event) => {
+                      setBulkMode(event.target.value as typeof bulkMode);
+                      setBulkValue("");
+                      setBulkTags([]);
+                      setBulkCustomValue("");
+                    }}
+                    className="w-full"
+                  >
+                    <option value="">Campo</option>
+                    <option value="customer">Empresa do contato</option>
+                    <option value="department">Departamento</option>
+                    <option value="profile">Perfil do contato</option>
+                    <option value="email">E-mail</option>
+                    <option value="instances">Instâncias</option>
+                    <option value="tags">Etiquetas</option>
+                    {customFieldDefinitions.length > 0 && (
+                      <optgroup label="Campos adicionais">
+                        {customFieldDefinitions.map((field) => (
+                          <option key={field.id} value={`custom:${field.id}`}>
+                            {field.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </Select>
+                )}
                 {bulkMode === "customer" && (
                   <Select value={bulkValue} onChange={(event) => setBulkValue(event.target.value)}>
                     <option value="">- Sem empresa -</option>
@@ -897,7 +934,7 @@ function ContatosPage() {
                 <Button
                   variant="primary"
                   size="sm"
-                  disabled={!bulkMode}
+                  disabled={!bulkAction || (bulkAction === "update" && !bulkMode)}
                   onClick={() => void applyBulkAction()}
                 >
                   <Check className="h-3.5 w-3.5" /> Aplicar
@@ -943,7 +980,7 @@ function ContatosPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="border-transparent bg-transparent hover:bg-transparent hover:text-primary"
+                        className="border-transparent bg-transparent text-primary hover:bg-transparent hover:text-primary/80"
                         title="Abrir conversa"
                         onClick={() => void openConversation(contact)}
                       >
@@ -952,7 +989,7 @@ function ContatosPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="border-transparent bg-transparent hover:bg-transparent hover:text-warning"
+                        className="border-transparent bg-transparent text-warning hover:bg-transparent hover:text-warning/80"
                         title="Editar"
                         onClick={() => setEditing(contact)}
                       >
@@ -961,7 +998,7 @@ function ContatosPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="border-transparent bg-transparent hover:bg-transparent hover:text-destructive"
+                        className="border-transparent bg-transparent text-destructive hover:bg-transparent hover:text-destructive/80"
                         title="Excluir"
                         onClick={() => setDeleting(contact)}
                       >
@@ -1740,7 +1777,12 @@ function ContactFormModal({
             </div>
             <div className="order-8 md:order-none">
               <Field label="Etiquetas">
-                <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
+                <TagMultiSelect
+                  tags={tags}
+                  selectedIds={tagIds}
+                  onChange={setTagIds}
+                  placement="down"
+                />
               </Field>
             </div>
           </div>
@@ -2438,13 +2480,16 @@ function DeleteLinkedContactCatalogMessage({
   name?: string | null;
   entityLabel: string;
 }) {
+  const selectedName = name ?? `Sem ${entityLabel}`;
+
   return (
-    <div className="space-y-3">
-      <p>Deseja realmente excluir o cadastro abaixo?</p>
-      <p className="rounded-lg border border-border bg-surface-1 px-3 py-2 font-semibold text-foreground">
-        {name ?? `Sem ${entityLabel}`}
+    <div className="space-y-2">
+      <p>
+        Deseja realmente excluir o cadastro <strong>{selectedName}</strong>?
       </p>
-      <p>Os Contatos vinculados serão desvinculados.</p>
+      <p className="text-xs italic text-muted-foreground">
+        Os Contatos vinculados serão desvinculados.
+      </p>
     </div>
   );
 }
@@ -2546,7 +2591,11 @@ function InstanceMultiSelect({
           <div className="grid grid-cols-2 gap-2 border-t border-border bg-popover p-2">
             <button
               type="button"
-              onClick={() => onChange([])}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onChange([]);
+              }}
               disabled={selectedIds.length === 0}
               className="flex items-center justify-center gap-1 rounded-md border border-destructive/30 bg-white px-2 py-2 text-xs font-medium text-destructive hover:bg-destructive/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -2554,7 +2603,11 @@ function InstanceMultiSelect({
             </button>
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+              }}
               className="flex items-center justify-center gap-1 rounded-md border border-primary/30 bg-white px-2 py-2 text-xs font-medium text-primary hover:bg-primary/5"
             >
               <Check className="h-3 w-3" /> Confirmar seleção
@@ -2629,9 +2682,9 @@ function TagMultiSelect({
       </button>
       {open && (
         <div
-          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(24rem,calc(100vh-10rem))] w-[min(42rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl`}
+          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(24rem,calc(100vh-8rem))] w-[min(42rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl`}
         >
-          <div className="grid min-h-0 grid-cols-1 gap-1 overflow-auto p-1 sm:grid-cols-2">
+          <div className="grid min-h-0 grid-cols-1 gap-1 overflow-y-auto overflow-x-hidden p-1 sm:grid-cols-2">
             {tags.map((tag) => {
               const active = selectedIds.includes(tag.id);
               return (
@@ -2669,7 +2722,11 @@ function TagMultiSelect({
           <div className="grid grid-cols-2 gap-2 border-t border-border bg-popover p-2">
             <button
               type="button"
-              onClick={() => onChange([])}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onChange([]);
+              }}
               disabled={selectedIds.length === 0}
               className="flex items-center justify-center gap-1 rounded-md border border-destructive/30 bg-white px-2 py-2 text-xs font-medium text-destructive hover:bg-destructive/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -2677,7 +2734,11 @@ function TagMultiSelect({
             </button>
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+              }}
               className="flex items-center justify-center gap-1 rounded-md border border-primary/30 bg-white px-2 py-2 text-xs font-medium text-primary hover:bg-primary/5"
             >
               <Check className="h-3 w-3" /> Confirmar seleção

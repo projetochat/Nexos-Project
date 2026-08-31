@@ -28,8 +28,8 @@ import {
   Ticket,
   Headset,
   MessagesSquare,
+  Network,
   ShieldCheck,
-  UsersRound,
   Wifi,
 } from "lucide-react";
 import { LogoMark, Avatar, Badge } from "./ui-kit";
@@ -95,7 +95,7 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
     items: [
       { to: "/atendentes", label: "Atendentes", icon: Headset },
       { to: "/perfis", label: "Perfil de Acesso", icon: ShieldCheck },
-      { to: "/departamentos", label: "Departamentos", icon: UsersRound },
+      { to: "/departamentos", label: "Departamentos", icon: Network },
       { to: "/etiquetas", label: "Etiquetas", icon: Tag },
       { to: "/mensagens-rapidas", label: "Mensagens Rápidas", icon: Zap },
       { to: "/campanhas", label: "Campanhas", icon: Megaphone },
