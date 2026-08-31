@@ -6,7 +6,6 @@ import {
   Users,
   Tag,
   Megaphone,
-  BarChart3,
   Settings,
   LifeBuoy,
   Search,
@@ -24,7 +23,6 @@ import {
   Bot,
   Workflow,
   Sparkles,
-  ListChecks,
   CheckCircle2,
   History,
   Ticket,
@@ -80,19 +78,10 @@ const principalNav: NavItem[] = [
 ];
 
 // Itens exibidos no topo da sidebar (sem agrupador) para administradores.
-const topNav: NavItem[] = [];
+const topNav: NavItem[] = [{ to: "/", label: "Dashboard", icon: LayoutDashboard }];
 
 // Agrupamento exibido apenas para administradores.
 const adminGroups: { title: string; items: NavItem[] }[] = [
-  {
-    title: "Dashboard",
-    items: [
-      { to: "/", label: "Dashboard", icon: LayoutDashboard },
-      { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
-      { to: "/filas", label: "Filas de atendimento", icon: ListChecks },
-      { to: "/bi", label: "BI", icon: BarChart3 },
-    ],
-  },
   {
     title: "Operação",
     items: [

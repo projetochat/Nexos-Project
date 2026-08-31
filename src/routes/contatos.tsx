@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Expand,
   FileSpreadsheet,
   FileUp,
   Italic,
@@ -21,7 +22,6 @@ import {
   ListIndentDecrease,
   ListIndentIncrease,
   ListOrdered,
-  Maximize2,
   MessageCircle,
   Network,
   Plug,
@@ -663,7 +663,7 @@ function ContatosPage() {
         </Card>
 
         {selectedIds.length > 0 && (
-          <Card className="mb-4 p-3">
+          <Card className="mb-4 hidden p-3 md:block">
             <div className="flex flex-wrap items-center gap-2">
               <span className="mr-2 text-sm font-medium">{selectedIds.length} selecionado(s)</span>
               <Select
@@ -786,8 +786,129 @@ function ContatosPage() {
           </Card>
         )}
 
-        <Card className="overflow-visible p-0">
-          <div className="space-y-3 p-3 md:hidden">
+        <Card className="mb-3 p-4 md:hidden">
+          <label className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <input
+              type="checkbox"
+              className="h-5 w-5 shrink-0"
+              checked={allVisibleSelected}
+              onChange={toggleVisibleSelection}
+              aria-label="Selecionar todos os registros"
+            />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">
+              Selecionar todos os registros
+            </span>
+          </label>
+          {selectedIds.length > 0 && (
+            <div className="mt-3 rounded-lg border border-border bg-card p-3">
+              <span className="mb-2 block text-xs font-semibold">
+                {selectedIds.length} selecionado(s)
+              </span>
+              <div className="grid gap-2">
+                <Select
+                  value={bulkMode}
+                  onChange={(event) => {
+                    setBulkMode(event.target.value as typeof bulkMode);
+                    setBulkValue("");
+                    setBulkTags([]);
+                    setBulkCustomValue("");
+                  }}
+                  className="w-full"
+                >
+                  <option value="">Ações</option>
+                  <option value="customer">Atualizar empresa do contato</option>
+                  <option value="department">Atualizar departamento</option>
+                  <option value="profile">Atualizar perfil do contato</option>
+                  <option value="email">Atualizar e-mail</option>
+                  <option value="instances">Atualizar instâncias</option>
+                  <option value="tags">Atualizar etiquetas</option>
+                  {customFieldDefinitions.length > 0 && (
+                    <optgroup label="Campos adicionais">
+                      {customFieldDefinitions.map((field) => (
+                        <option key={field.id} value={`custom:${field.id}`}>
+                          Atualizar {field.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <option value="delete">Excluir</option>
+                </Select>
+                {bulkMode === "customer" && (
+                  <Select value={bulkValue} onChange={(event) => setBulkValue(event.target.value)}>
+                    <option value="">- Sem empresa -</option>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.nome}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+                {bulkMode === "department" && (
+                  <Select value={bulkValue} onChange={(event) => setBulkValue(event.target.value)}>
+                    <option value="">- Sem departamento -</option>
+                    {departments.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.nome}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+                {bulkMode === "profile" && (
+                  <Select value={bulkValue} onChange={(event) => setBulkValue(event.target.value)}>
+                    <option value="">- Sem perfil -</option>
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.nome}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+                {bulkMode === "tags" && (
+                  <TagMultiSelect
+                    tags={tags}
+                    selectedIds={bulkTags}
+                    onChange={setBulkTags}
+                    placement="down"
+                    flow
+                  />
+                )}
+                {bulkMode === "email" && (
+                  <Input
+                    type="email"
+                    value={bulkValue}
+                    onChange={(event) => setBulkValue(event.target.value)}
+                    placeholder="email@exemplo.com"
+                  />
+                )}
+                {bulkMode === "instances" && (
+                  <InstanceMultiSelect
+                    instances={visibleInstances}
+                    selectedIds={bulkValue ? bulkValue.split(",").filter(Boolean) : []}
+                    onChange={(ids) => setBulkValue(ids.join(","))}
+                  />
+                )}
+                {selectedBulkCustomField && (
+                  <CustomContactFieldInput
+                    field={selectedBulkCustomField}
+                    value={bulkCustomValue}
+                    onChange={setBulkCustomValue}
+                  />
+                )}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={!bulkMode}
+                  onClick={() => void applyBulkAction()}
+                >
+                  <Check className="h-3.5 w-3.5" /> Aplicar
+                </Button>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card className="overflow-visible p-4 md:p-0">
+          <div className="space-y-3 md:hidden">
             {loading && (
               <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
                 Carregando...
@@ -796,11 +917,11 @@ function ContatosPage() {
             {!loading &&
               contacts.map((contact) => (
                 <div key={contact.id} className="rounded-lg border border-border bg-surface-1 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
                       <input
                         type="checkbox"
-                        className="mt-1 h-4 w-4 shrink-0"
+                        className="h-5 w-5 shrink-0"
                         checked={selectedIds.includes(contact.id)}
                         onChange={() =>
                           setSelectedIds((current) =>
@@ -811,20 +932,14 @@ function ContatosPage() {
                         }
                         aria-label={`Selecionar ${contact.nome}`}
                       />
-                      <div className="min-w-0">
-                        <span className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                          Nome contato
-                        </span>
+                      <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold">{contact.nome}</p>
-                        <span className="mt-2 block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                          WhatsApp
-                        </span>
-                        <p className="truncate font-mono text-xs">
+                        <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
                           {formatPhoneWithDdi(contact.telefone)}
                         </p>
                       </div>
                     </div>
-                    <div className="flex shrink-0 gap-1">
+                    <div className="flex shrink-0 items-center gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1543,7 +1658,7 @@ function ContactFormModal({
                     onChange={(e) =>
                       setTelefone(maskBrazilMobilePhone(e.target.value, countryCode))
                     }
-                    placeholder="(11) 90000-0000"
+                    placeholder="(00) 00000-0000"
                   />
                 </div>
                 {errors.telefone && (
@@ -1651,9 +1766,9 @@ function ContactFormModal({
                         {field.note && (
                           <span
                             title={field.note}
-                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground"
+                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-primary transition hover:text-primary/80"
                           >
-                            <Info className="h-3.5 w-3.5" />
+                            <Info className="h-3 w-3" />
                           </span>
                         )}
                       </div>
@@ -1889,8 +2004,10 @@ function CustomersManagerModal({
       />
       <ConfirmDialog
         open={!!deleting}
-        title="Excluir empresa?"
-        description={`Esta acao arquivara ${deleting?.nome ?? ""}. Contatos vinculados serao desvinculados.`}
+        title="Excluir Empresa do Contato?"
+        description={
+          <DeleteLinkedContactCatalogMessage name={deleting?.nome} entityLabel="empresa" />
+        }
         destructive
         confirmLabel="Excluir"
         onClose={() => setDeleting(null)}
@@ -1964,11 +2081,11 @@ function DepartmentsManagerModal({
     if (!deleting) return;
     try {
       await crmApi.deleteContactDepartment(deleting.id);
-      toast.success("Departamento desativado");
+      toast.success("Departamento excluído");
       setDeleting(null);
       await load();
     } catch (error) {
-      toast.error("Falha ao desativar departamento", { description: (error as Error).message });
+      toast.error("Falha ao excluir departamento", { description: (error as Error).message });
     }
   };
 
@@ -2026,7 +2143,7 @@ function DepartmentsManagerModal({
                 <Button
                   variant="ghost"
                   size="sm"
-                  title="Desativar"
+                  title="Excluir"
                   onClick={() => setDeleting(department)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -2051,10 +2168,12 @@ function DepartmentsManagerModal({
       />
       <ConfirmDialog
         open={!!deleting}
-        title="Desativar departamento?"
-        description={`Esta acao desativara ${deleting?.nome ?? ""}.`}
+        title="Excluir Departamento do Contato?"
+        description={
+          <DeleteLinkedContactCatalogMessage name={deleting?.nome} entityLabel="departamento" />
+        }
         destructive
-        confirmLabel="Desativar"
+        confirmLabel="Excluir"
         onClose={() => setDeleting(null)}
         onConfirm={deleteDepartment}
       />
@@ -2211,11 +2330,11 @@ function ContactProfilesManagerModal({
     if (!deleting) return;
     try {
       await crmApi.deleteContactProfile(deleting.id);
-      toast.success("Perfil desativado");
+      toast.success("Perfil excluído");
       setDeleting(null);
       await load();
     } catch (error) {
-      toast.error("Falha ao desativar perfil", { description: (error as Error).message });
+      toast.error("Falha ao excluir perfil", { description: (error as Error).message });
     }
   };
 
@@ -2273,7 +2392,7 @@ function ContactProfilesManagerModal({
                 <Button
                   variant="ghost"
                   size="sm"
-                  title="Desativar"
+                  title="Excluir"
                   onClick={() => setDeleting(profile)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -2299,14 +2418,34 @@ function ContactProfilesManagerModal({
       />
       <ConfirmDialog
         open={!!deleting}
-        title="Desativar perfil?"
-        description={`Esta acao desativara ${deleting?.nome ?? ""}.`}
+        title="Excluir Perfil do Contato?"
+        description={
+          <DeleteLinkedContactCatalogMessage name={deleting?.nome} entityLabel="perfil" />
+        }
         destructive
-        confirmLabel="Desativar"
+        confirmLabel="Excluir"
         onClose={() => setDeleting(null)}
         onConfirm={deleteProfile}
       />
     </Modal>
+  );
+}
+
+function DeleteLinkedContactCatalogMessage({
+  name,
+  entityLabel,
+}: {
+  name?: string | null;
+  entityLabel: string;
+}) {
+  return (
+    <div className="space-y-3">
+      <p>Deseja realmente excluir o cadastro abaixo?</p>
+      <p className="rounded-lg border border-border bg-surface-1 px-3 py-2 font-semibold text-foreground">
+        {name ?? `Sem ${entityLabel}`}
+      </p>
+      <p>Os Contatos vinculados serão desvinculados.</p>
+    </div>
   );
 }
 
@@ -2473,9 +2612,14 @@ function TagMultiSelect({
             selectedTags.map((tag) => (
               <span
                 key={tag.id}
-                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium text-foreground"
+                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                style={{
+                  backgroundColor: `${tag.cor ?? "#3b82f6"}1f`,
+                  borderColor: `${tag.cor ?? "#3b82f6"}66`,
+                  color: tag.cor ?? "#3b82f6",
+                }}
               >
-                <Tag className="h-3 w-3" style={{ color: tag.cor }} />
+                <Tag className="h-3 w-3 shrink-0" />
                 {tag.nome}
               </span>
             ))
@@ -2502,8 +2646,17 @@ function TagMultiSelect({
                   >
                     {active && <Check className="h-3 w-3" />}
                   </span>
-                  <Tag className="h-3.5 w-3.5 shrink-0" style={{ color: tag.cor }} />
-                  <span className="truncate">{tag.nome}</span>
+                  <span
+                    className="inline-flex min-w-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                    style={{
+                      backgroundColor: `${tag.cor ?? "#3b82f6"}1f`,
+                      borderColor: `${tag.cor ?? "#3b82f6"}66`,
+                      color: tag.cor ?? "#3b82f6",
+                    }}
+                  >
+                    <Tag className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{tag.nome}</span>
+                  </span>
                 </button>
               );
             })}
@@ -2851,12 +3004,15 @@ function HtmlTextEditor({
           <ToolbarButton title="Aumentar recuo" onClick={() => command("indent")}>
             <ListIndentIncrease className="h-4 w-4" />
           </ToolbarButton>
+          {!expanded && (
+            <>
+              <ToolbarDivider />
+              <ToolbarButton title="Maximizar" onClick={() => setFullscreen(true)}>
+                <Expand className="h-4 w-4" />
+              </ToolbarButton>
+            </>
+          )}
         </div>
-        {!expanded && (
-          <ToolbarButton title="Maximizar" onClick={() => setFullscreen(true)}>
-            <Maximize2 className="h-4 w-4" />
-          </ToolbarButton>
-        )}
       </div>
       <div
         ref={editorRef}
@@ -3585,7 +3741,7 @@ function CustomerFormModal({
             onChange={(event) =>
               setForm({ ...form, telefone: maskBrazilPhone(event.target.value) })
             }
-            placeholder="(11) 90000-0000"
+            placeholder="(00) 00000-0000"
           />
         </Field>
         <Field label="E-mail">
