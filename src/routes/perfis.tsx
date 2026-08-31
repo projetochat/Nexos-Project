@@ -4,9 +4,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2, ShieldCheck, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { SectionHeader, Card, Button, Field, Input, Textarea, SearchInput } from "@/components/ui-kit";
+import {
+  SectionHeader,
+  Card,
+  Button,
+  Field,
+  Input,
+  Textarea,
+  SearchInput,
+} from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
-import { connectionsApi, organizationApi, type ApiMessagingConnection, type ApiRole } from "@/lib/nexos-api";
+import {
+  connectionsApi,
+  organizationApi,
+  type ApiMessagingConnection,
+  type ApiRole,
+} from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/perfis")({ component: Page });
 
@@ -255,7 +268,7 @@ function Page() {
     <AppShell>
       <PageContainer>
         <SectionHeader
-          title="Perfis de acesso"
+          title="Perfil de Acesso"
           subtitle={`${items.length} perfis cadastrados.`}
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>

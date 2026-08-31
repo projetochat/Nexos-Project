@@ -6,7 +6,6 @@ import {
   AlignJustify,
   AlignLeft,
   AlignRight,
-  BookUser,
   Building2,
   Bold,
   Check,
@@ -28,6 +27,7 @@ import {
   Plug,
   Info,
   Pencil,
+  Phone,
   Plus,
   Search,
   ShieldCheck,
@@ -490,8 +490,7 @@ function ContatosPage() {
     }
   };
 
-  const closeImportProgress = () =>
-    setImportProgress((current) => ({ ...current, open: false }));
+  const closeImportProgress = () => setImportProgress((current) => ({ ...current, open: false }));
 
   const handleImportProgressAction = () => {
     if (importProgress.status === "running") {
@@ -563,7 +562,7 @@ function ContatosPage() {
                       className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
                       onClick={() => void importFromAgenda()}
                     >
-                      <BookUser className="h-4 w-4" /> Importar via Agenda
+                      <Phone className="h-4 w-4" /> Importar via Agenda
                     </button>
                     <button
                       type="button"
@@ -796,10 +795,7 @@ function ContatosPage() {
             )}
             {!loading &&
               contacts.map((contact) => (
-                <div
-                  key={contact.id}
-                  className="rounded-lg border border-border bg-surface-1 p-3"
-                >
+                <div key={contact.id} className="rounded-lg border border-border bg-surface-1 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 gap-2">
                       <input
@@ -832,6 +828,7 @@ function ContatosPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="border-transparent bg-transparent hover:bg-transparent hover:text-primary"
                         title="Abrir conversa"
                         onClick={() => void openConversation(contact)}
                       >
@@ -840,6 +837,7 @@ function ContatosPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="border-transparent bg-transparent hover:bg-transparent hover:text-warning"
                         title="Editar"
                         onClick={() => setEditing(contact)}
                       >
@@ -848,6 +846,7 @@ function ContatosPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="border-transparent bg-transparent hover:bg-transparent hover:text-destructive"
                         title="Excluir"
                         onClick={() => setDeleting(contact)}
                       >
@@ -892,10 +891,7 @@ function ContatosPage() {
               )}
               {!loading &&
                 contacts.map((contact) => (
-                  <tr
-                    key={contact.id}
-                    className="transition hover:bg-surface-1"
-                  >
+                  <tr key={contact.id} className="transition hover:bg-surface-1">
                     <td className="relative px-3 py-3 sm:px-4">
                       <input
                         type="checkbox"
@@ -949,6 +945,7 @@ function ContatosPage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="border-transparent bg-transparent hover:bg-transparent hover:text-primary"
                           title="Abrir conversa"
                           onClick={() => void openConversation(contact)}
                         >
@@ -957,6 +954,7 @@ function ContatosPage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="border-transparent bg-transparent hover:bg-transparent hover:text-warning"
                           title="Editar"
                           onClick={() => setEditing(contact)}
                         >
@@ -965,6 +963,7 @@ function ContatosPage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="border-transparent bg-transparent hover:bg-transparent hover:text-destructive"
                           title="Excluir"
                           onClick={() => setDeleting(contact)}
                         >
@@ -987,7 +986,10 @@ function ContatosPage() {
             <div className="flex min-w-0 items-center gap-2">
               <span className="shrink-0 leading-tight sm:leading-normal">
                 <span className="block sm:inline">Mostrando</span>
-                <span className="block sm:inline"> {contacts.length} de {total}</span>
+                <span className="block sm:inline">
+                  {" "}
+                  {contacts.length} de {total}
+                </span>
               </span>
               <Select
                 value={String(pageSize)}
@@ -1330,9 +1332,7 @@ function ImportProgressModal({
           </div>
         </div>
         {done && (
-          <p className="text-sm text-muted-foreground">
-            {imported} contato(s) importado(s).
-          </p>
+          <p className="text-sm text-muted-foreground">{imported} contato(s) importado(s).</p>
         )}
       </div>
     </Modal>
@@ -1547,9 +1547,7 @@ function ContactFormModal({
                   />
                 </div>
                 {errors.telefone && (
-                  <span className="mt-1 block text-[11px] text-destructive">
-                    {errors.telefone}
-                  </span>
+                  <span className="mt-1 block text-[11px] text-destructive">{errors.telefone}</span>
                 )}
               </Field>
             </div>
@@ -1644,7 +1642,21 @@ function ContactFormModal({
                 const isHtmlField = field.type === "text" && contactTextVariant(field) === "html";
                 return (
                   <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
-                    <Field label={field.required ? `${field.label} *` : field.label}>
+                    <div>
+                      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                        <span>
+                          {field.label}
+                          {field.required && <span className="text-destructive"> *</span>}
+                        </span>
+                        {field.note && (
+                          <span
+                            title={field.note}
+                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </span>
+                        )}
+                      </div>
                       <div className={`flex gap-2 ${isHtmlField ? "items-start" : "items-center"}`}>
                         <CustomContactFieldInput
                           field={field}
@@ -1653,21 +1665,13 @@ function ContactFormModal({
                             setCustomFields((current) => ({ ...current, [field.id]: value }))
                           }
                         />
-                        {field.note && (
-                          <span
-                            title={field.note}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground"
-                          >
-                            <Info className="h-4 w-4" />
-                          </span>
-                        )}
                       </div>
                       {errors[`custom_${field.id}`] && (
                         <span className="mt-1 block text-[11px] text-destructive">
                           {errors[`custom_${field.id}`]}
                         </span>
                       )}
-                    </Field>
+                    </div>
                   </div>
                 );
               })}
@@ -1805,16 +1809,18 @@ function CustomersManagerModal({
               {customers.map((customer) => (
                 <div
                   key={customer.id}
-                  className="flex items-center gap-3 rounded-lg border border-border bg-surface-1 p-3"
+                  className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-1 p-3 sm:gap-3"
                 >
-                  <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white"
-                    style={{ backgroundColor: customer.cor }}
-                  >
-                    <Building2 className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{customer.nome}</p>
+                  <div className="flex min-w-[9rem] flex-1 items-center gap-3">
+                    <span
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white"
+                      style={{ backgroundColor: customer.cor }}
+                    >
+                      <Building2 className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">{customer.nome}</p>
+                    </div>
                   </div>
                   <Button variant="secondary" size="sm" onClick={() => selectCustomer(customer)}>
                     Selecionar
@@ -1844,7 +1850,7 @@ function CustomersManagerModal({
               Nenhuma empresa encontrada.
             </div>
           )}
-          <div className="flex items-center justify-between rounded-lg border border-border bg-surface-1 px-4 py-3 text-xs text-muted-foreground">
+          <div className="hidden items-center justify-between rounded-lg border border-border bg-surface-1 px-4 py-3 text-xs text-muted-foreground sm:flex">
             <span>
               Mostrando {customers.length} de {total}
             </span>
@@ -2705,10 +2711,7 @@ function HtmlTextEditor({
     if (!editor) return;
     const now = Date.now();
     const commandKey = `${name}:${commandValue ?? ""}`;
-    if (
-      lastCommandRef.current?.name === commandKey &&
-      now - lastCommandRef.current.at < 700
-    ) {
+    if (lastCommandRef.current?.name === commandKey && now - lastCommandRef.current.at < 700) {
       return;
     }
     lastCommandRef.current = { name: commandKey, at: now };

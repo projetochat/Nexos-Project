@@ -345,7 +345,7 @@ function ContactFieldFormModal({
           </Field>
         )}
         {form.type === "number" && (
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2 md:gap-3">
             <Field label="Casas Decimais">
               <Input
                 type="number"

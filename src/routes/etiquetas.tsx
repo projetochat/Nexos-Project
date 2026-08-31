@@ -52,47 +52,44 @@ function Page() {
           <SearchInput value={query} onChange={setQuery} placeholder="Buscar etiqueta..." />
         </Card>
 
-        <Card className="overflow-hidden p-0">
-          <div className="grid grid-cols-1 divide-y divide-border md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-3">
-            {filtered.map((etiqueta) => (
-              <div key={etiqueta.id} className="flex items-center gap-3 p-4">
-                <span
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
-                  style={{ background: etiqueta.cor }}
-                >
-                  <Tag className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{etiqueta.nome}</p>
-                  <p className="mt-0.5 text-[11px] uppercase tracking-widest text-muted-foreground">
-                    {etiqueta.conversationCount ?? 0} conversas · {etiqueta.customerCount ?? 0}{" "}
-                    clientes
-                  </p>
-                </div>
-                {canManageCatalog && (
-                  <>
-                    <Button variant="ghost" size="sm" onClick={() => setEditing(etiqueta)}>
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setDeleting(etiqueta)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </>
-                )}
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((etiqueta) => (
+            <div
+              key={etiqueta.id}
+              className="flex items-center gap-3 rounded-lg border border-border bg-surface-1 p-3"
+            >
+              <span
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
+                style={{ background: etiqueta.cor }}
+              >
+                <Tag className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{etiqueta.nome}</p>
               </div>
-            ))}
-            {isLoading && (
-              <div className="col-span-full p-8 text-center text-sm text-muted-foreground">
-                Carregando...
-              </div>
-            )}
-            {!isLoading && filtered.length === 0 && (
-              <div className="col-span-full p-8 text-center text-sm text-muted-foreground">
-                Nenhuma etiqueta cadastrada.
-              </div>
-            )}
-          </div>
-        </Card>
+              {canManageCatalog && (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(etiqueta)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setDeleting(etiqueta)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              )}
+            </div>
+          ))}
+          {isLoading && (
+            <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Carregando...
+            </div>
+          )}
+          {!isLoading && filtered.length === 0 && (
+            <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Nenhuma etiqueta cadastrada.
+            </div>
+          )}
+        </div>
 
         <EtiquetaForm
           open={nova.open}

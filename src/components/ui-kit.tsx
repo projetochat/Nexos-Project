@@ -18,7 +18,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-xl border border-border bg-card shadow-card ${padding ? "p-6" : ""} ${className}`}
+      className={`rounded-lg border border-border bg-card shadow-card sm:rounded-xl ${padding ? "p-4 sm:p-6" : ""} ${className}`}
     >
       {children}
     </div>
@@ -38,41 +38,28 @@ export function Button({
   children: React.ReactNode;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:border-primary";
+    "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg font-medium transition-all disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:border-primary";
   const sizes: Record<string, string> = {
-    sm: "px-2.5 py-1.5 text-xs",
-    md: "px-4 py-2 text-sm",
-    lg: "px-5 py-2.5 text-base",
+    sm: "min-h-8 px-2.5 py-1.5 text-xs",
+    md: "min-h-10 px-3 py-2 text-sm sm:px-4",
+    lg: "min-h-11 px-4 py-2.5 text-sm sm:px-5 sm:text-base",
     icon: "h-9 w-9 text-sm",
   };
   const variants: Record<string, string> = {
-    primary:
-      "bg-gradient-brand text-white shadow-glow hover:brightness-110 active:brightness-95",
-    secondary:
-      "bg-secondary text-secondary-foreground border border-border hover:bg-surface-3",
+    primary: "bg-gradient-brand text-white shadow-glow hover:brightness-110 active:brightness-95",
+    secondary: "bg-secondary text-secondary-foreground border border-border hover:bg-surface-3",
     ghost: "border border-border bg-surface-2 text-foreground hover:bg-surface-3",
-    outline:
-      "border border-border bg-transparent text-foreground hover:bg-surface-2",
-    destructive:
-      "bg-destructive text-destructive-foreground hover:brightness-110",
+    outline: "border border-border bg-transparent text-foreground hover:bg-surface-2",
+    destructive: "bg-destructive text-destructive-foreground hover:brightness-110",
   };
   return (
-    <button
-      className={`${base} ${sizes[size]} ${variants[variant]} ${className}`}
-      {...rest}
-    >
+    <button className={`${base} ${sizes[size]} ${variants[variant]} ${className}`} {...rest}>
       {children}
     </button>
   );
 }
 
-export type BadgeTone =
-  | "default"
-  | "success"
-  | "warning"
-  | "info"
-  | "destructive"
-  | "brand";
+export type BadgeTone = "default" | "success" | "warning" | "info" | "destructive" | "brand";
 
 export function Badge({
   tone = "default",
@@ -101,13 +88,10 @@ export function Badge({
   );
 }
 
-export function Input({
-  className = "",
-  ...rest
-}: React.InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className = "", ...rest }: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={`w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
+      className={`min-h-10 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
       {...rest}
     />
   );
@@ -126,7 +110,7 @@ export function SearchInput({
 }) {
   return (
     <div
-      className={`flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 transition focus-within:border-primary ${className}`}
+      className={`flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 transition focus-within:border-primary ${className}`}
     >
       <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
       <input
@@ -156,7 +140,7 @@ export function Textarea({
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
+      className={`min-h-24 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
       {...rest}
     />
   );
@@ -170,7 +154,7 @@ export function Select({
   return (
     <span className="relative block w-full">
       <select
-        className={`w-full appearance-none rounded-lg border border-border bg-surface-1 px-3 py-2 pr-9 text-sm outline-none transition focus:border-primary ${className}`}
+        className={`min-h-10 w-full appearance-none rounded-lg border border-border bg-surface-1 px-3 py-2 pr-9 text-sm outline-none transition focus:border-primary ${className}`}
         {...rest}
       >
         {children}
@@ -206,11 +190,7 @@ export function Field({
         )}
       </span>
       {children}
-      {hint && (
-        <span className="mt-1 block text-[11px] text-muted-foreground">
-          {hint}
-        </span>
-      )}
+      {hint && <span className="mt-1 block text-[11px] text-muted-foreground">{hint}</span>}
     </label>
   );
 }
@@ -243,9 +223,7 @@ export function Avatar({
 }
 
 export function Skeleton({ className = "" }: { className?: string }) {
-  return (
-    <div className={`animate-pulse rounded bg-surface-3 ${className}`} />
-  );
+  return <div className={`animate-pulse rounded bg-surface-3 ${className}`} />;
 }
 
 export function Alert({
@@ -266,9 +244,7 @@ export function Alert({
   return (
     <div className={`rounded-lg border p-4 ${map[tone]}`}>
       <p className="text-sm font-semibold">{title}</p>
-      {children && (
-        <p className="mt-0.5 text-sm text-foreground/80">{children}</p>
-      )}
+      {children && <p className="mt-0.5 text-sm text-foreground/80">{children}</p>}
     </div>
   );
 }
@@ -292,17 +268,9 @@ export function KPI({
   }[tone];
   return (
     <Card>
-      <p className="text-xs uppercase tracking-widest text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-3 font-mono text-3xl font-semibold tabular-nums">
-        {value}
-      </p>
-      {delta && (
-        <p className={`mt-1 text-xs font-medium ${toneClass}`}>
-          {delta} vs semana
-        </p>
-      )}
+      <p className="text-xs uppercase tracking-widest text-muted-foreground">{label}</p>
+      <p className="mt-3 font-mono text-3xl font-semibold tabular-nums">{value}</p>
+      {delta && <p className={`mt-1 text-xs font-medium ${toneClass}`}>{delta} vs semana</p>}
     </Card>
   );
 }
@@ -319,14 +287,16 @@ export function SectionHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
+    <div className="mb-4 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:mb-6 sm:gap-4">
       <div className="min-w-0">
-        <h1 className="truncate text-2xl font-semibold tracking-tight">
-          {title}
-        </h1>
-        {subtitle && <p className={`mt-1 text-sm text-muted-foreground ${subtitleClassName}`}>{subtitle}</p>}
+        <h1 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+        {subtitle && (
+          <p className={`mt-1 text-sm text-muted-foreground ${subtitleClassName}`}>{subtitle}</p>
+        )}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && (
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+      )}
     </div>
   );
 }
@@ -350,11 +320,7 @@ export function EmptyState({
         </div>
       )}
       <p className="text-base font-semibold">{title}</p>
-      {description && (
-        <p className="mt-1 max-w-md text-sm text-muted-foreground">
-          {description}
-        </p>
-      )}
+      {description && <p className="mt-1 max-w-md text-sm text-muted-foreground">{description}</p>}
       {action && <div className="mt-6">{action}</div>}
     </Card>
   );

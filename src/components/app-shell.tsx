@@ -74,8 +74,8 @@ function filterForOperator(items: NavItem[]): NavItem[] {
 const principalNav: NavItem[] = [
   { to: "/inbox", label: "Chat", icon: MessagesSquare },
   { to: "/contatos", label: "Contatos", icon: Users },
-  { to: "/historico", label: "Histórico de conversa", icon: History },
-  { to: "/mensagens-rapidas", label: "Mensagens rápidas", icon: Zap },
+  { to: "/historico", label: "Histórico de Conversas", icon: History },
+  { to: "/mensagens-rapidas", label: "Mensagens Rápidas", icon: Zap },
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
 ];
 
@@ -98,17 +98,17 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
     items: [
       { to: "/inbox", label: "Chat", icon: MessagesSquare },
       { to: "/contatos", label: "Contatos", icon: Users },
-      { to: "/historico", label: "Histórico de conversa", icon: History },
+      { to: "/historico", label: "Histórico de Conversas", icon: History },
     ],
   },
   {
     title: "Administração",
     items: [
       { to: "/atendentes", label: "Atendentes", icon: Headset },
-      { to: "/perfis", label: "Perfis de acesso", icon: ShieldCheck },
+      { to: "/perfis", label: "Perfil de Acesso", icon: ShieldCheck },
       { to: "/departamentos", label: "Departamentos", icon: UsersRound },
       { to: "/etiquetas", label: "Etiquetas", icon: Tag },
-      { to: "/mensagens-rapidas", label: "Mensagens rápidas", icon: Zap },
+      { to: "/mensagens-rapidas", label: "Mensagens Rápidas", icon: Zap },
       { to: "/campanhas", label: "Campanhas", icon: Megaphone },
     ],
   },
@@ -184,11 +184,13 @@ const LABELS: Record<string, string> = {
   departamentos: "Departamentos",
   etiquetas: "Etiquetas",
   campanhas: "Campanhas",
+  historico: "Histórico de Conversas",
+  "mensagens-rapidas": "Mensagens Rápidas",
   relatorios: "Relatórios",
   bi: "BI",
   configuracoes: "Configurações",
   perfil: "Perfil",
-  perfis: "Perfis de acesso",
+  perfis: "Perfil de Acesso",
   instancias: "Instâncias",
   ajuda: "Central de Ajuda",
   filas: "Filas de atendimento",
@@ -544,7 +546,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
 
       <nav
         className={`flex min-h-0 flex-1 flex-col overflow-x-hidden py-3 ${
-          isOperator ? "gap-5 overflow-y-auto" : "gap-1.5"
+          isOperator ? "gap-5 overflow-y-auto" : "gap-0"
         } ${collapsed ? "px-2" : "px-3"} ${
           !isOperator ? (collapsed ? "sidebar-scroll-hover" : "sidebar-scroll overflow-y-auto") : ""
         }`}
@@ -889,7 +891,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-[200] flex w-72 max-w-[82vw] flex-col border-r border-border bg-surface-1 shadow-2xl transition-transform duration-200 lg:hidden ${
+        className={`fixed inset-y-0 left-0 z-[200] flex w-72 max-w-[86vw] flex-col border-r border-border bg-surface-1 shadow-2xl transition-transform duration-200 lg:hidden ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -911,7 +913,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
             <X className="h-4 w-4" />
           </button>
         </div>
-        <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        <nav className="sidebar-scroll min-h-0 flex-1 overflow-y-auto px-3 py-3">
           {isOperator ? (
             <div className="space-y-0.5">
               {mainNav.map((item) => (
@@ -1067,7 +1069,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {showTopbar && (
             <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
           )}
-          <main key={pathname} className="min-w-0 flex-1 overflow-y-auto animate-fade-in-soft">
+          <main
+            key={pathname}
+            className="min-w-0 flex-1 overflow-y-auto overscroll-contain animate-fade-in-soft"
+          >
             {children}
           </main>
           <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
@@ -1111,7 +1116,9 @@ export function PageContainer({
   className?: string;
 }) {
   return (
-    <div className={`mx-auto w-full max-w-7xl px-4 py-6 md:px-6 md:py-8 lg:px-8 ${className}`}>
+    <div
+      className={`mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 md:px-6 md:py-8 lg:px-8 ${className}`}
+    >
       {children}
     </div>
   );

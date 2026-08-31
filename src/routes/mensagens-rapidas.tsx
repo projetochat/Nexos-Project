@@ -21,7 +21,7 @@ export const Route = createFileRoute("/mensagens-rapidas")({
   component: QuickRepliesPage,
   head: () => ({
     meta: [
-      { title: "Mensagens rápidas · Nexo" },
+      { title: "Mensagens Rápidas · Nexo" },
       {
         name: "description",
         content: "Atalhos de mensagens rápidas para agilizar respostas no atendimento.",
@@ -65,7 +65,7 @@ function QuickRepliesPage() {
     <AppShell>
       <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
         <SectionHeader
-          title="Mensagens rápidas"
+          title="Mensagens Rápidas"
           subtitle="Atalhos que aparecem digitando / no chat."
           actions={
             canManageCatalog ? (
@@ -97,7 +97,11 @@ function QuickRepliesPage() {
         ) : (
           <>
             <Card className="mb-4 p-4">
-              <SearchInput value={query} onChange={setQuery} placeholder="Buscar atalho ou texto..." />
+              <SearchInput
+                value={query}
+                onChange={setQuery}
+                placeholder="Buscar atalho ou texto..."
+              />
             </Card>
             <div className="grid gap-3 md:grid-cols-2">
               {filtered.map((reply) => (
