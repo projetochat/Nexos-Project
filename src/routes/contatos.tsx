@@ -31,6 +31,7 @@ import {
   Plus,
   Search,
   ShieldCheck,
+  Star,
   Strikethrough,
   Tag,
   Trash2,
@@ -73,25 +74,197 @@ const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000, 10000] as const;
 const CUSTOMER_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 const DEFAULT_CUSTOMER_PAGE_SIZE = 10;
+const FAVORITE_COUNTRY_CODES_KEY = "nexo.favorite-country-codes";
 const COUNTRY_CODES = [
-  { code: "55", country: "Brasil", flag: "🇧🇷" },
-  { code: "1", country: "Estados Unidos", flag: "🇺🇸" },
-  { code: "351", country: "Portugal", flag: "🇵🇹" },
-  { code: "54", country: "Argentina", flag: "🇦🇷" },
-  { code: "56", country: "Chile", flag: "🇨🇱" },
-  { code: "57", country: "Colômbia", flag: "🇨🇴" },
-  { code: "52", country: "México", flag: "🇲🇽" },
-  { code: "34", country: "Espanha", flag: "🇪🇸" },
+  { id: "br", code: "55", country: "Brasil", flag: "🇧🇷" },
+  { id: "us", code: "1", country: "Estados Unidos", flag: "🇺🇸" },
+  { id: "pt", code: "351", country: "Portugal", flag: "🇵🇹" },
+  { id: "ar", code: "54", country: "Argentina", flag: "🇦🇷" },
+  { id: "cl", code: "56", country: "Chile", flag: "🇨🇱" },
+  { id: "co", code: "57", country: "Colômbia", flag: "🇨🇴" },
+  { id: "mx", code: "52", country: "México", flag: "🇲🇽" },
+  { id: "es", code: "34", country: "Espanha", flag: "🇪🇸" },
+  { id: "af", code: "93", country: "Afeganistão", flag: "🇦🇫" },
+  { id: "za", code: "27", country: "África do Sul", flag: "🇿🇦" },
+  { id: "al", code: "355", country: "Albânia", flag: "🇦🇱" },
+  { id: "de", code: "49", country: "Alemanha", flag: "🇩🇪" },
+  { id: "ad", code: "376", country: "Andorra", flag: "🇦🇩" },
+  { id: "ao", code: "244", country: "Angola", flag: "🇦🇴" },
+  { id: "ai", code: "1264", country: "Anguilla", flag: "🇦🇮" },
+  { id: "ag", code: "1268", country: "Antígua e Barbuda", flag: "🇦🇬" },
+  { id: "sa", code: "966", country: "Arábia Saudita", flag: "🇸🇦" },
+  { id: "dz", code: "213", country: "Argélia", flag: "🇩🇿" },
+  { id: "am", code: "374", country: "Armênia", flag: "🇦🇲" },
+  { id: "aw", code: "297", country: "Aruba", flag: "🇦🇼" },
+  { id: "au", code: "61", country: "Austrália", flag: "🇦🇺" },
+  { id: "at", code: "43", country: "Áustria", flag: "🇦🇹" },
+  { id: "az", code: "994", country: "Azerbaijão", flag: "🇦🇿" },
+  { id: "bs", code: "1242", country: "Bahamas", flag: "🇧🇸" },
+  { id: "bh", code: "973", country: "Bahrein", flag: "🇧🇭" },
+  { id: "bd", code: "880", country: "Bangladesh", flag: "🇧🇩" },
+  { id: "bb", code: "1246", country: "Barbados", flag: "🇧🇧" },
+  { id: "be", code: "32", country: "Bélgica", flag: "🇧🇪" },
+  { id: "bz", code: "501", country: "Belize", flag: "🇧🇿" },
+  { id: "bj", code: "229", country: "Benin", flag: "🇧🇯" },
+  { id: "bm", code: "1441", country: "Bermudas", flag: "🇧🇲" },
+  { id: "by", code: "375", country: "Bielorrússia", flag: "🇧🇾" },
+  { id: "bo", code: "591", country: "Bolívia", flag: "🇧🇴" },
+  { id: "ba", code: "387", country: "Bósnia e Herzegovina", flag: "🇧🇦" },
+  { id: "bw", code: "267", country: "Botswana", flag: "🇧🇼" },
+  { id: "bn", code: "673", country: "Brunei", flag: "🇧🇳" },
+  { id: "bg", code: "359", country: "Bulgária", flag: "🇧🇬" },
+  { id: "bf", code: "226", country: "Burkina Faso", flag: "🇧🇫" },
+  { id: "bi", code: "257", country: "Burundi", flag: "🇧🇮" },
+  { id: "bt", code: "975", country: "Butão", flag: "🇧🇹" },
+  { id: "cv", code: "238", country: "Cabo Verde", flag: "🇨🇻" },
+  { id: "cm", code: "237", country: "Camarões", flag: "🇨🇲" },
+  { id: "kh", code: "855", country: "Camboja", flag: "🇰🇭" },
+  { id: "ca", code: "1", country: "Canadá", flag: "🇨🇦" },
+  { id: "qa", code: "974", country: "Catar", flag: "🇶🇦" },
+  { id: "kz", code: "7", country: "Cazaquistão", flag: "🇰🇿" },
+  { id: "td", code: "235", country: "Chade", flag: "🇹🇩" },
+  { id: "cn", code: "86", country: "China", flag: "🇨🇳" },
+  { id: "cy", code: "357", country: "Chipre", flag: "🇨🇾" },
+  { id: "sg", code: "65", country: "Cingapura", flag: "🇸🇬" },
+  { id: "cg", code: "242", country: "Congo", flag: "🇨🇬" },
+  { id: "cd", code: "243", country: "Congo, Rep. Democrática", flag: "🇨🇩" },
+  { id: "kr", code: "82", country: "Coreia do Sul", flag: "🇰🇷" },
+  { id: "ci", code: "225", country: "Costa do Marfim", flag: "🇨🇮" },
+  { id: "cr", code: "506", country: "Costa Rica", flag: "🇨🇷" },
+  { id: "hr", code: "385", country: "Croácia", flag: "🇭🇷" },
+  { id: "cu", code: "53", country: "Cuba", flag: "🇨🇺" },
+  { id: "dk", code: "45", country: "Dinamarca", flag: "🇩🇰" },
+  { id: "dj", code: "253", country: "Djibuti", flag: "🇩🇯" },
+  { id: "dm", code: "1767", country: "Dominica", flag: "🇩🇲" },
+  { id: "eg", code: "20", country: "Egito", flag: "🇪🇬" },
+  { id: "sv", code: "503", country: "El Salvador", flag: "🇸🇻" },
+  { id: "ae", code: "971", country: "Emirados Árabes Unidos", flag: "🇦🇪" },
+  { id: "ec", code: "593", country: "Equador", flag: "🇪🇨" },
+  { id: "sk", code: "421", country: "Eslováquia", flag: "🇸🇰" },
+  { id: "si", code: "386", country: "Eslovênia", flag: "🇸🇮" },
+  { id: "ee", code: "372", country: "Estônia", flag: "🇪🇪" },
+  { id: "et", code: "251", country: "Etiópia", flag: "🇪🇹" },
+  { id: "fj", code: "679", country: "Fiji", flag: "🇫🇯" },
+  { id: "ph", code: "63", country: "Filipinas", flag: "🇵🇭" },
+  { id: "fi", code: "358", country: "Finlândia", flag: "🇫🇮" },
+  { id: "fr", code: "33", country: "França", flag: "🇫🇷" },
+  { id: "ga", code: "241", country: "Gabão", flag: "🇬🇦" },
+  { id: "gm", code: "220", country: "Gâmbia", flag: "🇬🇲" },
+  { id: "gh", code: "233", country: "Gana", flag: "🇬🇭" },
+  { id: "ge", code: "995", country: "Geórgia", flag: "🇬🇪" },
+  { id: "gi", code: "350", country: "Gibraltar", flag: "🇬🇮" },
+  { id: "gr", code: "30", country: "Grécia", flag: "🇬🇷" },
+  { id: "gd", code: "1473", country: "Granada", flag: "🇬🇩" },
+  { id: "gt", code: "502", country: "Guatemala", flag: "🇬🇹" },
+  { id: "gy", code: "592", country: "Guiana", flag: "🇬🇾" },
+  { id: "gn", code: "224", country: "Guiné", flag: "🇬🇳" },
+  { id: "gq", code: "240", country: "Guiné Equatorial", flag: "🇬🇶" },
+  { id: "gw", code: "245", country: "Guiné-Bissau", flag: "🇬🇼" },
+  { id: "ht", code: "509", country: "Haiti", flag: "🇭🇹" },
+  { id: "hn", code: "504", country: "Honduras", flag: "🇭🇳" },
+  { id: "hk", code: "852", country: "Hong Kong", flag: "🇭🇰" },
+  { id: "hu", code: "36", country: "Hungria", flag: "🇭🇺" },
+  { id: "ye", code: "967", country: "Iêmen", flag: "🇾🇪" },
+  { id: "in", code: "91", country: "Índia", flag: "🇮🇳" },
+  { id: "id", code: "62", country: "Indonésia", flag: "🇮🇩" },
+  { id: "iq", code: "964", country: "Iraque", flag: "🇮🇶" },
+  { id: "ie", code: "353", country: "Irlanda", flag: "🇮🇪" },
+  { id: "ir", code: "98", country: "Irã", flag: "🇮🇷" },
+  { id: "is", code: "354", country: "Islândia", flag: "🇮🇸" },
+  { id: "il", code: "972", country: "Israel", flag: "🇮🇱" },
+  { id: "it", code: "39", country: "Itália", flag: "🇮🇹" },
+  { id: "jm", code: "1876", country: "Jamaica", flag: "🇯🇲" },
+  { id: "jp", code: "81", country: "Japão", flag: "🇯🇵" },
+  { id: "jo", code: "962", country: "Jordânia", flag: "🇯🇴" },
+  { id: "kw", code: "965", country: "Kuwait", flag: "🇰🇼" },
+  { id: "la", code: "856", country: "Laos", flag: "🇱🇦" },
+  { id: "ls", code: "266", country: "Lesoto", flag: "🇱🇸" },
+  { id: "lv", code: "371", country: "Letônia", flag: "🇱🇻" },
+  { id: "lb", code: "961", country: "Líbano", flag: "🇱🇧" },
+  { id: "lr", code: "231", country: "Libéria", flag: "🇱🇷" },
+  { id: "ly", code: "218", country: "Líbia", flag: "🇱🇾" },
+  { id: "li", code: "423", country: "Liechtenstein", flag: "🇱🇮" },
+  { id: "lt", code: "370", country: "Lituânia", flag: "🇱🇹" },
+  { id: "lu", code: "352", country: "Luxemburgo", flag: "🇱🇺" },
+  { id: "mo", code: "853", country: "Macau", flag: "🇲🇴" },
+  { id: "mk", code: "389", country: "Macedônia do Norte", flag: "🇲🇰" },
+  { id: "mg", code: "261", country: "Madagascar", flag: "🇲🇬" },
+  { id: "my", code: "60", country: "Malásia", flag: "🇲🇾" },
+  { id: "mw", code: "265", country: "Malawi", flag: "🇲🇼" },
+  { id: "mv", code: "960", country: "Maldivas", flag: "🇲🇻" },
+  { id: "ml", code: "223", country: "Mali", flag: "🇲🇱" },
+  { id: "mt", code: "356", country: "Malta", flag: "🇲🇹" },
+  { id: "ma", code: "212", country: "Marrocos", flag: "🇲🇦" },
+  { id: "mu", code: "230", country: "Maurício", flag: "🇲🇺" },
+  { id: "mr", code: "222", country: "Mauritânia", flag: "🇲🇷" },
+  { id: "md", code: "373", country: "Moldávia", flag: "🇲🇩" },
+  { id: "mc", code: "377", country: "Mônaco", flag: "🇲🇨" },
+  { id: "mn", code: "976", country: "Mongólia", flag: "🇲🇳" },
+  { id: "me", code: "382", country: "Montenegro", flag: "🇲🇪" },
+  { id: "mz", code: "258", country: "Moçambique", flag: "🇲🇿" },
+  { id: "mm", code: "95", country: "Myanmar", flag: "🇲🇲" },
+  { id: "na", code: "264", country: "Namíbia", flag: "🇳🇦" },
+  { id: "np", code: "977", country: "Nepal", flag: "🇳🇵" },
+  { id: "ni", code: "505", country: "Nicarágua", flag: "🇳🇮" },
+  { id: "ne", code: "227", country: "Níger", flag: "🇳🇪" },
+  { id: "ng", code: "234", country: "Nigéria", flag: "🇳🇬" },
+  { id: "no", code: "47", country: "Noruega", flag: "🇳🇴" },
+  { id: "nz", code: "64", country: "Nova Zelândia", flag: "🇳🇿" },
+  { id: "om", code: "968", country: "Omã", flag: "🇴🇲" },
+  { id: "nl", code: "31", country: "Países Baixos", flag: "🇳🇱" },
+  { id: "pw", code: "680", country: "Palau", flag: "🇵🇼" },
+  { id: "pa", code: "507", country: "Panamá", flag: "🇵🇦" },
+  { id: "pg", code: "675", country: "Papua-Nova Guiné", flag: "🇵🇬" },
+  { id: "pk", code: "92", country: "Paquistão", flag: "🇵🇰" },
+  { id: "py", code: "595", country: "Paraguai", flag: "🇵🇾" },
+  { id: "pe", code: "51", country: "Peru", flag: "🇵🇪" },
+  { id: "pl", code: "48", country: "Polônia", flag: "🇵🇱" },
+  { id: "pr", code: "1787", country: "Porto Rico", flag: "🇵🇷" },
+  { id: "ke", code: "254", country: "Quênia", flag: "🇰🇪" },
+  { id: "kg", code: "996", country: "Quirguistão", flag: "🇰🇬" },
+  { id: "gb", code: "44", country: "Reino Unido", flag: "🇬🇧" },
+  { id: "cf", code: "236", country: "República Centro-Africana", flag: "🇨🇫" },
+  { id: "cz", code: "420", country: "República Tcheca", flag: "🇨🇿" },
+  { id: "do", code: "1809", country: "República Dominicana", flag: "🇩🇴" },
+  { id: "ro", code: "40", country: "Romênia", flag: "🇷🇴" },
+  { id: "rw", code: "250", country: "Ruanda", flag: "🇷🇼" },
+  { id: "ru", code: "7", country: "Rússia", flag: "🇷🇺" },
+  { id: "ws", code: "685", country: "Samoa", flag: "🇼🇸" },
+  { id: "sm", code: "378", country: "San Marino", flag: "🇸🇲" },
+  { id: "lc", code: "1758", country: "Santa Lúcia", flag: "🇱🇨" },
+  { id: "sn", code: "221", country: "Senegal", flag: "🇸🇳" },
+  { id: "rs", code: "381", country: "Sérvia", flag: "🇷🇸" },
+  { id: "sc", code: "248", country: "Seychelles", flag: "🇸🇨" },
+  { id: "sl", code: "232", country: "Serra Leoa", flag: "🇸🇱" },
+  { id: "sy", code: "963", country: "Síria", flag: "🇸🇾" },
+  { id: "so", code: "252", country: "Somália", flag: "🇸🇴" },
+  { id: "lk", code: "94", country: "Sri Lanka", flag: "🇱🇰" },
+  { id: "sd", code: "249", country: "Sudão", flag: "🇸🇩" },
+  { id: "se", code: "46", country: "Suécia", flag: "🇸🇪" },
+  { id: "ch", code: "41", country: "Suíça", flag: "🇨🇭" },
+  { id: "sr", code: "597", country: "Suriname", flag: "🇸🇷" },
+  { id: "tj", code: "992", country: "Tadjiquistão", flag: "🇹🇯" },
+  { id: "th", code: "66", country: "Tailândia", flag: "🇹🇭" },
+  { id: "tw", code: "886", country: "Taiwan", flag: "🇹🇼" },
+  { id: "tz", code: "255", country: "Tanzânia", flag: "🇹🇿" },
+  { id: "tl", code: "670", country: "Timor-Leste", flag: "🇹🇱" },
+  { id: "tg", code: "228", country: "Togo", flag: "🇹🇬" },
+  { id: "to", code: "676", country: "Tonga", flag: "🇹🇴" },
+  { id: "tt", code: "1868", country: "Trinidad e Tobago", flag: "🇹🇹" },
+  { id: "tn", code: "216", country: "Tunísia", flag: "🇹🇳" },
+  { id: "tm", code: "993", country: "Turcomenistão", flag: "🇹🇲" },
+  { id: "tr", code: "90", country: "Turquia", flag: "🇹🇷" },
+  { id: "ua", code: "380", country: "Ucrânia", flag: "🇺🇦" },
+  { id: "ug", code: "256", country: "Uganda", flag: "🇺🇬" },
+  { id: "uy", code: "598", country: "Uruguai", flag: "🇺🇾" },
+  { id: "uz", code: "998", country: "Uzbequistão", flag: "🇺🇿" },
+  { id: "vu", code: "678", country: "Vanuatu", flag: "🇻🇺" },
+  { id: "ve", code: "58", country: "Venezuela", flag: "🇻🇪" },
+  { id: "vn", code: "84", country: "Vietnã", flag: "🇻🇳" },
+  { id: "zm", code: "260", country: "Zâmbia", flag: "🇿🇲" },
+  { id: "zw", code: "263", country: "Zimbábue", flag: "🇿🇼" },
 ];
-const PHONE_MASK_GROUPS: Record<string, number[]> = {
-  "1": [3, 3, 4],
-  "34": [3, 3, 3],
-  "351": [3, 3, 3],
-  "52": [2, 4, 4],
-  "54": [2, 4, 4],
-  "56": [1, 4, 4],
-  "57": [3, 3, 4],
-};
+const SORTED_COUNTRY_CODES = [...COUNTRY_CODES].sort(compareCountriesByName);
 
 type Customer = ApiCustomer;
 type Contact = ApiContact;
@@ -1703,7 +1876,6 @@ function ImportProgressModal({
       <div className="space-y-4">
         <div>
           <p className="text-sm font-medium text-foreground">{statusText}</p>
-          <p className="text-sm text-muted-foreground">Origem: {sourceLabel}</p>
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
@@ -1791,7 +1963,7 @@ function ContactFormModal({
     setCountryCode(initialPhone.countryCode);
     setTelefone(
       initialPhone.localPhone
-        ? maskBrazilMobilePhone(initialPhone.localPhone, initialPhone.countryCode)
+        ? formatPhoneDraftOnBlur(initialPhone.localPhone, initialPhone.countryCode)
         : "",
     );
     setCustomerId(initial?.customer_id ?? "");
@@ -1827,7 +1999,15 @@ function ContactFormModal({
 
   const handleCountryCodeChange = (nextCode: string) => {
     setCountryCode(nextCode);
-    setTelefone((current) => maskPhoneByCountry(current, nextCode));
+    setTelefone((current) => formatPhoneDraftOnBlur(current, nextCode));
+  };
+
+  const handlePhoneChange = (value: string) => {
+    setTelefone(phoneDraftByCountry(value, countryCode));
+  };
+
+  const handlePhoneBlur = () => {
+    setTelefone((current) => formatPhoneDraftOnBlur(current, countryCode));
   };
 
   const handle = () => {
@@ -1938,9 +2118,8 @@ function ContactFormModal({
                       />
                       <Input
                         value={telefone}
-                        onChange={(e) =>
-                          setTelefone(maskPhoneByCountry(e.target.value, countryCode))
-                        }
+                        onChange={(e) => handlePhoneChange(e.target.value)}
+                        onBlur={handlePhoneBlur}
                         placeholder={countryCode === "55" ? "(00) 00000-0000" : undefined}
                       />
                     </div>
@@ -2981,9 +3160,9 @@ function TagMultiSelect({
       </button>
       {open && (
         <div
-          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(24rem,calc(100vh-8rem))] w-[min(42rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl`}
+          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(38rem,calc(100vh-8rem))] w-[min(42rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl sm:max-h-[min(20rem,calc(100vh-8rem))]`}
         >
-          <div className="grid min-h-0 grid-cols-1 gap-1 overflow-y-auto overflow-x-hidden p-1 sm:grid-cols-2">
+          <div className="grid max-h-[33rem] min-h-0 grid-cols-1 gap-1 overflow-y-auto overflow-x-hidden p-1 sm:max-h-[17rem] sm:grid-cols-2">
             {tags.map((tag) => {
               const active = selectedIds.includes(tag.id);
               return (
@@ -3862,30 +4041,24 @@ function formatPhoneForSubmit(value: string, countryCode = "55") {
   return digits.startsWith(code) ? `+${digits}` : `+${code}${digits}`;
 }
 
-function maskBrazilMobilePhone(value: string, countryCode = "55") {
-  return maskPhoneByCountry(value, countryCode);
+function phoneDraftByCountry(value: string, countryCode = "55") {
+  const code = onlyDigits(countryCode) || "55";
+  const maxLength = code === "55" ? 11 : 20;
+  return onlyDigits(value).slice(0, maxLength);
+}
+
+function formatPhoneDraftOnBlur(value: string, countryCode = "55") {
+  const code = onlyDigits(countryCode) || "55";
+  const digits = onlyDigits(value);
+  if (code !== "55") return digits;
+  return maskBrazilPhone(normalizeBrazilMobileDigits(digits, code));
 }
 
 function maskPhoneByCountry(value: string, countryCode = "55") {
   const digits = onlyDigits(value);
   const code = onlyDigits(countryCode) || "55";
-  if (code === "55") return maskBrazilPhone(digits);
-  const groups = PHONE_MASK_GROUPS[code] ?? [3, 3, 4, 4];
-  return maskDigitGroups(digits, groups);
-}
-
-function maskDigitGroups(value: string, groups: number[]) {
-  const maxLength = groups.reduce((total, group) => total + group, 0);
-  const digits = onlyDigits(value).slice(0, maxLength);
-  const parts: string[] = [];
-  let cursor = 0;
-  for (const group of groups) {
-    const part = digits.slice(cursor, cursor + group);
-    if (!part) break;
-    parts.push(part);
-    cursor += group;
-  }
-  return parts.join(" ");
+  if (code === "55") return formatPhoneDraftOnBlur(digits, code);
+  return digits;
 }
 
 function isValidPhoneForCountry(value: string, countryCode = "55") {
@@ -3926,6 +4099,20 @@ function formatPhoneWithDdi(value: string) {
   return `+${parsed.countryCode} ${local}`.trim();
 }
 
+function compareCountriesByName(
+  a: (typeof COUNTRY_CODES)[number],
+  b: (typeof COUNTRY_CODES)[number],
+) {
+  return normalizeCountrySort(a.country).localeCompare(normalizeCountrySort(b.country), "pt-BR");
+}
+
+function normalizeCountrySort(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 function CountryCodeSelect({
   value,
   onChange,
@@ -3937,14 +4124,30 @@ function CountryCodeSelect({
 }) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const [favoriteCodes, setFavoriteCodes] = React.useState<string[]>([]);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const searchRef = React.useRef<HTMLInputElement>(null);
   const selected = COUNTRY_CODES.find((country) => country.code === value) ?? COUNTRY_CODES[0];
-  const filtered = COUNTRY_CODES.filter((country) =>
+  const filtered = SORTED_COUNTRY_CODES.filter((country) =>
     `${country.country} ${country.code} ${country.flag}`
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
+  const favoriteCountries = favoriteCodes
+    .map((code) => COUNTRY_CODES.find((country) => country.code === code))
+    .filter((country): country is (typeof COUNTRY_CODES)[number] => Boolean(country))
+    .sort(compareCountriesByName) as typeof COUNTRY_CODES;
+
+  React.useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(FAVORITE_COUNTRY_CODES_KEY) ?? "[]");
+      if (Array.isArray(stored)) {
+        setFavoriteCodes(stored.filter((code) => typeof code === "string").slice(0, 5));
+      }
+    } catch {
+      setFavoriteCodes([]);
+    }
+  }, []);
 
   React.useEffect(() => {
     if (!open) return;
@@ -3955,6 +4158,23 @@ function CountryCodeSelect({
     window.setTimeout(() => searchRef.current?.focus(), 0);
     return () => document.removeEventListener("pointerdown", closeOnOutside);
   }, [open]);
+
+  const persistFavoriteCodes = (codes: string[]) => {
+    setFavoriteCodes(codes);
+    localStorage.setItem(FAVORITE_COUNTRY_CODES_KEY, JSON.stringify(codes));
+  };
+
+  const toggleFavorite = (code: string) => {
+    const exists = favoriteCodes.includes(code);
+    const next = exists ? favoriteCodes.filter((item) => item !== code) : [...favoriteCodes, code];
+    persistFavoriteCodes(next.slice(-5));
+  };
+
+  const selectCountryCode = (code: string) => {
+    onChange(code);
+    setOpen(false);
+    setQuery("");
+  };
 
   return (
     <div ref={rootRef} className={`relative shrink-0 ${compact ? "w-20 sm:w-32" : "w-32"}`}>
@@ -3993,28 +4213,83 @@ function CountryCodeSelect({
               </button>
             )}
           </div>
+          {favoriteCountries.length > 0 && (
+            <div className="border-b border-border p-1">
+              <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Favoritos
+              </p>
+              {favoriteCountries.map((country) => (
+                <CountryCodeOption
+                  key={`favorite-${country.code}`}
+                  country={country}
+                  favorite={favoriteCodes.includes(country.code)}
+                  onSelect={() => selectCountryCode(country.code)}
+                  onToggleFavorite={() => toggleFavorite(country.code)}
+                />
+              ))}
+            </div>
+          )}
           <div className="max-h-56 overflow-auto p-1">
             {filtered.map((country) => (
-              <button
-                key={country.code}
-                type="button"
-                onClick={() => {
-                  onChange(country.code);
-                  setOpen(false);
-                  setQuery("");
-                }}
-                className="flex w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
-              >
-                <span className="truncate">
-                  {country.flag} {country.country}
-                </span>
-                <span className="font-mono text-xs text-muted-foreground">+{country.code}</span>
-              </button>
+              <CountryCodeOption
+                key={country.id}
+                country={country}
+                favorite={favoriteCodes.includes(country.code)}
+                onSelect={() => selectCountryCode(country.code)}
+                onToggleFavorite={() => toggleFavorite(country.code)}
+              />
             ))}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function CountryCodeOption({
+  country,
+  favorite,
+  onSelect,
+  onToggleFavorite,
+}: {
+  country: (typeof COUNTRY_CODES)[number];
+  favorite: boolean;
+  onSelect: () => void;
+  onToggleFavorite: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="group flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
+    >
+      <span className="min-w-0 flex-1 truncate">
+        {country.flag} {country.country}
+      </span>
+      <span className="font-mono text-xs text-muted-foreground">+{country.code}</span>
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+        title={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onToggleFavorite();
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.stopPropagation();
+          onToggleFavorite();
+        }}
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition ${
+          favorite ? "text-amber-500" : "text-muted-foreground opacity-70 group-hover:opacity-100"
+        }`}
+      >
+        <Star className={`h-3.5 w-3.5 ${favorite ? "fill-current" : ""}`} />
+      </span>
+    </button>
   );
 }
 function isSelectableInstanceStatus(status?: string | null) {

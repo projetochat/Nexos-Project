@@ -288,68 +288,50 @@ function ContactFieldsSettings() {
                 setDraggingFieldId(null);
                 setDragOverFieldId(null);
               }}
-              className={`rounded-lg border border-border bg-card p-3 transition ${
+              className={`rounded-lg border border-border bg-card px-2 py-2 transition ${
                 draggingFieldId === field.id ? "opacity-50" : ""
               } ${dragOverFieldId === field.id ? "border-primary bg-primary/5" : ""}`}
             >
-              <div className="flex items-start gap-3">
-                <div className="flex cursor-grab items-center gap-1.5 pt-1 text-muted-foreground active:cursor-grabbing">
-                  <GripVertical className="h-4 w-4" />
+              <div className="flex items-center gap-2">
+                <div className="flex shrink-0 cursor-grab items-center gap-1 text-muted-foreground active:cursor-grabbing">
+                  <GripVertical className="h-3.5 w-3.5" />
                   <span className="font-mono text-xs">{field.position + 1}</span>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{field.label}</p>
-                  <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                    <div>
-                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
-                        Tipo
-                      </span>
-                      <span className="text-foreground">{fieldTypeLabel(field)}</span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
-                        Obrigatório
-                      </span>
-                      <span className="text-foreground">{field.required ? "Sim" : "Não"}</span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
-                        Aba
-                      </span>
-                      <span className="text-foreground">{displayFieldTab(field)}</span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
-                        Agrupamento
-                      </span>
-                      <span className="text-foreground">
-                        {displayFieldGroup(field) === "-" ? "Nenhum" : displayFieldGroup(field)}
-                      </span>
-                    </div>
-                  </div>
+                <div className="min-w-0 flex-1 leading-tight">
+                  <p className="truncate text-xs font-semibold text-foreground">{field.label}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                    {fieldTypeLabel(field)}
+                  </p>
                 </div>
-              </div>
-              <div className="mt-3 flex justify-end gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="duplicate-action-button"
-                  title="Duplicar"
-                  onClick={() => setDuplicating(field)}
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
-                <Button variant="ghost" size="sm" title="Editar" onClick={() => setEditing(field)}>
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  title="Excluir"
-                  onClick={() => setDeleting(field)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                <div className="flex shrink-0 justify-end gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="duplicate-action-button h-8 w-8 p-0"
+                    title="Duplicar"
+                    onClick={() => setDuplicating(field)}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    title="Editar"
+                    onClick={() => setEditing(field)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    title="Excluir"
+                    onClick={() => setDeleting(field)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
           ))}
