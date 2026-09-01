@@ -120,6 +120,7 @@ export type InboundMessageEvent = {
     providerInstanceName?: string | null;
     mediaRef?: string | null;
     remoteJid?: string | null;
+    profilePictureUrl?: string | null;
     normalizedPhoneCandidates?: string[];
   };
 };

@@ -495,11 +495,32 @@ button[aria-label*="Editar"]:hover svg {
   color: var(--color-warning);
 }
 
+button[title*="Excluir"]:hover svg,
+button[aria-label*="Excluir"]:hover svg,
+button[title*="Arquivar"]:hover svg,
+button[aria-label*="Arquivar"]:hover svg {
+  color: var(--color-destructive);
+}
+
 button[title*="Abrir conversa"]:hover svg,
 button[aria-label*="Abrir conversa"]:hover svg,
 button[title*="Selecionar"]:hover svg,
 button[aria-label*="Selecionar"]:hover svg {
   color: var(--color-primary);
+}
+
+.select-action-button:hover {
+  color: var(--color-primary);
+}
+
+button[title*="Duplicar"]:hover svg,
+button[aria-label*="Duplicar"]:hover svg,
+.duplicate-action-button:hover svg {
+  color: var(--color-success);
+}
+
+.duplicate-action-button:hover {
+  color: var(--color-success);
 }
 
 /* Variante "revelar no hover" — usada quando a sidebar está recolhida.

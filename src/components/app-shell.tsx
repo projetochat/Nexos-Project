@@ -362,7 +362,7 @@ function NavSection({
     >
       {!collapsed && (
         <p
-          className={`mb-1 ${flush ? "pl-2" : "pl-7"} pr-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground`}
+          className={`mb-0.5 ${flush ? "pl-2" : "pl-7"} pr-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground`}
         >
           {title}
         </p>
@@ -910,7 +910,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
               ))}
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {visibleTopNav.length > 0 && (
                 <div className="space-y-0.5">
                   {visibleTopNav.map((item) => (
@@ -920,7 +920,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
               )}
               {visibleAdminGroups.map((group) => (
                 <div key={group.title} className="space-y-0.5">
-                  <p className="mb-1 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  <p className="mb-0.5 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                     {group.title}
                   </p>
                   <div className="space-y-0.5 pl-3">
@@ -935,7 +935,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
         </nav>
         {sysNav.length > 0 && (
           <div className="shrink-0 border-t border-border px-3 py-2">
-            <p className="mb-1 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            <p className="mb-0.5 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
               Sistema
             </p>
             <div className="space-y-0.5 pl-3">

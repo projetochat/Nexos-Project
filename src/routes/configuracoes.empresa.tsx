@@ -41,7 +41,7 @@ function EmpresaSettings() {
           </Field>
         </div>
       </div>
-      <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
+      <div className="mt-6 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
         <Button variant="ghost">Cancelar</Button>
         <Button variant="primary">Salvar alterações</Button>
       </div>

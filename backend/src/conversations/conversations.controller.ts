@@ -27,6 +27,7 @@ import {
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
+import { ContactProfilePictureSyncService } from "../messaging/contact-profile-picture-sync.service";
 import { AssignConversationDto } from "./dto/assign-conversation.dto";
 import { CreateConversationDto } from "./dto/create-conversation.dto";
 import { ListConversationsQueryDto } from "./dto/list-conversations-query.dto";
@@ -63,6 +64,8 @@ export class ConversationsController {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(MessagesService) private readonly messages: MessagesService,
     @Inject(RealtimePublisher) private readonly realtime: RealtimePublisher,
+    @Inject(ContactProfilePictureSyncService)
+    private readonly profilePictures: ContactProfilePictureSyncService,
   ) {}
 
   @Get()
@@ -86,9 +89,16 @@ export class ConversationsController {
       this.countTabs(countBase, current),
     ]);
 
+    const syncedAvatars = await this.profilePictures.syncMissing({
+      tenantId: current.tenantId,
+      contacts: items.flatMap((conversation) =>
+        conversation.contact ? [conversation.contact] : [],
+      ),
+    });
+
     return {
       ...paginated(
-        items.map((conversation) => this.serialize(conversation)),
+        items.map((conversation) => this.serialize(conversation, syncedAvatars)),
         total,
         page,
         pageSize,
@@ -101,7 +111,11 @@ export class ConversationsController {
   @RequirePermissions("conversations.read")
   async detail(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const conversation = await this.findVisibleConversation(id, current);
-    return this.serialize(conversation);
+    const syncedAvatars = await this.profilePictures.syncMissing({
+      tenantId: current.tenantId,
+      contacts: conversation.contact ? [conversation.contact] : [],
+    });
+    return this.serialize(conversation, syncedAvatars);
   }
 
   @Post()
@@ -684,7 +698,10 @@ export class ConversationsController {
     return membership?.user.name ?? membership?.user.email ?? "atendente selecionado";
   }
 
-  private serialize(conversation: ConversationWithRelations) {
+  private serialize(
+    conversation: ConversationWithRelations,
+    syncedAvatars = new Map<string, string>(),
+  ) {
     return {
       id: conversation.id,
       tenantId: conversation.tenantId,
@@ -712,7 +729,8 @@ export class ConversationsController {
             id: conversation.contact.id,
             nome: conversation.contact.name,
             telefone: conversation.contact.phone,
-            avatar_url: conversation.contact.avatarUrl,
+            avatar_url:
+              syncedAvatars.get(conversation.contact.id) ?? conversation.contact.avatarUrl,
             customer_id: conversation.contact.customerId,
             email: conversation.contact.email,
             departamento: conversation.contact.departmentName,

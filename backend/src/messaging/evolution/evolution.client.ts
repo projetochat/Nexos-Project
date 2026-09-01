@@ -5,6 +5,7 @@ import { classifyEvolutionProviderError } from "./evolution-provider-error.class
 import {
   EvolutionConnectionStateResponse,
   EvolutionCreateInstanceResponse,
+  EvolutionProfilePictureResponse,
   EvolutionInstance,
   EvolutionSendTextResponse,
 } from "./evolution.types";
@@ -191,6 +192,20 @@ export class EvolutionClient {
     return extractGroupInfo(response);
   }
 
+  async fetchProfilePictureUrl(input: {
+    instanceName: string;
+    number: string;
+  }): Promise<string | null> {
+    const response = await this.request<EvolutionProfilePictureResponse | unknown>(
+      `/chat/fetchProfilePictureUrl/${input.instanceName}`,
+      {
+        method: "POST",
+        body: { number: input.number },
+      },
+    );
+    return extractProfilePictureUrl(response);
+  }
+
   async getBase64FromMediaMessage(input: {
     instanceName: string;
     message: unknown;
@@ -319,6 +334,21 @@ function extractGroupInfo(
   for (const nested of Object.values(record)) {
     const info = extractGroupInfo(nested);
     if (info) return info;
+  }
+  return null;
+}
+
+function extractProfilePictureUrl(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const url =
+    stringField(record, "profilePictureUrl") ??
+    stringField(record, "picture") ??
+    stringField(record, "url");
+  if (url) return url;
+  for (const nested of Object.values(record)) {
+    const nestedUrl = extractProfilePictureUrl(nested);
+    if (nestedUrl) return nestedUrl;
   }
   return null;
 }

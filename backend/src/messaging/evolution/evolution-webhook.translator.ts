@@ -159,6 +159,7 @@ export class EvolutionWebhookTranslator {
                 readNestedString(data, ["group", "subject"]))
               : readString(data, "pushName"),
           remoteJid,
+          profilePictureUrl: extractProfilePictureUrl(data),
           normalizedPhoneCandidates,
         },
       },
@@ -300,6 +301,21 @@ function extractMediaEnvelope(media: Record<string, unknown>): InboundMessageEve
     durationMs: secondsToMs(numberValue(media.seconds ?? media.duration)),
     sha256: readString(media, "fileSha256") ?? readString(media, "mediaKeyTimestamp"),
   };
+}
+
+function extractProfilePictureUrl(value: Record<string, unknown> | null | undefined) {
+  if (!value) return null;
+  return (
+    readString(value, "profilePictureUrl") ??
+    readString(value, "profilePicUrl") ??
+    readString(value, "profilePicURL") ??
+    readString(value, "picture") ??
+    readString(value, "avatar") ??
+    readNestedString(value, ["contact", "profilePictureUrl"]) ??
+    readNestedString(value, ["contact", "profilePicUrl"]) ??
+    readNestedString(value, ["sender", "profilePictureUrl"]) ??
+    readNestedString(value, ["sender", "profilePicUrl"])
+  );
 }
 
 function extractQuoted(

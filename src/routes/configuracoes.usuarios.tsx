@@ -16,12 +16,12 @@ function UsuariosSettings() {
 
   return (
     <Card className="p-0">
-      <div className="flex items-center justify-between border-b border-border p-5">
-        <div>
+      <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="min-w-0">
           <p className="text-sm font-semibold">Usuarios</p>
           <p className="text-xs text-muted-foreground">Membros com acesso a plataforma.</p>
         </div>
-        <Button variant="primary" size="sm">
+        <Button variant="primary" size="sm" className="self-start sm:self-auto">
           <Plus className="h-3.5 w-3.5" /> Convidar
         </Button>
       </div>
@@ -29,18 +29,23 @@ function UsuariosSettings() {
         {isLoading && <li className="p-4 text-sm text-muted-foreground">Carregando...</li>}
         {!isLoading &&
           users.map((membership) => (
-            <li key={membership.id} className="flex items-center gap-4 p-4">
+            <li
+              key={membership.id}
+              className="flex flex-wrap items-center gap-3 p-4 sm:flex-nowrap sm:gap-4"
+            >
               <Avatar name={membership.user.name} size={32} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{membership.user.name}</p>
                 <p className="truncate text-xs text-muted-foreground">{membership.user.email}</p>
               </div>
-              <Badge tone={membership.status === "ACTIVE" ? "brand" : "default"} dot={false}>
-                {membership.role.name}
-              </Badge>
-              <Button variant="ghost" size="sm">
-                Editar
-              </Button>
+              <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
+                <Badge tone={membership.status === "ACTIVE" ? "brand" : "default"} dot={false}>
+                  {membership.role.name}
+                </Badge>
+                <Button variant="ghost" size="sm">
+                  Editar
+                </Button>
+              </div>
             </li>
           ))}
       </ul>

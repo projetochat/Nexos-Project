@@ -32,6 +32,31 @@ describe("EvolutionWebhookTranslator", () => {
     });
   });
 
+  it("preserves contact profile picture URLs from inbound webhook payloads", () => {
+    const result = translator.translate(
+      {
+        event: "messages.upsert",
+        instance: "tenant-support",
+        data: {
+          key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: false, id: "MSG-PHOTO" },
+          message: { conversation: "Ola" },
+          pushName: "Cliente",
+          profilePicUrl: "https://pps.whatsapp.net/v/profile.jpg",
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        metadata: {
+          profilePictureUrl: "https://pps.whatsapp.net/v/profile.jpg",
+        },
+      },
+    });
+  });
+
   it("normalizes realistic Evolution v2.3.1 uppercase webhook payloads", () => {
     const result = translator.translate(
       {

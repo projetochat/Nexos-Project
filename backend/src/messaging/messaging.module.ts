@@ -6,6 +6,7 @@ import { PlatformModule } from "../platform/platform.module";
 import { QueueModule } from "../queue/queue.module";
 import { RealtimeModule } from "../realtime/realtime.module";
 import { DevelopmentMessagingProvider } from "./development-messaging.provider";
+import { ContactProfilePictureSyncService } from "./contact-profile-picture-sync.service";
 import { EvolutionClient } from "./evolution/evolution.client";
 import { EvolutionMessagingProvider } from "./evolution/evolution-messaging.provider";
 import { EvolutionStartupService } from "./evolution/evolution-startup.service";
@@ -43,6 +44,7 @@ import { MessagingStatusService } from "./messaging-status.service";
     MessagingOutboundService,
     MessagingOutboundWorker,
     MessagingInboundService,
+    ContactProfilePictureSyncService,
     MessagingReactionService,
     MessagingStatusService,
   ],
@@ -53,6 +55,7 @@ import { MessagingStatusService } from "./messaging-status.service";
     MessagingStatusService,
     MessagingConnectionsService,
     MessagingMediaStorageService,
+    ContactProfilePictureSyncService,
   ],
 })
 export class MessagingModule {}

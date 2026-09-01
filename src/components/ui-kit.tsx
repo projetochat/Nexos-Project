@@ -123,7 +123,7 @@ export function SearchInput({
         <button
           type="button"
           onClick={() => onChange("")}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-destructive/30 bg-destructive/10 text-destructive transition hover:bg-destructive/15"
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
           aria-label="Limpar busca"
           title="Limpar busca"
         >

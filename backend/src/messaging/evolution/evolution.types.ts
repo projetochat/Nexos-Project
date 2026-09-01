@@ -50,6 +50,19 @@ export type EvolutionSendTextResponse = {
   status?: string;
 };
 
+export type EvolutionProfilePictureResponse = {
+  wuid?: string;
+  profilePictureUrl?: string | null;
+  picture?: string | null;
+  url?: string | null;
+  response?: {
+    wuid?: string;
+    profilePictureUrl?: string | null;
+    picture?: string | null;
+    url?: string | null;
+  };
+};
+
 export type EvolutionWebhookPayload = {
   event?: string;
   instance?: string;

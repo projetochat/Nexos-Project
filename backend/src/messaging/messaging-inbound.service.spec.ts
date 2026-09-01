@@ -18,6 +18,8 @@ describe("MessagingInboundService", () => {
     prisma.message.create.mockResolvedValue({
       id: "message-inbound",
       conversationId: "conversation-a",
+      status: MessageStatus.CREATED,
+      createdAt: new Date("2026-08-03T12:00:00.000Z"),
     });
     prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 1 }));
 
@@ -146,6 +148,191 @@ describe("MessagingInboundService", () => {
         }),
       ],
     });
+  });
+
+  it("reuses the unique contact when inbound creation races with another message", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(null);
+    prisma.contact.upsert.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.create.mockResolvedValue({
+      id: "message-inbound",
+      conversationId: "conversation-a",
+      status: MessageStatus.CREATED,
+      createdAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+    prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 1 }));
+
+    await new MessagingInboundService(prisma as never).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "inbound-race",
+      externalChatId: "5511999999999@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
+      sender: {
+        phone: "5511999999999@s.whatsapp.net",
+        normalizedPhone: "+5511999999999",
+        displayName: "Cliente",
+      },
+      type: MessageType.TEXT,
+      content: "Mensagem concorrente",
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(prisma.contact.create).not.toHaveBeenCalled();
+    expect(prisma.contact.upsert).toHaveBeenCalledWith({
+      where: {
+        tenantId_normalizedPhone: {
+          tenantId: "tenant-a",
+          normalizedPhone: "+5511999999999",
+        },
+      },
+      update: expect.objectContaining({
+        archivedAt: null,
+        phone: "5511999999999@s.whatsapp.net",
+      }),
+      create: expect.objectContaining({
+        tenantId: "tenant-a",
+        normalizedPhone: "+5511999999999",
+      }),
+    });
+    expect(prisma.message.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        conversationId: "conversation-a",
+        externalMessageId: "inbound-race",
+      }),
+    });
+  });
+
+  it("syncs the WhatsApp profile picture into the contact avatar on inbound messages", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.contact.updateMany.mockResolvedValue({ count: 1 });
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.create.mockResolvedValue({
+      id: "message-inbound",
+      conversationId: "conversation-a",
+      status: MessageStatus.CREATED,
+      createdAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+    prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 1 }));
+    const realtime = {
+      publishMessageCreated: vi.fn(),
+      publishConversationUpdated: vi.fn(),
+      publishContactUpdated: vi.fn(),
+      publishUnreadUpdated: vi.fn(),
+    };
+    const evolution = {
+      fetchProfilePictureUrl: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("jid not accepted"))
+        .mockResolvedValue("https://pps.whatsapp.net/v/profile-picture.jpg"),
+    };
+
+    await new MessagingInboundService(
+      prisma as never,
+      undefined,
+      realtime as never,
+      evolution as never,
+    ).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "inbound-photo",
+      externalChatId: "5511999999999@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
+      sender: {
+        phone: "5511999999999@s.whatsapp.net",
+        normalizedPhone: "+5511999999999",
+        displayName: "Douglas Rezende",
+      },
+      type: MessageType.TEXT,
+      content: "Oi",
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+      metadata: { remoteJid: "5511999999999@s.whatsapp.net" },
+    });
+
+    expect(evolution.fetchProfilePictureUrl).toHaveBeenCalledWith({
+      instanceName: "tenant-a-suporte",
+      number: "5511999999999@s.whatsapp.net",
+    });
+    expect(evolution.fetchProfilePictureUrl).toHaveBeenCalledWith({
+      instanceName: "tenant-a-suporte",
+      number: "5511999999999",
+    });
+    expect(prisma.contact.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        id: "contact-a",
+        OR: [
+          { avatarUrl: null },
+          { avatarUrl: { not: "https://pps.whatsapp.net/v/profile-picture.jpg" } },
+        ],
+      },
+      data: { avatarUrl: "https://pps.whatsapp.net/v/profile-picture.jpg" },
+    });
+    expect(realtime.publishContactUpdated).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      contactId: "contact-a",
+      contact: { id: "contact-a" },
+    });
+  });
+
+  it("uses the profile picture URL from the Evolution webhook when present", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.contact.updateMany.mockResolvedValue({ count: 1 });
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.create.mockResolvedValue({
+      id: "message-inbound",
+      conversationId: "conversation-a",
+      status: MessageStatus.CREATED,
+      createdAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+    prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 1 }));
+    const evolution = { fetchProfilePictureUrl: vi.fn() };
+
+    await new MessagingInboundService(
+      prisma as never,
+      undefined,
+      undefined,
+      evolution as never,
+    ).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "inbound-photo-webhook",
+      externalChatId: "5511999999999@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
+      sender: {
+        phone: "5511999999999@s.whatsapp.net",
+        normalizedPhone: "+5511999999999",
+        displayName: "Douglas Rezende",
+      },
+      type: MessageType.TEXT,
+      content: "Oi",
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+      metadata: {
+        remoteJid: "5511999999999@s.whatsapp.net",
+        profilePictureUrl: "https://pps.whatsapp.net/v/profile-picture-from-webhook.jpg",
+      },
+    });
+
+    expect(evolution.fetchProfilePictureUrl).not.toHaveBeenCalled();
+    expect(prisma.contact.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { avatarUrl: "https://pps.whatsapp.net/v/profile-picture-from-webhook.jpg" },
+      }),
+    );
   });
 
   it("downloads inbound media through Evolution before falling back to encrypted provider URLs", async () => {
@@ -316,7 +503,13 @@ function prismaMock() {
   const prisma = {
     messagingConnection: { findFirst: vi.fn() },
     message: { findFirst: vi.fn(), create: vi.fn() },
-    contact: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+    contact: {
+      findFirst: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      create: vi.fn(),
+      upsert: vi.fn(),
+    },
     conversation: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     department: { findFirst: vi.fn().mockResolvedValue({ id: "department-a" }) },
     tenantMembership: { findMany: vi.fn().mockResolvedValue([{ id: "membership-a" }]) },

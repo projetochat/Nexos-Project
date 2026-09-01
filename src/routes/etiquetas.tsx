@@ -65,14 +65,26 @@ function Page() {
                 <Tag className="h-4 w-4" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{etiqueta.nome}</p>
+                <p className="truncate text-sm font-bold">{etiqueta.nome}</p>
               </div>
               {canManageCatalog && (
                 <>
-                  <Button variant="ghost" size="sm" onClick={() => setEditing(etiqueta)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Editar"
+                    aria-label={`Editar ${etiqueta.nome}`}
+                    onClick={() => setEditing(etiqueta)}
+                  >
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setDeleting(etiqueta)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Excluir"
+                    aria-label={`Excluir ${etiqueta.nome}`}
+                    onClick={() => setDeleting(etiqueta)}
+                  >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </>
@@ -115,21 +127,36 @@ function Page() {
         />
         <ConfirmDialog
           open={!!deleting}
-          title="Arquivar etiqueta?"
+          title="Excluir Etiqueta?"
           destructive
-          description={`Esta ação removerá "${deleting?.nome ?? ""}" do catálogo ativo.`}
-          confirmLabel="Arquivar"
+          description={<DeleteLinkedContactCatalogMessage name={deleting?.nome} />}
+          confirmLabel="Excluir"
           onClose={() => setDeleting(null)}
           onConfirm={async () => {
             if (!deleting) return;
             await crmApi.archiveTag(deleting.id);
-            toast.success("Etiqueta arquivada");
+            toast.success("Etiqueta excluída");
             refresh();
             setDeleting(null);
           }}
         />
       </PageContainer>
     </AppShell>
+  );
+}
+
+function DeleteLinkedContactCatalogMessage({ name }: { name?: string | null }) {
+  const selectedName = name ?? "Sem etiqueta";
+
+  return (
+    <div className="space-y-2">
+      <p>
+        Deseja realmente excluir o cadastro <strong>"{selectedName}"</strong>?
+      </p>
+      <p className="text-xs italic text-muted-foreground">
+        Os Contatos vinculados serão desvinculados.
+      </p>
+    </div>
   );
 }
 
@@ -182,17 +209,17 @@ function EtiquetaForm({
         </>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
         <Field label="Nome *">
           <Input value={name} onChange={(event) => setName(event.target.value)} />
         </Field>
         <Field label="Cor">
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
+          <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
             <input
               type="color"
               value={completeHexColor(color)}
               onChange={(event) => setColor(normalizeHexColor(event.target.value))}
-              className="h-7 w-9 cursor-pointer rounded border border-border bg-transparent p-0"
+              className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
             />
             <input
               type="text"

@@ -299,6 +299,7 @@ function Page() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="duplicate-action-button"
                       onClick={() => duplicate.mutate(p)}
                       title="Duplicar"
                     >

@@ -43,6 +43,7 @@ export class TagsController {
   @Post("tags")
   @RequirePermissions("chat.tags.manage")
   async create(@Body() dto: CreateTagDto, @CurrentUser() current: AuthenticatedUser) {
+    await this.assertTagNameAvailable(dto.name, current.tenantId);
     try {
       const tag = await this.prisma.tag.create({
         data: {
@@ -54,7 +55,7 @@ export class TagsController {
       });
       return serializeTag(tag);
     } catch (error) {
-      handleUniqueTag(error);
+      handleUniqueTag(error, dto.name);
     }
   }
 
@@ -66,6 +67,7 @@ export class TagsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.findTagOrThrow(id, current.tenantId);
+    if (dto.name) await this.assertTagNameAvailable(dto.name, current.tenantId, id);
     try {
       const tag = await this.prisma.tag.update({
         where: { tenantId_id: { tenantId: current.tenantId, id } },
@@ -77,7 +79,7 @@ export class TagsController {
       });
       return serializeTag(tag);
     } catch (error) {
-      handleUniqueTag(error);
+      handleUniqueTag(error, dto.name);
     }
   }
 
@@ -141,6 +143,25 @@ export class TagsController {
     return tag;
   }
 
+  private async assertTagNameAvailable(name: string, tenantId: string, ignoreId?: string) {
+    const cleanName = clean(name);
+    const duplicate = await this.prisma.tag.findFirst({
+      where: {
+        tenantId,
+        archivedAt: null,
+        normalizedName: normalizeName(cleanName),
+        ...(ignoreId ? { id: { not: ignoreId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (duplicate) {
+      throw new ConflictException({
+        code: "TAG_ALREADY_EXISTS",
+        message: `Etiqueta "${cleanName}" já existente.`,
+      });
+    }
+  }
+
   private async findContactOrThrow(id: string, tenantId: string) {
     const contact = await this.prisma.contact.findFirst({
       where: { id, tenantId, archivedAt: null },
@@ -174,11 +195,12 @@ function serializeTag(tag: { id: string; name: string; color: string }) {
   return { id: tag.id, nome: tag.name, cor: tag.color };
 }
 
-function handleUniqueTag(error: unknown): never {
+function handleUniqueTag(error: unknown, name?: string): never {
   if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
+    const cleanName = name ? clean(name) : "informada";
     throw new ConflictException({
       code: "TAG_ALREADY_EXISTS",
-      message: "Já existe uma etiqueta com este nome.",
+      message: `Etiqueta "${cleanName}" já existente.`,
     });
   }
   throw error;

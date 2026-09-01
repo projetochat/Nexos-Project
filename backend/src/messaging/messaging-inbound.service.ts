@@ -79,8 +79,23 @@ export class MessagingInboundService {
               instance: connection.externalReference ?? existingContact.instance,
             },
           })
-        : await tx.contact.create({
-            data: {
+        : await tx.contact.upsert({
+            where: {
+              tenantId_normalizedPhone: {
+                tenantId: event.tenantId,
+                normalizedPhone: canonicalPhone,
+              },
+            },
+            update: {
+              name: isGroup
+                ? (groupDisplayName ?? "Grupo WhatsApp")
+                : (event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone),
+              phone: isGroup ? event.externalChatId : event.sender.phone,
+              departmentId: defaultDepartmentId,
+              instance: connection.externalReference,
+              archivedAt: null,
+            },
+            create: {
               tenantId: event.tenantId,
               name: isGroup
                 ? (groupDisplayName ?? "Grupo WhatsApp")
@@ -248,12 +263,26 @@ export class MessagingInboundService {
         duplicate: false,
         contactId: contact.id,
         conversationId: conversation.id,
+        providerInstanceName: event.metadata?.providerInstanceName ?? connection.externalReference,
         createdConversation,
         leadId: lead?.id ?? null,
         notifications,
         unreadCount: updatedConversation.unreadCount,
       };
     });
+
+    const profilePictureUpdated = await this.syncContactProfilePicture(event, result).catch(
+      (error) => {
+        this.logger.warn({
+          event: "messaging.contact.profile_picture_sync_failed",
+          tenantId: event.tenantId,
+          connectionId: event.connectionId,
+          externalChatId: event.externalChatId,
+          error: error instanceof Error ? error.message : "profile picture sync failed",
+        });
+        return false;
+      },
+    );
 
     this.logger.log({
       event: "messaging.inbound.processed",
@@ -281,8 +310,19 @@ export class MessagingInboundService {
       this.realtime?.publishConversationUpdated({
         tenantId: event.tenantId,
         conversationId: result.message.conversationId,
-        reason: result.createdConversation ? "inbound.created" : "inbound.updated",
+        reason: result.createdConversation
+          ? "inbound.created"
+          : profilePictureUpdated
+            ? "contact.profile_picture.updated"
+            : "inbound.updated",
       });
+      if (profilePictureUpdated && result.contactId) {
+        this.realtime?.publishContactUpdated({
+          tenantId: event.tenantId,
+          contactId: result.contactId,
+          contact: { id: result.contactId },
+        });
+      }
       if (result.leadId) {
         this.realtime?.publishLeadCreated({
           tenantId: event.tenantId,
@@ -306,6 +346,57 @@ export class MessagingInboundService {
       });
     }
     return result;
+  }
+
+  private async syncContactProfilePicture(
+    event: InboundMessageEvent,
+    result: {
+      duplicate: boolean;
+      contactId?: string | null;
+      providerInstanceName?: string | null;
+    },
+  ) {
+    if (result.duplicate || event.conversationType === "GROUP") return false;
+    if (!result.contactId || !result.providerInstanceName) return false;
+    const avatarUrl =
+      event.metadata?.profilePictureUrl ??
+      (typeof this.evolution?.fetchProfilePictureUrl === "function"
+        ? await this.fetchProfilePictureUrl(result.providerInstanceName, event)
+        : null);
+    if (!avatarUrl) return false;
+
+    const updated = await this.prisma.contact.updateMany({
+      where: {
+        tenantId: event.tenantId,
+        id: result.contactId,
+        OR: [{ avatarUrl: null }, { avatarUrl: { not: avatarUrl } }],
+      },
+      data: { avatarUrl },
+    });
+    return updated.count > 0;
+  }
+
+  private async fetchProfilePictureUrl(instanceName: string, event: InboundMessageEvent) {
+    const candidates = profilePictureLookupCandidates(event);
+    for (const number of candidates) {
+      try {
+        const avatarUrl = await this.evolution?.fetchProfilePictureUrl({
+          instanceName,
+          number,
+        });
+        if (avatarUrl) return avatarUrl;
+      } catch (error) {
+        this.logger.debug({
+          event: "messaging.contact.profile_picture_lookup_failed",
+          tenantId: event.tenantId,
+          connectionId: event.connectionId,
+          externalChatId: event.externalChatId,
+          lookup: maskProfilePictureLookup(number),
+          error: error instanceof Error ? error.message : "profile picture lookup failed",
+        });
+      }
+    }
+    return null;
   }
 
   async processEdit(event: MessageEditEvent) {
@@ -577,6 +668,27 @@ function resolveInboundMediaState(
 
 function uniqueNormalizedPhones(values: Array<string | null | undefined>) {
   return [...new Set(values.filter((value): value is string => !!value))];
+}
+
+function profilePictureLookupCandidates(event: InboundMessageEvent) {
+  const rawValues = [
+    event.metadata?.remoteJid,
+    event.externalChatId,
+    event.sender.phone,
+    event.sender.normalizedPhone,
+  ];
+  const values = rawValues.flatMap((value) => {
+    if (!value) return [];
+    const beforeDomain = value.split("@")[0] ?? value;
+    const digits = beforeDomain.replace(/\D/g, "");
+    return [value, digits].filter((item) => item && !item.includes("@g.us"));
+  });
+  return [...new Set(values)];
+}
+
+function maskProfilePictureLookup(value: string) {
+  if (value.includes("@")) return value.replace(/^(\d{4})\d+(@.+)$/, "$1***$2");
+  return value.replace(/^(\d{4})\d+(\d{2})$/, "$1***$2");
 }
 
 function mediaPreview(type: InboundMessageEvent["type"]) {

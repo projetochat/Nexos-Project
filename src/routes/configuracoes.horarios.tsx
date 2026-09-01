@@ -26,13 +26,13 @@ function HorariosSettings() {
         {DAYS.map(([day, start, end, active]) => (
           <div
             key={day}
-            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border bg-surface-1 p-3 md:grid-cols-[160px_1fr_auto]"
+            className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border bg-surface-1 p-3 md:grid-cols-[160px_1fr_auto]"
           >
             <span className="truncate text-sm font-medium">{day}</span>
-            <div className="col-span-2 flex items-center gap-2 md:col-span-1">
-              <Input defaultValue={start} className="w-24" disabled={!active} />
+            <div className="col-span-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 md:col-span-1 md:flex">
+              <Input defaultValue={start} className="w-full md:w-24" disabled={!active} />
               <span className="text-xs text-muted-foreground">até</span>
-              <Input defaultValue={end} className="w-24" disabled={!active} />
+              <Input defaultValue={end} className="w-full md:w-24" disabled={!active} />
             </div>
             <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
               <input type="checkbox" defaultChecked={active} className="h-3.5 w-3.5" />
@@ -41,7 +41,7 @@ function HorariosSettings() {
           </div>
         ))}
       </div>
-      <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
+      <div className="mt-6 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
         <Button variant="ghost">Cancelar</Button>
         <Button variant="primary">Salvar</Button>
       </div>

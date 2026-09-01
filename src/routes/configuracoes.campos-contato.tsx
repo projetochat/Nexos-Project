@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowDown, ArrowUp, Copy, Pencil, Plus, Trash2 } from "lucide-react";
+import { Copy, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
 import {
@@ -68,6 +68,8 @@ function ContactFieldsSettings() {
   const [requiredFilter, setRequiredFilter] = React.useState("");
   const [tabFilter, setTabFilter] = React.useState("");
   const [groupFilter, setGroupFilter] = React.useState("");
+  const [draggingFieldId, setDraggingFieldId] = React.useState<string | null>(null);
+  const [dragOverFieldId, setDragOverFieldId] = React.useState<string | null>(null);
   const create = useDisclosure();
 
   const load = React.useCallback(async () => {
@@ -102,6 +104,21 @@ function ContactFieldsSettings() {
               .filter(Boolean)
           : [],
     };
+    const duplicate = fields.find(
+      (field) =>
+        field.id !== editing?.id &&
+        normalizeFieldName(field.label) === normalizeFieldName(payload.label),
+    );
+    if (duplicate) {
+      toast.error("Falha ao salvar campo", {
+        description: (
+          <span>
+            Campo Adicional "<strong>{payload.label}</strong>" já existente.
+          </span>
+        ),
+      });
+      return;
+    }
     try {
       if (editing) {
         await crmApi.updateContactCustomField(editing.id, payload);
@@ -118,9 +135,14 @@ function ContactFieldsSettings() {
     }
   };
 
+  const orderedFields = React.useMemo(
+    () => [...fields].sort((a, b) => a.position - b.position || a.label.localeCompare(b.label)),
+    [fields],
+  );
+
   const filteredFields = React.useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return fields.filter((field) => {
+    return orderedFields.filter((field) => {
       const tabName = displayFieldTab(field);
       const groupName = displayFieldGroup(field);
       const matchesQuery =
@@ -134,7 +156,7 @@ function ContactFieldsSettings() {
       const matchesGroup = !groupFilter || groupName === groupFilter;
       return matchesQuery && matchesType && matchesRequired && matchesTab && matchesGroup;
     });
-  }, [fields, groupFilter, query, requiredFilter, tabFilter, typeFilter]);
+  }, [groupFilter, orderedFields, query, requiredFilter, tabFilter, typeFilter]);
 
   const tabOptions = React.useMemo(
     () => uniqueLabels(fields.map(displayFieldTab).filter(Boolean)),
@@ -145,26 +167,28 @@ function ContactFieldsSettings() {
     [fields],
   );
 
-  const moveField = async (field: ApiContactCustomField, direction: -1 | 1) => {
-    const ordered = [...fields].sort(
-      (a, b) => a.position - b.position || a.label.localeCompare(b.label),
-    );
-    const index = ordered.findIndex((item) => item.id === field.id);
-    const nextIndex = index + direction;
-    if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) return;
-    const reordered = [...ordered];
-    [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
+  const reorderField = async (draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return;
+    const sourceIndex = orderedFields.findIndex((field) => field.id === draggedId);
+    if (sourceIndex < 0 || !orderedFields.some((field) => field.id === targetId)) return;
+    const previous = fields;
+    const reordered = [...orderedFields];
+    const [dragged] = reordered.splice(sourceIndex, 1);
+    const nextTargetIndex = reordered.findIndex((field) => field.id === targetId);
+    reordered.splice(nextTargetIndex, 0, dragged);
+    setFields(reordered.map((field, position) => ({ ...field, position })));
     try {
       const updated = await crmApi.reorderContactCustomFields(reordered.map((item) => item.id));
       setFields(updated);
       toast.success("Ordem atualizada");
     } catch (error) {
+      setFields(previous);
       toast.error("Falha ao ordenar campos", { description: (error as Error).message });
     }
   };
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <SectionHeader
         title="Campos Adicionais"
         subtitle="Defina campos que aparecem no cadastro e edição de contatos."
@@ -174,9 +198,9 @@ function ContactFieldsSettings() {
           </Button>
         }
       />
-      <div className="mb-4 rounded-lg border border-border bg-surface-1 p-4">
-        <div className="grid gap-3 md:grid-cols-5">
-          <div className="md:col-span-2">
+      <div className="mb-4 rounded-lg border border-border bg-card p-4">
+        <div className="grid gap-3 lg:grid-cols-[minmax(12rem,1.25fr)_minmax(9rem,0.8fr)_minmax(8rem,0.65fr)_minmax(9rem,0.8fr)_minmax(9rem,0.8fr)]">
+          <div>
             <Field label="Busca">
               <SearchInput
                 value={query}
@@ -201,8 +225,8 @@ function ContactFieldsSettings() {
               onChange={(event) => setRequiredFilter(event.target.value)}
             >
               <option value="">Todos</option>
-              <option value="yes">S</option>
-              <option value="no">N</option>
+              <option value="yes">Sim</option>
+              <option value="no">Não</option>
             </Select>
           </Field>
           <Field label="Aba">
@@ -220,23 +244,129 @@ function ContactFieldsSettings() {
               <option value="">Todos</option>
               {groupOptions.map((group) => (
                 <option key={group} value={group}>
-                  {group}
+                  {group === "-" ? "Nenhum" : group}
                 </option>
               ))}
             </Select>
           </Field>
         </div>
       </div>
-      <div className="mt-4 overflow-x-auto rounded-lg border border-border">
+      <div className="mt-4 space-y-3 md:hidden">
+        {loading && (
+          <div className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+            Carregando...
+          </div>
+        )}
+        {!loading &&
+          filteredFields.map((field) => (
+            <div
+              key={field.id}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", field.id);
+                setDraggingFieldId(field.id);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                setDragOverFieldId(field.id);
+              }}
+              onDragLeave={() =>
+                setDragOverFieldId((current) => (current === field.id ? null : current))
+              }
+              onDrop={(event) => {
+                event.preventDefault();
+                const draggedId = event.dataTransfer.getData("text/plain") || draggingFieldId;
+                setDragOverFieldId(null);
+                setDraggingFieldId(null);
+                if (draggedId) void reorderField(draggedId, field.id);
+              }}
+              onDragEnd={() => {
+                setDraggingFieldId(null);
+                setDragOverFieldId(null);
+              }}
+              className={`rounded-lg border border-border bg-card p-3 transition ${
+                draggingFieldId === field.id ? "opacity-50" : ""
+              } ${dragOverFieldId === field.id ? "border-primary bg-primary/5" : ""}`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex cursor-grab items-center gap-1.5 pt-1 text-muted-foreground active:cursor-grabbing">
+                  <GripVertical className="h-4 w-4" />
+                  <span className="font-mono text-xs">{field.position + 1}</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{field.label}</p>
+                  <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                    <div>
+                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
+                        Tipo
+                      </span>
+                      <span className="text-foreground">{fieldTypeLabel(field)}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
+                        Obrigatório
+                      </span>
+                      <span className="text-foreground">{field.required ? "Sim" : "Não"}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
+                        Aba
+                      </span>
+                      <span className="text-foreground">{displayFieldTab(field)}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
+                        Agrupamento
+                      </span>
+                      <span className="text-foreground">
+                        {displayFieldGroup(field) === "-" ? "Nenhum" : displayFieldGroup(field)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 flex justify-end gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="duplicate-action-button"
+                  title="Duplicar"
+                  onClick={() => setDuplicating(field)}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="ghost" size="sm" title="Editar" onClick={() => setEditing(field)}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Excluir"
+                  onClick={() => setDeleting(field)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        {!loading && filteredFields.length === 0 && (
+          <div className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+            Nenhum campo adicional cadastrado.
+          </div>
+        )}
+      </div>
+      <div className="mt-4 hidden overflow-x-auto rounded-lg border border-border md:block">
         <table className="w-full min-w-[58rem] table-fixed text-sm">
           <thead className="bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
             <tr>
               <th className="w-24 px-4 py-3">Posição</th>
               <th className="w-[24%] px-4 py-3">Campo</th>
               <th className="w-32 px-4 py-3">Tipo</th>
-              <th className="w-28 px-4 py-3">Obrigatório</th>
+              <th className="w-36 px-4 py-3">Obrigatório</th>
               <th className="w-36 px-4 py-3">Aba</th>
-              <th className="w-44 px-4 py-3">Agrupamento</th>
+              <th className="w-36 px-4 py-3">Agrupamento</th>
               <th className="w-40 px-4 py-3 text-center">Ações</th>
             </tr>
           </thead>
@@ -250,26 +380,41 @@ function ContactFieldsSettings() {
             )}
             {!loading &&
               filteredFields.map((field) => (
-                <tr key={field.id} className="hover:bg-surface-1">
+                <tr
+                  key={field.id}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", field.id);
+                    setDraggingFieldId(field.id);
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDragOverFieldId(field.id);
+                  }}
+                  onDragLeave={() =>
+                    setDragOverFieldId((current) => (current === field.id ? null : current))
+                  }
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const draggedId = event.dataTransfer.getData("text/plain") || draggingFieldId;
+                    setDragOverFieldId(null);
+                    setDraggingFieldId(null);
+                    if (draggedId) void reorderField(draggedId, field.id);
+                  }}
+                  onDragEnd={() => {
+                    setDraggingFieldId(null);
+                    setDragOverFieldId(null);
+                  }}
+                  className={`transition hover:bg-surface-1 ${
+                    draggingFieldId === field.id ? "opacity-50" : ""
+                  } ${dragOverFieldId === field.id ? "bg-primary/5" : ""}`}
+                >
                   <td className="px-4 py-3 text-muted-foreground">
-                    <div className="flex items-center gap-1">
+                    <div className="flex cursor-grab items-center gap-2 active:cursor-grabbing">
+                      <GripVertical className="h-4 w-4 text-muted-foreground" />
                       <span className="w-8 font-mono">{field.position + 1}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Subir"
-                        onClick={() => void moveField(field, -1)}
-                      >
-                        <ArrowUp className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Descer"
-                        onClick={() => void moveField(field, 1)}
-                      >
-                        <ArrowDown className="h-3.5 w-3.5" />
-                      </Button>
                     </div>
                   </td>
                   <td className="px-4 py-3 font-medium">{field.label}</td>
@@ -284,6 +429,7 @@ function ContactFieldsSettings() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="duplicate-action-button"
                         title="Duplicar"
                         onClick={() => setDuplicating(field)}
                       >
@@ -475,9 +621,10 @@ function ContactFieldFormModal({
               onChange={(event) =>
                 setForm({ ...form, dateVariant: event.target.value as DateVariant })
               }
+              className="w-full whitespace-nowrap sm:min-w-56"
             >
-              <option value="date">Data: 28/08/2026</option>
-              <option value="datetime">Data/Hora: 28/08/2026 10:08</option>
+              <option value="date">Data: 01/01/2026</option>
+              <option value="datetime">Data/Hora: 01/01/2026 10:06</option>
             </Select>
           </Field>
         )}
@@ -651,6 +798,10 @@ function displayFieldGroup(field: ApiContactCustomField) {
 
 function uniqueLabels(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function normalizeFieldName(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function clampInteger(value: string | number, min: number, max: number) {

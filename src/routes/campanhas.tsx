@@ -1,17 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Copy,
-  Eye,
-  Megaphone,
-  Pause,
-  Play,
-  Plus,
-  RefreshCw,
-  Square,
-  Trash2,
-} from "lucide-react";
+import { Copy, Eye, Megaphone, Pause, Play, Plus, RefreshCw, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -447,7 +437,12 @@ function CampaignDetail({
             <Square className="h-3.5 w-3.5" /> Cancelar
           </Button>
         )}
-        <Button size="sm" variant="outline" onClick={() => onAction("duplicate", campaign)}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="duplicate-action-button"
+          onClick={() => onAction("duplicate", campaign)}
+        >
           <Copy className="h-3.5 w-3.5" /> Duplicar
         </Button>
         {canArchive && (

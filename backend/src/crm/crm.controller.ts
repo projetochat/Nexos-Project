@@ -33,6 +33,7 @@ import { ContactCompanyRole, ContactCustomFieldType, Prisma } from "../generated
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
+import { ContactProfilePictureSyncService } from "../messaging/contact-profile-picture-sync.service";
 import { CreateContactDto } from "./dto/create-contact.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
 import { ListContactsQueryDto } from "./dto/list-contacts-query.dto";
@@ -177,6 +178,8 @@ export class CrmController {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RealtimePublisher) private readonly realtime: RealtimePublisher,
     @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
+    @Inject(ContactProfilePictureSyncService)
+    private readonly profilePictures: ContactProfilePictureSyncService,
   ) {}
 
   @Get("customers")
@@ -228,6 +231,7 @@ export class CrmController {
   @Post("customers")
   @RequirePermissions("crm.manage")
   async createCustomer(@Body() dto: CreateCustomerDto, @CurrentUser() current: AuthenticatedUser) {
+    await this.assertCustomerNameAvailable(dto.name, current.tenantId);
     const customer = await this.prisma.customer.create({
       data: {
         tenantId: current.tenantId,
@@ -251,6 +255,7 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.findCustomerOrThrow(id, current.tenantId);
+    if (dto.name) await this.assertCustomerNameAvailable(dto.name, current.tenantId, id);
     const customer = await this.prisma.customer.update({
       where: { id },
       data: {
@@ -289,11 +294,20 @@ export class CrmController {
   async listCustomerContacts(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     await this.findCustomerOrThrow(id, current.tenantId);
     const contacts = await this.prisma.contact.findMany({
-      where: { tenantId: current.tenantId, customerId: id, archivedAt: null },
+      where: {
+        tenantId: current.tenantId,
+        customerId: id,
+        archivedAt: null,
+        NOT: { normalizedPhone: { startsWith: "group:" } },
+      },
       orderBy: [{ name: "asc" }],
       include: contactInclude,
     });
-    return contacts.map((contact) => this.serializeContact(contact));
+    const syncedAvatars = await this.profilePictures.syncMissing({
+      tenantId: current.tenantId,
+      contacts,
+    });
+    return contacts.map((contact) => this.serializeContact(contact, undefined, syncedAvatars));
   }
 
   @Get("contacts")
@@ -311,6 +325,7 @@ export class CrmController {
     const where: Prisma.ContactWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,
+      NOT: { normalizedPhone: { startsWith: "group:" } },
       ...(query.linked === "linked" ? { customerId: { not: null } } : {}),
       ...(query.linked === "unlinked" ? { customerId: null } : {}),
       ...(query.customerId ? { customerId: query.customerId } : {}),
@@ -364,8 +379,13 @@ export class CrmController {
       this.prisma.contact.count({ where }),
     ]);
 
+    const syncedAvatars = await this.profilePictures.syncMissing({
+      tenantId: current.tenantId,
+      contacts: items,
+    });
+
     return paginated(
-      items.map((contact) => this.serializeContact(contact)),
+      items.map((contact) => this.serializeContact(contact, undefined, syncedAvatars)),
       total,
       page,
       pageSize,
@@ -438,6 +458,7 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const data = this.prepareContactCustomField(dto);
+    await this.assertContactCustomFieldNameAvailable(data.label!, current.tenantId);
     await this.prisma.contactCustomField.updateMany({
       where: {
         tenantId: current.tenantId,
@@ -505,6 +526,8 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.findContactCustomFieldOrThrow(id, current.tenantId);
+    if (dto.label)
+      await this.assertContactCustomFieldNameAvailable(dto.label, current.tenantId, id);
     const field = await this.prisma.contactCustomField.update({
       where: { id },
       data: this.prepareContactCustomField(dto, true),
@@ -620,6 +643,7 @@ export class CrmController {
   ) {
     const name = dto.name?.trim();
     if (!name) throw new BadRequestException("Informe o nome.");
+    await this.assertContactCatalogNameAvailable("department", name, current.tenantId);
     const item = await this.prisma.contactDepartment.create({
       data: {
         tenantId: current.tenantId,
@@ -640,6 +664,8 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.assertContactCatalog("department", id, current.tenantId);
+    if (dto.name)
+      await this.assertContactCatalogNameAvailable("department", dto.name, current.tenantId, id);
     const item = await this.prisma.contactDepartment.update({
       where: { id },
       data: {
@@ -688,6 +714,7 @@ export class CrmController {
   ) {
     const name = dto.name?.trim();
     if (!name) throw new BadRequestException("Informe o nome.");
+    await this.assertContactCatalogNameAvailable("profile", name, current.tenantId);
     const item = await this.prisma.contactProfile.create({
       data: {
         tenantId: current.tenantId,
@@ -708,6 +735,8 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.assertContactCatalog("profile", id, current.tenantId);
+    if (dto.name)
+      await this.assertContactCatalogNameAvailable("profile", dto.name, current.tenantId, id);
     const item = await this.prisma.contactProfile.update({
       where: { id },
       data: {
@@ -980,6 +1009,25 @@ export class CrmController {
     return customer;
   }
 
+  private async assertCustomerNameAvailable(name: string, tenantId: string, ignoreId?: string) {
+    const cleanName = name.trim().replace(/\s+/g, " ");
+    const duplicate = await this.prisma.customer.findFirst({
+      where: {
+        tenantId,
+        archivedAt: null,
+        name: { equals: cleanName, mode: "insensitive" },
+        ...(ignoreId ? { id: { not: ignoreId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (duplicate) {
+      throw new ConflictException({
+        code: "CUSTOMER_ALREADY_EXISTS",
+        message: `Empresa do Contato "${cleanName}" já existente.`,
+      });
+    }
+  }
+
   private async findContactOrThrow(id: string, tenantId: string) {
     const contact = await this.prisma.contact.findFirst({
       where: { id, tenantId, archivedAt: null },
@@ -1101,6 +1149,71 @@ export class CrmController {
             where: { id, tenantId, archivedAt: null },
           });
     if (!item) throw new NotFoundException("Item nao encontrado.");
+  }
+
+  private async assertContactCatalogNameAvailable(
+    kind: "department" | "profile",
+    name: string,
+    tenantId: string,
+    ignoreId?: string,
+  ) {
+    const cleanName = name.trim().replace(/\s+/g, " ");
+    const normalizedName = normalizeCatalogName(cleanName);
+    const duplicate =
+      kind === "department"
+        ? await this.prisma.contactDepartment.findFirst({
+            where: {
+              tenantId,
+              archivedAt: null,
+              normalizedName,
+              ...(ignoreId ? { id: { not: ignoreId } } : {}),
+            },
+            select: { id: true },
+          })
+        : await this.prisma.contactProfile.findFirst({
+            where: {
+              tenantId,
+              archivedAt: null,
+              normalizedName,
+              ...(ignoreId ? { id: { not: ignoreId } } : {}),
+            },
+            select: { id: true },
+          });
+    if (duplicate) {
+      throw new ConflictException({
+        code:
+          kind === "department"
+            ? "CONTACT_DEPARTMENT_ALREADY_EXISTS"
+            : "CONTACT_PROFILE_ALREADY_EXISTS",
+        message:
+          kind === "department"
+            ? `Departamento do Contato "${cleanName}" já existente.`
+            : `Perfil do Contato "${cleanName}" já existente.`,
+      });
+    }
+  }
+
+  private async assertContactCustomFieldNameAvailable(
+    label: string,
+    tenantId: string,
+    ignoreId?: string,
+  ) {
+    const cleanLabel = label.trim().replace(/\s+/g, " ");
+    const duplicate = await this.prisma.contactCustomField.findFirst({
+      where: {
+        tenantId,
+        archivedAt: null,
+        normalizedName: normalizeCatalogName(cleanLabel),
+        ...(ignoreId ? { id: { not: ignoreId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (duplicate) {
+      throw new ConflictException({
+        code: "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS",
+        message: `Campo Adicional "${cleanLabel}" já existente.`,
+      });
+    }
   }
 
   private prepareContactCustomField(dto: ContactCustomFieldDto, partial = false) {
@@ -1283,6 +1396,7 @@ export class CrmController {
   private serializeContact(
     contact: Prisma.ContactGetPayload<{ include: typeof contactInclude }>,
     meta?: { lifecycle?: "created" | "restored" },
+    syncedAvatars = new Map<string, string>(),
   ) {
     const instanceIds = contact.instanceIds.length
       ? contact.instanceIds
@@ -1295,7 +1409,7 @@ export class CrmController {
       nome: contact.name,
       telefone: contact.phone,
       normalizedPhone: contact.normalizedPhone,
-      avatar_url: contact.avatarUrl,
+      avatar_url: syncedAvatars.get(contact.id) ?? contact.avatarUrl,
       customer_id: contact.customerId,
       email: contact.email,
       departamento: contact.departmentName,

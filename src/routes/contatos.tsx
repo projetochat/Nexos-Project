@@ -8,7 +8,6 @@ import {
   AlignRight,
   Building2,
   Bold,
-  Camera,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -23,7 +22,7 @@ import {
   ListIndentDecrease,
   ListIndentIncrease,
   ListOrdered,
-  MessageCircle,
+  MessageSquareMore,
   Network,
   Plug,
   Info,
@@ -72,6 +71,8 @@ export const Route = createFileRoute("/contatos")({ component: ContatosPage });
 
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000, 10000] as const;
+const CUSTOMER_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+const DEFAULT_CUSTOMER_PAGE_SIZE = 10;
 const COUNTRY_CODES = [
   { code: "55", country: "Brasil", flag: "🇧🇷" },
   { code: "1", country: "Estados Unidos", flag: "🇺🇸" },
@@ -82,6 +83,15 @@ const COUNTRY_CODES = [
   { code: "52", country: "México", flag: "🇲🇽" },
   { code: "34", country: "Espanha", flag: "🇪🇸" },
 ];
+const PHONE_MASK_GROUPS: Record<string, number[]> = {
+  "1": [3, 3, 4],
+  "34": [3, 3, 3],
+  "351": [3, 3, 3],
+  "52": [2, 4, 4],
+  "54": [2, 4, 4],
+  "56": [1, 4, 4],
+  "57": [3, 3, 4],
+};
 
 type Customer = ApiCustomer;
 type Contact = ApiContact;
@@ -251,6 +261,13 @@ function ContatosPage() {
   const pageSafe = Math.min(page, totalPages);
   const allVisibleSelected =
     contacts.length > 0 && contacts.every((contact) => selectedIds.includes(contact.id));
+  const exportableSelectedCount = React.useMemo(
+    () =>
+      contacts.filter((contact) => selectedIds.includes(contact.id) && isExportableContact(contact))
+        .length,
+    [contacts, selectedIds],
+  );
+  const exportableContactCount = exportAllRecords ? total : exportableSelectedCount;
   const toggleVisibleSelection = () =>
     setSelectedIds(allVisibleSelected ? [] : contacts.map((contact) => contact.id));
 
@@ -291,14 +308,21 @@ function ContatosPage() {
     }
   };
 
-  const exportContacts = async (format: "csv" | "xls" = "csv") => {
+  const exportContacts = async (format: "csv" | "xlsx" = "csv") => {
     if (!exportAllRecords && selectedIds.length === 0) {
       toast.error("Selecione algum registro p/ prosseguir com a exportação");
       return;
     }
-    const rows = exportAllRecords
+    const sourceRows = exportAllRecords
       ? await loadContactsForExport()
       : contacts.filter((contact) => selectedIds.includes(contact.id));
+    const rows = sourceRows.filter(isExportableContact);
+    if (rows.length === 0) {
+      toast.error("Nenhum contato válido para exportar", {
+        description: "Grupos não entram na exportação de contatos.",
+      });
+      return;
+    }
     const rowsForExport = [
       [
         "Contato",
@@ -321,12 +345,18 @@ function ContatosPage() {
         contact.tags.map((tag) => tag.nome).join(", "),
       ]),
     ];
-    const csv = toCsv(rowsForExport);
-    downloadTextFile(
-      `contatos-${new Date().toISOString().slice(0, 10)}.${format}`,
-      format === "xls" ? toExcelHtml(rowsForExport) : csv,
-      format === "xls" ? "application/vnd.ms-excel;charset=utf-8" : "text/csv;charset=utf-8",
-    );
+    const filename = `contatos-${new Date().toISOString().slice(0, 10)}.${format}`;
+    if (format === "xlsx") {
+      const worksheet = XLSX.utils.aoa_to_sheet(rowsForExport);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Contatos");
+      XLSX.writeFile(workbook, filename);
+    } else {
+      downloadTextFile(filename, toCsv(rowsForExport), "text/csv;charset=utf-8");
+    }
+    toast.success("Exportação gerada", {
+      description: `${rows.length} contato(s) exportado(s).`,
+    });
     exportMenu.hide();
   };
 
@@ -364,6 +394,91 @@ function ContatosPage() {
     importModal.show();
   };
 
+  const ensureImportCatalogs = async (records: string[][], index: Map<string, number>) => {
+    const [customerResponse, options] = await Promise.all([
+      crmApi.listCustomers({ pageSize: 10000 }),
+      crmApi.contactOptions(),
+    ]);
+    const importedCustomers = [...customerResponse.items];
+    const importedDepartments = [...options.departments];
+    const importedProfiles = [...options.profiles];
+    const importedTags = [...options.tags];
+
+    const ensureCustomer = async (name: string) => {
+      const cleanName = cleanImportName(name);
+      if (!cleanName || findByImportedName(importedCustomers, cleanName)) return;
+      try {
+        importedCustomers.push(await crmApi.createCustomer({ name: cleanName }));
+      } catch {
+        const refreshed = await crmApi.listCustomers({ pageSize: 10000 });
+        const existing = findByImportedName(refreshed.items, cleanName);
+        if (existing) importedCustomers.push(existing);
+      }
+    };
+
+    const ensureDepartment = async (name: string) => {
+      const cleanName = cleanImportName(name);
+      if (!cleanName || findByImportedName(importedDepartments, cleanName)) return;
+      try {
+        importedDepartments.push(await crmApi.createContactDepartment({ name: cleanName }));
+      } catch {
+        const refreshed = await crmApi.listContactDepartments();
+        const existing = findByImportedName(refreshed, cleanName);
+        if (existing) importedDepartments.push(existing);
+      }
+    };
+
+    const ensureProfile = async (name: string) => {
+      const cleanName = cleanImportName(name);
+      if (!cleanName || findByImportedName(importedProfiles, cleanName)) return;
+      try {
+        importedProfiles.push(await crmApi.createContactProfile({ name: cleanName }));
+      } catch {
+        const refreshed = await crmApi.listContactProfiles();
+        const existing = findByImportedName(refreshed, cleanName);
+        if (existing) importedProfiles.push(existing);
+      }
+    };
+
+    const ensureTag = async (name: string) => {
+      const cleanName = cleanImportName(name);
+      if (!cleanName || findByImportedName(importedTags, cleanName)) return;
+      try {
+        importedTags.push(await crmApi.createTag({ name: cleanName }));
+      } catch {
+        const refreshed = await crmApi.listTags();
+        const existing = findByImportedName(refreshed, cleanName);
+        if (existing) importedTags.push(existing);
+      }
+    };
+
+    const customerNames = uniqueLabels(records.map((row) => valueAt(row, index, ["empresa"])));
+    const departmentNames = uniqueLabels(
+      records.map((row) => valueAt(row, index, ["departamento"])),
+    );
+    const profileNames = uniqueLabels(records.map((row) => valueAt(row, index, ["perfil"])));
+    const tagNames = uniqueLabels(
+      records.flatMap((row) => splitImportList(valueAt(row, index, ["etiquetas"]))),
+    );
+
+    for (const name of customerNames) await ensureCustomer(name);
+    for (const name of departmentNames) await ensureDepartment(name);
+    for (const name of profileNames) await ensureProfile(name);
+    for (const name of tagNames) await ensureTag(name);
+
+    setCustomers(importedCustomers);
+    setDepartments(importedDepartments);
+    setProfiles(importedProfiles);
+    setTags(importedTags);
+
+    return {
+      customers: importedCustomers,
+      departments: importedDepartments,
+      profiles: importedProfiles,
+      tags: importedTags,
+    };
+  };
+
   const importContactsRows = async (rows: string[][], source: ImportSource = "excel") => {
     const [header, ...records] = rows;
     if (!header?.length) return;
@@ -382,6 +497,15 @@ function ContatosPage() {
     });
     if (!validRecords.length) {
       toast.error("Nenhum contato válido encontrado.");
+      return;
+    }
+    let importCatalogs: Awaited<ReturnType<typeof ensureImportCatalogs>>;
+    try {
+      importCatalogs = await ensureImportCatalogs(validRecords, index);
+    } catch (error) {
+      toast.error("Falha ao preparar cadastros da importação", {
+        description: (error as Error).message,
+      });
       return;
     }
     cancelImportRef.current = false;
@@ -415,11 +539,11 @@ function ContatosPage() {
       const profileName = valueAt(row, index, ["perfil"]);
       const tagNames = splitImportList(valueAt(row, index, ["etiquetas"]));
       const instanceNames = splitImportList(valueAt(row, index, ["instancias", "instâncias"]));
-      const customer = findByImportedName(customers, customerName);
-      const department = findByImportedName(departments, departmentName);
-      const profile = findByImportedName(profiles, profileName);
+      const customer = findByImportedName(importCatalogs.customers, customerName);
+      const department = findByImportedName(importCatalogs.departments, departmentName);
+      const profile = findByImportedName(importCatalogs.profiles, profileName);
       const importedTags = tagNames
-        .map((item) => findByImportedName(tags, item))
+        .map((item) => findByImportedName(importCatalogs.tags, item))
         .filter(Boolean) as Tag[];
       const importedInstances = instanceNames
         .map((item) => findImportedInstance(instances, item))
@@ -455,11 +579,11 @@ function ContatosPage() {
         imported: created,
         status: "completed",
       }));
-      toast.success("Importação concluída", { description: `${created} contatos importados.` });
     } else {
-      toast.error("Importação cancelada", {
-        description: `${created} contato(s) importado(s) antes do cancelamento.`,
-      });
+      setImportProgress((current) => ({
+        ...current,
+        imported: created,
+      }));
     }
     await load();
   };
@@ -566,7 +690,7 @@ function ContatosPage() {
                       className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
                       onClick={() => void importFromAgenda()}
                     >
-                      <Phone className="h-4 w-4" /> Importar via Agenda
+                      <Phone className="h-4 w-4" /> Importar Agenda Telefônica
                     </button>
                     <button
                       type="button"
@@ -575,12 +699,22 @@ function ContatosPage() {
                     >
                       <FileSpreadsheet className="h-4 w-4" /> Importar via Excel/CSV
                     </button>
+                    <div className="mt-1 border-t border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+                      {exportableContactCount} contato(s) para exportar
+                    </div>
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
                       onClick={() => void exportContacts("csv")}
                     >
-                      <Download className="h-4 w-4" /> Exportar
+                      <Download className="h-4 w-4" /> Exportar CSV
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
+                      onClick={() => void exportContacts("xlsx")}
+                    >
+                      <FileSpreadsheet className="h-4 w-4" /> Exportar XLSX
                     </button>
                     <label className="mt-1 flex cursor-pointer items-center gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground">
                       <input
@@ -970,6 +1104,7 @@ function ContatosPage() {
                         }
                         aria-label={`Selecionar ${contact.nome}`}
                       />
+                      <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={32} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold">{contact.nome}</p>
                         <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
@@ -981,16 +1116,14 @@ function ContatosPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="border-transparent bg-transparent hover:bg-transparent"
                         title="Abrir conversa"
                         onClick={() => void openConversation(contact)}
                       >
-                        <MessageCircle className="h-3.5 w-3.5" />
+                        <MessageSquareMore className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="border-transparent bg-transparent hover:bg-transparent"
                         title="Editar"
                         onClick={() => setEditing(contact)}
                       >
@@ -999,11 +1132,11 @@ function ContatosPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="border-transparent bg-transparent text-destructive hover:bg-transparent hover:text-destructive/80"
+                        className="text-destructive hover:text-destructive"
                         title="Excluir"
                         onClick={() => setDeleting(contact)}
                       >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
@@ -1027,11 +1160,11 @@ function ContatosPage() {
                     aria-label="Selecionar contatos visíveis"
                   />
                 </th>
-                <th className="w-[38%] px-3 py-3 font-medium sm:px-4">Contato</th>
+                <th className="w-[35%] px-3 py-3 font-medium sm:px-4">Contato</th>
                 <th className="w-[16%] px-3 py-3 font-medium sm:px-4">WhatsApp</th>
                 <th className="w-[21%] px-4 py-3 font-medium">Empresa</th>
                 <th className="w-[15%] px-4 py-3 font-medium">Departamento</th>
-                <th className="w-28 rounded-tr-lg px-3 py-3 text-center font-medium sm:px-4">
+                <th className="w-40 rounded-tr-lg px-3 py-3 text-center font-medium sm:px-4">
                   Ações
                 </th>
               </tr>
@@ -1065,7 +1198,11 @@ function ContatosPage() {
                     <td className="px-3 py-3 sm:px-4">
                       <div className="flex items-center gap-3">
                         <span className="hidden sm:inline-flex">
-                          <Avatar name={contact.nome} size={30} />
+                          <Avatar
+                            name={contact.nome}
+                            src={contact.avatar_url ?? undefined}
+                            size={30}
+                          />
                         </span>
                         <p className="truncate font-medium">{contact.nome}</p>
                       </div>
@@ -1100,16 +1237,14 @@ function ContatosPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="border-transparent bg-transparent hover:bg-transparent hover:text-primary"
                           title="Abrir conversa"
                           onClick={() => void openConversation(contact)}
                         >
-                          <MessageCircle className="h-3.5 w-3.5" />
+                          <MessageSquareMore className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="border-transparent bg-transparent hover:bg-transparent hover:text-warning"
                           title="Editar"
                           onClick={() => setEditing(contact)}
                         >
@@ -1118,7 +1253,7 @@ function ContatosPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="border-transparent bg-transparent hover:bg-transparent hover:text-destructive"
+                          className="text-destructive hover:text-destructive"
                           title="Excluir"
                           onClick={() => setDeleting(contact)}
                         >
@@ -1462,9 +1597,11 @@ function ImportProgressModal({
       title="Importação de Contatos"
       size="sm"
       footer={
-        <Button variant={done ? "primary" : "secondary"} size="sm" onClick={onAction}>
-          {done ? "Concluir" : "Cancelar importação"}
-        </Button>
+        done ? null : (
+          <Button variant="secondary" size="sm" onClick={onAction}>
+            Cancelar importação
+          </Button>
+        )
       }
     >
       <div className="space-y-4">
@@ -1475,7 +1612,7 @@ function ImportProgressModal({
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="font-semibold text-foreground">
-              {current} de {total} Contatos
+              {imported} de {total} contatos importados
             </span>
             <span className="text-muted-foreground">{percent}%</span>
           </div>
@@ -1486,9 +1623,6 @@ function ImportProgressModal({
             />
           </div>
         </div>
-        {done && (
-          <p className="text-sm text-muted-foreground">{imported} contato(s) importado(s).</p>
-        )}
       </div>
     </Modal>
   );
@@ -1549,6 +1683,7 @@ function ContactFormModal({
   );
   const [activeContactTab, setActiveContactTab] = React.useState("Geral");
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [photoPreviewOpen, setPhotoPreviewOpen] = React.useState(false);
   const customersManager = useDisclosure();
   const departmentsManager = useDisclosure();
   const profilesManager = useDisclosure();
@@ -1573,6 +1708,7 @@ function ContactFormModal({
     setCustomFields(initial?.customFields ?? {});
     setActiveContactTab("Geral");
     setErrors({});
+    setPhotoPreviewOpen(false);
     void crmApi
       .listContactCustomFields()
       .then(setCustomFieldDefinitions)
@@ -1592,6 +1728,11 @@ function ContactFormModal({
     }
     return Array.from(groups.entries());
   }, [activeContactTab, customFieldDefinitions]);
+
+  const handleCountryCodeChange = (nextCode: string) => {
+    setCountryCode(nextCode);
+    setTelefone((current) => maskPhoneByCountry(current, nextCode));
+  };
 
   const handle = () => {
     const errs: Record<string, string> = {};
@@ -1623,287 +1764,286 @@ function ContactFormModal({
     });
   };
 
-  const handlePhotoChange = async (file: File | null) => {
-    if (!file) return;
-    try {
-      setAvatarUrl(await readContactImageAsDataUrl(file));
-    } catch (error) {
-      toast.error((error as Error).message);
-    }
-  };
-
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={initial ? "Editar Contato" : "Criar Contato"}
-      description=""
-      size="xl"
-      footer={
-        <div className="flex w-full items-center justify-between gap-2">
-          <ContactFormLog contact={initial} />
-          <div className="flex shrink-0 justify-end gap-1.5 sm:gap-2">
-            <Button variant="ghost" size="sm" className="px-2 sm:px-2.5" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button variant="primary" size="sm" className="px-2.5 sm:px-2.5" onClick={handle}>
-              Salvar
-            </Button>
-          </div>
-        </div>
-      }
-    >
-      <div className="space-y-4">
-        <div className="flex flex-wrap gap-2 border-b border-border">
-          {contactTabs.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveContactTab(tab)}
-              className={`border-b-2 px-3 py-2 text-sm font-medium transition ${
-                activeContactTab === tab
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-        {activeContactTab === "Geral" && (
-          <div className="grid gap-4 md:grid-cols-[7.5rem_minmax(0,1fr)_minmax(0,1fr)] md:items-start">
-            <div className="order-0 md:row-span-2">
-              <div className="flex items-center gap-3 md:block">
-                <div className="relative inline-flex">
-                  <Avatar name={nome || "Contato"} src={avatarUrl ?? undefined} size={88} />
-                  <label className="absolute -bottom-1 -right-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-surface-1 text-muted-foreground shadow-sm transition hover:text-primary">
-                    <Camera className="h-4 w-4" />
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      className="hidden"
-                      onChange={(event) => {
-                        void handlePhotoChange(event.target.files?.[0] ?? null);
-                        event.currentTarget.value = "";
-                      }}
-                    />
-                  </label>
-                </div>
-                {avatarUrl && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="md:mt-2 md:w-[88px] md:px-1"
-                    onClick={() => setAvatarUrl(null)}
-                  >
-                    Remover
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div className="order-1 md:order-none">
-              <Field label="Nome *">
-                <Input value={nome} onChange={(e) => setNome(e.target.value)} />
-                {errors.nome && (
-                  <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
-                )}
-              </Field>
-            </div>
-            <div className="order-4 md:order-none">
-              <Field label="Empresa do Contato">
-                <div className="flex gap-2">
-                  <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-                    <option value="">- Sem empresa -</option>
-                    {customers.map((customer) => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.nome}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={customersManager.show}
-                    title="Gerenciar empresas"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </Field>
-            </div>
-            <div className="order-2 md:order-none">
-              <Field label="WhatsApp *">
-                <div className="flex gap-2">
-                  <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
-                  <Input
-                    value={telefone}
-                    onChange={(e) =>
-                      setTelefone(maskBrazilMobilePhone(e.target.value, countryCode))
-                    }
-                    placeholder="(00) 00000-0000"
-                  />
-                </div>
-                {errors.telefone && (
-                  <span className="mt-1 block text-[11px] text-destructive">{errors.telefone}</span>
-                )}
-              </Field>
-            </div>
-            <div className="order-5 md:order-none">
-              <Field label="Departamento do Contato">
-                <div className="flex gap-2">
-                  <Select
-                    value={contactDepartmentId}
-                    onChange={(e) => setContactDepartmentId(e.target.value)}
-                  >
-                    <option value="">- Sem departamento -</option>
-                    {departments.map((department) => (
-                      <option key={department.id} value={department.id}>
-                        {department.nome}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={departmentsManager.show}
-                    title="Gerenciar departamentos"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </Field>
-            </div>
-            <div className="order-3 md:order-none">
-              <Field label="E-mail">
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="email@exemplo.com"
-                />
-                {errors.email && (
-                  <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
-                )}
-              </Field>
-            </div>
-            <div className="order-6 md:order-none">
-              <Field label="Perfil do Contato">
-                <div className="flex gap-2">
-                  <Select
-                    value={contactProfileId}
-                    onChange={(e) => setContactProfileId(e.target.value)}
-                  >
-                    <option value="">- Sem perfil -</option>
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.nome}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={profilesManager.show}
-                    title="Gerenciar perfis"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </Field>
-            </div>
-            <div className="order-7 md:order-none">
-              <Field label="Instância">
-                <InstanceMultiSelect
-                  instances={instances}
-                  selectedIds={instanceIds}
-                  onChange={setInstanceIds}
-                />
-              </Field>
-            </div>
-            <div className="order-8 md:order-none">
-              <Field label="Etiquetas">
-                <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
-              </Field>
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        title={initial ? "Editar Contato" : "Criar Contato"}
+        description=""
+        size="xl"
+        footer={
+          <div className="flex w-full items-center justify-between gap-2">
+            <ContactFormLog contact={initial} />
+            <div className="flex shrink-0 justify-end gap-1.5 sm:gap-2">
+              <Button variant="ghost" size="sm" className="px-2 sm:px-2.5" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button variant="primary" size="sm" className="px-2.5 sm:px-2.5" onClick={handle}>
+                Salvar
+              </Button>
             </div>
           </div>
-        )}
-        {groupedCustomFields.map(([group, fields]) => (
-          <div key={group} className="space-y-3">
-            {group && (
-              <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                {group}
-              </h3>
-            )}
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2 border-b border-border">
+            {contactTabs.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveContactTab(tab)}
+                className={`border-b-2 px-3 py-2 text-sm font-medium transition ${
+                  activeContactTab === tab
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+          {activeContactTab === "Geral" && (
             <div className="grid gap-4 md:grid-cols-2">
-              {fields.map((field) => {
-                const isHtmlField = field.type === "text" && contactTextVariant(field) === "html";
-                return (
-                  <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
-                    <div>
-                      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium leading-none text-muted-foreground">
-                        <span>
-                          {field.label}
-                          {field.required && <span className="text-destructive"> *</span>}
-                        </span>
-                        {field.note && (
-                          <span
-                            title={field.note}
-                            className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-full align-middle text-primary transition hover:text-primary/80"
-                          >
-                            <Info className="h-3 w-3" />
+              <div className="space-y-4">
+                <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-3 md:grid-cols-[7.5rem_minmax(0,1fr)] md:items-start md:gap-x-4 md:gap-y-4">
+                  <div className="row-span-2 self-stretch">
+                    <div className="flex h-full min-h-[8.5rem] items-center justify-center">
+                      {avatarUrl ? (
+                        <button
+                          type="button"
+                          title="Mostrar foto"
+                          aria-label="Mostrar foto"
+                          onClick={() => setPhotoPreviewOpen(true)}
+                          className="group relative inline-flex cursor-pointer rounded-full outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                        >
+                          <Avatar name={nome || "Contato"} src={avatarUrl} size={88} />
+                          <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-foreground/80 px-1.5 py-0.5 text-[10px] font-medium text-background opacity-0 transition group-hover:opacity-100">
+                            Mostrar foto
                           </span>
-                        )}
-                      </div>
-                      <div className={`flex gap-2 ${isHtmlField ? "items-start" : "items-center"}`}>
-                        <CustomContactFieldInput
-                          field={field}
-                          value={customFields[field.id]}
-                          onChange={(value) =>
-                            setCustomFields((current) => ({ ...current, [field.id]: value }))
-                          }
-                        />
-                      </div>
-                      {errors[`custom_${field.id}`] && (
-                        <span className="mt-1 block text-[11px] text-destructive">
-                          {errors[`custom_${field.id}`]}
-                        </span>
+                        </button>
+                      ) : (
+                        <Avatar name={nome || "Contato"} src={avatarUrl ?? undefined} size={88} />
                       )}
                     </div>
                   </div>
-                );
-              })}
+                  <Field label="Nome *">
+                    <Input value={nome} onChange={(e) => setNome(e.target.value)} />
+                    {errors.nome && (
+                      <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
+                    )}
+                  </Field>
+                  <Field label="WhatsApp *">
+                    <div className="flex gap-2">
+                      <CountryCodeSelect
+                        value={countryCode}
+                        onChange={handleCountryCodeChange}
+                        compact
+                      />
+                      <Input
+                        value={telefone}
+                        onChange={(e) =>
+                          setTelefone(maskPhoneByCountry(e.target.value, countryCode))
+                        }
+                        placeholder="(00) 00000-0000"
+                      />
+                    </div>
+                    {errors.telefone && (
+                      <span className="mt-1 block text-[11px] text-destructive">
+                        {errors.telefone}
+                      </span>
+                    )}
+                  </Field>
+                </div>
+                <Field label="E-mail">
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="email@exemplo.com"
+                  />
+                  {errors.email && (
+                    <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
+                  )}
+                </Field>
+                <Field label="Instâncias">
+                  <InstanceMultiSelect
+                    instances={instances}
+                    selectedIds={instanceIds}
+                    onChange={setInstanceIds}
+                  />
+                </Field>
+              </div>
+              <div className="space-y-4">
+                <Field label="Empresa do Contato">
+                  <div className="flex gap-2">
+                    <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                      <option value="">- Sem empresa -</option>
+                      {customers.map((customer) => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.nome}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={customersManager.show}
+                      title="Gerenciar empresas"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </Field>
+                <Field label="Departamento do Contato">
+                  <div className="flex gap-2">
+                    <Select
+                      value={contactDepartmentId}
+                      onChange={(e) => setContactDepartmentId(e.target.value)}
+                    >
+                      <option value="">- Sem departamento -</option>
+                      {departments.map((department) => (
+                        <option key={department.id} value={department.id}>
+                          {department.nome}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={departmentsManager.show}
+                      title="Gerenciar departamentos"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </Field>
+                <Field label="Perfil do Contato">
+                  <div className="flex gap-2">
+                    <Select
+                      value={contactProfileId}
+                      onChange={(e) => setContactProfileId(e.target.value)}
+                    >
+                      <option value="">- Sem perfil -</option>
+                      {profiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.nome}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={profilesManager.show}
+                      title="Gerenciar perfis"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </Field>
+                <Field label="Etiquetas">
+                  <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
+                </Field>
+              </div>
             </div>
+          )}
+          {groupedCustomFields.map(([group, fields]) => (
+            <div key={group} className="space-y-3">
+              {group && (
+                <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                  {group}
+                </h3>
+              )}
+              <div className="grid gap-4 md:grid-cols-2">
+                {fields.map((field) => {
+                  const isHtmlField = field.type === "text" && contactTextVariant(field) === "html";
+                  return (
+                    <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
+                      <div>
+                        <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium leading-none text-muted-foreground">
+                          <span>
+                            {field.label}
+                            {field.required && <span className="text-destructive"> *</span>}
+                          </span>
+                          {field.note && (
+                            <span
+                              title={field.note}
+                              className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-full align-middle text-primary transition hover:text-primary/80"
+                            >
+                              <Info className="h-3 w-3" />
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          className={`flex gap-2 ${isHtmlField ? "items-start" : "items-center"}`}
+                        >
+                          <CustomContactFieldInput
+                            field={field}
+                            value={customFields[field.id]}
+                            onChange={(value) =>
+                              setCustomFields((current) => ({ ...current, [field.id]: value }))
+                            }
+                          />
+                        </div>
+                        {errors[`custom_${field.id}`] && (
+                          <span className="mt-1 block text-[11px] text-destructive">
+                            {errors[`custom_${field.id}`]}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        <CustomersManagerModal
+          open={customersManager.open}
+          onClose={customersManager.hide}
+          onCustomerSelected={(customer) => {
+            onCustomerCreated(customer);
+            setCustomerId(customer.id);
+            customersManager.hide();
+          }}
+        />
+        <DepartmentsManagerModal
+          open={departmentsManager.open}
+          onClose={departmentsManager.hide}
+          onDepartmentSelected={(department) => {
+            onDepartmentSaved(department);
+            setContactDepartmentId(department.id);
+            departmentsManager.hide();
+          }}
+        />
+        <ContactProfilesManagerModal
+          open={profilesManager.open}
+          onClose={profilesManager.hide}
+          onProfileSelected={(profile) => {
+            onProfileSaved(profile);
+            setContactProfileId(profile.id);
+            profilesManager.hide();
+          }}
+        />
+      </Modal>
+      {avatarUrl && (
+        <Modal
+          open={photoPreviewOpen}
+          onClose={() => setPhotoPreviewOpen(false)}
+          title="Foto do Contato"
+          size="xl"
+          footer={null}
+        >
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <img
+              src={avatarUrl}
+              alt={nome ? `Foto de ${nome}` : "Foto do contato"}
+              className="max-h-[70vh] max-w-full rounded-lg object-contain"
+            />
           </div>
-        ))}
-      </div>
-      <CustomersManagerModal
-        open={customersManager.open}
-        onClose={customersManager.hide}
-        onCustomerSelected={(customer) => {
-          onCustomerCreated(customer);
-          setCustomerId(customer.id);
-          customersManager.hide();
-        }}
-      />
-      <DepartmentsManagerModal
-        open={departmentsManager.open}
-        onClose={departmentsManager.hide}
-        onDepartmentSelected={(department) => {
-          onDepartmentSaved(department);
-          setContactDepartmentId(department.id);
-          departmentsManager.hide();
-        }}
-      />
-      <ContactProfilesManagerModal
-        open={profilesManager.open}
-        onClose={profilesManager.hide}
-        onProfileSelected={(profile) => {
-          onProfileSaved(profile);
-          setContactProfileId(profile.id);
-          profilesManager.hide();
-        }}
-      />
-    </Modal>
+        </Modal>
+      )}
+    </>
   );
 }
 
@@ -1919,7 +2059,7 @@ function CustomersManagerModal({
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [query, setQuery] = React.useState("");
   const [page, setPage] = React.useState(1);
-  const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
+  const [pageSize, setPageSize] = React.useState(DEFAULT_CUSTOMER_PAGE_SIZE);
   const [total, setTotal] = React.useState(0);
   const [totalPages, setTotalPages] = React.useState(1);
   const [loading, setLoading] = React.useState(false);
@@ -2010,7 +2150,12 @@ function CustomersManagerModal({
                       <p className="truncate text-sm font-semibold">{customer.nome}</p>
                     </div>
                   </div>
-                  <Button variant="secondary" size="sm" onClick={() => selectCustomer(customer)}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="select-action-button"
+                    onClick={() => selectCustomer(customer)}
+                  >
                     Selecionar
                   </Button>
                   <Button
@@ -2052,7 +2197,7 @@ function CustomersManagerModal({
                 onChange={(event) => setPageSize(Number(event.target.value))}
                 className="h-8 w-20 text-xs sm:w-24"
               >
-                {PAGE_SIZE_OPTIONS.map((option) => (
+                {CUSTOMER_PAGE_SIZE_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>
@@ -2219,7 +2364,12 @@ function DepartmentsManagerModal({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{department.nome}</p>
                 </div>
-                <Button variant="secondary" size="sm" onClick={() => selectDepartment(department)}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="select-action-button"
+                  onClick={() => selectDepartment(department)}
+                >
                   Selecionar
                 </Button>
                 <Button
@@ -2468,7 +2618,12 @@ function ContactProfilesManagerModal({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{profile.nome}</p>
                 </div>
-                <Button variant="secondary" size="sm" onClick={() => selectProfile(profile)}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="select-action-button"
+                  onClick={() => selectProfile(profile)}
+                >
                   Selecionar
                 </Button>
                 <Button
@@ -3127,8 +3282,8 @@ function HtmlTextEditor({
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
-        className={`min-h-44 w-full overflow-y-auto px-3 py-2 text-sm outline-none [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 ${
-          expanded ? "min-h-[62vh]" : ""
+        className={`w-full overflow-y-auto px-3 py-2 text-sm outline-none [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 ${
+          expanded ? "h-[62vh]" : "h-44"
         }`}
         onBlur={saveSelection}
         onInput={() => {
@@ -3501,7 +3656,7 @@ function countValidImportRows(rows: string[][]) {
 }
 
 function downloadImportTemplate(format: "csv" | "xls" | "xlsx") {
-  const filename = `modelo-importacao-contatos.${format}`;
+  const filename = `modelo-importacao-contatos-${format}.${format}`;
   if (format === "xlsx") {
     const worksheet = XLSX.utils.aoa_to_sheet(IMPORT_TEMPLATE_ROWS);
     const workbook = XLSX.utils.book_new();
@@ -3570,8 +3725,12 @@ function splitImportList(value: string) {
     .filter(Boolean);
 }
 
+function cleanImportName(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
 function normalizeImportName(value: string) {
-  return normalizeHeader(value).replace(/\s+/g, " ");
+  return normalizeHeader(cleanImportName(value)).replace(/\s+/g, " ");
 }
 
 function findByImportedName<T extends { nome: string }>(items: T[], value: string) {
@@ -3608,8 +3767,29 @@ function formatPhoneForSubmit(value: string, countryCode = "55") {
 }
 
 function maskBrazilMobilePhone(value: string, countryCode = "55") {
+  return maskPhoneByCountry(value, countryCode);
+}
+
+function maskPhoneByCountry(value: string, countryCode = "55") {
   const digits = onlyDigits(value);
-  return onlyDigits(countryCode) === "55" ? maskBrazilPhone(digits) : digits;
+  const code = onlyDigits(countryCode) || "55";
+  if (code === "55") return maskBrazilPhone(digits);
+  const groups = PHONE_MASK_GROUPS[code] ?? [3, 3, 4, 4];
+  return maskDigitGroups(digits, groups);
+}
+
+function maskDigitGroups(value: string, groups: number[]) {
+  const maxLength = groups.reduce((total, group) => total + group, 0);
+  const digits = onlyDigits(value).slice(0, maxLength);
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const group of groups) {
+    const part = digits.slice(cursor, cursor + group);
+    if (!part) break;
+    parts.push(part);
+    cursor += group;
+  }
+  return parts.join(" ");
 }
 
 function isValidPhoneForCountry(value: string, countryCode = "55") {
@@ -3628,6 +3808,13 @@ function isWhatsAppGroupPhone(digits: string) {
   return digits.startsWith("120363") && digits.length >= 16 && digits.length <= 30;
 }
 
+function isExportableContact(contact: Pick<Contact, "normalizedPhone" | "telefone">) {
+  const normalized = contact.normalizedPhone ?? "";
+  if (normalized.startsWith("group:")) return false;
+  if (String(contact.telefone ?? "").includes("@g.us")) return false;
+  return !isWhatsAppGroupPhone(onlyDigits(contact.telefone));
+}
+
 function normalizeBrazilMobileDigits(digits: string, countryCode = "55") {
   if (onlyDigits(countryCode) !== "55") return digits;
   const local = digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;
@@ -3639,17 +3826,18 @@ function normalizeBrazilMobileDigits(digits: string, countryCode = "55") {
 
 function formatPhoneWithDdi(value: string) {
   const parsed = splitPhoneByCountry(value);
-  const local =
-    parsed.countryCode === "55" ? maskBrazilPhone(parsed.localPhone) : parsed.localPhone;
+  const local = maskPhoneByCountry(parsed.localPhone, parsed.countryCode);
   return `+${parsed.countryCode} ${local}`.trim();
 }
 
 function CountryCodeSelect({
   value,
   onChange,
+  compact = false,
 }: {
   value: string;
   onChange: (value: string) => void;
+  compact?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -3673,7 +3861,7 @@ function CountryCodeSelect({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="relative w-32 shrink-0">
+    <div ref={rootRef} className={`relative shrink-0 ${compact ? "w-20 sm:w-32" : "w-32"}`}>
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
@@ -3701,7 +3889,7 @@ function CountryCodeSelect({
               <button
                 type="button"
                 onClick={() => setQuery("")}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-destructive/30 bg-destructive/10 text-destructive transition hover:bg-destructive/15"
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
                 aria-label="Limpar busca"
                 title="Limpar busca"
               >
@@ -3916,39 +4104,6 @@ function ColorField({
       />
     </div>
   );
-}
-
-function readContactImageAsDataUrl(file: File): Promise<string> {
-  if (!/^image\/(png|jpe?g|webp)$/i.test(file.type)) {
-    return Promise.reject(new Error("Use uma imagem PNG, JPG ou WebP."));
-  }
-  if (file.size > 2 * 1024 * 1024) {
-    return Promise.reject(new Error("A imagem deve ter até 2 MB."));
-  }
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const reader = new FileReader();
-    reader.onload = () => {
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const max = 320;
-        const scale = Math.min(1, max / Math.max(img.width, img.height));
-        canvas.width = Math.max(1, Math.round(img.width * scale));
-        canvas.height = Math.max(1, Math.round(img.height * scale));
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("Não foi possível processar a imagem."));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.82));
-      };
-      img.onerror = () => reject(new Error("Não foi possível processar a imagem."));
-      img.src = String(reader.result);
-    };
-    reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
-    reader.readAsDataURL(file);
-  });
 }
 
 function customerPayload(data: CustomerFormData) {
