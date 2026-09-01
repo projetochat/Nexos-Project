@@ -303,11 +303,11 @@ export class CrmController {
       orderBy: [{ name: "asc" }],
       include: contactInclude,
     });
-    const syncedAvatars = await this.profilePictures.syncMissing({
+    this.profilePictures.enqueueMissing({
       tenantId: current.tenantId,
       contacts,
     });
-    return contacts.map((contact) => this.serializeContact(contact, undefined, syncedAvatars));
+    return contacts.map((contact) => this.serializeContact(contact));
   }
 
   @Get("contacts")
@@ -379,13 +379,13 @@ export class CrmController {
       this.prisma.contact.count({ where }),
     ]);
 
-    const syncedAvatars = await this.profilePictures.syncMissing({
+    this.profilePictures.enqueueMissing({
       tenantId: current.tenantId,
       contacts: items,
     });
 
     return paginated(
-      items.map((contact) => this.serializeContact(contact, undefined, syncedAvatars)),
+      items.map((contact) => this.serializeContact(contact)),
       total,
       page,
       pageSize,
@@ -1396,7 +1396,6 @@ export class CrmController {
   private serializeContact(
     contact: Prisma.ContactGetPayload<{ include: typeof contactInclude }>,
     meta?: { lifecycle?: "created" | "restored" },
-    syncedAvatars = new Map<string, string>(),
   ) {
     const instanceIds = contact.instanceIds.length
       ? contact.instanceIds
@@ -1409,7 +1408,7 @@ export class CrmController {
       nome: contact.name,
       telefone: contact.phone,
       normalizedPhone: contact.normalizedPhone,
-      avatar_url: syncedAvatars.get(contact.id) ?? contact.avatarUrl,
+      avatar_url: contact.avatarUrl,
       customer_id: contact.customerId,
       email: contact.email,
       departamento: contact.departmentName,

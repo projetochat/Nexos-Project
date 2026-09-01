@@ -76,6 +76,40 @@ describe("ContactProfilePictureSyncService", () => {
     expect(prisma.contact.updateMany).not.toHaveBeenCalled();
     expect(realtime.publishContactUpdated).not.toHaveBeenCalled();
   });
+
+  it("queues profile picture lookups without blocking the caller", async () => {
+    vi.useFakeTimers();
+    try {
+      const prisma = prismaMock();
+      const evolution = {
+        fetchProfilePictureUrl: vi.fn().mockResolvedValue("https://whatsapp.test/douglas.jpg"),
+      };
+      const realtime = { publishContactUpdated: vi.fn() };
+      const service = new ContactProfilePictureSyncService(
+        prisma as never,
+        evolution as never,
+        realtime as never,
+      );
+
+      service.enqueueMissing({
+        tenantId: "tenant-a",
+        contacts: [contact({ id: "contact-a", instance: "SMCLICK" })],
+      });
+
+      expect(evolution.fetchProfilePictureUrl).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(evolution.fetchProfilePictureUrl).toHaveBeenCalled();
+      expect(prisma.contact.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { avatarUrl: "https://whatsapp.test/douglas.jpg" },
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 function prismaMock() {

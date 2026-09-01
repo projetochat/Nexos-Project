@@ -207,13 +207,12 @@ describe("MessagingInboundService", () => {
     });
   });
 
-  it("syncs the WhatsApp profile picture into the contact avatar on inbound messages", async () => {
+  it("does not block inbound messages while looking up WhatsApp profile pictures", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
     prisma.message.findFirst.mockResolvedValue(null);
     prisma.contact.findFirst.mockResolvedValue(contact());
     prisma.contact.update.mockResolvedValue(contact());
-    prisma.contact.updateMany.mockResolvedValue({ count: 1 });
     prisma.conversation.findFirst.mockResolvedValue(conversation());
     prisma.message.create.mockResolvedValue({
       id: "message-inbound",
@@ -228,12 +227,7 @@ describe("MessagingInboundService", () => {
       publishContactUpdated: vi.fn(),
       publishUnreadUpdated: vi.fn(),
     };
-    const evolution = {
-      fetchProfilePictureUrl: vi
-        .fn()
-        .mockRejectedValueOnce(new Error("jid not accepted"))
-        .mockResolvedValue("https://pps.whatsapp.net/v/profile-picture.jpg"),
-    };
+    const evolution = { fetchProfilePictureUrl: vi.fn() };
 
     await new MessagingInboundService(
       prisma as never,
@@ -258,30 +252,9 @@ describe("MessagingInboundService", () => {
       metadata: { remoteJid: "5511999999999@s.whatsapp.net" },
     });
 
-    expect(evolution.fetchProfilePictureUrl).toHaveBeenCalledWith({
-      instanceName: "tenant-a-suporte",
-      number: "5511999999999@s.whatsapp.net",
-    });
-    expect(evolution.fetchProfilePictureUrl).toHaveBeenCalledWith({
-      instanceName: "tenant-a-suporte",
-      number: "5511999999999",
-    });
-    expect(prisma.contact.updateMany).toHaveBeenCalledWith({
-      where: {
-        tenantId: "tenant-a",
-        id: "contact-a",
-        OR: [
-          { avatarUrl: null },
-          { avatarUrl: { not: "https://pps.whatsapp.net/v/profile-picture.jpg" } },
-        ],
-      },
-      data: { avatarUrl: "https://pps.whatsapp.net/v/profile-picture.jpg" },
-    });
-    expect(realtime.publishContactUpdated).toHaveBeenCalledWith({
-      tenantId: "tenant-a",
-      contactId: "contact-a",
-      contact: { id: "contact-a" },
-    });
+    expect(evolution.fetchProfilePictureUrl).not.toHaveBeenCalled();
+    expect(prisma.contact.updateMany).not.toHaveBeenCalled();
+    expect(realtime.publishContactUpdated).not.toHaveBeenCalled();
   });
 
   it("uses the profile picture URL from the Evolution webhook when present", async () => {

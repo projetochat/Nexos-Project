@@ -158,10 +158,12 @@ function ContatosPage() {
   const [bulkTags, setBulkTags] = React.useState<string[]>([]);
   const [bulkCustomValue, setBulkCustomValue] = React.useState<string | boolean>("");
   const importModal = useDisclosure();
+  const exportModal = useDisclosure();
   const exportMenu = useDisclosure();
   const exportMenuRef = React.useRef<HTMLDivElement>(null);
   const [exportAllRecords, setExportAllRecords] = React.useState(false);
   const cancelImportRef = React.useRef(false);
+  const importProgressAutoCloseRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [importProgress, setImportProgress] = React.useState<ImportProgressState>({
     open: false,
     source: null,
@@ -257,6 +259,36 @@ function ContatosPage() {
     document.addEventListener("pointerdown", closeOnOutside);
     return () => document.removeEventListener("pointerdown", closeOnOutside);
   }, [exportMenu]);
+  React.useEffect(() => {
+    if (importProgressAutoCloseRef.current) {
+      clearTimeout(importProgressAutoCloseRef.current);
+      importProgressAutoCloseRef.current = null;
+    }
+    if (
+      !importProgress.open ||
+      importProgress.status === "running" ||
+      importProgress.status === "idle"
+    ) {
+      return;
+    }
+    importProgressAutoCloseRef.current = setTimeout(() => {
+      setImportProgress({
+        open: false,
+        source: null,
+        current: 0,
+        total: 0,
+        imported: 0,
+        status: "idle",
+      });
+      importProgressAutoCloseRef.current = null;
+    }, 3500);
+    return () => {
+      if (importProgressAutoCloseRef.current) {
+        clearTimeout(importProgressAutoCloseRef.current);
+        importProgressAutoCloseRef.current = null;
+      }
+    };
+  }, [importProgress.open, importProgress.status]);
 
   const pageSafe = Math.min(page, totalPages);
   const allVisibleSelected =
@@ -358,6 +390,7 @@ function ContatosPage() {
       description: `${rows.length} contato(s) exportado(s).`,
     });
     exportMenu.hide();
+    exportModal.hide();
   };
 
   const loadContactsForExport = async () => {
@@ -616,7 +649,19 @@ function ContatosPage() {
     }
   };
 
-  const closeImportProgress = () => setImportProgress((current) => ({ ...current, open: false }));
+  const closeImportProgress = () =>
+    setImportProgress((current) =>
+      current.status === "running"
+        ? { ...current, open: false }
+        : {
+            open: false,
+            source: null,
+            current: 0,
+            total: 0,
+            imported: 0,
+            status: "idle",
+          },
+    );
 
   const handleImportProgressAction = () => {
     if (importProgress.status === "running") {
@@ -705,26 +750,13 @@ function ContatosPage() {
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
-                      onClick={() => void exportContacts("csv")}
+                      onClick={() => {
+                        exportMenu.hide();
+                        exportModal.show();
+                      }}
                     >
-                      <Download className="h-4 w-4" /> Exportar CSV
+                      <Download className="h-4 w-4" /> Exportar
                     </button>
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
-                      onClick={() => void exportContacts("xlsx")}
-                    >
-                      <FileSpreadsheet className="h-4 w-4" /> Exportar XLSX
-                    </button>
-                    <label className="mt-1 flex cursor-pointer items-center gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={exportAllRecords}
-                        onChange={(event) => setExportAllRecords(event.target.checked)}
-                        className="h-4 w-4 accent-primary"
-                      />
-                      Exportar todos os Registros
-                    </label>
                   </div>
                 )}
               </div>
@@ -1380,6 +1412,14 @@ function ContatosPage() {
           onClose={importModal.hide}
           onImport={importContactsRows}
         />
+        <ExportContactsModal
+          open={exportModal.open}
+          contactCount={exportableContactCount}
+          exportAllRecords={exportAllRecords}
+          onExportAllRecordsChange={setExportAllRecords}
+          onClose={exportModal.hide}
+          onExport={exportContacts}
+        />
         <ImportProgressModal
           open={importProgress.open}
           source={importProgress.source}
@@ -1556,6 +1596,64 @@ function ImportContactsModal({
             </p>
           </div>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+function ExportContactsModal({
+  open,
+  contactCount,
+  exportAllRecords,
+  onExportAllRecordsChange,
+  onClose,
+  onExport,
+}: {
+  open: boolean;
+  contactCount: number;
+  exportAllRecords: boolean;
+  onExportAllRecordsChange: (value: boolean) => void;
+  onClose: () => void;
+  onExport: (format: "csv" | "xlsx") => void | Promise<void>;
+}) {
+  return (
+    <Modal open={open} onClose={onClose} title="Exportar Contatos" size="sm">
+      <div className="space-y-4">
+        <div className="rounded-lg border border-border bg-surface-1 px-4 py-3">
+          <p className="text-sm font-semibold text-foreground">
+            {contactCount} contato(s) para exportar
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Grupos não entram na exportação de contatos.
+          </p>
+        </div>
+
+        <div className="grid gap-2">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-sm transition hover:bg-surface-1"
+            onClick={() => void onExport("csv")}
+          >
+            <Download className="h-4 w-4" /> Exportar CSV
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-sm transition hover:bg-surface-1"
+            onClick={() => void onExport("xlsx")}
+          >
+            <FileSpreadsheet className="h-4 w-4" /> Exportar Excel
+          </button>
+        </div>
+
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={exportAllRecords}
+            onChange={(event) => onExportAllRecordsChange(event.target.checked)}
+            className="h-4 w-4 accent-primary"
+          />
+          Exportar todos os Registros
+        </label>
       </div>
     </Modal>
   );
@@ -1845,7 +1943,7 @@ function ContactFormModal({
                         onChange={(e) =>
                           setTelefone(maskPhoneByCountry(e.target.value, countryCode))
                         }
-                        placeholder="(00) 00000-0000"
+                        placeholder={countryCode === "55" ? "(00) 00000-0000" : undefined}
                       />
                     </div>
                     {errors.telefone && (

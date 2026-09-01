@@ -89,7 +89,7 @@ export class ConversationsController {
       this.countTabs(countBase, current),
     ]);
 
-    const syncedAvatars = await this.profilePictures.syncMissing({
+    this.profilePictures.enqueueMissing({
       tenantId: current.tenantId,
       contacts: items.flatMap((conversation) =>
         conversation.contact ? [conversation.contact] : [],
@@ -98,7 +98,7 @@ export class ConversationsController {
 
     return {
       ...paginated(
-        items.map((conversation) => this.serialize(conversation, syncedAvatars)),
+        items.map((conversation) => this.serialize(conversation)),
         total,
         page,
         pageSize,
@@ -111,11 +111,11 @@ export class ConversationsController {
   @RequirePermissions("conversations.read")
   async detail(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const conversation = await this.findVisibleConversation(id, current);
-    const syncedAvatars = await this.profilePictures.syncMissing({
+    this.profilePictures.enqueueMissing({
       tenantId: current.tenantId,
       contacts: conversation.contact ? [conversation.contact] : [],
     });
-    return this.serialize(conversation, syncedAvatars);
+    return this.serialize(conversation);
   }
 
   @Post()
@@ -698,10 +698,7 @@ export class ConversationsController {
     return membership?.user.name ?? membership?.user.email ?? "atendente selecionado";
   }
 
-  private serialize(
-    conversation: ConversationWithRelations,
-    syncedAvatars = new Map<string, string>(),
-  ) {
+  private serialize(conversation: ConversationWithRelations) {
     return {
       id: conversation.id,
       tenantId: conversation.tenantId,
@@ -729,8 +726,7 @@ export class ConversationsController {
             id: conversation.contact.id,
             nome: conversation.contact.name,
             telefone: conversation.contact.phone,
-            avatar_url:
-              syncedAvatars.get(conversation.contact.id) ?? conversation.contact.avatarUrl,
+            avatar_url: conversation.contact.avatarUrl,
             customer_id: conversation.contact.customerId,
             email: conversation.contact.email,
             departamento: conversation.contact.departmentName,

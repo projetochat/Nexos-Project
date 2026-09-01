@@ -15,9 +15,19 @@ type ContactProfilePictureTarget = {
   instanceIds: string[];
 };
 
+type QueuedContactProfilePictureTarget = {
+  tenantId: string;
+  contact: ContactProfilePictureTarget;
+};
+
 @Injectable()
 export class ContactProfilePictureSyncService {
   private readonly logger = new Logger(ContactProfilePictureSyncService.name);
+  private readonly queuedContactIds = new Set<string>();
+  private readonly recentAttempts = new Map<string, number>();
+  private pendingContacts: QueuedContactProfilePictureTarget[] = [];
+  private draining = false;
+  private drainTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -62,6 +72,58 @@ export class ContactProfilePictureSyncService {
     return synced;
   }
 
+  enqueueMissing(input: { tenantId: string; contacts: ContactProfilePictureTarget[] }) {
+    const now = Date.now();
+    const targets = uniqueContacts(input.contacts)
+      .filter((contact) => needsProfilePicture(contact))
+      .filter((contact) => !this.wasRecentlyAttempted(contact.id, now))
+      .filter((contact) => !this.queuedContactIds.has(contact.id))
+      .slice(0, 10);
+    if (!targets.length) return;
+
+    for (const contact of targets) {
+      this.queuedContactIds.add(contact.id);
+      this.pendingContacts.push({ tenantId: input.tenantId, contact });
+    }
+    if (this.pendingContacts.length > 100) {
+      const overflow = this.pendingContacts.splice(0, this.pendingContacts.length - 100);
+      for (const item of overflow) this.queuedContactIds.delete(item.contact.id);
+    }
+    this.scheduleDrain();
+  }
+
+  private scheduleDrain() {
+    if (this.drainTimer || this.draining) return;
+    this.drainTimer = setTimeout(() => {
+      this.drainTimer = null;
+      void this.drain();
+    }, 250);
+  }
+
+  private async drain() {
+    if (this.draining) return;
+    this.draining = true;
+    try {
+      while (this.pendingContacts.length) {
+        const item = this.pendingContacts.shift();
+        if (!item) break;
+        this.queuedContactIds.delete(item.contact.id);
+        this.recentAttempts.set(item.contact.id, Date.now());
+        await this.syncMissing({ tenantId: item.tenantId, contacts: [item.contact] });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Nao foi possivel sincronizar fotos em segundo plano: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    } finally {
+      this.draining = false;
+      this.trimRecentAttempts(Date.now());
+      if (this.pendingContacts.length) this.scheduleDrain();
+    }
+  }
+
   private async resolveInstanceName(tenantId: string, contact: ContactProfilePictureTarget) {
     const keys = [
       ...new Set([contact.instance, ...contact.instanceIds].filter(Boolean)),
@@ -99,7 +161,22 @@ export class ContactProfilePictureSyncService {
     }
     return null;
   }
+
+  private wasRecentlyAttempted(contactId: string, now: number) {
+    const lastAttempt = this.recentAttempts.get(contactId);
+    return !!lastAttempt && now - lastAttempt < PROFILE_PICTURE_RETRY_INTERVAL_MS;
+  }
+
+  private trimRecentAttempts(now: number) {
+    for (const [contactId, attemptedAt] of this.recentAttempts) {
+      if (now - attemptedAt > PROFILE_PICTURE_RETRY_INTERVAL_MS) {
+        this.recentAttempts.delete(contactId);
+      }
+    }
+  }
 }
+
+const PROFILE_PICTURE_RETRY_INTERVAL_MS = 3 * 60 * 60 * 1000;
 
 function uniqueContacts(contacts: ContactProfilePictureTarget[]) {
   const seen = new Set<string>();

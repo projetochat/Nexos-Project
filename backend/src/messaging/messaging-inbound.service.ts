@@ -358,11 +358,7 @@ export class MessagingInboundService {
   ) {
     if (result.duplicate || event.conversationType === "GROUP") return false;
     if (!result.contactId || !result.providerInstanceName) return false;
-    const avatarUrl =
-      event.metadata?.profilePictureUrl ??
-      (typeof this.evolution?.fetchProfilePictureUrl === "function"
-        ? await this.fetchProfilePictureUrl(result.providerInstanceName, event)
-        : null);
+    const avatarUrl = event.metadata?.profilePictureUrl;
     if (!avatarUrl) return false;
 
     const updated = await this.prisma.contact.updateMany({
@@ -374,29 +370,6 @@ export class MessagingInboundService {
       data: { avatarUrl },
     });
     return updated.count > 0;
-  }
-
-  private async fetchProfilePictureUrl(instanceName: string, event: InboundMessageEvent) {
-    const candidates = profilePictureLookupCandidates(event);
-    for (const number of candidates) {
-      try {
-        const avatarUrl = await this.evolution?.fetchProfilePictureUrl({
-          instanceName,
-          number,
-        });
-        if (avatarUrl) return avatarUrl;
-      } catch (error) {
-        this.logger.debug({
-          event: "messaging.contact.profile_picture_lookup_failed",
-          tenantId: event.tenantId,
-          connectionId: event.connectionId,
-          externalChatId: event.externalChatId,
-          lookup: maskProfilePictureLookup(number),
-          error: error instanceof Error ? error.message : "profile picture lookup failed",
-        });
-      }
-    }
-    return null;
   }
 
   async processEdit(event: MessageEditEvent) {
@@ -668,27 +641,6 @@ function resolveInboundMediaState(
 
 function uniqueNormalizedPhones(values: Array<string | null | undefined>) {
   return [...new Set(values.filter((value): value is string => !!value))];
-}
-
-function profilePictureLookupCandidates(event: InboundMessageEvent) {
-  const rawValues = [
-    event.metadata?.remoteJid,
-    event.externalChatId,
-    event.sender.phone,
-    event.sender.normalizedPhone,
-  ];
-  const values = rawValues.flatMap((value) => {
-    if (!value) return [];
-    const beforeDomain = value.split("@")[0] ?? value;
-    const digits = beforeDomain.replace(/\D/g, "");
-    return [value, digits].filter((item) => item && !item.includes("@g.us"));
-  });
-  return [...new Set(values)];
-}
-
-function maskProfilePictureLookup(value: string) {
-  if (value.includes("@")) return value.replace(/^(\d{4})\d+(@.+)$/, "$1***$2");
-  return value.replace(/^(\d{4})\d+(\d{2})$/, "$1***$2");
 }
 
 function mediaPreview(type: InboundMessageEvent["type"]) {
