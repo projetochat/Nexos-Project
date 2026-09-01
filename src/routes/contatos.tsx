@@ -744,9 +744,7 @@ function ContatosPage() {
                     >
                       <FileSpreadsheet className="h-4 w-4" /> Importar via Excel/CSV
                     </button>
-                    <div className="mt-1 border-t border-border px-3 py-2 text-xs font-medium text-muted-foreground">
-                      {exportableContactCount} contato(s) para exportar
-                    </div>
+                    <div className="mt-1 border-t border-border"></div>
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
@@ -3497,7 +3495,7 @@ function CustomDateInput({
       type="text"
       inputMode="numeric"
       value={draft}
-      placeholder={variant === "datetime" ? "28/08/2026 10:08" : "28/08/2026"}
+      placeholder={variant === "datetime" ? "00/00/0000 00:00" : "00/00/0000"}
       data-date-input="true"
       onKeyDown={(event) => {
         if (event.key.toLowerCase() !== "h") return;

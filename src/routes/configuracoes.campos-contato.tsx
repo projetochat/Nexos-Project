@@ -13,6 +13,7 @@ import {
   Select,
   Textarea,
 } from "@/components/ui-kit";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { crmApi, type ApiContactCustomField } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/configuracoes/campos-contato")({
@@ -192,6 +193,7 @@ function ContactFieldsSettings() {
       <SectionHeader
         title="Campos Adicionais"
         subtitle="Defina campos que aparecem no cadastro e edição de contatos."
+        subtitleClassName="hidden md:block"
         actions={
           <Button variant="primary" size="sm" onClick={create.show}>
             <Plus className="h-3.5 w-3.5" /> Novo Campo
@@ -199,8 +201,8 @@ function ContactFieldsSettings() {
         }
       />
       <div className="mb-4 rounded-lg border border-border bg-card p-4">
-        <div className="grid gap-3 lg:grid-cols-[minmax(12rem,1.25fr)_minmax(9rem,0.8fr)_minmax(8rem,0.65fr)_minmax(9rem,0.8fr)_minmax(9rem,0.8fr)]">
-          <div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(12rem,1.25fr)_minmax(9rem,0.8fr)_minmax(8rem,0.65fr)_minmax(9rem,0.8fr)_minmax(9rem,0.8fr)]">
+          <div className="col-span-2 lg:col-span-1">
             <Field label="Busca">
               <SearchInput
                 value={query}
@@ -515,6 +517,7 @@ function ContactFieldFormModal({
   initial?: ApiContactCustomField;
   clone?: boolean;
 }) {
+  const isMobile = useIsMobile();
   const [form, setForm] = React.useState<FieldForm>(emptyFieldForm());
   React.useEffect(() => {
     if (!open) return;
@@ -624,7 +627,9 @@ function ContactFieldFormModal({
               className="w-full whitespace-nowrap sm:min-w-56"
             >
               <option value="date">Data: 01/01/2026</option>
-              <option value="datetime">Data/Hora: 01/01/2026 10:06</option>
+              <option value="datetime">
+                {isMobile ? "Dt/Hr: 01/01/2026 10:06" : "Data/Hora: 01/01/2026 10:06"}
+              </option>
             </Select>
           </Field>
         )}

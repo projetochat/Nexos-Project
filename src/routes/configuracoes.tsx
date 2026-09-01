@@ -24,7 +24,6 @@ function ConfiguracoesLayout() {
       <PageContainer className="max-w-[96rem] overflow-x-hidden lg:px-6 xl:px-8">
         <SectionHeader
           title="Configurações"
-          subtitle="Ajustes gerais da sua conta e da operação."
         />
 
         <div className="grid min-w-0 gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5">
