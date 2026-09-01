@@ -191,7 +191,7 @@ function DepartamentoForm({
     setForm(
       initial
         ? { name: initial.name, description: initial.description, color: initial.color }
-        : { color: "#6366f1" },
+        : { color: "#3B82F6" },
     );
     setError("");
   }, [initial, open]);
@@ -246,7 +246,7 @@ function DepartamentoForm({
               className="h-9 w-14 cursor-pointer rounded border border-border bg-transparent"
             />
             <Input
-              value={form.color ?? "#6366f1"}
+              value={form.color ?? "#3B82F6"}
               onChange={(e) => setForm({ ...form, color: normalizeHexColor(e.target.value) })}
             />
           </div>
@@ -256,14 +256,14 @@ function DepartamentoForm({
   );
 }
 
-function normalizeHexColor(value?: string | null, _fallback = "#6366f1") {
+function normalizeHexColor(value?: string | null, _fallback = "#3B82F6") {
   const digits = String(value ?? "")
     .replace(/[^0-9a-fA-F]/g, "")
     .slice(0, 6);
   return `#${digits.toUpperCase()}`;
 }
 
-function completeHexColor(value?: string | null, fallback = "#6366f1") {
+function completeHexColor(value?: string | null, fallback = "#3B82F6") {
   const normalized = normalizeHexColor(value);
   return normalized.length === 7 ? normalized : normalizeHexColor(fallback);
 }

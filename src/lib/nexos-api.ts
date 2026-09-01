@@ -653,6 +653,8 @@ type ContactPayload = {
   instance?: string | null;
   instanceIds?: string[];
   tagIds?: string[];
+  avatarUrl?: string | null;
+  customFields?: Record<string, string | number | boolean | null>;
 };
 
 type ListConversationsParams = ListParams & {
@@ -956,6 +958,7 @@ export const crmApi = {
     tabName?: string;
     groupName?: string;
     options?: string[];
+    position?: number;
   }) =>
     apiRequest<ApiContactCustomField>("/crm/contact-custom-fields", {
       method: "POST",
@@ -972,6 +975,7 @@ export const crmApi = {
       tabName: string;
       groupName: string;
       options: string[];
+      position: number;
     }>,
   ) =>
     apiRequest<ApiContactCustomField>(`/crm/contact-custom-fields/${id}`, {
@@ -980,6 +984,11 @@ export const crmApi = {
     }),
   deleteContactCustomField: (id: string) =>
     apiRequest<ApiContactCustomField>(`/crm/contact-custom-fields/${id}`, { method: "DELETE" }),
+  reorderContactCustomFields: (fieldIds: string[]) =>
+    apiRequest<ApiContactCustomField[]>("/crm/contact-custom-fields/reorder", {
+      method: "PATCH",
+      body: JSON.stringify({ fieldIds }),
+    }),
 };
 
 export const quickReplyApi = {

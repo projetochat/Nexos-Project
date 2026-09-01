@@ -77,7 +77,7 @@ export class DepartmentsController {
           tenantId: current.tenantId,
           name: dto.name.trim(),
           description: dto.description?.trim() || null,
-          color: dto.color ?? "#6366f1",
+          color: dto.color ?? "#3B82F6",
           active: dto.active ?? true,
         },
       });

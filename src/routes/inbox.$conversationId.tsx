@@ -754,7 +754,8 @@ function MessageText({ content }: { content: string }) {
   const match =
     text.match(/^\*\*(.+?):\*\*(?:\r?\n){1,2}([\s\S]*)$/) ??
     text.match(/^\*(.+?):\*(?:\r?\n){1,2}([\s\S]*)$/);
-  if (!match) return <span className="whitespace-pre-wrap break-words">{renderWhatsAppText(text)}</span>;
+  if (!match)
+    return <span className="whitespace-pre-wrap break-words">{renderWhatsAppText(text)}</span>;
   return (
     <span className="whitespace-pre-wrap break-words">
       <strong>{match[1]}:</strong>
@@ -765,7 +766,9 @@ function MessageText({ content }: { content: string }) {
 }
 
 function renderWhatsAppText(text: string) {
-  const parts = text.split(/(\*\*[^*\n][\s\S]*?[^*\n]\*\*|\*[^*\n][^*\n]*?[^*\n]\*|_[^_\n][^_\n]*?[^_\n]_|~[^~\n][^~\n]*?[^~\n]~|```[\s\S]*?```|`[^`\n]+`)/g);
+  const parts = text.split(
+    /(\*\*[^*\n][\s\S]*?[^*\n]\*\*|\*[^*\n][^*\n]*?[^*\n]\*|_[^_\n][^_\n]*?[^_\n]_|~[^~\n][^~\n]*?[^~\n]~|```[\s\S]*?```|`[^`\n]+`)/g,
+  );
   return parts.map((part, index) => {
     if (!part) return null;
     if (part.startsWith("**") && part.endsWith("**")) {
@@ -1860,7 +1863,7 @@ function TagsModal({
   });
   const [creating, setCreating] = React.useState(false);
   const [newName, setNewName] = React.useState("");
-  const [newColor, setNewColor] = React.useState("#6366f1");
+  const [newColor, setNewColor] = React.useState("#3B82F6");
 
   const currentIds = new Set(current.map((t) => t.id));
 

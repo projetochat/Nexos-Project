@@ -923,9 +923,11 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
                   <p className="mb-1 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                     {group.title}
                   </p>
-                  {group.items.map((item) => (
-                    <MobileNavLink key={item.to} item={item} onClose={onClose} />
-                  ))}
+                  <div className="space-y-0.5 pl-3">
+                    {group.items.map((item) => (
+                      <MobileNavLink key={item.to} item={item} onClose={onClose} />
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -936,7 +938,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
             <p className="mb-1 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
               Sistema
             </p>
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 pl-3">
               {sysNav.map((item) => (
                 <MobileNavLink key={item.to} item={item} onClose={onClose} />
               ))}

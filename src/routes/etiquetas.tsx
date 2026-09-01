@@ -145,12 +145,12 @@ function EtiquetaForm({
   initial?: ApiTag;
 }) {
   const [name, setName] = React.useState("");
-  const [color, setColor] = React.useState("#6366f1");
+  const [color, setColor] = React.useState("#3B82F6");
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
     setName(initial?.nome ?? "");
-    setColor(initial?.cor ?? "#6366f1");
+    setColor(initial?.cor ?? "#3B82F6");
   }, [initial, open]);
 
   const submit = async () => {
@@ -182,21 +182,25 @@ function EtiquetaForm({
         </>
       }
     >
-      <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
         <Field label="Nome *">
           <Input value={name} onChange={(event) => setName(event.target.value)} />
         </Field>
         <Field label="Cor">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
             <input
               type="color"
               value={completeHexColor(color)}
               onChange={(event) => setColor(normalizeHexColor(event.target.value))}
-              className="h-9 w-14 cursor-pointer rounded border border-border"
+              className="h-7 w-9 cursor-pointer rounded border border-border bg-transparent p-0"
             />
-            <Input
+            <input
+              type="text"
               value={color}
               onChange={(event) => setColor(normalizeHexColor(event.target.value))}
+              placeholder={completeHexColor("#3B82F6")}
+              maxLength={7}
+              className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
             />
           </div>
         </Field>
@@ -205,14 +209,14 @@ function EtiquetaForm({
   );
 }
 
-function normalizeHexColor(value?: string | null, _fallback = "#6366f1") {
+function normalizeHexColor(value?: string | null, _fallback = "#3B82F6") {
   const digits = String(value ?? "")
     .replace(/[^0-9a-fA-F]/g, "")
     .slice(0, 6);
   return `#${digits.toUpperCase()}`;
 }
 
-function completeHexColor(value?: string | null, fallback = "#6366f1") {
+function completeHexColor(value?: string | null, fallback = "#3B82F6") {
   const normalized = normalizeHexColor(value);
   return normalized.length === 7 ? normalized : normalizeHexColor(fallback);
 }

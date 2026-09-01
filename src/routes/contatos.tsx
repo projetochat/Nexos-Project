@@ -8,6 +8,7 @@ import {
   AlignRight,
   Building2,
   Bold,
+  Camera,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -547,7 +548,7 @@ function ContatosPage() {
 
   return (
     <AppShell>
-      <PageContainer className="max-w-none lg:px-5 xl:px-6">
+      <PageContainer className="max-w-[96rem] lg:px-8 xl:px-10 2xl:px-12">
         <SectionHeader
           title="Contatos"
           subtitle={`${total} contatos cadastrados.`}
@@ -1077,9 +1078,9 @@ function ContatosPage() {
                         <span
                           className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
                           style={{
-                            backgroundColor: `${contact.customer.cor ?? "#3b82f6"}1f`,
-                            borderColor: `${contact.customer.cor ?? "#3b82f6"}66`,
-                            color: contact.customer.cor ?? "#3b82f6",
+                            backgroundColor: `${contact.customer.cor ?? "#3B82F6"}1f`,
+                            borderColor: `${contact.customer.cor ?? "#3B82F6"}66`,
+                            color: contact.customer.cor ?? "#3B82F6",
                           }}
                         >
                           <Link2 className="h-3 w-3 shrink-0" />
@@ -1148,7 +1149,7 @@ function ContatosPage() {
               <Select
                 value={String(pageSize)}
                 onChange={(event) => setPageSize(Number(event.target.value))}
-                className="h-9 w-20 text-xs sm:h-8 sm:w-24"
+                className="h-8 w-20 text-xs sm:w-24"
               >
                 {PAGE_SIZE_OPTIONS.map((option) => (
                   <option key={option} value={option}>
@@ -1528,6 +1529,7 @@ function ContactFormModal({
     instanceIds: string[];
     tag_ids: string[];
     customFields: Record<string, string | boolean>;
+    avatarUrl: string | null;
   }) => void | Promise<void>;
   initial?: Contact;
 }) {
@@ -1536,6 +1538,7 @@ function ContactFormModal({
   const [countryCode, setCountryCode] = React.useState("55");
   const [customerId, setCustomerId] = React.useState("");
   const [email, setEmail] = React.useState("");
+  const [avatarUrl, setAvatarUrl] = React.useState<string | null>(null);
   const [contactDepartmentId, setContactDepartmentId] = React.useState("");
   const [contactProfileId, setContactProfileId] = React.useState("");
   const [instanceIds, setInstanceIds] = React.useState<string[]>([]);
@@ -1562,6 +1565,7 @@ function ContactFormModal({
     );
     setCustomerId(initial?.customer_id ?? "");
     setEmail(initial?.email ?? "");
+    setAvatarUrl(initial?.avatar_url ?? null);
     setContactDepartmentId(initial?.contactDepartmentId ?? "");
     setContactProfileId(initial?.contactProfileId ?? "");
     setInstanceIds(initial?.instanceIds ?? (initial?.instancia ? [initial.instancia] : []));
@@ -1615,7 +1619,17 @@ function ContactFormModal({
       instanceIds,
       tag_ids: tagIds,
       customFields: normalizedCustomFields,
+      avatarUrl,
     });
+  };
+
+  const handlePhotoChange = async (file: File | null) => {
+    if (!file) return;
+    try {
+      setAvatarUrl(await readContactImageAsDataUrl(file));
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
   };
 
   return (
@@ -1657,7 +1671,36 @@ function ContactFormModal({
           ))}
         </div>
         {activeContactTab === "Geral" && (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-[7.5rem_minmax(0,1fr)_minmax(0,1fr)] md:items-start">
+            <div className="order-0 md:row-span-2">
+              <div className="flex items-center gap-3 md:block">
+                <div className="relative inline-flex">
+                  <Avatar name={nome || "Contato"} src={avatarUrl ?? undefined} size={88} />
+                  <label className="absolute -bottom-1 -right-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-surface-1 text-muted-foreground shadow-sm transition hover:text-primary">
+                    <Camera className="h-4 w-4" />
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={(event) => {
+                        void handlePhotoChange(event.target.files?.[0] ?? null);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+                {avatarUrl && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="md:mt-2 md:w-[88px] md:px-1"
+                    onClick={() => setAvatarUrl(null)}
+                  >
+                    Remover
+                  </Button>
+                )}
+              </div>
+            </div>
             <div className="order-1 md:order-none">
               <Field label="Nome *">
                 <Input value={nome} onChange={(e) => setNome(e.target.value)} />
@@ -1805,7 +1848,7 @@ function ContactFormModal({
                         {field.note && (
                           <span
                             title={field.note}
-                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full align-middle text-primary transition hover:text-primary/80"
+                            className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-full align-middle text-primary transition hover:text-primary/80"
                           >
                             <Info className="h-3 w-3" />
                           </span>
@@ -1876,6 +1919,7 @@ function CustomersManagerModal({
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [query, setQuery] = React.useState("");
   const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = React.useState(0);
   const [totalPages, setTotalPages] = React.useState(1);
   const [loading, setLoading] = React.useState(false);
@@ -1886,7 +1930,7 @@ function CustomersManagerModal({
     if (!open) return;
     setLoading(true);
     try {
-      const response = await crmApi.listCustomers({ q: query, page, pageSize: 8 });
+      const response = await crmApi.listCustomers({ q: query, page, pageSize });
       setCustomers(response.items);
       setTotal(response.total);
       setTotalPages(response.totalPages);
@@ -1895,13 +1939,13 @@ function CustomersManagerModal({
     } finally {
       setLoading(false);
     }
-  }, [open, page, query]);
+  }, [open, page, pageSize, query]);
   React.useEffect(() => {
     if (open) void load();
   }, [load, open]);
   React.useEffect(() => {
     setPage(1);
-  }, [query]);
+  }, [pageSize, query]);
   const pageSafe = Math.min(page, totalPages);
   const selectCustomer = (customer: Customer) => {
     onCustomerSelected(customer);
@@ -1933,17 +1977,7 @@ function CustomersManagerModal({
     }
   };
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Empresa do Contato"
-      size="xl"
-      footer={
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Fechar
-        </Button>
-      }
-    >
+    <Modal open={open} onClose={onClose} title="Empresa do Contato" size="xl">
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
           <div></div>
@@ -2004,10 +2038,27 @@ function CustomersManagerModal({
               Nenhuma empresa encontrada.
             </div>
           )}
-          <div className="hidden items-center justify-between rounded-lg border border-border bg-surface-1 px-4 py-3 text-xs text-muted-foreground sm:flex">
-            <span>
-              Mostrando {customers.length} de {total}
-            </span>
+          <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 leading-tight sm:leading-normal">
+                <span className="block sm:inline">Mostrando</span>
+                <span className="block sm:inline">
+                  {" "}
+                  {customers.length} de {total}
+                </span>
+              </span>
+              <Select
+                value={String(pageSize)}
+                onChange={(event) => setPageSize(Number(event.target.value))}
+                className="h-8 w-20 text-xs sm:w-24"
+              >
+                {PAGE_SIZE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
@@ -2241,7 +2292,7 @@ function DepartmentFormModal({
     setForm(
       initial
         ? { name: initial.nome, description: initial.descricao, color: initial.cor }
-        : { color: "#6366f1" },
+        : { color: "#3B82F6" },
     );
     setError("");
   }, [initial, open]);
@@ -2286,8 +2337,8 @@ function DepartmentFormModal({
           </Field>
           <Field label="Cor">
             <ColorField
-              value={form.color ?? "#6366f1"}
-              fallback="#6366f1"
+              value={form.color ?? "#3B82F6"}
+              fallback="#3B82F6"
               onChange={(color) => setForm({ ...form, color })}
             />
           </Field>
@@ -2664,9 +2715,9 @@ function TagMultiSelect({
                 key={tag.id}
                 className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
                 style={{
-                  backgroundColor: `${tag.cor ?? "#3b82f6"}1f`,
-                  borderColor: `${tag.cor ?? "#3b82f6"}66`,
-                  color: tag.cor ?? "#3b82f6",
+                  backgroundColor: `${tag.cor ?? "#3B82F6"}1f`,
+                  borderColor: `${tag.cor ?? "#3B82F6"}66`,
+                  color: tag.cor ?? "#3B82F6",
                 }}
               >
                 <Tag className="h-3 w-3 shrink-0" />
@@ -2699,9 +2750,9 @@ function TagMultiSelect({
                   <span
                     className="inline-flex min-w-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
                     style={{
-                      backgroundColor: `${tag.cor ?? "#3b82f6"}1f`,
-                      borderColor: `${tag.cor ?? "#3b82f6"}66`,
-                      color: tag.cor ?? "#3b82f6",
+                      backgroundColor: `${tag.cor ?? "#3B82F6"}1f`,
+                      borderColor: `${tag.cor ?? "#3B82F6"}66`,
+                      color: tag.cor ?? "#3B82F6",
                     }}
                   >
                     <Tag className="h-3 w-3 shrink-0" />
@@ -3557,7 +3608,7 @@ function formatPhoneForSubmit(value: string, countryCode = "55") {
 }
 
 function maskBrazilMobilePhone(value: string, countryCode = "55") {
-  const digits = normalizeBrazilMobileDigits(onlyDigits(value), countryCode);
+  const digits = onlyDigits(value);
   return onlyDigits(countryCode) === "55" ? maskBrazilPhone(digits) : digits;
 }
 
@@ -3782,7 +3833,7 @@ function CustomerFormModal({
           <Field label="Cor">
             <ColorField
               value={form.cor ?? "#3B82F6"}
-              fallback="#3b82f6"
+              fallback="#3B82F6"
               onChange={(cor) => setForm({ ...form, cor })}
             />
           </Field>
@@ -3825,14 +3876,14 @@ function CustomerFormModal({
   );
 }
 
-function normalizeHexColor(value?: string | null, _fallback = "#6366f1") {
+function normalizeHexColor(value?: string | null, _fallback = "#3B82F6") {
   const digits = String(value ?? "")
     .replace(/[^0-9a-fA-F]/g, "")
     .slice(0, 6);
   return `#${digits.toUpperCase()}`;
 }
 
-function completeHexColor(value?: string | null, fallback = "#6366f1") {
+function completeHexColor(value?: string | null, fallback = "#3B82F6") {
   const normalized = normalizeHexColor(value);
   return normalized.length === 7 ? normalized : normalizeHexColor(fallback);
 }
@@ -3867,13 +3918,46 @@ function ColorField({
   );
 }
 
+function readContactImageAsDataUrl(file: File): Promise<string> {
+  if (!/^image\/(png|jpe?g|webp)$/i.test(file.type)) {
+    return Promise.reject(new Error("Use uma imagem PNG, JPG ou WebP."));
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    return Promise.reject(new Error("A imagem deve ter até 2 MB."));
+  }
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const max = 320;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Não foi possível processar a imagem."));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      img.onerror = () => reject(new Error("Não foi possível processar a imagem."));
+      img.src = String(reader.result);
+    };
+    reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function customerPayload(data: CustomerFormData) {
   return {
     name: data.nome,
     responsibleContactName: data.contato_responsavel?.trim() || null,
     phone: data.telefone?.trim() || null,
     email: data.email?.trim() || null,
-    color: completeHexColor(data.cor, "#3b82f6"),
+    color: completeHexColor(data.cor, "#3B82F6"),
     notes: data.notas?.trim() || null,
   };
 }
@@ -3896,7 +3980,7 @@ function departmentPayload(data: DepartamentoFormData) {
   return {
     name: data.name ?? "",
     description: data.description?.trim() || null,
-    color: completeHexColor(data.color, "#6366f1"),
+    color: completeHexColor(data.color, "#3B82F6"),
   };
 }
 
@@ -3911,6 +3995,7 @@ function contactPayload(data: {
   instanceIds: string[];
   tag_ids: string[];
   customFields?: Record<string, string | boolean>;
+  avatarUrl?: string | null;
 }) {
   return {
     name: data.nome,
@@ -3923,5 +4008,6 @@ function contactPayload(data: {
     instance: data.instanceIds[0] ?? null,
     tagIds: data.tag_ids,
     customFields: data.customFields ?? {},
+    avatarUrl: data.avatarUrl ?? null,
   };
 }

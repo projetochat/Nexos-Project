@@ -21,13 +21,13 @@ function ConfiguracoesLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   return (
     <AppShell>
-      <PageContainer>
+      <PageContainer className="max-w-[96rem] lg:px-6 xl:px-8">
         <SectionHeader
           title="Configurações"
           subtitle="Ajustes gerais da sua conta e da operação."
         />
 
-        <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
           <aside>
             <nav className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface-1 p-1 lg:flex-col lg:overflow-visible lg:p-2">
               {TABS.map((t) => {

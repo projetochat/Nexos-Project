@@ -1,9 +1,18 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
-import { Button, Card, Field, Input, SectionHeader, Select, Textarea } from "@/components/ui-kit";
+import {
+  Button,
+  Card,
+  Field,
+  Input,
+  SearchInput,
+  SectionHeader,
+  Select,
+  Textarea,
+} from "@/components/ui-kit";
 import { crmApi, type ApiContactCustomField } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/configuracoes/campos-contato")({
@@ -52,7 +61,13 @@ function ContactFieldsSettings() {
   const [fields, setFields] = React.useState<ApiContactCustomField[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [editing, setEditing] = React.useState<ApiContactCustomField | null>(null);
+  const [duplicating, setDuplicating] = React.useState<ApiContactCustomField | null>(null);
   const [deleting, setDeleting] = React.useState<ApiContactCustomField | null>(null);
+  const [query, setQuery] = React.useState("");
+  const [typeFilter, setTypeFilter] = React.useState("");
+  const [requiredFilter, setRequiredFilter] = React.useState("");
+  const [tabFilter, setTabFilter] = React.useState("");
+  const [groupFilter, setGroupFilter] = React.useState("");
   const create = useDisclosure();
 
   const load = React.useCallback(async () => {
@@ -96,9 +111,55 @@ function ContactFieldsSettings() {
       toast.success(editing ? "Campo atualizado" : "Campo criado");
       create.hide();
       setEditing(null);
+      setDuplicating(null);
       await load();
     } catch (error) {
       toast.error("Falha ao salvar campo", { description: (error as Error).message });
+    }
+  };
+
+  const filteredFields = React.useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return fields.filter((field) => {
+      const tabName = displayFieldTab(field);
+      const groupName = displayFieldGroup(field);
+      const matchesQuery =
+        !normalizedQuery ||
+        field.label.toLowerCase().includes(normalizedQuery) ||
+        (field.note ?? "").toLowerCase().includes(normalizedQuery);
+      const matchesType = !typeFilter || field.type === typeFilter;
+      const matchesRequired =
+        !requiredFilter || (requiredFilter === "yes" ? field.required : !field.required);
+      const matchesTab = !tabFilter || tabName === tabFilter;
+      const matchesGroup = !groupFilter || groupName === groupFilter;
+      return matchesQuery && matchesType && matchesRequired && matchesTab && matchesGroup;
+    });
+  }, [fields, groupFilter, query, requiredFilter, tabFilter, typeFilter]);
+
+  const tabOptions = React.useMemo(
+    () => uniqueLabels(fields.map(displayFieldTab).filter(Boolean)),
+    [fields],
+  );
+  const groupOptions = React.useMemo(
+    () => uniqueLabels(fields.map(displayFieldGroup).filter(Boolean)),
+    [fields],
+  );
+
+  const moveField = async (field: ApiContactCustomField, direction: -1 | 1) => {
+    const ordered = [...fields].sort(
+      (a, b) => a.position - b.position || a.label.localeCompare(b.label),
+    );
+    const index = ordered.findIndex((item) => item.id === field.id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) return;
+    const reordered = [...ordered];
+    [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
+    try {
+      const updated = await crmApi.reorderContactCustomFields(reordered.map((item) => item.id));
+      setFields(updated);
+      toast.success("Ordem atualizada");
+    } catch (error) {
+      toast.error("Falha ao ordenar campos", { description: (error as Error).message });
     }
   };
 
@@ -113,17 +174,70 @@ function ContactFieldsSettings() {
           </Button>
         }
       />
-      <div className="mt-4 overflow-hidden rounded-lg border border-border">
-        <table className="w-full table-fixed text-sm">
+      <div className="mb-4 rounded-lg border border-border bg-surface-1 p-4">
+        <div className="grid gap-3 md:grid-cols-5">
+          <div className="md:col-span-2">
+            <Field label="Busca">
+              <SearchInput
+                value={query}
+                onChange={setQuery}
+                placeholder="Buscar por nome ou nota explicativa..."
+              />
+            </Field>
+          </div>
+          <Field label="Tipo do Campo">
+            <Select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+              <option value="">Todos</option>
+              <option value="text">Texto</option>
+              <option value="number">Número</option>
+              <option value="checkbox">Checkbox</option>
+              <option value="list">Lista</option>
+              <option value="date">Data</option>
+            </Select>
+          </Field>
+          <Field label="Obrigatório">
+            <Select
+              value={requiredFilter}
+              onChange={(event) => setRequiredFilter(event.target.value)}
+            >
+              <option value="">Todos</option>
+              <option value="yes">S</option>
+              <option value="no">N</option>
+            </Select>
+          </Field>
+          <Field label="Aba">
+            <Select value={tabFilter} onChange={(event) => setTabFilter(event.target.value)}>
+              <option value="">Todas</option>
+              {tabOptions.map((tab) => (
+                <option key={tab} value={tab}>
+                  {tab}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Agrupamento">
+            <Select value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}>
+              <option value="">Todos</option>
+              {groupOptions.map((group) => (
+                <option key={group} value={group}>
+                  {group}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+      </div>
+      <div className="mt-4 overflow-x-auto rounded-lg border border-border">
+        <table className="w-full min-w-[58rem] table-fixed text-sm">
           <thead className="bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
             <tr>
+              <th className="w-24 px-4 py-3">Posição</th>
               <th className="w-[24%] px-4 py-3">Campo</th>
               <th className="w-32 px-4 py-3">Tipo</th>
+              <th className="w-28 px-4 py-3">Obrigatório</th>
               <th className="w-36 px-4 py-3">Aba</th>
               <th className="w-44 px-4 py-3">Agrupamento</th>
-              <th className="w-28 px-4 py-3">Obrigatório</th>
-              <th className="px-4 py-3">Nota</th>
-              <th className="w-24 px-4 py-3 text-center">Ações</th>
+              <th className="w-40 px-4 py-3 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -135,24 +249,46 @@ function ContactFieldsSettings() {
               </tr>
             )}
             {!loading &&
-              fields.map((field) => (
+              filteredFields.map((field) => (
                 <tr key={field.id} className="hover:bg-surface-1">
+                  <td className="px-4 py-3 text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                      <span className="w-8 font-mono">{field.position + 1}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Subir"
+                        onClick={() => void moveField(field, -1)}
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Descer"
+                        onClick={() => void moveField(field, 1)}
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </td>
                   <td className="px-4 py-3 font-medium">{field.label}</td>
                   <td className="px-4 py-3 text-muted-foreground">{fieldTypeLabel(field)}</td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {isReservedContactTab(field.tabName)
-                      ? DEFAULT_CONTACT_CUSTOM_TAB
-                      : field.tabName}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {isReservedContactGroup(field.groupName) ? "-" : field.groupName || "-"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
                     {field.required ? "Sim" : "Não"}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{field.note || "-"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{displayFieldTab(field)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{displayFieldGroup(field)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Duplicar"
+                        onClick={() => setDuplicating(field)}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -173,7 +309,7 @@ function ContactFieldsSettings() {
                   </td>
                 </tr>
               ))}
-            {!loading && fields.length === 0 && (
+            {!loading && filteredFields.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                   Nenhum campo adicional cadastrado.
@@ -184,14 +320,15 @@ function ContactFieldsSettings() {
         </table>
       </div>
       <ContactFieldFormModal
-        open={create.open || !!editing}
-        initial={editing ?? undefined}
+        open={create.open || !!editing || !!duplicating}
+        initial={editing ?? duplicating ?? undefined}
+        clone={!!duplicating}
         onClose={() => {
           create.hide();
           setEditing(null);
+          setDuplicating(null);
         }}
         onSubmit={save}
-        fields={fields}
       />
       <ConfirmDialog
         open={!!deleting}
@@ -224,19 +361,19 @@ function ContactFieldFormModal({
   onClose,
   onSubmit,
   initial,
-  fields,
+  clone = false,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: FieldForm) => void | Promise<void>;
   initial?: ApiContactCustomField;
-  fields: ApiContactCustomField[];
+  clone?: boolean;
 }) {
   const [form, setForm] = React.useState<FieldForm>(emptyFieldForm());
   React.useEffect(() => {
     if (!open) return;
-    setForm(initial ? fieldToForm(initial) : emptyFieldForm());
-  }, [initial, open]);
+    setForm(initial ? fieldToForm(initial, clone) : emptyFieldForm());
+  }, [clone, initial, open]);
 
   const save = () => {
     if (form.label.trim().length < 2) {
@@ -266,7 +403,7 @@ function ContactFieldFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial ? "Editar Campo" : "Novo Campo"}
+      title={initial && !clone ? "Editar Campo" : clone ? "Duplicar Campo" : "Novo Campo"}
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -289,7 +426,7 @@ function ContactFieldFormModal({
           <Field label="Tipo *">
             <Select
               value={form.type}
-              disabled={!!initial}
+              disabled={!!initial && !clone}
               onChange={(event) => {
                 const type = event.target.value as FieldForm["type"];
                 setForm({ ...form, type, required: type === "checkbox" ? false : form.required });
@@ -448,12 +585,12 @@ function emptyFieldForm(): FieldForm {
   };
 }
 
-function fieldToForm(field: ApiContactCustomField): FieldForm {
+function fieldToForm(field: ApiContactCustomField, clone = false): FieldForm {
   const config = parseFieldConfig(field.mask);
   const tabName = field.tabName || "";
   const groupName = field.groupName || "";
   return {
-    label: field.label,
+    label: clone ? `${field.label} - Cópia` : field.label,
     type: field.type,
     required: field.required,
     tabName: isReservedContactTab(tabName) ? "" : tabName,
@@ -502,6 +639,18 @@ function isReservedContactTab(value: string) {
 
 function isReservedContactGroup(value: string) {
   return value.trim().toLowerCase() === RESERVED_CONTACT_GROUP.toLowerCase();
+}
+
+function displayFieldTab(field: ApiContactCustomField) {
+  return isReservedContactTab(field.tabName) ? DEFAULT_CONTACT_CUSTOM_TAB : field.tabName;
+}
+
+function displayFieldGroup(field: ApiContactCustomField) {
+  return isReservedContactGroup(field.groupName) ? "-" : field.groupName || "-";
+}
+
+function uniqueLabels(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
 function clampInteger(value: string | number, min: number, max: number) {

@@ -580,7 +580,7 @@ model Department {
   tenantId        String
   name            String
   description     String?
-  color           String                 @default("#6366f1")
+  color           String                 @default("#3B82F6")
   active          Boolean                @default(true)
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
@@ -666,7 +666,7 @@ model Customer {
   phone                  String?
   notes                  String?
   responsibleContactName String?
-  color                  String              @default("#6366f1")
+  color                  String              @default("#3B82F6")
   archivedAt             DateTime?
   createdAt              DateTime            @default(now())
   updatedAt              DateTime            @updatedAt
@@ -732,7 +732,7 @@ model ContactDepartment {
   name           String
   normalizedName String
   description    String?
-  color          String    @default("#6366f1")
+  color          String    @default("#3B82F6")
   archivedAt     DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -750,7 +750,7 @@ model ContactProfile {
   name           String
   normalizedName String
   description    String?
-  color          String    @default("#6366f1")
+  color          String    @default("#3B82F6")
   archivedAt     DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -806,7 +806,7 @@ model Tag {
   tenantId       String
   name           String
   normalizedName String
-  color          String       @default("#6366f1")
+  color          String       @default("#3B82F6")
   archivedAt     DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt

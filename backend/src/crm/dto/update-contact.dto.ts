@@ -28,6 +28,10 @@ export class UpdateContactDto {
   email?: string;
 
   @IsOptional()
+  @IsString()
+  avatarUrl?: string | null;
+
+  @IsOptional()
   @IsUUID()
   customerId?: string | null;
 

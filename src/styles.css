@@ -485,6 +485,23 @@
   background-color: color-mix(in oklab, var(--foreground) 40%, transparent);
 }
 
+button[title*="Excluir"]:hover svg,
+button[aria-label*="Excluir"]:hover svg {
+  color: var(--color-destructive);
+}
+
+button[title*="Editar"]:hover svg,
+button[aria-label*="Editar"]:hover svg {
+  color: var(--color-warning);
+}
+
+button[title*="Abrir conversa"]:hover svg,
+button[aria-label*="Abrir conversa"]:hover svg,
+button[title*="Selecionar"]:hover svg,
+button[aria-label*="Selecionar"]:hover svg {
+  color: var(--color-primary);
+}
+
 /* Variante "revelar no hover" — usada quando a sidebar está recolhida.
    Trilho reservado (overflow-y: scroll) mantém a largura fixa do painel;
    o polegar fica invisível até o hover, portanto a barra é flutuante

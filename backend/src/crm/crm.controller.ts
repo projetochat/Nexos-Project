@@ -104,6 +104,14 @@ class ContactCustomFieldDto {
   @MaxLength(120, { each: true })
   options?: string[];
 }
+
+class ReorderContactCustomFieldsDto {
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsUUID(undefined, { each: true })
+  fieldIds!: string[];
+}
+
 class BulkUpdateContactsDto {
   @IsArray()
   @ArrayMaxSize(1000)
@@ -228,7 +236,7 @@ export class CrmController {
         phone: cleanNullable(dto.phone),
         notes: cleanNullable(dto.notes),
         responsibleContactName: cleanNullable(dto.responsibleContactName),
-        color: dto.color ?? "#6366f1",
+        color: dto.color ?? "#3B82F6",
       },
       include: customerInclude,
     });
@@ -430,9 +438,20 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const data = this.prepareContactCustomField(dto);
-    const position = await this.prisma.contactCustomField.count({
-      where: { tenantId: current.tenantId, archivedAt: null },
+    await this.prisma.contactCustomField.updateMany({
+      where: {
+        tenantId: current.tenantId,
+        normalizedName: data.normalizedName!,
+        archivedAt: { not: null },
+      },
+      data: { normalizedName: `${data.normalizedName}__archived__${Date.now()}` },
     });
+    const lastField = await this.prisma.contactCustomField.findFirst({
+      where: { tenantId: current.tenantId, archivedAt: null },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    const position = (lastField?.position ?? -1) + 1;
     const field = await this.prisma.contactCustomField.create({
       data: {
         tenantId: current.tenantId,
@@ -449,6 +468,33 @@ export class CrmController {
       },
     });
     return this.serializeContactCustomField(field);
+  }
+
+  @Patch("contact-custom-fields/reorder")
+  @RequirePermissions("crm.manage")
+  async reorderContactCustomFields(
+    @Body() dto: ReorderContactCustomFieldsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const fieldIds = Array.from(new Set(dto.fieldIds ?? []));
+    if (!fieldIds.length) throw new BadRequestException("Informe a ordem dos campos.");
+    const fields = await this.prisma.contactCustomField.findMany({
+      where: { tenantId: current.tenantId, id: { in: fieldIds }, archivedAt: null },
+      select: { id: true },
+    });
+    if (fields.length !== fieldIds.length) {
+      throw new BadRequestException("Alguns campos adicionais nao foram encontrados.");
+    }
+    await this.prisma.$transaction(
+      fieldIds.map((id, position) =>
+        this.prisma.contactCustomField.update({ where: { id }, data: { position } }),
+      ),
+    );
+    const updated = await this.prisma.contactCustomField.findMany({
+      where: { tenantId: current.tenantId, archivedAt: null },
+      orderBy: [{ position: "asc" }, { label: "asc" }],
+    });
+    return updated.map((field) => this.serializeContactCustomField(field));
   }
 
   @Patch("contact-custom-fields/:id")
@@ -472,10 +518,13 @@ export class CrmController {
     @Param("id") id: string,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    await this.findContactCustomFieldOrThrow(id, current.tenantId);
+    const currentField = await this.findContactCustomFieldOrThrow(id, current.tenantId);
     const field = await this.prisma.contactCustomField.update({
       where: { id },
-      data: { archivedAt: new Date() },
+      data: {
+        archivedAt: new Date(),
+        normalizedName: `${currentField.normalizedName}__archived__${Date.now()}`,
+      },
     });
     return this.serializeContactCustomField(field);
   }
@@ -577,7 +626,7 @@ export class CrmController {
         name,
         normalizedName: normalizeCatalogName(name),
         description: cleanNullable(dto.description),
-        color: dto.color || "#6366f1",
+        color: dto.color || "#3B82F6",
       },
     });
     return this.serializeContactCatalog(item);
@@ -645,7 +694,7 @@ export class CrmController {
         name,
         normalizedName: normalizeCatalogName(name),
         description: cleanNullable(dto.description),
-        color: dto.color || "#6366f1",
+        color: dto.color || "#3B82F6",
       },
     });
     return this.serializeContactCatalog(item);
@@ -730,6 +779,7 @@ export class CrmController {
             phone: dto.phone.trim(),
             normalizedPhone,
             email: cleanNullable(dto.email),
+            avatarUrl: cleanNullable(dto.avatarUrl),
             customerId: links.customerId,
             departmentId: links.departmentId,
             contactDepartmentId: links.contactDepartmentId,
@@ -754,6 +804,7 @@ export class CrmController {
             phone: dto.phone.trim(),
             normalizedPhone,
             email: cleanNullable(dto.email),
+            avatarUrl: cleanNullable(dto.avatarUrl),
             customerId: links.customerId,
             departmentId: links.departmentId,
             contactDepartmentId: links.contactDepartmentId,
@@ -845,6 +896,7 @@ export class CrmController {
                   ? currentGroupIdentity
                   : (groupContactIdentityFromPhone(dto.phone) ?? normalizePhone(dto.phone)),
             email: nullableUpdate(dto.email),
+            avatarUrl: nullableUpdate(dto.avatarUrl),
             customerId: dto.customerId === undefined ? undefined : links.customerId,
             departmentId: dto.departmentId === undefined ? undefined : links.departmentId,
             contactDepartmentId:

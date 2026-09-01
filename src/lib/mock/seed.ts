@@ -20,7 +20,17 @@ const day = 86_400_000;
 const pick = <T>(arr: readonly T[]) => arr[Math.floor(faker.number.float() * arr.length)];
 
 /* ---------------- Empresas (15) ---------------- */
-const SEGMENTOS = ["E-commerce", "SaaS", "Educação", "Saúde", "Fintech", "Logística", "Varejo", "Serviços", "Indústria"];
+const SEGMENTOS = [
+  "E-commerce",
+  "SaaS",
+  "Educação",
+  "Saúde",
+  "Fintech",
+  "Logística",
+  "Varejo",
+  "Serviços",
+  "Indústria",
+];
 const PLANOS = ["Free", "Trial", "Pro", "Enterprise"] as const;
 
 export const empresas: Empresa[] = Array.from({ length: 15 }, (_, i) => ({
@@ -35,7 +45,7 @@ export const empresas: Empresa[] = Array.from({ length: 15 }, (_, i) => ({
 
 /* ---------------- Departamentos (12) ---------------- */
 const DEPTOS = [
-  ["Comercial", "#6366f1"],
+  ["Comercial", "#3B82F6"],
   ["Suporte Nível 1", "#06b6d4"],
   ["Suporte Nível 2", "#0ea5e9"],
   ["Financeiro", "#f59e0b"],
@@ -97,7 +107,15 @@ export const atendentes: Atendente[] = Array.from({ length: 30 }, (_, i) => {
 });
 
 /* ---------------- Clientes (120) ---------------- */
-const STATUS_CLIENTE = ["Ativo", "Ativo", "Ativo", "VIP", "Trial", "Inadimplente", "Perdido"] as const;
+const STATUS_CLIENTE = [
+  "Ativo",
+  "Ativo",
+  "Ativo",
+  "VIP",
+  "Trial",
+  "Inadimplente",
+  "Perdido",
+] as const;
 
 export const clientes: Cliente[] = Array.from({ length: 120 }, (_, i) => {
   const nome = faker.person.fullName();
@@ -128,7 +146,16 @@ export const clientes: Cliente[] = Array.from({ length: 120 }, (_, i) => {
 });
 
 /* ---------------- Conversas (300) + Mensagens (~2000) ---------------- */
-const STATUS_CONV = ["aguardando", "atendendo", "atendendo", "resolvida", "resolvida", "resolvida", "perdida", "arquivada"] as const;
+const STATUS_CONV = [
+  "aguardando",
+  "atendendo",
+  "atendendo",
+  "resolvida",
+  "resolvida",
+  "resolvida",
+  "perdida",
+  "arquivada",
+] as const;
 const CANAIS = ["WhatsApp", "WhatsApp Business"] as const;
 
 const FRASES_CLIENTE = [
@@ -172,7 +199,10 @@ for (let i = 0; i < 300; i++) {
   const status = pick(STATUS_CONV);
   const atendente = status === "aguardando" ? undefined : pick(atendentes);
   const dep = pick(departamentos);
-  const createdAt = now - faker.number.int({ min: 0, max: 60 }) * day - faker.number.int({ min: 0, max: 20 }) * 3_600_000;
+  const createdAt =
+    now -
+    faker.number.int({ min: 0, max: 60 }) * day -
+    faker.number.int({ min: 0, max: 20 }) * 3_600_000;
   const msgCount = faker.number.int({ min: 3, max: 12 });
   const tagsCount = faker.number.int({ min: 0, max: 2 });
   const tagsSet = new Set<string>();
@@ -223,7 +253,9 @@ for (let i = 0; i < 300; i++) {
 // Garante ~2000 mensagens: adiciona conversas extras se necessário
 while (mensagens.length < 2000) {
   const conv = pick(conversas);
-  const atendente = conv.atendenteId ? atendentes.find((a) => a.id === conv.atendenteId) : undefined;
+  const atendente = conv.atendenteId
+    ? atendentes.find((a) => a.id === conv.atendenteId)
+    : undefined;
   const fromClient = faker.number.float() < 0.55 || !atendente;
   conv.updatedAt += faker.number.int({ min: 30, max: 300 }) * 1000;
   mensagens.push({
@@ -256,7 +288,8 @@ const STATUS_CAMP = ["rascunho", "agendada", "enviando", "concluida", "pausada"]
 export const campanhas: Campanha[] = NOMES_CAMP.map((nome, i) => {
   const publico = faker.number.int({ min: 200, max: 4200 });
   const status = i < 3 ? "concluida" : pick(STATUS_CAMP);
-  const enviadas = status === "rascunho" ? 0 : Math.floor(publico * (0.6 + faker.number.float() * 0.4));
+  const enviadas =
+    status === "rascunho" ? 0 : Math.floor(publico * (0.6 + faker.number.float() * 0.4));
   const entregues = Math.floor(enviadas * (0.9 + faker.number.float() * 0.09));
   const lidas = Math.floor(entregues * (0.55 + faker.number.float() * 0.35));
   const respondidas = Math.floor(lidas * (0.1 + faker.number.float() * 0.25));
@@ -270,6 +303,7 @@ export const campanhas: Campanha[] = NOMES_CAMP.map((nome, i) => {
     lidas,
     respondidas,
     criadaEm: now - faker.number.int({ min: 1, max: 90 }) * day,
-    agendadaPara: status === "agendada" ? now + faker.number.int({ min: 1, max: 14 }) * day : undefined,
+    agendadaPara:
+      status === "agendada" ? now + faker.number.int({ min: 1, max: 14 }) * day : undefined,
   };
 });

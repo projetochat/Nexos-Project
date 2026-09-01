@@ -24,8 +24,7 @@ import type {
 } from "./types";
 
 let counter = 1;
-const genId = (prefix: string) =>
-  `${prefix}-${Date.now().toString(36)}${(counter++).toString(36)}`;
+const genId = (prefix: string) => `${prefix}-${Date.now().toString(36)}${(counter++).toString(36)}`;
 
 type State = {
   empresas: Empresa[];
@@ -114,8 +113,7 @@ export const useStore = create<State>((set, get) => ({
   },
   updateCliente: (id, patch) =>
     set((s) => ({ clientes: s.clientes.map((c) => (c.id === id ? { ...c, ...patch } : c)) })),
-  deleteCliente: (id) =>
-    set((s) => ({ clientes: s.clientes.filter((c) => c.id !== id) })),
+  deleteCliente: (id) => set((s) => ({ clientes: s.clientes.filter((c) => c.id !== id) })),
 
   createEmpresa: (d) => {
     const e: Empresa = {
@@ -152,21 +150,22 @@ export const useStore = create<State>((set, get) => ({
   },
   updateAtendente: (id, patch) =>
     set((s) => ({ atendentes: s.atendentes.map((a) => (a.id === id ? { ...a, ...patch } : a)) })),
-  deleteAtendente: (id) =>
-    set((s) => ({ atendentes: s.atendentes.filter((a) => a.id !== id) })),
+  deleteAtendente: (id) => set((s) => ({ atendentes: s.atendentes.filter((a) => a.id !== id) })),
 
   createDepartamento: (d) => {
     const dep: Departamento = {
       id: genId("dep"),
       nome: d.nome ?? "Novo departamento",
-      cor: d.cor ?? "#6366f1",
+      cor: d.cor ?? "#3B82F6",
       descricao: d.descricao ?? "",
     };
     set((s) => ({ departamentos: [dep, ...s.departamentos] }));
     return dep;
   },
   updateDepartamento: (id, patch) =>
-    set((s) => ({ departamentos: s.departamentos.map((d) => (d.id === id ? { ...d, ...patch } : d)) })),
+    set((s) => ({
+      departamentos: s.departamentos.map((d) => (d.id === id ? { ...d, ...patch } : d)),
+    })),
   deleteDepartamento: (id) =>
     set((s) => ({ departamentos: s.departamentos.filter((d) => d.id !== id) })),
 
@@ -174,15 +173,14 @@ export const useStore = create<State>((set, get) => ({
     const e: Etiqueta = {
       id: genId("tag"),
       nome: d.nome ?? "Nova etiqueta",
-      cor: d.cor ?? "#6366f1",
+      cor: d.cor ?? "#3B82F6",
     };
     set((s) => ({ etiquetas: [e, ...s.etiquetas] }));
     return e;
   },
   updateEtiqueta: (id, patch) =>
     set((s) => ({ etiquetas: s.etiquetas.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
-  deleteEtiqueta: (id) =>
-    set((s) => ({ etiquetas: s.etiquetas.filter((e) => e.id !== id) })),
+  deleteEtiqueta: (id) => set((s) => ({ etiquetas: s.etiquetas.filter((e) => e.id !== id) })),
 
   createCampanha: (d) => {
     const c: Campanha = {
@@ -201,8 +199,7 @@ export const useStore = create<State>((set, get) => ({
   },
   updateCampanha: (id, patch) =>
     set((s) => ({ campanhas: s.campanhas.map((c) => (c.id === id ? { ...c, ...patch } : c)) })),
-  deleteCampanha: (id) =>
-    set((s) => ({ campanhas: s.campanhas.filter((c) => c.id !== id) })),
+  deleteCampanha: (id) => set((s) => ({ campanhas: s.campanhas.filter((c) => c.id !== id) })),
 
   sendMessage: (conversaId, texto) => {
     const m: Mensagem = {
@@ -217,7 +214,13 @@ export const useStore = create<State>((set, get) => ({
       mensagens: [...s.mensagens, m],
       conversas: s.conversas.map((c) =>
         c.id === conversaId
-          ? { ...c, updatedAt: m.createdAt, status: c.status === "aguardando" ? "atendendo" : c.status, atendenteId: c.atendenteId ?? s.currentUserId, naoLidas: 0 }
+          ? {
+              ...c,
+              updatedAt: m.createdAt,
+              status: c.status === "aguardando" ? "atendendo" : c.status,
+              atendenteId: c.atendenteId ?? s.currentUserId,
+              naoLidas: 0,
+            }
           : c,
       ),
     }));
@@ -235,7 +238,9 @@ export const useStore = create<State>((set, get) => ({
   },
   transferConversa: (conversaId, atendenteId) =>
     set((s) => ({
-      conversas: s.conversas.map((c) => (c.id === conversaId ? { ...c, atendenteId, status: "atendendo" } : c)),
+      conversas: s.conversas.map((c) =>
+        c.id === conversaId ? { ...c, atendenteId, status: "atendendo" } : c,
+      ),
       mensagens: [
         ...s.mensagens,
         {
@@ -263,11 +268,15 @@ export const useStore = create<State>((set, get) => ({
     })),
   toggleFavoritoConversa: (conversaId) =>
     set((s) => ({
-      conversas: s.conversas.map((c) => (c.id === conversaId ? { ...c, favorito: !c.favorito } : c)),
+      conversas: s.conversas.map((c) =>
+        c.id === conversaId ? { ...c, favorito: !c.favorito } : c,
+      ),
     })),
   setConversaStatus: (conversaId, status) =>
     set((s) => ({
-      conversas: s.conversas.map((c) => (c.id === conversaId ? { ...c, status, updatedAt: Date.now() } : c)),
+      conversas: s.conversas.map((c) =>
+        c.id === conversaId ? { ...c, status, updatedAt: Date.now() } : c,
+      ),
     })),
   addTagConversa: (conversaId, tagId) =>
     set((s) => ({
@@ -294,7 +303,9 @@ export const useStore = create<State>((set, get) => ({
       createdAt: Date.now(),
     };
     set((s) => ({
-      clientes: s.clientes.map((c) => (c.id === clienteId ? { ...c, notas: [nota, ...c.notas] } : c)),
+      clientes: s.clientes.map((c) =>
+        c.id === clienteId ? { ...c, notas: [nota, ...c.notas] } : c,
+      ),
     }));
   },
 }));

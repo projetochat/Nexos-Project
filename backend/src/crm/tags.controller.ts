@@ -49,7 +49,7 @@ export class TagsController {
           tenantId: current.tenantId,
           name: clean(dto.name),
           normalizedName: normalizeName(dto.name),
-          color: dto.color ?? "#6366f1",
+          color: dto.color ?? "#3B82F6",
         },
       });
       return serializeTag(tag);
