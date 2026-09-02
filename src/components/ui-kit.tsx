@@ -167,10 +167,12 @@ export function Select({
 export function Field({
   label,
   hint,
+  error,
   children,
 }: {
   label: string;
   hint?: string;
+  error?: string;
   children: React.ReactNode;
 }) {
   const requiredMarkIndex = label.indexOf("*");
@@ -190,7 +192,11 @@ export function Field({
         )}
       </span>
       {children}
-      {hint && <span className="mt-1 block text-[11px] text-muted-foreground">{hint}</span>}
+      {error ? (
+        <span className="mt-1 block text-[11px] font-medium text-destructive">{error}</span>
+      ) : hint ? (
+        <span className="mt-1 block text-[11px] text-muted-foreground">{hint}</span>
+      ) : null}
     </label>
   );
 }

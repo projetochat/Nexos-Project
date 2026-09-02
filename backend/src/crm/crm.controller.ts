@@ -774,6 +774,7 @@ export class CrmController {
       await this.prisma.contact.count({ where: { tenantId: current.tenantId, archivedAt: null } }),
     );
     const links = await this.resolveContactLinks(dto, current.tenantId);
+    this.assertContactHasInstance(links.instanceIds);
     const normalizedPhone = groupContactIdentityFromPhone(dto.phone) ?? normalizePhone(dto.phone);
     const phoneCandidates = contactPhoneDuplicateCandidates(dto.phone);
     const existing = await this.prisma.contact.findFirst({
@@ -893,6 +894,9 @@ export class CrmController {
       }
     }
     const links = await this.resolveContactLinks(dto, current.tenantId);
+    this.assertContactHasInstance(
+      dto.instanceIds === undefined ? currentContact.instanceIds : links.instanceIds,
+    );
     try {
       const contact = await this.prisma.$transaction(async (tx) => {
         if (dto.tagIds) {
@@ -1137,6 +1141,12 @@ export class CrmController {
       instanceIds: instanceIds.length ? instanceIds : fallbackInstance ? [fallbackInstance] : [],
       tagIds,
     };
+  }
+
+  private assertContactHasInstance(instanceIds: string[]) {
+    if (!instanceIds.length) {
+      throw new BadRequestException("Selecione ao menos uma instancia para o contato.");
+    }
   }
 
   private async assertContactCatalog(kind: "department" | "profile", id: string, tenantId: string) {

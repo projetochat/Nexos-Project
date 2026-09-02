@@ -485,24 +485,18 @@ function ContatosPage() {
 
   const openConversation = async (contact: Contact) => {
     try {
-      const existing = await conversationApi.list({
-        contactId: contact.id,
-        page: 1,
-        pageSize: 10,
-        sort: "lastMessageAt",
-        direction: "desc",
-      });
-      const open = existing.items.find((conversation) => conversation.status !== "fechada");
-      if (open) {
-        navigate({ to: "/inbox/$conversationId", params: { conversationId: open.id } });
-        return;
-      }
       const connectionId =
         contact.instanceIds
           ?.map((value) =>
-            instances.find((instance) => instance.value === value || instance.id === value),
+            instances.find(
+              (instance) =>
+                instance.value === value ||
+                instance.id === value ||
+                instance.externalReference === value ||
+                instance.name === value,
+            ),
           )
-          .find(Boolean)?.id ??
+          .find((instance) => instance?.status?.toUpperCase() === "CONNECTED")?.id ??
         contact.instanceIds?.[0] ??
         null;
       const conversation = await conversationApi.create({
@@ -2017,6 +2011,7 @@ function ContactFormModal({
     const errs: Record<string, string> = {};
     if (!nome.trim() || nome.trim().length < 2) errs.nome = "Informe o nome.";
     if (!isValidPhoneForCountry(telefone, countryCode)) errs.telefone = "WhatsApp inválido.";
+    if (!instanceIds.length) errs.instanceIds = "Selecione ao menos uma instância.";
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = "E-mail invalido.";
     const normalizedCustomFields = normalizeCustomFieldValues(customFields, customFieldDefinitions);
     for (const field of customFieldDefinitions) {
@@ -2143,6 +2138,15 @@ function ContactFormModal({
                     <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
                   )}
                 </Field>
+                <div className="hidden md:block">
+                  <Field label="Instâncias *" error={errors.instanceIds}>
+                    <InstanceMultiSelect
+                      instances={instances}
+                      selectedIds={instanceIds}
+                      onChange={setInstanceIds}
+                    />
+                  </Field>
+                </div>
               </div>
               <div className="space-y-4">
                 <Field label="Empresa do Contato">
@@ -2211,13 +2215,15 @@ function ContactFormModal({
                     </Button>
                   </div>
                 </Field>
-                <Field label="Instâncias">
-                  <InstanceMultiSelect
-                    instances={instances}
-                    selectedIds={instanceIds}
-                    onChange={setInstanceIds}
-                  />
-                </Field>
+                <div className="md:hidden">
+                  <Field label="Instâncias *" error={errors.instanceIds}>
+                    <InstanceMultiSelect
+                      instances={instances}
+                      selectedIds={instanceIds}
+                      onChange={setInstanceIds}
+                    />
+                  </Field>
+                </div>
                 <Field label="Etiquetas">
                   <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
                 </Field>
@@ -3357,18 +3363,7 @@ function CustomListMultiSelect({
   selectedValues: string[];
   onChange: (values: string[]) => void;
 }) {
-  const [open, setOpen] = React.useState(false);
-  const rootRef = React.useRef<HTMLDivElement>(null);
   const selectedSet = new Set(selectedValues);
-
-  React.useEffect(() => {
-    if (!open) return;
-    const closeOnOutside = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnOutside);
-    return () => document.removeEventListener("pointerdown", closeOnOutside);
-  }, [open]);
 
   const toggle = (option: string) => {
     onChange(
@@ -3378,79 +3373,35 @@ function CustomListMultiSelect({
     );
   };
 
+  if (!options.length) {
+    return (
+      <div className="flex min-h-10 items-center rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-muted-foreground">
+        Nenhuma opção cadastrada.
+      </div>
+    );
+  }
+
   return (
-    <div ref={rootRef} className="relative w-full">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm text-foreground outline-none transition focus:border-primary"
-      >
-        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-          {selectedValues.length === 0 ? (
-            <span className="text-muted-foreground">- Selecione -</span>
-          ) : (
-            selectedValues.map((value) => (
-              <span
-                key={value}
-                className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
-              >
-                <Tag className="h-3 w-3 shrink-0" />
-                {value}
-              </span>
-            ))
-          )}
-        </span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-[9999] mt-2 flex max-h-[min(20rem,calc(100vh-8rem))] w-[min(32rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl">
-          <div className="max-h-[17rem] overflow-y-auto overflow-x-hidden p-1">
-            {options.map((option) => {
-              const active = selectedSet.has(option);
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => toggle(option)}
-                  className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
-                >
-                  <span
-                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${active ? "border-primary bg-primary text-white" : "border-border"}`}
-                  >
-                    {active && <Check className="h-3 w-3" />}
-                  </span>
-                  <span className="truncate">{option}</span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="grid grid-cols-2 gap-2 border-t border-border bg-popover p-2">
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onChange([]);
-              }}
-              disabled={selectedValues.length === 0}
-              className="flex items-center justify-center gap-1 rounded-md border border-destructive/30 bg-white px-2 py-2 text-xs font-medium text-destructive hover:bg-destructive/5 disabled:cursor-not-allowed disabled:opacity-50"
+    <div className="max-h-56 overflow-y-auto rounded-lg border border-border bg-surface-1 p-2">
+      <div className="grid gap-1">
+        {options.map((option) => {
+          const checked = selectedSet.has(option);
+          return (
+            <label
+              key={option}
+              className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground transition hover:bg-surface-2"
             >
-              <X className="h-3 w-3" /> Limpar seleção
-            </button>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setOpen(false);
-              }}
-              className="flex items-center justify-center gap-1 rounded-md border border-primary/30 bg-white px-2 py-2 text-xs font-medium text-primary hover:bg-primary/5"
-            >
-              <Check className="h-3 w-3" /> Confirmar seleção
-            </button>
-          </div>
-        </div>
-      )}
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggle(option)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+              />
+              <span className="min-w-0 flex-1 break-words">{option}</span>
+            </label>
+          );
+        })}
+      </div>
     </div>
   );
 }

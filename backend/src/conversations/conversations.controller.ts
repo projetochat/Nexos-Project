@@ -130,8 +130,13 @@ export class ConversationsController {
       dto.departmentId ?? contact.departmentId,
       current,
     );
-    const connection = await this.resolveConversationConnection(dto.connectionId, current);
+    const connection = await this.resolveConversationConnection(dto.connectionId, current, contact);
     const assignToSelf = dto.assignToSelf ?? false;
+    if (assignToSelf && !connection) {
+      throw new BadRequestException(
+        "Nenhuma instancia WhatsApp conectada para iniciar a conversa.",
+      );
+    }
     const status = assignToSelf ? ConversationStatus.EM_ANDAMENTO : ConversationStatus.ABERTA;
     const now = new Date();
 
@@ -147,7 +152,31 @@ export class ConversationsController {
         orderBy: { updatedAt: "desc" },
         include: conversationInclude,
       });
-      if (existing) return { conversation: existing, created: false };
+      if (existing) {
+        if (!assignToSelf) return { conversation: existing, created: false, updated: false };
+        const shouldAssign =
+          existing.assignedMembershipId !== current.membershipId ||
+          existing.status !== ConversationStatus.EM_ANDAMENTO ||
+          !existing.protocol;
+        if (!shouldAssign) return { conversation: existing, created: false, updated: false };
+        await this.assertAssignableMembership(
+          tx,
+          current.membershipId,
+          current.tenantId,
+          existing.departmentId,
+        );
+        const updated = await tx.conversation.update({
+          where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
+          data: {
+            assignedMembershipId: current.membershipId,
+            status: ConversationStatus.EM_ANDAMENTO,
+            protocol: existing.protocol ?? (await this.nextProtocol(tx, current.tenantId)),
+            lastMessageAt: existing.lastMessageAt ?? now,
+          },
+          include: conversationInclude,
+        });
+        return { conversation: updated, created: false, updated: true };
+      }
 
       const protocol = assignToSelf ? await this.nextProtocol(tx, current.tenantId) : null;
       const created = await tx.conversation.create({
@@ -179,7 +208,7 @@ export class ConversationsController {
         where: { id: created.id },
         include: conversationInclude,
       });
-      return { conversation, created: true };
+      return { conversation, created: true, updated: false };
     });
 
     if (result.created) {
@@ -187,6 +216,13 @@ export class ConversationsController {
         tenantId: current.tenantId,
         conversationId: result.conversation.id,
         conversation: this.serialize(result.conversation),
+      });
+    } else if (result.updated) {
+      this.realtime.publishConversationUpdated({
+        tenantId: current.tenantId,
+        conversationId: result.conversation.id,
+        conversation: this.serialize(result.conversation),
+        reason: "assignment.updated",
       });
     }
     return this.serialize(result.conversation);
@@ -599,12 +635,33 @@ export class ConversationsController {
   private async resolveConversationConnection(
     connectionId: string | null | undefined,
     current: AuthenticatedUser,
+    contact?: { instance: string | null; instanceIds: string[] },
   ) {
-    if (!connectionId) return null;
-    const connection = await this.prisma.messagingConnection.findFirst({
-      where: { id: connectionId, tenantId: current.tenantId },
-    });
-    if (!connection) throw new BadRequestException("Connection inexistente para este tenant.");
+    const connectionKeys = uniqueValues([
+      connectionId,
+      ...(contact?.instanceIds ?? []),
+      contact?.instance,
+    ]);
+
+    const connection = connectionKeys.length
+      ? await this.prisma.messagingConnection.findFirst({
+          where: {
+            tenantId: current.tenantId,
+            archivedAt: null,
+            OR: [
+              { id: { in: connectionKeys } },
+              { externalReference: { in: connectionKeys } },
+              { name: { in: connectionKeys } },
+            ],
+          },
+          orderBy: { createdAt: "asc" },
+        })
+      : null;
+
+    if (!connection) {
+      if (connectionId) throw new BadRequestException("Connection inexistente para este tenant.");
+      return null;
+    }
     if (
       connection.providerType !== MessagingProviderType.EVOLUTION ||
       !connection.externalReference
@@ -891,6 +948,10 @@ function statusSystemNote(status: ConversationStatus) {
 function cleanNullable(value?: string | null) {
   if (value === undefined || value === null) return null;
   return value.trim() || null;
+}
+
+function uniqueValues(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean) as string[]));
 }
 
 function roleLabel(role: ConversationWithRelations["contact"]["companyRole"]) {
