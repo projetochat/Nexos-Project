@@ -1,5 +1,6 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import {
   AlignCenter,
@@ -281,10 +282,12 @@ type DepartamentoFormData = {
 type ContactTextVariant = "short" | "long" | "html";
 type ContactNumberSymbol = "" | "R$" | "%" | "$" | "€" | "£" | "¥";
 type ContactDateVariant = "date" | "datetime";
+type ContactListVariant = "single" | "multi";
 type ContactFieldConfig = {
   text?: { variant?: ContactTextVariant };
   number?: { decimals?: number; thousands?: boolean; symbol?: ContactNumberSymbol };
   date?: { variant?: ContactDateVariant };
+  list?: { variant?: ContactListVariant };
 };
 type ImportSource = "agenda" | "excel";
 type ImportProgressStatus = "idle" | "running" | "completed" | "cancelled";
@@ -1034,7 +1037,7 @@ function ContatosPage() {
                   }}
                   className="w-60"
                 >
-                  <option value="">Campo</option>
+                  <option value="">- Selecione um cmapo -</option>
                   <option value="customer">Empresa do contato</option>
                   <option value="department">Departamento</option>
                   <option value="profile">Perfil do contato</option>
@@ -2088,7 +2091,6 @@ function ContactFormModal({
                       {avatarUrl ? (
                         <button
                           type="button"
-                          title="Mostrar foto"
                           aria-label="Mostrar foto"
                           onClick={() => setPhotoPreviewOpen(true)}
                           className="group relative inline-flex cursor-pointer rounded-full outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
@@ -2140,13 +2142,6 @@ function ContactFormModal({
                   {errors.email && (
                     <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
                   )}
-                </Field>
-                <Field label="Instâncias">
-                  <InstanceMultiSelect
-                    instances={instances}
-                    selectedIds={instanceIds}
-                    onChange={setInstanceIds}
-                  />
                 </Field>
               </div>
               <div className="space-y-4">
@@ -2215,6 +2210,13 @@ function ContactFormModal({
                       <Plus className="h-3.5 w-3.5" />
                     </Button>
                   </div>
+                </Field>
+                <Field label="Instâncias">
+                  <InstanceMultiSelect
+                    instances={instances}
+                    selectedIds={instanceIds}
+                    onChange={setInstanceIds}
+                  />
                 </Field>
                 <Field label="Etiquetas">
                   <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
@@ -3285,6 +3287,15 @@ function CustomContactFieldInput({
     );
   }
   if (field.type === "list") {
+    if (contactListVariant(field) === "multi") {
+      return (
+        <CustomListMultiSelect
+          options={field.options}
+          selectedValues={parseMultiListValue(String(value ?? ""))}
+          onChange={(values) => onChange(JSON.stringify(values))}
+        />
+      );
+    }
     return (
       <Select value={String(value ?? "")} onChange={(event) => onChange(event.target.value)}>
         <option value="">- Selecione -</option>
@@ -3334,6 +3345,113 @@ function CustomContactFieldInput({
       placeholder={numberPlaceholder(numberConfig)}
       onChange={(event) => onChange(maskAdditionalNumber(event.target.value, numberConfig))}
     />
+  );
+}
+
+function CustomListMultiSelect({
+  options,
+  selectedValues,
+  onChange,
+}: {
+  options: string[];
+  selectedValues: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const selectedSet = new Set(selectedValues);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    return () => document.removeEventListener("pointerdown", closeOnOutside);
+  }, [open]);
+
+  const toggle = (option: string) => {
+    onChange(
+      selectedSet.has(option)
+        ? selectedValues.filter((item) => item !== option)
+        : [...selectedValues, option],
+    );
+  };
+
+  return (
+    <div ref={rootRef} className="relative w-full">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm text-foreground outline-none transition focus:border-primary"
+      >
+        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+          {selectedValues.length === 0 ? (
+            <span className="text-muted-foreground">- Selecione -</span>
+          ) : (
+            selectedValues.map((value) => (
+              <span
+                key={value}
+                className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
+              >
+                <Tag className="h-3 w-3 shrink-0" />
+                {value}
+              </span>
+            ))
+          )}
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-[9999] mt-2 flex max-h-[min(20rem,calc(100vh-8rem))] w-[min(32rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl">
+          <div className="max-h-[17rem] overflow-y-auto overflow-x-hidden p-1">
+            {options.map((option) => {
+              const active = selectedSet.has(option);
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => toggle(option)}
+                  className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
+                >
+                  <span
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${active ? "border-primary bg-primary text-white" : "border-border"}`}
+                  >
+                    {active && <Check className="h-3 w-3" />}
+                  </span>
+                  <span className="truncate">{option}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="grid grid-cols-2 gap-2 border-t border-border bg-popover p-2">
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onChange([]);
+              }}
+              disabled={selectedValues.length === 0}
+              className="flex items-center justify-center gap-1 rounded-md border border-destructive/30 bg-white px-2 py-2 text-xs font-medium text-destructive hover:bg-destructive/5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <X className="h-3 w-3" /> Limpar seleção
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+              }}
+              className="flex items-center justify-center gap-1 rounded-md border border-primary/30 bg-white px-2 py-2 text-xs font-medium text-primary hover:bg-primary/5"
+            >
+              <Check className="h-3 w-3" /> Confirmar seleção
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -3752,6 +3870,26 @@ function contactDateVariant(field: ContactCustomField): ContactDateVariant {
   return parseContactFieldConfig(field.mask).date?.variant ?? "date";
 }
 
+function contactListVariant(field: ContactCustomField): ContactListVariant {
+  return parseContactFieldConfig(field.mask).list?.variant ?? "single";
+}
+
+function parseMultiListValue(value: string) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === "string");
+    }
+  } catch {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
 function formatDateForDisplay(value: string, variant: ContactDateVariant) {
   if (!value) return "";
   const date = new Date(value);
@@ -4125,6 +4263,7 @@ function CountryCodeSelect({
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [favoriteCodes, setFavoriteCodes] = React.useState<string[]>([]);
+  const [menuRect, setMenuRect] = React.useState<DOMRect | null>(null);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const searchRef = React.useRef<HTMLInputElement>(null);
   const selected = COUNTRY_CODES.find((country) => country.code === value) ?? COUNTRY_CODES[0];
@@ -4138,7 +4277,7 @@ function CountryCodeSelect({
     .filter((country): country is (typeof COUNTRY_CODES)[number] => Boolean(country))
     .sort(compareCountriesByName) as typeof COUNTRY_CODES;
 
-  React.useEffect(() => {
+  const loadFavoriteCodes = React.useCallback(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(FAVORITE_COUNTRY_CODES_KEY) ?? "[]");
       if (Array.isArray(stored)) {
@@ -4148,6 +4287,31 @@ function CountryCodeSelect({
       setFavoriteCodes([]);
     }
   }, []);
+
+  React.useEffect(() => {
+    loadFavoriteCodes();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === FAVORITE_COUNTRY_CODES_KEY) loadFavoriteCodes();
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", loadFavoriteCodes);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", loadFavoriteCodes);
+    };
+  }, [loadFavoriteCodes]);
+
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    const updateRect = () => setMenuRect(rootRef.current?.getBoundingClientRect() ?? null);
+    updateRect();
+    window.addEventListener("resize", updateRect);
+    window.addEventListener("scroll", updateRect, true);
+    return () => {
+      window.removeEventListener("resize", updateRect);
+      window.removeEventListener("scroll", updateRect, true);
+    };
+  }, [open]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -4186,41 +4350,59 @@ function CountryCodeSelect({
         <span>+{selected.code}</span>
         <ChevronDown className="h-4 w-4 text-muted-foreground" />
       </button>
-      {open && (
-        <div className="absolute left-0 top-full z-[100] mt-2 w-72 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl">
-          <div className="flex items-center gap-2 border-b border-border px-2">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <input
-              ref={searchRef}
-              type="text"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar país ou DDI..."
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery("")}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-                aria-label="Limpar busca"
-                title="Limpar busca"
-              >
-                <X className="h-3 w-3" />
-              </button>
+      {open &&
+        menuRect &&
+        createPortal(
+          <div
+            className="fixed z-[300] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl"
+            style={countryCodeMenuStyle(menuRect)}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 border-b border-border px-2">
+              <Search className="h-4 w-4 text-muted-foreground" />
+              <input
+                ref={searchRef}
+                type="text"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Buscar país ou DDI..."
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none focus:text-foreground"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                  aria-label="Limpar busca"
+                  title="Limpar busca"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+            {favoriteCountries.length > 0 && (
+              <div className="border-b border-border p-1">
+                <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Favoritos
+                </p>
+                {favoriteCountries.map((country) => (
+                  <CountryCodeOption
+                    key={`favorite-${country.code}`}
+                    country={country}
+                    favorite={favoriteCodes.includes(country.code)}
+                    onSelect={() => selectCountryCode(country.code)}
+                    onToggleFavorite={() => toggleFavorite(country.code)}
+                  />
+                ))}
+              </div>
             )}
-          </div>
-          {favoriteCountries.length > 0 && (
-            <div className="border-b border-border p-1">
-              <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Favoritos
-              </p>
-              {favoriteCountries.map((country) => (
+            <div className="max-h-56 overflow-auto p-1">
+              {filtered.map((country) => (
                 <CountryCodeOption
-                  key={`favorite-${country.code}`}
+                  key={country.id}
                   country={country}
                   favorite={favoriteCodes.includes(country.code)}
                   onSelect={() => selectCountryCode(country.code)}
@@ -4228,22 +4410,18 @@ function CountryCodeSelect({
                 />
               ))}
             </div>
-          )}
-          <div className="max-h-56 overflow-auto p-1">
-            {filtered.map((country) => (
-              <CountryCodeOption
-                key={country.id}
-                country={country}
-                favorite={favoriteCodes.includes(country.code)}
-                onSelect={() => selectCountryCode(country.code)}
-                onToggleFavorite={() => toggleFavorite(country.code)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
+}
+
+function countryCodeMenuStyle(rect: DOMRect): React.CSSProperties {
+  const viewportWidth = window.innerWidth;
+  const width = Math.min(320, viewportWidth - 24);
+  const left = Math.min(Math.max(12, rect.left), viewportWidth - width - 12);
+  return { top: rect.bottom + 8, left, width };
 }
 
 function CountryCodeOption({

@@ -185,6 +185,24 @@ export class EvolutionClient {
     });
   }
 
+  async createGroup(input: { instanceName: string; subject: string; participants: string[] }) {
+    const response = await this.request<unknown>(`/group/create/${input.instanceName}`, {
+      method: "POST",
+      body: {
+        subject: input.subject,
+        participants: input.participants,
+      },
+    });
+    return { groupJid: extractGroupJid(response) };
+  }
+
+  async fetchGroups(input: { instanceName: string }) {
+    const response = await this.request<unknown>(
+      `/group/fetchAllGroups/${input.instanceName}?getParticipants=true`,
+    );
+    return extractGroups(response);
+  }
+
   async findGroupInfo(input: { instanceName: string; groupJid: string }) {
     const response = await this.request<unknown>(
       `/group/findGroupInfos/${input.instanceName}?groupJid=${encodeURIComponent(input.groupJid)}`,
@@ -320,22 +338,174 @@ async function readJson(response: Response) {
   }
 }
 
-function extractGroupInfo(
-  value: unknown,
-): { subject?: string | null; name?: string | null } | null {
+function extractGroupInfo(value: unknown): {
+  subject?: string | null;
+  name?: string | null;
+  imageUrl?: string | null;
+  createdAt?: Date | null;
+  participants?: Array<{
+    externalParticipantId: string;
+    phone?: string | null;
+    displayName?: string | null;
+    isAdmin: boolean;
+    isSuperAdmin: boolean;
+  }>;
+} | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
+  const snapshot = extractGroupSnapshot(record);
+  if (snapshot) return { ...snapshot, name: snapshot.subject };
   const subject =
     stringField(record, "subject") ??
     stringField(record, "name") ??
     stringField(record, "groupName") ??
     stringField(record, "title");
-  if (subject) return { subject, name: subject };
+  if (subject) {
+    return {
+      subject,
+      name: subject,
+      imageUrl:
+        stringField(record, "pictureUrl") ??
+        stringField(record, "profilePictureUrl") ??
+        stringField(record, "picture") ??
+        stringField(record, "imageUrl"),
+      createdAt: dateField(record, "creation") ?? dateField(record, "createdAt"),
+      participants: groupParticipantsFromRecord(record),
+    };
+  }
   for (const nested of Object.values(record)) {
     const info = extractGroupInfo(nested);
     if (info) return info;
   }
   return null;
+}
+
+function extractGroupJid(value: unknown): string | null {
+  if (typeof value === "string") return value.endsWith("@g.us") ? value : null;
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const jid =
+    stringField(record, "id") ??
+    stringField(record, "gid") ??
+    stringField(record, "jid") ??
+    stringField(record, "groupJid") ??
+    stringField(record, "remoteJid");
+  if (jid?.endsWith("@g.us")) return jid;
+  for (const nested of Object.values(record)) {
+    const nestedJid = extractGroupJid(nested);
+    if (nestedJid) return nestedJid;
+  }
+  return null;
+}
+
+function extractGroups(value: unknown): Array<{
+  groupJid: string;
+  subject: string;
+  imageUrl?: string | null;
+  createdAt?: Date | null;
+  participants: Array<{
+    externalParticipantId: string;
+    phone?: string | null;
+    displayName?: string | null;
+    isAdmin: boolean;
+    isSuperAdmin: boolean;
+  }>;
+}> {
+  const source = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? ((value as Record<string, unknown>).groups ??
+        (value as Record<string, unknown>).data ??
+        (value as Record<string, unknown>).value)
+      : null;
+  if (!Array.isArray(source)) return [];
+  return source
+    .map((item) => extractGroupSnapshot(item))
+    .filter((item): item is NonNullable<ReturnType<typeof extractGroupSnapshot>> => Boolean(item));
+}
+
+function extractGroupSnapshot(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const groupJid = extractGroupJid(record);
+  if (!groupJid) return null;
+  const subject =
+    stringField(record, "subject") ??
+    stringField(record, "name") ??
+    stringField(record, "groupName") ??
+    "Grupo WhatsApp";
+  return {
+    groupJid,
+    subject,
+    imageUrl:
+      stringField(record, "pictureUrl") ??
+      stringField(record, "profilePictureUrl") ??
+      stringField(record, "picture") ??
+      stringField(record, "imageUrl"),
+    createdAt: dateField(record, "creation") ?? dateField(record, "createdAt"),
+    participants: groupParticipantsFromRecord(record),
+  };
+}
+
+function groupParticipantsFromRecord(record: Record<string, unknown>) {
+  return extractGroupParticipants(
+    record.participants ??
+      record.participantsList ??
+      record.participantList ??
+      record.members ??
+      record.users,
+  );
+}
+
+function extractGroupParticipants(value: unknown) {
+  const source = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.values(value)
+      : [];
+  return source
+    .map((participant) => {
+      if (!participant || typeof participant !== "object") return null;
+      const record = participant as Record<string, unknown>;
+      const id =
+        stringField(record, "id") ??
+        stringField(record, "jid") ??
+        stringField(record, "remoteJid") ??
+        stringField(record, "participant") ??
+        stringField(record, "phone") ??
+        stringField(record, "number");
+      if (!id) return null;
+      const admin = stringField(record, "admin");
+      const phone = phoneFromParticipant(
+        stringField(record, "phone") ?? stringField(record, "number") ?? id,
+      );
+      return {
+        externalParticipantId: id,
+        phone,
+        displayName:
+          stringField(record, "name") ??
+          stringField(record, "pushName") ??
+          stringField(record, "notify") ??
+          stringField(record, "verifiedName"),
+        isAdmin: admin === "admin" || admin === "superadmin" || record.isAdmin === true,
+        isSuperAdmin: admin === "superadmin" || record.isSuperAdmin === true,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+}
+
+function dateField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  if (value instanceof Date) return value;
+  if (typeof value === "number") return new Date(value < 10000000000 ? value * 1000 : value);
+  if (typeof value !== "string" || !value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function phoneFromParticipant(value: string) {
+  const phone = value.split("@")[0]?.replace(/\D/g, "");
+  return phone || null;
 }
 
 function extractProfilePictureUrl(value: unknown): string | null {

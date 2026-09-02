@@ -232,6 +232,37 @@ export type ApiConversation = {
   } | null;
 };
 
+export type ApiWhatsappGroupParticipant = {
+  id: string;
+  name: string;
+  phone: string | null;
+  externalParticipantId: string;
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
+  active: boolean;
+  lastSeenAt: string;
+};
+
+export type ApiWhatsappGroup = {
+  id: string;
+  tenantId: string;
+  conversationId: string;
+  name: string;
+  externalChatId: string | null;
+  imageUrl: string | null;
+  createdAt: string;
+  participantsCount: number;
+  connection: {
+    id: string;
+    name: string;
+    externalReference: string | null;
+    status: string;
+  } | null;
+  participants: ApiWhatsappGroupParticipant[];
+  lastMessagePreview: string | null;
+  lastMessageAt: string | null;
+};
+
 export type ApiQuickReply = {
   id: string;
   tenantId: string;
@@ -988,6 +1019,19 @@ export const crmApi = {
     apiRequest<ApiContactCustomField[]>("/crm/contact-custom-fields/reorder", {
       method: "PATCH",
       body: JSON.stringify({ fieldIds }),
+    }),
+};
+
+export const groupsApi = {
+  list: (params: ListParams = {}) =>
+    apiRequest<PaginatedResponse<ApiWhatsappGroup>>(`/groups${queryString(params)}`),
+  detail: (id: string) => apiRequest<ApiWhatsappGroup>(`/groups/${id}`),
+  create: (data: { name: string; connectionId: string; participantContactIds: string[] }) =>
+    apiRequest<ApiWhatsappGroup>("/groups", { method: "POST", body: JSON.stringify(data) }),
+  sync: (data: { connectionId?: string } = {}) =>
+    apiRequest<{ synced: number }>("/groups/sync", {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
 };
 

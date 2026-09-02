@@ -141,6 +141,50 @@ describe("EvolutionClient", () => {
     );
   });
 
+  it("maps detailed group participants from Evolution responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({
+        id: "120363405324564520@g.us",
+        subject: "Os 3 fas de quilos mortais",
+        participants: {
+          "5562999991111@s.whatsapp.net": {
+            id: "5562999991111@s.whatsapp.net",
+            name: "Douglas",
+            admin: "admin",
+          },
+          "5562888882222@s.whatsapp.net": {
+            id: "5562888882222@s.whatsapp.net",
+            notify: "Jullya",
+          },
+        },
+      }),
+    );
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      new EvolutionClient().findGroupInfo({
+        instanceName: "instance-a",
+        groupJid: "120363405324564520@g.us",
+      }),
+    ).resolves.toMatchObject({
+      subject: "Os 3 fas de quilos mortais",
+      participants: [
+        {
+          externalParticipantId: "5562999991111@s.whatsapp.net",
+          phone: "5562999991111",
+          displayName: "Douglas",
+          isAdmin: true,
+        },
+        {
+          externalParticipantId: "5562888882222@s.whatsapp.net",
+          phone: "5562888882222",
+          displayName: "Jullya",
+          isAdmin: false,
+        },
+      ],
+    });
+  });
+
   it("fetches and deletes Evolution instances", async () => {
     const fetchMock = vi
       .fn()

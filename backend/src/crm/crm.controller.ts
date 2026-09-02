@@ -1250,7 +1250,9 @@ export class CrmController {
       mask:
         type === ContactCustomFieldType.NUMBER
           ? (cleanNullable(dto.mask) ?? "0,00")
-          : type === ContactCustomFieldType.TEXT || type === ContactCustomFieldType.DATE
+          : type === ContactCustomFieldType.TEXT ||
+              type === ContactCustomFieldType.DATE ||
+              type === ContactCustomFieldType.LIST
             ? cleanNullable(dto.mask)
             : null,
       note: nullableUpdate(dto.note),
@@ -1298,7 +1300,11 @@ export class CrmController {
       const value = normalizeContactCustomFieldValue(field, raw);
       if (field.required && !value)
         throw new BadRequestException(`Campo obrigatorio: ${field.label}.`);
-      if (field.type === ContactCustomFieldType.LIST && value && !field.options.includes(value)) {
+      if (
+        field.type === ContactCustomFieldType.LIST &&
+        value &&
+        !validContactListValue(field, value)
+      ) {
         throw new BadRequestException(`Opcao invalida para ${field.label}.`);
       }
       await tx.contactCustomFieldValue.upsert({
@@ -1328,7 +1334,11 @@ export class CrmController {
       const value = normalizeContactCustomFieldValue(field, raw);
       if (field.required && !value)
         throw new BadRequestException(`Campo obrigatorio: ${field.label}.`);
-      if (field.type === ContactCustomFieldType.LIST && value && !field.options.includes(value)) {
+      if (
+        field.type === ContactCustomFieldType.LIST &&
+        value &&
+        !validContactListValue(field, value)
+      ) {
         throw new BadRequestException(`Opcao invalida para ${field.label}.`);
       }
       await tx.contactCustomFieldValue.upsert({
@@ -1500,8 +1510,42 @@ function normalizeContactCustomFieldValue(
   raw: string | number | boolean | null | undefined,
 ) {
   const value = raw === undefined || raw === null ? "" : String(raw).trim();
+  if (field.type === ContactCustomFieldType.LIST && isMultiListField(field.mask)) {
+    const selected = parseMultiListValue(value);
+    return selected.length ? JSON.stringify(selected) : "";
+  }
   if (!value || field.type !== ContactCustomFieldType.DATE) return value;
   return parseContactCustomDateValue(value, field.mask) ?? value;
+}
+
+function validContactListValue(field: { mask: string | null; options: string[] }, value: string) {
+  if (!isMultiListField(field.mask)) return field.options.includes(value);
+  return parseMultiListValue(value).every((item) => field.options.includes(item));
+}
+
+function isMultiListField(mask: string | null) {
+  if (!mask?.trim().startsWith("{")) return false;
+  try {
+    const parsed = JSON.parse(mask) as { list?: { variant?: string } };
+    return parsed.list?.variant === "multi";
+  } catch {
+    return false;
+  }
+}
+
+function parseMultiListValue(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === "string");
+    }
+  } catch {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
 }
 
 function parseContactCustomDateValue(value: string, mask: string | null) {

@@ -22,12 +22,14 @@ export const Route = createFileRoute("/configuracoes/campos-contato")({
 
 type TextVariant = "short" | "long" | "html";
 type DateVariant = "date" | "datetime";
+type ListVariant = "single" | "multi";
 type NumberSymbol = "" | "R$" | "%" | "$" | "€" | "£" | "¥";
 
 type FieldConfig = {
   text?: { variant?: TextVariant };
   number?: { decimals?: number; thousands?: boolean; symbol?: NumberSymbol };
   date?: { variant?: DateVariant };
+  list?: { variant?: ListVariant };
 };
 
 type FieldForm = {
@@ -41,6 +43,7 @@ type FieldForm = {
   numberDecimals: number;
   numberThousands: boolean;
   numberSymbol: NumberSymbol;
+  listVariant: ListVariant;
   note: string;
   optionsText: string;
 };
@@ -468,7 +471,7 @@ function ContactFieldsSettings() {
             Esta ação removerá o campo adicional{" "}
             <strong className="font-semibold text-foreground">"{deleting?.label ?? ""}"</strong>.
             <br />
-            Deseja realmente continuar ?
+            Deseja realmente continuar?
           </p>
         }
         destructive
@@ -606,7 +609,7 @@ function ContactFieldFormModal({
               onChange={(event) =>
                 setForm({ ...form, dateVariant: event.target.value as DateVariant })
               }
-              className="w-full whitespace-nowrap sm:min-w-56"
+              className="w-full whitespace-nowrap text-sm sm:min-w-56"
             >
               <option value="date">Data: 01/01/2026</option>
               <option value="datetime">
@@ -657,14 +660,27 @@ function ContactFieldFormModal({
           </div>
         )}
         {form.type === "list" && (
-          <Field label="Opções da lista *">
-            <Textarea
-              rows={4}
-              value={form.optionsText}
-              onChange={(event) => setForm({ ...form, optionsText: event.target.value })}
-              placeholder="Uma opção por linha"
-            />
-          </Field>
+          <div className="space-y-3">
+            <Field label="Formato da lista *">
+              <Select
+                value={form.listVariant}
+                onChange={(event) =>
+                  setForm({ ...form, listVariant: event.target.value as ListVariant })
+                }
+              >
+                <option value="single">Lista Simples</option>
+                <option value="multi">Lista Múltipla</option>
+              </Select>
+            </Field>
+            <Field label="Opções da lista *">
+              <Textarea
+                rows={4}
+                value={form.optionsText}
+                onChange={(event) => setForm({ ...form, optionsText: event.target.value })}
+                placeholder="Uma opção por linha"
+              />
+            </Field>
+          </div>
         )}
         <div className="grid gap-3 md:grid-cols-2">
           <div>
@@ -714,6 +730,7 @@ function emptyFieldForm(): FieldForm {
     numberDecimals: 2,
     numberThousands: true,
     numberSymbol: "",
+    listVariant: "single",
     note: "",
     optionsText: "",
   };
@@ -734,6 +751,7 @@ function fieldToForm(field: ApiContactCustomField, clone = false): FieldForm {
     numberDecimals: config.number?.decimals ?? 2,
     numberThousands: config.number?.thousands ?? true,
     numberSymbol: config.number?.symbol ?? "",
+    listVariant: config.list?.variant ?? "single",
     note: field.note ?? "",
     optionsText: field.options.join("\n"),
   };
@@ -754,6 +772,9 @@ function buildFieldMask(data: FieldForm) {
   }
   if (data.type === "date") {
     return JSON.stringify({ date: { variant: data.dateVariant } });
+  }
+  if (data.type === "list") {
+    return JSON.stringify({ list: { variant: data.listVariant } });
   }
   return null;
 }
@@ -806,5 +827,9 @@ function fieldTypeLabel(field: ApiContactCustomField) {
     const variant = parseFieldConfig(field.mask).date?.variant ?? "date";
     return variant === "datetime" ? "Data/Hora" : "Data";
   }
-  return { number: "Número", checkbox: "Checkbox", list: "Lista" }[field.type];
+  if (field.type === "list") {
+    const variant = parseFieldConfig(field.mask).list?.variant ?? "single";
+    return variant === "multi" ? "Lista Múltipla" : "Lista Simples";
+  }
+  return { number: "Número", checkbox: "Checkbox" }[field.type];
 }

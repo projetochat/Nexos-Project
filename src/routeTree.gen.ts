@@ -17,6 +17,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as InstanciasRouteImport } from './routes/instancias'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as HistoricoRouteImport } from './routes/historico'
+import { Route as GruposRouteImport } from './routes/grupos'
 import { Route as FilasRouteImport } from './routes/filas'
 import { Route as EtiquetasRouteImport } from './routes/etiquetas'
 import { Route as EmpresasRouteImport } from './routes/empresas'
@@ -104,6 +105,11 @@ const InboxRoute = InboxRouteImport.update({
 const HistoricoRoute = HistoricoRouteImport.update({
   id: '/historico',
   path: '/historico',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GruposRoute = GruposRouteImport.update({
+  id: '/grupos',
+  path: '/grupos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FilasRoute = FilasRouteImport.update({
@@ -368,6 +374,7 @@ export interface FileRoutesByFullPath {
   '/empresas': typeof EmpresasRoute
   '/etiquetas': typeof EtiquetasRoute
   '/filas': typeof FilasRoute
+  '/grupos': typeof GruposRoute
   '/historico': typeof HistoricoRoute
   '/inbox': typeof InboxRouteWithChildren
   '/instancias': typeof InstanciasRoute
@@ -423,6 +430,7 @@ export interface FileRoutesByTo {
   '/empresas': typeof EmpresasRoute
   '/etiquetas': typeof EtiquetasRoute
   '/filas': typeof FilasRoute
+  '/grupos': typeof GruposRoute
   '/historico': typeof HistoricoRoute
   '/instancias': typeof InstanciasRoute
   '/login': typeof LoginRoute
@@ -481,6 +489,7 @@ export interface FileRoutesById {
   '/empresas': typeof EmpresasRoute
   '/etiquetas': typeof EtiquetasRoute
   '/filas': typeof FilasRoute
+  '/grupos': typeof GruposRoute
   '/historico': typeof HistoricoRoute
   '/inbox': typeof InboxRouteWithChildren
   '/instancias': typeof InstanciasRoute
@@ -541,6 +550,7 @@ export interface FileRouteTypes {
     | '/empresas'
     | '/etiquetas'
     | '/filas'
+    | '/grupos'
     | '/historico'
     | '/inbox'
     | '/instancias'
@@ -596,6 +606,7 @@ export interface FileRouteTypes {
     | '/empresas'
     | '/etiquetas'
     | '/filas'
+    | '/grupos'
     | '/historico'
     | '/instancias'
     | '/login'
@@ -653,6 +664,7 @@ export interface FileRouteTypes {
     | '/empresas'
     | '/etiquetas'
     | '/filas'
+    | '/grupos'
     | '/historico'
     | '/inbox'
     | '/instancias'
@@ -712,6 +724,7 @@ export interface RootRouteChildren {
   EmpresasRoute: typeof EmpresasRoute
   EtiquetasRoute: typeof EtiquetasRoute
   FilasRoute: typeof FilasRoute
+  GruposRoute: typeof GruposRoute
   HistoricoRoute: typeof HistoricoRoute
   InboxRoute: typeof InboxRouteWithChildren
   InstanciasRoute: typeof InstanciasRoute
@@ -778,6 +791,13 @@ declare module '@tanstack/react-router' {
       path: '/historico'
       fullPath: '/historico'
       preLoaderRoute: typeof HistoricoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/grupos': {
+      id: '/grupos'
+      path: '/grupos'
+      fullPath: '/grupos'
+      preLoaderRoute: typeof GruposRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/filas': {
@@ -1244,6 +1264,7 @@ const rootRouteChildren: RootRouteChildren = {
   EmpresasRoute: EmpresasRoute,
   EtiquetasRoute: EtiquetasRoute,
   FilasRoute: FilasRoute,
+  GruposRoute: GruposRoute,
   HistoricoRoute: HistoricoRoute,
   InboxRoute: InboxRouteWithChildren,
   InstanciasRoute: InstanciasRoute,

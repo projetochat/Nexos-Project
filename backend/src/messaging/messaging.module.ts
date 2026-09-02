@@ -56,6 +56,7 @@ import { MessagingStatusService } from "./messaging-status.service";
     MessagingConnectionsService,
     MessagingMediaStorageService,
     ContactProfilePictureSyncService,
+    EvolutionClient,
   ],
 })
 export class MessagingModule {}

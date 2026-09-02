@@ -27,9 +27,9 @@ function Page() {
   });
 
   const filtered = React.useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizeSearch(query);
     if (!q) return etiquetas;
-    return etiquetas.filter((tag) => tag.nome.toLowerCase().includes(q));
+    return etiquetas.filter((tag) => normalizeSearch(tag.nome).includes(q));
   }, [etiquetas, query]);
   const refresh = () => qc.invalidateQueries({ queryKey: tagsQueryKey });
 
@@ -109,7 +109,8 @@ function Page() {
           onSubmit={async (data) => {
             await crmApi.createTag(data);
             toast.success("Etiqueta criada");
-            refresh();
+            setQuery("");
+            await refresh();
             nova.hide();
           }}
         />
@@ -121,7 +122,8 @@ function Page() {
             if (!editing) return;
             await crmApi.updateTag(editing.id, data);
             toast.success("Etiqueta atualizada");
-            refresh();
+            setQuery("");
+            await refresh();
             setEditing(null);
           }}
         />
@@ -143,6 +145,14 @@ function Page() {
       </PageContainer>
     </AppShell>
   );
+}
+
+function normalizeSearch(value: string) {
+  return value
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 }
 
 function DeleteLinkedContactCatalogMessage({ name }: { name?: string | null }) {

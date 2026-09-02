@@ -44,6 +44,25 @@ export class TagsController {
   @RequirePermissions("chat.tags.manage")
   async create(@Body() dto: CreateTagDto, @CurrentUser() current: AuthenticatedUser) {
     await this.assertTagNameAvailable(dto.name, current.tenantId);
+    const archived = await this.prisma.tag.findFirst({
+      where: {
+        tenantId: current.tenantId,
+        archivedAt: { not: null },
+        normalizedName: normalizeName(dto.name),
+      },
+    });
+    if (archived) {
+      const tag = await this.prisma.tag.update({
+        where: { tenantId_id: { tenantId: current.tenantId, id: archived.id } },
+        data: {
+          name: clean(dto.name),
+          normalizedName: normalizeName(dto.name),
+          color: dto.color ?? archived.color,
+          archivedAt: null,
+        },
+      });
+      return serializeTag(tag);
+    }
     try {
       const tag = await this.prisma.tag.create({
         data: {

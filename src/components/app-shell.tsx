@@ -31,6 +31,7 @@ import {
   Network,
   ShieldCheck,
   Wifi,
+  UsersRound,
 } from "lucide-react";
 import { LogoMark, Avatar, Badge } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
@@ -105,6 +106,7 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
     title: "Canais",
     items: [
       { to: "/instancias", label: "Instâncias", icon: Wifi },
+      { to: "/grupos", label: "Gerenciar Grupos", icon: UsersRound },
       { to: "/chatbot", label: "Fluxo de Bot", icon: Bot },
       { to: "/automacoes", label: "Automações", icon: Workflow },
       { to: "/agente-ia", label: "Agente de IA", icon: Sparkles },
@@ -130,6 +132,7 @@ const NAV_PERMISSIONS: Record<string, string[]> = {
   "/filas": ["conversations.manage"],
   "/bi": ["crm.read", "conversations.read", "campaigns.read", "tickets.read"],
   "/instancias": ["connections.read", "connections.manage"],
+  "/grupos": ["conversations.read", "conversations.manage"],
   "/chatbot": ["automations.read", "automations.manage"],
   "/automacoes": ["automations.read", "automations.manage"],
   "/agente-ia": ["automations.read", "automations.manage"],
@@ -181,6 +184,7 @@ const LABELS: Record<string, string> = {
   perfil: "Perfil",
   perfis: "Perfil de Acesso",
   instancias: "Instâncias",
+  grupos: "Gerenciar Grupos",
   ajuda: "Central de Ajuda",
   filas: "Filas de atendimento",
 
