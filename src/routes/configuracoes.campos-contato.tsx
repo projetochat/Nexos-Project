@@ -30,6 +30,7 @@ type FieldConfig = {
   number?: { decimals?: number; thousands?: boolean; symbol?: NumberSymbol };
   date?: { variant?: DateVariant };
   list?: { variant?: ListVariant };
+  checkbox?: { description?: string };
 };
 
 type FieldForm = {
@@ -44,6 +45,7 @@ type FieldForm = {
   numberThousands: boolean;
   numberSymbol: NumberSymbol;
   listVariant: ListVariant;
+  checkboxDescription: string;
   note: string;
   optionsText: string;
 };
@@ -682,6 +684,17 @@ function ContactFieldFormModal({
             </Field>
           </div>
         )}
+        {form.type === "checkbox" && (
+          <Field label="Descrição Complementar">
+            <Input
+              value={form.checkboxDescription}
+              maxLength={100}
+              onChange={(event) =>
+                setForm({ ...form, checkboxDescription: event.target.value.slice(0, 100) })
+              }
+            />
+          </Field>
+        )}
         <div className="grid gap-3 md:grid-cols-2">
           <div>
             <Field label="Aba *">
@@ -731,6 +744,7 @@ function emptyFieldForm(): FieldForm {
     numberThousands: true,
     numberSymbol: "",
     listVariant: "single",
+    checkboxDescription: "",
     note: "",
     optionsText: "",
   };
@@ -752,6 +766,7 @@ function fieldToForm(field: ApiContactCustomField, clone = false): FieldForm {
     numberThousands: config.number?.thousands ?? true,
     numberSymbol: config.number?.symbol ?? "",
     listVariant: config.list?.variant ?? "single",
+    checkboxDescription: config.checkbox?.description ?? "",
     note: field.note ?? "",
     optionsText: field.options.join("\n"),
   };
@@ -775,6 +790,10 @@ function buildFieldMask(data: FieldForm) {
   }
   if (data.type === "list") {
     return JSON.stringify({ list: { variant: data.listVariant } });
+  }
+  if (data.type === "checkbox") {
+    const description = data.checkboxDescription.trim().slice(0, 100);
+    return description ? JSON.stringify({ checkbox: { description } }) : null;
   }
   return null;
 }

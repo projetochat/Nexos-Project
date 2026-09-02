@@ -288,6 +288,7 @@ type ContactFieldConfig = {
   number?: { decimals?: number; thousands?: boolean; symbol?: ContactNumberSymbol };
   date?: { variant?: ContactDateVariant };
   list?: { variant?: ContactListVariant };
+  checkbox?: { description?: string };
 };
 type ImportSource = "agenda" | "excel";
 type ImportProgressStatus = "idle" | "running" | "completed" | "cancelled";
@@ -1031,7 +1032,7 @@ function ContatosPage() {
                   }}
                   className="w-60"
                 >
-                  <option value="">- Selecione um cmapo -</option>
+                  <option value="">- Selecione o campo -</option>
                   <option value="customer">Empresa do contato</option>
                   <option value="department">Departamento</option>
                   <option value="profile">Perfil do contato</option>
@@ -1187,7 +1188,7 @@ function ContatosPage() {
                     }}
                     className="w-full"
                   >
-                    <option value="">Campo</option>
+                    <option value="">- Selecione o campo -</option>
                     <option value="customer">Empresa do contato</option>
                     <option value="department">Departamento</option>
                     <option value="profile">Perfil do contato</option>
@@ -1984,6 +1985,7 @@ function ContactFormModal({
     () => uniqueLabels(["Geral", ...customFieldDefinitions.map(normalizeContactCustomFieldTab)]),
     [customFieldDefinitions],
   );
+  const showContactTabs = customFieldDefinitions.length > 0 || contactTabs.length > 1;
   const groupedCustomFields = React.useMemo(() => {
     const groups = new Map<string, ContactCustomField[]>();
     for (const field of customFieldDefinitions) {
@@ -2011,7 +2013,6 @@ function ContactFormModal({
     const errs: Record<string, string> = {};
     if (!nome.trim() || nome.trim().length < 2) errs.nome = "Informe o nome.";
     if (!isValidPhoneForCountry(telefone, countryCode)) errs.telefone = "WhatsApp inválido.";
-    if (!instanceIds.length) errs.instanceIds = "Selecione ao menos uma instância.";
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = "E-mail invalido.";
     const normalizedCustomFields = normalizeCustomFieldValues(customFields, customFieldDefinitions);
     for (const field of customFieldDefinitions) {
@@ -2061,24 +2062,26 @@ function ContactFormModal({
         }
       >
         <div className="space-y-4">
-          <div className="flex flex-wrap gap-2 border-b border-border">
-            {contactTabs.map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveContactTab(tab)}
-                className={`border-b-2 px-3 py-2 text-sm font-medium transition ${
-                  activeContactTab === tab
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
+          {showContactTabs && (
+            <div className="flex flex-wrap gap-2 border-b border-border">
+              {contactTabs.map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveContactTab(tab)}
+                  className={`border-b-2 px-3 py-2 text-sm font-medium transition ${
+                    activeContactTab === tab
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+          )}
           {activeContactTab === "Geral" && (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-x-4 md:grid-cols-2 md:gap-y-4">
               <div className="space-y-4">
                 <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-3 md:grid-cols-[7.5rem_minmax(0,1fr)] md:items-start md:gap-x-4 md:gap-y-4">
                   <div className="row-span-2 self-stretch">
@@ -2139,7 +2142,7 @@ function ContactFormModal({
                   )}
                 </Field>
                 <div className="hidden md:block">
-                  <Field label="Instâncias *" error={errors.instanceIds}>
+                  <Field label="Instâncias">
                     <InstanceMultiSelect
                       instances={instances}
                       selectedIds={instanceIds}
@@ -2216,7 +2219,7 @@ function ContactFormModal({
                   </div>
                 </Field>
                 <div className="md:hidden">
-                  <Field label="Instâncias *" error={errors.instanceIds}>
+                  <Field label="Instâncias">
                     <InstanceMultiSelect
                       instances={instances}
                       selectedIds={instanceIds}
@@ -3281,14 +3284,15 @@ function CustomContactFieldInput({
   onChange: (value: string | boolean) => void;
 }) {
   if (field.type === "checkbox") {
+    const description = contactCheckboxDescription(field);
     return (
-      <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
+      <div className="inline-flex w-full items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
         <input
           type="checkbox"
           checked={value === true || value === "true"}
           onChange={(event) => onChange(event.target.checked)}
         />
-        <span>Marcado</span>
+        <span>{description || "Marcado"}</span>
       </div>
     );
   }
@@ -3375,15 +3379,15 @@ function CustomListMultiSelect({
 
   if (!options.length) {
     return (
-      <div className="flex min-h-10 items-center rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-muted-foreground">
+      <div className="flex min-h-10 w-full items-center rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-muted-foreground">
         Nenhuma opção cadastrada.
       </div>
     );
   }
 
   return (
-    <div className="max-h-56 overflow-y-auto rounded-lg border border-border bg-surface-1 p-2">
-      <div className="grid gap-1">
+    <div className="max-h-56 w-full overflow-y-auto rounded-lg border border-border bg-surface-1 p-2">
+      <div className="grid grid-cols-2 gap-1">
         {options.map((option) => {
           const checked = selectedSet.has(option);
           return (
@@ -3823,6 +3827,10 @@ function contactDateVariant(field: ContactCustomField): ContactDateVariant {
 
 function contactListVariant(field: ContactCustomField): ContactListVariant {
   return parseContactFieldConfig(field.mask).list?.variant ?? "single";
+}
+
+function contactCheckboxDescription(field: ContactCustomField) {
+  return parseContactFieldConfig(field.mask).checkbox?.description?.trim() ?? "";
 }
 
 function parseMultiListValue(value: string) {

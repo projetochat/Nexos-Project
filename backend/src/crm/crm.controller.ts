@@ -774,7 +774,6 @@ export class CrmController {
       await this.prisma.contact.count({ where: { tenantId: current.tenantId, archivedAt: null } }),
     );
     const links = await this.resolveContactLinks(dto, current.tenantId);
-    this.assertContactHasInstance(links.instanceIds);
     const normalizedPhone = groupContactIdentityFromPhone(dto.phone) ?? normalizePhone(dto.phone);
     const phoneCandidates = contactPhoneDuplicateCandidates(dto.phone);
     const existing = await this.prisma.contact.findFirst({
@@ -894,9 +893,6 @@ export class CrmController {
       }
     }
     const links = await this.resolveContactLinks(dto, current.tenantId);
-    this.assertContactHasInstance(
-      dto.instanceIds === undefined ? currentContact.instanceIds : links.instanceIds,
-    );
     try {
       const contact = await this.prisma.$transaction(async (tx) => {
         if (dto.tagIds) {
@@ -1143,12 +1139,6 @@ export class CrmController {
     };
   }
 
-  private assertContactHasInstance(instanceIds: string[]) {
-    if (!instanceIds.length) {
-      throw new BadRequestException("Selecione ao menos uma instancia para o contato.");
-    }
-  }
-
   private async assertContactCatalog(kind: "department" | "profile", id: string, tenantId: string) {
     const item =
       kind === "department"
@@ -1262,7 +1252,8 @@ export class CrmController {
           ? (cleanNullable(dto.mask) ?? "0,00")
           : type === ContactCustomFieldType.TEXT ||
               type === ContactCustomFieldType.DATE ||
-              type === ContactCustomFieldType.LIST
+              type === ContactCustomFieldType.LIST ||
+              type === ContactCustomFieldType.CHECKBOX
             ? cleanNullable(dto.mask)
             : null,
       note: nullableUpdate(dto.note),
