@@ -644,9 +644,6 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     await this.entitlements.assertTenantOperational(current.tenantId);
-    if (!dto.selectedPhones?.length) {
-      throw new BadRequestException("Selecione ao menos um contato para importar.");
-    }
     const preview = await this.buildAgendaImportPreview(current.tenantId, dto.connectionId);
     const selectedPhones = new Set(dto.selectedPhones ?? []);
     const selectedIgnoredItems = new Map(
@@ -657,16 +654,29 @@ export class CrmController {
         )
         .map((item) => [item.normalizedPhone as string, item]),
     );
+    const activeRegisteredItems = preview.ignoredItems.filter(
+      (item) =>
+        item.normalizedPhone &&
+        ["Contato ja cadastrado ativo", "Contato já cadastrado ativo"].includes(item.reason),
+    );
     const candidates = [
       ...preview.items.filter((item) => selectedPhones.has(item.normalizedPhone)),
       ...Array.from(selectedIgnoredItems.values()).map((item) => ({
-          id: item.normalizedPhone as string,
-          name: item.name,
-          phone: item.normalizedPhone as string,
-          normalizedPhone: item.normalizedPhone as string,
-          avatarUrl: null,
-        })),
+        id: item.normalizedPhone as string,
+        name: item.name,
+        phone: item.normalizedPhone as string,
+        normalizedPhone: item.normalizedPhone as string,
+        avatarUrl: null,
+      })),
     ];
+    const instanceUpdatePhones = new Set(
+      activeRegisteredItems.map((item) => item.normalizedPhone).filter((phone): phone is string => Boolean(phone)),
+    );
+
+    if (!candidates.length && !instanceUpdatePhones.size) {
+      throw new BadRequestException("Selecione ao menos um contato para importar.");
+    }
+
     let imported = 0;
     let skipped = 0;
     const importedContacts: Array<{
@@ -680,6 +690,39 @@ export class CrmController {
       instanceIds: string[];
     }> = [];
 
+    for (const normalizedPhone of instanceUpdatePhones) {
+      try {
+        const existing = await this.prisma.contact.findFirst({
+          where: {
+            tenantId: current.tenantId,
+            archivedAt: null,
+            normalizedPhone: { in: contactPhoneDuplicateCandidates(normalizedPhone) },
+          },
+          select: agendaImportedContactSelect,
+        });
+        if (!existing) {
+          skipped += 1;
+          continue;
+        }
+        if (existing.instanceIds.includes(preview.connection.id)) {
+          continue;
+        }
+        const nextInstanceIds = [...new Set([...existing.instanceIds, preview.connection.id])];
+        const contact = await this.prisma.contact.update({
+          where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
+          data: {
+            instance: existing.instance ?? preview.connection.id,
+            instanceIds: nextInstanceIds,
+          },
+          select: agendaImportedContactSelect,
+        });
+        importedContacts.push(contact);
+        imported += 1;
+      } catch {
+        skipped += 1;
+      }
+    }
+
     for (const item of candidates) {
       try {
         const existing = await this.prisma.contact.findFirst({
@@ -687,10 +730,22 @@ export class CrmController {
             tenantId: current.tenantId,
             normalizedPhone: { in: contactPhoneDuplicateCandidates(item.normalizedPhone) },
           },
-          select: { id: true, archivedAt: true },
+          select: { id: true, archivedAt: true, instance: true, instanceIds: true },
         });
         if (existing?.archivedAt === null) {
-          skipped += 1;
+          if (!existing.instanceIds.includes(preview.connection.id)) {
+            const nextInstanceIds = [...new Set([...existing.instanceIds, preview.connection.id])];
+            const contact = await this.prisma.contact.update({
+              where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
+              data: {
+                instance: existing.instance ?? preview.connection.id,
+                instanceIds: nextInstanceIds,
+              },
+              select: agendaImportedContactSelect,
+            });
+            importedContacts.push(contact);
+            imported += 1;
+          }
           continue;
         }
         await this.entitlements.assertWithinLimit(
@@ -735,12 +790,17 @@ export class CrmController {
         skipped += 1;
       }
     }
+
     this.profilePictures.enqueueMissing({
       tenantId: current.tenantId,
       contacts: importedContacts,
     });
 
-    return { total: candidates.length, imported, skipped: preview.skipped + skipped };
+    return {
+      total: candidates.length + instanceUpdatePhones.size,
+      imported,
+      skipped: Math.max(preview.skipped - activeRegisteredItems.length, 0) + skipped,
+    };
   }
 
   @Post("contacts/import/agenda/preview")
@@ -992,6 +1052,21 @@ export class CrmController {
       include: contactInclude,
     });
     if (existing?.archivedAt === null) {
+      if (links.instanceIds.length) {
+        const nextInstanceIds = [...new Set([...existing.instanceIds, ...links.instanceIds])];
+        const shouldUpdateInstances = nextInstanceIds.length !== existing.instanceIds.length;
+        if (shouldUpdateInstances) {
+          const contact = await this.prisma.contact.update({
+            where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
+            data: {
+              instance: existing.instance ?? links.instance,
+              instanceIds: nextInstanceIds,
+            },
+            include: contactInclude,
+          });
+          return this.serializeContact(contact);
+        }
+      }
       throw new ConflictException({
         code: "CONTACT_ALREADY_EXISTS",
         message: "Ja existe um contato ativo com este telefone.",
@@ -2150,4 +2225,3 @@ function handlePrismaError(error: unknown): never {
 function isPrismaError(error: unknown, code: string) {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
-

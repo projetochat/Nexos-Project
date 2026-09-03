@@ -275,6 +275,7 @@ const COUNTRY_CODES = [
   { id: "zw", code: "263", country: "Zimbábue", flag: "🇿🇼" },
 ];
 const SORTED_COUNTRY_CODES = [...COUNTRY_CODES].sort(compareCountriesByName);
+const CONTACT_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 type Customer = ApiCustomer;
 type Contact = ApiContact;
@@ -479,6 +480,21 @@ function ContatosPage() {
     contacts.length > 0 &&
     (allFilteredSelected || contacts.every((contact) => selectedIds.includes(contact.id)));
   const selectedBulkCount = allFilteredSelected ? total : selectedIds.length;
+  const contactAnchorLetters = React.useMemo(() => {
+    const seen = new Set<string>();
+    const anchors = new Map<string, string>();
+    for (const contact of contacts) {
+      const letter = contactAlphabetKey(contact.nome);
+      if (!letter || seen.has(letter)) continue;
+      seen.add(letter);
+      anchors.set(contact.id, letter);
+    }
+    return anchors;
+  }, [contacts]);
+  const availableContactLetters = React.useMemo(
+    () => new Set(contactAnchorLetters.values()),
+    [contactAnchorLetters],
+  );
   const exportableSelectedCount = React.useMemo(
     () =>
       contacts.filter((contact) => selectedIds.includes(contact.id) && isExportableContact(contact))
@@ -508,6 +524,17 @@ function ContatosPage() {
         ? current.filter((id) => id !== contactId)
         : [...current, contactId],
     );
+  };
+  const scrollToContactLetter = (letter: string) => {
+    const anchors = Array.from(
+      document.querySelectorAll<HTMLElement>(`[data-contact-letter-anchor="${letter}"]`),
+    );
+    const visibleAnchor = anchors.find((anchor) => anchor.offsetParent !== null) ?? anchors[0];
+    visibleAnchor?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const scrollToContactsFooter = () => {
+    const footer = document.querySelector<HTMLElement>("[data-contacts-list-footer]");
+    footer?.scrollIntoView({ behavior: "smooth", block: "end" });
   };
 
   const selectedBulkCustomField = bulkMode.startsWith("custom:")
@@ -915,7 +942,13 @@ function ContatosPage() {
 
   const confirmAgendaImport = async () => {
     const selectedPhones = agendaImportPreview.selectedPhones;
-    if (!selectedPhones.length) {
+    const registeredPhones = agendaImportPreview.ignoredItems.filter(
+      (item) =>
+        item.normalizedPhone &&
+        ["Contato ja cadastrado ativo", "Contato já cadastrado ativo"].includes(item.reason),
+    );
+    const progressTotal = selectedPhones.length + registeredPhones.length;
+    if (!progressTotal) {
       toast.error("Selecione ao menos um contato para importar.");
       return;
     }
@@ -925,15 +958,23 @@ function ContatosPage() {
       open: true,
       source: "agenda",
       current: 0,
-      total: selectedPhones.length,
+      total: progressTotal,
       imported: 0,
       status: "running",
     });
+    const progressTimer = window.setInterval(() => {
+      setImportProgress((current) => {
+        if (current.source !== "agenda" || current.status !== "running") return current;
+        const nextCurrent = Math.min(current.current + 1, Math.max(current.total - 1, 0));
+        return { ...current, current: nextCurrent, imported: nextCurrent };
+      });
+    }, 250);
     try {
       const result = await crmApi.importContactsFromAgenda({
         connectionId: agendaImportPreview.connectionId || undefined,
         selectedPhones,
       });
+      window.clearInterval(progressTimer);
       setAgendaImportPreview({
         open: false,
         loading: false,
@@ -959,6 +1000,7 @@ function ContatosPage() {
       });
       await load();
     } catch (error) {
+      window.clearInterval(progressTimer);
       setAgendaImportPreview((current) => ({ ...current, busy: false }));
       setImportProgress({
         open: false,
@@ -986,20 +1028,6 @@ function ContatosPage() {
           },
     );
 
-  const handleImportProgressAction = () => {
-    if (importProgress.status === "running") {
-      cancelImportRef.current = true;
-      return;
-    }
-    setImportProgress({
-      open: false,
-      source: null,
-      current: 0,
-      total: 0,
-      imported: 0,
-      status: "idle",
-    });
-  };
 
   const applyBulkAction = async () => {
     if (!selectedBulkCount || !bulkMode) return;
@@ -1108,7 +1136,7 @@ function ContatosPage() {
                   Todas
                 </option>,
                 <option key="empty" value={EMPTY_FILTER_VALUE}>
-                  - Sem instância - 
+                  - Sem instância -
                 </option>,
                 ...visibleInstances.map((option) => (
                   <option key={option.id} value={option.value}>
@@ -1123,7 +1151,7 @@ function ContatosPage() {
                   Todas
                 </option>,
                 <option key="empty" value={EMPTY_FILTER_VALUE}>
-                  - Sem empresa - 
+                  - Sem empresa -
                 </option>,
                 ...customers.map((customer) => (
                   <option key={customer.id} value={customer.id}>
@@ -1142,7 +1170,7 @@ function ContatosPage() {
                   Todos
                 </option>,
                 <option key="empty" value={EMPTY_FILTER_VALUE}>
-                  - Sem departamento - 
+                  - Sem departamento -
                 </option>,
                 ...departments.map((department) => (
                   <option key={department.id} value={department.id}>
@@ -1157,7 +1185,7 @@ function ContatosPage() {
                   Todas
                 </option>,
                 <option key="empty" value={EMPTY_FILTER_VALUE}>
-                  - Sem etiqueta - 
+                  - Sem etiqueta -
                 </option>,
                 ...tags.map((tag) => (
                   <option key={tag.id} value={tag.id}>
@@ -1476,8 +1504,14 @@ function ContatosPage() {
           )}
         </Card>
 
-        <Card className="overflow-visible p-4 md:overflow-hidden md:rounded-lg md:p-0">
-          <div className="space-y-3 md:hidden">
+        <div className="relative">
+          <AlphabetFloatingNav
+            availableLetters={availableContactLetters}
+            onLetterClick={scrollToContactLetter}
+            onFooterClick={scrollToContactsFooter}
+          />
+          <Card className="overflow-visible p-4 md:overflow-hidden md:rounded-lg md:p-0">
+            <div className="space-y-3 md:hidden">
             {loading && (
               <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
                 Carregando...
@@ -1485,7 +1519,11 @@ function ContatosPage() {
             )}
             {!loading &&
               contacts.map((contact) => (
-                <div key={contact.id} className="rounded-lg border border-border bg-surface-1 p-3">
+                <div
+                  key={contact.id}
+                  data-contact-letter-anchor={contactAnchorLetters.get(contact.id) ?? undefined}
+                  className="rounded-lg border border-border bg-surface-1 p-3 scroll-mt-4"
+                >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 flex-1 items-center gap-3">
                       <input
@@ -1574,7 +1612,11 @@ function ContatosPage() {
               )}
               {!loading &&
                 contacts.map((contact) => (
-                  <tr key={contact.id} className="transition hover:bg-surface-1">
+                  <tr
+                    key={contact.id}
+                    data-contact-letter-anchor={contactAnchorLetters.get(contact.id) ?? undefined}
+                    className="transition hover:bg-surface-1 scroll-mt-4"
+                  >
                     <td
                       className="relative px-3 py-3 sm:px-4"
                       style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
@@ -1665,7 +1707,7 @@ function ContatosPage() {
               )}
             </tbody>
           </table>
-          <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3">
+          <div data-contacts-list-footer className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3">
             <div className="flex min-w-0 items-center gap-2">
               <span className="shrink-0 leading-tight sm:leading-normal">
                 <span className="block sm:inline">Mostrando</span>
@@ -1710,7 +1752,8 @@ function ContatosPage() {
               </Button>
             </div>
           </div>
-        </Card>
+          </Card>
+        </div>
 
         <ContactFormModal
           open={create.open}
@@ -1820,7 +1863,6 @@ function ContatosPage() {
           imported={importProgress.imported}
           status={importProgress.status}
           onClose={closeImportProgress}
-          onAction={handleImportProgressAction}
         />
         <ConfirmDialog
           open={!!deleting}
@@ -1867,6 +1909,50 @@ function ContatosPage() {
   );
 }
 
+function AlphabetFloatingNav({
+  availableLetters,
+  onLetterClick,
+  onFooterClick,
+}: {
+  availableLetters: Set<string>;
+  onLetterClick: (letter: string) => void;
+  onFooterClick: () => void;
+}) {
+  return (
+    <div className="pointer-events-none absolute bottom-14 right-[-2.75rem] top-2 z-10 hidden items-start xl:flex">
+      <div className="pointer-events-auto sticky top-24 flex max-h-[calc(100dvh-8rem)] flex-col items-center gap-0.5 rounded-full border border-border bg-card/95 p-1 shadow-card backdrop-blur">
+        {CONTACT_ALPHABET.map((letter) => {
+          const available = availableLetters.has(letter);
+          return (
+            <button
+              key={letter}
+              type="button"
+              disabled={!available}
+              onClick={() => onLetterClick(letter)}
+              className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold transition ${
+                available
+                  ? "text-muted-foreground hover:bg-primary hover:text-primary-foreground"
+                  : "cursor-not-allowed text-muted-foreground/30"
+              }`}
+              title={available ? `Ir para contatos com ${letter}` : undefined}
+            >
+              {letter}
+            </button>
+          );
+        })}
+        <div className="my-0.5 h-px w-4 bg-border" />
+        <button
+          type="button"
+          onClick={onFooterClick}
+          className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-primary hover:text-primary-foreground"
+          title="Ir para o rodapé"
+        >
+          <ChevronDown className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
 function AgendaImportPreviewModal({
   open,
   loading,
@@ -1904,8 +1990,10 @@ function AgendaImportPreviewModal({
 }) {
   const [query, setQuery] = React.useState("");
   const [activeTab, setActiveTab] = React.useState<"available" | "ignored">("available");
-  const [ignoredReasonFilter, setIgnoredReasonFilter] = React.useState("missing_name");
-  const [ignoredFilterOpen, setIgnoredFilterOpen] = React.useState(false);
+  const [availableStatusFilter, setAvailableStatusFilter] = React.useState<"all" | "new" | "registered">("all");
+  const [ignoredReasonFilter, setIgnoredReasonFilter] = React.useState("all");
+  const [listScrolling, setListScrolling] = React.useState(false);
+  const listScrollTimerRef = React.useRef<number | null>(null);
   const requiresConnectionSelection = instances.length > 1;
   const hasPreviewLoaded = loading || previewLoaded;
   const selectedSet = React.useMemo(() => new Set(selectedPhones), [selectedPhones]);
@@ -1934,15 +2022,38 @@ function AgendaImportPreviewModal({
     }
     return counts;
   }, [ignoredFilterOptions, ignoredItems]);
+
+  const allIgnoredFilterOption = React.useMemo(
+    () => ({
+      key: "all",
+      label: "Todos",
+      reasons: ignoredFilterOptions.flatMap((option) => option.reasons),
+    }),
+    [ignoredFilterOptions],
+  );
+  const visibleIgnoredFilterOptions = React.useMemo(
+    () => [allIgnoredFilterOption, ...ignoredFilterOptions],
+    [allIgnoredFilterOption, ignoredFilterOptions],
+  );
   const selectedIgnoredFilter =
-    ignoredFilterOptions.find((option) => option.key === ignoredReasonFilter) ?? ignoredFilterOptions[0];
-  const alreadyRegisteredCount = React.useMemo(
+    visibleIgnoredFilterOptions.find((option) => option.key === ignoredReasonFilter) ?? allIgnoredFilterOption;
+  const alreadyRegisteredItems = React.useMemo(
     () =>
-      ignoredItems.filter((item) =>
-        ["Contato ja cadastrado ativo", "Contato já cadastrado ativo"].includes(item.reason),
-      ).length,
+      ignoredItems
+        .filter((item) =>
+          ["Contato ja cadastrado ativo", "Contato já cadastrado ativo"].includes(item.reason),
+        )
+        .filter((item) => item.normalizedPhone)
+        .map((item) => ({
+          name: item.name || "Sem nome",
+          phone: item.phone || item.normalizedPhone || "",
+          normalizedPhone: item.normalizedPhone || item.phone,
+          avatarUrl: null as string | null,
+          registered: true as const,
+        })),
     [ignoredItems],
   );
+  const alreadyRegisteredCount = alreadyRegisteredItems.length;
   const ignoredCount = React.useMemo(
     () =>
       ignoredFilterOptions.reduce(
@@ -1951,16 +2062,37 @@ function AgendaImportPreviewModal({
       ),
     [ignoredFilterCounts, ignoredFilterOptions],
   );
+
+  const ignoredExportItems = React.useMemo(
+    () =>
+      ignoredItems.filter((item) =>
+        ignoredFilterOptions.some((option) => option.reasons.includes(item.reason)),
+      ),
+    [ignoredFilterOptions, ignoredItems],
+  );
   const phoneContactsCount = items.length + ignoredCount + alreadyRegisteredCount;
+  const agendaImportCount = selectedPhones.length;
+  const agendaActionCount = agendaImportCount + alreadyRegisteredCount;
   const ignoredReasonLabel = (reason: string) =>
     ignoredFilterOptions.find((option) => option.reasons.includes(reason))?.label ?? reason;
-  const filteredItems = React.useMemo(() => {
+  const availableItems = React.useMemo(
+    () => [
+      ...items.map((item) => ({ ...item, registered: false as const })),
+      ...alreadyRegisteredItems,
+    ],
+    [alreadyRegisteredItems, items],
+  );
+  const filteredAvailableItems = React.useMemo(() => {
     const search = normalizeHeader(query);
-    if (!search) return items;
-    return items.filter((item) =>
-      normalizeHeader(`${item.name} ${item.phone} ${item.normalizedPhone}`).includes(search),
-    );
-  }, [items, query]);
+    return availableItems.filter((item) => {
+      const matchesStatus =
+        availableStatusFilter === "all" ||
+        (availableStatusFilter === "registered" ? item.registered : !item.registered);
+      const matchesSearch =
+        !search || normalizeHeader(`${item.name} ${item.phone} ${item.normalizedPhone}`).includes(search);
+      return matchesStatus && matchesSearch;
+    });
+  }, [availableItems, availableStatusFilter, query]);
   const filteredIgnoredItems = React.useMemo(() => {
     const search = normalizeHeader(query);
     return ignoredItems.filter((item) => {
@@ -1976,10 +2108,18 @@ function AgendaImportPreviewModal({
     if (!open) {
       setQuery("");
       setActiveTab("available");
-      setIgnoredReasonFilter("missing_name");
-      setIgnoredFilterOpen(false);
+      setAvailableStatusFilter("all");
+      setIgnoredReasonFilter("all");
+      setListScrolling(false);
     }
   }, [open]);
+
+  React.useEffect(
+    () => () => {
+      if (listScrollTimerRef.current) window.clearTimeout(listScrollTimerRef.current);
+    },
+    [],
+  );
 
   const toggleAll = () => {
     onSelectedPhonesChange(allSelected ? [] : items.map((item) => item.normalizedPhone));
@@ -1991,6 +2131,11 @@ function AgendaImportPreviewModal({
         : [...selectedPhones, phone],
     );
   };
+  const handleListScroll = () => {
+    setListScrolling(true);
+    if (listScrollTimerRef.current) window.clearTimeout(listScrollTimerRef.current);
+    listScrollTimerRef.current = window.setTimeout(() => setListScrolling(false), 800);
+  };
 
   const primaryAction = requiresConnectionSelection && !hasPreviewLoaded;
 
@@ -1999,12 +2144,14 @@ function AgendaImportPreviewModal({
       open={open}
       onClose={onClose}
       title="Importar Agenda Telefônica"
-      size="lg"
+      size="xl"
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
-            Cancelar
-          </Button>
+          {!previewLoaded && (
+            <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+              Cancelar
+            </Button>
+          )}
           {(primaryAction || activeTab === "available") && (
             <Button
               variant="primary"
@@ -2013,14 +2160,14 @@ function AgendaImportPreviewModal({
               disabled={
                 busy ||
                 loading ||
-                (primaryAction ? !connectionId : selectedPhones.length === 0)
+                (primaryAction ? !connectionId : agendaActionCount === 0)
               }
             >
               {busy
                 ? "Importando..."
                 : primaryAction
                   ? "Buscar contatos"
-                  : `Importar ${selectedPhones.length} contato(s)`}
+                  : `Importar ${formatIntegerPtBr(agendaActionCount)} contato(s)`}
             </Button>
           )}
         </>
@@ -2045,24 +2192,24 @@ function AgendaImportPreviewModal({
         )}
 
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Contatos do Telefone</p>
+          <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">Contatos do Telefone</p>
             <p className="text-base font-semibold text-foreground">{formatIntegerPtBr(phoneContactsCount)}</p>
           </div>
-          <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Já cadastrados</p>
+          <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">Já cadastrados</p>
             <p className="text-base font-semibold text-foreground">
               {formatIntegerPtBr(alreadyRegisteredCount)}
             </p>
           </div>
-          <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Disponíveis</p>
+          <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">Disponíveis</p>
             <p className="text-base font-semibold text-foreground">
               {formatIntegerPtBr(items.length)}
             </p>
           </div>
-          <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Ignorados</p>
+          <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">Ignorados</p>
             <p className="text-base font-semibold text-foreground">
               {formatIntegerPtBr(ignoredCount)}
             </p>
@@ -2103,65 +2250,63 @@ function AgendaImportPreviewModal({
         />
 
         {activeTab === "available" ? (
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              disabled={loading || busy || !items.length}
-              onChange={toggleAll}
-              className="h-4 w-4 accent-primary"
-            />
-            Selecionar todos os contatos disponíveis
-          </label>
+          <div className="space-y-3">
+            <div className="rounded-lg border border-border bg-surface-1 p-3 text-sm">
+              <Field label="Tipo">
+                <Select
+                  value={availableStatusFilter}
+                  onChange={(event) =>
+                    setAvailableStatusFilter(event.target.value as "all" | "new" | "registered")
+                  }
+                  disabled={loading || busy}
+                >
+                  <option value="all">
+                    Todos ({formatIntegerPtBr(availableItems.length)})
+                  </option>
+                  <option value="new">
+                    Contatos não cadastrados ({formatIntegerPtBr(items.length)})
+                  </option>
+                  <option value="registered">
+                    Cadastrados ({formatIntegerPtBr(alreadyRegisteredCount)})
+                  </option>
+                </Select>
+              </Field>
+            </div>
+            {availableStatusFilter !== "registered" && (
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  disabled={loading || busy || !items.length}
+                  onChange={toggleAll}
+                  className="h-4 w-4 accent-primary"
+                />
+                Selecionar todos os contatos disponíveis
+              </label>
+            )}
+          </div>
         ) : (
           <div className="grid gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto]">
             <Field label="Tipo">
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setIgnoredFilterOpen((current) => !current)}
-                  disabled={loading || busy}
-                  className="flex min-h-10 w-full items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 text-left text-sm outline-none transition hover:border-primary focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <span className="min-w-0 flex-1 truncate">{selectedIgnoredFilter.label}</span>
-                  <span className="shrink-0 font-semibold text-foreground">
-                    {formatIntegerPtBr(ignoredFilterCounts.get(selectedIgnoredFilter.key) ?? 0)}
-                  </span>
-                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                </button>
-                {ignoredFilterOpen && !loading && !busy && (
-                  <div className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-20 overflow-hidden rounded-lg border border-border bg-card shadow-lg">
-                    {ignoredFilterOptions.map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        onClick={() => {
-                          setIgnoredReasonFilter(option.key);
-                          setIgnoredFilterOpen(false);
-                        }}
-                        className={`flex min-h-9 w-full items-center gap-3 px-3 text-left text-sm transition ${
-                          ignoredReasonFilter === option.key
-                            ? "bg-primary text-primary-foreground"
-                            : "text-foreground hover:bg-surface-1"
-                        }`}
-                      >
-                        <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                        <span className="shrink-0 font-semibold">
-                          {formatIntegerPtBr(ignoredFilterCounts.get(option.key) ?? 0)}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <Select
+                value={ignoredReasonFilter}
+                onChange={(event) => setIgnoredReasonFilter(event.target.value)}
+                disabled={loading || busy}
+              >
+                {visibleIgnoredFilterOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label} ({formatIntegerPtBr(option.key === "all" ? ignoredCount : (ignoredFilterCounts.get(option.key) ?? 0))})
+                  </option>
+                ))}
+              </Select>
             </Field>
             <div className="flex flex-wrap items-end gap-2">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => downloadAgendaIgnoredTemplate(ignoredItems)}
-                disabled={loading || busy || ignoredItems.length === 0}
+                onClick={() => downloadAgendaIgnoredTemplate(ignoredExportItems)}
+                disabled={loading || busy || ignoredExportItems.length === 0}
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" /> Gerar Excel
               </Button>
@@ -2169,7 +2314,10 @@ function AgendaImportPreviewModal({
           </div>
         )}
 
-        <div className="max-h-[46vh] space-y-2 overflow-y-auto pr-1">
+        <div
+          onScroll={handleListScroll}
+          className={`agenda-import-scroll max-h-[46vh] space-y-2 pr-1 ${listScrolling ? "is-scrolling" : ""}`}
+        >
           {loading ? (
             <div className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
               Buscando contatos na instância WhatsApp...
@@ -2200,18 +2348,24 @@ function AgendaImportPreviewModal({
                 Nenhum contato ignorado encontrado.
               </div>
             )
-          ) : filteredItems.length ? (
-            filteredItems.map((item) => (
+          ) : filteredAvailableItems.length ? (
+            filteredAvailableItems.map((item) => (
               <label
-                key={item.normalizedPhone}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 transition hover:border-primary/60"
+                key={`${item.registered ? "registered" : "new"}-${item.normalizedPhone}`}
+                className={`flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 ${
+                  item.registered
+                    ? "cursor-not-allowed"
+                    : "cursor-pointer transition hover:border-primary/60"
+                }`}
               >
                 <input
                   type="checkbox"
-                  checked={selectedSet.has(item.normalizedPhone)}
-                  disabled={busy}
-                  onChange={() => toggleItem(item.normalizedPhone)}
-                  className="h-4 w-4 accent-primary"
+                  checked={!item.registered && selectedSet.has(item.normalizedPhone)}
+                  disabled={busy || item.registered}
+                  onChange={() => {
+                    if (!item.registered) toggleItem(item.normalizedPhone);
+                  }}
+                  className="h-4 w-4 accent-primary disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 <Avatar name={item.name} src={item.avatarUrl} size={36} />
                 <span className="min-w-0 flex-1">
@@ -2222,11 +2376,20 @@ function AgendaImportPreviewModal({
                     {formatPhoneWithDdi(item.phone)}
                   </span>
                 </span>
+                {item.registered && (
+                  <span className="shrink-0 rounded-full border border-border bg-surface-1 px-2 py-0.5 text-xs text-muted-foreground">
+                    Contato já cadastrado
+                  </span>
+                )}
               </label>
             ))
           ) : (
             <div className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
-              Nenhum contato disponível para importação.
+              {availableStatusFilter === "registered"
+                ? "Nenhum contato cadastrado encontrado."
+                : availableStatusFilter === "new"
+                  ? "Nenhum contato não cadastrado encontrado."
+                  : "Nenhum contato disponível para importação."}
             </div>
           )}
         </div>
@@ -2427,7 +2590,6 @@ function ImportProgressModal({
   imported,
   status,
   onClose,
-  onAction,
 }: {
   open: boolean;
   source: ImportSource | null;
@@ -2436,7 +2598,6 @@ function ImportProgressModal({
   imported: number;
   status: ImportProgressStatus;
   onClose: () => void;
-  onAction: () => void;
 }) {
   const percent = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
   const sourceLabel = source === "agenda" ? "agenda" : "Excel/CSV";
@@ -2459,11 +2620,7 @@ function ImportProgressModal({
           <Button variant="primary" size="sm" onClick={onClose}>
             Confirmar
           </Button>
-        ) : (
-          <Button variant="secondary" size="sm" onClick={onAction}>
-            Cancelar importação
-          </Button>
-        )
+        ) : null
       }
     >
       <div className="space-y-4">
@@ -4668,6 +4825,12 @@ function formatIntegerPtBr(value: number) {
   return new Intl.NumberFormat("pt-BR").format(value);
 }
 
+function contactAlphabetKey(name: string) {
+  const normalized = normalizeHeader(name);
+  const firstLetter = normalized.match(/[a-z]/)?.[0];
+  return firstLetter ? firstLetter.toUpperCase() : null;
+}
+
 function parseCsv(input: string) {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -5396,13 +5559,3 @@ function contactPayload(data: {
     avatarUrl: data.avatarUrl ?? null,
   };
 }
-
-
-
-
-
-
-
-
-
-

@@ -1,4 +1,4 @@
-﻿import * as React from "react";
+import * as React from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -1121,3 +1121,5 @@ export function PageContainer({
 
 /* Re-exports for admin/operator shells */
 export { useAuthGate, useSidebarState, Topbar, MobileNav, ImpersonationBanner, CheckCircle2 };
+
+
