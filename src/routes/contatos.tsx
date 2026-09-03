@@ -1951,6 +1951,7 @@ function AgendaImportPreviewModal({
       ),
     [ignoredFilterCounts, ignoredFilterOptions],
   );
+  const phoneContactsCount = items.length + ignoredCount + alreadyRegisteredCount;
   const ignoredReasonLabel = (reason: string) =>
     ignoredFilterOptions.find((option) => option.reasons.includes(reason))?.label ?? reason;
   const filteredItems = React.useMemo(() => {
@@ -2046,7 +2047,7 @@ function AgendaImportPreviewModal({
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
             <p className="text-xs text-muted-foreground">Contatos do Telefone</p>
-            <p className="text-base font-semibold text-foreground">{formatIntegerPtBr(total)}</p>
+            <p className="text-base font-semibold text-foreground">{formatIntegerPtBr(phoneContactsCount)}</p>
           </div>
           <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
             <p className="text-xs text-muted-foreground">Já cadastrados</p>
@@ -5395,6 +5396,8 @@ function contactPayload(data: {
     avatarUrl: data.avatarUrl ?? null,
   };
 }
+
+
 
 
 
