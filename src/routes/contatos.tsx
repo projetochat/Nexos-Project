@@ -311,6 +311,8 @@ type AgendaImportPreviewState = {
   open: boolean;
   loading: boolean;
   busy: boolean;
+  previewLoaded: boolean;
+  connectionId: string;
   total: number;
   skipped: number;
   items: ApiAgendaImportContact[];
@@ -361,6 +363,8 @@ function ContatosPage() {
     open: false,
     loading: false,
     busy: false,
+    previewLoaded: false,
+    connectionId: "",
     total: 0,
     skipped: 0,
     items: [],
@@ -373,6 +377,10 @@ function ContatosPage() {
   const create = useDisclosure();
   const visibleInstances = React.useMemo(
     () => instances.filter((instance) => isSelectableInstanceStatus(instance.status)),
+    [instances],
+  );
+  const connectedAgendaInstances = React.useMemo(
+    () => instances.filter((instance) => isConnectedInstanceStatus(instance.status)),
     [instances],
   );
 
@@ -812,23 +820,53 @@ function ContatosPage() {
   const importFromAgenda = async () => {
     if (reopenImportProgress()) return;
     exportMenu.hide();
+    if (!connectedAgendaInstances.length) {
+      toast.error("Nenhuma instância WhatsApp conectada para importar agenda.");
+      return;
+    }
+    const singleConnectionId =
+      connectedAgendaInstances.length === 1 ? connectedAgendaInstances[0]?.id : "";
     setAgendaImportPreview({
       open: true,
-      loading: true,
+      loading: Boolean(singleConnectionId),
       busy: false,
+      previewLoaded: false,
+      connectionId: singleConnectionId,
       total: 0,
       skipped: 0,
       items: [],
       selectedPhones: [],
     });
+    if (!singleConnectionId) return;
+    await loadAgendaImportPreview(singleConnectionId);
+  };
+
+  const loadAgendaImportPreview = async (connectionId: string) => {
+    if (!connectionId) {
+      toast.error("Selecione uma instância WhatsApp para importar agenda.");
+      return;
+    }
+    setAgendaImportPreview((current) => ({
+      ...current,
+      loading: true,
+      busy: false,
+      previewLoaded: false,
+      connectionId,
+      total: 0,
+      skipped: 0,
+      items: [],
+      selectedPhones: [],
+    }));
     try {
       const result = await crmApi.previewContactsFromAgenda({
-        connectionId: instanciaFilter || undefined,
+        connectionId,
       });
       setAgendaImportPreview({
         open: true,
         loading: false,
         busy: false,
+        previewLoaded: true,
+        connectionId,
         total: result.total,
         skipped: result.skipped,
         items: result.items,
@@ -839,6 +877,8 @@ function ContatosPage() {
         open: false,
         loading: false,
         busy: false,
+        previewLoaded: false,
+        connectionId: "",
         total: 0,
         skipped: 0,
         items: [],
@@ -854,6 +894,8 @@ function ContatosPage() {
       open: false,
       loading: false,
       busy: false,
+      previewLoaded: false,
+      connectionId: "",
       total: 0,
       skipped: 0,
       items: [],
@@ -879,13 +921,15 @@ function ContatosPage() {
     });
     try {
       const result = await crmApi.importContactsFromAgenda({
-        connectionId: instanciaFilter || undefined,
+        connectionId: agendaImportPreview.connectionId || undefined,
         selectedPhones,
       });
       setAgendaImportPreview({
         open: false,
         loading: false,
         busy: false,
+        previewLoaded: false,
+        connectionId: "",
         total: 0,
         skipped: 0,
         items: [],
@@ -1684,10 +1728,25 @@ function ContatosPage() {
           open={agendaImportPreview.open}
           loading={agendaImportPreview.loading}
           busy={agendaImportPreview.busy}
+          previewLoaded={agendaImportPreview.previewLoaded}
+          instances={connectedAgendaInstances}
+          connectionId={agendaImportPreview.connectionId}
           total={agendaImportPreview.total}
           skipped={agendaImportPreview.skipped}
           items={agendaImportPreview.items}
           selectedPhones={agendaImportPreview.selectedPhones}
+          onConnectionIdChange={(connectionId) =>
+            setAgendaImportPreview((current) => ({
+              ...current,
+              connectionId,
+              previewLoaded: false,
+              total: 0,
+              skipped: 0,
+              items: [],
+              selectedPhones: [],
+            }))
+          }
+          onLoadPreview={loadAgendaImportPreview}
           onSelectedPhonesChange={(selectedPhones) =>
             setAgendaImportPreview((current) => ({ ...current, selectedPhones }))
           }
@@ -1761,10 +1820,15 @@ function AgendaImportPreviewModal({
   open,
   loading,
   busy,
+  previewLoaded,
+  instances,
+  connectionId,
   total,
   skipped,
   items,
   selectedPhones,
+  onConnectionIdChange,
+  onLoadPreview,
   onSelectedPhonesChange,
   onClose,
   onConfirm,
@@ -1772,15 +1836,22 @@ function AgendaImportPreviewModal({
   open: boolean;
   loading: boolean;
   busy: boolean;
+  previewLoaded: boolean;
+  instances: ContactInstanceOption[];
+  connectionId: string;
   total: number;
   skipped: number;
   items: ApiAgendaImportContact[];
   selectedPhones: string[];
+  onConnectionIdChange: (connectionId: string) => void;
+  onLoadPreview: (connectionId: string) => void | Promise<void>;
   onSelectedPhonesChange: (phones: string[]) => void;
   onClose: () => void;
   onConfirm: () => void | Promise<void>;
 }) {
   const [query, setQuery] = React.useState("");
+  const requiresConnectionSelection = instances.length > 1;
+  const hasPreviewLoaded = loading || previewLoaded;
   const selectedSet = React.useMemo(() => new Set(selectedPhones), [selectedPhones]);
   const filteredItems = React.useMemo(() => {
     const search = normalizeHeader(query);
@@ -1805,6 +1876,7 @@ function AgendaImportPreviewModal({
         : [...selectedPhones, phone],
     );
   };
+  const primaryAction = requiresConnectionSelection && !hasPreviewLoaded;
 
   return (
     <Modal
@@ -1820,15 +1892,40 @@ function AgendaImportPreviewModal({
           <Button
             variant="primary"
             size="sm"
-            onClick={() => void onConfirm()}
-            disabled={busy || loading || selectedPhones.length === 0}
+            onClick={() => void (primaryAction ? onLoadPreview(connectionId) : onConfirm())}
+            disabled={
+              busy ||
+              loading ||
+              (primaryAction ? !connectionId : selectedPhones.length === 0)
+            }
           >
-            {busy ? "Importando..." : `Importar ${selectedPhones.length} contato(s)`}
+            {busy
+              ? "Importando..."
+              : primaryAction
+                ? "Buscar contatos"
+                : `Importar ${selectedPhones.length} contato(s)`}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
+        {requiresConnectionSelection && (
+          <Field label="Instância WhatsApp *">
+            <Select
+              value={connectionId}
+              onChange={(event) => onConnectionIdChange(event.target.value)}
+              disabled={busy || loading}
+            >
+              <option value="">- Selecione -</option>
+              {instances.map((instance) => (
+                <option key={instance.id} value={instance.id}>
+                  {instance.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+
         <div className="grid gap-2 sm:grid-cols-3">
           <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
             <p className="text-xs text-muted-foreground">Encontrados</p>
@@ -4792,6 +4889,10 @@ function isSelectableInstanceStatus(status?: string | null) {
     status === "connected" ||
     status === "disconnected"
   );
+}
+
+function isConnectedInstanceStatus(status?: string | null) {
+  return status?.toUpperCase() === "CONNECTED";
 }
 
 function uniqueLabels(values: Array<string | null | undefined>) {
