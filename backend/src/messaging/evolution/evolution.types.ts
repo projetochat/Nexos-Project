@@ -77,6 +77,7 @@ export type EvolutionContact = {
   number?: string | null;
   profilePictureUrl?: string | null;
   isGroup?: boolean;
+  type?: string | null;
 };
 
 export type EvolutionWebhookPayload = {

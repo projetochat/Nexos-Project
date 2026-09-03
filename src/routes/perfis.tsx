@@ -14,6 +14,7 @@ import {
   SearchInput,
 } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
+import { num } from "@/lib/format";
 import {
   connectionsApi,
   organizationApi,
@@ -269,7 +270,7 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Perfil de Acesso"
-          subtitle={`${items.length} perfis cadastrados.`}
+          subtitle={`${num(items.length)} perfis cadastrados.`}
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>
               <Plus className="h-3.5 w-3.5" /> Novo perfil

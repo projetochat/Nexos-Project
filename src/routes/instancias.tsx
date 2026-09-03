@@ -19,6 +19,7 @@ import { AppShell, PageContainer } from "@/components/app-shell";
 import { Badge, Button, Card, Field, Input, SectionHeader, Textarea } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
+import { num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import { connectionsApi, type ApiMessagingConnection } from "@/lib/nexos-api";
 
@@ -148,7 +149,7 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Instancias"
-          subtitle={`${visibleItems.length} instancias cadastradas.`}
+          subtitle={`${num(visibleItems.length)} instancias cadastradas.`}
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>
               <Plus className="h-3.5 w-3.5" /> Nova instancia

@@ -23,6 +23,7 @@ function Page() {
     refetchInterval: 30_000,
   });
   const queues = data?.items ?? [];
+  const totalItems = queues.reduce((sum, queue) => sum + queue.quantidade, 0);
 
   React.useEffect(
     () =>
@@ -39,7 +40,7 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Filas de atendimento"
-          subtitle={`${queues.reduce((sum, queue) => sum + queue.quantidade, 0)} itens em filas operacionais.`}
+          subtitle={`${num(totalItems)} itens em filas operacionais.`}
           actions={
             <div className="flex gap-2">
               <Button
@@ -67,7 +68,7 @@ function Page() {
                   <div className="min-w-0">
                     <h3 className="truncate text-sm font-semibold">{queue.nome}</h3>
                     <p className="truncate text-xs text-muted-foreground">
-                      Capacidade atual: {queue.capacidade} atendimentos
+                      Capacidade atual: {num(queue.capacidade)} atendimentos
                     </p>
                   </div>
                 </div>
@@ -129,7 +130,7 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
       <div className="mx-auto flex h-4 w-4 items-center justify-center text-muted-foreground">
         {icon}
       </div>
-      <div className="mt-1 font-mono text-lg font-semibold">{value}</div>
+      <div className="mt-1 font-mono text-lg font-semibold">{num(value)}</div>
       <div className="text-[10px] uppercase text-muted-foreground">{label}</div>
     </div>
   );

@@ -15,6 +15,7 @@ import {
   SearchInput,
 } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
+import { num } from "@/lib/format";
 import { organizationApi, type ApiDepartment } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/departamentos")({ component: Page });
@@ -86,7 +87,7 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Departamentos"
-          subtitle={`${departamentos.length} departamentos cadastrados.`}
+          subtitle={`${num(departamentos.length)} departamentos cadastrados.`}
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>
               <Plus className="h-3.5 w-3.5" /> Criar departamento

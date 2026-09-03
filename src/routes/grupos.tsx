@@ -32,11 +32,13 @@ import {
   type ApiContactInstanceOption,
   type ApiWhatsappGroup,
 } from "@/lib/nexos-api";
+import { num } from "@/lib/format";
 
 export const Route = createFileRoute("/grupos")({ component: GroupsPage });
 
 const DEFAULT_PAGE_SIZE = 12;
 const PAGE_SIZE_OPTIONS = [12, 24, 48, 96] as const;
+const EMPTY_FILTER_VALUE = "__empty__";
 
 function GroupsPage() {
   const navigate = useNavigate();
@@ -45,6 +47,7 @@ function GroupsPage() {
   const [instances, setInstances] = React.useState<ApiContactInstanceOption[]>([]);
   const [contacts, setContacts] = React.useState<ApiContact[]>([]);
   const [query, setQuery] = React.useState("");
+  const [instanceFilter, setInstanceFilter] = React.useState("");
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = React.useState(0);
@@ -58,7 +61,7 @@ function GroupsPage() {
     setLoading(true);
     try {
       const [groupResponse, options, contactResponse] = await Promise.all([
-        groupsApi.list({ q: query, page, pageSize }),
+        groupsApi.list({ q: query, page, pageSize, connectionId: instanceFilter }),
         crmApi.contactOptions(),
         crmApi.listContacts({ pageSize: 1000 }),
       ]);
@@ -74,7 +77,7 @@ function GroupsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, query]);
+  }, [instanceFilter, page, pageSize, query]);
 
   React.useEffect(() => {
     void load();
@@ -89,7 +92,7 @@ function GroupsPage() {
 
   React.useEffect(() => {
     setPage(1);
-  }, [query, pageSize]);
+  }, [instanceFilter, query, pageSize]);
 
   const pageSafe = Math.min(page, totalPages);
   const syncGroups = async () => {
@@ -97,7 +100,7 @@ function GroupsPage() {
     try {
       const result = await groupsApi.sync();
       toast.success("Grupos atualizados", {
-        description: `${result.synced} grupo(s) sincronizado(s).`,
+        description: `${num(result.synced)} grupo(s) sincronizado(s).`,
       });
       await load();
     } catch (error) {
@@ -112,7 +115,7 @@ function GroupsPage() {
       <PageContainer className="max-w-[96rem] lg:px-8 xl:px-10 2xl:px-12">
         <SectionHeader
           title="Gerenciar Grupos"
-          subtitle={`${total} grupos de WhatsApp conectados.`}
+          subtitle={`${num(total)} grupos de WhatsApp conectados.`}
           actions={
             <Button variant="primary" size="sm" onClick={create.show}>
               <Plus className="h-3.5 w-3.5" /> Criar Grupo
@@ -121,13 +124,24 @@ function GroupsPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-end">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)_auto_auto] md:items-end">
             <Field label="Busca">
               <SearchInput
                 value={query}
                 onChange={setQuery}
                 placeholder="Buscar por grupo, participante ou WhatsApp..."
               />
+            </Field>
+            <Field label="Instância">
+              <Select value={instanceFilter} onChange={(event) => setInstanceFilter(event.target.value)}>
+                <option value="">Todos</option>
+                <option value={EMPTY_FILTER_VALUE}>- Sem instância -</option>
+                {instances.map((instance) => (
+                  <option key={instance.id} value={instance.id}>
+                    {instance.name}
+                  </option>
+                ))}
+              </Select>
             </Field>
             <Button variant="secondary" size="md" onClick={() => void load()}>
               <Search className="h-4 w-4" /> Buscar
@@ -177,7 +191,7 @@ function GroupsPage() {
           <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3">
             <div className="flex min-w-0 items-center gap-2">
               <span className="shrink-0">
-                Mostrando {groups.length} de {total}
+                Mostrando {num(groups.length)} de {num(total)}
               </span>
               <Select
                 value={String(pageSize)}
@@ -268,7 +282,7 @@ function GroupCard({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-foreground">{group.name}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {group.participantsCount} participante(s)
+            {num(group.participantsCount)} participante(s)
           </p>
         </div>
         <Button
@@ -471,7 +485,7 @@ function GroupDetailModal({
             <div className="min-w-0 flex-1">
               <p className="truncate text-base font-semibold">{group.name}</p>
               <p className="text-sm text-muted-foreground">
-                {group.participantsCount} participante(s) cadastrados
+                {num(group.participantsCount)} participante(s) cadastrados
               </p>
               <p className="text-xs text-muted-foreground">
                 Criado em {formatDate(group.createdAt)}

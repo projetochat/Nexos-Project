@@ -134,10 +134,19 @@ class ReorderContactCustomFieldsDto {
 }
 
 class BulkUpdateContactsDto {
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(1000)
   @IsUUID(undefined, { each: true })
-  contactIds!: string[];
+  contactIds?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  allFiltered?: boolean;
+
+  @IsOptional()
+  @IsObject()
+  filters?: Partial<ListContactsQueryDto>;
 
   @IsOptional()
   @IsUUID()
@@ -201,6 +210,8 @@ const agendaImportedContactSelect = {
   instance: true,
   instanceIds: true,
 } satisfies Prisma.ContactSelect;
+
+const EMPTY_CONTACT_FILTER_VALUE = "__empty__";
 
 @Controller("crm")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -349,67 +360,17 @@ export class CrmController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const { page, pageSize, skip } = pagination(query);
-    const q = query.q?.trim();
-    const qDigits = q?.replace(/\D/g, "") ?? "";
-    const instanceKeys = query.instance
-      ? await this.resolveInstanceFilterKeys(query.instance, current.tenantId)
-      : [];
-    const where: Prisma.ContactWhereInput = {
-      tenantId: current.tenantId,
-      archivedAt: null,
-      NOT: { normalizedPhone: { startsWith: "group:" } },
-      ...(query.linked === "linked" ? { customerId: { not: null } } : {}),
-      ...(query.linked === "unlinked" ? { customerId: null } : {}),
-      ...(query.customerId ? { customerId: query.customerId } : {}),
-      ...(query.instance
-        ? {
-            AND: [
-              {
-                OR: [
-                  { instance: { in: instanceKeys } },
-                  { instanceIds: { hasSome: instanceKeys } },
-                ],
-              },
-            ],
-          }
-        : {}),
-      ...(query.department ? { contactDepartmentId: query.department } : {}),
-      ...(query.tagId
-        ? {
-            tags: {
-              some: {
-                tenantId: current.tenantId,
-                tagId: query.tagId,
-                tag: { archivedAt: null },
-              },
-            },
-          }
-        : {}),
-      ...(q
-        ? {
-            OR: [
-              { name: { contains: q, mode: "insensitive" } },
-              { phone: { contains: q, mode: "insensitive" } },
-              ...(qDigits
-                ? [{ normalizedPhone: { contains: qDigits, mode: "insensitive" } } as const]
-                : []),
-              { email: { contains: q, mode: "insensitive" } },
-              { customer: { name: { contains: q, mode: "insensitive" } } },
-            ],
-          }
-        : {}),
-    };
+    const where = await this.buildContactListWhere(query, current.tenantId);
 
-    const [items, total] = await this.prisma.$transaction([
+    const [allItems, total] = await this.prisma.$transaction([
       this.prisma.contact.findMany({
         where,
-        skip,
-        take: pageSize,
-        orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+        orderBy: [{ createdAt: "desc" }],
         include: contactInclude,
       }),
       this.prisma.contact.count({ where }),
     ]);
+    const items = allItems.sort(compareContactsByDisplayName).slice(skip, skip + pageSize);
 
     this.profilePictures.enqueueMissing({
       tenantId: current.tenantId,
@@ -590,18 +551,37 @@ export class CrmController {
     @Body() dto: BulkUpdateContactsDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
+    const allFiltered = dto.allFiltered === true;
     const contactIds = Array.from(new Set(dto.contactIds ?? []));
-    if (!contactIds.length) throw new BadRequestException("Selecione ao menos um contato.");
+    if (!allFiltered && !contactIds.length)
+      throw new BadRequestException("Selecione ao menos um contato.");
 
-    const total = await this.prisma.contact.count({
-      where: { tenantId: current.tenantId, id: { in: contactIds }, archivedAt: null },
-    });
-    if (total !== contactIds.length)
+    const contactWhere = allFiltered
+      ? await this.buildContactListWhere(dto.filters ?? {}, current.tenantId)
+      : {
+          tenantId: current.tenantId,
+          id: { in: contactIds },
+          archivedAt: null,
+          NOT: { normalizedPhone: { startsWith: "group:" } },
+        };
+    const total = await this.prisma.contact.count({ where: contactWhere });
+    if (!total) throw new BadRequestException("Selecione ao menos um contato.");
+    if (!allFiltered && total !== contactIds.length)
       throw new BadRequestException("Alguns contatos nao foram encontrados.");
+
+    const targetContactIds =
+      allFiltered && (dto.customFields !== undefined || dto.tagIds !== undefined)
+        ? (
+            await this.prisma.contact.findMany({
+              where: contactWhere,
+              select: { id: true },
+            })
+          ).map((contact) => contact.id)
+        : contactIds;
 
     if (dto.delete) {
       await this.prisma.contact.updateMany({
-        where: { tenantId: current.tenantId, id: { in: contactIds } },
+        where: contactWhere,
         data: { archivedAt: new Date() },
       });
       return { updated: total, deleted: true };
@@ -610,7 +590,7 @@ export class CrmController {
     const links = await this.resolveContactLinks(dto, current.tenantId);
     await this.prisma.$transaction(async (tx) => {
       await tx.contact.updateMany({
-        where: { tenantId: current.tenantId, id: { in: contactIds } },
+        where: contactWhere,
         data: {
           customerId: dto.customerId === undefined ? undefined : links.customerId,
           contactDepartmentId:
@@ -624,7 +604,7 @@ export class CrmController {
       });
 
       if (dto.customFields !== undefined) {
-        for (const contactId of contactIds) {
+        for (const contactId of targetContactIds) {
           await this.saveProvidedContactCustomFields(
             tx,
             current.tenantId,
@@ -636,11 +616,11 @@ export class CrmController {
 
       if (dto.tagIds !== undefined) {
         await tx.contactTag.deleteMany({
-          where: { tenantId: current.tenantId, contactId: { in: contactIds } },
+          where: { tenantId: current.tenantId, contactId: { in: targetContactIds } },
         });
         if (links.tagIds.length) {
           await tx.contactTag.createMany({
-            data: contactIds.flatMap((contactId) =>
+            data: targetContactIds.flatMap((contactId) =>
               links.tagIds.map((tagId) => ({ tenantId: current.tenantId, contactId, tagId })),
             ),
           });
@@ -669,7 +649,24 @@ export class CrmController {
     }
     const preview = await this.buildAgendaImportPreview(current.tenantId, dto.connectionId);
     const selectedPhones = new Set(dto.selectedPhones ?? []);
-    const candidates = preview.items.filter((item) => selectedPhones.has(item.normalizedPhone));
+    const selectedIgnoredItems = new Map(
+      preview.ignoredItems
+        .filter(
+          (item) =>
+            item.importable && item.normalizedPhone && selectedPhones.has(item.normalizedPhone),
+        )
+        .map((item) => [item.normalizedPhone as string, item]),
+    );
+    const candidates = [
+      ...preview.items.filter((item) => selectedPhones.has(item.normalizedPhone)),
+      ...Array.from(selectedIgnoredItems.values()).map((item) => ({
+          id: item.normalizedPhone as string,
+          name: item.name,
+          phone: item.normalizedPhone as string,
+          normalizedPhone: item.normalizedPhone as string,
+          avatarUrl: null,
+        })),
+    ];
     let imported = 0;
     let skipped = 0;
     const importedContacts: Array<{
@@ -758,6 +755,84 @@ export class CrmController {
       total: preview.total,
       skipped: preview.skipped,
       items: preview.items,
+      ignoredItems: preview.ignoredItems,
+    };
+  }
+
+  private async buildContactListWhere(
+    query: Partial<ListContactsQueryDto>,
+    tenantId: string,
+  ): Promise<Prisma.ContactWhereInput> {
+    const q = query.q?.trim();
+    const qDigits = q?.replace(/\D/g, "") ?? "";
+    const instanceKeys = query.instance
+      ? await this.resolveInstanceFilterKeys(query.instance, tenantId)
+      : [];
+    const filterWithoutCustomer = query.customerId === EMPTY_CONTACT_FILTER_VALUE;
+    const filterWithoutDepartment = query.department === EMPTY_CONTACT_FILTER_VALUE;
+    const filterWithoutTags = query.tagId === EMPTY_CONTACT_FILTER_VALUE;
+
+    return {
+      tenantId,
+      archivedAt: null,
+      NOT: { normalizedPhone: { startsWith: "group:" } },
+      ...(query.linked === "linked" ? { customerId: { not: null } } : {}),
+      ...(query.linked === "unlinked" ? { customerId: null } : {}),
+      ...(filterWithoutCustomer
+        ? { customerId: null }
+        : query.customerId
+          ? { customerId: query.customerId }
+          : {}),
+      ...(query.instance
+        ? {
+            AND: [
+              {
+                OR: [
+                  { instance: { in: instanceKeys } },
+                  { instanceIds: { hasSome: instanceKeys } },
+                ],
+              },
+            ],
+          }
+        : {}),
+      ...(filterWithoutDepartment
+        ? { contactDepartmentId: null }
+        : query.department
+          ? { contactDepartmentId: query.department }
+          : {}),
+      ...(filterWithoutTags
+        ? {
+            tags: {
+              none: {
+                tenantId,
+                tag: { archivedAt: null },
+              },
+            },
+          }
+        : query.tagId
+          ? {
+              tags: {
+                some: {
+                  tenantId,
+                  tagId: query.tagId,
+                  tag: { archivedAt: null },
+                },
+              },
+            }
+          : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              { phone: { contains: q, mode: "insensitive" } },
+              ...(qDigits
+                ? [{ normalizedPhone: { contains: qDigits, mode: "insensitive" } } as const]
+                : []),
+              { email: { contains: q, mode: "insensitive" } },
+              { customer: { name: { contains: q, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
     };
   }
 
@@ -1290,23 +1365,68 @@ export class CrmController {
         avatarUrl: string | null;
       }
     >();
-    let skipped = 0;
+    let ignoredItems: Array<{
+      name: string;
+      phone: string;
+      normalizedPhone: string | null;
+      reason: string;
+      importable: boolean;
+    }> = [];
 
     for (const item of contacts) {
+      const name = importedEvolutionContactName(item);
+      const rawPhone = importedEvolutionContactRawPhone(item);
       try {
         if (item.isGroup) {
-          skipped += 1;
+          ignoredItems.push({
+            name: name ?? "Grupo WhatsApp",
+            phone: rawPhone,
+            normalizedPhone: null,
+            reason: "Grupo WhatsApp",
+            importable: false,
+          });
           continue;
         }
         const phone = importedEvolutionContactPhone(item);
-        const name = importedEvolutionContactName(item);
-        if (!phone || !name || groupContactIdentityFromPhone(phone)) {
-          skipped += 1;
+        if (!phone || !name) {
+          ignoredItems.push({
+            name: name ?? "",
+            phone: phone || rawPhone,
+            normalizedPhone: null,
+            reason: !phone ? "Telefone indisponivel" : "Nome indisponivel",
+            importable: false,
+          });
+          continue;
+        }
+        if (groupContactIdentityFromPhone(phone)) {
+          ignoredItems.push({
+            name,
+            phone,
+            normalizedPhone: null,
+            reason: "Grupo WhatsApp",
+            importable: false,
+          });
           continue;
         }
         const normalizedPhone = normalizePhone(phone);
+        if (item.type === "group_member") {
+          ignoredItems.push({
+            name,
+            phone: normalizedPhone,
+            normalizedPhone,
+            reason: "Contato de grupo",
+            importable: false,
+          });
+          continue;
+        }
         if (byPhone.has(normalizedPhone)) {
-          skipped += 1;
+          ignoredItems.push({
+            name,
+            phone: normalizedPhone,
+            normalizedPhone,
+            reason: "Telefone duplicado na agenda",
+            importable: false,
+          });
           continue;
         }
         byPhone.set(normalizedPhone, {
@@ -1317,18 +1437,39 @@ export class CrmController {
           avatarUrl: null,
         });
       } catch {
-        skipped += 1;
+        ignoredItems.push({
+          name: name ?? "",
+          phone: rawPhone,
+          normalizedPhone: null,
+          reason: "Telefone invalido",
+          importable: false,
+        });
       }
     }
 
     const candidates = [...byPhone.values()];
-    if (!candidates.length) return { connection, total: contacts.length, skipped, items: [] };
+    const importableIgnoredPhones = ignoredItems
+      .map((item) => item.normalizedPhone)
+      .filter((phone): phone is string => Boolean(phone));
+    const duplicateLookupPhones = [
+      ...candidates.map((item) => item.normalizedPhone),
+      ...importableIgnoredPhones,
+    ];
+    if (!duplicateLookupPhones.length) {
+      return {
+        connection,
+        total: contacts.length,
+        skipped: ignoredItems.length,
+        items: [],
+        ignoredItems,
+      };
+    }
 
     const existingContacts = await this.prisma.contact.findMany({
       where: {
         tenantId,
         normalizedPhone: {
-          in: candidates.flatMap((item) => contactPhoneDuplicateCandidates(item.normalizedPhone)),
+          in: duplicateLookupPhones.flatMap((phone) => contactPhoneDuplicateCandidates(phone)),
         },
       },
       select: { normalizedPhone: true, archivedAt: true },
@@ -1339,12 +1480,29 @@ export class CrmController {
         .map((item) => item.normalizedPhone),
     );
     const items = candidates.filter((item) => !activePhones.has(item.normalizedPhone));
+    ignoredItems = ignoredItems.map((item) =>
+      item.importable && item.normalizedPhone && activePhones.has(item.normalizedPhone)
+        ? { ...item, reason: "Contato ja cadastrado ativo", importable: false }
+        : item,
+    );
+    ignoredItems.push(
+      ...candidates
+        .filter((item) => activePhones.has(item.normalizedPhone))
+        .map((item) => ({
+          name: item.name,
+          phone: item.normalizedPhone,
+          normalizedPhone: item.normalizedPhone,
+          reason: "Contato ja cadastrado ativo",
+          importable: false,
+        })),
+    );
 
     return {
       connection,
       total: contacts.length,
-      skipped: skipped + candidates.length - items.length,
+      skipped: ignoredItems.length,
       items,
+      ignoredItems,
     };
   }
 
@@ -1855,6 +2013,30 @@ function cleanNullable(value?: string | null) {
   return value.trim() || null;
 }
 
+function compareContactsByDisplayName<T extends { name: string; createdAt: Date }>(a: T, b: T) {
+  const aKey = contactNameSortKey(a.name);
+  const bKey = contactNameSortKey(b.name);
+  if (aKey.symbolOnly !== bKey.symbolOnly) return aKey.symbolOnly ? 1 : -1;
+  const nameCompare = aKey.value.localeCompare(bKey.value, "pt-BR", {
+    sensitivity: "base",
+    numeric: true,
+  });
+  if (nameCompare !== 0) return nameCompare;
+  return b.createdAt.getTime() - a.createdAt.getTime();
+}
+
+function contactNameSortKey(name: string) {
+  const value = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR");
+  const lettersOnly = value.replace(/[^\p{L}\s]+/gu, " ").replace(/\s+/g, " ").trim();
+  return {
+    symbolOnly: !/\p{L}/u.test(lettersOnly),
+    value: lettersOnly,
+  };
+}
+
 function importedEvolutionContactPhone(item: {
   id?: string | null;
   remoteJid?: string | null;
@@ -1867,6 +2049,14 @@ function importedEvolutionContactPhone(item: {
   const idPhone = id ? phoneFromWhatsappIdentifier(id) : null;
   if (idPhone) return idPhone;
   return phoneFromStandaloneEvolutionNumber(item.number);
+}
+
+function importedEvolutionContactRawPhone(item: {
+  id?: string | null;
+  remoteJid?: string | null;
+  number?: string | null;
+}) {
+  return cleanNullable(item.number) ?? cleanNullable(item.remoteJid) ?? cleanNullable(item.id) ?? "";
 }
 
 function importedEvolutionContactName(item: {
@@ -1960,3 +2150,4 @@ function handlePrismaError(error: unknown): never {
 function isPrismaError(error: unknown, code: string) {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
+

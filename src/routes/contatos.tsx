@@ -68,6 +68,7 @@ import {
   conversationApi,
   crmApi,
   type ApiAgendaImportContact,
+  type ApiAgendaImportIgnoredContact,
   type ApiContact,
   type ApiContactCatalog,
   type ApiContactCustomField,
@@ -83,6 +84,7 @@ const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000, 10000] as const;
 const CUSTOMER_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 const DEFAULT_CUSTOMER_PAGE_SIZE = 10;
 const FAVORITE_COUNTRY_CODES_KEY = "nexo.favorite-country-codes";
+const EMPTY_FILTER_VALUE = "__empty__";
 const COUNTRY_CODES = [
   { id: "br", code: "55", country: "Brasil", flag: "🇧🇷" },
   { id: "us", code: "1", country: "Estados Unidos", flag: "🇺🇸" },
@@ -316,6 +318,7 @@ type AgendaImportPreviewState = {
   total: number;
   skipped: number;
   items: ApiAgendaImportContact[];
+  ignoredItems: ApiAgendaImportIgnoredContact[];
   selectedPhones: string[];
 };
 
@@ -339,6 +342,7 @@ function ContatosPage() {
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [allFilteredSelected, setAllFilteredSelected] = React.useState(false);
   const [bulkAction, setBulkAction] = React.useState("");
   const [bulkMode, setBulkMode] = React.useState("");
   const [bulkValue, setBulkValue] = React.useState("");
@@ -350,7 +354,6 @@ function ContatosPage() {
   const exportMenuRef = React.useRef<HTMLDivElement>(null);
   const [exportAllRecords, setExportAllRecords] = React.useState(false);
   const cancelImportRef = React.useRef(false);
-  const importProgressAutoCloseRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [importProgress, setImportProgress] = React.useState<ImportProgressState>({
     open: false,
     source: null,
@@ -368,6 +371,7 @@ function ContatosPage() {
     total: 0,
     skipped: 0,
     items: [],
+    ignoredItems: [],
     selectedPhones: [],
   });
   const [total, setTotal] = React.useState(0);
@@ -406,19 +410,25 @@ function ContatosPage() {
       ),
     [instances],
   );
+  const currentContactFilters = React.useMemo(
+    () => ({
+      q: query,
+      instance: instanciaFilter,
+      department: departamentoFilter,
+      customerId: clienteFilter,
+      tagId: tagFilter,
+    }),
+    [clienteFilter, departamentoFilter, instanciaFilter, query, tagFilter],
+  );
 
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
       const [contactResponse, customerResponse, options, customFields] = await Promise.all([
         crmApi.listContacts({
-          q: query,
+          ...currentContactFilters,
           page,
           pageSize,
-          instance: instanciaFilter,
-          department: departamentoFilter,
-          customerId: clienteFilter,
-          tagId: tagFilter,
         }),
         crmApi.listCustomers({ pageSize: 100 }),
         crmApi.contactOptions(),
@@ -440,19 +450,22 @@ function ContatosPage() {
     } finally {
       setLoading(false);
     }
-  }, [clienteFilter, departamentoFilter, instanciaFilter, page, pageSize, query, tagFilter]);
+  }, [currentContactFilters, page, pageSize]);
 
   React.useEffect(() => {
     void load();
   }, [load]);
   React.useEffect(() => {
     setPage(1);
+    setSelectedIds([]);
+    setAllFilteredSelected(false);
   }, [query, instanciaFilter, departamentoFilter, clienteFilter, tagFilter, pageSize]);
   React.useEffect(() => {
+    if (allFilteredSelected) return;
     setSelectedIds((current) =>
       current.filter((id) => contacts.some((contact) => contact.id === id)),
     );
-  }, [contacts]);
+  }, [allFilteredSelected, contacts]);
   React.useEffect(() => {
     if (!exportMenu.open) return;
     const closeOnOutside = (event: PointerEvent) => {
@@ -461,40 +474,11 @@ function ContatosPage() {
     document.addEventListener("pointerdown", closeOnOutside);
     return () => document.removeEventListener("pointerdown", closeOnOutside);
   }, [exportMenu]);
-  React.useEffect(() => {
-    if (importProgressAutoCloseRef.current) {
-      clearTimeout(importProgressAutoCloseRef.current);
-      importProgressAutoCloseRef.current = null;
-    }
-    if (
-      !importProgress.open ||
-      importProgress.status === "running" ||
-      importProgress.status === "idle"
-    ) {
-      return;
-    }
-    importProgressAutoCloseRef.current = setTimeout(() => {
-      setImportProgress({
-        open: false,
-        source: null,
-        current: 0,
-        total: 0,
-        imported: 0,
-        status: "idle",
-      });
-      importProgressAutoCloseRef.current = null;
-    }, 3500);
-    return () => {
-      if (importProgressAutoCloseRef.current) {
-        clearTimeout(importProgressAutoCloseRef.current);
-        importProgressAutoCloseRef.current = null;
-      }
-    };
-  }, [importProgress.open, importProgress.status]);
-
   const pageSafe = Math.min(page, totalPages);
   const allVisibleSelected =
-    contacts.length > 0 && contacts.every((contact) => selectedIds.includes(contact.id));
+    contacts.length > 0 &&
+    (allFilteredSelected || contacts.every((contact) => selectedIds.includes(contact.id)));
+  const selectedBulkCount = allFilteredSelected ? total : selectedIds.length;
   const exportableSelectedCount = React.useMemo(
     () =>
       contacts.filter((contact) => selectedIds.includes(contact.id) && isExportableContact(contact))
@@ -502,8 +486,29 @@ function ContatosPage() {
     [contacts, selectedIds],
   );
   const exportableContactCount = exportAllRecords ? total : exportableSelectedCount;
-  const toggleVisibleSelection = () =>
+  const resetBulkSelection = () => {
+    setSelectedIds([]);
+    setAllFilteredSelected(false);
+  };
+  const toggleVisibleSelection = () => {
+    if (allFilteredSelected) {
+      resetBulkSelection();
+      return;
+    }
     setSelectedIds(allVisibleSelected ? [] : contacts.map((contact) => contact.id));
+  };
+  const toggleContactSelection = (contactId: string) => {
+    if (allFilteredSelected) {
+      setAllFilteredSelected(false);
+      setSelectedIds(contacts.filter((contact) => contact.id !== contactId).map((contact) => contact.id));
+      return;
+    }
+    setSelectedIds((current) =>
+      current.includes(contactId)
+        ? current.filter((id) => id !== contactId)
+        : [...current, contactId],
+    );
+  };
 
   const selectedBulkCustomField = bulkMode.startsWith("custom:")
     ? customFieldDefinitions.find((field) => field.id === bulkMode.slice("custom:".length))
@@ -835,6 +840,7 @@ function ContatosPage() {
       total: 0,
       skipped: 0,
       items: [],
+      ignoredItems: [],
       selectedPhones: [],
     });
     if (!singleConnectionId) return;
@@ -855,6 +861,7 @@ function ContatosPage() {
       total: 0,
       skipped: 0,
       items: [],
+      ignoredItems: [],
       selectedPhones: [],
     }));
     try {
@@ -870,6 +877,7 @@ function ContatosPage() {
         total: result.total,
         skipped: result.skipped,
         items: result.items,
+        ignoredItems: result.ignoredItems ?? [],
         selectedPhones: result.items.map((item) => item.normalizedPhone),
       });
     } catch (error) {
@@ -882,6 +890,7 @@ function ContatosPage() {
         total: 0,
         skipped: 0,
         items: [],
+        ignoredItems: [],
         selectedPhones: [],
       });
       toast.error("Falha ao importar agenda", { description: (error as Error).message });
@@ -899,6 +908,7 @@ function ContatosPage() {
       total: 0,
       skipped: 0,
       items: [],
+      ignoredItems: [],
       selectedPhones: [],
     });
   };
@@ -933,6 +943,7 @@ function ContatosPage() {
         total: 0,
         skipped: 0,
         items: [],
+        ignoredItems: [],
         selectedPhones: [],
       });
       setImportProgress({
@@ -944,7 +955,7 @@ function ContatosPage() {
         status: "completed",
       });
       toast.success("Importação concluída", {
-        description: `${result.imported} de ${result.total} contato(s) importado(s).`,
+        description: `${formatIntegerPtBr(result.imported)} de ${formatIntegerPtBr(result.total)} contato(s) importado(s).`,
       });
       await load();
     } catch (error) {
@@ -991,34 +1002,38 @@ function ContatosPage() {
   };
 
   const applyBulkAction = async () => {
-    if (!selectedIds.length || !bulkMode) return;
+    if (!selectedBulkCount || !bulkMode) return;
+    const target = allFilteredSelected
+      ? { allFiltered: true, filters: currentContactFilters }
+      : { contactIds: selectedIds };
     if (bulkMode === "delete") {
-      if (!window.confirm(`Deseja realmente excluir ${selectedIds.length} contato(s)?`)) return;
-      await crmApi.bulkUpdateContacts({ contactIds: selectedIds, delete: true });
+      if (!window.confirm(`Deseja realmente excluir ${formatIntegerPtBr(selectedBulkCount)} contato(s)?`))
+        return;
+      await crmApi.bulkUpdateContacts({ ...target, delete: true });
     } else if (bulkMode === "tags") {
-      await crmApi.bulkUpdateContacts({ contactIds: selectedIds, tagIds: bulkTags });
+      await crmApi.bulkUpdateContacts({ ...target, tagIds: bulkTags });
     } else if (bulkMode === "instances") {
       await crmApi.bulkUpdateContacts({
-        contactIds: selectedIds,
+        ...target,
         instanceIds: bulkValue ? bulkValue.split(",").filter(Boolean) : [],
       });
     } else if (bulkMode === "email") {
-      await crmApi.bulkUpdateContacts({ contactIds: selectedIds, email: bulkValue || null });
+      await crmApi.bulkUpdateContacts({ ...target, email: bulkValue || null });
     } else if (selectedBulkCustomField) {
       await crmApi.bulkUpdateContacts({
-        contactIds: selectedIds,
+        ...target,
         customFields: { [selectedBulkCustomField.id]: bulkCustomValue },
       });
     } else {
       await crmApi.bulkUpdateContacts({
-        contactIds: selectedIds,
+        ...target,
         customerId: bulkMode === "customer" ? bulkValue || null : undefined,
         contactDepartmentId: bulkMode === "department" ? bulkValue || null : undefined,
         contactProfileId: bulkMode === "profile" ? bulkValue || null : undefined,
       });
     }
     toast.success("Contatos atualizados");
-    setSelectedIds([]);
+    resetBulkSelection();
     setBulkAction("");
     setBulkMode("");
     setBulkValue("");
@@ -1032,7 +1047,7 @@ function ContatosPage() {
       <PageContainer className="max-w-[96rem] lg:px-8 xl:px-10 2xl:px-12">
         <SectionHeader
           title="Contatos"
-          subtitle={`${total} contatos cadastrados.`}
+          subtitle={`${formatIntegerPtBr(total)} contatos cadastrados.`}
           subtitleClassName="hidden sm:block"
           actions={
             <div className="flex flex-wrap items-center gap-2">
@@ -1092,6 +1107,9 @@ function ContatosPage() {
                 <option key="all" value="">
                   Todas
                 </option>,
+                <option key="empty" value={EMPTY_FILTER_VALUE}>
+                  - Sem instância - 
+                </option>,
                 ...visibleInstances.map((option) => (
                   <option key={option.id} value={option.value}>
                     {option.name}
@@ -1103,6 +1121,9 @@ function ContatosPage() {
               {[
                 <option key="all" value="">
                   Todas
+                </option>,
+                <option key="empty" value={EMPTY_FILTER_VALUE}>
+                  - Sem empresa - 
                 </option>,
                 ...customers.map((customer) => (
                   <option key={customer.id} value={customer.id}>
@@ -1120,6 +1141,9 @@ function ContatosPage() {
                 <option key="all" value="">
                   Todos
                 </option>,
+                <option key="empty" value={EMPTY_FILTER_VALUE}>
+                  - Sem departamento - 
+                </option>,
                 ...departments.map((department) => (
                   <option key={department.id} value={department.id}>
                     {department.nome}
@@ -1132,6 +1156,9 @@ function ContatosPage() {
                 <option key="all" value="">
                   Todas
                 </option>,
+                <option key="empty" value={EMPTY_FILTER_VALUE}>
+                  - Sem etiqueta - 
+                </option>,
                 ...tags.map((tag) => (
                   <option key={tag.id} value={tag.id}>
                     {tag.nome}
@@ -1142,10 +1169,24 @@ function ContatosPage() {
           </div>
         </Card>
 
-        {selectedIds.length > 0 && (
+        {selectedBulkCount > 0 && (
           <Card className="mb-4 hidden p-3 md:block">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="mr-2 text-sm font-medium">{selectedIds.length} selecionado(s)</span>
+              <span className="mr-2 text-sm font-medium">
+                {formatIntegerPtBr(selectedBulkCount)} selecionado(s)
+              </span>
+              <label className="flex min-h-9 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 shrink-0"
+                  checked={allFilteredSelected}
+                  onChange={(event) => {
+                    setAllFilteredSelected(event.target.checked);
+                    setSelectedIds(event.target.checked ? contacts.map((contact) => contact.id) : []);
+                  }}
+                />
+                <span className="font-medium">Marcar todos os registros</span>
+              </label>
               <Select
                 value={bulkAction}
                 onChange={(event) => {
@@ -1296,12 +1337,26 @@ function ContatosPage() {
               Selecionar todos os registros
             </span>
           </label>
-          {selectedIds.length > 0 && (
+          {selectedBulkCount > 0 && (
             <div className="mt-3 rounded-lg border border-border bg-card p-3">
               <span className="mb-2 block text-xs font-semibold">
-                {selectedIds.length} selecionado(s)
+                {formatIntegerPtBr(selectedBulkCount)} selecionado(s)
               </span>
               <div className="grid gap-2">
+                <label className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 shrink-0"
+                    checked={allFilteredSelected}
+                    onChange={(event) => {
+                      setAllFilteredSelected(event.target.checked);
+                      setSelectedIds(event.target.checked ? contacts.map((contact) => contact.id) : []);
+                    }}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                    Marcar todos os registros
+                  </span>
+                </label>
                 <Select
                   value={bulkAction}
                   onChange={(event) => {
@@ -1436,14 +1491,8 @@ function ContatosPage() {
                       <input
                         type="checkbox"
                         className="h-5 w-5 shrink-0"
-                        checked={selectedIds.includes(contact.id)}
-                        onChange={() =>
-                          setSelectedIds((current) =>
-                            current.includes(contact.id)
-                              ? current.filter((id) => id !== contact.id)
-                              : [...current, contact.id],
-                          )
-                        }
+                        checked={allFilteredSelected || selectedIds.includes(contact.id)}
+                        onChange={() => toggleContactSelection(contact.id)}
                         aria-label={`Selecionar ${contact.nome}`}
                       />
                       <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={32} />
@@ -1493,11 +1542,14 @@ function ContatosPage() {
           <table className="hidden w-full table-fixed overflow-hidden rounded-lg text-sm md:table">
             <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
               <tr>
-                <th className="w-10 rounded-tl-lg px-3 py-3 font-medium sm:px-4">
+                <th
+                  className="w-10 rounded-tl-lg px-3 py-3 font-medium sm:px-4"
+                  style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
+                >
                   <input
                     type="checkbox"
                     className="h-4 w-4"
-                    style={{ width: 16, height: 16, minWidth: 16, minHeight: 16 }}
+                    style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
                     checked={allVisibleSelected}
                     onChange={toggleVisibleSelection}
                     aria-label="Selecionar contatos visíveis"
@@ -1523,19 +1575,16 @@ function ContatosPage() {
               {!loading &&
                 contacts.map((contact) => (
                   <tr key={contact.id} className="transition hover:bg-surface-1">
-                    <td className="relative px-3 py-3 sm:px-4">
+                    <td
+                      className="relative px-3 py-3 sm:px-4"
+                      style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
+                    >
                       <input
                         type="checkbox"
                         className="h-4 w-4"
-                        style={{ width: 16, height: 16, minWidth: 16, minHeight: 16 }}
-                        checked={selectedIds.includes(contact.id)}
-                        onChange={() =>
-                          setSelectedIds((current) =>
-                            current.includes(contact.id)
-                              ? current.filter((id) => id !== contact.id)
-                              : [...current, contact.id],
-                          )
-                        }
+                        style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+                        checked={allFilteredSelected || selectedIds.includes(contact.id)}
+                        onChange={() => toggleContactSelection(contact.id)}
                         aria-label={`Selecionar ${contact.nome}`}
                       />
                     </td>
@@ -1622,7 +1671,7 @@ function ContatosPage() {
                 <span className="block sm:inline">Mostrando</span>
                 <span className="block sm:inline">
                   {" "}
-                  {contacts.length} de {total}
+                  {formatIntegerPtBr(contacts.length)} de {formatIntegerPtBr(total)}
                 </span>
               </span>
               <Select
@@ -1734,6 +1783,7 @@ function ContatosPage() {
           total={agendaImportPreview.total}
           skipped={agendaImportPreview.skipped}
           items={agendaImportPreview.items}
+          ignoredItems={agendaImportPreview.ignoredItems}
           selectedPhones={agendaImportPreview.selectedPhones}
           onConnectionIdChange={(connectionId) =>
             setAgendaImportPreview((current) => ({
@@ -1743,6 +1793,7 @@ function ContatosPage() {
               total: 0,
               skipped: 0,
               items: [],
+              ignoredItems: [],
               selectedPhones: [],
             }))
           }
@@ -1826,6 +1877,7 @@ function AgendaImportPreviewModal({
   total,
   skipped,
   items,
+  ignoredItems,
   selectedPhones,
   onConnectionIdChange,
   onLoadPreview,
@@ -1842,6 +1894,7 @@ function AgendaImportPreviewModal({
   total: number;
   skipped: number;
   items: ApiAgendaImportContact[];
+  ignoredItems: ApiAgendaImportIgnoredContact[];
   selectedPhones: string[];
   onConnectionIdChange: (connectionId: string) => void;
   onLoadPreview: (connectionId: string) => void | Promise<void>;
@@ -1850,9 +1903,56 @@ function AgendaImportPreviewModal({
   onConfirm: () => void | Promise<void>;
 }) {
   const [query, setQuery] = React.useState("");
+  const [activeTab, setActiveTab] = React.useState<"available" | "ignored">("available");
+  const [ignoredReasonFilter, setIgnoredReasonFilter] = React.useState("missing_name");
+  const [ignoredFilterOpen, setIgnoredFilterOpen] = React.useState(false);
   const requiresConnectionSelection = instances.length > 1;
   const hasPreviewLoaded = loading || previewLoaded;
   const selectedSet = React.useMemo(() => new Set(selectedPhones), [selectedPhones]);
+  const ignoredFilterOptions = React.useMemo(
+    () => [
+      {
+        key: "missing_name",
+        label: "Nome indisponível",
+        reasons: ["Nome indisponivel"],
+      },
+      {
+        key: "invalid_phone",
+        label: "Telefone inválido",
+        reasons: ["Telefone invalido"],
+      },
+    ],
+    [],
+  );
+  const ignoredFilterCounts = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const option of ignoredFilterOptions) {
+      counts.set(
+        option.key,
+        ignoredItems.filter((item) => option.reasons.includes(item.reason)).length,
+      );
+    }
+    return counts;
+  }, [ignoredFilterOptions, ignoredItems]);
+  const selectedIgnoredFilter =
+    ignoredFilterOptions.find((option) => option.key === ignoredReasonFilter) ?? ignoredFilterOptions[0];
+  const alreadyRegisteredCount = React.useMemo(
+    () =>
+      ignoredItems.filter((item) =>
+        ["Contato ja cadastrado ativo", "Contato já cadastrado ativo"].includes(item.reason),
+      ).length,
+    [ignoredItems],
+  );
+  const ignoredCount = React.useMemo(
+    () =>
+      ignoredFilterOptions.reduce(
+        (sum, option) => sum + (ignoredFilterCounts.get(option.key) ?? 0),
+        0,
+      ),
+    [ignoredFilterCounts, ignoredFilterOptions],
+  );
+  const ignoredReasonLabel = (reason: string) =>
+    ignoredFilterOptions.find((option) => option.reasons.includes(reason))?.label ?? reason;
   const filteredItems = React.useMemo(() => {
     const search = normalizeHeader(query);
     if (!search) return items;
@@ -1860,10 +1960,24 @@ function AgendaImportPreviewModal({
       normalizeHeader(`${item.name} ${item.phone} ${item.normalizedPhone}`).includes(search),
     );
   }, [items, query]);
+  const filteredIgnoredItems = React.useMemo(() => {
+    const search = normalizeHeader(query);
+    return ignoredItems.filter((item) => {
+      const matchesReason = selectedIgnoredFilter.reasons.includes(item.reason);
+      const matchesSearch =
+        !search || normalizeHeader(`${item.name} ${item.phone} ${item.reason}`).includes(search);
+      return matchesReason && matchesSearch;
+    });
+  }, [ignoredItems, query, selectedIgnoredFilter]);
   const allSelected = items.length > 0 && selectedPhones.length === items.length;
 
   React.useEffect(() => {
-    if (!open) setQuery("");
+    if (!open) {
+      setQuery("");
+      setActiveTab("available");
+      setIgnoredReasonFilter("missing_name");
+      setIgnoredFilterOpen(false);
+    }
   }, [open]);
 
   const toggleAll = () => {
@@ -1876,6 +1990,7 @@ function AgendaImportPreviewModal({
         : [...selectedPhones, phone],
     );
   };
+
   const primaryAction = requiresConnectionSelection && !hasPreviewLoaded;
 
   return (
@@ -1889,22 +2004,24 @@ function AgendaImportPreviewModal({
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
             Cancelar
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => void (primaryAction ? onLoadPreview(connectionId) : onConfirm())}
-            disabled={
-              busy ||
-              loading ||
-              (primaryAction ? !connectionId : selectedPhones.length === 0)
-            }
-          >
-            {busy
-              ? "Importando..."
-              : primaryAction
-                ? "Buscar contatos"
-                : `Importar ${selectedPhones.length} contato(s)`}
-          </Button>
+          {(primaryAction || activeTab === "available") && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void (primaryAction ? onLoadPreview(connectionId) : onConfirm())}
+              disabled={
+                busy ||
+                loading ||
+                (primaryAction ? !connectionId : selectedPhones.length === 0)
+              }
+            >
+              {busy
+                ? "Importando..."
+                : primaryAction
+                  ? "Buscar contatos"
+                  : `Importar ${selectedPhones.length} contato(s)`}
+            </Button>
+          )}
         </>
       }
     >
@@ -1926,20 +2043,57 @@ function AgendaImportPreviewModal({
           </Field>
         )}
 
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Encontrados</p>
-            <p className="text-base font-semibold text-foreground">{total}</p>
+            <p className="text-xs text-muted-foreground">Contatos do Telefone</p>
+            <p className="text-base font-semibold text-foreground">{formatIntegerPtBr(total)}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Já cadastrados</p>
+            <p className="text-base font-semibold text-foreground">
+              {formatIntegerPtBr(alreadyRegisteredCount)}
+            </p>
           </div>
           <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
             <p className="text-xs text-muted-foreground">Disponíveis</p>
-            <p className="text-base font-semibold text-foreground">{items.length}</p>
+            <p className="text-base font-semibold text-foreground">
+              {formatIntegerPtBr(items.length)}
+            </p>
           </div>
           <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
             <p className="text-xs text-muted-foreground">Ignorados</p>
-            <p className="text-base font-semibold text-foreground">{skipped}</p>
+            <p className="text-base font-semibold text-foreground">
+              {formatIntegerPtBr(ignoredCount)}
+            </p>
           </div>
         </div>
+
+        {hasPreviewLoaded && (
+          <div className="flex gap-2 border-b border-border">
+            <button
+              type="button"
+              onClick={() => setActiveTab("available")}
+              className={`border-b-2 px-3 py-2 text-sm font-medium transition ${
+                activeTab === "available"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Disponíveis
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("ignored")}
+              className={`border-b-2 px-3 py-2 text-sm font-medium transition ${
+                activeTab === "ignored"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Ignorados
+            </button>
+          </div>
+        )}
 
         <SearchInput
           value={query}
@@ -1947,22 +2101,104 @@ function AgendaImportPreviewModal({
           placeholder="Buscar por nome ou WhatsApp..."
         />
 
-        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
-          <input
-            type="checkbox"
-            checked={allSelected}
-            disabled={loading || busy || !items.length}
-            onChange={toggleAll}
-            className="h-4 w-4 accent-primary"
-          />
-          Selecionar todos os contatos disponíveis
-        </label>
+        {activeTab === "available" ? (
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              disabled={loading || busy || !items.length}
+              onChange={toggleAll}
+              className="h-4 w-4 accent-primary"
+            />
+            Selecionar todos os contatos disponíveis
+          </label>
+        ) : (
+          <div className="grid gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto]">
+            <Field label="Tipo">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIgnoredFilterOpen((current) => !current)}
+                  disabled={loading || busy}
+                  className="flex min-h-10 w-full items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 text-left text-sm outline-none transition hover:border-primary focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="min-w-0 flex-1 truncate">{selectedIgnoredFilter.label}</span>
+                  <span className="shrink-0 font-semibold text-foreground">
+                    {formatIntegerPtBr(ignoredFilterCounts.get(selectedIgnoredFilter.key) ?? 0)}
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+                {ignoredFilterOpen && !loading && !busy && (
+                  <div className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-20 overflow-hidden rounded-lg border border-border bg-card shadow-lg">
+                    {ignoredFilterOptions.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => {
+                          setIgnoredReasonFilter(option.key);
+                          setIgnoredFilterOpen(false);
+                        }}
+                        className={`flex min-h-9 w-full items-center gap-3 px-3 text-left text-sm transition ${
+                          ignoredReasonFilter === option.key
+                            ? "bg-primary text-primary-foreground"
+                            : "text-foreground hover:bg-surface-1"
+                        }`}
+                      >
+                        <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                        <span className="shrink-0 font-semibold">
+                          {formatIntegerPtBr(ignoredFilterCounts.get(option.key) ?? 0)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Field>
+            <div className="flex flex-wrap items-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => downloadAgendaIgnoredTemplate(ignoredItems)}
+                disabled={loading || busy || ignoredItems.length === 0}
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" /> Gerar Excel
+              </Button>
+            </div>
+          </div>
+        )}
 
         <div className="max-h-[46vh] space-y-2 overflow-y-auto pr-1">
           {loading ? (
             <div className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
               Buscando contatos na instância WhatsApp...
             </div>
+          ) : activeTab === "ignored" ? (
+            filteredIgnoredItems.length ? (
+              filteredIgnoredItems.map((item, index) => (
+                <label
+                  key={`${item.phone}-${index}`}
+                  className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
+                >
+                  <Avatar name={item.name || item.phone || "Contato"} size={36} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-foreground">
+                      {item.name || "Sem nome"}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {item.phone || "Sem telefone"}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-full border border-border bg-surface-1 px-2 py-0.5 text-xs text-muted-foreground">
+                    {ignoredReasonLabel(item.reason)}
+                  </span>
+                </label>
+              ))
+            ) : (
+              <div className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+                Nenhum contato ignorado encontrado.
+              </div>
+            )
           ) : filteredItems.length ? (
             filteredItems.map((item) => (
               <label
@@ -2218,7 +2454,11 @@ function ImportProgressModal({
       title="Importação de Contatos"
       size="sm"
       footer={
-        done ? null : (
+        done ? (
+          <Button variant="primary" size="sm" onClick={onClose}>
+            Confirmar
+          </Button>
+        ) : (
           <Button variant="secondary" size="sm" onClick={onAction}>
             Cancelar importação
           </Button>
@@ -2232,7 +2472,7 @@ function ImportProgressModal({
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="font-semibold text-foreground">
-              {imported} de {total} contatos importados
+              {formatIntegerPtBr(imported)} de {formatIntegerPtBr(total)} contatos importados
             </span>
             <span className="text-muted-foreground">{percent}%</span>
           </div>
@@ -2833,7 +3073,7 @@ function CustomersManagerModal({
                 <span className="block sm:inline">Mostrando</span>
                 <span className="block sm:inline">
                   {" "}
-                  {customers.length} de {total}
+                  {formatIntegerPtBr(customers.length)} de {formatIntegerPtBr(total)}
                 </span>
               </span>
               <Select
@@ -4402,6 +4642,31 @@ function downloadImportTemplate(format: "csv" | "xls" | "xlsx") {
   downloadTextFile(filename, toCsv(IMPORT_TEMPLATE_ROWS), "text/csv;charset=utf-8");
 }
 
+function downloadAgendaIgnoredTemplate(items: ApiAgendaImportIgnoredContact[]) {
+  const rows = [
+    [...IMPORT_TEMPLATE_ROWS[0], "Motivo"],
+    ...items.map((item) => [
+      item.name,
+      item.phone,
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      item.reason,
+    ]),
+  ];
+  const worksheet = XLSX.utils.aoa_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Contatos ignorados");
+  XLSX.writeFile(workbook, `contatos-ignorados-agenda-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function formatIntegerPtBr(value: number) {
+  return new Intl.NumberFormat("pt-BR").format(value);
+}
+
 function parseCsv(input: string) {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -4752,7 +5017,7 @@ function CountryCodeSelect({
         onClick={() => setOpen((current) => !current)}
         className={`flex w-full items-center justify-between gap-2 px-3 text-sm outline-none transition ${
           embedded
-            ? "h-full rounded-none border-0 bg-transparent"
+            ? "h-full rounded-none border-0 bg-surface-1"
             : "h-10 rounded-lg border border-border bg-surface-1 focus:border-primary"
         }`}
       >
@@ -5130,3 +5395,11 @@ function contactPayload(data: {
     avatarUrl: data.avatarUrl ?? null,
   };
 }
+
+
+
+
+
+
+
+

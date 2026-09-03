@@ -17,6 +17,7 @@ import {
   Select,
 } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
+import { num } from "@/lib/format";
 import { organizationApi, type ApiUserMembership } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/atendentes")({ component: AtendentesPage });
@@ -120,7 +121,7 @@ function AtendentesPage() {
       <PageContainer>
         <SectionHeader
           title="Atendentes"
-          subtitle={`${atendentes.length} atendentes cadastrados.`}
+          subtitle={`${num(atendentes.length)} atendentes cadastrados.`}
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>
               <Plus className="h-3.5 w-3.5" /> Cadastrar
@@ -129,7 +130,7 @@ function AtendentesPage() {
         />
 
         <div className="mb-6 grid gap-4 md:grid-cols-4">
-          <KPI label="Total" value={String(atendentes.length)} tone="info" />
+          <KPI label="Total" value={num(atendentes.length)} tone="info" />
           <KPI
             label="Online agora"
             value={String(online)}

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Button, Card, Field, Input, SectionHeader, SearchInput } from "@/components/ui-kit";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
+import { num } from "@/lib/format";
 import { crmApi, type ApiTag } from "@/lib/nexos-api";
 import { useChatPerms } from "@/lib/perms";
 
@@ -38,7 +39,7 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Etiquetas"
-          subtitle={`${etiquetas.length} etiquetas para classificar contatos e conversas.`}
+          subtitle={`${num(etiquetas.length)} etiquetas para classificar contatos e conversas.`}
           actions={
             canManageCatalog ? (
               <Button variant="primary" size="sm" onClick={nova.show}>

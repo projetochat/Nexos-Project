@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, IsUUID } from "class-validator";
+import { IsIn, IsOptional, IsString } from "class-validator";
 import { PaginationDto } from "./pagination.dto";
 
 export class ListContactsQueryDto extends PaginationDto {
@@ -15,10 +15,10 @@ export class ListContactsQueryDto extends PaginationDto {
   department?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   customerId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   tagId?: string;
 }

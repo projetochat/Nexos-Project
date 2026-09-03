@@ -16,6 +16,7 @@ import {
   Select,
 } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
+import { num } from "@/lib/format";
 import {
   conversationApi,
   crmApi,
@@ -112,7 +113,7 @@ function ChamadosPage() {
       <PageContainer>
         <SectionHeader
           title="Chamados"
-          subtitle={`${tickets.data?.total ?? 0} chamado(s) em PostgreSQL.`}
+          subtitle={`${num(tickets.data?.total ?? 0)} chamado(s) em PostgreSQL.`}
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>
               <Plus className="h-3.5 w-3.5" /> Novo chamado

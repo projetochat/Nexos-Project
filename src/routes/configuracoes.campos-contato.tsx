@@ -251,7 +251,7 @@ function ContactFieldsSettings() {
               <option value="">Todos</option>
               {groupOptions.map((group) => (
                 <option key={group} value={group}>
-                  {group === "-" ? "Nenhum" : group}
+                  {group === "-" ? "- Sem Agrupamento -" : group}
                 </option>
               ))}
             </Select>

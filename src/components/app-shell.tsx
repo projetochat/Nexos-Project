@@ -88,6 +88,7 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
     items: [
       { to: "/inbox", label: "Chat", icon: MessagesSquare },
       { to: "/contatos", label: "Contatos", icon: Users },
+      { to: "/grupos", label: "Gerenciar Grupos", icon: UsersRound },
       { to: "/historico", label: "Histórico de Conversas", icon: History },
     ],
   },
@@ -106,7 +107,6 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
     title: "Canais",
     items: [
       { to: "/instancias", label: "Instâncias", icon: Wifi },
-      { to: "/grupos", label: "Gerenciar Grupos", icon: UsersRound },
       { to: "/chatbot", label: "Fluxo de Bot", icon: Bot },
       { to: "/automacoes", label: "Automações", icon: Workflow },
       { to: "/agente-ia", label: "Agente de IA", icon: Sparkles },

@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Badge, Button, SearchInput, Select } from "@/components/ui-kit";
-import { fmtDate, fmtHM } from "@/lib/format";
+import { fmtDate, fmtHM, num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import {
   conversationApi,
@@ -184,7 +184,7 @@ function HistoricoPage() {
 
             <footer className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
               <span>
-                Pagina {history.data?.page ?? page} de {history.data?.totalPages ?? 1}
+                Pagina {num(history.data?.page ?? page)} de {num(history.data?.totalPages ?? 1)}
               </span>
               <div className="flex gap-1">
                 <Button

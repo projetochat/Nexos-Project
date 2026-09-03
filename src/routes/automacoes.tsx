@@ -20,6 +20,7 @@ import {
   type ApiAutomationRule,
   type ApiDepartment,
 } from "@/lib/nexos-api";
+import { num } from "@/lib/format";
 
 export const Route = createFileRoute("/automacoes")({
   head: () => ({ meta: [{ title: "Automacoes - Nexo" }] }),
@@ -56,7 +57,7 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Automacoes"
-          subtitle={`${rules.length} regras configuradas no tenant.`}
+          subtitle={`${num(rules.length)} regras configuradas no tenant.`}
           actions={
             <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
               <Plus className="h-3.5 w-3.5" /> Nova automacao

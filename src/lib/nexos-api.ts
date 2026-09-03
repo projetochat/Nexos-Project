@@ -208,10 +208,19 @@ export type ApiAgendaImportContact = {
   avatarUrl: string | null;
 };
 
+export type ApiAgendaImportIgnoredContact = {
+  name: string;
+  phone: string;
+  normalizedPhone: string | null;
+  reason: string;
+  importable: boolean;
+};
+
 export type ApiAgendaImportPreview = {
   total: number;
   skipped: number;
   items: ApiAgendaImportContact[];
+  ignoredItems: ApiAgendaImportIgnoredContact[];
 };
 
 export type ApiConversationStatus = "aberta" | "em_andamento" | "aguardando" | "fechada";
@@ -945,7 +954,9 @@ export const crmApi = {
       },
     ),
   bulkUpdateContacts: (data: {
-    contactIds: string[];
+    contactIds?: string[];
+    allFiltered?: boolean;
+    filters?: ListContactsParams;
     customerId?: string | null;
     contactDepartmentId?: string | null;
     contactProfileId?: string | null;
@@ -1052,7 +1063,7 @@ export const crmApi = {
 };
 
 export const groupsApi = {
-  list: (params: ListParams = {}) =>
+  list: (params: ListParams & { connectionId?: string } = {}) =>
     apiRequest<PaginatedResponse<ApiWhatsappGroup>>(`/groups${queryString(params)}`),
   detail: (id: string) => apiRequest<ApiWhatsappGroup>(`/groups/${id}`),
   create: (data: { name: string; connectionId: string; participantContactIds: string[] }) =>

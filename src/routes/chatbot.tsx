@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Bot, MessageSquareText, Sparkles } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Badge, Button, Card, SectionHeader } from "@/components/ui-kit";
+import { num } from "@/lib/format";
 import { automationApi } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/chatbot")({
@@ -23,7 +24,7 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Chatbot"
-          subtitle={`${active} regras de resposta ativa.`}
+          subtitle={`${num(active)} regras de resposta ativa.`}
           actions={
             <Link to="/automacoes">
               <Button variant="primary" size="sm">
@@ -36,7 +37,7 @@ function Page() {
         <div className="mb-6 grid gap-4 md:grid-cols-3">
           <Card>
             <div className="text-xs uppercase text-muted-foreground">Regras ativas</div>
-            <div className="mt-2 text-2xl font-semibold">{active}</div>
+            <div className="mt-2 text-2xl font-semibold">{num(active)}</div>
           </Card>
           <Card>
             <div className="text-xs uppercase text-muted-foreground">Regras pausadas</div>

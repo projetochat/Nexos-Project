@@ -477,6 +477,7 @@ function extractContacts(value: unknown): EvolutionContact[] {
           stringField(record, "picture") ??
           stringField(record, "imageUrl"),
         isGroup: record.isGroup === true || stringField(record, "type") === "group",
+        type: stringField(record, "type"),
       };
     })
     .filter((item): item is EvolutionContact => Boolean(item));

@@ -34,6 +34,10 @@ class ListGroupsQueryDto {
 
   @IsOptional()
   @IsString()
+  connectionId?: string;
+
+  @IsOptional()
+  @IsString()
   page?: string;
 
   @IsOptional()
@@ -69,6 +73,7 @@ const groupInclude = {
 } satisfies Prisma.ConversationInclude;
 
 type GroupConversation = Prisma.ConversationGetPayload<{ include: typeof groupInclude }>;
+const EMPTY_GROUP_FILTER_VALUE = "__empty__";
 
 @Controller("groups")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -85,10 +90,16 @@ export class GroupsController {
     const { page, pageSize, skip } = pagination(query);
     const q = query.q?.trim();
     const qDigits = q?.replace(/\D/g, "") ?? "";
+    const filterWithoutConnection = query.connectionId === EMPTY_GROUP_FILTER_VALUE;
     const where: Prisma.ConversationWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,
       conversationType: ConversationType.GROUP,
+      ...(filterWithoutConnection
+        ? { connectionId: null }
+        : query.connectionId
+          ? { connectionId: query.connectionId }
+          : {}),
       ...(q
         ? {
             OR: [
