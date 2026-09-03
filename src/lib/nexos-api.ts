@@ -200,6 +200,20 @@ export type ApiContact = {
   lifecycle?: "created" | "restored";
 };
 
+export type ApiAgendaImportContact = {
+  id: string;
+  name: string;
+  phone: string;
+  normalizedPhone: string;
+  avatarUrl: string | null;
+};
+
+export type ApiAgendaImportPreview = {
+  total: number;
+  skipped: number;
+  items: ApiAgendaImportContact[];
+};
+
 export type ApiConversationStatus = "aberta" | "em_andamento" | "aguardando" | "fechada";
 
 export type ApiConversation = {
@@ -915,6 +929,21 @@ export const crmApi = {
     apiRequest<ApiContact>(`/crm/contacts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteContact: (id: string) =>
     apiRequest<ApiContact>(`/crm/contacts/${id}`, { method: "DELETE" }),
+  previewContactsFromAgenda: (data: { connectionId?: string | null } = {}) =>
+    apiRequest<ApiAgendaImportPreview>("/crm/contacts/import/agenda/preview", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  importContactsFromAgenda: (
+    data: { connectionId?: string | null; selectedPhones?: string[] } = {},
+  ) =>
+    apiRequest<{ total: number; imported: number; skipped: number }>(
+      "/crm/contacts/import/agenda",
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+    ),
   bulkUpdateContacts: (data: {
     contactIds: string[];
     customerId?: string | null;

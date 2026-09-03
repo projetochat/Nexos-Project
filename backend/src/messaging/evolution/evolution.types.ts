@@ -63,6 +63,22 @@ export type EvolutionProfilePictureResponse = {
   };
 };
 
+export type EvolutionContact = {
+  id?: string;
+  remoteJid?: string;
+  pushName?: string | null;
+  name?: string | null;
+  verifiedName?: string | null;
+  notify?: string | null;
+  contactName?: string | null;
+  shortName?: string | null;
+  displayName?: string | null;
+  profileName?: string | null;
+  number?: string | null;
+  profilePictureUrl?: string | null;
+  isGroup?: boolean;
+};
+
 export type EvolutionWebhookPayload = {
   event?: string;
   instance?: string;

@@ -29,11 +29,18 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
-import { ContactCompanyRole, ContactCustomFieldType, Prisma } from "../generated/prisma";
+import {
+  ContactCompanyRole,
+  ContactCustomFieldType,
+  MessagingConnectionStatus,
+  MessagingProviderType,
+  Prisma,
+} from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { ContactProfilePictureSyncService } from "../messaging/contact-profile-picture-sync.service";
+import { EvolutionClient } from "../messaging/evolution/evolution.client";
 import { CreateContactDto } from "./dto/create-contact.dto";
 import { CreateCustomerDto } from "./dto/create-customer.dto";
 import { ListContactsQueryDto } from "./dto/list-contacts-query.dto";
@@ -106,6 +113,19 @@ class ContactCustomFieldDto {
   options?: string[];
 }
 
+class ImportContactsFromAgendaDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  connectionId?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10000)
+  @IsString({ each: true })
+  selectedPhones?: string[];
+}
+
 class ReorderContactCustomFieldsDto {
   @IsArray()
   @ArrayMaxSize(500)
@@ -171,6 +191,17 @@ const contactInclude = {
   customFieldValues: { include: { field: true } },
 } satisfies Prisma.ContactInclude;
 
+const agendaImportedContactSelect = {
+  id: true,
+  tenantId: true,
+  name: true,
+  phone: true,
+  normalizedPhone: true,
+  avatarUrl: true,
+  instance: true,
+  instanceIds: true,
+} satisfies Prisma.ContactSelect;
+
 @Controller("crm")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class CrmController {
@@ -180,6 +211,7 @@ export class CrmController {
     @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
     @Inject(ContactProfilePictureSyncService)
     private readonly profilePictures: ContactProfilePictureSyncService,
+    @Inject(EvolutionClient) private readonly evolution: EvolutionClient,
   ) {}
 
   @Get("customers")
@@ -623,6 +655,110 @@ export class CrmController {
   async findContact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const contact = await this.findContactOrThrow(id, current.tenantId);
     return this.serializeContact(contact);
+  }
+
+  @Post("contacts/import/agenda")
+  @RequirePermissions("crm.manage")
+  async importContactsFromAgenda(
+    @Body() dto: ImportContactsFromAgendaDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.entitlements.assertTenantOperational(current.tenantId);
+    if (!dto.selectedPhones?.length) {
+      throw new BadRequestException("Selecione ao menos um contato para importar.");
+    }
+    const preview = await this.buildAgendaImportPreview(current.tenantId, dto.connectionId);
+    const selectedPhones = new Set(dto.selectedPhones ?? []);
+    const candidates = preview.items.filter((item) => selectedPhones.has(item.normalizedPhone));
+    let imported = 0;
+    let skipped = 0;
+    const importedContacts: Array<{
+      id: string;
+      tenantId: string;
+      name: string;
+      phone: string;
+      normalizedPhone: string;
+      avatarUrl: string | null;
+      instance: string | null;
+      instanceIds: string[];
+    }> = [];
+
+    for (const item of candidates) {
+      try {
+        const existing = await this.prisma.contact.findFirst({
+          where: {
+            tenantId: current.tenantId,
+            normalizedPhone: { in: contactPhoneDuplicateCandidates(item.normalizedPhone) },
+          },
+          select: { id: true, archivedAt: true },
+        });
+        if (existing?.archivedAt === null) {
+          skipped += 1;
+          continue;
+        }
+        await this.entitlements.assertWithinLimit(
+          current.tenantId,
+          "maxContacts",
+          await this.prisma.contact.count({
+            where: { tenantId: current.tenantId, archivedAt: null },
+          }),
+        );
+        if (existing?.archivedAt) {
+          const contact = await this.prisma.contact.update({
+            where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
+            data: {
+              name: item.name,
+              phone: item.phone,
+              normalizedPhone: item.normalizedPhone,
+              avatarUrl: null,
+              instance: preview.connection.id,
+              instanceIds: [preview.connection.id],
+              archivedAt: null,
+            },
+            select: agendaImportedContactSelect,
+          });
+          importedContacts.push(contact);
+        } else {
+          const contact = await this.prisma.contact.create({
+            data: {
+              tenantId: current.tenantId,
+              name: item.name,
+              phone: item.phone,
+              normalizedPhone: item.normalizedPhone,
+              avatarUrl: null,
+              instance: preview.connection.id,
+              instanceIds: [preview.connection.id],
+            },
+            select: agendaImportedContactSelect,
+          });
+          importedContacts.push(contact);
+        }
+        imported += 1;
+      } catch {
+        skipped += 1;
+      }
+    }
+    this.profilePictures.enqueueMissing({
+      tenantId: current.tenantId,
+      contacts: importedContacts,
+    });
+
+    return { total: candidates.length, imported, skipped: preview.skipped + skipped };
+  }
+
+  @Post("contacts/import/agenda/preview")
+  @RequirePermissions("crm.manage")
+  async previewContactsFromAgenda(
+    @Body() dto: ImportContactsFromAgendaDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.entitlements.assertTenantOperational(current.tenantId);
+    const preview = await this.buildAgendaImportPreview(current.tenantId, dto.connectionId);
+    return {
+      total: preview.total,
+      skipped: preview.skipped,
+      items: preview.items,
+    };
   }
 
   @Get("contact-departments")
@@ -1139,6 +1275,120 @@ export class CrmController {
     };
   }
 
+  private async buildAgendaImportPreview(tenantId: string, connectionId?: string | null) {
+    const connection = await this.resolveAgendaImportConnection(tenantId, connectionId);
+    const contacts = await this.evolution.findContacts({
+      instanceName: connection.externalReference,
+    });
+    const byPhone = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        phone: string;
+        normalizedPhone: string;
+        avatarUrl: string | null;
+      }
+    >();
+    let skipped = 0;
+
+    for (const item of contacts) {
+      try {
+        if (item.isGroup) {
+          skipped += 1;
+          continue;
+        }
+        const phone = importedEvolutionContactPhone(item);
+        const name = importedEvolutionContactName(item);
+        if (!phone || !name || groupContactIdentityFromPhone(phone)) {
+          skipped += 1;
+          continue;
+        }
+        const normalizedPhone = normalizePhone(phone);
+        if (byPhone.has(normalizedPhone)) {
+          skipped += 1;
+          continue;
+        }
+        byPhone.set(normalizedPhone, {
+          id: normalizedPhone,
+          name: name.slice(0, 120),
+          phone: normalizedPhone,
+          normalizedPhone,
+          avatarUrl: null,
+        });
+      } catch {
+        skipped += 1;
+      }
+    }
+
+    const candidates = [...byPhone.values()];
+    if (!candidates.length) return { connection, total: contacts.length, skipped, items: [] };
+
+    const existingContacts = await this.prisma.contact.findMany({
+      where: {
+        tenantId,
+        normalizedPhone: {
+          in: candidates.flatMap((item) => contactPhoneDuplicateCandidates(item.normalizedPhone)),
+        },
+      },
+      select: { normalizedPhone: true, archivedAt: true },
+    });
+    const activePhones = new Set(
+      existingContacts
+        .filter((item) => item.archivedAt === null)
+        .map((item) => item.normalizedPhone),
+    );
+    const items = candidates.filter((item) => !activePhones.has(item.normalizedPhone));
+
+    return {
+      connection,
+      total: contacts.length,
+      skipped: skipped + candidates.length - items.length,
+      items,
+    };
+  }
+
+  private async resolveAgendaImportConnection(tenantId: string, connectionId?: string | null) {
+    const connectionKey = cleanNullable(connectionId);
+    const connections = await this.prisma.messagingConnection.findMany({
+      where: {
+        tenantId,
+        archivedAt: null,
+        providerType: MessagingProviderType.EVOLUTION,
+        status: MessagingConnectionStatus.CONNECTED,
+        externalReference: { not: null },
+        ...(connectionKey
+          ? {
+              OR: [
+                { id: connectionKey },
+                { externalReference: connectionKey },
+                { name: connectionKey },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { createdAt: "asc" },
+      take: connectionKey ? 1 : 2,
+    });
+
+    if (!connections.length) {
+      throw new BadRequestException(
+        connectionKey
+          ? "Instancia WhatsApp conectada nao encontrada."
+          : "Nenhuma instancia WhatsApp conectada para importar agenda.",
+      );
+    }
+    if (!connectionKey && connections.length > 1) {
+      throw new BadRequestException("Selecione uma instancia WhatsApp para importar agenda.");
+    }
+
+    const connection = connections[0];
+    if (!connection.externalReference) {
+      throw new BadRequestException("Instancia WhatsApp sem referencia Evolution.");
+    }
+    return connection as typeof connection & { externalReference: string };
+  }
+
   private async assertContactCatalog(kind: "department" | "profile", id: string, tenantId: string) {
     const item =
       kind === "department"
@@ -1603,6 +1853,79 @@ function paginated<T>(items: T[], total: number, page: number, pageSize: number)
 function cleanNullable(value?: string | null) {
   if (value === undefined || value === null) return null;
   return value.trim() || null;
+}
+
+function importedEvolutionContactPhone(item: {
+  id?: string | null;
+  remoteJid?: string | null;
+  number?: string | null;
+}) {
+  const remoteJid = cleanNullable(item.remoteJid);
+  const remoteJidPhone = remoteJid ? phoneFromWhatsappIdentifier(remoteJid) : null;
+  if (remoteJidPhone) return remoteJidPhone;
+  const id = cleanNullable(item.id);
+  const idPhone = id ? phoneFromWhatsappIdentifier(id) : null;
+  if (idPhone) return idPhone;
+  return phoneFromStandaloneEvolutionNumber(item.number);
+}
+
+function importedEvolutionContactName(item: {
+  name?: string | null;
+  pushName?: string | null;
+  verifiedName?: string | null;
+  notify?: string | null;
+  contactName?: string | null;
+  shortName?: string | null;
+  displayName?: string | null;
+  profileName?: string | null;
+}) {
+  return (
+    cleanNullable(item.name) ??
+    cleanNullable(item.pushName) ??
+    cleanNullable(item.verifiedName) ??
+    cleanNullable(item.notify) ??
+    cleanNullable(item.contactName) ??
+    cleanNullable(item.shortName) ??
+    cleanNullable(item.displayName) ??
+    cleanNullable(item.profileName)
+  );
+}
+
+function phoneFromWhatsappIdentifier(value: string) {
+  const lower = value.toLowerCase();
+  if (
+    lower.includes("@g.us") ||
+    lower.includes("broadcast") ||
+    lower.includes("status@") ||
+    (!lower.includes("@s.whatsapp.net") && !lower.includes("@c.us"))
+  ) {
+    return null;
+  }
+  const digits = value.split("@")[0]?.split(":")[0]?.replace(/\D/g, "") ?? "";
+  return digits.length >= 10 && digits.length <= 15 && !digits.startsWith("0")
+    ? `+${digits}`
+    : null;
+}
+
+function phoneFromStandaloneEvolutionNumber(value?: string | null) {
+  const raw = cleanNullable(value);
+  if (!raw) return "";
+  if (raw.includes("@")) return phoneFromWhatsappIdentifier(raw) ?? "";
+  const digits = raw.replace(/\D/g, "");
+  if (raw.startsWith("+")) return raw;
+  if (digits.startsWith("0") && (digits.length === 11 || digits.length === 12)) {
+    return `+55${digits.slice(1)}`;
+  }
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+    return `+${digits}`;
+  }
+  if (digits.length === 10 || digits.length === 11) {
+    return `+55${digits}`;
+  }
+  if (digits.length > 11 && digits.length <= 15 && !digits.startsWith("0")) {
+    return `+${digits}`;
+  }
+  return "";
 }
 
 function normalizeCatalogName(value: string) {

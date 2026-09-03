@@ -185,6 +185,42 @@ describe("EvolutionClient", () => {
     });
   });
 
+  it("maps contacts without deriving phone numbers from internal ids", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response([
+        {
+          id: "internal-contact-123",
+          remoteJid: "5562999991111:12@s.whatsapp.net",
+          contactName: "Douglas Rezende",
+          profilePicUrl: "https://whatsapp.test/profile.jpg",
+        },
+        {
+          id: "internal-contact-456",
+          number: 6292728679,
+          shortName: "Contato Agenda",
+        },
+      ]),
+    );
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      new EvolutionClient().findContacts({ instanceName: "instance-a" }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: "internal-contact-123",
+        remoteJid: "5562999991111:12@s.whatsapp.net",
+        number: null,
+        contactName: "Douglas Rezende",
+        profilePictureUrl: "https://whatsapp.test/profile.jpg",
+      }),
+      expect.objectContaining({
+        id: "internal-contact-456",
+        number: "6292728679",
+        shortName: "Contato Agenda",
+      }),
+    ]);
+  });
+
   it("fetches and deletes Evolution instances", async () => {
     const fetchMock = vi
       .fn()

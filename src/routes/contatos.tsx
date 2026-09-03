@@ -67,6 +67,7 @@ import { isValidEmail, maskBrazilPhone, onlyDigits } from "@/lib/input-masks";
 import {
   conversationApi,
   crmApi,
+  type ApiAgendaImportContact,
   type ApiContact,
   type ApiContactCatalog,
   type ApiContactCustomField,
@@ -306,14 +307,14 @@ type ImportProgressState = {
   imported: number;
   status: ImportProgressStatus;
 };
-type ContactPickerNavigator = Navigator & {
-  contacts?: {
-    getProperties?: () => Promise<Array<"name" | "tel" | "email">>;
-    select: (
-      properties: Array<"name" | "tel" | "email">,
-      options?: { multiple?: boolean },
-    ) => Promise<Array<{ name?: string[]; tel?: string[]; email?: string[] }>>;
-  };
+type AgendaImportPreviewState = {
+  open: boolean;
+  loading: boolean;
+  busy: boolean;
+  total: number;
+  skipped: number;
+  items: ApiAgendaImportContact[];
+  selectedPhones: string[];
 };
 
 function ContatosPage() {
@@ -355,6 +356,15 @@ function ContatosPage() {
     total: 0,
     imported: 0,
     status: "idle",
+  });
+  const [agendaImportPreview, setAgendaImportPreview] = React.useState<AgendaImportPreviewState>({
+    open: false,
+    loading: false,
+    busy: false,
+    total: 0,
+    skipped: 0,
+    items: [],
+    selectedPhones: [],
   });
   const [total, setTotal] = React.useState(0);
   const [totalPages, setTotalPages] = React.useState(1);
@@ -802,46 +812,108 @@ function ContatosPage() {
   const importFromAgenda = async () => {
     if (reopenImportProgress()) return;
     exportMenu.hide();
-    const contactsApi = (navigator as ContactPickerNavigator).contacts;
-    if (!contactsApi?.select) {
-      toast.error("Agenda indisponível neste navegador ou dispositivo.");
+    setAgendaImportPreview({
+      open: true,
+      loading: true,
+      busy: false,
+      total: 0,
+      skipped: 0,
+      items: [],
+      selectedPhones: [],
+    });
+    try {
+      const result = await crmApi.previewContactsFromAgenda({
+        connectionId: instanciaFilter || undefined,
+      });
+      setAgendaImportPreview({
+        open: true,
+        loading: false,
+        busy: false,
+        total: result.total,
+        skipped: result.skipped,
+        items: result.items,
+        selectedPhones: result.items.map((item) => item.normalizedPhone),
+      });
+    } catch (error) {
+      setAgendaImportPreview({
+        open: false,
+        loading: false,
+        busy: false,
+        total: 0,
+        skipped: 0,
+        items: [],
+        selectedPhones: [],
+      });
+      toast.error("Falha ao importar agenda", { description: (error as Error).message });
+    }
+  };
+
+  const closeAgendaImportPreview = () => {
+    if (agendaImportPreview.busy) return;
+    setAgendaImportPreview({
+      open: false,
+      loading: false,
+      busy: false,
+      total: 0,
+      skipped: 0,
+      items: [],
+      selectedPhones: [],
+    });
+  };
+
+  const confirmAgendaImport = async () => {
+    const selectedPhones = agendaImportPreview.selectedPhones;
+    if (!selectedPhones.length) {
+      toast.error("Selecione ao menos um contato para importar.");
       return;
     }
+    setAgendaImportPreview((current) => ({ ...current, busy: true }));
+    cancelImportRef.current = false;
+    setImportProgress({
+      open: true,
+      source: "agenda",
+      current: 0,
+      total: selectedPhones.length,
+      imported: 0,
+      status: "running",
+    });
     try {
-      const supportedProperties = contactsApi.getProperties
-        ? await contactsApi.getProperties()
-        : (["name", "tel", "email"] as Array<"name" | "tel" | "email">);
-      if (!supportedProperties.includes("tel")) {
-        toast.error("Agenda indisponível para importação de telefones neste dispositivo.");
-        return;
-      }
-      const properties: Array<"name" | "tel" | "email"> = [
-        ...(supportedProperties.includes("name") ? (["name"] as const) : []),
-        "tel",
-        ...(supportedProperties.includes("email") ? (["email"] as const) : []),
-      ];
-      const selectedContacts = await contactsApi.select(properties, {
-        multiple: true,
+      const result = await crmApi.importContactsFromAgenda({
+        connectionId: instanciaFilter || undefined,
+        selectedPhones,
       });
-      if (!selectedContacts.length) return;
-      const contactRows = selectedContacts.flatMap((contact) => {
-        const name = contact.name?.[0] ?? "";
-        const email = contact.email?.[0] ?? "";
-        return (contact.tel ?? [])
-          .map((phone) => phone.trim())
-          .filter(Boolean)
-          .map((phone) => [name || phone, phone, email]);
+      setAgendaImportPreview({
+        open: false,
+        loading: false,
+        busy: false,
+        total: 0,
+        skipped: 0,
+        items: [],
+        selectedPhones: [],
       });
-      if (!contactRows.length) {
-        toast.error("Nenhum telefone encontrado nos contatos selecionados.");
-        return;
-      }
-      const rows = [["Contato", "WhatsApp", "E-mail"], ...contactRows];
-      await importContactsRows(rows, "agenda");
+      setImportProgress({
+        open: true,
+        source: "agenda",
+        current: result.total,
+        total: result.total,
+        imported: result.imported,
+        status: "completed",
+      });
+      toast.success("Importação concluída", {
+        description: `${result.imported} de ${result.total} contato(s) importado(s).`,
+      });
+      await load();
     } catch (error) {
-      if ((error as Error).name !== "AbortError") {
-        toast.error("Falha ao acessar a agenda", { description: (error as Error).message });
-      }
+      setAgendaImportPreview((current) => ({ ...current, busy: false }));
+      setImportProgress({
+        open: false,
+        source: null,
+        current: 0,
+        total: 0,
+        imported: 0,
+        status: "idle",
+      });
+      toast.error("Falha ao importar agenda", { description: (error as Error).message });
     }
   };
 
@@ -1608,6 +1680,20 @@ function ContatosPage() {
           onClose={importModal.hide}
           onImport={importContactsRows}
         />
+        <AgendaImportPreviewModal
+          open={agendaImportPreview.open}
+          loading={agendaImportPreview.loading}
+          busy={agendaImportPreview.busy}
+          total={agendaImportPreview.total}
+          skipped={agendaImportPreview.skipped}
+          items={agendaImportPreview.items}
+          selectedPhones={agendaImportPreview.selectedPhones}
+          onSelectedPhonesChange={(selectedPhones) =>
+            setAgendaImportPreview((current) => ({ ...current, selectedPhones }))
+          }
+          onClose={closeAgendaImportPreview}
+          onConfirm={confirmAgendaImport}
+        />
         <ExportContactsModal
           open={exportModal.open}
           contactCount={exportableContactCount}
@@ -1668,6 +1754,150 @@ function ContatosPage() {
         />
       </PageContainer>
     </AppShell>
+  );
+}
+
+function AgendaImportPreviewModal({
+  open,
+  loading,
+  busy,
+  total,
+  skipped,
+  items,
+  selectedPhones,
+  onSelectedPhonesChange,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  loading: boolean;
+  busy: boolean;
+  total: number;
+  skipped: number;
+  items: ApiAgendaImportContact[];
+  selectedPhones: string[];
+  onSelectedPhonesChange: (phones: string[]) => void;
+  onClose: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const [query, setQuery] = React.useState("");
+  const selectedSet = React.useMemo(() => new Set(selectedPhones), [selectedPhones]);
+  const filteredItems = React.useMemo(() => {
+    const search = normalizeHeader(query);
+    if (!search) return items;
+    return items.filter((item) =>
+      normalizeHeader(`${item.name} ${item.phone} ${item.normalizedPhone}`).includes(search),
+    );
+  }, [items, query]);
+  const allSelected = items.length > 0 && selectedPhones.length === items.length;
+
+  React.useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
+
+  const toggleAll = () => {
+    onSelectedPhonesChange(allSelected ? [] : items.map((item) => item.normalizedPhone));
+  };
+  const toggleItem = (phone: string) => {
+    onSelectedPhonesChange(
+      selectedSet.has(phone)
+        ? selectedPhones.filter((item) => item !== phone)
+        : [...selectedPhones, phone],
+    );
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Importar Agenda Telefônica"
+      size="lg"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+            Cancelar
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => void onConfirm()}
+            disabled={busy || loading || selectedPhones.length === 0}
+          >
+            {busy ? "Importando..." : `Importar ${selectedPhones.length} contato(s)`}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Encontrados</p>
+            <p className="text-base font-semibold text-foreground">{total}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Disponíveis</p>
+            <p className="text-base font-semibold text-foreground">{items.length}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Ignorados</p>
+            <p className="text-base font-semibold text-foreground">{skipped}</p>
+          </div>
+        </div>
+
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Buscar por nome ou WhatsApp..."
+        />
+
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            disabled={loading || busy || !items.length}
+            onChange={toggleAll}
+            className="h-4 w-4 accent-primary"
+          />
+          Selecionar todos os contatos disponíveis
+        </label>
+
+        <div className="max-h-[46vh] space-y-2 overflow-y-auto pr-1">
+          {loading ? (
+            <div className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+              Buscando contatos na instância WhatsApp...
+            </div>
+          ) : filteredItems.length ? (
+            filteredItems.map((item) => (
+              <label
+                key={item.normalizedPhone}
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 transition hover:border-primary/60"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedSet.has(item.normalizedPhone)}
+                  disabled={busy}
+                  onChange={() => toggleItem(item.normalizedPhone)}
+                  className="h-4 w-4 accent-primary"
+                />
+                <Avatar name={item.name} src={item.avatarUrl} size={36} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-foreground">
+                    {item.name}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {formatPhoneWithDdi(item.phone)}
+                  </span>
+                </span>
+              </label>
+            ))
+          ) : (
+            <div className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+              Nenhum contato disponível para importação.
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -4440,30 +4670,32 @@ function CountryCodeSelect({
             style={countryCodeMenuStyle(menuRect)}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            <div className="mt-2 mb-2 flex items-center gap-2 border-b border-border px-2 pb-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input
-                ref={searchRef}
-                type="text"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Buscar país ou DDI..."
-                autoComplete="off"
-                autoCorrect="off"
-                spellCheck={false}
-                className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none focus:text-foreground"
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery("")}
-                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-                  aria-label="Limpar busca"
-                  title="Limpar busca"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
+            <div className="border-b border-border p-2">
+              <div className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 transition focus-within:border-primary">
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Buscar país ou DDI..."
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 text-sm outline-none ring-0 placeholder:text-muted-foreground focus:border-0 focus:outline-none focus:ring-0"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                    aria-label="Limpar busca"
+                    title="Limpar busca"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
             </div>
             {favoriteCountries.length > 0 && (
               <div className="border-b border-border p-1">

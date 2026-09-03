@@ -4,6 +4,7 @@ import { assertEvolutionConfigured, evolutionConfigFromEnv } from "./evolution.c
 import { classifyEvolutionProviderError } from "./evolution-provider-error.classifier";
 import {
   EvolutionConnectionStateResponse,
+  EvolutionContact,
   EvolutionCreateInstanceResponse,
   EvolutionProfilePictureResponse,
   EvolutionInstance,
@@ -208,6 +209,14 @@ export class EvolutionClient {
       `/group/findGroupInfos/${input.instanceName}?groupJid=${encodeURIComponent(input.groupJid)}`,
     );
     return extractGroupInfo(response);
+  }
+
+  async findContacts(input: { instanceName: string }) {
+    const response = await this.request<unknown>(`/chat/findContacts/${input.instanceName}`, {
+      method: "POST",
+      body: { where: {} },
+    });
+    return extractContacts(response);
   }
 
   async fetchProfilePictureUrl(input: {
@@ -424,6 +433,63 @@ function extractGroups(value: unknown): Array<{
     .filter((item): item is NonNullable<ReturnType<typeof extractGroupSnapshot>> => Boolean(item));
 }
 
+function extractContacts(value: unknown): EvolutionContact[] {
+  const source = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? ((value as Record<string, unknown>).contacts ??
+        (value as Record<string, unknown>).data ??
+        (value as Record<string, unknown>).value)
+      : null;
+  if (!Array.isArray(source)) return [];
+  return source
+    .map((item): EvolutionContact | null => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      const id =
+        stringField(record, "id") ??
+        stringField(record, "remoteJid") ??
+        stringField(record, "jid") ??
+        phoneStringField(record, "number");
+      const number =
+        phoneStringField(record, "number") ??
+        phoneStringField(record, "phone") ??
+        phoneStringField(record, "waId") ??
+        phoneStringField(record, "wuid") ??
+        (id && looksLikeWhatsappPhoneIdentifier(id) ? phoneFromParticipant(id) : null);
+      if (!id && !number) return null;
+      return {
+        id: id ?? undefined,
+        remoteJid: stringField(record, "remoteJid") ?? id ?? undefined,
+        pushName: stringField(record, "pushName"),
+        name: stringField(record, "name"),
+        verifiedName: stringField(record, "verifiedName"),
+        notify: stringField(record, "notify"),
+        contactName: stringField(record, "contactName"),
+        shortName: stringField(record, "shortName"),
+        displayName: stringField(record, "displayName"),
+        profileName: stringField(record, "profileName"),
+        number,
+        profilePictureUrl:
+          stringField(record, "profilePictureUrl") ??
+          stringField(record, "profilePicUrl") ??
+          stringField(record, "pictureUrl") ??
+          stringField(record, "picture") ??
+          stringField(record, "imageUrl"),
+        isGroup: record.isGroup === true || stringField(record, "type") === "group",
+      };
+    })
+    .filter((item): item is EvolutionContact => Boolean(item));
+}
+
+function looksLikeWhatsappPhoneIdentifier(value: string) {
+  const lower = value.toLowerCase();
+  if (lower.includes("@s.whatsapp.net") || lower.includes("@c.us")) return true;
+  if (lower.includes("@")) return false;
+  const digits = value.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15;
+}
+
 function extractGroupSnapshot(value: unknown) {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
@@ -504,7 +570,7 @@ function dateField(record: Record<string, unknown>, key: string) {
 }
 
 function phoneFromParticipant(value: string) {
-  const phone = value.split("@")[0]?.replace(/\D/g, "");
+  const phone = value.split("@")[0]?.split(":")[0]?.replace(/\D/g, "");
   return phone || null;
 }
 
@@ -576,4 +642,11 @@ function decodeBase64Media(
 function stringField(record: Record<string, unknown>, key: string) {
   const value = record[key];
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function phoneStringField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  if (typeof value === "string") return value.trim() ? value : null;
+  if (typeof value === "number" && Number.isFinite(value)) return String(Math.trunc(value));
+  return null;
 }

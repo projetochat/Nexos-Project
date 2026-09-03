@@ -15,4 +15,13 @@ describe("normalizePhone", () => {
     expect(normalizePhone("+1 415 555 2671")).toBe("+14155552671");
     expect(normalizePhone("+351 912 345 678")).toBe("+351912345678");
   });
+
+  it("rejects Brazilian mobile numbers with invalid area codes", () => {
+    expect(() => normalizePhone("+55 (00) 91976-7995")).toThrow(
+      "Telefone celular brasileiro deve conter DDD e 9 digitos.",
+    );
+    expect(() => normalizePhone("+55 (09) 96003-7658")).toThrow(
+      "Telefone celular brasileiro deve conter DDD e 9 digitos.",
+    );
+  });
 });
