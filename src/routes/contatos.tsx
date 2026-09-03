@@ -1,6 +1,12 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { createPortal } from "react-dom";
+import {
+  AsYouType,
+  getCountryCallingCode,
+  parsePhoneNumberFromString,
+  type CountryCode,
+} from "libphonenumber-js/min";
 import * as XLSX from "xlsx";
 import {
   AlignCenter,
@@ -302,6 +308,7 @@ type ImportProgressState = {
 };
 type ContactPickerNavigator = Navigator & {
   contacts?: {
+    getProperties?: () => Promise<Array<"name" | "tel" | "email">>;
     select: (
       properties: Array<"name" | "tel" | "email">,
       options?: { multiple?: boolean },
@@ -801,17 +808,35 @@ function ContatosPage() {
       return;
     }
     try {
-      const selectedContacts = await contactsApi.select(["name", "tel", "email"], {
+      const supportedProperties = contactsApi.getProperties
+        ? await contactsApi.getProperties()
+        : (["name", "tel", "email"] as Array<"name" | "tel" | "email">);
+      if (!supportedProperties.includes("tel")) {
+        toast.error("Agenda indisponível para importação de telefones neste dispositivo.");
+        return;
+      }
+      const properties: Array<"name" | "tel" | "email"> = [
+        ...(supportedProperties.includes("name") ? (["name"] as const) : []),
+        "tel",
+        ...(supportedProperties.includes("email") ? (["email"] as const) : []),
+      ];
+      const selectedContacts = await contactsApi.select(properties, {
         multiple: true,
       });
-      const rows = [
-        ["Contato", "WhatsApp", "E-mail"],
-        ...selectedContacts.map((contact) => [
-          contact.name?.[0] ?? "",
-          contact.tel?.[0] ?? "",
-          contact.email?.[0] ?? "",
-        ]),
-      ];
+      if (!selectedContacts.length) return;
+      const contactRows = selectedContacts.flatMap((contact) => {
+        const name = contact.name?.[0] ?? "";
+        const email = contact.email?.[0] ?? "";
+        return (contact.tel ?? [])
+          .map((phone) => phone.trim())
+          .filter(Boolean)
+          .map((phone) => [name || phone, phone, email]);
+      });
+      if (!contactRows.length) {
+        toast.error("Nenhum telefone encontrado nos contatos selecionados.");
+        return;
+      }
+      const rows = [["Contato", "WhatsApp", "E-mail"], ...contactRows];
       await importContactsRows(rows, "agenda");
     } catch (error) {
       if ((error as Error).name !== "AbortError") {
@@ -1355,7 +1380,8 @@ function ContatosPage() {
                 <th className="w-10 rounded-tl-lg px-3 py-3 font-medium sm:px-4">
                   <input
                     type="checkbox"
-                    className="h-5 w-5"
+                    className="h-4 w-4"
+                    style={{ width: 16, height: 16, minWidth: 16, minHeight: 16 }}
                     checked={allVisibleSelected}
                     onChange={toggleVisibleSelection}
                     aria-label="Selecionar contatos visíveis"
@@ -1384,7 +1410,8 @@ function ContatosPage() {
                     <td className="relative px-3 py-3 sm:px-4">
                       <input
                         type="checkbox"
-                        className="h-5 w-5"
+                        className="h-4 w-4"
+                        style={{ width: 16, height: 16, minWidth: 16, minHeight: 16 }}
                         checked={selectedIds.includes(contact.id)}
                         onChange={() =>
                           setSelectedIds((current) =>
@@ -2002,7 +2029,9 @@ function ContactFormModal({
   };
 
   const handlePhoneChange = (value: string) => {
-    setTelefone(phoneDraftByCountry(value, countryCode));
+    const parsed = parsePhoneDraftInput(value, countryCode);
+    if (parsed.countryCode !== countryCode) setCountryCode(parsed.countryCode);
+    setTelefone(phoneDraftByCountry(parsed.localPhone, parsed.countryCode));
   };
 
   const handlePhoneBlur = () => {
@@ -2110,17 +2139,19 @@ function ContactFormModal({
                     )}
                   </Field>
                   <Field label="WhatsApp *">
-                    <div className="flex gap-2">
+                    <div className="flex h-9 overflow-hidden rounded-md border border-input bg-transparent shadow-sm transition-colors focus-within:ring-1 focus-within:ring-ring">
                       <CountryCodeSelect
                         value={countryCode}
                         onChange={handleCountryCodeChange}
                         compact
+                        embedded
                       />
                       <Input
                         value={telefone}
                         onChange={(e) => handlePhoneChange(e.target.value)}
                         onBlur={handlePhoneBlur}
                         placeholder={countryCode === "55" ? "(00) 00000-0000" : undefined}
+                        className="!h-9 !min-h-0 rounded-none border-0 !py-0 leading-normal shadow-none focus-visible:ring-0"
                       />
                     </div>
                     {errors.telefone && (
@@ -3291,6 +3322,7 @@ function CustomContactFieldInput({
           type="checkbox"
           checked={value === true || value === "true"}
           onChange={(event) => onChange(event.target.checked)}
+          className="h-4 w-4"
         />
         <span>{description || "Marcado"}</span>
       </div>
@@ -4122,12 +4154,22 @@ function findImportedInstance(instances: ContactInstanceOption[], value: string)
 }
 function splitPhoneByCountry(value: string) {
   const digits = onlyDigits(value);
-  const match = COUNTRY_CODES.slice()
-    .sort((a, b) => b.code.length - a.code.length)
-    .find((country) => digits.startsWith(country.code) && digits.length > country.code.length + 8);
+  const phone = parsePhoneNumberFromString(value.trim().startsWith("+") ? value : `+${digits}`);
+  const match = phone
+    ? COUNTRY_CODES.find(
+        (country) =>
+          country.code === phone.countryCallingCode || country.id.toUpperCase() === phone.country,
+      )
+    : COUNTRY_CODES.slice()
+        .sort((a, b) => b.code.length - a.code.length)
+        .find((country) => digits.startsWith(country.code) && digits.length > country.code.length);
   return {
     countryCode: match?.code ?? "55",
-    localPhone: match ? digits.slice(match.code.length) : digits,
+    localPhone: phone?.nationalNumber
+      ? String(phone.nationalNumber)
+      : match
+        ? digits.slice(match.code.length)
+        : digits,
   };
 }
 
@@ -4135,19 +4177,60 @@ function formatPhoneForSubmit(value: string, countryCode = "55") {
   const digits = normalizeBrazilMobileDigits(onlyDigits(value), countryCode);
   if (!digits) return value;
   const code = onlyDigits(countryCode) || "55";
-  return digits.startsWith(code) ? `+${digits}` : `+${code}${digits}`;
+  const fullNumber = digits.startsWith(code) ? `+${digits}` : `+${code}${digits}`;
+  const phone = parsePhoneNumberFromString(fullNumber);
+  return phone?.number ?? fullNumber;
 }
 
 function phoneDraftByCountry(value: string, countryCode = "55") {
   const code = onlyDigits(countryCode) || "55";
-  const maxLength = code === "55" ? 11 : 20;
-  return onlyDigits(value).slice(0, maxLength);
+  const maxLength = code === "55" ? 11 : 15;
+  const parsed = parsePhoneDraftInput(value, code);
+  return onlyDigits(parsed.localPhone).slice(0, maxLength);
+}
+
+function parsePhoneDraftInput(value: string, currentCountryCode = "55") {
+  const currentCode = onlyDigits(currentCountryCode) || "55";
+  const digits = onlyDigits(value);
+  if (!digits) return { countryCode: currentCode, localPhone: "" };
+
+  const explicit = value.trim().startsWith("+")
+    ? splitPhoneByCountry(value)
+    : currentCode === "55"
+      ? inferPhoneCountryWithoutPlus(value, currentCode)
+      : null;
+  return explicit ?? { countryCode: currentCode, localPhone: digits };
+}
+
+function inferPhoneCountryWithoutPlus(value: string, currentCountryCode: string) {
+  const digits = onlyDigits(value);
+  if (digits.startsWith("55")) {
+    const local = normalizeBrazilMobileDigits(digits.slice(2), "55");
+    if (local.length === 11 && local[2] === "9") return { countryCode: "55", localPhone: local };
+  }
+
+  if (/^\s*1[\s().-]+/.test(value) && digits.length === 11) {
+    return { countryCode: "1", localPhone: digits.slice(1) };
+  }
+
+  if (currentCountryCode !== "55") {
+    const phone = parsePhoneNumberFromString(`+${digits}`);
+    const match = phone
+      ? COUNTRY_CODES.find(
+          (country) =>
+            country.code === phone.countryCallingCode || country.id.toUpperCase() === phone.country,
+        )
+      : null;
+    if (match) return { countryCode: match.code, localPhone: digits.slice(match.code.length) };
+  }
+
+  return null;
 }
 
 function formatPhoneDraftOnBlur(value: string, countryCode = "55") {
   const code = onlyDigits(countryCode) || "55";
   const digits = onlyDigits(value);
-  if (code !== "55") return digits;
+  if (code !== "55") return formatInternationalPhoneDraft(digits, code);
   return maskBrazilPhone(normalizeBrazilMobileDigits(digits, code));
 }
 
@@ -4163,11 +4246,16 @@ function isValidPhoneForCountry(value: string, countryCode = "55") {
   const digits = onlyDigits(value);
   const fullDigits = digits.startsWith(code) ? digits : `${code}${digits}`;
   if (isWhatsAppGroupPhone(fullDigits)) return true;
-  if (code !== "55") return digits.length >= 6;
   const local = normalizeBrazilMobileDigits(digits, code);
-  if (local.length !== 11 || local[2] !== "9") return false;
-  const subscriber = local.slice(3);
-  return !/^(\d)\1+$/.test(subscriber);
+  if (code === "55") {
+    if (local.length !== 11 || local[2] !== "9") return false;
+    const subscriber = local.slice(3);
+    return !/^(\d)\1+$/.test(subscriber);
+  }
+  const phone = parsePhoneNumberFromString(`+${code}${digits}`);
+  if (!phone) return false;
+  const subscriber = String(phone.nationalNumber);
+  return phone.isPossible() && !/^(\d)\1+$/.test(subscriber);
 }
 
 function isWhatsAppGroupPhone(digits: string) {
@@ -4188,6 +4276,32 @@ function normalizeBrazilMobileDigits(digits: string, countryCode = "55") {
     return `${local.slice(0, 2)}9${local.slice(2)}`;
   }
   return local;
+}
+
+function formatInternationalPhoneDraft(digits: string, countryCode = "55") {
+  const code = onlyDigits(countryCode) || "55";
+  if (!digits) return "";
+  const iso = countryCodeToIso(code);
+  const localDigits = digits.startsWith(code) ? digits.slice(code.length) : digits;
+  if (!iso) return localDigits.slice(0, 15);
+  try {
+    const formatted = new AsYouType(iso).input(localDigits);
+    return formatted || localDigits;
+  } catch {
+    return localDigits.slice(0, 15);
+  }
+}
+
+function countryCodeToIso(countryCode: string): CountryCode | undefined {
+  const code = onlyDigits(countryCode);
+  const country = COUNTRY_CODES.find((item) => item.code === code);
+  if (!country) return undefined;
+  const iso = country.id.toUpperCase() as CountryCode;
+  try {
+    return getCountryCallingCode(iso) === code ? iso : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function formatPhoneWithDdi(value: string) {
@@ -4214,10 +4328,12 @@ function CountryCodeSelect({
   value,
   onChange,
   compact = false,
+  embedded = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   compact?: boolean;
+  embedded?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -4300,11 +4416,18 @@ function CountryCodeSelect({
   };
 
   return (
-    <div ref={rootRef} className={`relative shrink-0 ${compact ? "w-20 sm:w-32" : "w-32"}`}>
+    <div
+      ref={rootRef}
+      className={`relative shrink-0 ${embedded ? "w-[76px]" : compact ? "w-20 sm:w-32" : "w-32"}`}
+    >
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 text-sm outline-none transition focus:border-primary"
+        className={`flex w-full items-center justify-between gap-2 px-3 text-sm outline-none transition ${
+          embedded
+            ? "h-full rounded-none border-0 bg-transparent"
+            : "h-10 rounded-lg border border-border bg-surface-1 focus:border-primary"
+        }`}
       >
         <span>+{selected.code}</span>
         <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -4317,7 +4440,7 @@ function CountryCodeSelect({
             style={countryCodeMenuStyle(menuRect)}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center gap-2 border-b border-border px-2">
+            <div className="mt-2 mb-2 flex items-center gap-2 border-b border-border px-2 pb-2">
               <Search className="h-4 w-4 text-muted-foreground" />
               <input
                 ref={searchRef}
