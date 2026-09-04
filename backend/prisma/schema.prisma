@@ -1049,6 +1049,10 @@ model MessagingConnection {
   externalReference    String?
   ownerExternalId      String?
   ownerPhoneNormalized String?
+  groupsLastSyncedAt   DateTime?
+  groupsSyncStatus     String?                    @default("IDLE")
+  groupsSyncError      String?
+  groupsSyncedCount    Int                       @default(0)
   archivedAt           DateTime?
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
@@ -1437,4 +1441,3 @@ model CampaignRecipient {
   @@index([tenantId, externalMessageId])
   @@map("campaign_recipients")
 }
-

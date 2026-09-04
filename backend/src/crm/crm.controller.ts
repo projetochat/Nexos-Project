@@ -39,6 +39,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
+import { GroupsSyncService } from "../conversations/groups-sync.service";
 import { ContactProfilePictureSyncService } from "../messaging/contact-profile-picture-sync.service";
 import { EvolutionClient } from "../messaging/evolution/evolution.client";
 import { CreateContactDto } from "./dto/create-contact.dto";
@@ -223,6 +224,7 @@ export class CrmController {
     @Inject(ContactProfilePictureSyncService)
     private readonly profilePictures: ContactProfilePictureSyncService,
     @Inject(EvolutionClient) private readonly evolution: EvolutionClient,
+    @Inject(GroupsSyncService) private readonly groupsSync: GroupsSyncService,
   ) {}
 
   @Get("customers")
@@ -795,6 +797,7 @@ export class CrmController {
       tenantId: current.tenantId,
       contacts: importedContacts,
     });
+    this.groupsSync.enqueueParticipantNameReconciliation({ tenantId: current.tenantId });
 
     return {
       total: candidates.length + instanceUpdatePhones.size,
@@ -1064,6 +1067,7 @@ export class CrmController {
             },
             include: contactInclude,
           });
+          this.groupsSync.enqueueParticipantNameReconciliation({ tenantId: current.tenantId });
           return this.serializeContact(contact);
         }
       }
@@ -1108,6 +1112,7 @@ export class CrmController {
           include: contactInclude,
         });
       });
+      this.groupsSync.enqueueParticipantNameReconciliation({ tenantId: current.tenantId });
       return this.serializeContact(contact, { lifecycle: "restored" });
     }
     try {
@@ -1141,6 +1146,7 @@ export class CrmController {
         await this.saveContactCustomFields(tx, current.tenantId, created.id, dto.customFields);
         return tx.contact.findUniqueOrThrow({ where: { id: created.id }, include: contactInclude });
       });
+      this.groupsSync.enqueueParticipantNameReconciliation({ tenantId: current.tenantId });
       return this.serializeContact(contact, { lifecycle: "created" });
     } catch (error) {
       handlePrismaError(error);
@@ -1235,6 +1241,7 @@ export class CrmController {
         contactId: contact.id,
         contact: this.serializeContact(contact),
       });
+      this.groupsSync.enqueueParticipantNameReconciliation({ tenantId: current.tenantId });
       return this.serializeContact(contact);
     } catch (error) {
       handlePrismaError(error);

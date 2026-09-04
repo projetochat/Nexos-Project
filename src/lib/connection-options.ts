@@ -1,4 +1,5 @@
 import type { ApiMessagingConnection } from "@/lib/nexos-api";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 const SUPPORTED_PROVIDER = "evolution";
 const CONNECTED_STATUS = "connected";
@@ -19,7 +20,7 @@ export function connectedEvolutionConnections(connections: ApiMessagingConnectio
 }
 
 export function connectedConnectionOptions(connections: ApiMessagingConnection[]) {
-  return connectedEvolutionConnections(connections).map((connection) => ({
+  return sortByOptionLabel(connectedEvolutionConnections(connections), connectionDisplayLabel).map((connection) => ({
     id: connection.id,
     value: connectionInstanceValue(connection),
     label: connectionDisplayLabel(connection),

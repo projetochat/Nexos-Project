@@ -64,6 +64,7 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { isValidEmail, maskBrazilPhone, onlyDigits } from "@/lib/input-masks";
+import { sortByOptionLabel } from "@/lib/sort-options";
 import {
   conversationApi,
   crmApi,
@@ -381,11 +382,19 @@ function ContatosPage() {
   const [deleting, setDeleting] = React.useState<Contact | null>(null);
   const create = useDisclosure();
   const visibleInstances = React.useMemo(
-    () => instances.filter((instance) => isSelectableInstanceStatus(instance.status)),
+    () =>
+      sortByOptionLabel(
+        instances.filter((instance) => isSelectableInstanceStatus(instance.status)),
+        (instance) => instance.name,
+      ),
     [instances],
   );
   const connectedAgendaInstances = React.useMemo(
-    () => instances.filter((instance) => isConnectedInstanceStatus(instance.status)),
+    () =>
+      sortByOptionLabel(
+        instances.filter((instance) => isConnectedInstanceStatus(instance.status)),
+        (instance) => instance.name,
+      ),
     [instances],
   );
 
@@ -438,12 +447,15 @@ function ContatosPage() {
       setContacts(contactResponse.items);
       setTotal(contactResponse.total);
       setTotalPages(contactResponse.totalPages);
-      setCustomers(customerResponse.items);
-      setTags(options.tags);
-      setDepartments(options.departments);
-      setProfiles(options.profiles);
+      setCustomers(sortByOptionLabel(customerResponse.items, (customer) => customer.nome));
+      setTags(sortByOptionLabel(options.tags, (tag) => tag.nome));
+      setDepartments(sortByOptionLabel(options.departments, (department) => department.nome));
+      setProfiles(sortByOptionLabel(options.profiles, (profile) => profile.nome));
       setInstances(
-        options.instances.filter((instance) => isSelectableInstanceStatus(instance.status)),
+        sortByOptionLabel(
+          options.instances.filter((instance) => isSelectableInstanceStatus(instance.status)),
+          (instance) => instance.name,
+        ),
       );
       setCustomFieldDefinitions(customFields);
     } catch (e) {
@@ -941,13 +953,13 @@ function ContatosPage() {
   };
 
   const confirmAgendaImport = async () => {
-    const selectedPhones = agendaImportPreview.selectedPhones;
-    const registeredPhones = agendaImportPreview.ignoredItems.filter(
-      (item) =>
-        item.normalizedPhone &&
-        ["Contato ja cadastrado ativo", "Contato já cadastrado ativo"].includes(item.reason),
+    const importablePhones = new Set(
+      agendaImportPreview.items.map((item) => item.normalizedPhone).filter(Boolean),
     );
-    const progressTotal = selectedPhones.length + registeredPhones.length;
+    const selectedPhones = agendaImportPreview.selectedPhones.filter((phone) =>
+      importablePhones.has(phone),
+    );
+    const progressTotal = selectedPhones.length;
     if (!progressTotal) {
       toast.error("Selecione ao menos um contato para importar.");
       return;
@@ -2071,8 +2083,11 @@ function AgendaImportPreviewModal({
     [ignoredFilterOptions, ignoredItems],
   );
   const phoneContactsCount = items.length + ignoredCount + alreadyRegisteredCount;
-  const agendaImportCount = selectedPhones.length;
-  const agendaActionCount = agendaImportCount + alreadyRegisteredCount;
+  const importablePhoneSet = React.useMemo(
+    () => new Set(items.map((item) => item.normalizedPhone).filter(Boolean)),
+    [items],
+  );
+  const agendaImportCount = selectedPhones.filter((phone) => importablePhoneSet.has(phone)).length;
   const ignoredReasonLabel = (reason: string) =>
     ignoredFilterOptions.find((option) => option.reasons.includes(reason))?.label ?? reason;
   const availableItems = React.useMemo(
@@ -2161,14 +2176,14 @@ function AgendaImportPreviewModal({
               disabled={
                 busy ||
                 loading ||
-                (primaryAction ? !connectionId : agendaActionCount === 0)
+                (primaryAction ? !connectionId : agendaImportCount === 0)
               }
             >
               {busy
                 ? "Importando..."
                 : primaryAction
                   ? "Buscar contatos"
-                  : `Importar ${formatIntegerPtBr(agendaActionCount)} contato(s)`}
+                  : `Importar ${formatIntegerPtBr(agendaImportCount)} contato(s)`}
             </Button>
           )}
         </>
@@ -2192,7 +2207,7 @@ function AgendaImportPreviewModal({
           </Field>
         )}
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
             <p className="truncate whitespace-nowrap text-xs text-muted-foreground">Contatos do Telefone</p>
             <p className="text-base font-semibold text-foreground">{formatIntegerPtBr(phoneContactsCount)}</p>
@@ -2204,15 +2219,15 @@ function AgendaImportPreviewModal({
             </p>
           </div>
           <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
-            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">Disponíveis</p>
-            <p className="text-base font-semibold text-foreground">
-              {formatIntegerPtBr(items.length)}
-            </p>
-          </div>
-          <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
             <p className="truncate whitespace-nowrap text-xs text-muted-foreground">Ignorados</p>
             <p className="text-base font-semibold text-foreground">
               {formatIntegerPtBr(ignoredCount)}
+            </p>
+          </div>
+          <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">Disponíveis</p>
+            <p className="text-base font-semibold text-foreground">
+              {formatIntegerPtBr(items.length)}
             </p>
           </div>
         </div>
@@ -2621,7 +2636,7 @@ function ImportProgressModal({
       footer={
         done ? (
           <Button variant="primary" size="sm" onClick={onClose}>
-            Confirmar
+            Concluir
           </Button>
         ) : null
       }
@@ -3930,9 +3945,9 @@ function TagMultiSelect({
       </button>
       {open && (
         <div
-          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(32.5rem,calc(100vh-8rem))] w-[min(42rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl sm:max-h-[min(17.5rem,calc(100vh-8rem))]`}
+          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(27rem,calc(100vh-8rem))] w-[min(42rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl sm:max-h-[min(15rem,calc(100vh-8rem))]`}
         >
-          <div className="grid max-h-[27.5rem] min-h-0 grid-cols-1 gap-1 overflow-y-auto overflow-x-hidden p-1 sm:max-h-[14.25rem] sm:grid-cols-2">
+          <div className="grid max-h-[22rem] min-h-0 grid-cols-1 gap-1 overflow-y-auto overflow-x-hidden p-1 sm:max-h-[11.5rem] sm:grid-cols-2">
             {tags.map((tag) => {
               const active = selectedIds.includes(tag.id);
               return (
@@ -5516,15 +5531,21 @@ function customerPayload(data: CustomerFormData) {
 function upsertCustomer(customers: Customer[], customer: Customer) {
   const exists = customers.some((item) => item.id === customer.id);
   return exists
-    ? customers.map((item) => (item.id === customer.id ? customer : item))
-    : [customer, ...customers];
+    ? sortByOptionLabel(
+        customers.map((item) => (item.id === customer.id ? customer : item)),
+        (item) => item.nome,
+      )
+    : sortByOptionLabel([customer, ...customers], (item) => item.nome);
 }
 
 function upsertCatalog(items: ContactCatalog[], value: ContactCatalog) {
   const exists = items.some((item) => item.id === value.id);
   return exists
-    ? items.map((item) => (item.id === value.id ? value : item))
-    : [value, ...items].sort((a, b) => a.nome.localeCompare(b.nome));
+    ? sortByOptionLabel(
+        items.map((item) => (item.id === value.id ? value : item)),
+        (item) => item.nome,
+      )
+    : sortByOptionLabel([value, ...items], (item) => item.nome);
 }
 
 function departmentPayload(data: DepartamentoFormData) {

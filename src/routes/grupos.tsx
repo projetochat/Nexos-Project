@@ -8,7 +8,6 @@ import {
   MessageSquareMore,
   Plus,
   RefreshCw,
-  Search,
   ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -33,6 +32,7 @@ import {
   type ApiWhatsappGroup,
 } from "@/lib/nexos-api";
 import { num } from "@/lib/format";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/grupos")({ component: GroupsPage });
 
@@ -69,9 +69,12 @@ function GroupsPage() {
       setTotal(groupResponse.total);
       setTotalPages(groupResponse.totalPages);
       setInstances(
-        options.instances.filter((instance) => instance.status?.toUpperCase() === "CONNECTED"),
+        sortByOptionLabel(
+          options.instances.filter((instance) => instance.status?.toUpperCase() === "CONNECTED"),
+          (instance) => instance.name,
+        ),
       );
-      setContacts(contactResponse.items);
+      setContacts(sortByOptionLabel(contactResponse.items, (contact) => contact.nome));
     } catch (error) {
       toast.error("Falha ao carregar grupos", { description: (error as Error).message });
     } finally {
@@ -98,9 +101,9 @@ function GroupsPage() {
   const syncGroups = async () => {
     setSyncing(true);
     try {
-      const result = await groupsApi.sync();
+      const result = await groupsApi.sync({ connectionId: instanceFilter && instanceFilter !== EMPTY_FILTER_VALUE ? instanceFilter : undefined });
       toast.success("Grupos atualizados", {
-        description: `${num(result.synced)} grupo(s) sincronizado(s).`,
+        description: `${num(result.synced)} grupo(s) sincronizado(s), ${num(result.participants)} participante(s) atualizado(s).`,
       });
       await load();
     } catch (error) {
@@ -124,7 +127,7 @@ function GroupsPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)_auto_auto] md:items-end">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)_auto] md:items-end">
             <Field label="Busca">
               <SearchInput
                 value={query}
@@ -143,9 +146,6 @@ function GroupsPage() {
                 ))}
               </Select>
             </Field>
-            <Button variant="secondary" size="md" onClick={() => void load()}>
-              <Search className="h-4 w-4" /> Buscar
-            </Button>
             <Button
               variant="secondary"
               size="md"

@@ -1,6 +1,6 @@
 import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MessagingConnectionStatus, MessagingProviderType } from "../generated/prisma";
+import { ConversationStatus, MessagingConnectionStatus, MessagingProviderType } from "../generated/prisma";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 import { evolutionQrBase64, MessagingConnectionsService } from "./messaging-connections.service";
 
@@ -216,6 +216,9 @@ describe("MessagingConnectionsService", () => {
     expect(groupsSync.enqueue).toHaveBeenCalledWith({
       tenantId: "tenant-a",
       connectionId: "connection-a",
+      includeParticipants: false,
+      followUpFullSync: true,
+      delayMs: 10000,
     });
   });
 
@@ -241,6 +244,9 @@ describe("MessagingConnectionsService", () => {
     expect(groupsSync.enqueue).toHaveBeenCalledWith({
       tenantId: "tenant-a",
       connectionId: "connection-a",
+      includeParticipants: false,
+      followUpFullSync: true,
+      delayMs: 10000,
     });
   });
 
@@ -303,6 +309,55 @@ describe("MessagingConnectionsService", () => {
         ownerPhoneNormalized: null,
         archivedAt: expect.any(Date),
       },
+    });
+  });
+
+  it("removes selected history and chat conversations when removing a connection", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.CONNECTED,
+    });
+    prisma.messagingConnection.update.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.REMOVED,
+      externalReference: null,
+      archivedAt: new Date("2026-08-04T00:00:00.000Z"),
+    });
+    prisma.conversation.updateMany
+      .mockResolvedValueOnce({ count: 2 })
+      .mockResolvedValueOnce({ count: 3 });
+    const evolution = { deleteInstance: vi.fn().mockResolvedValue({}) };
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, evolution as never).remove(
+        "connection-a",
+        current as never,
+        { removeConversationHistory: true, removeChatConversations: true },
+      ),
+    ).resolves.toMatchObject({
+      removedConversationHistoryCount: 2,
+      removedChatConversationCount: 3,
+    });
+
+    expect(prisma.conversation.updateMany).toHaveBeenNthCalledWith(1, {
+      where: {
+        tenantId: "tenant-a",
+        connectionId: "connection-a",
+        status: ConversationStatus.FECHADA,
+        archivedAt: null,
+      },
+      data: { archivedAt: expect.any(Date) },
+    });
+    expect(prisma.conversation.updateMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        tenantId: "tenant-a",
+        connectionId: "connection-a",
+        status: { not: ConversationStatus.FECHADA },
+        archivedAt: null,
+        inboxArchivedAt: null,
+      },
+      data: { inboxArchivedAt: expect.any(Date) },
     });
   });
 

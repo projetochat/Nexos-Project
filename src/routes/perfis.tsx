@@ -15,6 +15,7 @@ import {
 } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import { num } from "@/lib/format";
+import { sortByOptionLabel } from "@/lib/sort-options";
 import {
   connectionsApi,
   organizationApi,
@@ -520,7 +521,7 @@ function PerfilForm({
             Instancias
           </h3>
           <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-            {connections.map((connection) => (
+            {sortByOptionLabel(connections, (connection) => connection.name).map((connection) => (
               <CheckField
                 key={connection.id}
                 label={connection.name}

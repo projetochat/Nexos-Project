@@ -37,6 +37,7 @@ import {
 } from "@/lib/nexos-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { useSession } from "@/lib/session";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/chamados")({
   validateSearch: (search) => ({
@@ -741,11 +742,14 @@ function useTicketOptions(enabled: boolean) {
     enabled,
   });
   return {
-    departments: departments.data ?? ([] as ApiDepartment[]),
-    users: users.data ?? ([] as ApiUserMembership[]),
-    contacts: contacts.data?.items ?? ([] as ApiContact[]),
-    customers: customers.data?.items ?? ([] as ApiCustomer[]),
-    conversations: conversations.data?.items ?? [],
+    departments: sortByOptionLabel(departments.data ?? ([] as ApiDepartment[]), (item) => item.name),
+    users: sortByOptionLabel(users.data ?? ([] as ApiUserMembership[]), (item) => item.user.name),
+    contacts: sortByOptionLabel(contacts.data?.items ?? ([] as ApiContact[]), (item) => item.nome),
+    customers: sortByOptionLabel(customers.data?.items ?? ([] as ApiCustomer[]), (item) => item.nome),
+    conversations: sortByOptionLabel(
+      conversations.data?.items ?? [],
+      (item) => `${item.protocolo ?? ""} ${item.contact?.nome ?? "Contato"}`,
+    ),
   };
 }
 

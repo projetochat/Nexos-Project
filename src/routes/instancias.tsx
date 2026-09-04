@@ -135,9 +135,17 @@ function Page() {
     onError: (e) => toast.error((e as Error).message),
   });
   const remove = useMutation({
-    mutationFn: (connection: ApiMessagingConnection) => connectionsApi.remove(connection.id),
+    mutationFn: ({
+      connection,
+      options,
+    }: {
+      connection: ApiMessagingConnection;
+      options: RemoveConnectionOptions;
+    }) => connectionsApi.remove(connection.id, options),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
+      qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+      qc.invalidateQueries({ queryKey: ["operations", "history"] });
       setRemoving(null);
       toast.success("Conexao removida");
     },
@@ -314,7 +322,7 @@ function Page() {
           connection={removing}
           busy={remove.isPending}
           onClose={() => setRemoving(null)}
-          onConfirm={(connection) => remove.mutate(connection)}
+          onConfirm={(connection, options) => remove.mutate({ connection, options })}
         />
       </PageContainer>
     </AppShell>
@@ -379,6 +387,11 @@ function ConnectionForm({
     </Modal>
   );
 }
+
+type RemoveConnectionOptions = {
+  removeConversationHistory: boolean;
+  removeChatConversations: boolean;
+};
 
 type ConnectionSettingsFormData = {
   name: string;
@@ -599,11 +612,17 @@ function RemoveConnectionModal({
   connection: ApiMessagingConnection | null;
   busy: boolean;
   onClose: () => void;
-  onConfirm: (connection: ApiMessagingConnection) => void;
+  onConfirm: (connection: ApiMessagingConnection, options: RemoveConnectionOptions) => void;
 }) {
   const [confirmation, setConfirmation] = React.useState("");
+  const [removeConversationHistory, setRemoveConversationHistory] = React.useState(false);
+  const [removeChatConversations, setRemoveChatConversations] = React.useState(false);
   React.useEffect(() => {
-    if (!connection) setConfirmation("");
+    if (!connection) {
+      setConfirmation("");
+      setRemoveConversationHistory(false);
+      setRemoveChatConversations(false);
+    }
   }, [connection]);
   const canConfirm = confirmation.trim().toUpperCase() === "REMOVER";
   return (
@@ -619,7 +638,10 @@ function RemoveConnectionModal({
           <Button
             variant="destructive"
             size="sm"
-            onClick={() => connection && onConfirm(connection)}
+            onClick={() =>
+              connection &&
+              onConfirm(connection, { removeConversationHistory, removeChatConversations })
+            }
             disabled={busy || !canConfirm}
           >
             <Trash2 className="h-3.5 w-3.5" /> Remover
@@ -631,9 +653,33 @@ function RemoveConnectionModal({
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           <p className="font-medium">{connection?.name}</p>
           <p className="mt-1">
-            A conexao sera indisponibilizada para novos envios e campanhas. O historico de
-            conversas, mensagens e campanhas sera preservado.
+            A conexao sera indisponibilizada para novos envios e campanhas. Selecione abaixo
+            o que tambem deve ser removido das telas do sistema.
           </p>
+        </div>
+        <div className="space-y-2">
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={removeConversationHistory}
+              onChange={(event) => setRemoveConversationHistory(event.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-primary"
+            />
+            <span>
+              <strong>Remover histórico de conversas</strong>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={removeChatConversations}
+              onChange={(event) => setRemoveChatConversations(event.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-primary"
+            />
+            <span>
+              <strong>Remover conversas do chat</strong>
+            </span>
+          </label>
         </div>
         <Field label='Digite "REMOVER" para confirmar'>
           <Input

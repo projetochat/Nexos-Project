@@ -36,6 +36,7 @@ import { relativeTime } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 import { useRealtimeInbox } from "@/lib/realtime/hooks";
+import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 
 type TabId = "ativas" | "standby" | "fila" | "leads";
 type SourceId = "todos" | "arquivados" | "humano" | "bots";
@@ -147,7 +148,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
           label: connection.name || connectionDisplayLabel(connection),
         }))
         .filter((option) => option.id)
-        .sort((a, b) => a.label.localeCompare(b.label)),
+        .sort((a, b) => compareOptionLabels(a.label, b.label)),
     [filterConnections],
   );
   const instanciaLabelByValue = React.useMemo(
@@ -166,7 +167,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
         out.push({ id: c.id, nome });
       }
     }
-    return out.sort((a, b) => a.nome.localeCompare(b.nome));
+    return sortByOptionLabel(out, (item) => item.nome);
   }, [customers]);
 
   const list = React.useMemo(() => {

@@ -74,6 +74,9 @@ const groupInclude = {
 
 type GroupConversation = Prisma.ConversationGetPayload<{ include: typeof groupInclude }>;
 const EMPTY_GROUP_FILTER_VALUE = "__empty__";
+const visibleGroupConnectionWhere: Prisma.ConversationWhereInput = {
+  OR: [{ connectionId: null }, { connection: { archivedAt: null } }],
+};
 
 @Controller("groups")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -91,26 +94,28 @@ export class GroupsController {
     const q = query.q?.trim();
     const qDigits = q?.replace(/\D/g, "") ?? "";
     const filterWithoutConnection = query.connectionId === EMPTY_GROUP_FILTER_VALUE;
+    const filters: Prisma.ConversationWhereInput[] = [visibleGroupConnectionWhere];
+    if (q) {
+      filters.push({
+        OR: [
+          { groupName: { contains: q, mode: "insensitive" } },
+          { externalChatId: { contains: q, mode: "insensitive" } },
+          { contact: { name: { contains: q, mode: "insensitive" } } },
+          { participants: { some: { displayName: { contains: q, mode: "insensitive" } } } },
+          ...(qDigits ? [{ participants: { some: { phone: { contains: qDigits } } } }] : []),
+        ],
+      });
+    }
     const where: Prisma.ConversationWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,
       conversationType: ConversationType.GROUP,
+      AND: filters,
       ...(filterWithoutConnection
         ? { connectionId: null }
         : query.connectionId
           ? { connectionId: query.connectionId }
           : {}),
-      ...(q
-        ? {
-            OR: [
-              { groupName: { contains: q, mode: "insensitive" } },
-              { externalChatId: { contains: q, mode: "insensitive" } },
-              { contact: { name: { contains: q, mode: "insensitive" } } },
-              { participants: { some: { displayName: { contains: q, mode: "insensitive" } } } },
-              ...(qDigits ? [{ participants: { some: { phone: { contains: qDigits } } } }] : []),
-            ],
-          }
-        : {}),
     };
 
     const [items, total] = await this.prisma.$transaction([
@@ -123,8 +128,6 @@ export class GroupsController {
       }),
       this.prisma.conversation.count({ where }),
     ]);
-
-    this.groupsSync.enqueue({ tenantId: current.tenantId });
 
     return paginated(
       items.map((item) => serializeGroup(item)),
@@ -143,6 +146,7 @@ export class GroupsController {
         tenantId: current.tenantId,
         archivedAt: null,
         conversationType: ConversationType.GROUP,
+        ...visibleGroupConnectionWhere,
       },
       include: groupInclude,
     });

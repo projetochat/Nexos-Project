@@ -21,6 +21,7 @@ import {
   type ApiDepartment,
 } from "@/lib/nexos-api";
 import { num } from "@/lib/format";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/automacoes")({
   head: () => ({ meta: [{ title: "Automacoes - Nexo" }] }),
@@ -205,7 +206,7 @@ function AutomationForm({
           <Field label="Departamento">
             <Select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
               <option value="">Selecione</option>
-              {departments.map((department) => (
+              {sortByOptionLabel(departments, (department) => department.name).map((department) => (
                 <option key={department.id} value={department.id}>
                   {department.name}
                 </option>

@@ -197,9 +197,10 @@ export class EvolutionClient {
     return { groupJid: extractGroupJid(response) };
   }
 
-  async fetchGroups(input: { instanceName: string }) {
+  async fetchGroups(input: { instanceName: string; getParticipants?: boolean }) {
+    const getParticipants = input.getParticipants ?? true;
     const response = await this.request<unknown>(
-      `/group/fetchAllGroups/${input.instanceName}?getParticipants=true`,
+      `/group/fetchAllGroups/${input.instanceName}?getParticipants=${getParticipants}`,
     );
     return extractGroups(response);
   }

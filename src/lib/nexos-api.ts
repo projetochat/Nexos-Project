@@ -1069,7 +1069,17 @@ export const groupsApi = {
   create: (data: { name: string; connectionId: string; participantContactIds: string[] }) =>
     apiRequest<ApiWhatsappGroup>("/groups", { method: "POST", body: JSON.stringify(data) }),
   sync: (data: { connectionId?: string } = {}) =>
-    apiRequest<{ synced: number }>("/groups/sync", {
+    apiRequest<{
+      synced: number;
+      created: number;
+      updated: number;
+      failed: number;
+      connections: number;
+      groups: number;
+      participants: number;
+      inactiveParticipants: number;
+      participantNamesUpdated: number;
+    }>("/groups/sync", {
       method: "POST",
       body: JSON.stringify(data),
     }),
@@ -1339,11 +1349,20 @@ export const connectionsApi = {
     apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/logout`, {
       method: "PATCH",
     }),
-  remove: (id: string) =>
-    apiRequest<{ id: string; removed: boolean; providerInstanceExisted: boolean }>(
-      `/messaging/connections/${id}`,
-      { method: "DELETE" },
-    ),
+  remove: (
+    id: string,
+    options: { removeConversationHistory?: boolean; removeChatConversations?: boolean } = {},
+  ) =>
+    apiRequest<{
+      id: string;
+      removed: boolean;
+      providerInstanceExisted: boolean;
+      removedConversationHistoryCount?: number;
+      removedChatConversationCount?: number;
+    }>(`/messaging/connections/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify(options),
+    }),
 };
 
 export const ticketApi = {

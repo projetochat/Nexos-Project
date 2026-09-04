@@ -49,6 +49,7 @@ import { useSession } from "@/lib/session";
 import { fmtHM, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
+import { sortByOptionLabel } from "@/lib/sort-options";
 import { startTyping, stopTyping } from "@/lib/realtime/client";
 
 export const Route = createFileRoute("/inbox/$conversationId")({ component: ConversationPage });
@@ -1796,7 +1797,7 @@ function RenameContactModal({
               onChange={(e) => setCustomerId(e.target.value || null)}
             >
               <option value="">Sem vínculo</option>
-              {customers.map((c) => (
+              {sortByOptionLabel(customers, (c) => c.nome).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.nome}
                 </option>
@@ -2048,7 +2049,7 @@ function TransferModal({
       {mode === "department" && (
         <Field label="Departamento">
           <Select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
-            {departments.map((d) => (
+            {sortByOptionLabel(departments, (d) => d.nome).map((d) => (
               <option key={d.id} value={d.id}>
                 {d.nome}
               </option>
@@ -2060,7 +2061,7 @@ function TransferModal({
       {mode === "agent" && (
         <Field label="Novo atendente">
           <Select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)}>
-            {agents.map((a) => (
+            {sortByOptionLabel(agents, (a) => a.nome).map((a) => (
               <option key={a.id} value={a.id}>
                 {a.nome}
               </option>

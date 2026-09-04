@@ -18,6 +18,7 @@ import {
 } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import { num } from "@/lib/format";
+import { sortByOptionLabel } from "@/lib/sort-options";
 import { organizationApi, type ApiUserMembership } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/atendentes")({ component: AtendentesPage });
@@ -232,13 +233,13 @@ function AtendentesPage() {
 
         <AtendenteForm
           open={novo.open}
-          perfis={perfis.map((p) => ({ id: p.id, nome: p.name }))}
+          perfis={sortByOptionLabel(perfis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
           onClose={novo.hide}
           onSubmit={(data) => create.mutate(data)}
         />
         <AtendenteForm
           open={!!editing}
-          perfis={perfis.map((p) => ({ id: p.id, nome: p.name }))}
+          perfis={sortByOptionLabel(perfis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
           initial={editing ?? undefined}
           onClose={() => setEditing(null)}
           onSubmit={(data) => editing && update.mutate({ id: editing.id, data })}

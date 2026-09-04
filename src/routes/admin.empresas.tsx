@@ -23,6 +23,7 @@ import {
 } from "@/components/ui-kit";
 import { platformApi, type PlatformPlan, type PlatformTenant } from "@/lib/nexos-api";
 import { fmtDate } from "@/lib/format";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/empresas")({
   head: () => ({ meta: [{ title: "Tenants - Nexo Admin" }] }),
@@ -281,7 +282,7 @@ function EmpresasSaaS() {
           {step === 4 && (
             <Field label="Plano inicial">
               <Select value={form.planId} onChange={(e) => update("planId", e.target.value)}>
-                {plans.map((plan) => (
+                {sortByOptionLabel(plans, (plan) => plan.name).map((plan) => (
                   <option key={plan.id} value={plan.id}>
                     {plan.name}
                   </option>

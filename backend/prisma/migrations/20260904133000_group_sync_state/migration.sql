@@ -1,0 +1,5 @@
+ALTER TABLE "messaging_connections"
+  ADD COLUMN IF NOT EXISTS "groupsLastSyncedAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "groupsSyncStatus" TEXT DEFAULT 'IDLE',
+  ADD COLUMN IF NOT EXISTS "groupsSyncError" TEXT,
+  ADD COLUMN IF NOT EXISTS "groupsSyncedCount" INTEGER NOT NULL DEFAULT 0;

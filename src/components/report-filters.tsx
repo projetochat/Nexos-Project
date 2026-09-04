@@ -8,6 +8,7 @@ import {
   type OperationalPeriod,
 } from "@/lib/nexos-api";
 import type { OperationalReportFilters } from "@/lib/operational-filters";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 const PERIOD_OPTIONS: { value: OperationalPeriod; label: string }[] = [
   { value: "today", label: "Hoje" },
@@ -38,6 +39,14 @@ export function ReportFiltersBar({
     queryKey: ["operations", "filters", "departments"],
     queryFn: organizationApi.listDepartments,
   });
+  const sortedCustomers = React.useMemo(
+    () => sortByOptionLabel(customers?.items ?? [], (customer) => customer.nome),
+    [customers?.items],
+  );
+  const sortedDepartments = React.useMemo(
+    () => sortByOptionLabel(departments, (department) => department.name),
+    [departments],
+  );
 
   return (
     <Card className="mb-6 p-4">
@@ -84,7 +93,7 @@ export function ReportFiltersBar({
             onChange={(e) => onChange({ customerId: e.target.value || undefined })}
           >
             <option value="">Todos</option>
-            {(customers?.items ?? []).map((customer) => (
+            {sortedCustomers.map((customer) => (
               <option key={customer.id} value={customer.id}>
                 {customer.nome}
               </option>
@@ -100,7 +109,7 @@ export function ReportFiltersBar({
             onChange={(e) => onChange({ departmentId: e.target.value || undefined })}
           >
             <option value="">Todos</option>
-            {departments.map((department) => (
+            {sortedDepartments.map((department) => (
               <option key={department.id} value={department.id}>
                 {department.name}
               </option>

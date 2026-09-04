@@ -33,6 +33,7 @@ import {
   type ApiTag,
 } from "@/lib/nexos-api";
 import { fmtDate, num } from "@/lib/format";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/campanhas")({ component: Page });
 
@@ -109,6 +110,10 @@ function Page() {
     queryKey: ["campaigns.connections"],
     queryFn: connectionsApi.list,
   });
+  const sortedConnections = React.useMemo(
+    () => sortByOptionLabel(connectionsQuery.data ?? [], (connection) => connection.name),
+    [connectionsQuery.data],
+  );
   const selectedCampaign =
     listQuery.data?.items.find((item) => item.id === selectedId) ??
     listQuery.data?.items[0] ??
@@ -220,7 +225,7 @@ function Page() {
               onChange={(event) => setFilters({ ...filters, connectionId: event.target.value })}
             >
               <option value="">Todas as conexoes</option>
-              {(connectionsQuery.data ?? []).map((connection) => (
+              {sortedConnections.map((connection) => (
                 <option key={connection.id} value={connection.id}>
                   {connection.name}
                 </option>
@@ -274,7 +279,7 @@ function Page() {
         <CampaignEditor
           open={createModal.open}
           onClose={createModal.hide}
-          connections={connectionsQuery.data ?? []}
+          connections={sortedConnections}
           onCreated={(campaign) => {
             createModal.hide();
             setFilters(DEFAULT_CAMPAIGN_FILTERS);
@@ -542,6 +547,18 @@ function CampaignEditor({
     queryFn: () => crmApi.listCustomers({ pageSize: 100 }),
     enabled: open,
   });
+  const sortedTags = React.useMemo(
+    () => sortByOptionLabel(tagsQuery.data ?? [], (tag) => tag.nome),
+    [tagsQuery.data],
+  );
+  const sortedContacts = React.useMemo(
+    () => sortByOptionLabel(contactsQuery.data?.items ?? [], (contact) => contact.nome),
+    [contactsQuery.data?.items],
+  );
+  const sortedCustomers = React.useMemo(
+    () => sortByOptionLabel(customersQuery.data?.items ?? [], (customer) => customer.nome),
+    [customersQuery.data?.items],
+  );
 
   React.useEffect(() => {
     if (!open) return;
@@ -727,7 +744,7 @@ function CampaignEditor({
               title="Tags"
               mode={form.tagMatchMode}
               onMode={(tagMatchMode) => setForm({ ...form, tagMatchMode })}
-              items={tagsQuery.data ?? []}
+              items={sortedTags}
               search={tagSearch}
               onSearch={setTagSearch}
               selected={form.tagIds}
@@ -736,7 +753,7 @@ function CampaignEditor({
           )}
           {form.audienceType === "CUSTOMERS" && (
             <CustomerSelector
-              items={customersQuery.data?.items ?? []}
+              items={sortedCustomers}
               search={customerSearch}
               onSearch={setCustomerSearch}
               selected={form.customerIds}
@@ -745,7 +762,7 @@ function CampaignEditor({
           )}
           {form.audienceType === "CONTACTS" && (
             <ContactSelector
-              items={contactsQuery.data?.items ?? []}
+              items={sortedContacts}
               search={contactSearch}
               onSearch={setContactSearch}
               selected={form.contactIds}

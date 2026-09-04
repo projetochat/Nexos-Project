@@ -21,6 +21,7 @@ import {
 } from "@/lib/nexos-api";
 import { useSession } from "@/lib/session";
 import { fmtDate } from "@/lib/format";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/empresas/$tenantId")({
   head: () => ({ meta: [{ title: "Tenant - Nexo Admin" }] }),
@@ -340,7 +341,7 @@ function TenantDetailPage() {
             <div className="mt-4 space-y-3">
               <Field label="Membership autorizada">
                 <Select value={membershipId} onChange={(e) => setMembershipId(e.target.value)}>
-                  {tenant.detail.users.map((item) => (
+                  {sortByOptionLabel(tenant.detail.users, (item) => `${item.user.name} ${item.role.name}`).map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.user.name} - {item.role.name}
                     </option>

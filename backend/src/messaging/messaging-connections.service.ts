@@ -8,7 +8,12 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { createHash, randomUUID } from "node:crypto";
-import { MessagingConnectionStatus, MessagingProviderType, Prisma } from "../generated/prisma";
+import {
+  ConversationStatus,
+  MessagingConnectionStatus,
+  MessagingProviderType,
+  Prisma,
+} from "../generated/prisma";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
@@ -289,7 +294,7 @@ export class MessagingConnectionsService {
     return this.evolution.health();
   }
 
-  async remove(id: string, current: AuthenticatedUser) {
+  async remove(id: string, current: AuthenticatedUser, options: RemoveConnectionOptions = {}) {
     const connection = await this.findTenantConnection(id, current.tenantId);
     const references = await this.connectionReferenceCounts(connection.tenantId, connection.id);
     const baseLog = {
@@ -301,6 +306,7 @@ export class MessagingConnectionsService {
       references,
     };
     if (connection.archivedAt || connection.status === MessagingConnectionStatus.REMOVED) {
+      const cleanup = await this.cleanupConnectionConversations(connection, options);
       this.logger.log({
         ...baseLog,
         authResult: "allowed",
@@ -314,6 +320,7 @@ export class MessagingConnectionsService {
         status: "removed",
         providerInstanceExisted: false,
         idempotent: true,
+        ...cleanup,
       };
     }
     if (
@@ -328,6 +335,7 @@ export class MessagingConnectionsService {
       baseLog,
     );
     const archivedAt = new Date();
+    const cleanup = await this.cleanupConnectionConversations(connection, options, archivedAt);
     const updated = await this.prisma.messagingConnection.update({
       where: { tenantId_id: { tenantId: current.tenantId, id: connection.id } },
       data: {
@@ -359,6 +367,43 @@ export class MessagingConnectionsService {
       status: "removed",
       providerInstanceExisted: providerDelete.instanceExisted,
       idempotent: providerDelete.idempotent,
+      ...cleanup,
+    };
+  }
+
+  private async cleanupConnectionConversations(
+    connection: { id: string; tenantId: string },
+    options: RemoveConnectionOptions,
+    removedAt = new Date(),
+  ) {
+    const [history, chat] = await Promise.all([
+      options.removeConversationHistory
+        ? this.prisma.conversation.updateMany({
+            where: {
+              tenantId: connection.tenantId,
+              connectionId: connection.id,
+              status: ConversationStatus.FECHADA,
+              archivedAt: null,
+            },
+            data: { archivedAt: removedAt },
+          })
+        : Promise.resolve({ count: 0 }),
+      options.removeChatConversations
+        ? this.prisma.conversation.updateMany({
+            where: {
+              tenantId: connection.tenantId,
+              connectionId: connection.id,
+              status: { not: ConversationStatus.FECHADA },
+              archivedAt: null,
+              inboxArchivedAt: null,
+            },
+            data: { inboxArchivedAt: removedAt },
+          })
+        : Promise.resolve({ count: 0 }),
+    ]);
+    return {
+      removedConversationHistoryCount: history.count,
+      removedChatConversationCount: chat.count,
     };
   }
 
@@ -477,7 +522,13 @@ export class MessagingConnectionsService {
     status: MessagingConnectionStatus;
   }) {
     if (connection.status !== MessagingConnectionStatus.CONNECTED) return;
-    this.groupsSync?.enqueue({ tenantId: connection.tenantId, connectionId: connection.id });
+    this.groupsSync?.enqueue({
+      tenantId: connection.tenantId,
+      connectionId: connection.id,
+      includeParticipants: false,
+      followUpFullSync: true,
+      delayMs: CONNECTED_GROUP_LIGHT_SYNC_DELAY_MS,
+    });
   }
 
   private async ensureWebhookConfiguredSafely(instanceName: string, connectionId: string) {
@@ -603,6 +654,13 @@ export class MessagingConnectionsService {
     };
   }
 }
+
+const CONNECTED_GROUP_LIGHT_SYNC_DELAY_MS = 10 * 1000;
+
+type RemoveConnectionOptions = {
+  removeConversationHistory?: boolean;
+  removeChatConversations?: boolean;
+};
 
 type ConnectionWithArchive = Prisma.MessagingConnectionGetPayload<object> & {
   archivedAt?: Date | null;

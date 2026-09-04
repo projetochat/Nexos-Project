@@ -15,6 +15,7 @@ import {
 } from "@/components/ui-kit";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { crmApi, type ApiContactCustomField } from "@/lib/nexos-api";
+import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/configuracoes/campos-contato")({
   component: ContactFieldsSettings,
@@ -165,12 +166,14 @@ function ContactFieldsSettings() {
   }, [groupFilter, orderedFields, query, requiredFilter, tabFilter, typeFilter]);
 
   const tabOptions = React.useMemo(
-    () => uniqueLabels(fields.map(displayFieldTab).filter(Boolean)),
+    () => sortByOptionLabel(uniqueLabels(fields.map(displayFieldTab).filter(Boolean)), (tab) => tab),
     [fields],
   );
   const groupOptions = React.useMemo(() => {
-    const labels = uniqueLabels(fields.map(displayFieldGroup).filter(Boolean));
-    return ["-", ...labels.filter((group) => group !== "-")];
+    const labels = uniqueLabels(fields.map(displayFieldGroup).filter(Boolean))
+      .filter((group) => group !== "-")
+      .sort(compareOptionLabels);
+    return ["-", ...labels];
   }, [fields]);
 
   const reorderField = async (draggedId: string, targetId: string) => {
