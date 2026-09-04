@@ -5,6 +5,7 @@ import { PrismaModule } from "../prisma/prisma.module";
 import { PlatformModule } from "../platform/platform.module";
 import { QueueModule } from "../queue/queue.module";
 import { RealtimeModule } from "../realtime/realtime.module";
+import { GroupsSyncService } from "../conversations/groups-sync.service";
 import { DevelopmentMessagingProvider } from "./development-messaging.provider";
 import { ContactProfilePictureSyncService } from "./contact-profile-picture-sync.service";
 import { EvolutionClient } from "./evolution/evolution.client";
@@ -47,6 +48,7 @@ import { MessagingStatusService } from "./messaging-status.service";
     ContactProfilePictureSyncService,
     MessagingReactionService,
     MessagingStatusService,
+    GroupsSyncService,
   ],
   exports: [
     MessagingOutboundService,
@@ -57,6 +59,7 @@ import { MessagingStatusService } from "./messaging-status.service";
     MessagingMediaStorageService,
     ContactProfilePictureSyncService,
     EvolutionClient,
+    GroupsSyncService,
   ],
 })
 export class MessagingModule {}

@@ -168,10 +168,10 @@ function ContactFieldsSettings() {
     () => uniqueLabels(fields.map(displayFieldTab).filter(Boolean)),
     [fields],
   );
-  const groupOptions = React.useMemo(
-    () => uniqueLabels(fields.map(displayFieldGroup).filter(Boolean)),
-    [fields],
-  );
+  const groupOptions = React.useMemo(() => {
+    const labels = uniqueLabels(fields.map(displayFieldGroup).filter(Boolean));
+    return ["-", ...labels.filter((group) => group !== "-")];
+  }, [fields]);
 
   const reorderField = async (draggedId: string, targetId: string) => {
     if (draggedId === targetId) return;
@@ -251,7 +251,7 @@ function ContactFieldsSettings() {
               <option value="">Todos</option>
               {groupOptions.map((group) => (
                 <option key={group} value={group}>
-                  {group === "-" ? "- Sem Agrupamento -" : group}
+                  {group === "-" ? "- Sem agrupamento -" : group}
                 </option>
               ))}
             </Select>

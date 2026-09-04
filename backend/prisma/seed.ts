@@ -954,7 +954,7 @@ function professionalLimits() {
   return {
     maxUsers: 20,
     maxDepartments: 10,
-    maxConnections: 3,
+    maxConnections: 5,
     maxContacts: 10000,
     maxCampaignRecipients: 500,
     maxStorageBytes: 512 * 1024 * 1024,

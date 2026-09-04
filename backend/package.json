@@ -18,7 +18,8 @@
     "audit:ticket-attachments": "node scripts/audit-ticket-attachments.mjs",
     "cleanup:ticket-attachments": "node scripts/audit-ticket-attachments.mjs --clean",
     "cleanup:homologation-queues": "node scripts/cleanup-homologation-queues.mjs",
-    "reset:homologation": "node scripts/reset-homologation.mjs"
+    "reset:homologation": "node scripts/reset-homologation.mjs",
+    "sync:staging-plan-limits": "node scripts/sync-staging-plan-limits.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.9",

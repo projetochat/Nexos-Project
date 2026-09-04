@@ -192,6 +192,58 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
+  it("enqueues group sync when the created Evolution instance is already connected", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.create.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.CONNECTED,
+    });
+    const evolution = {
+      createInstance: vi.fn().mockResolvedValue({ instance: { status: "open" } }),
+      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
+      deleteInstance: vi.fn(),
+    };
+    const groupsSync = { enqueue: vi.fn() };
+
+    await new MessagingConnectionsService(
+      prisma as never,
+      evolution as never,
+      undefined,
+      undefined,
+      groupsSync as never,
+    ).createEvolution({ name: "Suporte" }, current as never);
+
+    expect(groupsSync.enqueue).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+    });
+  });
+
+  it("enqueues group sync when a connection status changes to connected", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findUniqueOrThrow.mockResolvedValue(connection());
+    prisma.messagingConnection.findFirst.mockResolvedValue(null);
+    prisma.messagingConnection.update.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.CONNECTED,
+    });
+    const evolution = { setWebhook: vi.fn().mockResolvedValue({ ok: true }) };
+    const groupsSync = { enqueue: vi.fn() };
+
+    await new MessagingConnectionsService(
+      prisma as never,
+      evolution as never,
+      undefined,
+      undefined,
+      groupsSync as never,
+    ).updateConnectionStatus("connection-a", MessagingConnectionStatus.CONNECTED);
+
+    expect(groupsSync.enqueue).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+    });
+  });
+
   it("ignores raw instanceName and always generates a unique technical instance", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.create.mockResolvedValue(connection());

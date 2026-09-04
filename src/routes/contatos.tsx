@@ -2138,6 +2138,7 @@ function AgendaImportPreviewModal({
   };
 
   const primaryAction = requiresConnectionSelection && !hasPreviewLoaded;
+  const canShowPreviewControls = previewLoaded && !loading;
 
   return (
     <Modal
@@ -2243,13 +2244,15 @@ function AgendaImportPreviewModal({
           </div>
         )}
 
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-          placeholder="Buscar por nome ou WhatsApp..."
-        />
+        {canShowPreviewControls && (
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar por nome ou WhatsApp..."
+          />
+        )}
 
-        {activeTab === "available" ? (
+        {canShowPreviewControls && (activeTab === "available" ? (
           <div className="space-y-3">
             <div className="rounded-lg border border-border bg-surface-1 p-3 text-sm">
               <Field label="Tipo">
@@ -2312,7 +2315,7 @@ function AgendaImportPreviewModal({
               </Button>
             </div>
           </div>
-        )}
+        ))}
 
         <div
           onScroll={handleListScroll}
@@ -3927,9 +3930,9 @@ function TagMultiSelect({
       </button>
       {open && (
         <div
-          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(38rem,calc(100vh-8rem))] w-[min(42rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl sm:max-h-[min(20rem,calc(100vh-8rem))]`}
+          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(32.5rem,calc(100vh-8rem))] w-[min(42rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl sm:max-h-[min(17.5rem,calc(100vh-8rem))]`}
         >
-          <div className="grid max-h-[33rem] min-h-0 grid-cols-1 gap-1 overflow-y-auto overflow-x-hidden p-1 sm:max-h-[17rem] sm:grid-cols-2">
+          <div className="grid max-h-[27.5rem] min-h-0 grid-cols-1 gap-1 overflow-y-auto overflow-x-hidden p-1 sm:max-h-[14.25rem] sm:grid-cols-2">
             {tags.map((tag) => {
               const active = selectedIds.includes(tag.id);
               return (

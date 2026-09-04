@@ -1817,9 +1817,10 @@ async function readError(response: Response) {
       error?: string;
       details?: unknown;
     };
+    const codeMessage = nexosMessageFromCode(data.code);
     const message = Array.isArray(data.message)
       ? data.message.join(", ")
-      : data.message || data.error || authMessageFromStatus(response.status, data.code);
+      : data.message || codeMessage || data.error || authMessageFromStatus(response.status, data.code);
     if (message) return new NexosApiError(message, response.status, data.code, data.details);
     const mapped = authMessageFromStatus(response.status, data.code);
     if (mapped) return new NexosApiError(mapped, response.status, data.code, data.details);
@@ -1842,6 +1843,16 @@ async function authErrorFromResponse(response: Response) {
       authMessageFromStatus(response.status) ?? "Ocorreu um erro interno ao autenticar.",
     );
   }
+}
+
+function nexosMessageFromCode(code?: string) {
+  if (code === "PLAN_LIMIT_CONNECTIONS_REACHED") {
+    return "Limite de instâncias atingido para o plano atual.";
+  }
+  if (code === "PLAN_FEATURE_NOT_AVAILABLE") {
+    return "Recurso não disponível para o plano atual.";
+  }
+  return null;
 }
 
 function authMessageFromStatus(status: number, code?: string) {

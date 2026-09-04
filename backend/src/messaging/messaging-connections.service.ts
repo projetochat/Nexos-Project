@@ -13,6 +13,7 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
+import { GroupsSyncService } from "../conversations/groups-sync.service";
 import { phoneFromRemoteIdentity } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
 import {
@@ -37,6 +38,7 @@ export class MessagingConnectionsService {
     @Inject(PlanEntitlementService)
     private readonly entitlements?: PlanEntitlementService,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
+    @Optional() @Inject(GroupsSyncService) private readonly groupsSync?: GroupsSyncService,
   ) {}
 
   async list(current: AuthenticatedUser) {
@@ -126,6 +128,7 @@ export class MessagingConnectionsService {
       status: connection.status.toLowerCase(),
       updatedAt: connection.updatedAt,
     });
+    this.enqueueGroupSyncForConnectedConnection(connection);
     return {
       ...this.serialize(connection),
       qrCodeBase64: evolutionQrBase64(response),
@@ -167,6 +170,7 @@ export class MessagingConnectionsService {
         updatedAt: updated.updatedAt,
       });
     }
+    this.enqueueGroupSyncForConnectedConnection(updated);
     return this.serialize(updated, { existsInProvider: true, webhookUrl: instance.Webhook?.url });
   }
 
@@ -463,7 +467,17 @@ export class MessagingConnectionsService {
         updatedAt: updated.updatedAt,
       });
     }
+    this.enqueueGroupSyncForConnectedConnection(updated);
     return updated;
+  }
+
+  private enqueueGroupSyncForConnectedConnection(connection: {
+    id: string;
+    tenantId: string;
+    status: MessagingConnectionStatus;
+  }) {
+    if (connection.status !== MessagingConnectionStatus.CONNECTED) return;
+    this.groupsSync?.enqueue({ tenantId: connection.tenantId, connectionId: connection.id });
   }
 
   private async ensureWebhookConfiguredSafely(instanceName: string, connectionId: string) {
