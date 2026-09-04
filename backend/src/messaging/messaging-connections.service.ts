@@ -10,6 +10,8 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import {
   ConversationStatus,
+  MessageDirection,
+  MessageType,
   MessagingConnectionStatus,
   MessagingProviderType,
   Prisma,
@@ -376,34 +378,59 @@ export class MessagingConnectionsService {
     options: RemoveConnectionOptions,
     removedAt = new Date(),
   ) {
-    const [history, chat] = await Promise.all([
-      options.removeConversationHistory
-        ? this.prisma.conversation.updateMany({
-            where: {
-              tenantId: connection.tenantId,
-              connectionId: connection.id,
-              status: ConversationStatus.FECHADA,
-              archivedAt: null,
-            },
-            data: { archivedAt: removedAt },
-          })
-        : Promise.resolve({ count: 0 }),
-      options.removeChatConversations
-        ? this.prisma.conversation.updateMany({
-            where: {
-              tenantId: connection.tenantId,
-              connectionId: connection.id,
-              status: { not: ConversationStatus.FECHADA },
-              archivedAt: null,
-              inboxArchivedAt: null,
-            },
-            data: { inboxArchivedAt: removedAt },
-          })
-        : Promise.resolve({ count: 0 }),
-    ]);
+    if (options.removeConversationHistory) {
+      const removed = await this.prisma.conversation.updateMany({
+        where: {
+          tenantId: connection.tenantId,
+          connectionId: connection.id,
+          archivedAt: null,
+        },
+        data: { archivedAt: removedAt, inboxArchivedAt: removedAt },
+      });
+      return {
+        removedConversationHistoryCount: removed.count,
+        closedChatConversationCount: 0,
+      };
+    }
+
+    const activeConversations = await this.prisma.conversation.findMany({
+      where: {
+        tenantId: connection.tenantId,
+        connectionId: connection.id,
+        status: { not: ConversationStatus.FECHADA },
+        archivedAt: null,
+      },
+      select: { id: true },
+    });
+    const closed = await this.prisma.conversation.updateMany({
+      where: {
+        tenantId: connection.tenantId,
+        connectionId: connection.id,
+        status: { not: ConversationStatus.FECHADA },
+        archivedAt: null,
+      },
+      data: {
+        status: ConversationStatus.FECHADA,
+        closedAt: removedAt,
+        inboxArchivedAt: null,
+      },
+    });
+    if (activeConversations.length) {
+      await this.prisma.message.createMany({
+        data: activeConversations.map((conversation) => ({
+          tenantId: connection.tenantId,
+          conversationId: conversation.id,
+          connectionId: connection.id,
+          direction: MessageDirection.SYSTEM,
+          type: MessageType.SYSTEM,
+          content: INSTANCE_REMOVAL_CLOSE_MESSAGE,
+          createdAt: removedAt,
+        })),
+      });
+    }
     return {
-      removedConversationHistoryCount: history.count,
-      removedChatConversationCount: chat.count,
+      removedConversationHistoryCount: 0,
+      closedChatConversationCount: closed.count,
     };
   }
 
@@ -655,11 +682,11 @@ export class MessagingConnectionsService {
   }
 }
 
+const INSTANCE_REMOVAL_CLOSE_MESSAGE = "Conversa encerrada via remoção da instancia";
 const CONNECTED_GROUP_LIGHT_SYNC_DELAY_MS = 10 * 1000;
 
 type RemoveConnectionOptions = {
   removeConversationHistory?: boolean;
-  removeChatConversations?: boolean;
 };
 
 type ConnectionWithArchive = Prisma.MessagingConnectionGetPayload<object> & {

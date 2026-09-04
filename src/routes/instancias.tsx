@@ -3,15 +3,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  CheckCircle2,
   Instagram,
   MessageCircle,
   Pencil,
-  Plug,
   Plus,
+  Power,
   QrCode,
   RefreshCw,
   Trash2,
+  Wifi,
   WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -32,7 +32,7 @@ const STATUS_TONE: Record<
   connected: "success",
   connecting: "warning",
   error: "destructive",
-  disconnected: "default",
+  disconnected: "destructive",
   removed: "default",
 };
 
@@ -146,6 +146,7 @@ function Page() {
       qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
       qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
       qc.invalidateQueries({ queryKey: ["operations", "history"] });
+      qc.invalidateQueries({ queryKey: ["nexos", "groups"] });
       setRemoving(null);
       toast.success("Conexao removida");
     },
@@ -156,11 +157,11 @@ function Page() {
     <AppShell>
       <PageContainer>
         <SectionHeader
-          title="Instancias"
-          subtitle={`${num(visibleItems.length)} instancias cadastradas.`}
+          title="Instâncias"
+          subtitle={`${num(visibleItems.length)} instâncias cadastradas.`}
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>
-              <Plus className="h-3.5 w-3.5" /> Nova instancia
+              <Plus className="h-3.5 w-3.5" /> Nova instância
             </Button>
           }
         />
@@ -169,7 +170,7 @@ function Page() {
           <Card className="p-8 text-center text-sm text-muted-foreground">Carregando...</Card>
         ) : visibleItems.length === 0 ? (
           <Card className="p-12 text-center text-sm text-muted-foreground">
-            Nenhuma instancia cadastrada.
+            Nenhuma instância cadastrada.
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -207,16 +208,6 @@ function Page() {
                     </Badge>
                   </div>
                   <div className="mt-4 space-y-2 border-t border-border pt-3 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Provedor</span>
-                      <span>{providerLabel(connection.providerType)}</span>
-                    </div>
-                    {connection.ownerPhone && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">WhatsApp</span>
-                        <span>{maskBrazilPhone(connection.ownerPhone)}</span>
-                      </div>
-                    )}
                     <div className="flex justify-between gap-3">
                       <span className="text-muted-foreground">Referencia</span>
                       <span className="truncate text-right">
@@ -225,7 +216,7 @@ function Page() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Criada em</span>
-                      <span>{new Date(connection.createdAt).toLocaleDateString("pt-BR")}</span>
+                      <span>{formatCreatedAt(connection.createdAt)}</span>
                     </div>
                     {connection.provider?.reason && (
                       <div className="flex justify-between gap-3 text-destructive">
@@ -244,39 +235,40 @@ function Page() {
                       </div>
                     )}
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => qrCode.mutate(connection)}
-                      disabled={
-                        connection.providerType !== "evolution" || connection.status === "connected"
-                      }
-                    >
-                      {connection.status === "connected" ? (
-                        <>
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Conectada
-                        </>
-                      ) : (
-                        <>
-                          <QrCode className="h-3.5 w-3.5" /> QR
-                        </>
-                      )}
-                    </Button>
+                  <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    {connection.status !== "connected" && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => qrCode.mutate(connection)}
+                        disabled={connection.providerType !== "evolution"}
+                        title="QR"
+                        aria-label="QR"
+                        className="hover:!bg-foreground hover:!text-background"
+                      >
+                        <QrCode className="h-3.5 w-3.5" /> QR
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => refresh.mutate(connection.id)}
+                      title="Status"
+                      aria-label="Status"
+                      className="group"
                     >
-                      <RefreshCw className="h-3.5 w-3.5" /> Status
+                      <RefreshCw className="h-3.5 w-3.5 transition-transform duration-500 group-hover:rotate-[720deg]" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="hover:!bg-destructive hover:!text-destructive-foreground"
                       onClick={() => logout.mutate(connection.id)}
                       disabled={!canDisconnect}
+                      title="Desconectar"
+                      aria-label="Desconectar"
                     >
-                      <WifiOff className="h-3.5 w-3.5" /> Desconectar
+                      <Power className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -291,6 +283,7 @@ function Page() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="text-destructive hover:text-destructive"
                       onClick={() => setRemoving(connection)}
                       disabled={remove.isPending}
                       title="Remover"
@@ -358,7 +351,7 @@ function ConnectionForm({
     <Modal
       open={open}
       onClose={onClose}
-      title="Nova instancia WhatsApp"
+      title="Nova instância WhatsApp"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -390,7 +383,6 @@ function ConnectionForm({
 
 type RemoveConnectionOptions = {
   removeConversationHistory: boolean;
-  removeChatConversations: boolean;
 };
 
 type ConnectionSettingsFormData = {
@@ -452,7 +444,7 @@ function ConnectionSettingsModal({
     <Modal
       open={!!connection}
       onClose={onClose}
-      title="Editar instancia"
+      title="Editar instância"
       size="lg"
       footer={
         <>
@@ -616,12 +608,10 @@ function RemoveConnectionModal({
 }) {
   const [confirmation, setConfirmation] = React.useState("");
   const [removeConversationHistory, setRemoveConversationHistory] = React.useState(false);
-  const [removeChatConversations, setRemoveChatConversations] = React.useState(false);
   React.useEffect(() => {
     if (!connection) {
       setConfirmation("");
       setRemoveConversationHistory(false);
-      setRemoveChatConversations(false);
     }
   }, [connection]);
   const canConfirm = confirmation.trim().toUpperCase() === "REMOVER";
@@ -640,7 +630,7 @@ function RemoveConnectionModal({
             size="sm"
             onClick={() =>
               connection &&
-              onConfirm(connection, { removeConversationHistory, removeChatConversations })
+              onConfirm(connection, { removeConversationHistory })
             }
             disabled={busy || !canConfirm}
           >
@@ -653,32 +643,20 @@ function RemoveConnectionModal({
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           <p className="font-medium">{connection?.name}</p>
           <p className="mt-1">
-            A conexao sera indisponibilizada para novos envios e campanhas. Selecione abaixo
-            o que tambem deve ser removido das telas do sistema.
+            A conexao sera indisponibilizada para novos envios e campanhas. Se o historico nao
+            for removido, as conversas ativas dessa instancia serao encerradas e mantidas no
+            historico.
           </p>
         </div>
         <div className="space-y-2">
-          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-xs italic">
             <input
               type="checkbox"
               checked={removeConversationHistory}
               onChange={(event) => setRemoveConversationHistory(event.target.checked)}
               className="mt-0.5 h-4 w-4 accent-primary"
             />
-            <span>
-              <strong>Remover histórico de conversas</strong>
-            </span>
-          </label>
-          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
-            <input
-              type="checkbox"
-              checked={removeChatConversations}
-              onChange={(event) => setRemoveChatConversations(event.target.checked)}
-              className="mt-0.5 h-4 w-4 accent-primary"
-            />
-            <span>
-              <strong>Remover conversas do chat</strong>
-            </span>
+            <span className="font-semibold">Remover histórico de conversas</span>
           </label>
         </div>
         <Field label='Digite "REMOVER" para confirmar'>
@@ -694,11 +672,11 @@ function RemoveConnectionModal({
 }
 
 function statusIcon(status: ApiMessagingConnection["status"]) {
-  if (status === "connected") return <CheckCircle2 className="h-3 w-3" />;
+  if (status === "connected") return <Wifi className="h-3 w-3" />;
   if (status === "connecting") return <QrCode className="h-3 w-3" />;
   if (status === "error") return <AlertTriangle className="h-3 w-3" />;
   if (status === "removed") return <Trash2 className="h-3 w-3" />;
-  return <Plug className="h-3 w-3" />;
+  return <WifiOff className="h-3 w-3" />;
 }
 
 function statusLabel(status: ApiMessagingConnection["status"]) {
@@ -710,6 +688,13 @@ function statusLabel(status: ApiMessagingConnection["status"]) {
     removed: "Removida",
   } as const;
   return labels[status];
+}
+
+function formatCreatedAt(value: string) {
+  const date = new Date(value);
+  const day = date.toLocaleDateString("pt-BR");
+  const time = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return `${day} ${time}`;
 }
 
 function providerLabel(provider: ApiMessagingConnection["providerType"]) {

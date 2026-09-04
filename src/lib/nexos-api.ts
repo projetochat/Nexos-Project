@@ -273,6 +273,7 @@ export type ApiWhatsappGroup = {
   name: string;
   externalChatId: string | null;
   imageUrl: string | null;
+  description: string | null;
   createdAt: string;
   participantsCount: number;
   connection: {
@@ -1068,6 +1069,36 @@ export const groupsApi = {
   detail: (id: string) => apiRequest<ApiWhatsappGroup>(`/groups/${id}`),
   create: (data: { name: string; connectionId: string; participantContactIds: string[] }) =>
     apiRequest<ApiWhatsappGroup>("/groups", { method: "POST", body: JSON.stringify(data) }),
+  updateName: (id: string, data: { name: string }) =>
+    apiRequest<ApiWhatsappGroup>(`/groups/${id}/name`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  updateDescription: (id: string, data: { description: string }) =>
+    apiRequest<ApiWhatsappGroup>(`/groups/${id}/description`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  updateParticipants: (
+    id: string,
+    data:
+      | { action: "add"; participantContactIds: string[] }
+      | { action: "remove"; participantIds: string[] },
+  ) =>
+    apiRequest<ApiWhatsappGroup>(`/groups/${id}/participants`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateAdmins: (
+    id: string,
+    data: { action: "promote" | "demote"; participantIds: string[] },
+  ) =>
+    apiRequest<ApiWhatsappGroup>(`/groups/${id}/admins`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  leave: (id: string) =>
+    apiRequest<{ id: string; left: boolean }>(`/groups/${id}/leave`, { method: "POST" }),
   sync: (data: { connectionId?: string } = {}) =>
     apiRequest<{
       synced: number;
@@ -1351,14 +1382,14 @@ export const connectionsApi = {
     }),
   remove: (
     id: string,
-    options: { removeConversationHistory?: boolean; removeChatConversations?: boolean } = {},
+    options: { removeConversationHistory?: boolean } = {},
   ) =>
     apiRequest<{
       id: string;
       removed: boolean;
       providerInstanceExisted: boolean;
       removedConversationHistoryCount?: number;
-      removedChatConversationCount?: number;
+      closedChatConversationCount?: number;
     }>(`/messaging/connections/${id}`, {
       method: "DELETE",
       body: JSON.stringify(options),

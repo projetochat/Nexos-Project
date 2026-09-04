@@ -197,6 +197,49 @@ export class EvolutionClient {
     return { groupJid: extractGroupJid(response) };
   }
 
+  updateGroupSubject(input: { instanceName: string; groupJid: string; subject: string }) {
+    return this.request<unknown>(
+      `/group/updateGroupSubject/${input.instanceName}?groupJid=${encodeURIComponent(input.groupJid)}`,
+      {
+        method: "POST",
+        body: { subject: input.subject, groupJid: input.groupJid },
+      },
+    );
+  }
+
+  updateGroupDescription(input: { instanceName: string; groupJid: string; description: string }) {
+    return this.request<unknown>(
+      `/group/updateGroupDescription/${input.instanceName}?groupJid=${encodeURIComponent(input.groupJid)}`,
+      {
+        method: "POST",
+        body: { description: input.description, groupJid: input.groupJid },
+      },
+    );
+  }
+
+  updateGroupParticipants(input: {
+    instanceName: string;
+    groupJid: string;
+    action: "add" | "remove" | "promote" | "demote";
+    participants: string[];
+  }) {
+    return this.request<unknown>(`/group/updateParticipant/${input.instanceName}`, {
+      method: "POST",
+      body: {
+        groupJid: input.groupJid,
+        action: input.action,
+        participants: input.participants,
+      },
+    });
+  }
+
+  leaveGroup(input: { instanceName: string; groupJid: string }) {
+    return this.request<unknown>(`/group/leaveGroup/${input.instanceName}`, {
+      method: "DELETE",
+      body: { groupJid: input.groupJid },
+    });
+  }
+
   async fetchGroups(input: { instanceName: string; getParticipants?: boolean }) {
     const getParticipants = input.getParticipants ?? true;
     const response = await this.request<unknown>(

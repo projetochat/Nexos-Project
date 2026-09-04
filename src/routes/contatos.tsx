@@ -528,7 +528,9 @@ function ContatosPage() {
   const toggleContactSelection = (contactId: string) => {
     if (allFilteredSelected) {
       setAllFilteredSelected(false);
-      setSelectedIds(contacts.filter((contact) => contact.id !== contactId).map((contact) => contact.id));
+      setSelectedIds(
+        contacts.filter((contact) => contact.id !== contactId).map((contact) => contact.id),
+      );
       return;
     }
     setSelectedIds((current) =>
@@ -1040,14 +1042,17 @@ function ContatosPage() {
           },
     );
 
-
   const applyBulkAction = async () => {
     if (!selectedBulkCount || !bulkMode) return;
     const target = allFilteredSelected
       ? { allFiltered: true, filters: currentContactFilters }
       : { contactIds: selectedIds };
     if (bulkMode === "delete") {
-      if (!window.confirm(`Deseja realmente excluir ${formatIntegerPtBr(selectedBulkCount)} contato(s)?`))
+      if (
+        !window.confirm(
+          `Deseja realmente excluir ${formatIntegerPtBr(selectedBulkCount)} contato(s)?`,
+        )
+      )
         return;
       await crmApi.bulkUpdateContacts({ ...target, delete: true });
     } else if (bulkMode === "tags") {
@@ -1222,7 +1227,9 @@ function ContatosPage() {
                   checked={allFilteredSelected}
                   onChange={(event) => {
                     setAllFilteredSelected(event.target.checked);
-                    setSelectedIds(event.target.checked ? contacts.map((contact) => contact.id) : []);
+                    setSelectedIds(
+                      event.target.checked ? contacts.map((contact) => contact.id) : [],
+                    );
                   }}
                 />
                 <span className="font-medium">Marcar todos os registros</span>
@@ -1390,7 +1397,9 @@ function ContatosPage() {
                     checked={allFilteredSelected}
                     onChange={(event) => {
                       setAllFilteredSelected(event.target.checked);
-                      setSelectedIds(event.target.checked ? contacts.map((contact) => contact.id) : []);
+                      setSelectedIds(
+                        event.target.checked ? contacts.map((contact) => contact.id) : [],
+                      );
                     }}
                   />
                   <span className="min-w-0 flex-1 truncate text-xs font-medium">
@@ -1524,163 +1533,40 @@ function ContatosPage() {
           />
           <Card className="overflow-visible p-4 md:overflow-hidden md:rounded-lg md:p-0">
             <div className="space-y-3 md:hidden">
-            {loading && (
-              <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
-                Carregando...
-              </div>
-            )}
-            {!loading &&
-              contacts.map((contact) => (
-                <div
-                  key={contact.id}
-                  data-contact-letter-anchor={contactAnchorLetters.get(contact.id) ?? undefined}
-                  className="rounded-lg border border-border bg-surface-1 p-3 scroll-mt-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <input
-                        type="checkbox"
-                        className="h-5 w-5 shrink-0"
-                        checked={allFilteredSelected || selectedIds.includes(contact.id)}
-                        onChange={() => toggleContactSelection(contact.id)}
-                        aria-label={`Selecionar ${contact.nome}`}
-                      />
-                      <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={32} />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">{contact.nome}</p>
-                        <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-                          {formatPhoneWithDdi(contact.telefone)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Abrir conversa"
-                        onClick={() => void openConversation(contact)}
-                      >
-                        <MessageSquareMore className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Editar"
-                        onClick={() => setEditing(contact)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        title="Excluir"
-                        onClick={() => setDeleting(contact)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            {!loading && contacts.length === 0 && (
-              <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
-                Nenhum contato encontrado.
-              </div>
-            )}
-          </div>
-          <table className="hidden w-full table-fixed overflow-hidden rounded-lg text-sm md:table">
-            <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
-              <tr>
-                <th
-                  className="w-10 rounded-tl-lg px-3 py-3 font-medium sm:px-4"
-                  style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
-                >
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4"
-                    style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
-                    checked={allVisibleSelected}
-                    onChange={toggleVisibleSelection}
-                    aria-label="Selecionar contatos visíveis"
-                  />
-                </th>
-                <th className="w-[35%] px-3 py-3 font-medium sm:px-4">Contato</th>
-                <th className="w-[16%] px-3 py-3 font-medium sm:px-4">WhatsApp</th>
-                <th className="w-[21%] px-4 py-3 font-medium">Empresa</th>
-                <th className="w-[15%] px-4 py-3 font-medium">Departamento</th>
-                <th className="w-40 rounded-tr-lg px-3 py-3 text-center font-medium sm:px-4">
-                  Ações
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
               {loading && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                    Carregando...
-                  </td>
-                </tr>
+                <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+                  Carregando...
+                </div>
               )}
               {!loading &&
                 contacts.map((contact) => (
-                  <tr
+                  <div
                     key={contact.id}
                     data-contact-letter-anchor={contactAnchorLetters.get(contact.id) ?? undefined}
-                    className="transition hover:bg-surface-1 scroll-mt-4"
+                    className="rounded-lg border border-border bg-surface-1 p-3 scroll-mt-4"
                   >
-                    <td
-                      className="relative px-3 py-3 sm:px-4"
-                      style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
-                    >
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
-                        checked={allFilteredSelected || selectedIds.includes(contact.id)}
-                        onChange={() => toggleContactSelection(contact.id)}
-                        aria-label={`Selecionar ${contact.nome}`}
-                      />
-                    </td>
-                    <td className="px-3 py-3 sm:px-4">
-                      <div className="flex items-center gap-3">
-                        <span className="hidden sm:inline-flex">
-                          <Avatar
-                            name={contact.nome}
-                            src={contact.avatar_url ?? undefined}
-                            size={30}
-                          />
-                        </span>
-                        <p className="truncate font-medium">{contact.nome}</p>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <input
+                          type="checkbox"
+                          className="h-5 w-5 shrink-0"
+                          checked={allFilteredSelected || selectedIds.includes(contact.id)}
+                          onChange={() => toggleContactSelection(contact.id)}
+                          aria-label={`Selecionar ${contact.nome}`}
+                        />
+                        <Avatar
+                          name={contact.nome}
+                          src={contact.avatar_url ?? undefined}
+                          size={32}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">{contact.nome}</p>
+                          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                            {formatPhoneWithDdi(contact.telefone)}
+                          </p>
+                        </div>
                       </div>
-                    </td>
-                    <td className="px-3 py-3 font-mono text-xs sm:px-4">
-                      {formatPhoneWithDdi(contact.telefone)}
-                    </td>
-                    <td className="px-4 py-3">
-                      {contact.customer ? (
-                        <span
-                          className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                          style={{
-                            backgroundColor: `${contact.customer.cor ?? "#3B82F6"}1f`,
-                            borderColor: `${contact.customer.cor ?? "#3B82F6"}66`,
-                            color: contact.customer.cor ?? "#3B82F6",
-                          }}
-                        >
-                          <Link2 className="h-3 w-3 shrink-0" />
-                          <span className="truncate">{contact.customer.nome}</span>
-                        </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Não vinculado</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-xs">
-                      {contact.contactDepartment?.nome ?? contact.departamento ?? (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 sm:px-4">
-                      <div className="flex justify-center gap-1">
+                      <div className="flex shrink-0 items-center gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -1707,63 +1593,199 @@ function ContatosPage() {
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
-                    </td>
-                  </tr>
+                    </div>
+                  </div>
                 ))}
               {!loading && contacts.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                    Nenhum contato encontrado.
-                  </td>
-                </tr>
+                <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+                  Nenhum contato encontrado.
+                </div>
               )}
-            </tbody>
-          </table>
-          <div data-contacts-list-footer className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0 leading-tight sm:leading-normal">
-                <span className="block sm:inline">Mostrando</span>
-                <span className="block sm:inline">
-                  {" "}
-                  {formatIntegerPtBr(contacts.length)} de {formatIntegerPtBr(total)}
+            </div>
+            <table className="hidden w-full table-fixed overflow-hidden rounded-lg text-sm md:table">
+              <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
+                <tr>
+                  <th
+                    className="w-10 rounded-tl-lg px-3 py-3 font-medium sm:px-4"
+                    style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+                      checked={allVisibleSelected}
+                      onChange={toggleVisibleSelection}
+                      aria-label="Selecionar contatos visíveis"
+                    />
+                  </th>
+                  <th className="w-[35%] px-3 py-3 font-medium sm:px-4">Contato</th>
+                  <th className="w-[16%] px-3 py-3 font-medium sm:px-4">WhatsApp</th>
+                  <th className="w-[21%] px-4 py-3 font-medium">Empresa</th>
+                  <th className="w-[15%] px-4 py-3 font-medium">Departamento</th>
+                  <th className="w-40 rounded-tr-lg px-3 py-3 text-center font-medium sm:px-4">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {loading && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-12 text-center text-sm text-muted-foreground"
+                    >
+                      Carregando...
+                    </td>
+                  </tr>
+                )}
+                {!loading &&
+                  contacts.map((contact) => (
+                    <tr
+                      key={contact.id}
+                      data-contact-letter-anchor={contactAnchorLetters.get(contact.id) ?? undefined}
+                      className="transition hover:bg-surface-1 scroll-mt-4"
+                    >
+                      <td
+                        className="relative px-3 py-3 sm:px-4"
+                        style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+                          checked={allFilteredSelected || selectedIds.includes(contact.id)}
+                          onChange={() => toggleContactSelection(contact.id)}
+                          aria-label={`Selecionar ${contact.nome}`}
+                        />
+                      </td>
+                      <td className="px-3 py-3 sm:px-4">
+                        <div className="flex items-center gap-3">
+                          <span className="hidden sm:inline-flex">
+                            <Avatar
+                              name={contact.nome}
+                              src={contact.avatar_url ?? undefined}
+                              size={30}
+                            />
+                          </span>
+                          <p className="truncate font-medium">{contact.nome}</p>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs sm:px-4">
+                        {formatPhoneWithDdi(contact.telefone)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {contact.customer ? (
+                          <span
+                            className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                            style={{
+                              backgroundColor: `${contact.customer.cor ?? "#3B82F6"}1f`,
+                              borderColor: `${contact.customer.cor ?? "#3B82F6"}66`,
+                              color: contact.customer.cor ?? "#3B82F6",
+                            }}
+                          >
+                            <Link2 className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{contact.customer.nome}</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Não vinculado</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs">
+                        {contact.contactDepartment?.nome ?? contact.departamento ?? (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 sm:px-4">
+                        <div className="flex justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Abrir conversa"
+                            onClick={() => void openConversation(contact)}
+                          >
+                            <MessageSquareMore className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Editar"
+                            onClick={() => setEditing(contact)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            title="Excluir"
+                            onClick={() => setDeleting(contact)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                {!loading && contacts.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-12 text-center text-sm text-muted-foreground"
+                    >
+                      Nenhum contato encontrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <div
+              data-contacts-list-footer
+              className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 leading-tight sm:leading-normal">
+                  <span className="block sm:inline">Mostrando</span>
+                  <span className="block sm:inline">
+                    {" "}
+                    {formatIntegerPtBr(contacts.length)} de {formatIntegerPtBr(total)}
+                  </span>
                 </span>
-              </span>
-              <Select
-                value={String(pageSize)}
-                onChange={(event) => setPageSize(Number(event.target.value))}
-                className="h-8 w-20 text-xs sm:w-24"
-              >
-                {PAGE_SIZE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Select>
+                <Select
+                  value={String(pageSize)}
+                  onChange={(event) => setPageSize(Number(event.target.value))}
+                  className="h-8 w-20 text-xs sm:w-24"
+                >
+                  {PAGE_SIZE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  disabled={pageSafe === 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <span className="font-mono">
+                  {pageSafe} / {totalPages}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  disabled={pageSafe === totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
-                disabled={pageSafe === 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </Button>
-              <span className="font-mono">
-                {pageSafe} / {totalPages}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
-                disabled={pageSafe === totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
           </Card>
         </div>
 
@@ -2002,7 +2024,9 @@ function AgendaImportPreviewModal({
 }) {
   const [query, setQuery] = React.useState("");
   const [activeTab, setActiveTab] = React.useState<"available" | "ignored">("available");
-  const [availableStatusFilter, setAvailableStatusFilter] = React.useState<"all" | "new" | "registered">("all");
+  const [availableStatusFilter, setAvailableStatusFilter] = React.useState<
+    "all" | "new" | "registered"
+  >("all");
   const [ignoredReasonFilter, setIgnoredReasonFilter] = React.useState("all");
   const [listScrolling, setListScrolling] = React.useState(false);
   const listScrollTimerRef = React.useRef<number | null>(null);
@@ -2048,7 +2072,8 @@ function AgendaImportPreviewModal({
     [allIgnoredFilterOption, ignoredFilterOptions],
   );
   const selectedIgnoredFilter =
-    visibleIgnoredFilterOptions.find((option) => option.key === ignoredReasonFilter) ?? allIgnoredFilterOption;
+    visibleIgnoredFilterOptions.find((option) => option.key === ignoredReasonFilter) ??
+    allIgnoredFilterOption;
   const alreadyRegisteredItems = React.useMemo(
     () =>
       ignoredItems
@@ -2104,7 +2129,8 @@ function AgendaImportPreviewModal({
         availableStatusFilter === "all" ||
         (availableStatusFilter === "registered" ? item.registered : !item.registered);
       const matchesSearch =
-        !search || normalizeHeader(`${item.name} ${item.phone} ${item.normalizedPhone}`).includes(search);
+        !search ||
+        normalizeHeader(`${item.name} ${item.phone} ${item.normalizedPhone}`).includes(search);
       return matchesStatus && matchesSearch;
     });
   }, [availableItems, availableStatusFilter, query]);
@@ -2174,9 +2200,7 @@ function AgendaImportPreviewModal({
               size="sm"
               onClick={() => void (primaryAction ? onLoadPreview(connectionId) : onConfirm())}
               disabled={
-                busy ||
-                loading ||
-                (primaryAction ? !connectionId : agendaImportCount === 0)
+                busy || loading || (primaryAction ? !connectionId : agendaImportCount === 0)
               }
             >
               {busy
@@ -2209,11 +2233,17 @@ function AgendaImportPreviewModal({
 
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
-            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">Contatos do Telefone</p>
-            <p className="text-base font-semibold text-foreground">{formatIntegerPtBr(phoneContactsCount)}</p>
+            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">
+              Contatos do Telefone
+            </p>
+            <p className="text-base font-semibold text-foreground">
+              {formatIntegerPtBr(phoneContactsCount)}
+            </p>
           </div>
           <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
-            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">Já cadastrados</p>
+            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">
+              Já cadastrados
+            </p>
             <p className="text-base font-semibold text-foreground">
               {formatIntegerPtBr(alreadyRegisteredCount)}
             </p>
@@ -2267,70 +2297,75 @@ function AgendaImportPreviewModal({
           />
         )}
 
-        {canShowPreviewControls && (activeTab === "available" ? (
-          <div className="space-y-3">
-            <div className="rounded-lg border border-border bg-surface-1 p-3 text-sm">
+        {canShowPreviewControls &&
+          (activeTab === "available" ? (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-border bg-surface-1 p-3 text-sm">
+                <Field label="Tipo">
+                  <Select
+                    value={availableStatusFilter}
+                    onChange={(event) =>
+                      setAvailableStatusFilter(event.target.value as "all" | "new" | "registered")
+                    }
+                    disabled={loading || busy}
+                  >
+                    <option value="all">Todos ({formatIntegerPtBr(availableItems.length)})</option>
+                    <option value="new">
+                      Contatos não cadastrados ({formatIntegerPtBr(items.length)})
+                    </option>
+                    <option value="registered">
+                      Cadastrados ({formatIntegerPtBr(alreadyRegisteredCount)})
+                    </option>
+                  </Select>
+                </Field>
+              </div>
+              {availableStatusFilter !== "registered" && (
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    disabled={loading || busy || !items.length}
+                    onChange={toggleAll}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  Selecionar todos os contatos disponíveis
+                </label>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto]">
               <Field label="Tipo">
                 <Select
-                  value={availableStatusFilter}
-                  onChange={(event) =>
-                    setAvailableStatusFilter(event.target.value as "all" | "new" | "registered")
-                  }
+                  value={ignoredReasonFilter}
+                  onChange={(event) => setIgnoredReasonFilter(event.target.value)}
                   disabled={loading || busy}
                 >
-                  <option value="all">
-                    Todos ({formatIntegerPtBr(availableItems.length)})
-                  </option>
-                  <option value="new">
-                    Contatos não cadastrados ({formatIntegerPtBr(items.length)})
-                  </option>
-                  <option value="registered">
-                    Cadastrados ({formatIntegerPtBr(alreadyRegisteredCount)})
-                  </option>
+                  {visibleIgnoredFilterOptions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label} (
+                      {formatIntegerPtBr(
+                        option.key === "all"
+                          ? ignoredCount
+                          : (ignoredFilterCounts.get(option.key) ?? 0),
+                      )}
+                      )
+                    </option>
+                  ))}
                 </Select>
               </Field>
+              <div className="flex flex-wrap items-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => downloadAgendaIgnoredTemplate(ignoredExportItems)}
+                  disabled={loading || busy || ignoredExportItems.length === 0}
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" /> Gerar Excel
+                </Button>
+              </div>
             </div>
-            {availableStatusFilter !== "registered" && (
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  disabled={loading || busy || !items.length}
-                  onChange={toggleAll}
-                  className="h-4 w-4 accent-primary"
-                />
-                Selecionar todos os contatos disponíveis
-              </label>
-            )}
-          </div>
-        ) : (
-          <div className="grid gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto]">
-            <Field label="Tipo">
-              <Select
-                value={ignoredReasonFilter}
-                onChange={(event) => setIgnoredReasonFilter(event.target.value)}
-                disabled={loading || busy}
-              >
-                {visibleIgnoredFilterOptions.map((option) => (
-                  <option key={option.key} value={option.key}>
-                    {option.label} ({formatIntegerPtBr(option.key === "all" ? ignoredCount : (ignoredFilterCounts.get(option.key) ?? 0))})
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <div className="flex flex-wrap items-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => downloadAgendaIgnoredTemplate(ignoredExportItems)}
-                disabled={loading || busy || ignoredExportItems.length === 0}
-              >
-                <FileSpreadsheet className="h-3.5 w-3.5" /> Gerar Excel
-              </Button>
-            </div>
-          </div>
-        ))}
+          ))}
 
         <div
           onScroll={handleListScroll}
@@ -2664,7 +2699,7 @@ function ImportProgressModal({
   );
 }
 
-function ContactFormModal({
+export function ContactFormModal({
   open,
   onClose,
   onSubmit,
@@ -2894,7 +2929,7 @@ function ContactFormModal({
                         onChange={(e) => handlePhoneChange(e.target.value)}
                         onBlur={handlePhoneBlur}
                         placeholder={countryCode === "55" ? "(00) 00000-0000" : undefined}
-                        className="!h-9 !min-h-0 rounded-none border-0 !py-0 leading-normal shadow-none focus-visible:ring-0"
+                        className="!h-9 !min-h-0 rounded-none border-0 !py-0 !pl-0 leading-normal shadow-none focus-visible:ring-0"
                       />
                     </div>
                     {errors.telefone && (
@@ -4821,22 +4856,15 @@ function downloadImportTemplate(format: "csv" | "xls" | "xlsx") {
 function downloadAgendaIgnoredTemplate(items: ApiAgendaImportIgnoredContact[]) {
   const rows = [
     [...IMPORT_TEMPLATE_ROWS[0], "Motivo"],
-    ...items.map((item) => [
-      item.name,
-      item.phone,
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      item.reason,
-    ]),
+    ...items.map((item) => [item.name, item.phone, "", "", "", "", "", "", item.reason]),
   ];
   const worksheet = XLSX.utils.aoa_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "Contatos ignorados");
-  XLSX.writeFile(workbook, `contatos-ignorados-agenda-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  XLSX.writeFile(
+    workbook,
+    `contatos-ignorados-agenda-${new Date().toISOString().slice(0, 10)}.xlsx`,
+  );
 }
 
 function formatIntegerPtBr(value: number) {
@@ -5556,7 +5584,8 @@ function departmentPayload(data: DepartamentoFormData) {
   };
 }
 
-function contactPayload(data: {
+// eslint-disable-next-line react-refresh/only-export-components
+export function contactPayload(data: {
   nome: string;
   telefone: string;
   countryCode?: string;

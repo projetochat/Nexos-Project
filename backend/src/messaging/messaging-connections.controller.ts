@@ -85,12 +85,11 @@ export class MessagingConnectionsController {
   @RequirePermissions("connections.manage")
   remove(
     @Param("id") id: string,
-    @Body() dto: { removeConversationHistory?: boolean; removeChatConversations?: boolean } | undefined,
+    @Body() dto: { removeConversationHistory?: boolean } | undefined,
     @CurrentUser() current: AuthenticatedUser,
   ) {
     return this.connections.remove(id, current, {
       removeConversationHistory: dto?.removeConversationHistory === true,
-      removeChatConversations: dto?.removeChatConversations === true,
     });
   }
 }

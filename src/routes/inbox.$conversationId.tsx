@@ -51,6 +51,7 @@ import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { startTyping, stopTyping } from "@/lib/realtime/client";
+import { ContactFormModal, contactPayload } from "./contatos";
 
 export const Route = createFileRoute("/inbox/$conversationId")({ component: ConversationPage });
 
@@ -249,7 +250,7 @@ function ConversationPage() {
 
   return (
     <InboxLayout>
-      <div className="flex h-full min-h-0">
+      <div className="relative flex h-full min-h-0">
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-surface-1 px-5 py-3">
             <button
@@ -429,7 +430,9 @@ function ConversationPage() {
         </div>
 
         {conv.contact && panelOpen && (
-          <ContactPanel contactId={conv.contact.id} onClose={() => setPanelOpen(false)} />
+          <div className="absolute inset-y-0 right-0 z-20 flex max-w-full">
+            <ContactPanel contactId={conv.contact.id} onClose={() => setPanelOpen(false)} />
+          </div>
         )}
       </div>
 
@@ -1454,11 +1457,21 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
   const qc = useQueryClient();
   const tagsModal = useDisclosure();
 
-  const renameModal = useDisclosure();
+  const editModal = useDisclosure();
 
   const { data: contact } = useQuery({
     queryKey: ["nexos", "contacts", contactId],
     queryFn: () => crmApi.getContact(contactId),
+  });
+  const { data: customersPage } = useQuery({
+    queryKey: ["nexos", "customers", "contact-panel"],
+    queryFn: () => crmApi.listCustomers({ pageSize: 100 }).then((page) => page.items),
+    enabled: editModal.open,
+  });
+  const { data: contactOptions } = useQuery({
+    queryKey: ["nexos", "contacts", "options", "contact-panel"],
+    queryFn: crmApi.contactOptions,
+    enabled: editModal.open,
   });
   const customerId = contact?.customer_id ?? null;
   const customer = contact?.customer ?? null;
@@ -1505,7 +1518,7 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={renameModal.show}
+                onClick={editModal.show}
                 aria-label="Editar contato"
               >
                 <Pencil className="h-3 w-3" /> Editar
@@ -1647,197 +1660,54 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
         canManageCatalog={perms.pode_editar_etiquetas}
         onChanged={() => qc.invalidateQueries({ queryKey: ["nexos", "contacts", contactId] })}
       />
-      <RenameContactModal
-        open={renameModal.open}
-        onClose={renameModal.hide}
-        contactId={contactId}
-        initialName={contact?.nome ?? ""}
-        initialCustomerId={customerId}
-        initialEmail={contact?.email ?? ""}
-        initialDepartamento={contact?.departamento ?? ""}
-        initialNivel={
-          (contact?.nivel_gerencia as
-            | "Colaborador"
-            | "Supervisor"
-            | "Gerente"
-            | "Diretoria"
-            | null) ?? null
-        }
-        onSaved={() => {
-          qc.invalidateQueries({ queryKey: ["nexos", "contacts", contactId] });
-          qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["nexos", "contact_protocols", contactId] });
-          renameModal.hide();
-        }}
-      />
+      {contact && (
+        <ContactFormModal
+          open={editModal.open}
+          onClose={editModal.hide}
+          initial={contact}
+          customers={sortByOptionLabel(customersPage ?? [], (item) => item.nome)}
+          tags={sortByOptionLabel(contactOptions?.tags ?? [], (item) => item.nome)}
+          departments={sortByOptionLabel(contactOptions?.departments ?? [], (item) => item.nome)}
+          profiles={sortByOptionLabel(contactOptions?.profiles ?? [], (item) => item.nome)}
+          instances={sortByOptionLabel(
+            (contactOptions?.instances ?? []).filter((instance) =>
+              isSelectableContactInstanceStatus(instance.status),
+            ),
+            (item) => item.name,
+          )}
+          onCustomerCreated={(customer) => {
+            qc.setQueryData(
+              ["nexos", "customers", "contact-panel"],
+              (current: (typeof customer)[] | undefined) =>
+                sortByOptionLabel([customer, ...(current ?? [])], (item) => item.nome),
+            );
+          }}
+          onDepartmentSaved={() =>
+            qc.invalidateQueries({ queryKey: ["nexos", "contacts", "options", "contact-panel"] })
+          }
+          onProfileSaved={() =>
+            qc.invalidateQueries({ queryKey: ["nexos", "contacts", "options", "contact-panel"] })
+          }
+          onSubmit={async (data) => {
+            await crmApi.updateContact(contactId, contactPayload(data));
+            qc.invalidateQueries({ queryKey: ["nexos", "contacts", contactId] });
+            qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+            qc.invalidateQueries({ queryKey: ["nexos", "contact_protocols", contactId] });
+            editModal.hide();
+          }}
+        />
+      )}
     </aside>
   );
 }
 
-function RenameContactModal({
-  open,
-  onClose,
-  contactId,
-  initialName,
-  initialCustomerId,
-  initialEmail,
-  initialDepartamento,
-  initialNivel,
-  onSaved,
-}: {
-  open: boolean;
-  onClose: () => void;
-  contactId: string;
-  initialName: string;
-  initialCustomerId: string | null;
-  initialEmail: string;
-  initialDepartamento: string;
-  initialNivel: "Colaborador" | "Supervisor" | "Gerente" | "Diretoria" | null;
-  onSaved: () => void;
-}) {
-  const perms = useChatPerms();
-  const [nome, setNome] = React.useState(initialName);
-  const [customerId, setCustomerId] = React.useState<string | null>(initialCustomerId);
-  const [email, setEmail] = React.useState(initialEmail);
-  const [departamento, setDepartamento] = React.useState(initialDepartamento);
-  const [nivel, setNivel] = React.useState<
-    "" | "Colaborador" | "Supervisor" | "Gerente" | "Diretoria"
-  >(initialNivel ?? "");
-  const [busy, setBusy] = React.useState(false);
-
-  const { data: customers = [] } = useQuery({
-    queryKey: ["nexos", "customers", "list-all"],
-    queryFn: () => crmApi.listCustomers({ pageSize: 100 }).then((page) => page.items),
-    enabled: open,
-  });
-
-  React.useEffect(() => {
-    if (open) {
-      setNome(initialName);
-      setCustomerId(initialCustomerId);
-      setEmail(initialEmail);
-      setDepartamento(initialDepartamento);
-      setNivel(initialNivel ?? "");
-    }
-  }, [open, initialName, initialCustomerId, initialEmail, initialDepartamento, initialNivel]);
-
-  const save = async () => {
-    const n = nome.trim();
-    if (!n) {
-      toast.error("Informe o nome.");
-      return;
-    }
-    const em = email.trim();
-    if (em && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
-      toast.error("E-mail inválido.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const patch: Parameters<typeof crmApi.updateContact>[1] = {};
-      if (n !== initialName) patch.name = n;
-      if ((em || null) !== (initialEmail || null)) patch.email = em || null;
-      if ((departamento.trim() || null) !== (initialDepartamento || null))
-        patch.departmentName = departamento.trim() || null;
-      if ((nivel || null) !== (initialNivel ?? null)) {
-        const roleMap = {
-          Colaborador: "COLABORADOR",
-          Supervisor: "SUPERVISOR",
-          Gerente: "GERENTE",
-          Diretoria: "DIRETORIA",
-        } as const;
-        patch.companyRole = nivel ? roleMap[nivel] : null;
-      }
-      if (
-        perms.pode_editar_vinculo_cliente &&
-        (customerId ?? null) !== (initialCustomerId ?? null)
-      ) {
-        patch.customerId = customerId;
-      }
-      if (Object.keys(patch).length) {
-        await crmApi.updateContact(contactId, patch);
-      }
-      toast.success("Contato atualizado");
-      onSaved();
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
+function isSelectableContactInstanceStatus(status?: string | null) {
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Editar contato"
-      footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" size="sm" onClick={save} disabled={busy}>
-            {busy ? "Salvando…" : "Salvar"}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-3">
-        <Field label="Nome">
-          <Input
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            placeholder="Nome do contato"
-          />
-        </Field>
-        {perms.pode_editar_vinculo_cliente && (
-          <Field label="Cliente">
-            <Select
-              value={customerId ?? ""}
-              onChange={(e) => setCustomerId(e.target.value || null)}
-            >
-              <option value="">Sem vínculo</option>
-              {sortByOptionLabel(customers, (c) => c.nome).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nome}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        )}
-        <Field label="Departamento do Contato">
-          <Input
-            value={departamento}
-            onChange={(e) => setDepartamento(e.target.value)}
-            placeholder="Ex.: Financeiro"
-          />
-        </Field>
-        <Field label="Perfil do Contato">
-          <Select
-            value={nivel}
-            onChange={(e) =>
-              setNivel(
-                e.target.value as "" | "Colaborador" | "Supervisor" | "Gerente" | "Diretoria",
-              )
-            }
-          >
-            <option value="">— Selecione —</option>
-            <option value="Colaborador">Colaborador</option>
-            <option value="Supervisor">Supervisor</option>
-            <option value="Gerente">Gerente</option>
-            <option value="Diretoria">Diretoria</option>
-          </Select>
-        </Field>
-        <Field label="E-mail">
-          <Input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="email@exemplo.com"
-          />
-        </Field>
-      </div>
-    </Modal>
+    !status ||
+    status === "CONNECTED" ||
+    status === "DISCONNECTED" ||
+    status === "connected" ||
+    status === "disconnected"
   );
 }
 

@@ -1,6 +1,6 @@
 import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ConversationStatus, MessagingConnectionStatus, MessagingProviderType } from "../generated/prisma";
+import { ConversationStatus, MessageDirection, MessageType, MessagingConnectionStatus, MessagingProviderType } from "../generated/prisma";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 import { evolutionQrBase64, MessagingConnectionsService } from "./messaging-connections.service";
 
@@ -281,6 +281,7 @@ describe("MessagingConnectionsService", () => {
       externalReference: null,
       archivedAt: new Date("2026-08-04T00:00:00.000Z"),
     });
+    prisma.conversation.findMany.mockResolvedValue([{ id: "conversation-a" }]);
     const evolution = { deleteInstance: vi.fn().mockResolvedValue({}) };
 
     await expect(
@@ -298,7 +299,32 @@ describe("MessagingConnectionsService", () => {
 
     expect(evolution.deleteInstance).toHaveBeenCalledWith("tenant-a-suporte");
     expect(prisma.message.updateMany).not.toHaveBeenCalled();
-    expect(prisma.conversation.updateMany).not.toHaveBeenCalled();
+    expect(prisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        connectionId: "connection-a",
+        status: { not: ConversationStatus.FECHADA },
+        archivedAt: null,
+      },
+      data: {
+        status: ConversationStatus.FECHADA,
+        closedAt: expect.any(Date),
+        inboxArchivedAt: null,
+      },
+    });
+    expect(prisma.message.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          tenantId: "tenant-a",
+          conversationId: "conversation-a",
+          connectionId: "connection-a",
+          direction: MessageDirection.SYSTEM,
+          type: MessageType.SYSTEM,
+          content: "Conversa encerrada via remoção da instancia",
+          createdAt: expect.any(Date),
+        },
+      ],
+    });
     expect(prisma.messagingConnection.delete).not.toHaveBeenCalled();
     expect(prisma.messagingConnection.update).toHaveBeenCalledWith({
       where: { tenantId_id: { tenantId: "tenant-a", id: "connection-a" } },
@@ -312,7 +338,7 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
-  it("removes selected history and chat conversations when removing a connection", async () => {
+  it("archives every connection conversation when history removal is requested", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue({
       ...connection(),
@@ -324,40 +350,27 @@ describe("MessagingConnectionsService", () => {
       externalReference: null,
       archivedAt: new Date("2026-08-04T00:00:00.000Z"),
     });
-    prisma.conversation.updateMany
-      .mockResolvedValueOnce({ count: 2 })
-      .mockResolvedValueOnce({ count: 3 });
+    prisma.conversation.updateMany.mockResolvedValueOnce({ count: 5 });
     const evolution = { deleteInstance: vi.fn().mockResolvedValue({}) };
 
     await expect(
       new MessagingConnectionsService(prisma as never, evolution as never).remove(
         "connection-a",
         current as never,
-        { removeConversationHistory: true, removeChatConversations: true },
+        { removeConversationHistory: true },
       ),
     ).resolves.toMatchObject({
-      removedConversationHistoryCount: 2,
-      removedChatConversationCount: 3,
+      removedConversationHistoryCount: 5,
+      closedChatConversationCount: 0,
     });
 
-    expect(prisma.conversation.updateMany).toHaveBeenNthCalledWith(1, {
+    expect(prisma.conversation.updateMany).toHaveBeenCalledWith({
       where: {
         tenantId: "tenant-a",
         connectionId: "connection-a",
-        status: ConversationStatus.FECHADA,
         archivedAt: null,
       },
-      data: { archivedAt: expect.any(Date) },
-    });
-    expect(prisma.conversation.updateMany).toHaveBeenNthCalledWith(2, {
-      where: {
-        tenantId: "tenant-a",
-        connectionId: "connection-a",
-        status: { not: ConversationStatus.FECHADA },
-        archivedAt: null,
-        inboxArchivedAt: null,
-      },
-      data: { inboxArchivedAt: expect.any(Date) },
+      data: { archivedAt: expect.any(Date), inboxArchivedAt: expect.any(Date) },
     });
   });
 
@@ -625,8 +638,16 @@ function prismaMock() {
       delete: vi.fn(),
       count: vi.fn().mockResolvedValue(0),
     },
-    message: { updateMany: vi.fn(), count: vi.fn().mockResolvedValue(0) },
-    conversation: { updateMany: vi.fn(), count: vi.fn().mockResolvedValue(0) },
+    message: {
+      updateMany: vi.fn(),
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+      count: vi.fn().mockResolvedValue(0),
+    },
+    conversation: {
+      findMany: vi.fn().mockResolvedValue([]),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      count: vi.fn().mockResolvedValue(0),
+    },
     campaign: { count: vi.fn().mockResolvedValue(0) },
     campaignRecipient: { count: vi.fn().mockResolvedValue(0) },
     ticket: { count: vi.fn().mockResolvedValue(0) },

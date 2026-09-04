@@ -4,13 +4,14 @@ import {
   Controller,
   Get,
   Inject,
+  Patch,
   NotFoundException,
   Param,
   Post,
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { IsArray, IsOptional, IsString, IsUUID, Length } from "class-validator";
+import { IsArray, IsIn, IsOptional, IsString, IsUUID, Length } from "class-validator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -64,6 +65,42 @@ class SyncGroupsDto {
   connectionId?: string;
 }
 
+class UpdateGroupNameDto {
+  @IsString()
+  @Length(2, 120)
+  name!: string;
+}
+
+class UpdateGroupDescriptionDto {
+  @IsString()
+  @Length(0, 512)
+  description!: string;
+}
+
+class UpdateGroupParticipantsDto {
+  @IsIn(["add", "remove"])
+  action!: "add" | "remove";
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  participantContactIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  participantIds?: string[];
+}
+
+class UpdateGroupAdminsDto {
+  @IsIn(["promote", "demote"])
+  action!: "promote" | "demote";
+
+  @IsArray()
+  @IsString({ each: true })
+  participantIds!: string[];
+}
+
 const groupInclude = {
   contact: true,
   connection: true,
@@ -75,7 +112,7 @@ const groupInclude = {
 type GroupConversation = Prisma.ConversationGetPayload<{ include: typeof groupInclude }>;
 const EMPTY_GROUP_FILTER_VALUE = "__empty__";
 const visibleGroupConnectionWhere: Prisma.ConversationWhereInput = {
-  OR: [{ connectionId: null }, { connection: { archivedAt: null } }],
+  OR: [{ connectionId: null }, { connection: { is: { archivedAt: null } } }],
 };
 
 @Controller("groups")
@@ -289,10 +326,219 @@ export class GroupsController {
     return serializeGroup(group);
   }
 
+  @Patch(":id/name")
+  @RequirePermissions("conversations.manage")
+  async updateName(
+    @Param("id") id: string,
+    @Body() dto: UpdateGroupNameDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const group = await this.resolveManagedGroup(id, current);
+    const name = dto.name.trim();
+    await this.evolution.updateGroupSubject({
+      instanceName: group.connection!.externalReference!,
+      groupJid: group.externalChatId!,
+      subject: name,
+    });
+    const updated = await this.prisma.conversation.update({
+      where: { tenantId_id: { tenantId: current.tenantId, id: group.id } },
+      data: {
+        groupName: name,
+        groupSubjectUpdatedAt: new Date(),
+        contact: { update: { name } },
+      },
+      include: groupInclude,
+    });
+    return serializeGroup(updated);
+  }
+
+  @Patch(":id/description")
+  @RequirePermissions("conversations.manage")
+  async updateDescription(
+    @Param("id") id: string,
+    @Body() dto: UpdateGroupDescriptionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const group = await this.resolveManagedGroup(id, current);
+    const description = dto.description.trim();
+    await this.evolution.updateGroupDescription({
+      instanceName: group.connection!.externalReference!,
+      groupJid: group.externalChatId!,
+      description,
+    });
+    const updated = await this.prisma.conversation.update({
+      where: { tenantId_id: { tenantId: current.tenantId, id: group.id } },
+      data: { groupMetadataJson: { ...groupMetadataObject(group.groupMetadataJson), description } },
+      include: groupInclude,
+    });
+    return serializeGroup(updated);
+  }
+
+  @Post(":id/participants")
+  @RequirePermissions("conversations.manage")
+  async updateParticipants(
+    @Param("id") id: string,
+    @Body() dto: UpdateGroupParticipantsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const group = await this.resolveManagedGroup(id, current);
+    if (dto.action === "add") {
+      const contactIds = [...new Set(dto.participantContactIds ?? [])];
+      if (!contactIds.length) throw new BadRequestException("Selecione ao menos um contato.");
+      const contacts = await this.prisma.contact.findMany({
+        where: {
+          tenantId: current.tenantId,
+          id: { in: contactIds },
+          archivedAt: null,
+          NOT: { normalizedPhone: { startsWith: "group:" } },
+        },
+        select: { id: true, name: true, phone: true, normalizedPhone: true },
+      });
+      if (!contacts.length) throw new BadRequestException("Nenhum contato valido encontrado.");
+      const numbers = contacts.map((contact) =>
+        providerNumber(contact.normalizedPhone || contact.phone),
+      );
+      await this.evolution.updateGroupParticipants({
+        instanceName: group.connection!.externalReference!,
+        groupJid: group.externalChatId!,
+        action: "add",
+        participants: numbers,
+      });
+      const now = new Date();
+      for (const contact of contacts) {
+        const participantId = providerNumber(contact.normalizedPhone || contact.phone);
+        await this.prisma.conversationParticipant.upsert({
+          where: {
+            tenantId_conversationId_externalParticipantId: {
+              tenantId: current.tenantId,
+              conversationId: group.id,
+              externalParticipantId: participantId,
+            },
+          },
+          update: {
+            phone: participantId,
+            displayName: contact.name,
+            active: true,
+            lastSeenAt: now,
+          },
+          create: {
+            tenantId: current.tenantId,
+            conversationId: group.id,
+            externalParticipantId: participantId,
+            phone: participantId,
+            displayName: contact.name,
+            lastSeenAt: now,
+          },
+        });
+      }
+    } else {
+      const participantIds = [...new Set(dto.participantIds ?? [])];
+      if (!participantIds.length) {
+        throw new BadRequestException("Selecione ao menos um participante.");
+      }
+      await this.evolution.updateGroupParticipants({
+        instanceName: group.connection!.externalReference!,
+        groupJid: group.externalChatId!,
+        action: "remove",
+        participants: participantIds,
+      });
+      await this.prisma.conversationParticipant.updateMany({
+        where: {
+          tenantId: current.tenantId,
+          conversationId: group.id,
+          externalParticipantId: { in: participantIds },
+        },
+        data: { active: false, isAdmin: false, isSuperAdmin: false, lastSeenAt: new Date() },
+      });
+    }
+    return this.reloadGroup(group.id, current);
+  }
+
+  @Post(":id/admins")
+  @RequirePermissions("conversations.manage")
+  async updateAdmins(
+    @Param("id") id: string,
+    @Body() dto: UpdateGroupAdminsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const group = await this.resolveManagedGroup(id, current);
+    const participantIds = [...new Set(dto.participantIds)];
+    if (!participantIds.length) {
+      throw new BadRequestException("Selecione ao menos um participante.");
+    }
+    await this.evolution.updateGroupParticipants({
+      instanceName: group.connection!.externalReference!,
+      groupJid: group.externalChatId!,
+      action: dto.action,
+      participants: participantIds,
+    });
+    await this.prisma.conversationParticipant.updateMany({
+      where: {
+        tenantId: current.tenantId,
+        conversationId: group.id,
+        externalParticipantId: { in: participantIds },
+      },
+      data: { isAdmin: dto.action === "promote", lastSeenAt: new Date() },
+    });
+    return this.reloadGroup(group.id, current);
+  }
+
+  @Post(":id/leave")
+  @RequirePermissions("conversations.manage")
+  async leave(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    const group = await this.resolveManagedGroup(id, current);
+    await this.evolution.leaveGroup({
+      instanceName: group.connection!.externalReference!,
+      groupJid: group.externalChatId!,
+    });
+    const now = new Date();
+    await this.prisma.conversation.update({
+      where: { tenantId_id: { tenantId: current.tenantId, id: group.id } },
+      data: { archivedAt: now, status: ConversationStatus.FECHADA, closedAt: now },
+    });
+    return { id: group.id, left: true };
+  }
+
   @Post("sync")
   @RequirePermissions("conversations.manage")
   async sync(@Body() dto: SyncGroupsDto | undefined, @CurrentUser() current: AuthenticatedUser) {
     return this.groupsSync.sync({ tenantId: current.tenantId, connectionId: dto?.connectionId });
+  }
+
+  private async resolveManagedGroup(id: string, current: AuthenticatedUser) {
+    const group = await this.prisma.conversation.findFirst({
+      where: {
+        id,
+        tenantId: current.tenantId,
+        archivedAt: null,
+        conversationType: ConversationType.GROUP,
+        ...visibleGroupConnectionWhere,
+      },
+      include: groupInclude,
+    });
+    if (!group) throw new NotFoundException("Grupo nao encontrado.");
+    if (!group.externalChatId?.endsWith("@g.us") || !group.connection?.externalReference) {
+      throw new BadRequestException("Grupo sem instancia WhatsApp conectada.");
+    }
+    if (group.connection.status !== MessagingConnectionStatus.CONNECTED) {
+      throw new BadRequestException("A instancia do grupo precisa estar conectada.");
+    }
+    return group;
+  }
+
+  private async reloadGroup(id: string, current: AuthenticatedUser) {
+    const group = await this.prisma.conversation.findFirst({
+      where: {
+        id,
+        tenantId: current.tenantId,
+        archivedAt: null,
+        conversationType: ConversationType.GROUP,
+        ...visibleGroupConnectionWhere,
+      },
+      include: groupInclude,
+    });
+    if (!group) throw new NotFoundException("Grupo nao encontrado.");
+    return serializeGroup(group);
   }
 }
 
@@ -305,6 +551,7 @@ function serializeGroup(group: GroupConversation) {
     name,
     externalChatId: group.externalChatId,
     imageUrl: group.groupImageUrl || group.contact.avatarUrl,
+    description: groupDescription(group.groupMetadataJson),
     createdAt: groupCreatedAt(group),
     participantsCount: group.participants.filter((participant) => participant.active).length,
     connection: group.connection
@@ -328,6 +575,18 @@ function serializeGroup(group: GroupConversation) {
     lastMessagePreview: group.lastMessagePreview,
     lastMessageAt: group.lastMessageAt,
   };
+}
+
+function groupDescription(value: Prisma.JsonValue | null) {
+  const metadata = groupMetadataObject(value);
+  const description = metadata.description;
+  return typeof description === "string" ? description : null;
+}
+
+function groupMetadataObject(value: Prisma.JsonValue | null) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, Prisma.JsonValue>)
+    : {};
 }
 
 function groupCreatedAt(group: GroupConversation) {
