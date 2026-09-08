@@ -126,14 +126,14 @@ function QuickRepliesPage() {
               {filtered.map((reply) => (
                 <Card
                   key={reply.id}
-                  className="flex h-full items-start justify-between gap-3 transition hover:border-primary/35 hover:bg-surface-1"
+                  className="flex h-full items-stretch justify-between gap-3 overflow-hidden transition hover:border-primary/35 hover:bg-surface-1"
                 >
-                  <div className="min-w-0 flex-1 overflow-y-auto pr-1">
+                  <div className="min-h-0 min-w-0 flex-1 overflow-hidden pr-1">
                     <p className="font-mono text-sm text-primary">
                       /{reply.atalho.replace(/^\//, "")}
                     </p>
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-foreground/90">
-                      {reply.texto}
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground/90">
+                      {previewQuickReplyText(reply.texto)}
                     </p>
                     <p className="mt-2 text-[10px] uppercase tracking-widest text-muted-foreground">
                       {reply.department?.nome ?? "compartilhada"}
@@ -403,6 +403,12 @@ function QuickReplyEditor({
 function duplicateShortcut(value: string, clone: boolean) {
   const shortcut = value.replace(/^\//, "");
   return clone ? `${shortcut}-copia` : shortcut;
+}
+
+function previewQuickReplyText(value: string) {
+  const maxLength = 170;
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength).trimEnd()}...`;
 }
 
 function readAttachment(file: File): Promise<QuickReplyAttachment> {

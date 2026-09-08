@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Check,
   Crown,
+  Pencil,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -13,6 +14,7 @@ import {
   ShieldCheck,
   UserMinus,
   UserPlus,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
@@ -130,7 +132,7 @@ function GroupsPage() {
           subtitle={`${num(total)} grupos de WhatsApp conectados.`}
           actions={
             <Button variant="primary" size="sm" onClick={create.show}>
-              <Plus className="h-3.5 w-3.5" /> Criar Grupo
+              <Plus className="h-3.5 w-3.5" /> Criar Grupos
             </Button>
           }
         />
@@ -358,6 +360,7 @@ function CreateGroupModal({
   const [connectionId, setConnectionId] = React.useState("");
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [query, setQuery] = React.useState("");
+  const [participantTab, setParticipantTab] = React.useState<"contacts" | "selected">("contacts");
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
@@ -366,25 +369,46 @@ function CreateGroupModal({
     setConnectionId(instances[0]?.id ?? "");
     setSelectedIds([]);
     setQuery("");
+    setParticipantTab("contacts");
     setBusy(false);
   }, [instances, open]);
 
   const filteredContacts = React.useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return contacts;
+    const selected = new Set(selectedIds);
     const digits = q.replace(/\D/g, "");
-    return contacts.filter(
-      (contact) =>
+    return contacts.filter((contact) => {
+      if (selected.has(contact.id)) return false;
+      if (!q) return true;
+      return (
         contact.nome.toLowerCase().includes(q) ||
         contact.telefone.toLowerCase().includes(q) ||
-        (digits && contact.normalizedPhone.includes(digits)),
-    );
-  }, [contacts, query]);
+        (digits && contact.normalizedPhone.includes(digits))
+      );
+    });
+  }, [contacts, query, selectedIds]);
 
-  const toggle = (id: string) => {
-    setSelectedIds((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
-    );
+  const selectedContacts = React.useMemo(() => {
+    const selected = new Set(selectedIds);
+    const q = query.trim().toLowerCase();
+    const digits = q.replace(/\D/g, "");
+    return contacts.filter((contact) => {
+      if (!selected.has(contact.id)) return false;
+      if (!q) return true;
+      return (
+        contact.nome.toLowerCase().includes(q) ||
+        contact.telefone.toLowerCase().includes(q) ||
+        (digits && contact.normalizedPhone.includes(digits))
+      );
+    });
+  }, [contacts, query, selectedIds]);
+
+  const addContact = (id: string) => {
+    setSelectedIds((current) => (current.includes(id) ? current : [...current, id]));
+  };
+
+  const removeContact = (id: string) => {
+    setSelectedIds((current) => current.filter((item) => item !== id));
   };
 
   const submit = async () => {
@@ -405,7 +429,7 @@ function CreateGroupModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Criar Grupo"
+      title="Criar Grupos"
       size="lg"
       footer={
         <>
@@ -413,7 +437,7 @@ function CreateGroupModal({
             Cancelar
           </Button>
           <Button variant="primary" size="sm" onClick={submit} disabled={busy}>
-            {busy ? "Criando..." : "Criar Grupo"}
+            {busy ? "Criando..." : "Criar Grupos"}
           </Button>
         </>
       }
@@ -440,23 +464,37 @@ function CreateGroupModal({
             placeholder="Buscar contato ou WhatsApp..."
           />
         </Field>
+        <div className="flex border-b border-border text-sm">
+          <button
+            type="button"
+            className={`border-b px-3 py-2 transition ${
+              participantTab === "contacts"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={() => setParticipantTab("contacts")}
+          >
+            Contatos
+          </button>
+          <button
+            type="button"
+            className={`border-b px-3 py-2 transition ${
+              participantTab === "selected"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={() => setParticipantTab("selected")}
+          >
+            Selecionados
+          </button>
+        </div>
         <div className="max-h-72 overflow-y-auto rounded-lg border border-border p-1">
-          {filteredContacts.map((contact) => {
-            const active = selectedIds.includes(contact.id);
-            return (
-              <button
+          {participantTab === "contacts" &&
+            filteredContacts.map((contact) => (
+              <div
                 key={contact.id}
-                type="button"
-                onClick={() => toggle(contact.id)}
                 className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
               >
-                <span
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                    active ? "border-primary bg-primary text-white" : "border-border"
-                  }`}
-                >
-                  {active && <Check className="h-3 w-3" />}
-                </span>
                 <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={32} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{contact.nome}</span>
@@ -464,12 +502,53 @@ function CreateGroupModal({
                     {contact.telefone}
                   </span>
                 </span>
-              </button>
-            );
-          })}
-          {filteredContacts.length === 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    addContact(contact.id);
+                  }}
+                >
+                  <UserPlus className="h-3.5 w-3.5" /> Adicionar
+                </Button>
+              </div>
+            ))}
+          {participantTab === "selected" &&
+            selectedContacts.map((contact) => (
+              <div
+                key={contact.id}
+                className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
+              >
+                <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={32} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{contact.nome}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {contact.telefone}
+                  </span>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    removeContact(contact.id);
+                  }}
+                >
+                  <UserMinus className="h-3.5 w-3.5" /> Remover
+                </Button>
+              </div>
+            ))}
+          {participantTab === "contacts" && filteredContacts.length === 0 && (
             <div className="px-3 py-8 text-center text-sm text-muted-foreground">
               Nenhum contato encontrado.
+            </div>
+          )}
+          {participantTab === "selected" && selectedContacts.length === 0 && (
+            <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+              Nenhum participante selecionado.
             </div>
           )}
         </div>
@@ -499,6 +578,9 @@ function GroupDetailModal({
   const [selectedContactIds, setSelectedContactIds] = React.useState<string[]>([]);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [addingParticipants, setAddingParticipants] = React.useState(false);
+  const [tab, setTab] = React.useState<"general" | "participants">("general");
+  const [editingName, setEditingName] = React.useState(false);
+  const [editingDescription, setEditingDescription] = React.useState(false);
 
   React.useEffect(() => {
     setName(group?.name ?? "");
@@ -507,6 +589,9 @@ function GroupDetailModal({
     setSelectedContactIds([]);
     setBusy(null);
     setAddingParticipants(false);
+    setTab("general");
+    setEditingName(false);
+    setEditingDescription(false);
   }, [group]);
 
   const activeParticipantKeys = React.useMemo(() => {
@@ -553,6 +638,7 @@ function GroupDetailModal({
     void run("name", async () => {
       const updated = await groupsApi.updateName(group.id, { name: name.trim() });
       onGroupChange(updated);
+      setEditingName(false);
       toast.success("Nome do grupo atualizado");
     });
   };
@@ -564,8 +650,19 @@ function GroupDetailModal({
         description: description.trim(),
       });
       onGroupChange(updated);
+      setEditingDescription(false);
       toast.success("Descricao do grupo atualizada");
     });
+  };
+
+  const cancelNameEdit = () => {
+    setName(group?.name ?? "");
+    setEditingName(false);
+  };
+
+  const cancelDescriptionEdit = () => {
+    setDescription(group?.description ?? "");
+    setEditingDescription(false);
   };
 
   const addParticipants = () => {
@@ -613,7 +710,7 @@ function GroupDetailModal({
     <Modal
       open={!!group}
       onClose={onClose}
-      title="Detalhes do Grupo"
+      title="Edição de Grupo"
       size="lg"
       footer={
         group ? (
@@ -633,205 +730,277 @@ function GroupDetailModal({
     >
       {group && (
         <div className="space-y-4">
-          <div className="flex items-start gap-3">
-            <Avatar name={group.name} src={group.imageUrl ?? undefined} size={56} />
-            <div className="min-w-0 flex-1">
-              <div className="flex gap-2">
-                <Input
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  disabled={busy === "name"}
-                  className="min-h-9"
-                  placeholder="Nome do grupo"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="Salvar nome"
-                  aria-label="Salvar nome"
-                  onClick={saveName}
-                  disabled={busy === "name"}
-                  className="h-9 w-9"
-                >
-                  <Check className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {num(group.participantsCount)} participante(s) cadastrados
-              </p>
-            </div>
+          <div className="flex border-b border-border text-sm">
+            <GroupModalTab active={tab === "general"} onClick={() => setTab("general")}>
+              Geral
+            </GroupModalTab>
+            <GroupModalTab active={tab === "participants"} onClick={() => setTab("participants")}>
+              Participantes
+            </GroupModalTab>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
-            <Field label="ID WhatsApp">
-              <Input value={group.externalChatId ?? "-"} readOnly />
-            </Field>
-            <Field label="Instância">
-              <Input value={group.connection?.name ?? "-"} readOnly />
-            </Field>
-          </div>
-
-          <div className="space-y-3">
-            <Field label="Descrição">
-              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_2.75rem]">
-                <Textarea
-                  rows={3}
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  disabled={busy === "description"}
-                  className="min-h-20"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="Salvar descrição"
-                  aria-label="Salvar descrição"
-                  onClick={saveDescription}
-                  disabled={busy === "description"}
-                  className="h-10 w-10 self-center"
-                >
-                  <Check className="h-4 w-4" />
-                </Button>
-              </div>
-            </Field>
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold">Participantes</h3>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  if (addingParticipants && selectedContactIds.length > 0) {
-                    addParticipants();
-                    return;
-                  }
-                  setAddingParticipants((current) => !current);
-                }}
-                disabled={busy === "participants"}
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-                {addingParticipants && selectedContactIds.length > 0
-                  ? `Adicionar (${selectedContactIds.length})`
-                  : "Adicionar"}
-              </Button>
-            </div>
-
-            {addingParticipants && (
-              <div className="mb-3 rounded-lg border border-border bg-surface-1 p-3">
-                <SearchInput
-                  value={query}
-                  onChange={setQuery}
-                  placeholder="Buscar contato ou WhatsApp..."
-                />
-                <div className="mt-2 max-h-36 overflow-y-auto rounded-lg border border-border bg-card p-1">
-                  {availableContacts.slice(0, 50).map((contact) => {
-                    const active = selectedContactIds.includes(contact.id);
-                    return (
-                      <button
-                        key={contact.id}
-                        type="button"
-                        onClick={() =>
-                          setSelectedContactIds((current) =>
-                            active
-                              ? current.filter((item) => item !== contact.id)
-                              : [...current, contact.id],
-                          )
-                        }
-                        className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm transition hover:bg-surface-2"
-                      >
-                        <span
-                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                            active ? "border-primary bg-primary text-white" : "border-border"
-                          }`}
+          {tab === "general" && (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3">
+                <Avatar name={group.name} src={group.imageUrl ?? undefined} size={56} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex gap-2">
+                    <div className="relative min-w-0 flex-1">
+                      <Input
+                        value={name}
+                        onChange={(event) => setName(event.target.value)}
+                        readOnly={!editingName}
+                        disabled={busy === "name"}
+                        className={`min-h-9 ${editingName ? "pr-9" : ""}`}
+                        placeholder="Nome do grupo"
+                      />
+                      {editingName && (
+                        <button
+                          type="button"
+                          onClick={cancelNameEdit}
+                          className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                          aria-label="Cancelar edição do nome"
+                          title="Cancelar edição"
                         >
-                          {active && <Check className="h-3 w-3" />}
-                        </span>
-                        <Avatar
-                          name={contact.nome}
-                          src={contact.avatar_url ?? undefined}
-                          size={28}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-medium">{contact.nome}</span>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {contact.telefone}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                  {availableContacts.length === 0 && (
-                    <div className="px-3 py-5 text-center text-sm text-muted-foreground">
-                      Nenhum contato disponível.
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
                     </div>
-                  )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title={editingName ? "Salvar nome" : "Editar nome"}
+                      aria-label={editingName ? "Salvar nome" : "Editar nome"}
+                      onClick={editingName ? saveName : () => setEditingName(true)}
+                      disabled={busy === "name"}
+                      className="h-9 w-9"
+                    >
+                      {editingName ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {num(group.participantsCount)} participante(s) cadastrados
+                  </p>
                 </div>
               </div>
-            )}
 
-            <div className="max-h-[22rem] overflow-y-auto rounded-lg border border-border">
-              {group.participants.map((participant) => (
-                <div
-                  key={participant.id}
-                  className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0 hover:bg-surface-1"
-                >
-                  <Avatar name={participant.name} size={32} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{participant.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {formatParticipantPhone(
-                        participant.phone ?? participant.externalParticipantId,
-                      )}
-                    </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="ID WhatsApp">
+                  <Input value={group.externalChatId ?? "-"} readOnly />
+                </Field>
+                <Field label="Instância">
+                  <Input value={group.connection?.name ?? "-"} readOnly />
+                </Field>
+              </div>
+
+              <Field label="Descrição">
+                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_2.75rem]">
+                  <div className="relative min-w-0">
+                    <Textarea
+                      rows={3}
+                      value={description}
+                      onChange={(event) => setDescription(event.target.value)}
+                      readOnly={!editingDescription}
+                      disabled={busy === "description"}
+                      className={`min-h-20 ${editingDescription ? "pr-9" : ""}`}
+                    />
+                    {editingDescription && (
+                      <button
+                        type="button"
+                        onClick={cancelDescriptionEdit}
+                        className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                        aria-label="Cancelar edição da descrição"
+                        title="Cancelar edição"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
-                  {(participant.isAdmin || participant.isSuperAdmin) && (
-                    <Badge tone="success">
-                      <ShieldCheck className="h-3 w-3" />
-                      {participant.isSuperAdmin ? "Super admin" : "Admin"}
-                    </Badge>
-                  )}
-                  <div className="flex shrink-0 gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title={participant.isAdmin ? "Remover admin" : "Tornar admin"}
-                      aria-label={participant.isAdmin ? "Remover admin" : "Tornar admin"}
-                      onClick={() =>
-                        updateParticipant(participant, participant.isAdmin ? "demote" : "promote")
-                      }
-                      disabled={!!busy || participant.isSuperAdmin}
-                      className="h-8 w-8"
-                    >
-                      <Crown className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Remover participante"
-                      aria-label="Remover participante"
-                      onClick={() => updateParticipant(participant, "remove")}
-                      disabled={!!busy || participant.isSuperAdmin}
-                      className="h-8 w-8"
-                    >
-                      <UserMinus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title={editingDescription ? "Salvar descrição" : "Editar descrição"}
+                    aria-label={editingDescription ? "Salvar descrição" : "Editar descrição"}
+                    onClick={
+                      editingDescription ? saveDescription : () => setEditingDescription(true)
+                    }
+                    disabled={busy === "description"}
+                    className="h-10 w-10 self-center"
+                  >
+                    {editingDescription ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <Pencil className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
-              ))}
-              {group.participants.length === 0 && (
-                <div className="p-6 text-center text-sm text-muted-foreground">
-                  Nenhum participante identificado ainda.
+              </Field>
+            </div>
+          )}
+
+          {tab === "participants" && (
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">Participantes</h3>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    if (addingParticipants && selectedContactIds.length > 0) {
+                      addParticipants();
+                      return;
+                    }
+                    setAddingParticipants((current) => !current);
+                  }}
+                  disabled={busy === "participants"}
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  {addingParticipants && selectedContactIds.length > 0
+                    ? `Adicionar (${selectedContactIds.length})`
+                    : "Adicionar"}
+                </Button>
+              </div>
+
+              {addingParticipants && (
+                <div className="mb-3 rounded-lg border border-border bg-surface-1 p-3">
+                  <SearchInput
+                    value={query}
+                    onChange={setQuery}
+                    placeholder="Buscar contato ou WhatsApp..."
+                  />
+                  <div className="mt-2 max-h-36 overflow-y-auto rounded-lg border border-border bg-card p-1">
+                    {availableContacts.slice(0, 50).map((contact) => {
+                      const active = selectedContactIds.includes(contact.id);
+                      return (
+                        <button
+                          key={contact.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedContactIds((current) =>
+                              active
+                                ? current.filter((item) => item !== contact.id)
+                                : [...current, contact.id],
+                            )
+                          }
+                          className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm transition hover:bg-surface-2"
+                        >
+                          <span
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                              active ? "border-primary bg-primary text-white" : "border-border"
+                            }`}
+                          >
+                            {active && <Check className="h-3 w-3" />}
+                          </span>
+                          <Avatar
+                            name={contact.nome}
+                            src={contact.avatar_url ?? undefined}
+                            size={28}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">{contact.nome}</span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {contact.telefone}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {availableContacts.length === 0 && (
+                      <div className="px-3 py-5 text-center text-sm text-muted-foreground">
+                        Nenhum contato disponível.
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
+
+              <div className="max-h-[22rem] overflow-y-auto rounded-lg border border-border">
+                {group.participants.map((participant) => (
+                  <div
+                    key={participant.id}
+                    className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0 hover:bg-surface-1"
+                  >
+                    <Avatar name={participant.name} size={32} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{participant.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {formatParticipantPhone(
+                          participant.phone ?? participant.externalParticipantId,
+                        )}
+                      </p>
+                    </div>
+                    {(participant.isAdmin || participant.isSuperAdmin) && (
+                      <Badge tone="success">
+                        <ShieldCheck className="h-3 w-3" />
+                        {participant.isSuperAdmin ? "Super admin" : "Admin"}
+                      </Badge>
+                    )}
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title={participant.isAdmin ? "Remover admin" : "Tornar admin"}
+                        aria-label={participant.isAdmin ? "Remover admin" : "Tornar admin"}
+                        onClick={() =>
+                          updateParticipant(participant, participant.isAdmin ? "demote" : "promote")
+                        }
+                        disabled={!!busy || participant.isSuperAdmin}
+                        className="h-8 w-8"
+                      >
+                        <Crown className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Remover participante"
+                        aria-label="Remover participante"
+                        onClick={() => updateParticipant(participant, "remove")}
+                        disabled={!!busy || participant.isSuperAdmin}
+                        className="h-8 w-8"
+                      >
+                        <UserMinus className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+                {group.participants.length === 0 && (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    Nenhum participante identificado ainda.
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
     </Modal>
   );
 }
+
+function GroupModalTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={`border-b px-3 py-3 text-left transition ${
+        active
+          ? "border-primary text-primary"
+          : "border-transparent text-muted-foreground hover:text-foreground"
+      }`}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 function EntityFormLog({
   createdAt,
   updatedAt,

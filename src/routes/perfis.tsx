@@ -150,10 +150,6 @@ type ShiftKey = keyof typeof SHIFT_LABELS;
 type WorkShift = { active: boolean; start: string; end: string };
 type WorkSchedule = { noSchedule: boolean; days: Record<WeekDay, Record<ShiftKey, WorkShift>> };
 
-function isAdministratorRole(role: ApiRole) {
-  return role.key === "tenant_admin" || role.name.trim().toLowerCase() === "administrador";
-}
-
 function countRoleMembers(memberships: ApiUserMembership[]) {
   return memberships.reduce<Record<string, number>>((acc, membership) => {
     acc[membership.role.id] = (acc[membership.role.id] ?? 0) + 1;
@@ -163,6 +159,24 @@ function countRoleMembers(memberships: ApiUserMembership[]) {
 
 function formatMemberCount(count: number) {
   return count === 1 ? "1 atendente" : `${num(count)} atendentes`;
+}
+
+function roleColor(role: ApiRole) {
+  const metadata = (role.metadata ?? {}) as RoleMetadata;
+  return metadata.color ?? DEFAULT_ROLE_COLOR;
+}
+
+function duplicateRoleDraft(role: ApiRole, roles: ApiRole[]): ApiRole {
+  const existingNames = new Set(roles.map((item) => item.name));
+  let name = `Copia de ${role.name}`;
+  let count = 2;
+  while (existingNames.has(name)) name = `Copia (${count++}) de ${role.name}`;
+  return {
+    ...role,
+    id: "",
+    key: "",
+    name,
+  };
 }
 
 function roleWithLogFallback(role: ApiRole, previous?: ApiRole | null) {
@@ -250,6 +264,7 @@ function Page() {
   });
 
   const [editing, setEditing] = React.useState<ApiRole | null>(null);
+  const [duplicating, setDuplicating] = React.useState<ApiRole | null>(null);
   const [deleting, setDeleting] = React.useState<ApiRole | null>(null);
   const [query, setQuery] = React.useState("");
   const novo = useDisclosure();
@@ -304,6 +319,7 @@ function Page() {
       toast.success(vars.id ? "Perfil atualizado" : "Perfil criado");
       novo.hide();
       setEditing(null);
+      setDuplicating(null);
     },
     onError: (error) => toast.error((error as Error).message),
   });
@@ -314,27 +330,6 @@ function Page() {
       qc.invalidateQueries({ queryKey: ["nexos", "roles"] });
       toast.success("Perfil removido");
       setDeleting(null);
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
-
-  const duplicate = useMutation({
-    mutationFn: (p: ApiRole) => {
-      if (isAdministratorRole(p)) throw new Error("O perfil Administrador nao pode ser duplicado.");
-      const existentes = new Set(items.map((x) => x.name));
-      let name = `Copia de ${p.name}`;
-      let n = 2;
-      while (existentes.has(name)) name = `Copia (${n++}) de ${p.name}`;
-      return organizationApi.createRole({
-        name,
-        description: p.description,
-        permissionIds: p.permissionIds,
-        metadata: p.metadata,
-      });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["nexos", "roles"] });
-      toast.success("Perfil duplicado");
     },
     onError: (error) => toast.error((error as Error).message),
   });
@@ -365,8 +360,8 @@ function Page() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filtered.map((p) => {
-              const administrator = isAdministratorRole(p);
               const memberCount = memberCountByRoleId[p.id] ?? 0;
+              const color = roleColor(p);
 
               return (
                 <Card
@@ -376,55 +371,49 @@ function Page() {
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex min-w-0 items-center gap-3">
                       <div
-                        className={cn(
-                          "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-primary",
-                          administrator ? "bg-primary/15" : "bg-emerald-500/15 text-emerald-600",
-                        )}
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+                        style={{ backgroundColor: `${color}24`, color }}
                       >
                         <ShieldCheck className="h-5 w-5" />
                       </div>
                       <div className="min-w-0">
                         <p className="truncate font-semibold">{p.name}</p>
-                        {!administrator && (
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            {formatMemberCount(memberCount)}
-                          </p>
-                        )}
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {formatMemberCount(memberCount)}
+                        </p>
                       </div>
                     </div>
 
-                    {!administrator && (
-                      <div className="flex shrink-0 gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="duplicate-action-button"
-                          onClick={() => duplicate.mutate(p)}
-                          title="Duplicar perfil"
-                          aria-label={`Duplicar perfil ${p.name}`}
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setEditing(p)}
-                          title="Editar perfil"
-                          aria-label={`Editar perfil ${p.name}`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDeleting(p)}
-                          title="Excluir perfil"
-                          aria-label={`Excluir perfil ${p.name}`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="duplicate-action-button"
+                        onClick={() => setDuplicating(duplicateRoleDraft(p, items))}
+                        title="Duplicar perfil"
+                        aria-label={`Duplicar perfil ${p.name}`}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditing(p)}
+                        title="Editar perfil"
+                        aria-label={`Editar perfil ${p.name}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeleting(p)}
+                        title="Excluir perfil"
+                        aria-label={`Excluir perfil ${p.name}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 </Card>
               );
@@ -447,6 +436,15 @@ function Page() {
           onClose={() => setEditing(null)}
           onSubmit={(data) => editing && save.mutate({ id: editing.id, data })}
         />
+        <PerfilForm
+          open={!!duplicating}
+          departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
+          connections={connections}
+          initial={duplicating ?? undefined}
+          clone
+          onClose={() => setDuplicating(null)}
+          onSubmit={(data) => save.mutate({ data })}
+        />
         <ConfirmDialog
           open={!!deleting}
           title="Excluir perfil?"
@@ -466,6 +464,7 @@ function PerfilForm({
   onClose,
   onSubmit,
   initial,
+  clone = false,
   departamentos,
   connections,
 }: {
@@ -473,6 +472,7 @@ function PerfilForm({
   onClose: () => void;
   onSubmit: (data: PerfilFormData) => void;
   initial?: ApiRole;
+  clone?: boolean;
   departamentos: { id: string; name: string }[];
   connections: ApiMessagingConnection[];
 }) {
@@ -579,14 +579,20 @@ function PerfilForm({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial?.id ? "Editar Perfil de Acesso" : "Novo Perfil"}
+      title={
+        initial?.id && !clone
+          ? "Editar Perfil de Acesso"
+          : clone
+            ? "Duplicar Perfil"
+            : "Novo Perfil"
+      }
       size="xl"
       footer={
         <div className="flex w-full items-center justify-between gap-4">
           <EntityFormLog
-            show={!!initial}
-            createdAt={initial?.createdAt}
-            updatedAt={initial?.updatedAt}
+            show={!!initial && !clone}
+            createdAt={clone ? undefined : initial?.createdAt}
+            updatedAt={clone ? undefined : initial?.updatedAt}
           />
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="ghost" size="sm" onClick={onClose}>

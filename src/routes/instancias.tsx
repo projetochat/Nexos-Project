@@ -5,7 +5,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Camera,
+  Check,
+  Copy,
   Eye,
+  Info,
   Pencil,
   Plus,
   Power,
@@ -29,6 +32,7 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
@@ -582,7 +586,7 @@ function ConnectionSettingsModal({
                   <button
                     ref={logoButtonRef}
                     type="button"
-                    className="flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-xs font-semibold text-muted-foreground"
+                    className="group relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-xs font-semibold text-muted-foreground"
                     onClick={() => setLogoMenuOpen((open) => !open)}
                     aria-label="Opções do logo"
                   >
@@ -595,6 +599,9 @@ function ConnectionSettingsModal({
                     ) : (
                       <span className="px-4">{connection?.name || "Logo"}</span>
                     )}
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-white opacity-0 transition group-hover:opacity-100">
+                      <Camera className="h-8 w-8" />
+                    </span>
                   </button>
                   <FloatingLogoMenu
                     open={logoMenuOpen}
@@ -678,8 +685,8 @@ function ConnectionSettingsModal({
                     />
                   </Field>
                   <Field label="Cor">
-                    <div className="flex gap-2">
-                      <Input
+                    <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
+                      <input
                         type="color"
                         value={completeHexColor(form.color, "#22c55e")}
                         onChange={(event) =>
@@ -688,9 +695,10 @@ function ConnectionSettingsModal({
                             color: normalizeHexColor(event.target.value, "#22c55e"),
                           })
                         }
-                        className="h-10 w-14 p-1"
+                        className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
                       />
-                      <Input
+                      <input
+                        type="text"
                         value={form.color || ""}
                         onChange={(event) =>
                           setForm({
@@ -698,6 +706,9 @@ function ConnectionSettingsModal({
                             color: normalizeHexColor(event.target.value, "#22c55e"),
                           })
                         }
+                        placeholder={completeHexColor("#22c55e")}
+                        maxLength={7}
+                        className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
                       />
                     </div>
                   </Field>
@@ -725,14 +736,30 @@ function ConnectionSettingsModal({
                     ))}
                   </Select>
                 </Field>
-                <Field
-                  label="Agente de IA"
-                  hint="Será preenchido pelos agentes cadastrados no módulo de IA."
-                >
+                <label className="block">
+                  <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    Agente de IA
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full text-primary transition hover:bg-primary/10"
+                            aria-label="Informação sobre Agente de IA"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          Será preenchida pelos agentes cadastrados no módulo de IA.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </span>
                   <Select value={aiAgentId} onChange={(event) => setAiAgentId(event.target.value)}>
                     <option value="">- Selecione um agente -</option>
                   </Select>
-                </Field>
+                </label>
               </div>
             </div>
           )}
@@ -1060,17 +1087,49 @@ function VariableTokens({ customFields }: { customFields: ApiContactCustomField[
       </p>
       <div className="mt-2 flex flex-wrap gap-2 text-xs">
         {tokens.map((token) => (
-          <button
-            key={token}
-            type="button"
-            className="rounded-md border border-border bg-card px-2 py-1 font-mono"
-            onClick={() => navigator.clipboard.writeText(token).catch(() => undefined)}
-          >
-            {token}
-          </button>
+          <VariableTokenButton key={token} token={token} />
         ))}
       </div>
     </div>
+  );
+}
+
+function VariableTokenButton({ token }: { token: string }) {
+  const tokenRef = React.useRef<HTMLSpanElement>(null);
+
+  const selectToken = () => {
+    const element = tokenRef.current;
+    if (!element) return;
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  };
+
+  const copyToken = () => {
+    selectToken();
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(token).then(() => toast.success("Variável copiada."));
+      return;
+    }
+    document.execCommand("copy");
+    toast.success("Variável copiada.");
+  };
+
+  return (
+    <button
+      type="button"
+      className="rounded-md border border-border bg-card px-2 py-1 font-mono transition hover:border-primary hover:bg-primary/10 hover:text-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      onClick={selectToken}
+      onDoubleClick={copyToken}
+      title="Clique para selecionar. Duplo clique para copiar."
+      aria-label={`Selecionar variável ${token}`}
+    >
+      <span ref={tokenRef} className="select-text">
+        {token}
+      </span>
+    </button>
   );
 }
 
@@ -1101,13 +1160,46 @@ function ServiceHoursTable({
   rows: ServiceHoursRow[];
   onChange: (rows: ServiceHoursRow[]) => void;
 }) {
+  const [editing, setEditing] = React.useState(false);
+
   const updateRow = (index: number, patch: Partial<ServiceHoursRow>) => {
     onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
   };
 
+  const copyToAll = (source: ServiceHoursRow) => {
+    onChange(
+      rows.map((row) => ({
+        ...row,
+        active: source.active,
+        start: source.start,
+        end: source.end,
+      })),
+    );
+  };
+
   return (
     <div className="space-y-2">
-      <p className="text-xs font-medium text-muted-foreground">Horário de Atendimento</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-medium text-muted-foreground">Horário de Atendimento</p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setEditing((current) => !current)}
+        >
+          {editing ? (
+            <>
+              <Check className="h-3.5 w-3.5" />
+              Concluir
+            </>
+          ) : (
+            <>
+              <Pencil className="h-3.5 w-3.5" />
+              Editar
+            </>
+          )}
+        </Button>
+      </div>
       <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full min-w-[420px] border-collapse text-sm">
           <thead className="bg-surface-1 text-[11px] uppercase tracking-widest text-muted-foreground">
@@ -1116,11 +1208,12 @@ function ServiceHoursTable({
               <th className="px-3 py-3 text-left font-semibold">Ativo</th>
               <th className="px-3 py-3 text-left font-semibold">Início</th>
               <th className="px-3 py-3 text-left font-semibold">Fim</th>
+              <th className="px-3 py-3 text-right font-semibold">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {rows.map((row, index) => (
-              <tr key={row.day}>
+              <tr key={row.day} className="transition hover:bg-surface-1/60">
                 <td className="px-3 py-2">{row.day}</td>
                 <td className="px-3 py-2">
                   <input
@@ -1133,21 +1226,50 @@ function ServiceHoursTable({
                 </td>
                 <td className="px-3 py-2">
                   <Input
-                    type="time"
+                    type="text"
+                    inputMode="numeric"
                     value={row.start}
-                    disabled={!row.active}
-                    onChange={(event) => updateRow(index, { start: event.target.value })}
+                    placeholder="00:00"
+                    disabled={!editing || !row.active}
+                    onChange={(event) =>
+                      updateRow(index, { start: sanitizeServiceHourDraft(event.target.value) })
+                    }
+                    onBlur={(event) =>
+                      updateRow(index, { start: formatServiceHourDraft(event.target.value) })
+                    }
                     className="w-32"
                   />
                 </td>
                 <td className="px-3 py-2">
                   <Input
-                    type="time"
+                    type="text"
+                    inputMode="numeric"
                     value={row.end}
-                    disabled={!row.active}
-                    onChange={(event) => updateRow(index, { end: event.target.value })}
+                    placeholder="00:00"
+                    disabled={!editing || !row.active}
+                    onChange={(event) =>
+                      updateRow(index, { end: sanitizeServiceHourDraft(event.target.value) })
+                    }
+                    onBlur={(event) =>
+                      updateRow(index, { end: formatServiceHourDraft(event.target.value) })
+                    }
                     className="w-32"
                   />
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={!editing}
+                    onClick={() => copyToAll(row)}
+                    title={`Copiar horário de ${row.day} para todos`}
+                    aria-label={`Copiar horário de ${row.day} para todos`}
+                    className="px-2"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    <span className="hidden xl:inline">Copiar para todos</span>
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -1156,6 +1278,20 @@ function ServiceHoursTable({
       </div>
     </div>
   );
+}
+
+function sanitizeServiceHourDraft(value: string) {
+  return value.replace(/[^\d:]/g, "").slice(0, 5);
+}
+
+function formatServiceHourDraft(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const padded =
+    digits.length <= 2 ? digits.padStart(2, "0").padEnd(4, "0") : digits.padStart(4, "0");
+  const hour = Math.min(23, Number(padded.slice(0, 2)));
+  const minute = Math.min(59, Number(padded.slice(2, 4)));
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 function EntityFormLog({

@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Building2, Users, Shield, Clock, Plug, SlidersHorizontal, ListPlus } from "lucide-react";
+import { Building2, Clock, ListPlus, Plug, Shield, SlidersHorizontal, Users } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { SectionHeader } from "@/components/ui-kit";
 
@@ -8,12 +8,12 @@ export const Route = createFileRoute("/configuracoes")({
 });
 
 const TABS = [
-  { to: "/configuracoes/geral", label: "Geral", icon: SlidersHorizontal },
   { to: "/configuracoes/empresa", label: "Empresa", icon: Building2 },
+  { to: "/configuracoes/geral", label: "Filas do Chat", icon: SlidersHorizontal },
   { to: "/configuracoes/usuarios", label: "Usuários", icon: Users },
   { to: "/configuracoes/permissoes", label: "Permissões", icon: Shield },
-  { to: "/configuracoes/horarios", label: "Horários", icon: Clock },
   { to: "/configuracoes/integracoes", label: "Integrações", icon: Plug },
+  { to: "/configuracoes/horarios", label: "Horários", icon: Clock },
   { to: "/configuracoes/campos-contato", label: "Campos Adicionais", icon: ListPlus },
 ] as const;
 
@@ -22,9 +22,7 @@ function ConfiguracoesLayout() {
   return (
     <AppShell>
       <PageContainer className="max-w-[96rem] overflow-x-hidden lg:px-6 xl:px-8">
-        <SectionHeader
-          title="Configurações"
-        />
+        <SectionHeader title="Configurações" />
 
         <div className="grid min-w-0 gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5">
           <aside>

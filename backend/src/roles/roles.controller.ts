@@ -93,9 +93,6 @@ export class RolesController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const existing = await this.findRoleOrThrow(id, current.tenantId);
-    if (this.isDefaultAdministratorRole(existing)) {
-      throw new BadRequestException("Role de administrador nao pode ser alterada.");
-    }
     if (dto.permissionIds) this.assertPermissions(dto.permissionIds);
     const role = await this.prisma.$transaction(async (tx) => {
       if (dto.permissionIds) {
@@ -126,10 +123,7 @@ export class RolesController {
   @Delete("roles/:id")
   @RequirePermissions("roles.manage")
   async remove(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    const role = await this.findRoleOrThrow(id, current.tenantId);
-    if (this.isDefaultAdministratorRole(role)) {
-      throw new BadRequestException("Role de administrador nao pode ser removida.");
-    }
+    await this.findRoleOrThrow(id, current.tenantId);
     const inUse = await this.prisma.tenantMembership.count({
       where: { tenantId: current.tenantId, roleId: id },
     });
@@ -162,10 +156,6 @@ export class RolesController {
         }),
       ),
     );
-  }
-
-  private isDefaultAdministratorRole(role: { key: string; name: string }) {
-    return role.key === "tenant_admin" || role.name.trim().toLowerCase() === "administrador";
   }
 
   private serialize(role: {
