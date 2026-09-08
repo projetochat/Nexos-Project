@@ -210,8 +210,20 @@ function normalizeName(value: string) {
   return normalized;
 }
 
-function serializeTag(tag: { id: string; name: string; color: string }) {
-  return { id: tag.id, nome: tag.name, cor: tag.color };
+function serializeTag(tag: {
+  id: string;
+  name: string;
+  color: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}) {
+  return {
+    id: tag.id,
+    nome: tag.name,
+    cor: tag.color,
+    createdAt: tag.createdAt,
+    updatedAt: tag.updatedAt,
+  };
 }
 
 function handleUniqueTag(error: unknown, name?: string): never {

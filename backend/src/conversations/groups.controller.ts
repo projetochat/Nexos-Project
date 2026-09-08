@@ -553,6 +553,7 @@ function serializeGroup(group: GroupConversation) {
     imageUrl: group.groupImageUrl || group.contact.avatarUrl,
     description: groupDescription(group.groupMetadataJson),
     createdAt: groupCreatedAt(group),
+    updatedAt: group.updatedAt,
     participantsCount: group.participants.filter((participant) => participant.active).length,
     connection: group.connection
       ? {

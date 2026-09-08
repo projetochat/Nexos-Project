@@ -1131,7 +1131,7 @@ function ContatosPage() {
                 )}
               </div>
               <Button variant="primary" size="sm" onClick={create.show}>
-                <Plus className="h-3.5 w-3.5" /> Criar Contato
+                <Plus className="h-3.5 w-3.5" /> Novo Contato
               </Button>
             </div>
           }
@@ -2851,7 +2851,7 @@ export function ContactFormModal({
       <Modal
         open={open}
         onClose={onClose}
-        title={initial ? "Editar Contato" : "Criar Contato"}
+        title={initial ? "Editar Contato" : "Novo Contato"}
         description=""
         size="xl"
         footer={

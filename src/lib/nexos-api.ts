@@ -68,6 +68,8 @@ export type ApiDepartment = {
   description: string | null;
   color: string;
   active: boolean;
+  createdAt?: string;
+  updatedAt?: string;
   memberCount?: number;
   openConversationCount?: number;
 };
@@ -80,6 +82,8 @@ export type ApiRole = {
   description: string | null;
   metadata: unknown;
   system: boolean;
+  createdAt?: string;
+  updatedAt?: string;
   permissionIds: string[];
 };
 
@@ -131,6 +135,8 @@ export type ApiTag = {
   nome: string;
   cor: string;
   archivedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
   conversationCount?: number;
   customerCount?: number;
 };
@@ -275,6 +281,7 @@ export type ApiWhatsappGroup = {
   imageUrl: string | null;
   description: string | null;
   createdAt: string;
+  updatedAt: string;
   participantsCount: number;
   connection: {
     id: string;
@@ -295,6 +302,10 @@ export type ApiQuickReply = {
   shortcut: string;
   texto: string;
   content: string;
+  attachmentFileName?: string | null;
+  attachmentMimeType?: string | null;
+  attachmentSize?: number | null;
+  attachmentDataUrl?: string | null;
   departmentId: string | null;
   department: { id: string; nome: string; cor: string } | null;
   archivedAt: string | null;
@@ -441,6 +452,7 @@ export type ApiMessagingConnection = {
   status: "disconnected" | "connecting" | "connected" | "error" | "removed";
   externalReference: string | null;
   color?: string | null;
+  logoUrl?: string | null;
   welcomeEnabled?: boolean;
   welcomeNewMessage?: string | null;
   welcomeExistingMessage?: string | null;
@@ -1089,10 +1101,7 @@ export const groupsApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  updateAdmins: (
-    id: string,
-    data: { action: "promote" | "demote"; participantIds: string[] },
-  ) =>
+  updateAdmins: (id: string, data: { action: "promote" | "demote"; participantIds: string[] }) =>
     apiRequest<ApiWhatsappGroup>(`/groups/${id}/admins`, {
       method: "POST",
       body: JSON.stringify(data),
@@ -1118,7 +1127,12 @@ export const groupsApi = {
 
 export const quickReplyApi = {
   list: (
-    params: { q?: string; departmentId?: string; status?: "active" | "archived" | "all" } = {},
+    params: {
+      q?: string;
+      departmentId?: string;
+      status?: "active" | "archived" | "all";
+      scope?: "visible" | "catalog";
+    } = {},
   ) => apiRequest<ApiQuickReply[]>(`/quick-replies${queryString(params)}`),
   create: (data: {
     title: string;
@@ -1126,6 +1140,10 @@ export const quickReplyApi = {
     content: string;
     departmentId?: string | null;
     closeOnSend?: boolean;
+    attachmentFileName?: string | null;
+    attachmentMimeType?: string | null;
+    attachmentSize?: number | null;
+    attachmentDataUrl?: string | null;
   }) => apiRequest<ApiQuickReply>("/quick-replies", { method: "POST", body: JSON.stringify(data) }),
   update: (
     id: string,
@@ -1135,6 +1153,10 @@ export const quickReplyApi = {
       content?: string;
       departmentId?: string | null;
       closeOnSend?: boolean;
+      attachmentFileName?: string | null;
+      attachmentMimeType?: string | null;
+      attachmentSize?: number | null;
+      attachmentDataUrl?: string | null;
     },
   ) =>
     apiRequest<ApiQuickReply>(`/quick-replies/${id}`, {
@@ -1361,6 +1383,7 @@ export const connectionsApi = {
     data: {
       name?: string;
       color?: string | null;
+      logoUrl?: string | null;
       welcomeEnabled?: boolean;
       welcomeNewMessage?: string | null;
       welcomeExistingMessage?: string | null;
@@ -1380,10 +1403,7 @@ export const connectionsApi = {
     apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/logout`, {
       method: "PATCH",
     }),
-  remove: (
-    id: string,
-    options: { removeConversationHistory?: boolean } = {},
-  ) =>
+  remove: (id: string, options: { removeConversationHistory?: boolean } = {}) =>
     apiRequest<{
       id: string;
       removed: boolean;
@@ -1870,7 +1890,10 @@ async function readError(response: Response) {
     const codeMessage = nexosMessageFromCode(data.code);
     const message = Array.isArray(data.message)
       ? data.message.join(", ")
-      : data.message || codeMessage || data.error || authMessageFromStatus(response.status, data.code);
+      : data.message ||
+        codeMessage ||
+        data.error ||
+        authMessageFromStatus(response.status, data.code);
     if (message) return new NexosApiError(message, response.status, data.code, data.details);
     const mapped = authMessageFromStatus(response.status, data.code);
     if (mapped) return new NexosApiError(mapped, response.status, data.code, data.details);

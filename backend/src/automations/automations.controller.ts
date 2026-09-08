@@ -110,6 +110,15 @@ const automationInclude = {
   department: true,
 } satisfies Prisma.AutomationRuleInclude;
 
+function parsePositiveInteger(value: unknown, fallback: number, max?: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+  const normalized = Math.floor(parsed);
+  return max ? Math.min(normalized, max) : normalized;
+}
+
 @Controller("automations")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class AutomationsController {
@@ -121,8 +130,8 @@ export class AutomationsController {
     @Query() query: ListAutomationRulesQueryDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 25;
+    const page = parsePositiveInteger(query.page, 1);
+    const pageSize = parsePositiveInteger(query.pageSize, 25, 100);
     const where: Prisma.AutomationRuleWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,

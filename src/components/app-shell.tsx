@@ -738,7 +738,7 @@ function Topbar({
       <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-1.5 transition focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-ring md:flex md:w-64 xl:w-80">
         <Search className="h-4 w-4 text-muted-foreground" />
         <input
-          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          className="topbar-search-input w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           placeholder="Buscar…"
         />
         <kbd className="hidden items-center gap-0.5 rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground lg:inline-flex">
@@ -1121,5 +1121,3 @@ export function PageContainer({
 
 /* Re-exports for admin/operator shells */
 export { useAuthGate, useSidebarState, Topbar, MobileNav, ImpersonationBanner, CheckCircle2 };
-
-

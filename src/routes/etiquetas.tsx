@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Tag, Trash2 } from "lucide-react";
+import { Copy, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Button, Card, Field, Input, SectionHeader, SearchInput } from "@/components/ui-kit";
@@ -14,12 +14,22 @@ export const Route = createFileRoute("/etiquetas")({ component: Page });
 
 const tagsQueryKey = ["nexos", "tags"] as const;
 
+function tagWithLogFallback(tag: ApiTag, previous?: ApiTag | null) {
+  const now = new Date().toISOString();
+  return {
+    ...tag,
+    createdAt: tag.createdAt ?? previous?.createdAt ?? now,
+    updatedAt: tag.updatedAt ?? now,
+  };
+}
+
 function Page() {
   const qc = useQueryClient();
   const perms = useChatPerms();
   const canManageCatalog = perms.pode_editar_etiquetas;
   const nova = useDisclosure();
   const [editing, setEditing] = React.useState<ApiTag | null>(null);
+  const [duplicating, setDuplicating] = React.useState<ApiTag | null>(null);
   const [deleting, setDeleting] = React.useState<ApiTag | null>(null);
   const [query, setQuery] = React.useState("");
   const { data: etiquetas = [], isLoading } = useQuery({
@@ -73,6 +83,15 @@ function Page() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    title="Duplicar"
+                    aria-label={`Duplicar ${etiqueta.nome}`}
+                    onClick={() => setDuplicating(etiqueta)}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     title="Editar"
                     aria-label={`Editar ${etiqueta.nome}`}
                     onClick={() => setEditing(etiqueta)}
@@ -108,11 +127,32 @@ function Page() {
           open={nova.open}
           onClose={nova.hide}
           onSubmit={async (data) => {
-            await crmApi.createTag(data);
+            const created = await crmApi.createTag(data);
+            qc.setQueryData<ApiTag[]>(tagsQueryKey, (current = []) => [
+              tagWithLogFallback(created),
+              ...current,
+            ]);
             toast.success("Etiqueta criada");
             setQuery("");
             await refresh();
             nova.hide();
+          }}
+        />
+        <EtiquetaForm
+          open={!!duplicating}
+          initial={duplicating ?? undefined}
+          clone
+          onClose={() => setDuplicating(null)}
+          onSubmit={async (data) => {
+            const created = await crmApi.createTag(data);
+            qc.setQueryData<ApiTag[]>(tagsQueryKey, (current = []) => [
+              tagWithLogFallback(created),
+              ...current,
+            ]);
+            toast.success("Etiqueta criada");
+            setQuery("");
+            await refresh();
+            setDuplicating(null);
           }}
         />
         <EtiquetaForm
@@ -121,7 +161,12 @@ function Page() {
           onClose={() => setEditing(null)}
           onSubmit={async (data) => {
             if (!editing) return;
-            await crmApi.updateTag(editing.id, data);
+            const updated = await crmApi.updateTag(editing.id, data);
+            qc.setQueryData<ApiTag[]>(tagsQueryKey, (current = []) =>
+              current.map((tag) =>
+                tag.id === updated.id ? tagWithLogFallback(updated, tag) : tag,
+              ),
+            );
             toast.success("Etiqueta atualizada");
             setQuery("");
             await refresh();
@@ -176,20 +221,22 @@ function EtiquetaForm({
   onClose,
   onSubmit,
   initial,
+  clone = false,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: { name: string; color?: string }) => Promise<void>;
   initial?: ApiTag;
+  clone?: boolean;
 }) {
   const [name, setName] = React.useState("");
   const [color, setColor] = React.useState("#3B82F6");
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
-    setName(initial?.nome ?? "");
+    setName(initial ? (clone ? `Copia de ${initial.nome}` : initial.nome) : "");
     setColor(initial?.cor ?? "#3B82F6");
-  }, [initial, open]);
+  }, [clone, initial, open]);
 
   const submit = async () => {
     if (name.trim().length < 2) return toast.error("Informe o nome.");
@@ -207,17 +254,24 @@ function EtiquetaForm({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial ? "Editar Etiqueta" : "Nova Etiqueta"}
+      title={initial && !clone ? "Editar Etiqueta" : "Nova Etiqueta"}
       size="sm"
       footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" size="sm" onClick={submit} disabled={busy}>
-            {busy ? "Salvando..." : "Salvar"}
-          </Button>
-        </>
+        <div className="flex w-full items-center justify-between gap-4">
+          <EntityFormLog
+            show={!!initial && !clone}
+            createdAt={initial?.createdAt}
+            updatedAt={initial?.updatedAt}
+          />
+          <div className="flex shrink-0 items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="sm" onClick={submit} disabled={busy}>
+              {busy ? "Salvando..." : "Salvar"}
+            </Button>
+          </div>
+        </div>
       }
     >
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
@@ -245,6 +299,35 @@ function EtiquetaForm({
       </div>
     </Modal>
   );
+}
+
+function EntityFormLog({
+  show,
+  createdAt,
+  updatedAt,
+}: {
+  show: boolean;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}) {
+  if (!show) return <span aria-hidden="true" />;
+  return (
+    <div className="min-w-0 text-left text-[11px] leading-4 text-muted-foreground sm:text-xs sm:leading-5">
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Criado:</span> {formatDateTime(createdAt)}
+      </div>
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Editado:</span> {formatDateTime(updatedAt)}
+      </div>
+    </div>
+  );
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }).replace(",", "");
 }
 
 function normalizeHexColor(value?: string | null, _fallback = "#3B82F6") {

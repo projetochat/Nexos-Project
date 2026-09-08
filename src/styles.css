@@ -431,6 +431,10 @@
     border-radius: 6px;
   }
 
+  .topbar-search-input:focus-visible {
+    box-shadow: none;
+  }
+
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;

@@ -431,6 +431,7 @@ export class AuthService {
         id: membership.user.id,
         email: membership.user.email,
         name: membership.user.name,
+        avatarUrl: membership.user.avatarUrl,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         roleName: membership.role.name,

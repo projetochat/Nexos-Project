@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Network } from "lucide-react";
+import { Plus, Pencil, Trash2, Network, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -26,9 +26,19 @@ type DepartamentoFormData = {
   color?: string;
 };
 
+function departmentWithLogFallback(department: ApiDepartment, previous?: ApiDepartment | null) {
+  const now = new Date().toISOString();
+  return {
+    ...department,
+    createdAt: department.createdAt ?? previous?.createdAt ?? now,
+    updatedAt: department.updatedAt ?? now,
+  };
+}
+
 function Page() {
   const qc = useQueryClient();
   const [editing, setEditing] = React.useState<ApiDepartment | null>(null);
+  const [duplicating, setDuplicating] = React.useState<ApiDepartment | null>(null);
   const [deleting, setDeleting] = React.useState<ApiDepartment | null>(null);
   const [query, setQuery] = React.useState("");
   const [activeFilter, setActiveFilter] = React.useState("active");
@@ -52,11 +62,24 @@ function Page() {
             description: payload.data.description,
             color: payload.data.color,
           }),
-    onSuccess: (_data, vars) => {
+    onSuccess: (data, vars) => {
+      const previous = vars.id ? editing : null;
+      const savedDepartment = departmentWithLogFallback(data, previous);
+      qc.setQueryData<ApiDepartment[]>(["nexos", "departments"], (current = []) => {
+        if (vars.id) {
+          return current.map((department) =>
+            department.id === savedDepartment.id
+              ? departmentWithLogFallback(savedDepartment, department)
+              : department,
+          );
+        }
+        return [savedDepartment, ...current];
+      });
       qc.invalidateQueries({ queryKey: ["nexos", "departments"] });
       toast.success(vars.id ? "Departamento atualizado" : "Departamento criado");
       novo.hide();
       setEditing(null);
+      setDuplicating(null);
     },
     onError: (error) => toast.error((error as Error).message),
   });
@@ -90,7 +113,7 @@ function Page() {
           subtitle={`${num(departamentos.length)} departamentos cadastrados.`}
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>
-              <Plus className="h-3.5 w-3.5" /> Criar departamento
+              <Plus className="h-3.5 w-3.5" /> Criar Departamento
             </Button>
           }
         />
@@ -115,30 +138,49 @@ function Page() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filtered.map((d) => (
-              <Card key={d.id}>
-                <div className="flex items-start justify-between">
-                  <div
-                    className="flex h-10 w-10 items-center justify-center rounded-lg text-white"
-                    style={{ background: d.color }}
-                  >
-                    <Network className="h-5 w-5" />
+              <Card
+                key={d.id}
+                className="min-h-[86px] p-4 transition hover:border-primary/35 hover:bg-surface-1"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
+                      style={{ background: d.color }}
+                    >
+                      <Network className="h-5 w-5" />
+                    </div>
+                    <p className="min-w-0 truncate font-semibold">{d.name}</p>
                   </div>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => setEditing(d)}>
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Duplicar departamento"
+                      aria-label={`Duplicar departamento ${d.name}`}
+                      onClick={() => setDuplicating(d)}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Editar departamento"
+                      aria-label={`Editar departamento ${d.name}`}
+                      onClick={() => setEditing(d)}
+                    >
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setDeleting(d)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Excluir departamento"
+                      aria-label={`Excluir departamento ${d.name}`}
+                      onClick={() => setDeleting(d)}
+                    >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
-                </div>
-                <p className="mt-4 font-semibold">{d.name}</p>
-                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{d.description}</p>
-                <div className="mt-4 flex items-center justify-between border-t border-border pt-3 font-mono text-xs">
-                  <span className="text-muted-foreground">{d.memberCount ?? 0} membros</span>
-                  <span className="text-primary">
-                    {d.openConversationCount ?? 0} conversas abertas
-                  </span>
                 </div>
               </Card>
             ))}
@@ -153,6 +195,13 @@ function Page() {
         <DepartamentoForm
           open={novo.open}
           onClose={novo.hide}
+          onSubmit={(data) => save.mutate({ data })}
+        />
+        <DepartamentoForm
+          open={!!duplicating}
+          initial={duplicating ?? undefined}
+          clone
+          onClose={() => setDuplicating(null)}
           onSubmit={(data) => save.mutate({ data })}
         />
         <DepartamentoForm
@@ -180,22 +229,28 @@ function DepartamentoForm({
   onClose,
   onSubmit,
   initial,
+  clone = false,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: DepartamentoFormData) => void;
   initial?: ApiDepartment;
+  clone?: boolean;
 }) {
   const [form, setForm] = React.useState<DepartamentoFormData>({});
   const [error, setError] = React.useState("");
   React.useEffect(() => {
     setForm(
       initial
-        ? { name: initial.name, description: initial.description, color: initial.color }
+        ? {
+            name: clone ? `Copia de ${initial.name}` : initial.name,
+            description: initial.description,
+            color: initial.color,
+          }
         : { color: "#3B82F6" },
     );
     setError("");
-  }, [initial, open]);
+  }, [clone, initial, open]);
 
   const submit = () => {
     if (!form.name || form.name.trim().length < 2) {
@@ -210,51 +265,90 @@ function DepartamentoForm({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial ? "Editar departamento" : "Criar departamento"}
+      title={initial && !clone ? "Editar Departamento" : "Novo departamento"}
       size="md"
       footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" size="sm" onClick={submit}>
-            Salvar
-          </Button>
-        </>
+        <div className="flex w-full items-center justify-between gap-4">
+          <EntityFormLog
+            show={!!initial && !clone}
+            createdAt={initial?.createdAt}
+            updatedAt={initial?.updatedAt}
+          />
+          <div className="flex shrink-0 items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="sm" onClick={submit}>
+              Salvar
+            </Button>
+          </div>
+        </div>
       }
     >
       <div className="space-y-4">
-        <Field label="Nome *">
-          <Input
-            value={form.name ?? ""}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-          />
-          {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
-        </Field>
-        <Field label="Descricao">
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_150px]">
+          <Field label="Nome *">
+            <Input
+              value={form.name ?? ""}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+            {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
+          </Field>
+          <Field label="Cor">
+            <div className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-2">
+              <input
+                type="color"
+                value={completeHexColor(form.color)}
+                onChange={(e) => setForm({ ...form, color: normalizeHexColor(e.target.value) })}
+                className="h-6 w-9 shrink-0 cursor-pointer rounded border border-border bg-transparent"
+              />
+              <Input
+                value={form.color ?? "#3B82F6"}
+                onChange={(e) => setForm({ ...form, color: normalizeHexColor(e.target.value) })}
+                className="min-h-0 border-0 bg-transparent px-1 py-0 uppercase focus:border-0"
+              />
+            </div>
+          </Field>
+        </div>
+        <Field label="Nota">
           <Textarea
             rows={3}
             value={form.description ?? ""}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
         </Field>
-        <Field label="Cor">
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={completeHexColor(form.color)}
-              onChange={(e) => setForm({ ...form, color: normalizeHexColor(e.target.value) })}
-              className="h-9 w-14 cursor-pointer rounded border border-border bg-transparent"
-            />
-            <Input
-              value={form.color ?? "#3B82F6"}
-              onChange={(e) => setForm({ ...form, color: normalizeHexColor(e.target.value) })}
-            />
-          </div>
-        </Field>
       </div>
     </Modal>
   );
+}
+
+function EntityFormLog({
+  show,
+  createdAt,
+  updatedAt,
+}: {
+  show: boolean;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}) {
+  if (!show) return <span aria-hidden="true" />;
+  return (
+    <div className="min-w-0 text-left text-[11px] leading-4 text-muted-foreground sm:text-xs sm:leading-5">
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Criado:</span> {formatDateTime(createdAt)}
+      </div>
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Editado:</span> {formatDateTime(updatedAt)}
+      </div>
+    </div>
+  );
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }).replace(",", "");
 }
 
 function normalizeHexColor(value?: string | null, _fallback = "#3B82F6") {

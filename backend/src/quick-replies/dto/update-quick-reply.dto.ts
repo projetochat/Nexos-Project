@@ -23,4 +23,19 @@ export class UpdateQuickReplyDto {
   @IsOptional()
   @IsBoolean()
   closeOnSend?: boolean;
+
+  @IsOptional()
+  @IsString()
+  attachmentFileName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  attachmentMimeType?: string | null;
+
+  @IsOptional()
+  attachmentSize?: number | null;
+
+  @IsOptional()
+  @IsString()
+  attachmentDataUrl?: string | null;
 }

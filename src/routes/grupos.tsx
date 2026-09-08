@@ -5,7 +5,6 @@ import {
   Check,
   Crown,
   LogOut,
-  Pencil,
   ChevronLeft,
   ChevronRight,
   MessageSquareMore,
@@ -108,7 +107,10 @@ function GroupsPage() {
   const syncGroups = async () => {
     setSyncing(true);
     try {
-      const result = await groupsApi.sync({ connectionId: instanceFilter && instanceFilter !== EMPTY_FILTER_VALUE ? instanceFilter : undefined });
+      const result = await groupsApi.sync({
+        connectionId:
+          instanceFilter && instanceFilter !== EMPTY_FILTER_VALUE ? instanceFilter : undefined,
+      });
       toast.success("Grupos atualizados", {
         description: `${num(result.synced)} grupo(s) sincronizado(s), ${num(result.participants)} participante(s) atualizado(s).`,
       });
@@ -143,7 +145,10 @@ function GroupsPage() {
               />
             </Field>
             <Field label="Instância">
-              <Select value={instanceFilter} onChange={(event) => setInstanceFilter(event.target.value)}>
+              <Select
+                value={instanceFilter}
+                onChange={(event) => setInstanceFilter(event.target.value)}
+              >
                 <option value="">Todos</option>
                 <option value={EMPTY_FILTER_VALUE}>- Sem instância -</option>
                 {instances.map((instance) => (
@@ -493,6 +498,7 @@ function GroupDetailModal({
   const [query, setQuery] = React.useState("");
   const [selectedContactIds, setSelectedContactIds] = React.useState<string[]>([]);
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [addingParticipants, setAddingParticipants] = React.useState(false);
 
   React.useEffect(() => {
     setName(group?.name ?? "");
@@ -500,6 +506,7 @@ function GroupDetailModal({
     setQuery("");
     setSelectedContactIds([]);
     setBusy(null);
+    setAddingParticipants(false);
   }, [group]);
 
   const activeParticipantKeys = React.useMemo(() => {
@@ -610,130 +617,165 @@ function GroupDetailModal({
       size="lg"
       footer={
         group ? (
-          <div className="flex w-full justify-between gap-2">
-            <Button variant="destructive" size="sm" onClick={leaveGroup} disabled={!!busy}>
-              <LogOut className="h-3.5 w-3.5" /> Sair do grupo
-            </Button>
-            <Button variant="primary" size="sm" onClick={() => onOpenChat(group)}>
-              <MessageSquareMore className="h-3.5 w-3.5" /> Abrir conversa
-            </Button>
+          <div className="flex w-full items-center justify-between gap-3">
+            <EntityFormLog createdAt={group.createdAt} updatedAt={group.updatedAt} />
+            <div className="flex shrink-0 items-center gap-2">
+              <Button variant="destructive" size="sm" onClick={leaveGroup} disabled={!!busy}>
+                <LogOut className="h-3.5 w-3.5" /> Sair do grupo
+              </Button>
+              <Button variant="primary" size="sm" onClick={() => onOpenChat(group)}>
+                <MessageSquareMore className="h-3.5 w-3.5" /> Abrir conversa
+              </Button>
+            </div>
           </div>
         ) : null
       }
     >
       {group && (
-        <div className="space-y-5">
-          <div className="flex items-center gap-4">
-            <Avatar name={group.name} src={group.imageUrl ?? undefined} size={64} />
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
+            <Avatar name={group.name} src={group.imageUrl ?? undefined} size={56} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-base font-semibold">{group.name}</p>
+              <div className="flex gap-2">
+                <Input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  disabled={busy === "name"}
+                  className="min-h-9"
+                  placeholder="Nome do grupo"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Salvar nome"
+                  aria-label="Salvar nome"
+                  onClick={saveName}
+                  disabled={busy === "name"}
+                  className="h-9 w-9"
+                >
+                  <Check className="h-4 w-4" />
+                </Button>
+              </div>
               <p className="text-sm text-muted-foreground">
                 {num(group.participantsCount)} participante(s) cadastrados
               </p>
-              <p className="text-xs text-muted-foreground">
-                Criado em {formatDate(group.createdAt)}
-              </p>
             </div>
-          </div>
-
-          <div className="grid gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm md:grid-cols-2">
-            <InfoLine label="ID WhatsApp" value={group.externalChatId ?? "-"} />
-            <InfoLine label="Instância" value={group.connection?.name ?? "-"} />
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Nome do grupo">
-              <div className="flex gap-2">
-                <Input value={name} onChange={(event) => setName(event.target.value)} />
-                <Button variant="secondary" size="md" onClick={saveName} disabled={busy === "name"}>
-                  <Pencil className="h-4 w-4" /> Salvar
-                </Button>
-              </div>
+            <Field label="ID WhatsApp">
+              <Input value={group.externalChatId ?? "-"} readOnly />
             </Field>
-            <Field label="Descrição">
-              <div className="flex gap-2">
-                <Textarea
-                  rows={1}
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                />
-                <Button
-                  variant="secondary"
-                  size="md"
-                  onClick={saveDescription}
-                  disabled={busy === "description"}
-                >
-                  <Pencil className="h-4 w-4" /> Salvar
-                </Button>
-              </div>
+            <Field label="Instância">
+              <Input value={group.connection?.name ?? "-"} readOnly />
             </Field>
           </div>
 
-          <div className="rounded-lg border border-border p-3">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold">Adicionar participantes</h3>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={addParticipants}
-                disabled={busy === "participants" || selectedContactIds.length === 0}
-              >
-                <UserPlus className="h-3.5 w-3.5" /> Adicionar
-              </Button>
-            </div>
-            <SearchInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Buscar contato ou WhatsApp..."
-            />
-            <div className="mt-2 max-h-36 overflow-y-auto rounded-lg border border-border p-1">
-              {availableContacts.slice(0, 50).map((contact) => {
-                const active = selectedContactIds.includes(contact.id);
-                return (
-                  <button
-                    key={contact.id}
-                    type="button"
-                    onClick={() =>
-                      setSelectedContactIds((current) =>
-                        active
-                          ? current.filter((item) => item !== contact.id)
-                          : [...current, contact.id],
-                      )
-                    }
-                    className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
-                  >
-                    <span
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                        active ? "border-primary bg-primary text-white" : "border-border"
-                      }`}
-                    >
-                      {active && <Check className="h-3 w-3" />}
-                    </span>
-                    <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={28} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{contact.nome}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {contact.telefone}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-              {availableContacts.length === 0 && (
-                <div className="px-3 py-5 text-center text-sm text-muted-foreground">
-                  Nenhum contato disponível.
-                </div>
-              )}
-            </div>
+          <div className="space-y-3">
+            <Field label="Descrição">
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_2.75rem]">
+                <Textarea
+                  rows={3}
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  disabled={busy === "description"}
+                  className="min-h-20"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Salvar descrição"
+                  aria-label="Salvar descrição"
+                  onClick={saveDescription}
+                  disabled={busy === "description"}
+                  className="h-10 w-10 self-center"
+                >
+                  <Check className="h-4 w-4" />
+                </Button>
+              </div>
+            </Field>
           </div>
 
           <div>
-            <h3 className="mb-2 text-sm font-semibold">Participantes</h3>
-            <div className="max-h-80 overflow-y-auto rounded-lg border border-border">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold">Participantes</h3>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  if (addingParticipants && selectedContactIds.length > 0) {
+                    addParticipants();
+                    return;
+                  }
+                  setAddingParticipants((current) => !current);
+                }}
+                disabled={busy === "participants"}
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                {addingParticipants && selectedContactIds.length > 0
+                  ? `Adicionar (${selectedContactIds.length})`
+                  : "Adicionar"}
+              </Button>
+            </div>
+
+            {addingParticipants && (
+              <div className="mb-3 rounded-lg border border-border bg-surface-1 p-3">
+                <SearchInput
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Buscar contato ou WhatsApp..."
+                />
+                <div className="mt-2 max-h-36 overflow-y-auto rounded-lg border border-border bg-card p-1">
+                  {availableContacts.slice(0, 50).map((contact) => {
+                    const active = selectedContactIds.includes(contact.id);
+                    return (
+                      <button
+                        key={contact.id}
+                        type="button"
+                        onClick={() =>
+                          setSelectedContactIds((current) =>
+                            active
+                              ? current.filter((item) => item !== contact.id)
+                              : [...current, contact.id],
+                          )
+                        }
+                        className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm transition hover:bg-surface-2"
+                      >
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                            active ? "border-primary bg-primary text-white" : "border-border"
+                          }`}
+                        >
+                          {active && <Check className="h-3 w-3" />}
+                        </span>
+                        <Avatar
+                          name={contact.nome}
+                          src={contact.avatar_url ?? undefined}
+                          size={28}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{contact.nome}</span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {contact.telefone}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {availableContacts.length === 0 && (
+                    <div className="px-3 py-5 text-center text-sm text-muted-foreground">
+                      Nenhum contato disponível.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="max-h-[22rem] overflow-y-auto rounded-lg border border-border">
               {group.participants.map((participant) => (
                 <div
                   key={participant.id}
-                  className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0"
+                  className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0 hover:bg-surface-1"
                 >
                   <Avatar name={participant.name} size={32} />
                   <div className="min-w-0 flex-1">
@@ -753,21 +795,25 @@ function GroupDetailModal({
                   <div className="flex shrink-0 gap-1">
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       title={participant.isAdmin ? "Remover admin" : "Tornar admin"}
+                      aria-label={participant.isAdmin ? "Remover admin" : "Tornar admin"}
                       onClick={() =>
                         updateParticipant(participant, participant.isAdmin ? "demote" : "promote")
                       }
                       disabled={!!busy || participant.isSuperAdmin}
+                      className="h-8 w-8"
                     >
                       <Crown className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       title="Remover participante"
+                      aria-label="Remover participante"
                       onClick={() => updateParticipant(participant, "remove")}
                       disabled={!!busy || participant.isSuperAdmin}
+                      className="h-8 w-8"
                     >
                       <UserMinus className="h-3.5 w-3.5" />
                     </Button>
@@ -786,11 +832,21 @@ function GroupDetailModal({
     </Modal>
   );
 }
-function InfoLine({ label, value }: { label: string; value: string }) {
+function EntityFormLog({
+  createdAt,
+  updatedAt,
+}: {
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}) {
   return (
-    <div className="min-w-0">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="truncate text-sm text-foreground">{value}</p>
+    <div className="min-w-0 text-left text-[11px] leading-4 text-muted-foreground sm:text-xs sm:leading-5">
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Criado:</span> {formatDateTime(createdAt)}
+      </div>
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Editado:</span> {formatDateTime(updatedAt)}
+      </div>
     </div>
   );
 }
@@ -798,6 +854,13 @@ function InfoLine({ label, value }: { label: string; value: string }) {
 function formatDate(value?: string | null) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }).replace(",", "");
 }
 
 function formatParticipantPhone(value?: string | null) {

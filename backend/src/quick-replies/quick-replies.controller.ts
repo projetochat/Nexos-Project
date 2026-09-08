@@ -56,6 +56,10 @@ export class QuickRepliesController {
           shortcut: normalizeShortcutDisplay(dto.shortcut),
           normalizedShortcut,
           content: dto.content.trim(),
+          attachmentFileName: dto.attachmentFileName ?? null,
+          attachmentMimeType: dto.attachmentMimeType ?? null,
+          attachmentSize: dto.attachmentSize ?? null,
+          attachmentDataUrl: dto.attachmentDataUrl ?? null,
           closeOnSend: dto.closeOnSend ?? false,
           departmentId,
           createdByMembershipId: current.membershipId,
@@ -98,6 +102,10 @@ export class QuickRepliesController {
           shortcut: dto.shortcut ? normalizeShortcutDisplay(dto.shortcut) : undefined,
           normalizedShortcut: dto.shortcut ? normalizedShortcut : undefined,
           content: dto.content?.trim(),
+          attachmentFileName: dto.attachmentFileName,
+          attachmentMimeType: dto.attachmentMimeType,
+          attachmentSize: dto.attachmentSize,
+          attachmentDataUrl: dto.attachmentDataUrl,
           closeOnSend: dto.closeOnSend,
           departmentId,
         },
@@ -141,6 +149,9 @@ export class QuickRepliesController {
           }
         : {}),
     };
+    if (query.scope === "catalog" && current.permissions?.includes("chat.quick_replies.manage")) {
+      return where;
+    }
     const allowed = await this.allowedDepartmentIds(current);
     if (query.departmentId) {
       if (current.roleKey !== "tenant_admin" && !allowed.includes(query.departmentId)) {
@@ -223,6 +234,10 @@ function serializeQuickReply(reply: QuickReplyWithRelations) {
     shortcut: reply.shortcut,
     texto: reply.content,
     content: reply.content,
+    attachmentFileName: reply.attachmentFileName,
+    attachmentMimeType: reply.attachmentMimeType,
+    attachmentSize: reply.attachmentSize,
+    attachmentDataUrl: reply.attachmentDataUrl,
     departmentId: reply.departmentId,
     department: reply.department
       ? { id: reply.department.id, nome: reply.department.name, cor: reply.department.color }

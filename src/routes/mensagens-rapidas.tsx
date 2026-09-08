@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Copy, Info, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -31,6 +31,12 @@ export const Route = createFileRoute("/mensagens-rapidas")({
 });
 
 const quickRepliesQueryKey = ["nexos", "quick-replies"] as const;
+type QuickReplyAttachment = {
+  fileName: string;
+  mimeType: string;
+  size: number;
+  dataUrl: string;
+};
 
 function QuickRepliesPage() {
   const qc = useQueryClient();
@@ -38,11 +44,12 @@ function QuickRepliesPage() {
   const canManageCatalog = perms.pode_gerenciar_respostas_rapidas;
   const editor = useDisclosure();
   const [editing, setEditing] = React.useState<ApiQuickReply | null>(null);
+  const [duplicating, setDuplicating] = React.useState<ApiQuickReply | null>(null);
   const [confirming, setConfirming] = React.useState<ApiQuickReply | null>(null);
   const [query, setQuery] = React.useState("");
   const { data: items = [], isLoading } = useQuery({
     queryKey: quickRepliesQueryKey,
-    queryFn: () => quickReplyApi.list(),
+    queryFn: () => quickReplyApi.list({ scope: "catalog" }),
   });
 
   const filtered = React.useMemo(() => {
@@ -54,11 +61,23 @@ function QuickRepliesPage() {
   const refresh = () => qc.invalidateQueries({ queryKey: quickRepliesQueryKey });
   const openNew = () => {
     setEditing(null);
+    setDuplicating(null);
     editor.show();
   };
   const openEdit = (reply: ApiQuickReply) => {
     setEditing(reply);
+    setDuplicating(null);
     editor.show();
+  };
+  const openDuplicate = (reply: ApiQuickReply) => {
+    setDuplicating(reply);
+    setEditing(null);
+    editor.show();
+  };
+  const closeEditor = () => {
+    editor.hide();
+    setEditing(null);
+    setDuplicating(null);
   };
 
   return (
@@ -103,10 +122,13 @@ function QuickRepliesPage() {
                 placeholder="Buscar atalho ou texto..."
               />
             </Card>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid auto-rows-[9.5rem] gap-3 md:grid-cols-2">
               {filtered.map((reply) => (
-                <Card key={reply.id} className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                <Card
+                  key={reply.id}
+                  className="flex h-full items-start justify-between gap-3 transition hover:border-primary/35 hover:bg-surface-1"
+                >
+                  <div className="min-w-0 flex-1 overflow-y-auto pr-1">
                     <p className="font-mono text-sm text-primary">
                       /{reply.atalho.replace(/^\//, "")}
                     </p>
@@ -123,6 +145,16 @@ function QuickRepliesPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        title="Duplicar"
+                        aria-label="Duplicar"
+                        onClick={() => openDuplicate(reply)}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Editar"
                         aria-label="Editar"
                         onClick={() => openEdit(reply)}
                       >
@@ -131,6 +163,7 @@ function QuickRepliesPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        title="Remover"
                         aria-label="Remover"
                         onClick={() => setConfirming(reply)}
                       >
@@ -151,12 +184,13 @@ function QuickRepliesPage() {
 
         <QuickReplyEditor
           open={editor.open}
-          onClose={editor.hide}
-          initial={editing}
+          onClose={closeEditor}
+          initial={editing ?? duplicating}
+          clone={!!duplicating}
           onSaved={() => {
             refresh();
             qc.invalidateQueries({ queryKey: ["nexos", "quick-replies", "composer"] });
-            editor.hide();
+            closeEditor();
           }}
         />
 
@@ -188,24 +222,38 @@ function QuickReplyEditor({
   open,
   onClose,
   initial,
+  clone = false,
   onSaved,
 }: {
   open: boolean;
   onClose: () => void;
   initial: ApiQuickReply | null;
+  clone?: boolean;
   onSaved: () => void;
 }) {
   const [atalho, setAtalho] = React.useState("");
   const [texto, setTexto] = React.useState("");
+  const [attachment, setAttachment] = React.useState<QuickReplyAttachment | null>(null);
   const [closeOnSend, setCloseOnSend] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  const fileRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (!open) return;
-    setAtalho(initial?.atalho.replace(/^\//, "") ?? "");
+    setAtalho(initial ? duplicateShortcut(initial.atalho, clone) : "");
     setTexto(initial?.texto ?? "");
+    setAttachment(
+      initial?.attachmentDataUrl
+        ? {
+            fileName: initial.attachmentFileName ?? "anexo",
+            mimeType: initial.attachmentMimeType ?? "application/octet-stream",
+            size: initial.attachmentSize ?? 0,
+            dataUrl: initial.attachmentDataUrl,
+          }
+        : null,
+    );
     setCloseOnSend(initial?.close_on_send ?? false);
-  }, [open, initial]);
+  }, [clone, open, initial]);
 
   const save = async () => {
     const shortcut = atalho.trim().replace(/^\//, "").toLowerCase();
@@ -214,13 +262,17 @@ function QuickReplyEditor({
     if (!content) return toast.error("Informe o texto.");
     setBusy(true);
     try {
-      if (initial) {
+      if (initial && !clone) {
         await quickReplyApi.update(initial.id, {
           title: shortcut,
           shortcut,
           content,
           departmentId: initial.departmentId,
           closeOnSend,
+          attachmentFileName: attachment?.fileName ?? null,
+          attachmentMimeType: attachment?.mimeType ?? null,
+          attachmentSize: attachment?.size ?? null,
+          attachmentDataUrl: attachment?.dataUrl ?? null,
         });
       } else {
         await quickReplyApi.create({
@@ -229,6 +281,10 @@ function QuickReplyEditor({
           content,
           departmentId: null,
           closeOnSend,
+          attachmentFileName: attachment?.fileName ?? null,
+          attachmentMimeType: attachment?.mimeType ?? null,
+          attachmentSize: attachment?.size ?? null,
+          attachmentDataUrl: attachment?.dataUrl ?? null,
         });
       }
       toast.success("Salvo");
@@ -244,8 +300,9 @@ function QuickReplyEditor({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial ? "Editar atalho" : "Novo atalho"}
+      title={initial && !clone ? "Editar atalho" : "Novo atalho"}
       description="Atalhos curtos aceleram respostas."
+      size="lg"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -258,22 +315,70 @@ function QuickReplyEditor({
       }
     >
       <div className="space-y-3">
-        <Field label="Atalho" hint="Sem barra. Ex.: bd, bt, obg">
+        <Field label="Atalho *" hint="Sem barra. Ex.: bd, bt, obg">
           <Input
             value={atalho}
             onChange={(event) => setAtalho(event.target.value)}
             placeholder="bd"
           />
         </Field>
-        <Field label="Texto completo">
+        <Field label="Mensagem *">
           <textarea
-            rows={4}
+            rows={8}
             value={texto}
             onChange={(event) => setTexto(event.target.value)}
-            className="w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring"
+            className="min-h-48 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring"
             placeholder="Bom dia! Como posso ajudar?"
           />
         </Field>
+        <div className="rounded-lg border border-border bg-surface-1 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Arquivo</p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {attachment
+                  ? `${attachment.fileName} (${formatFileSize(attachment.size)})`
+                  : "Nenhum arquivo anexado."}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {attachment && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Remover arquivo"
+                  aria-label="Remover arquivo"
+                  onClick={() => setAttachment(null)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                title="Anexar arquivo"
+                onClick={() => fileRef.current?.click()}
+              >
+                <Paperclip className="h-4 w-4" /> Anexar
+              </Button>
+            </div>
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            className="hidden"
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file) return;
+              try {
+                setAttachment(await readAttachment(file));
+              } catch (error) {
+                toast.error((error as Error).message);
+              }
+            }}
+          />
+        </div>
         <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm transition hover:bg-surface-2">
           <input
             type="checkbox"
@@ -283,7 +388,7 @@ function QuickReplyEditor({
           />
           <span>
             <span className="flex items-center gap-1 font-medium">
-              <CheckCircle2 className="h-4 w-4 text-primary" /> Encerrar conversa
+              <Info className="h-4 w-4 text-primary" /> Encerrar conversa
             </span>
             <span className="mt-1 block text-xs text-muted-foreground">
               Ao enviar este atalho no chat, a conversa será encerrada automaticamente.
@@ -293,4 +398,35 @@ function QuickReplyEditor({
       </div>
     </Modal>
   );
+}
+
+function duplicateShortcut(value: string, clone: boolean) {
+  const shortcut = value.replace(/^\//, "");
+  return clone ? `${shortcut}-copia` : shortcut;
+}
+
+function readAttachment(file: File): Promise<QuickReplyAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("Nao foi possivel carregar o arquivo."));
+        return;
+      }
+      resolve({
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+        dataUrl: reader.result,
+      });
+    };
+    reader.onerror = () => reject(new Error("Nao foi possivel carregar o arquivo."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }

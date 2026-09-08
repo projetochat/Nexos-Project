@@ -223,6 +223,7 @@ export class MessagingConnectionsService {
       data: {
         name: dto.name?.trim(),
         color: normalizeColor(dto.color),
+        logoUrl: normalizeLogoUrl(dto.logoUrl),
         welcomeEnabled: dto.welcomeEnabled,
         welcomeNewMessage: cleanOptionalText(dto.welcomeNewMessage),
         welcomeExistingMessage: cleanOptionalText(dto.welcomeExistingMessage),
@@ -668,6 +669,7 @@ export class MessagingConnectionsService {
       status: connection.status.toLowerCase(),
       externalReference: connection.externalReference,
       color: connection.color,
+      logoUrl: connection.logoUrl,
       welcomeEnabled: connection.welcomeEnabled,
       welcomeNewMessage: connection.welcomeNewMessage,
       welcomeExistingMessage: connection.welcomeExistingMessage,
@@ -740,6 +742,16 @@ function normalizeColor(value: string | null | undefined) {
   const trimmed = value?.trim();
   if (!trimmed) return "#22c55e";
   return /^#[0-9a-f]{6}$/i.test(trimmed) ? trimmed : "#22c55e";
+}
+
+function normalizeLogoUrl(value: string | null | undefined) {
+  if (value === undefined) return undefined;
+  if (value === null || value.trim() === "") return null;
+  const trimmed = value.trim();
+  if (!/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(trimmed)) {
+    throw new BadRequestException("Logo da instancia invalida.");
+  }
+  return trimmed;
 }
 
 function cleanOptionalText(value: string | null | undefined) {

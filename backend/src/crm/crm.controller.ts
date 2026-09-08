@@ -1975,13 +1975,15 @@ export class CrmController {
   }
 
   private serializeTag(
-    tag: { id: string; name: string; color: string },
+    tag: { id: string; name: string; color: string; createdAt?: Date; updatedAt?: Date },
     counts?: { conversationCount?: number; customerCount?: number },
   ) {
     return {
       id: tag.id,
       nome: tag.name,
       cor: tag.color,
+      createdAt: tag.createdAt,
+      updatedAt: tag.updatedAt,
       conversationCount: counts?.conversationCount,
       customerCount: counts?.customerCount,
     };

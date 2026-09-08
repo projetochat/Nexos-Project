@@ -163,6 +163,8 @@ export class DepartmentsController {
     color: string;
     active: boolean;
     tenantId: string;
+    createdAt: Date;
+    updatedAt: Date;
   }) {
     return {
       id: department.id,
@@ -171,6 +173,8 @@ export class DepartmentsController {
       description: department.description,
       color: department.color,
       active: department.active,
+      createdAt: department.createdAt.toISOString(),
+      updatedAt: department.updatedAt.toISOString(),
     };
   }
 }

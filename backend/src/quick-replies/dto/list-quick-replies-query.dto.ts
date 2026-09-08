@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID } from "class-validator";
+import { IsIn, IsOptional, IsString, IsUUID } from "class-validator";
 
 export class ListQuickRepliesQueryDto {
   @IsOptional()
@@ -12,4 +12,8 @@ export class ListQuickRepliesQueryDto {
   @IsOptional()
   @IsString()
   status?: "active" | "archived" | "all";
+
+  @IsOptional()
+  @IsIn(["visible", "catalog"])
+  scope?: "visible" | "catalog";
 }

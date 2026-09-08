@@ -1040,6 +1040,7 @@ model MessagingConnection {
   tenantId             String
   name                 String
   color                String?                   @default("#22c55e")
+  logoUrl              String?
   welcomeEnabled       Boolean                   @default(false)
   welcomeNewMessage    String?
   welcomeExistingMessage String?
@@ -1077,6 +1078,10 @@ model QuickReply {
   shortcut              String
   normalizedShortcut    String
   content               String
+  attachmentFileName    String?
+  attachmentMimeType    String?
+  attachmentSize        Int?
+  attachmentDataUrl     String?
   closeOnSend           Boolean           @default(false)
   departmentId          String?
   createdByMembershipId String?

@@ -1,7 +1,18 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Eye,
+  Pencil,
+  Plus,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -10,7 +21,6 @@ import {
   Button,
   Avatar,
   Badge,
-  KPI,
   Field,
   Input,
   SearchInput,
@@ -18,12 +28,15 @@ import {
 } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import { num } from "@/lib/format";
+import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { organizationApi, type ApiUserMembership } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/atendentes")({ component: AtendentesPage });
 
 const TONE = { online: "success", ausente: "warning", offline: "default" } as const;
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 type Atendente = {
   id: string;
@@ -44,6 +57,7 @@ type Atendente = {
 
 function AtendentesPage() {
   const qc = useQueryClient();
+  const sessionUser = useSession((state) => state.user);
   const { data: memberships = [], isLoading } = useQuery({
     queryKey: ["nexos", "users"],
     queryFn: organizationApi.listUsers,
@@ -55,8 +69,12 @@ function AtendentesPage() {
 
   const atendentes = React.useMemo(() => memberships.map(toAtendente), [memberships]);
   const [query, setQuery] = React.useState("");
-  const [statusFilter, setStatusFilter] = React.useState("all");
+  const [perfilFilter, setPerfilFilter] = React.useState("");
+  const [ativoFilter, setAtivoFilter] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [editing, setEditing] = React.useState<Atendente | null>(null);
+  const [duplicating, setDuplicating] = React.useState<Atendente | null>(null);
   const [deleting, setDeleting] = React.useState<Atendente | null>(null);
   const novo = useDisclosure();
 
@@ -73,6 +91,7 @@ function AtendentesPage() {
       qc.invalidateQueries({ queryKey: ["nexos", "users"] });
       toast.success("Atendente cadastrado");
       novo.hide();
+      setDuplicating(null);
     },
     onError: (error) => toast.error((error as Error).message),
   });
@@ -87,8 +106,9 @@ function AtendentesPage() {
         avatarUrl: data.avatarUrl ?? null,
         membershipStatus: data.ativo === false ? "DISABLED" : "ACTIVE",
       }),
-    onSuccess: () => {
+    onSuccess: (membership) => {
       qc.invalidateQueries({ queryKey: ["nexos", "users"] });
+      syncSessionUserFromMembership(membership, sessionUser?.id);
       toast.success("Atendente atualizado");
       setEditing(null);
     },
@@ -106,97 +126,114 @@ function AtendentesPage() {
   });
 
   const filtered = atendentes.filter((a) => {
-    if (statusFilter !== "all" && a.status !== statusFilter) return false;
+    if (perfilFilter && a.perfilId !== perfilFilter) return false;
+    if (ativoFilter === "active" && !a.ativo) return false;
+    if (ativoFilter === "inactive" && a.ativo) return false;
     if (query) return (a.nome + a.email + a.cargo).toLowerCase().includes(query.toLowerCase());
     return true;
   });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageSafe = Math.min(page, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
 
-  const online = atendentes.filter((a) => a.status === "online").length;
-  const csat = atendentes.length
-    ? (atendentes.reduce((s, a) => s + a.csat, 0) / atendentes.length).toFixed(1)
-    : "0.0";
-  const idle = atendentes.filter((a) => a.emAtendimento === 0 && a.status === "online").length;
+  React.useEffect(() => {
+    setPage(1);
+  }, [ativoFilter, perfilFilter, query, pageSize]);
 
   return (
     <AppShell>
-      <PageContainer>
+      <PageContainer className="max-w-[96rem] lg:px-8 xl:px-10 2xl:px-12">
         <SectionHeader
           title="Atendentes"
           subtitle={`${num(atendentes.length)} atendentes cadastrados.`}
+          subtitleClassName="hidden sm:block"
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>
-              <Plus className="h-3.5 w-3.5" /> Cadastrar
+              <Plus className="h-3.5 w-3.5" /> Novo Atendente
             </Button>
           }
         />
 
-        <div className="mb-6 grid gap-4 md:grid-cols-4">
-          <KPI label="Total" value={num(atendentes.length)} tone="info" />
-          <KPI
-            label="Online agora"
-            value={String(online)}
-            delta={`+${Math.floor(online / 6)}`}
-            tone="success"
-          />
-          <KPI label="Avaliacao media" value={csat} delta="+0.1" tone="success" />
-          <KPI label="Ociosos" value={String(idle)} tone="warning" />
-        </div>
-
         <Card className="mb-4 p-4">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-            <SearchInput value={query} onChange={setQuery} placeholder="Buscar atendente..." />
-            <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="all">Todos os status</option>
-              <option>online</option>
-              <option>ausente</option>
-              <option>offline</option>
-            </Select>
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(140px,0.7fr))]">
+            <div className="col-span-2 xl:col-span-1">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Busca</label>
+              <SearchInput
+                value={query}
+                onChange={setQuery}
+                placeholder="Buscar por nome, e-mail ou perfil..."
+              />
+            </div>
+            <FilterSelect label="Perfil" value={perfilFilter} onChange={setPerfilFilter}>
+              <option value="">Todos</option>
+              {sortByOptionLabel(perfis, (p) => p.name).map((perfil) => (
+                <option key={perfil.id} value={perfil.id}>
+                  {perfil.name}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect label="Ativo" value={ativoFilter} onChange={setAtivoFilter}>
+              <option value="">Todos</option>
+              <option value="active">Ativos</option>
+              <option value="inactive">Inativos</option>
+            </FilterSelect>
           </div>
         </Card>
 
-        <Card className="overflow-hidden p-0">
-          <table className="w-full table-fixed text-sm">
+        <Card className="overflow-visible p-4 md:overflow-hidden md:rounded-lg md:p-0">
+          <table className="w-full table-fixed overflow-hidden rounded-lg text-sm">
             <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
               <tr>
-                <th className="px-4 py-3 font-medium">Atendente</th>
-                <th className="px-4 py-3 font-medium">E-mail</th>
-                <th className="px-4 py-3 font-medium">Perfil</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Em atendimento</th>
-                <th className="px-4 py-3 font-medium">Avaliacao</th>
-                <th className="px-4 py-3 text-center font-medium">Ações</th>
+                <th className="w-[30%] rounded-tl-lg px-3 py-3 font-medium sm:px-4">Atendente</th>
+                <th className="w-[22%] px-3 py-3 font-medium sm:px-4">Perfil</th>
+                <th className="w-[28%] px-3 py-3 font-medium sm:px-4">E-mail</th>
+                <th className="w-[10%] px-3 py-3 font-medium sm:px-4">Ativo</th>
+                <th className="w-36 rounded-tr-lg px-3 py-3 text-center font-medium sm:px-4">
+                  Ações
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {isLoading && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">
                     Carregando...
                   </td>
                 </tr>
               )}
               {!isLoading &&
-                filtered.map((a) => {
+                paginated.map((a) => {
                   const perfil = perfis.find((p) => p.id === a.perfilId);
                   return (
                     <tr key={a.id} className="transition hover:bg-surface-1">
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3 sm:px-4">
                         <div className="flex items-center gap-3">
                           <Avatar name={a.nome} src={a.avatarUrl} size={30} />
-                          <div>
-                            <p className="font-medium">{a.nome}</p>
-                          </div>
+                          <p className="truncate font-medium">{a.nome}</p>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{a.email}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{perfil?.name ?? "-"}</td>
-                      <td className="px-4 py-3">
-                        <Badge tone={TONE[a.status]}>{a.status}</Badge>
+                      <td className="px-3 py-3 text-muted-foreground sm:px-4">
+                        <span className="truncate">{perfil?.name ?? "-"}</span>
                       </td>
-                      <td className="px-4 py-3 font-mono">{a.emAtendimento}</td>
-                      <td className="px-4 py-3 font-mono">{a.csat}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3 text-muted-foreground sm:px-4">
+                        <span className="block truncate">{a.email}</span>
+                      </td>
+                      <td className="px-3 py-3 sm:px-4">
+                        <Badge tone={a.ativo ? "success" : "default"}>
+                          {a.ativo ? "Ativo" : "Inativo"}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-3 sm:px-4">
                         <div className="flex justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDuplicating(a)}
+                            title="Duplicar"
+                            aria-label="Duplicar"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -209,9 +246,10 @@ function AtendentesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            className="text-destructive hover:text-destructive"
                             onClick={() => setDeleting(a)}
-                            title="Remover"
-                            aria-label="Remover"
+                            title="Excluir"
+                            aria-label="Excluir"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -222,13 +260,58 @@ function AtendentesPage() {
                 })}
               {!isLoading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">
                     Nenhum resultado.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+          <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 leading-tight sm:leading-normal">
+                <span className="block sm:inline">Mostrando</span>
+                <span className="block sm:inline">
+                  {" "}
+                  {num(paginated.length)} de {num(filtered.length)}
+                </span>
+              </span>
+              <Select
+                value={String(pageSize)}
+                onChange={(event) => setPageSize(Number(event.target.value))}
+                className="h-8 w-20 text-xs sm:w-24"
+              >
+                {PAGE_SIZE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                disabled={pageSafe === 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <span className="font-mono">
+                {pageSafe} / {totalPages}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                disabled={pageSafe === totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
         </Card>
 
         <AtendenteForm
@@ -243,6 +326,14 @@ function AtendentesPage() {
           initial={editing ?? undefined}
           onClose={() => setEditing(null)}
           onSubmit={(data) => editing && update.mutate({ id: editing.id, data })}
+        />
+        <AtendenteForm
+          open={!!duplicating}
+          perfis={sortByOptionLabel(perfis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
+          initial={duplicating ?? undefined}
+          clone
+          onClose={() => setDuplicating(null)}
+          onSubmit={(data) => create.mutate(data)}
         />
         <ConfirmDialog
           open={!!deleting}
@@ -263,21 +354,35 @@ function AtendenteForm({
   onClose,
   onSubmit,
   initial,
+  clone = false,
   perfis,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (d: Partial<Atendente>) => void;
   initial?: Atendente;
+  clone?: boolean;
   perfis: { id: string; nome: string }[];
 }) {
   const [form, setForm] = React.useState<Partial<Atendente>>({});
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [photoMenuOpen, setPhotoMenuOpen] = React.useState(false);
+  const [cameraOpen, setCameraOpen] = React.useState(false);
+  const [photoPreviewOpen, setPhotoPreviewOpen] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const photoButtonRef = React.useRef<HTMLButtonElement | null>(null);
   React.useEffect(() => {
     setForm(
       initial
-        ? { ...initial }
+        ? clone
+          ? {
+              ...initial,
+              id: undefined,
+              nome: `${initial.nome} - Cópia`,
+              email: "",
+              senha: "",
+            }
+          : { ...initial }
         : {
             cargo: "Atendente",
             perfilId: perfis[0]?.id,
@@ -286,7 +391,10 @@ function AtendenteForm({
           },
     );
     setErrors({});
-  }, [initial, open, perfis]);
+    setPhotoMenuOpen(false);
+    setCameraOpen(false);
+    setPhotoPreviewOpen(false);
+  }, [clone, initial, open, perfis]);
 
   const onPickFile = (file?: File | null) => {
     if (!file) return;
@@ -295,8 +403,20 @@ function AtendenteForm({
       return;
     }
     void readImageAsCompressedDataUrl(file)
-      .then((avatarUrl) => setForm((f) => ({ ...f, avatarUrl })))
+      .then((avatarUrl) => {
+        setForm((f) => ({ ...f, avatarUrl }));
+        setPhotoMenuOpen(false);
+      })
       .catch((error) => toast.error((error as Error).message));
+  };
+
+  const showPhoto = () => {
+    setPhotoMenuOpen(false);
+    if (!form.avatarUrl) {
+      toast.info("Nenhuma foto cadastrada para este atendente.");
+      return;
+    }
+    setPhotoPreviewOpen(true);
   };
 
   const submit = () => {
@@ -305,7 +425,7 @@ function AtendenteForm({
     if (!form.perfilId) errs.perfilId = "Selecione um perfil.";
     if (!form.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email))
       errs.email = "E-mail invalido.";
-    if (!initial && (!form.senha || form.senha.length < 6))
+    if ((!initial || clone) && (!form.senha || form.senha.length < 6))
       errs.senha = "Senha minima de 6 caracteres.";
     if (form.senha && form.senha.length > 0 && form.senha.length < 6)
       errs.senha = "Senha minima de 6 caracteres.";
@@ -318,133 +438,441 @@ function AtendenteForm({
   };
 
   return (
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        title={
+          initial && !clone
+            ? "Editar Atendente"
+            : clone
+              ? "Duplicar Atendente"
+              : "Cadastrar Atendente"
+        }
+        size="lg"
+        footer={
+          <div className="flex w-full items-center justify-between gap-2">
+            <EntityFormLog
+              createdAt={initial && !clone ? initial.createdAt : undefined}
+              updatedAt={initial && !clone ? initial.updatedAt : undefined}
+            />
+            <div className="flex shrink-0 justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button variant="primary" size="sm" onClick={submit}>
+                Salvar
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <div className="grid gap-5 md:grid-cols-[150px_minmax(0,1fr)]">
+          <div className="relative flex justify-center md:justify-start md:pt-9">
+            <button
+              ref={photoButtonRef}
+              type="button"
+              className="relative flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-sm font-semibold text-muted-foreground"
+              onClick={() => setPhotoMenuOpen((current) => !current)}
+              aria-label="Opções da foto"
+            >
+              {form.avatarUrl ? (
+                <img
+                  src={form.avatarUrl}
+                  alt="Foto do atendente"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <Avatar name={form.nome ?? "?"} size={112} />
+              )}
+              <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-white opacity-0 transition hover:opacity-100">
+                <Camera className="h-8 w-8" />
+              </span>
+            </button>
+            <FloatingPhotoMenu
+              open={photoMenuOpen}
+              anchorRef={photoButtonRef}
+              onClose={() => setPhotoMenuOpen(false)}
+            >
+              <PhotoMenuButton icon={<Eye className="h-4 w-4" />} onClick={showPhoto}>
+                Mostrar foto
+              </PhotoMenuButton>
+              <PhotoMenuButton
+                icon={<Camera className="h-4 w-4" />}
+                onClick={() => {
+                  setPhotoMenuOpen(false);
+                  setCameraOpen(true);
+                }}
+              >
+                Tirar foto
+              </PhotoMenuButton>
+              <PhotoMenuButton
+                icon={<Upload className="h-4 w-4" />}
+                onClick={() => fileRef.current?.click()}
+              >
+                Carregar foto
+              </PhotoMenuButton>
+              <div className="my-1 border-t border-border" />
+              <PhotoMenuButton
+                icon={<Trash2 className="h-4 w-4" />}
+                onClick={() => {
+                  setForm({ ...form, avatarUrl: undefined });
+                  setPhotoMenuOpen(false);
+                }}
+              >
+                Remover foto
+              </PhotoMenuButton>
+            </FloatingPhotoMenu>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                onPickFile(event.target.files?.[0]);
+                event.currentTarget.value = "";
+              }}
+            />
+          </div>
+
+          <div className="space-y-4">
+            <label className="flex min-h-9 cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-primary"
+                checked={form.ativo !== false}
+                onChange={(event) => setForm({ ...form, ativo: event.target.checked })}
+              />
+              <span>Ativo</span>
+            </label>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Nome *">
+                <Input
+                  value={form.nome ?? ""}
+                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                />
+                {errors.nome && (
+                  <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
+                )}
+              </Field>
+              <Field label="Perfil de acesso *">
+                <Select
+                  value={form.perfilId ?? ""}
+                  onChange={(e) => setForm({ ...form, perfilId: e.target.value || undefined })}
+                >
+                  <option value="">Selecione...</option>
+                  {perfis.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome}
+                    </option>
+                  ))}
+                </Select>
+                {errors.perfilId && (
+                  <span className="mt-1 block text-[11px] text-destructive">{errors.perfilId}</span>
+                )}
+              </Field>
+              <Field label="E-mail (login) *">
+                <Input
+                  type="email"
+                  value={form.email ?? ""}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                />
+                {errors.email && (
+                  <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
+                )}
+              </Field>
+              <Field label={initial && !clone ? "Senha (deixe em branco para manter)" : "Senha *"}>
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.senha ?? ""}
+                  onChange={(e) => setForm({ ...form, senha: e.target.value })}
+                />
+                {errors.senha && (
+                  <span className="mt-1 block text-[11px] text-destructive">{errors.senha}</span>
+                )}
+              </Field>
+            </div>
+          </div>
+        </div>
+      </Modal>
+      <AtendenteCameraModal
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={(avatarUrl) => {
+          setForm((current) => ({ ...current, avatarUrl }));
+          setCameraOpen(false);
+        }}
+      />
+      <PhotoPreviewModal
+        open={photoPreviewOpen}
+        title={form.nome ? `Foto de ${form.nome}` : "Foto do atendente"}
+        src={form.avatarUrl}
+        onClose={() => setPhotoPreviewOpen(false)}
+      />
+    </>
+  );
+}
+
+function PhotoMenuButton({
+  icon,
+  onClick,
+  children,
+}: {
+  icon: React.ReactNode;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex w-full items-center gap-3 px-4 py-2 text-left text-foreground transition hover:bg-surface-1"
+      onClick={onClick}
+    >
+      <span className="text-muted-foreground">{icon}</span>
+      {children}
+    </button>
+  );
+}
+
+function FloatingPhotoMenu({
+  open,
+  anchorRef,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const menuRef = React.useRef<HTMLDivElement | null>(null);
+  const [position, setPosition] = React.useState({ top: 0, left: 0 });
+
+  React.useEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      setPosition({
+        top: Math.min(window.innerHeight - 220, rect.bottom + 8),
+        left: Math.max(12, Math.min(window.innerWidth - 204, rect.left)),
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [anchorRef, open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || anchorRef.current?.contains(target)) return;
+      onClose();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [anchorRef, onClose, open]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="fixed z-[260] w-48 rounded-lg border border-border bg-card py-2 text-sm shadow-xl"
+      style={{ top: position.top, left: position.left }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+function AtendenteCameraModal({
+  open,
+  onClose,
+  onCapture,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCapture: (dataUrl: string) => void;
+}) {
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    setError(null);
+
+    const stopCamera = () => {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    };
+
+    navigator.mediaDevices
+      ?.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          void videoRef.current.play();
+        }
+      })
+      .catch(() => {
+        setError("Não foi possível acessar a câmera neste dispositivo.");
+      });
+
+    return () => {
+      cancelled = true;
+      stopCamera();
+    };
+  }, [open]);
+
+  const capture = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      setError("A câmera ainda não está pronta.");
+      return;
+    }
+    const maxSize = 512;
+    const ratio = Math.min(1, maxSize / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(video.videoWidth * ratio));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * ratio));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      setError("Não foi possível capturar a imagem.");
+      return;
+    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    onCapture(canvas.toDataURL("image/jpeg", 0.82));
+  };
+
+  return (
     <Modal
       open={open}
       onClose={onClose}
-      title={initial ? "Editar atendente" : "Cadastrar atendente"}
-      size="lg"
+      title="Tirar foto"
+      size="md"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Button variant="primary" size="sm" onClick={submit}>
-            Salvar
+          <Button variant="primary" size="sm" onClick={capture} disabled={!!error}>
+            Capturar
           </Button>
         </>
       }
     >
-      <div className="grid gap-4">
-        <Field label="Status">
-          <div className="flex w-fit gap-2 rounded-lg border border-border bg-surface-1 p-1">
-            <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-sm">
-              <input
-                type="radio"
-                name="atendente-status"
-                className="h-4 w-4 accent-primary"
-                checked={form.ativo !== false}
-                onChange={() => setForm({ ...form, ativo: true })}
-              />
-              <span>Ativo</span>
-            </label>
-            <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-sm">
-              <input
-                type="radio"
-                name="atendente-status"
-                className="h-4 w-4 accent-primary"
-                checked={form.ativo === false}
-                onChange={() => setForm({ ...form, ativo: false })}
-              />
-              <span>Inativo</span>
-            </label>
-          </div>
-        </Field>
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Nome *">
-            <Input
-              value={form.nome ?? ""}
-              onChange={(e) => setForm({ ...form, nome: e.target.value })}
-            />
-            {errors.nome && (
-              <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
-            )}
-          </Field>
-          <Field label="Perfil de acesso *">
-            <Select
-              value={form.perfilId ?? ""}
-              onChange={(e) => setForm({ ...form, perfilId: e.target.value || undefined })}
-            >
-              <option value="">Selecione...</option>
-              {perfis.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nome}
-                </option>
-              ))}
-            </Select>
-            {errors.perfilId && (
-              <span className="mt-1 block text-[11px] text-destructive">{errors.perfilId}</span>
-            )}
-          </Field>
-          <Field label="E-mail (login) *">
-            <Input
-              type="email"
-              value={form.email ?? ""}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-            />
-            {errors.email && (
-              <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
-            )}
-          </Field>
-          <Field label={initial ? "Senha (deixe em branco para manter)" : "Senha *"}>
-            <Input
-              type="password"
-              autoComplete="new-password"
-              value={form.senha ?? ""}
-              onChange={(e) => setForm({ ...form, senha: e.target.value })}
-            />
-            {errors.senha && (
-              <span className="mt-1 block text-[11px] text-destructive">{errors.senha}</span>
-            )}
-          </Field>
+      {error ? (
+        <div className="rounded-lg border border-border bg-surface-1 p-6 text-center text-sm text-muted-foreground">
+          {error}
         </div>
-        <Field label="Foto">
-          <div className="flex items-center gap-3">
-            {form.avatarUrl ? (
-              <img src={form.avatarUrl} alt="" className="h-14 w-14 rounded-full object-cover" />
-            ) : (
-              <Avatar name={form.nome ?? "?"} size={56} />
-            )}
-            <div className="flex gap-2">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => onPickFile(e.target.files?.[0])}
-              />
-              <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}>
-                Fazer upload
-              </Button>
-              {form.avatarUrl && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setForm({ ...form, avatarUrl: undefined })}
-                >
-                  Remover
-                </Button>
-              )}
-            </div>
-          </div>
-        </Field>
-        {initial && (
-          <div className="rounded-lg border border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground">
-            <span className="mr-3">Criado: {formatDateTime(initial.createdAt)}</span>
-            <span>Editado: {formatDateTime(initial.updatedAt)}</span>
-          </div>
+      ) : (
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          className="aspect-video w-full rounded-lg border border-border bg-black object-cover"
+        />
+      )}
+    </Modal>
+  );
+}
+
+function PhotoPreviewModal({
+  open,
+  title,
+  src,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  src?: string | null;
+  onClose: () => void;
+}) {
+  return (
+    <Modal open={open && !!src} onClose={onClose} title={title} size="md">
+      <div className="flex justify-center">
+        {src && (
+          <img
+            src={src}
+            alt={title}
+            className="max-h-[70vh] w-full max-w-sm rounded-xl border border-border object-contain"
+          />
         )}
       </div>
     </Modal>
+  );
+}
+
+function EntityFormLog({
+  createdAt,
+  updatedAt,
+}: {
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}) {
+  if (!createdAt && !updatedAt) return <span aria-hidden="true" />;
+  return (
+    <div className="min-w-0 text-left text-[11px] leading-4 text-muted-foreground sm:text-xs sm:leading-5">
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Criado:</span> {formatDateTime(createdAt)}
+      </div>
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Editado:</span> {formatDateTime(updatedAt)}
+      </div>
+    </div>
+  );
+}
+
+function syncSessionUserFromMembership(membership: ApiUserMembership, currentUserId?: string) {
+  if (!currentUserId || membership.user.id !== currentUserId) return;
+  useSession.setState((state) => ({
+    user: state.user
+      ? {
+          ...state.user,
+          nome: membership.user.name,
+          email: membership.user.email,
+          avatarUrl: membership.user.avatarUrl ?? undefined,
+        }
+      : state.user,
+  }));
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
+      <Select value={value} onChange={(event) => onChange(event.target.value)}>
+        {children}
+      </Select>
+    </label>
   );
 }
 
@@ -467,7 +895,7 @@ function toAtendente(membership: ApiUserMembership): Atendente {
   };
 }
 
-function formatDateTime(value?: string) {
+function formatDateTime(value?: string | null) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
