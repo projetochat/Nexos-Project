@@ -51,6 +51,10 @@ async function main() {
     await seedDemoData();
     return;
   }
+  if (seedMode === "production") {
+    await seedProductionStaging();
+    return;
+  }
   if (seedMode !== "homologation") {
     throw new Error(`SEED_MODE invalido: ${seedMode}`);
   }
@@ -164,6 +168,141 @@ async function seedHomologationMinimum() {
   await seedMembership(tenant.id, admin.id, roles.tenant_admin.id, [department.id]);
   await seedMembership(tenant.id, agent.id, roles.agent.id, [department.id]);
   await seedTenantSubscription(tenant.id, "plan_professional_homologation");
+}
+
+async function seedProductionStaging() {
+  const tenantName = productionStagingTenantName();
+  const tenantSlug = productionStagingTenantSlug();
+  const adminEmail = productionStagingAdminEmail();
+  const adminPassword = productionStagingAdminPassword();
+  const departmentName = productionStagingDepartmentName();
+  const planCode = process.env.STAGING_PLAN_CODE?.trim() || "professional";
+  const plan = await prisma.plan.findUnique({ where: { code: planCode } });
+  if (!plan || plan.status !== "ACTIVE") {
+    throw new Error(`STAGING_PLAN_CODE invalido ou inativo: ${planCode}`);
+  }
+
+  const passwordHash = await hash(adminPassword, 12);
+  const tenant = await prisma.$transaction(async (tx) => {
+    const savedTenant = await tx.tenant.upsert({
+      where: { slug: tenantSlug },
+      update: {
+        name: tenantName,
+        legalName: tenantName,
+        displayName: tenantName,
+        status: "ACTIVE",
+        timezone: "America/Sao_Paulo",
+        locale: "pt-BR",
+        activatedAt: new Date(),
+        suspendedAt: null,
+        terminatedAt: null,
+        suspensionReason: null,
+      },
+      create: {
+        name: tenantName,
+        slug: tenantSlug,
+        legalName: tenantName,
+        displayName: tenantName,
+        status: "ACTIVE",
+        timezone: "America/Sao_Paulo",
+        locale: "pt-BR",
+        activatedAt: new Date(),
+      },
+    });
+    const roles = await seedRolesWithClient(tx, savedTenant.id);
+    const department = await tx.department.upsert({
+      where: { tenantId_name: { tenantId: savedTenant.id, name: departmentName } },
+      update: {
+        description: "Departamento inicial da empresa staging.",
+        color: "#3B82F6",
+        active: true,
+      },
+      create: {
+        tenantId: savedTenant.id,
+        name: departmentName,
+        description: "Departamento inicial da empresa staging.",
+        color: "#3B82F6",
+        active: true,
+      },
+    });
+    const user = await tx.user.upsert({
+      where: { email: adminEmail },
+      update: {
+        name: "Administrador Staging",
+        passwordHash,
+        status: "ACTIVE",
+        platformRole: PlatformRole.USER,
+      },
+      create: {
+        email: adminEmail,
+        name: "Administrador Staging",
+        passwordHash,
+        status: "ACTIVE",
+        platformRole: PlatformRole.USER,
+      },
+    });
+    const membership = await tx.tenantMembership.upsert({
+      where: { tenantId_userId: { tenantId: savedTenant.id, userId: user.id } },
+      update: { roleId: roles.tenant_admin.id, status: "ACTIVE" },
+      create: {
+        tenantId: savedTenant.id,
+        userId: user.id,
+        roleId: roles.tenant_admin.id,
+        status: "ACTIVE",
+      },
+    });
+    await tx.departmentMembership.upsert({
+      where: {
+        departmentId_membershipId: {
+          departmentId: department.id,
+          membershipId: membership.id,
+        },
+      },
+      update: {},
+      create: {
+        tenantId: savedTenant.id,
+        departmentId: department.id,
+        membershipId: membership.id,
+      },
+    });
+    const subscription = await tx.tenantSubscription.findFirst({
+      where: {
+        tenantId: savedTenant.id,
+        status: { in: ["TRIALING", "ACTIVE", "PAST_DUE", "SUSPENDED"] },
+      },
+    });
+    if (subscription) {
+      await tx.tenantSubscription.update({
+        where: { id: subscription.id },
+        data: {
+          planId: plan.id,
+          status: "ACTIVE",
+          currentPeriodEnd: addDays(new Date(), 30),
+          limitsSnapshot: plan.limits ?? professionalLimits(),
+          featuresSnapshot: plan.features ?? professionalFeatures(),
+          cancelAtPeriodEnd: false,
+          cancelledAt: null,
+        },
+      });
+    } else {
+      await tx.tenantSubscription.create({
+        data: {
+          tenantId: savedTenant.id,
+          planId: plan.id,
+          status: "ACTIVE",
+          currentPeriodEnd: addDays(new Date(), 30),
+          limitsSnapshot: plan.limits ?? professionalLimits(),
+          featuresSnapshot: plan.features ?? professionalFeatures(),
+        },
+      });
+    }
+    return savedTenant;
+  });
+
+  console.info(`productionStagingTenant=${tenant.slug}`);
+  console.info(`productionStagingName=${tenant.name}`);
+  console.info(`productionStagingAdminEmail=${adminEmail}`);
+  console.info("productionStagingSeed=upserted");
 }
 
 async function seedDemoData() {
@@ -306,6 +445,53 @@ async function seedRoles(tenantId: string) {
         },
       });
       await replaceRolePermissions(saved.id, role.permissions);
+      return [role.key, saved] as const;
+    }),
+  );
+  return Object.fromEntries(entries) as unknown as Record<
+    (typeof SYSTEM_ROLES)[number]["key"],
+    { id: string }
+  >;
+}
+
+async function seedRolesWithClient(
+  tx: Pick<PrismaClient, "permission" | "role" | "rolePermission">,
+  tenantId: string,
+) {
+  const permissionIds = [...new Set(SYSTEM_ROLES.flatMap((role) => role.permissions))];
+  await Promise.all(
+    permissionIds.map((permissionId) =>
+      tx.permission.upsert({
+        where: { id: permissionId },
+        update: { description: permissionDescription(permissionId) },
+        create: { id: permissionId, description: permissionDescription(permissionId) },
+      }),
+    ),
+  );
+
+  const entries = await Promise.all(
+    SYSTEM_ROLES.map(async (role) => {
+      const saved = await tx.role.upsert({
+        where: { tenantId_key: { tenantId, key: role.key } },
+        update: {
+          name: role.name,
+          description: role.description,
+          system: true,
+        },
+        create: {
+          id: `${tenantId}:${role.key}`,
+          tenantId,
+          key: role.key,
+          name: role.name,
+          description: role.description,
+          system: true,
+        },
+      });
+      await tx.rolePermission.deleteMany({ where: { roleId: saved.id } });
+      await tx.rolePermission.createMany({
+        data: role.permissions.map((permissionId) => ({ roleId: saved.id, permissionId })),
+        skipDuplicates: true,
+      });
       return [role.key, saved] as const;
     }),
   );
@@ -907,6 +1093,34 @@ function seedAgentPassword() {
   return "demo1234";
 }
 
+function productionStagingTenantName() {
+  return process.env.STAGING_TENANT_NAME?.trim() || "Empresa Teste";
+}
+
+function productionStagingTenantSlug() {
+  return normalizeSlug(process.env.STAGING_TENANT_SLUG?.trim() || "staging");
+}
+
+function productionStagingDepartmentName() {
+  return process.env.STAGING_DEPARTMENT_NAME?.trim() || "Atendimento";
+}
+
+function productionStagingAdminEmail() {
+  const email = process.env.STAGING_ADMIN_EMAIL ?? process.env.SEED_ADMIN_EMAIL;
+  if (!email?.trim()) {
+    throw new Error("STAGING_ADMIN_EMAIL must be configured for SEED_MODE=production.");
+  }
+  return email.toLowerCase().trim();
+}
+
+function productionStagingAdminPassword() {
+  const password = process.env.STAGING_ADMIN_PASSWORD ?? process.env.SEED_ADMIN_PASSWORD;
+  if (!password) {
+    throw new Error("STAGING_ADMIN_PASSWORD must be configured for SEED_MODE=production.");
+  }
+  return password;
+}
+
 function seedPlatformEmail(key: string) {
   const email = process.env[key];
   if (!email?.trim()) throw new Error(`${key} must be configured.`);
@@ -959,6 +1173,20 @@ function professionalLimits() {
     maxCampaignRecipients: 500,
     maxStorageBytes: 512 * 1024 * 1024,
   };
+}
+
+function normalizeSlug(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getTime() + days * 24 * 60 * 60_000);
 }
 
 main()
