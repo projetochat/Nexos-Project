@@ -1044,6 +1044,8 @@ model MessagingConnection {
   welcomeEnabled       Boolean                   @default(false)
   welcomeNewMessage    String?
   welcomeExistingMessage String?
+  absenceEnabled       Boolean                   @default(false)
+  absenceMessage       String?
   notes                String?
   providerType         MessagingProviderType
   status               MessagingConnectionStatus @default(DISCONNECTED)

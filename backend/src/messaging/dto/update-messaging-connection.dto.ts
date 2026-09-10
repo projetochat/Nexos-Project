@@ -31,6 +31,15 @@ export class UpdateMessagingConnectionDto {
   welcomeExistingMessage?: string | null;
 
   @IsOptional()
+  @IsBoolean()
+  absenceEnabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  absenceMessage?: string | null;
+
+  @IsOptional()
   @IsString()
   @MaxLength(1000)
   notes?: string | null;

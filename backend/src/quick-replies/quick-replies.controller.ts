@@ -196,14 +196,13 @@ export class QuickRepliesController {
 
   private async ensureShortcutAvailable(
     tenantId: string,
-    departmentId: string | null,
+    _departmentId: string | null,
     normalizedShortcut: string,
     excludeId?: string,
   ) {
     const duplicate = await this.prisma.quickReply.findFirst({
       where: {
         tenantId,
-        departmentId,
         normalizedShortcut,
         archivedAt: null,
         ...(excludeId ? { id: { not: excludeId } } : {}),

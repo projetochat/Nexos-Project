@@ -260,11 +260,13 @@ export function KPI({
   value,
   delta,
   tone = "info",
+  icon,
 }: {
   label: string;
   value: string;
   delta?: string;
   tone?: "success" | "warning" | "info" | "destructive";
+  icon?: React.ReactNode;
 }) {
   const toneClass = {
     success: "text-success",
@@ -273,10 +275,15 @@ export function KPI({
     destructive: "text-destructive",
   }[tone];
   return (
-    <Card>
+    <Card className={icon ? "relative overflow-hidden" : ""}>
       <p className="text-xs uppercase tracking-widest text-muted-foreground">{label}</p>
       <p className="mt-3 font-mono text-3xl font-semibold tabular-nums">{value}</p>
       {delta && <p className={`mt-1 text-xs font-medium ${toneClass}`}>{delta} vs semana</p>}
+      {icon && (
+        <span className={`absolute bottom-4 right-4 ${toneClass}`} aria-hidden="true">
+          {icon}
+        </span>
+      )}
     </Card>
   );
 }

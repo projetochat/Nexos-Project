@@ -112,24 +112,24 @@ export function DashboardFiltersBar({
             ))}
           </Select>
         </FilterField>
-        <FilterField label="Dt. inicial">
+        <FilterField label="Dt. inicial" className="min-w-0">
           <Input
             type="date"
             value={start}
             readOnly={!isCustom}
             aria-readonly={!isCustom}
             onChange={(event) => onChange({ start: event.target.value })}
-            className={!isCustom ? "cursor-not-allowed text-muted-foreground" : ""}
+            className={`min-w-0 px-2 text-xs sm:px-3 sm:text-sm ${!isCustom ? "cursor-not-allowed text-muted-foreground" : ""}`}
           />
         </FilterField>
-        <FilterField label="Dt. final">
+        <FilterField label="Dt. final" className="min-w-0">
           <Input
             type="date"
             value={end}
             readOnly={!isCustom}
             aria-readonly={!isCustom}
             onChange={(event) => onChange({ end: event.target.value })}
-            className={!isCustom ? "cursor-not-allowed text-muted-foreground" : ""}
+            className={`min-w-0 px-2 text-xs sm:px-3 sm:text-sm ${!isCustom ? "cursor-not-allowed text-muted-foreground" : ""}`}
           />
         </FilterField>
       </div>
@@ -137,9 +137,17 @@ export function DashboardFiltersBar({
   );
 }
 
-function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
+function FilterField({
+  label,
+  children,
+  className = "",
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div>
+    <div className={className}>
       <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
         {label}
       </label>

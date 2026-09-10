@@ -8,6 +8,7 @@ import {
   AlignRight,
   Bold,
   ChevronDown,
+  Copy,
   Download,
   Eye,
   Expand,
@@ -40,7 +41,7 @@ import {
   SectionHeader,
   Select,
 } from "@/components/ui-kit";
-import { Modal, useDisclosure } from "@/components/modal";
+import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
 import { num } from "@/lib/format";
 import {
   conversationApi,
@@ -48,7 +49,6 @@ import {
   messageApi,
   organizationApi,
   ticketApi,
-  type ApiContact,
   type ApiConversation,
   type ApiMessage,
   type ApiCustomer,
@@ -90,13 +90,6 @@ const priorities: ApiTicketPriority[] = ["BAIXA", "NORMAL", "ALTA", "URGENTE"];
 const categories: ApiTicketCategory[] = ["SUPORTE", "DEV", "FINANCEIRO", "OPERACIONAL"];
 const listKey = ["tickets", "list"] as const;
 const maxAttachmentSizeMb = 10;
-const allowedAttachmentMimeTypes = new Set([
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "text/plain",
-]);
 
 function ChamadosPage() {
   const qc = useQueryClient();
@@ -107,6 +100,9 @@ function ChamadosPage() {
   const [status, setStatus] = React.useState<ApiTicketStatus | "">("");
   const [priority, setPriority] = React.useState<ApiTicketPriority | "">("");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [editingTicket, setEditingTicket] = React.useState<ApiTicket | null>(null);
+  const [duplicatingTicket, setDuplicatingTicket] = React.useState<ApiTicket | null>(null);
+  const [deletingTicket, setDeletingTicket] = React.useState<ApiTicket | null>(null);
   const params = {
     search: query || undefined,
     status: status || undefined,
@@ -210,6 +206,7 @@ function ChamadosPage() {
                     <th className="px-4 py-3">Contact/Customer</th>
                     <th className="px-4 py-3">Departamento</th>
                     <th className="px-4 py-3">Responsável</th>
+                    <th className="w-32 px-4 py-3 text-center">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -239,6 +236,47 @@ function ChamadosPage() {
                       <td className="px-4 py-3 text-xs">
                         {ticket.assignedMembership?.user.name ?? "Fila"}
                       </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Duplicar chamado"
+                            aria-label={`Duplicar chamado ${ticket.protocol}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDuplicatingTicket(ticket);
+                            }}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Editar chamado"
+                            aria-label={`Editar chamado ${ticket.protocol}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setEditingTicket(ticket);
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="hover:!bg-destructive hover:!text-destructive-foreground"
+                            title="Excluir chamado"
+                            aria-label={`Excluir chamado ${ticket.protocol}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDeletingTicket(ticket);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -262,6 +300,45 @@ function ChamadosPage() {
           onClose={() => setSelectedId(null)}
           onChanged={refreshTickets}
         />
+        <TicketEditor
+          open={!!duplicatingTicket}
+          initialTicket={duplicatingTicket}
+          clone
+          onClose={() => setDuplicatingTicket(null)}
+          onSaved={(ticket) => {
+            setDuplicatingTicket(null);
+            setSelectedId(ticket.id);
+            refreshTickets();
+          }}
+        />
+        <TicketEditor
+          open={!!editingTicket}
+          initialTicket={editingTicket}
+          onClose={() => setEditingTicket(null)}
+          onSaved={(ticket) => {
+            setEditingTicket(null);
+            setSelectedId(ticket.id);
+            refreshTickets();
+          }}
+        />
+        <ConfirmDialog
+          open={!!deletingTicket}
+          title="Excluir chamado?"
+          description={`O chamado ${deletingTicket?.protocol ?? ""} será excluído da listagem. Deseja continuar?`}
+          confirmLabel="Excluir"
+          destructive
+          onClose={() => setDeletingTicket(null)}
+          onConfirm={() => {
+            if (!deletingTicket) return;
+            void ticketApi
+              .archive(deletingTicket.id)
+              .then(() => {
+                toast.success("Chamado excluído.");
+                refreshTickets();
+              })
+              .catch((error) => toast.error((error as Error).message));
+          }}
+        />
       </PageContainer>
     </AppShell>
   );
@@ -272,11 +349,15 @@ function TicketEditor({
   onClose,
   onSaved,
   initialConversationId,
+  initialTicket,
+  clone = false,
 }: {
   open: boolean;
   onClose: () => void;
   onSaved: (ticket: ApiTicket) => void;
   initialConversationId?: string;
+  initialTicket?: ApiTicket | null;
+  clone?: boolean;
 }) {
   const options = useTicketOptions(open);
   const initialConversation = useQuery({
@@ -296,43 +377,60 @@ function TicketEditor({
   const [priority, setPriority] = React.useState<ApiTicketPriority>("NORMAL");
   const [departmentId, setDepartmentId] = React.useState("");
   const [contactId, setContactId] = React.useState("");
+  const [requesterSearch, setRequesterSearch] = React.useState("");
+  const [requesterResultsOpen, setRequesterResultsOpen] = React.useState(false);
   const [customerId, setCustomerId] = React.useState("");
   const [conversationId, setConversationId] = React.useState("");
   const [assignedMembershipId, setAssignedMembershipId] = React.useState("");
   const [attachment, setAttachment] = React.useState<File | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const defaultDepartmentId = options.departments[0]?.id ?? "";
+  const requesterContacts = useQuery({
+    queryKey: ["tickets", "requester-contacts", requesterSearch],
+    queryFn: () => crmApi.listContacts({ q: requesterSearch.trim() || undefined, pageSize: 20 }),
+    enabled: open,
+  });
 
   React.useEffect(() => {
     if (!open) return;
-    setTitle("");
-    setDescription("");
-    setCategory("SUPORTE");
-    setPriority("NORMAL");
-    setDepartmentId(options.departments[0]?.id ?? "");
-    setContactId("");
-    setCustomerId("");
-    setConversationId(initialConversationId ?? "");
-    setAssignedMembershipId("");
+    setTitle(initialTicket ? (clone ? `${initialTicket.title} - Cópia` : initialTicket.title) : "");
+    setDescription(initialTicket?.descriptionHtmlSanitized ?? initialTicket?.descriptionText ?? "");
+    setCategory(initialTicket?.category ?? "SUPORTE");
+    setPriority(initialTicket?.priority ?? "NORMAL");
+    setDepartmentId(initialTicket?.department.id ?? "");
+    setContactId(initialTicket?.requesterContact?.id ?? "");
+    setRequesterSearch(initialTicket?.requesterContact?.name ?? "");
+    setRequesterResultsOpen(false);
+    setCustomerId(initialTicket?.customer?.id ?? "");
+    setConversationId(initialTicket?.conversation?.id ?? initialConversationId ?? "");
+    setAssignedMembershipId(initialTicket?.assignedMembership?.id ?? "");
     setAttachment(null);
-  }, [open, initialConversationId, options.departments]);
+  }, [clone, initialConversationId, initialTicket, open]);
+
+  React.useEffect(() => {
+    if (!open || initialTicket || initialConversationId || departmentId || !defaultDepartmentId)
+      return;
+    setDepartmentId(defaultDepartmentId);
+  }, [defaultDepartmentId, departmentId, initialConversationId, initialTicket, open]);
 
   React.useEffect(() => {
     const conversation = initialConversation.data;
-    if (!open || !conversation) return;
+    if (!open || initialTicket || !conversation) return;
     setConversationId(conversation.id);
     setContactId(conversation.contact_id ?? "");
+    setRequesterSearch(conversation.contact?.nome ?? "");
     setCustomerId(conversation.contact?.customer_id ?? conversation.contact?.customer?.id ?? "");
-    setDepartmentId(conversation.department_id ?? options.departments[0]?.id ?? "");
+    setDepartmentId(conversation.department_id ?? defaultDepartmentId);
     setAssignedMembershipId(conversation.assigned_membership_id ?? "");
     setTitle(`Chamado aberto pelo Chat - ${conversation.protocolo ?? conversation.id.slice(0, 8)}`);
-  }, [initialConversation.data, open, options.departments]);
+  }, [defaultDepartmentId, initialConversation.data, initialTicket, open]);
 
   React.useEffect(() => {
     const conversation = initialConversation.data;
     const messages = initialMessages.data;
-    if (!open || !conversation || !messages?.length) return;
+    if (!open || initialTicket || !conversation || !messages?.length) return;
     setDescription(buildConversationTicketDescription(conversation, messages));
-  }, [initialConversation.data, initialMessages.data, open]);
+  }, [initialConversation.data, initialMessages.data, initialTicket, open]);
 
   const submit = async () => {
     if (!title.trim()) return toast.error("Informe o título.");
@@ -340,19 +438,39 @@ function TicketEditor({
     if (!departmentId) return toast.error("Selecione o departamento.");
     setBusy(true);
     try {
-      const ticket = await ticketApi.create({
-        title: title.trim(),
-        descriptionHtml: /<[^>]+>/.test(description) ? description : textToHtml(description),
-        category,
-        priority,
-        departmentId,
-        requesterContactId: contactId || null,
-        customerId: customerId || null,
-        conversationId: conversationId || null,
-        assignedMembershipId: assignedMembershipId || null,
-      });
+      const descriptionHtml = /<[^>]+>/.test(description) ? description : textToHtml(description);
+      let ticket: ApiTicket;
+      if (initialTicket && !clone) {
+        ticket = await ticketApi.update(initialTicket.id, {
+          title: title.trim(),
+          descriptionHtml,
+          category,
+          priority,
+          requesterContactId: contactId || null,
+          customerId: customerId || null,
+          conversationId: conversationId || null,
+        });
+        if (departmentId !== initialTicket.department.id) {
+          ticket = await ticketApi.updateDepartment(ticket.id, departmentId);
+        }
+        if (assignedMembershipId !== (initialTicket.assignedMembership?.id ?? "")) {
+          ticket = await ticketApi.updateAssignee(ticket.id, assignedMembershipId || null);
+        }
+      } else {
+        ticket = await ticketApi.create({
+          title: title.trim(),
+          descriptionHtml,
+          category,
+          priority,
+          departmentId,
+          requesterContactId: contactId || null,
+          customerId: customerId || null,
+          conversationId: conversationId || null,
+          assignedMembershipId: assignedMembershipId || null,
+        });
+      }
       if (attachment) await ticketApi.uploadAttachment(ticket.id, attachment);
-      toast.success(`${ticket.protocol} criado`);
+      toast.success(initialTicket && !clone ? "Chamado atualizado." : `${ticket.protocol} criado`);
       onSaved(ticket);
     } catch (error) {
       toast.error((error as Error).message);
@@ -365,7 +483,9 @@ function TicketEditor({
     <Modal
       open={open}
       onClose={onClose}
-      title="Novo Chamado"
+      title={
+        initialTicket && !clone ? "Editar Chamado" : clone ? "Duplicar Chamado" : "Novo Chamado"
+      }
       size="xl"
       footer={
         <>
@@ -373,7 +493,7 @@ function TicketEditor({
             Cancelar
           </Button>
           <Button variant="primary" size="sm" disabled={busy} onClick={submit}>
-            {busy ? "Criando..." : "Criar Chamado"}
+            {busy ? "Salvando..." : initialTicket && !clone ? "Salvar" : "Criar Chamado"}
           </Button>
         </>
       }
@@ -401,14 +521,51 @@ function TicketEditor({
             </Select>
           </Field>
           <Field label="Solicitante *">
-            <Select value={contactId} onChange={(event) => setContactId(event.target.value)}>
-              <option value="">Selecione...</option>
-              {options.contacts.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.nome}
-                </option>
-              ))}
-            </Select>
+            <div
+              className="relative"
+              onFocusCapture={() => setRequesterResultsOpen(true)}
+              onBlurCapture={() => window.setTimeout(() => setRequesterResultsOpen(false), 120)}
+            >
+              <SearchInput
+                value={requesterSearch}
+                onChange={(value) => {
+                  setRequesterSearch(value);
+                  setContactId("");
+                  setRequesterResultsOpen(true);
+                }}
+                placeholder="Buscar contato..."
+              />
+              {requesterResultsOpen && (
+                <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-border bg-card shadow-elevated">
+                  {requesterContacts.isFetching ? (
+                    <p className="px-3 py-3 text-sm text-muted-foreground">Buscando contatos...</p>
+                  ) : requesterContacts.data?.items.length ? (
+                    requesterContacts.data.items.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="flex w-full items-center justify-between gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-1"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          setContactId(item.id);
+                          setRequesterSearch(item.nome);
+                          setRequesterResultsOpen(false);
+                        }}
+                      >
+                        <span className="min-w-0 truncate font-medium">{item.nome}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {item.telefone || item.email || "Sem telefone"}
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="px-3 py-3 text-sm text-muted-foreground">
+                      Nenhum contato encontrado.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </Field>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
@@ -455,10 +612,15 @@ function TicketEditor({
             {attachment ? attachment.name : "Escolher arquivos"}
             <input
               type="file"
+              accept="*/*"
               className="hidden"
               onChange={(event) => setAttachment(event.target.files?.[0] ?? null)}
             />
           </label>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Aceita documentos, imagens, planilhas e demais tipos de arquivo (máx.{" "}
+            {maxAttachmentSizeMb} MB).
+          </p>
         </div>
       </div>
     </Modal>
@@ -869,10 +1031,6 @@ function Attachments({
   const [busy, setBusy] = React.useState(false);
   const upload = async (file: File | undefined) => {
     if (!file) return;
-    if (!allowedAttachmentMimeTypes.has(file.type || "application/octet-stream")) {
-      toast.error("Tipo de arquivo não permitido.");
-      return;
-    }
     if (file.size > maxAttachmentSizeMb * 1024 * 1024) {
       toast.error(`O arquivo excede o limite permitido de ${maxAttachmentSizeMb} MB.`);
       return;
@@ -912,6 +1070,7 @@ function Attachments({
             <Paperclip className="h-3.5 w-3.5" /> {busy ? "Enviando..." : "Anexar"}
             <input
               type="file"
+              accept="*/*"
               className="hidden"
               disabled={busy}
               onChange={(event) => upload(event.target.files?.[0])}
@@ -983,11 +1142,6 @@ function useTicketOptions(enabled: boolean) {
     queryFn: organizationApi.listUsers,
     enabled,
   });
-  const contacts = useQuery({
-    queryKey: ["tickets", "contacts"],
-    queryFn: () => crmApi.listContacts({ pageSize: 100 }),
-    enabled,
-  });
   const customers = useQuery({
     queryKey: ["tickets", "customers"],
     queryFn: () => crmApi.listCustomers({ pageSize: 100 }),
@@ -1004,7 +1158,6 @@ function useTicketOptions(enabled: boolean) {
       (item) => item.name,
     ),
     users: sortByOptionLabel(users.data ?? ([] as ApiUserMembership[]), (item) => item.user.name),
-    contacts: sortByOptionLabel(contacts.data?.items ?? ([] as ApiContact[]), (item) => item.nome),
     customers: sortByOptionLabel(
       customers.data?.items ?? ([] as ApiCustomer[]),
       (item) => item.nome,

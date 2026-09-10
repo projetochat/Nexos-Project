@@ -68,6 +68,8 @@ type Schedule = {
   attachmentName: string | null;
 };
 const STORAGE_KEY = "nexo.schedules";
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 function SchedulingPage() {
   const [items, setItems] = React.useState<Schedule[]>(() => readSchedules());
@@ -76,6 +78,8 @@ function SchedulingPage() {
   const [status, setStatus] = React.useState("");
   const [connectionId, setConnectionId] = React.useState("");
   const [departmentId, setDepartmentId] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [editing, setEditing] = React.useState<Schedule | null>(null);
   const [removing, setRemoving] = React.useState<Schedule | null>(null);
   const { data: connections = [] } = useQuery({
@@ -87,7 +91,7 @@ function SchedulingPage() {
     queryFn: organizationApi.listDepartments,
   });
   React.useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(items)), [items]);
-  const visible = items.filter(
+  const filtered = items.filter(
     (item) =>
       (!query ||
         `${item.identifier} ${item.title} ${item.destination}`
@@ -98,6 +102,14 @@ function SchedulingPage() {
       (!connectionId || item.connectionId === connectionId) &&
       (!departmentId || item.departmentId === departmentId),
   );
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageSafe = Math.min(page, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [query, type, status, connectionId, departmentId, pageSize]);
+
   const save = (item: Schedule) => {
     setItems((current) =>
       current.some((entry) => entry.id === item.id)
@@ -120,8 +132,10 @@ function SchedulingPage() {
           }
         />
         <Card className="mb-4 p-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_10rem_10rem_12rem_12rem]">
-            <SearchInput value={query} onChange={setQuery} placeholder="Buscar agendamento..." />
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(16rem,1fr)_10rem_10rem_12rem_12rem]">
+            <div className="col-span-2 xl:col-span-1">
+              <SearchInput value={query} onChange={setQuery} placeholder="Buscar agendamento..." />
+            </div>
             <Filter
               label="Tipo"
               value={type}
@@ -154,7 +168,44 @@ function SchedulingPage() {
             />
           </div>
         </Card>
-        <Card padding={false} className="overflow-hidden">
+        <div className="space-y-3 md:hidden">
+          {paginated.map((item) => (
+            <ScheduleMobileCard
+              key={item.id}
+              item={item}
+              connections={connections}
+              departments={departments}
+              onEdit={() => setEditing(item)}
+              onDuplicate={() =>
+                setEditing({
+                  ...item,
+                  id: crypto.randomUUID(),
+                  identifier: `${item.identifier}-Cópia`,
+                  status: "pending",
+                })
+              }
+              onRemove={() => setRemoving(item)}
+            />
+          ))}
+          {!filtered.length && (
+            <Card className="p-8 text-center text-sm text-muted-foreground">
+              Nenhum agendamento encontrado.
+            </Card>
+          )}
+          <Card padding={false} className="overflow-hidden">
+            <SchedulePagination
+              shown={paginated.length}
+              total={filtered.length}
+              page={pageSafe}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              onPageSizeChange={setPageSize}
+              onPrevious={() => setPage((current) => Math.max(1, current - 1))}
+              onNext={() => setPage((current) => Math.min(totalPages, current + 1))}
+            />
+          </Card>
+        </div>
+        <Card padding={false} className="hidden overflow-hidden md:block">
           <div className="overflow-x-auto">
             <table className="min-w-[1050px] w-full text-sm">
               <thead className="border-b border-border bg-surface-2 text-left text-[11px] uppercase tracking-widest text-muted-foreground">
@@ -176,7 +227,7 @@ function SchedulingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {visible.map((item) => (
+                {paginated.map((item) => (
                   <ScheduleRow
                     key={item.id}
                     item={item}
@@ -194,7 +245,7 @@ function SchedulingPage() {
                     onRemove={() => setRemoving(item)}
                   />
                 ))}
-                {!visible.length && (
+                {!filtered.length && (
                   <tr>
                     <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
                       Nenhum agendamento encontrado.
@@ -204,18 +255,16 @@ function SchedulingPage() {
               </tbody>
             </table>
           </div>
-          <footer className="flex items-center justify-end gap-3 border-t border-border bg-surface-1 px-4 py-3 text-xs text-muted-foreground">
-            Itens por página: 12{" "}
-            <span>
-              {num(visible.length)} de {num(items.length)}
-            </span>
-            <Button variant="ghost" size="sm" disabled>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="sm" disabled>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </footer>
+          <SchedulePagination
+            shown={paginated.length}
+            total={filtered.length}
+            page={pageSafe}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            onPageSizeChange={setPageSize}
+            onPrevious={() => setPage((current) => Math.max(1, current - 1))}
+            onNext={() => setPage((current) => Math.min(totalPages, current + 1))}
+          />
         </Card>
         <ScheduleForm
           item={editing}
@@ -228,7 +277,7 @@ function SchedulingPage() {
           open={!!removing}
           title="Excluir agendamento?"
           destructive
-          description={`O agendamento ${removing?.identifier ?? ""} será removido.`}
+          description={`Deseja realmente excluir o agendamento "${removing?.title ?? ""}"?`}
           confirmLabel="Excluir"
           onClose={() => setRemoving(null)}
           onConfirm={() => {
@@ -267,6 +316,164 @@ function Filter({
     </Field>
   );
 }
+
+function SchedulePagination({
+  shown,
+  total,
+  page,
+  totalPages,
+  pageSize,
+  onPageSizeChange,
+  onPrevious,
+  onNext,
+}: {
+  shown: number;
+  total: number;
+  page: number;
+  totalPages: number;
+  pageSize: number;
+  onPageSizeChange: (value: number) => void;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <footer className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="shrink-0 leading-tight sm:leading-normal">
+          <span className="block sm:inline">Mostrando</span>
+          <span className="block sm:inline">
+            {" "}
+            {num(shown)} de {num(total)}
+          </span>
+        </span>
+        <Select
+          value={String(pageSize)}
+          onChange={(event) => onPageSizeChange(Number(event.target.value))}
+          className="h-8 w-20 text-xs sm:w-24"
+          aria-label="Itens por página"
+        >
+          {PAGE_SIZE_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+          disabled={page === 1}
+          onClick={onPrevious}
+          aria-label="Página anterior"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </Button>
+        <span className="font-mono">
+          {page} / {totalPages}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+          disabled={page === totalPages}
+          onClick={onNext}
+          aria-label="Próxima página"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </footer>
+  );
+}
+
+function ScheduleMobileCard({
+  item,
+  connections,
+  departments,
+  onEdit,
+  onDuplicate,
+  onRemove,
+}: {
+  item: Schedule;
+  connections: ApiMessagingConnection[];
+  departments: ApiDepartment[];
+  onEdit: () => void;
+  onDuplicate: () => void;
+  onRemove: () => void;
+}) {
+  const connection = connections.find((entry) => entry.id === item.connectionId)?.name ?? "—";
+  const department = departments.find((entry) => entry.id === item.departmentId)?.name ?? "—";
+  const isMessage = item.type === "message";
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-start gap-3">
+        <span
+          className={`shrink-0 rounded-lg p-2 text-white ${isMessage ? "bg-emerald-500" : "bg-primary"}`}
+        >
+          {isMessage ? <MessageCircle className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate font-semibold">{item.title || "Sem título"}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {isMessage ? "Mensagem" : "Tarefa"} · {item.identifier || "Sem identificador"}
+              </p>
+            </div>
+            <Badge tone={item.status === "completed" ? "success" : "warning"}>
+              {item.status === "completed" ? "Concluída" : "Pendente"}
+            </Badge>
+          </div>
+          <div className="mt-3 space-y-2 text-sm">
+            <p className="flex items-start gap-2">
+              <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <span className="min-w-0">{new Date(item.scheduledAt).toLocaleString("pt-BR")}</span>
+            </p>
+            <p className="flex items-start gap-2 text-muted-foreground">
+              <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <span className="min-w-0 break-words">
+                {item.destination || "Sistema"} · {department}
+              </span>
+            </p>
+            <p className="flex items-center gap-2 text-muted-foreground">
+              <Clock3 className="h-4 w-4 shrink-0 text-primary" />
+              {{ once: "Única", weekly: "Semanal", monthly: "Mensal" }[item.recurrence]} ·{" "}
+              {connection}
+            </p>
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end gap-1 border-t border-border pt-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          title="Duplicar"
+          aria-label="Duplicar"
+          onClick={onDuplicate}
+        >
+          <Copy className="h-4 w-4" />
+        </Button>
+        <Button variant="ghost" size="sm" title="Editar" aria-label="Editar" onClick={onEdit}>
+          <Pencil className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          title="Excluir"
+          aria-label="Excluir"
+          className="text-destructive hover:text-destructive"
+          onClick={onRemove}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function ScheduleRow({
   item,
   connections,

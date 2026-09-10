@@ -500,6 +500,7 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
           <div className="my-1 h-px bg-border" />
           <button
             onClick={async () => {
+              if (!window.confirm("Deseja realmente sair do sistema?")) return;
               await signOut();
               logout();
               navigate({ to: "/login" });
@@ -659,6 +660,7 @@ function UserMenu() {
           <div className="my-1 h-px bg-border" />
           <button
             onClick={async () => {
+              if (!window.confirm("Deseja realmente sair do sistema?")) return;
               await signOut();
               logout();
               navigate({ to: "/login" });
@@ -961,6 +963,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
           <button
             type="button"
             onClick={async () => {
+              if (!window.confirm("Deseja realmente sair do sistema?")) return;
               await signOut();
               logout();
               onClose();

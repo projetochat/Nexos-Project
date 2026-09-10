@@ -32,7 +32,7 @@ import {
   Select,
   Textarea,
 } from "@/components/ui-kit";
-import { Modal, useDisclosure } from "@/components/modal";
+import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
@@ -66,6 +66,7 @@ function Page() {
     status?: string;
   } | null>(null);
   const [removing, setRemoving] = React.useState<ApiMessagingConnection | null>(null);
+  const [disconnecting, setDisconnecting] = React.useState<ApiMessagingConnection | null>(null);
   const [editing, setEditing] = React.useState<ApiMessagingConnection | null>(null);
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["nexos", "messaging-connections"],
@@ -305,7 +306,7 @@ function Page() {
                       variant="ghost"
                       size="sm"
                       className="hover:!bg-destructive hover:!text-destructive-foreground"
-                      onClick={() => logout.mutate(connection.id)}
+                      onClick={() => setDisconnecting(connection)}
                       disabled={!canDisconnect}
                       title="Desconectar"
                       aria-label="Desconectar"
@@ -359,6 +360,17 @@ function Page() {
           busy={remove.isPending}
           onClose={() => setRemoving(null)}
           onConfirm={(connection, options) => remove.mutate({ connection, options })}
+        />
+        <ConfirmDialog
+          open={!!disconnecting}
+          title="Desligar instância?"
+          description={`Deseja desligar a instância “${disconnecting?.name ?? ""}”? Será necessário conectá-la novamente para enviar e receber mensagens.`}
+          confirmLabel="Desligar"
+          destructive
+          onClose={() => setDisconnecting(null)}
+          onConfirm={() => {
+            if (disconnecting) logout.mutate(disconnecting.id);
+          }}
         />
       </PageContainer>
     </AppShell>
@@ -426,12 +438,12 @@ function ConnectionForm({
       <form id="new-whatsapp-instance-form" className="space-y-5" onSubmit={submit}>
         <fieldset>
           <legend className="mb-2.5 text-sm font-semibold">Tipo de conexão</legend>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
               aria-pressed={connectionType === "qr-code"}
               onClick={() => setConnectionType("qr-code")}
-              className="group flex min-h-36 flex-col items-center justify-center rounded-xl border border-border bg-surface-1 p-4 text-center outline-none transition hover:border-emerald-500 hover:bg-emerald-500/10 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/30 data-[selected=true]:border-emerald-500 data-[selected=true]:bg-emerald-500/10"
+              className="group flex min-h-32 flex-col items-center justify-center rounded-xl border border-border bg-surface-1 p-3 text-center outline-none transition hover:border-emerald-500 hover:bg-emerald-500/10 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/30 data-[selected=true]:border-emerald-500 data-[selected=true]:bg-emerald-500/10 sm:min-h-36 sm:p-4"
               data-selected={connectionType === "qr-code"}
             >
               <span className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-surface-3 text-muted-foreground transition group-hover:bg-emerald-500 group-hover:text-white group-data-[selected=true]:bg-emerald-500 group-data-[selected=true]:text-white">
@@ -445,13 +457,14 @@ function ConnectionForm({
               disabled
               aria-disabled="true"
               title="A integração com a API Oficial estará disponível em breve."
-              className="flex min-h-36 cursor-not-allowed flex-col items-center justify-center rounded-xl border border-border bg-surface-1 p-4 text-center opacity-50"
+              className="flex min-h-32 cursor-not-allowed flex-col items-center justify-center rounded-xl border border-border bg-surface-1 p-3 text-center opacity-50 sm:min-h-36 sm:p-4"
             >
               <span className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-surface-3 text-muted-foreground">
                 <InfinityIcon className="h-7 w-7" aria-hidden="true" />
               </span>
               <span className="text-base font-semibold">API Oficial</span>
               <span className="mt-0.5 text-sm text-muted-foreground">Meta Business</span>
+              <span className="text-xs italic text-muted-foreground">(em breve)</span>
             </button>
           </div>
         </fieldset>
@@ -480,6 +493,8 @@ type ConnectionSettingsFormData = {
   welcomeEnabled: boolean;
   welcomeNewMessage: string | null;
   welcomeExistingMessage: string | null;
+  absenceEnabled: boolean;
+  absenceMessage: string | null;
   notes: string | null;
 };
 
@@ -575,6 +590,7 @@ function ConnectionSettingsModal({
   const [absenceEnabled, setAbsenceEnabled] = React.useState(false);
   const [absenceMessage, setAbsenceMessage] = React.useState("");
   const [serviceHours, setServiceHours] = React.useState<ServiceHoursRow[]>(defaultServiceHours);
+  const [showWelcomeValidation, setShowWelcomeValidation] = React.useState(false);
   const [form, setForm] = React.useState<ConnectionSettingsFormData>({
     name: "",
     color: "#22c55e",
@@ -582,6 +598,8 @@ function ConnectionSettingsModal({
     welcomeEnabled: false,
     welcomeNewMessage: "",
     welcomeExistingMessage: "",
+    absenceEnabled: false,
+    absenceMessage: "",
     notes: "",
   });
 
@@ -594,9 +612,10 @@ function ConnectionSettingsModal({
     setLogoPreviewOpen(false);
     setTimezone("America/Sao_Paulo");
     setAiAgentId("");
-    setAbsenceEnabled(false);
-    setAbsenceMessage("");
+    setAbsenceEnabled(connection.absenceEnabled ?? false);
+    setAbsenceMessage(connection.absenceMessage ?? "");
     setServiceHours(defaultServiceHours());
+    setShowWelcomeValidation(false);
     setForm({
       name: connection.name,
       color: connection.color || "#22c55e",
@@ -604,6 +623,8 @@ function ConnectionSettingsModal({
       welcomeEnabled: connection.welcomeEnabled ?? false,
       welcomeNewMessage: connection.welcomeNewMessage ?? "",
       welcomeExistingMessage: connection.welcomeExistingMessage ?? "",
+      absenceEnabled: connection.absenceEnabled ?? false,
+      absenceMessage: connection.absenceMessage ?? "",
       notes: connection.notes || "",
     });
   }, [connection]);
@@ -625,6 +646,15 @@ function ConnectionSettingsModal({
 
   const save = () => {
     if (!connection || form.name.trim().length < 2) return;
+    const missingWelcomeNewMessage = form.welcomeEnabled && !form.welcomeNewMessage?.trim();
+    const missingWelcomeExistingMessage =
+      form.welcomeEnabled && !form.welcomeExistingMessage?.trim();
+    if (missingWelcomeNewMessage || missingWelcomeExistingMessage) {
+      setTab("greeting");
+      setShowWelcomeValidation(true);
+      toast.error("Preencha as mensagens de saudação para salvar.");
+      return;
+    }
     onSubmit(connection, {
       ...form,
       name: form.name.trim(),
@@ -632,6 +662,8 @@ function ConnectionSettingsModal({
       logoUrl: form.logoUrl,
       welcomeNewMessage: form.welcomeNewMessage?.trim() || null,
       welcomeExistingMessage: form.welcomeExistingMessage?.trim() || null,
+      absenceEnabled,
+      absenceMessage: absenceMessage.trim() || null,
       notes: form.notes?.trim() || null,
     });
   };
@@ -760,7 +792,7 @@ function ConnectionSettingsModal({
                   />
                 </div>
 
-                <div className="grid grid-cols-[minmax(0,1fr)_130px] gap-4 sm:grid-cols-[minmax(0,1.35fr)_minmax(150px,0.75fr)] md:grid-cols-2">
+                <div className="grid grid-cols-[minmax(7rem,1fr)_10.5rem] gap-4 sm:grid-cols-[minmax(0,1.25fr)_minmax(11rem,0.85fr)] md:grid-cols-2">
                   <Field label="Telefone *">
                     <Input
                       value={connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""}
@@ -853,30 +885,79 @@ function ConnectionSettingsModal({
                 <input
                   type="checkbox"
                   checked={form.welcomeEnabled}
-                  onChange={(event) => setForm({ ...form, welcomeEnabled: event.target.checked })}
+                  onChange={(event) => {
+                    setForm({ ...form, welcomeEnabled: event.target.checked });
+                    setShowWelcomeValidation(false);
+                  }}
                   className="h-4 w-4 accent-primary"
                 />
                 Ativar mensagem de saudação
               </label>
-              <Field label="Mensagem para novo contato">
-                <Textarea
-                  rows={4}
-                  value={form.welcomeNewMessage ?? ""}
-                  onChange={(event) => setForm({ ...form, welcomeNewMessage: event.target.value })}
-                  disabled={!form.welcomeEnabled}
-                  placeholder={NEW_CONTACT_MESSAGE_PLACEHOLDER}
-                />
+              <Field
+                label={
+                  form.welcomeEnabled
+                    ? "Mensagem para novo contato *"
+                    : "Mensagem para novo contato"
+                }
+                error={
+                  showWelcomeValidation && form.welcomeEnabled && !form.welcomeNewMessage?.trim()
+                    ? "Preencha a mensagem para novo contato."
+                    : undefined
+                }
+              >
+                <div className="space-y-2">
+                  <Textarea
+                    rows={4}
+                    value={form.welcomeNewMessage ?? ""}
+                    onChange={(event) =>
+                      setForm({ ...form, welcomeNewMessage: event.target.value })
+                    }
+                    disabled={!form.welcomeEnabled}
+                    aria-invalid={
+                      showWelcomeValidation &&
+                      form.welcomeEnabled &&
+                      !form.welcomeNewMessage?.trim()
+                    }
+                    placeholder={NEW_CONTACT_MESSAGE_PLACEHOLDER}
+                  />
+                  {!form.welcomeEnabled && (
+                    <CopyPlaceholderButton value={NEW_CONTACT_MESSAGE_PLACEHOLDER} />
+                  )}
+                </div>
               </Field>
-              <Field label="Mensagem para contato existente">
-                <Textarea
-                  rows={4}
-                  value={form.welcomeExistingMessage ?? ""}
-                  onChange={(event) =>
-                    setForm({ ...form, welcomeExistingMessage: event.target.value })
-                  }
-                  disabled={!form.welcomeEnabled}
-                  placeholder={EXISTING_CONTACT_MESSAGE_PLACEHOLDER}
-                />
+              <Field
+                label={
+                  form.welcomeEnabled
+                    ? "Mensagem para contato existente *"
+                    : "Mensagem para contato existente"
+                }
+                error={
+                  showWelcomeValidation &&
+                  form.welcomeEnabled &&
+                  !form.welcomeExistingMessage?.trim()
+                    ? "Preencha a mensagem para contato existente."
+                    : undefined
+                }
+              >
+                <div className="space-y-2">
+                  <Textarea
+                    rows={4}
+                    value={form.welcomeExistingMessage ?? ""}
+                    onChange={(event) =>
+                      setForm({ ...form, welcomeExistingMessage: event.target.value })
+                    }
+                    disabled={!form.welcomeEnabled}
+                    aria-invalid={
+                      showWelcomeValidation &&
+                      form.welcomeEnabled &&
+                      !form.welcomeExistingMessage?.trim()
+                    }
+                    placeholder={EXISTING_CONTACT_MESSAGE_PLACEHOLDER}
+                  />
+                  {!form.welcomeEnabled && (
+                    <CopyPlaceholderButton value={EXISTING_CONTACT_MESSAGE_PLACEHOLDER} />
+                  )}
+                </div>
               </Field>
             </div>
           )}
@@ -893,15 +974,22 @@ function ConnectionSettingsModal({
                 Ativar mensagem de ausência
               </label>
               <Field label="Mensagem de Ausência">
-                <Textarea
-                  rows={6}
-                  value={absenceMessage}
-                  onChange={(event) => setAbsenceMessage(event.target.value)}
-                  disabled={!absenceEnabled}
-                  placeholder={ABSENCE_MESSAGE_PLACEHOLDER}
-                />
+                <div className="space-y-2">
+                  <Textarea
+                    rows={6}
+                    value={absenceMessage}
+                    onChange={(event) => setAbsenceMessage(event.target.value)}
+                    disabled={!absenceEnabled}
+                    placeholder={ABSENCE_MESSAGE_PLACEHOLDER}
+                  />
+                  {!absenceEnabled && <CopyPlaceholderButton value={ABSENCE_MESSAGE_PLACEHOLDER} />}
+                </div>
               </Field>
-              <ServiceHoursTable rows={serviceHours} onChange={setServiceHours} />
+              <ServiceHoursTable
+                rows={serviceHours}
+                onChange={setServiceHours}
+                enabled={absenceEnabled}
+              />
             </div>
           )}
 
@@ -1174,13 +1262,47 @@ function VariableDictionary({ customFields }: { customFields: ApiContactCustomFi
         {variables.map(({ token, description }) => (
           <div
             key={token}
-            className="grid gap-2 px-3 py-2 text-xs sm:grid-cols-[10.5rem_minmax(0,1fr)] sm:items-center sm:gap-3"
+            className="grid gap-2 px-3 py-2 text-xs md:grid-cols-[13rem_minmax(0,1fr)] md:items-center md:gap-3"
           >
             <VariableTokenButton token={token} />
-            <span className="text-muted-foreground">{description}</span>
+            <span className="min-w-0 text-muted-foreground">{description}</span>
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function CopyPlaceholderButton({ value }: { value: string }) {
+  const copyPlaceholder = () => {
+    const copyFallback = () => {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
+      toast.success("Mensagem padrão copiada.");
+    };
+
+    if (!navigator.clipboard?.writeText) {
+      copyFallback();
+      return;
+    }
+
+    void navigator.clipboard
+      .writeText(value)
+      .then(() => toast.success("Mensagem padrão copiada."))
+      .catch(copyFallback);
+  };
+
+  return (
+    <div className="flex justify-end">
+      <Button type="button" variant="ghost" size="sm" onClick={copyPlaceholder}>
+        <Copy className="h-3.5 w-3.5" /> Copiar mensagem padrão
+      </Button>
     </div>
   );
 }
@@ -1211,7 +1333,7 @@ function VariableTokenButton({ token }: { token: string }) {
   return (
     <button
       type="button"
-      className="rounded-md border border-border bg-card px-2 py-1 font-mono transition hover:border-primary hover:bg-primary/10 hover:text-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      className="w-fit max-w-full whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 font-mono transition hover:border-primary hover:bg-primary/10 hover:text-primary focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
       onClick={selectToken}
       onDoubleClick={copyToken}
       title="Clique para selecionar. Duplo clique para copiar."
@@ -1241,26 +1363,57 @@ function mergeMessageVariables(baseTokens: string[], customFields: ApiContactCus
   return variables;
 }
 
+const VARIABLE_NAME_STOP_WORDS = new Set([
+  "de",
+  "do",
+  "dos",
+  "da",
+  "das",
+  "o",
+  "a",
+  "os",
+  "as",
+  "um",
+  "uns",
+  "uma",
+  "umas",
+  "e",
+  "ou",
+]);
+
 function customFieldVariableToken(label: string) {
-  const key = label
+  const words = label
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+    .replace(/^_+|_+$/g, "")
+    .split("_")
+    .filter(Boolean);
+  const meaningfulWords = words.filter((word) => !VARIABLE_NAME_STOP_WORDS.has(word));
+  const key = (meaningfulWords.length ? meaningfulWords : words).join("_");
   return key ? `{{${key}}}` : null;
 }
 
 function ServiceHoursTable({
   rows,
   onChange,
+  enabled,
 }: {
   rows: ServiceHoursRow[];
   onChange: (rows: ServiceHoursRow[]) => void;
+  enabled: boolean;
 }) {
   const [editing, setEditing] = React.useState(false);
   const [selectedRow, setSelectedRow] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (!enabled) {
+      setEditing(false);
+      setSelectedRow(null);
+    }
+  }, [enabled]);
 
   const updateRow = (index: number, patch: Partial<ServiceHoursRow>) => {
     onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
@@ -1286,28 +1439,31 @@ function ServiceHoursTable({
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs font-medium text-muted-foreground">Horário de Atendimento</p>
-        <Button type="button" variant="ghost" size="sm" onClick={toggleEditing}>
-          {editing ? (
-            <>
-              <Check className="h-3.5 w-3.5" />
-              Concluir
-            </>
-          ) : (
-            <>
-              <Pencil className="h-3.5 w-3.5" />
-              Editar
-            </>
-          )}
-        </Button>
+        {enabled && (
+          <Button type="button" variant="ghost" size="sm" onClick={toggleEditing}>
+            {editing ? (
+              <>
+                <Check className="h-3.5 w-3.5" />
+                Concluir
+              </>
+            ) : (
+              <>
+                <Pencil className="h-3.5 w-3.5" />
+                Editar
+              </>
+            )}
+          </Button>
+        )}
       </div>
       <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full table-fixed border-collapse text-sm">
           <thead className="bg-surface-1 text-[11px] uppercase tracking-widest text-muted-foreground">
             <tr>
               <th className="w-[35%] px-2 py-3 text-left font-semibold sm:w-[29%] sm:px-3">
-                Dia da semana
+                <span className="sm:hidden">Dia</span>
+                <span className="hidden sm:inline">Dia da semana</span>
               </th>
-              <th className="w-[14%] px-1 py-3 text-center font-semibold sm:w-[13%] sm:px-3">
+              <th className="w-[14%] px-1 py-3 text-center font-semibold sm:w-[23%] sm:px-3">
                 Ativo
               </th>
               <th className="w-[25%] px-1 py-3 text-center font-semibold sm:w-[19%] sm:px-3">
@@ -1316,7 +1472,7 @@ function ServiceHoursTable({
               <th className="w-[26%] px-1 py-3 text-center font-semibold sm:w-[19%] sm:px-3">
                 Fim
               </th>
-              <th className="hidden w-[20%] px-1 py-3 sm:table-cell sm:px-3" aria-label="Ações" />
+              <th className="hidden w-[10%] px-1 py-3 sm:table-cell sm:px-3" aria-label="Ações" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -1496,20 +1652,20 @@ function RemoveConnectionModal({
       }
     >
       <div className="space-y-4">
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
           <p className="font-medium">{connection?.name}</p>
           <p className="mt-1">
-            A conexao será indisponibilizada para novos envios e campanhas. Se o histórico não for
-            removido, as conversas ativas dessa instancia serão encerradas e mantidas no histórico.
+            A conexão será indisponibilizada para novos envios e campanhas. Se o histórico não for
+            removido, as conversas ativas desta instância serão encerradas e mantidas no histórico.
           </p>
         </div>
         <div className="space-y-2">
-          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-xs italic">
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-xs italic">
             <input
               type="checkbox"
               checked={removeConversationHistory}
               onChange={(event) => setRemoveConversationHistory(event.target.checked)}
-              className="mt-0.5 h-4 w-4 accent-primary"
+              className="h-4 w-4 accent-primary"
             />
             <span className="font-semibold">Remover histórico de conversas</span>
           </label>

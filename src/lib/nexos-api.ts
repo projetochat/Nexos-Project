@@ -456,6 +456,8 @@ export type ApiMessagingConnection = {
   welcomeEnabled?: boolean;
   welcomeNewMessage?: string | null;
   welcomeExistingMessage?: string | null;
+  absenceEnabled?: boolean;
+  absenceMessage?: string | null;
   notes?: string | null;
   ownerPhoneMasked?: string | null;
   ownerPhone?: string | null;
@@ -1438,6 +1440,8 @@ export const connectionsApi = {
       welcomeEnabled?: boolean;
       welcomeNewMessage?: string | null;
       welcomeExistingMessage?: string | null;
+      absenceEnabled?: boolean;
+      absenceMessage?: string | null;
       notes?: string | null;
     },
   ) =>

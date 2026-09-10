@@ -461,7 +461,7 @@ function Page() {
           open={!!deleting}
           title="Excluir perfil?"
           destructive
-          description={`Esta acao removera ${deleting?.name ?? ""}.`}
+          description={`Deseja realmente excluir o perfil "${deleting?.name ?? ""}"?`}
           confirmLabel="Excluir"
           onClose={() => setDeleting(null)}
           onConfirm={() => deleting && remove.mutate(deleting.id)}
@@ -503,6 +503,15 @@ function PerfilForm({
   });
   const [error, setError] = React.useState("");
   const [activeTab, setActiveTab] = React.useState<PerfilTab>("geral");
+  const duplicateNameError = (name: string) => {
+    const normalizedName = normalizeRoleName(name);
+    if (!normalizedName) return "";
+    return roles.some(
+      (role) => role.id !== initial?.id && normalizeRoleName(role.name) === normalizedName,
+    )
+      ? "Já existe um perfil de acesso com este nome."
+      : "";
+  };
 
   React.useEffect(() => {
     if (!open) return;
@@ -546,12 +555,9 @@ function PerfilForm({
       setError("Informe o nome.");
       return;
     }
-    const normalizedName = normalizeRoleName(form.name);
-    const hasDuplicate = roles.some(
-      (role) => role.id !== initial?.id && normalizeRoleName(role.name) === normalizedName,
-    );
-    if (hasDuplicate) {
-      setError("Já existe um perfil de acesso com este nome.");
+    const duplicateError = duplicateNameError(form.name);
+    if (duplicateError) {
+      setError(duplicateError);
       setActiveTab("geral");
       return;
     }
@@ -637,7 +643,7 @@ function PerfilForm({
             error={error}
             onChange={(patch) => {
               setForm((current) => ({ ...current, ...patch }));
-              if (patch.name !== undefined) setError("");
+              if (patch.name !== undefined) setError(duplicateNameError(patch.name));
             }}
           />
         )}
@@ -725,14 +731,13 @@ function GeneralTab({
 }) {
   return (
     <section className="space-y-4">
-      <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(0,0.65fr)] gap-3 md:gap-4 md:grid-cols-[1fr_220px]">
-        <Field label="Nome *">
+      <div className="grid grid-cols-[minmax(7rem,1fr)_10.5rem] gap-3 md:gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+        <Field label="Nome *" error={error || undefined}>
           <Input
             value={form.name}
             onChange={(event) => onChange({ name: event.target.value })}
             placeholder="Ex: Atendente Senior"
           />
-          {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
         </Field>
         <Field label="Cor">
           <div className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-2">
@@ -746,7 +751,7 @@ function GeneralTab({
             <Input
               value={form.color}
               onChange={(event) => onChange({ color: event.target.value })}
-              className="min-h-0 border-0 bg-transparent px-1 py-0 uppercase focus:border-0"
+              className="min-h-0 min-w-0 flex-1 border-0 bg-transparent px-1 py-0 uppercase focus:border-0"
             />
           </div>
         </Field>
@@ -1007,25 +1012,33 @@ function WorkScheduleEditor({
           <input
             type="checkbox"
             checked={value.noSchedule}
-            disabled={!editing}
-            onChange={(event) => onChange({ ...value, noSchedule: event.target.checked })}
+            onChange={(event) => {
+              const noSchedule = event.target.checked;
+              onChange({ ...value, noSchedule });
+              if (noSchedule) {
+                setEditing(false);
+                setSelectedDay(null);
+              }
+            }}
             className="h-4 w-4 accent-primary"
           />
           Sem jornada
         </label>
-        <Button type="button" variant="ghost" size="sm" onClick={toggleEditing}>
-          {editing ? (
-            <>
-              <Check className="h-3.5 w-3.5" />
-              Concluir
-            </>
-          ) : (
-            <>
-              <Pencil className="h-3.5 w-3.5" />
-              Editar
-            </>
-          )}
-        </Button>
+        {!value.noSchedule && (
+          <Button type="button" variant="ghost" size="sm" onClick={toggleEditing}>
+            {editing ? (
+              <>
+                <Check className="h-3.5 w-3.5" />
+                Concluir
+              </>
+            ) : (
+              <>
+                <Pencil className="h-3.5 w-3.5" />
+                Editar
+              </>
+            )}
+          </Button>
+        )}
       </div>
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[900px] table-fixed text-xs">

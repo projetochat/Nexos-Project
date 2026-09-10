@@ -271,6 +271,7 @@ export class UsersController {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
       );
+      await this.assertNameAvailable(tx, current.tenantId, dto.name);
       await this.entitlements.assertTenantOperational(current.tenantId);
       await this.entitlements.assertWithinLimit(
         current.tenantId,
@@ -333,6 +334,12 @@ export class UsersController {
     const avatarUrl = normalizeAvatarUrl(dto.avatarUrl);
 
     const membership = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
+      );
+      if (dto.name !== undefined) {
+        await this.assertNameAvailable(tx, current.tenantId, dto.name, existing.id);
+      }
       await tx.user.update({
         where: { id: existing.userId },
         data: {
@@ -478,6 +485,24 @@ export class UsersController {
     }
   }
 
+  private async assertNameAvailable(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    name: string,
+    excludeMembershipId?: string,
+  ) {
+    const normalizedName = normalizeUserName(name);
+    const memberships = await tx.tenantMembership.findMany({
+      where: { tenantId, ...(excludeMembershipId ? { id: { not: excludeMembershipId } } : {}) },
+      select: { user: { select: { name: true } } },
+    });
+    if (
+      memberships.some((membership) => normalizeUserName(membership.user.name) === normalizedName)
+    ) {
+      throw new BadRequestException("Já existe um atendente com este nome.");
+    }
+  }
+
   private async findMembershipOrThrow(id: string, tenantId: string) {
     const membership = await this.prisma.tenantMembership.findFirst({
       where: { id, tenantId },
@@ -565,4 +590,13 @@ function normalizeAvatarUrl(value: string | null | undefined) {
     throw new BadRequestException("Imagem de perfil invalida.");
   }
   return trimmed;
+}
+
+function normalizeUserName(value: string) {
+  return value
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("pt-BR");
 }

@@ -236,10 +236,10 @@ function Page() {
         />
         <ConfirmDialog
           open={!!deleting}
-          title="Desativar departamento?"
+          title="Excluir departamento?"
           destructive
-          description={`Esta acao desativara ${deleting?.name ?? ""}.`}
-          confirmLabel="Desativar"
+          description={`Deseja realmente excluir o departamento "${deleting?.name ?? ""}"?`}
+          confirmLabel="Excluir"
           onClose={() => setDeleting(null)}
           onConfirm={() => deleting && remove.mutate(deleting.id)}
         />
@@ -265,6 +265,17 @@ function DepartamentoForm({
 }) {
   const [form, setForm] = React.useState<DepartamentoFormData>({});
   const [error, setError] = React.useState("");
+  const duplicateNameError = (name: string) => {
+    const normalizedName = normalizeDepartmentName(name);
+    if (!normalizedName) return "";
+    return departments.some(
+      (department) =>
+        department.id !== (initial && !clone ? initial.id : undefined) &&
+        normalizeDepartmentName(department.name) === normalizedName,
+    )
+      ? "Já existe um departamento com este nome."
+      : "";
+  };
   React.useEffect(() => {
     setForm(
       initial
@@ -284,14 +295,9 @@ function DepartamentoForm({
       toast.error("Nome obrigatório.");
       return;
     }
-    const normalizedName = normalizeDepartmentName(form.name);
-    const hasDuplicate = departments.some(
-      (department) =>
-        department.id !== initial?.id &&
-        normalizeDepartmentName(department.name) === normalizedName,
-    );
-    if (hasDuplicate) {
-      setError("Já existe um departamento com este nome.");
+    const duplicateError = duplicateNameError(form.name);
+    if (duplicateError) {
+      setError(duplicateError);
       return;
     }
     onSubmit({ ...form, color: completeHexColor(form.color) });
@@ -328,16 +334,15 @@ function DepartamentoForm({
       }
     >
       <div className="space-y-4">
-        <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(0,0.65fr)] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_150px]">
-          <Field label="Nome *">
+        <div className="grid grid-cols-[minmax(7rem,1fr)_10.5rem] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_11rem]">
+          <Field label="Nome *" error={error || undefined}>
             <Input
               value={form.name ?? ""}
               onChange={(e) => {
                 setForm({ ...form, name: e.target.value });
-                setError("");
+                setError(duplicateNameError(e.target.value));
               }}
             />
-            {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
           </Field>
           <Field label="Cor">
             <div className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-2">
@@ -350,7 +355,7 @@ function DepartamentoForm({
               <Input
                 value={form.color ?? "#3B82F6"}
                 onChange={(e) => setForm({ ...form, color: normalizeHexColor(e.target.value) })}
-                className="min-h-0 border-0 bg-transparent px-1 py-0 uppercase focus:border-0"
+                className="min-h-0 min-w-0 flex-1 border-0 bg-transparent px-1 py-0 uppercase focus:border-0"
               />
             </div>
           </Field>

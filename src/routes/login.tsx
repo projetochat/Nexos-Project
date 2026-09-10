@@ -1,10 +1,7 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { AlertCircle, CheckCircle2, Eye, EyeOff, Loader2, Moon, Sun } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useTheme } from "@/components/theme-provider";
-import { LogoMark, Button, Field, Input } from "@/components/ui-kit";
-import { healthCheck, type NexosHealth } from "@/lib/nexos-api";
 import { currentRoleHome, signIn, useSession, type Role } from "@/lib/session";
 
 export const Route = createFileRoute("/login")({
@@ -15,29 +12,17 @@ export const Route = createFileRoute("/login")({
 function LoginPage() {
   const navigate = useNavigate();
   const user = useSession((s) => s.user);
-  const { resolved, toggle } = useTheme();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [health, setHealth] = React.useState<NexosHealth | null>(null);
   const errorRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (user) navigate({ to: currentRoleHome(user.role) as never });
   }, [user, navigate]);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    healthCheck().then((result) => {
-      if (!cancelled) setHealth(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -61,69 +46,39 @@ function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-dvh overflow-hidden bg-background">
-      <div className="pointer-events-none absolute -left-32 top-20 h-96 w-96 rounded-full bg-primary/20 blur-3xl" />
-      <div className="pointer-events-none absolute -right-32 bottom-20 h-96 w-96 rounded-full bg-accent/20 blur-3xl" />
+    <div className="relative min-h-dvh overflow-hidden bg-[#f8fbff] text-[#071535]">
+      <div
+        className="pointer-events-none absolute inset-0 hidden bg-cover bg-center lg:block"
+        style={{ backgroundImage: "url('/login-desktop-background.jpg')" }}
+      />
+      <div className="pointer-events-none absolute inset-0 hidden bg-white/10 lg:block" />
+      <div
+        className="relative h-[34svh] min-h-64 max-h-80 bg-cover bg-center lg:hidden"
+        style={{
+          backgroundImage: "url('/login-mobile-background.jpg')",
+          backgroundPosition: "center 58%",
+        }}
+        aria-hidden="true"
+      />
 
-      <button
-        onClick={toggle}
-        className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface-1 text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
-        aria-label="Alternar tema"
-      >
-        {resolved === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-      </button>
+      <div className="relative mx-auto grid w-full max-w-[1500px] items-center gap-10 px-4 pb-6 lg:min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(460px,0.95fr)] lg:px-12 lg:py-10 xl:gap-20">
+        <div className="hidden lg:block" aria-hidden="true" />
 
-      <div className="relative mx-auto grid min-h-dvh max-w-6xl gap-8 px-6 py-10 lg:grid-cols-[1.1fr_1fr] lg:items-center">
-        <div className="hidden flex-col justify-center lg:flex">
-          <div className="mb-6 flex items-center gap-2.5">
-            <LogoMark size={36} />
-            <div>
-              <div className="text-lg font-semibold tracking-tight">Nexo</div>
-              <div className="text-xs text-muted-foreground">Atendimento com clareza</div>
+        <div className="mx-auto w-full max-w-[560px]">
+          <div className="rounded-[1.75rem] border border-slate-200/90 bg-white/90 p-7 shadow-[0_24px_70px_rgba(15,42,90,0.13)] backdrop-blur sm:p-12">
+            <div className="text-sm font-bold uppercase tracking-[0.14em] text-slate-500">
+              Ambiente de produção
             </div>
-          </div>
+            <h1 className="mt-3 text-4xl font-bold tracking-tight text-[#071535] sm:text-5xl">
+              Entrar no Nexus
+            </h1>
 
-          <h2 className="text-3xl font-semibold tracking-tight">Acesse o ambiente Nexos.</h2>
-          <p className="mt-3 max-w-md text-sm text-muted-foreground">
-            A autenticacao usa a API e o banco configurados para homologação. A sessão e validada
-            antes de liberar as rotas protegidas.
-          </p>
-
-          <div className="mt-8 max-w-md rounded-lg border border-border bg-surface-1 p-3">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              {health?.database === "up" ? (
-                <CheckCircle2 className="h-4 w-4 text-success" />
-              ) : (
-                <AlertCircle className="h-4 w-4 text-warning" />
-              )}
-              Ambiente de homologação
-            </div>
-            <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
-              <span>API: {health ? "online" : "indisponivel"}</span>
-              <span>Database: {health?.database ?? "desconhecido"}</span>
-              <span>Redis: {health?.redis ?? "desconhecido"}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="mx-auto w-full max-w-md">
-          <div className="mb-6 flex items-center gap-2 lg:hidden">
-            <LogoMark size={30} />
-            <span className="text-lg font-semibold tracking-tight">Nexo</span>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-8 shadow-elevated">
-            <div className="mb-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Ambiente de homologação
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight">Entrar no Nexos</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Use uma conta ativa vinculada a uma organização de homologação.
-            </p>
-
-            <form onSubmit={handleLogin} className="mt-6 space-y-4">
-              <Field label="E-mail">
-                <Input
+            <form onSubmit={handleLogin} className="mt-9 space-y-5">
+              <div>
+                <label htmlFor="email" className="mb-2 block text-lg font-semibold text-slate-500">
+                  E-mail
+                </label>
+                <input
                   id="email"
                   type="email"
                   value={email}
@@ -132,13 +87,20 @@ function LoginPage() {
                   autoComplete="email"
                   aria-invalid={Boolean(error)}
                   aria-describedby={error ? "login-error" : undefined}
+                  className="h-16 w-full rounded-2xl border border-slate-200 bg-[#eff6ff] px-5 text-xl text-[#071535] outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                   required
                 />
-              </Field>
+              </div>
 
-              <Field label="Senha">
+              <div>
+                <label
+                  htmlFor="password"
+                  className="mb-2 block text-lg font-semibold text-slate-500"
+                >
+                  Senha
+                </label>
                 <div className="relative">
-                  <Input
+                  <input
                     id="password"
                     type={showPassword ? "text" : "password"}
                     value={password}
@@ -147,46 +109,47 @@ function LoginPage() {
                     autoComplete="current-password"
                     aria-invalid={Boolean(error)}
                     aria-describedby={error ? "login-error" : undefined}
+                    className="h-16 w-full rounded-2xl border border-slate-200 bg-[#eff6ff] px-5 pr-16 text-xl text-[#071535] outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                     required
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((value) => !value)}
-                    className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+                    className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 transition hover:bg-white hover:text-[#071535]"
                     aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                   >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showPassword ? <EyeOff className="h-6 w-6" /> : <Eye className="h-6 w-6" />}
                   </button>
                 </div>
-              </Field>
+              </div>
 
               {error && (
                 <div
                   id="login-error"
                   ref={errorRef}
                   tabIndex={-1}
-                  className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive outline-none"
+                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 outline-none"
                   role="alert"
                 >
                   {error}
                 </div>
               )}
 
-              <Button variant="primary" className="w-full" type="submit" disabled={loading}>
+              <button
+                className="flex h-16 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#0e55ef] via-[#176ef2] to-[#37b4e8] text-xl font-semibold text-white shadow-[0_10px_24px_rgba(23,105,238,0.25)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
+                type="submit"
+                disabled={loading}
+              >
                 {loading ? (
                   <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Entrando...
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Entrando...
                   </>
                 ) : (
                   <>Entrar</>
                 )}
-              </Button>
+              </button>
             </form>
           </div>
-
-          <p className="mt-6 text-center text-xs text-muted-foreground">
-            Nexo - acesso real ao ambiente configurado
-          </p>
         </div>
       </div>
     </div>

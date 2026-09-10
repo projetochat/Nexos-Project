@@ -56,6 +56,15 @@ type Atendente = {
   updatedAt?: string;
 };
 
+function normalizeAtendenteName(value: string) {
+  return value
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("pt-BR");
+}
+
 function AtendentesPage() {
   const qc = useQueryClient();
   const sessionUser = useSession((state) => state.user);
@@ -373,12 +382,14 @@ function AtendentesPage() {
 
         <AtendenteForm
           open={novo.open}
+          atendentes={atendentes}
           perfis={sortByOptionLabel(perfis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
           onClose={novo.hide}
           onSubmit={(data) => create.mutate(data)}
         />
         <AtendenteForm
           open={!!editing}
+          atendentes={atendentes}
           perfis={sortByOptionLabel(perfis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
           initial={editing ?? undefined}
           onClose={() => setEditing(null)}
@@ -386,6 +397,7 @@ function AtendentesPage() {
         />
         <AtendenteForm
           open={!!duplicating}
+          atendentes={atendentes}
           perfis={sortByOptionLabel(perfis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
           initial={duplicating ?? undefined}
           clone
@@ -394,10 +406,10 @@ function AtendentesPage() {
         />
         <ConfirmDialog
           open={!!deleting}
-          title="Desativar atendente?"
+          title="Excluir atendente?"
           destructive
-          description={`Esta acao desativara ${deleting?.nome ?? ""} na equipe.`}
-          confirmLabel="Desativar"
+          description={`Deseja realmente excluir o atendente "${deleting?.nome ?? ""}"?`}
+          confirmLabel="Excluir"
           onClose={() => setDeleting(null)}
           onConfirm={() => deleting && remove.mutate(deleting.id)}
         />
@@ -412,6 +424,7 @@ function AtendenteForm({
   onSubmit,
   initial,
   clone = false,
+  atendentes,
   perfis,
 }: {
   open: boolean;
@@ -419,6 +432,7 @@ function AtendenteForm({
   onSubmit: (d: Partial<Atendente>) => void;
   initial?: Atendente;
   clone?: boolean;
+  atendentes: Atendente[];
   perfis: { id: string; nome: string }[];
 }) {
   const [form, setForm] = React.useState<Partial<Atendente>>({});
@@ -429,6 +443,19 @@ function AtendenteForm({
   const [photoPreviewOpen, setPhotoPreviewOpen] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const photoButtonRef = React.useRef<HTMLButtonElement | null>(null);
+  const duplicateName = (value: string) =>
+    atendentes.some(
+      (atendente) =>
+        atendente.id !== (initial && !clone ? initial.id : undefined) &&
+        normalizeAtendenteName(atendente.nome) === normalizeAtendenteName(value),
+    );
+  const duplicateEmail = (value: string) =>
+    atendentes.some(
+      (atendente) =>
+        atendente.id !== (initial && !clone ? initial.id : undefined) &&
+        atendente.email.trim().toLocaleLowerCase("pt-BR") ===
+          value.trim().toLocaleLowerCase("pt-BR"),
+    );
   React.useEffect(() => {
     setForm(
       initial
@@ -481,9 +508,11 @@ function AtendenteForm({
   const submit = () => {
     const errs: Record<string, string> = {};
     if (!form.nome || form.nome.trim().length < 3) errs.nome = "Informe o nome.";
+    else if (duplicateName(form.nome)) errs.nome = "Já existe um atendente com este nome.";
     if (!form.perfilId) errs.perfilId = "Selecione um perfil.";
     if (!form.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email))
       errs.email = "E-mail inválido.";
+    else if (duplicateEmail(form.email)) errs.email = "Já existe um atendente com este e-mail.";
     if ((!initial || clone) && (!form.senha || form.senha.length < 6))
       errs.senha = "Senha mínima de 6 caracteres.";
     if (form.senha && form.senha.length > 0 && form.senha.length < 6)
@@ -517,7 +546,12 @@ function AtendenteForm({
               <Button variant="ghost" size="sm" onClick={onClose}>
                 Cancelar
               </Button>
-              <Button variant="primary" size="sm" onClick={submit}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={submit}
+                disabled={Boolean(errors.nome || errors.email)}
+              >
                 Salvar
               </Button>
             </div>
@@ -606,7 +640,14 @@ function AtendenteForm({
               <Field label="Nome *">
                 <Input
                   value={form.nome ?? ""}
-                  onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                  onChange={(e) => {
+                    const nome = e.target.value;
+                    setForm({ ...form, nome });
+                    setErrors((current) => ({
+                      ...current,
+                      nome: duplicateName(nome) ? "Já existe um atendente com este nome." : "",
+                    }));
+                  }}
                 />
                 {errors.nome && (
                   <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
@@ -632,7 +673,14 @@ function AtendenteForm({
                 <Input
                   type="email"
                   value={form.email ?? ""}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  onChange={(e) => {
+                    const email = e.target.value;
+                    setForm({ ...form, email });
+                    setErrors((current) => ({
+                      ...current,
+                      email: duplicateEmail(email) ? "Já existe um atendente com este e-mail." : "",
+                    }));
+                  }}
                 />
                 {errors.email && (
                   <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>

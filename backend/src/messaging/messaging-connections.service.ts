@@ -218,15 +218,31 @@ export class MessagingConnectionsService {
     if (connection.archivedAt || connection.status === MessagingConnectionStatus.REMOVED) {
       throw new BadRequestException("Connection removida não pode ser editada.");
     }
+    const welcomeEnabled = dto.welcomeEnabled ?? connection.welcomeEnabled;
+    const welcomeNewMessage =
+      dto.welcomeNewMessage === undefined
+        ? connection.welcomeNewMessage
+        : cleanOptionalText(dto.welcomeNewMessage);
+    const welcomeExistingMessage =
+      dto.welcomeExistingMessage === undefined
+        ? connection.welcomeExistingMessage
+        : cleanOptionalText(dto.welcomeExistingMessage);
+    if (welcomeEnabled && (!welcomeNewMessage || !welcomeExistingMessage)) {
+      throw new BadRequestException(
+        "Preencha as mensagens para novo contato e contato existente antes de ativar a saudação.",
+      );
+    }
     const updated = await this.prisma.messagingConnection.update({
       where: { tenantId_id: { tenantId: current.tenantId, id: connection.id } },
       data: {
         name: dto.name?.trim(),
         color: normalizeColor(dto.color),
         logoUrl: normalizeLogoUrl(dto.logoUrl),
-        welcomeEnabled: dto.welcomeEnabled,
-        welcomeNewMessage: cleanOptionalText(dto.welcomeNewMessage),
-        welcomeExistingMessage: cleanOptionalText(dto.welcomeExistingMessage),
+        welcomeEnabled,
+        welcomeNewMessage,
+        welcomeExistingMessage,
+        absenceEnabled: dto.absenceEnabled,
+        absenceMessage: cleanOptionalText(dto.absenceMessage),
         notes: cleanOptionalText(dto.notes),
       },
     });
@@ -673,6 +689,8 @@ export class MessagingConnectionsService {
       welcomeEnabled: connection.welcomeEnabled,
       welcomeNewMessage: connection.welcomeNewMessage,
       welcomeExistingMessage: connection.welcomeExistingMessage,
+      absenceEnabled: connection.absenceEnabled,
+      absenceMessage: connection.absenceMessage,
       notes: connection.notes,
       ownerPhoneMasked: maskPhone(connection.ownerPhoneNormalized),
       ownerPhone: connection.ownerPhoneNormalized,

@@ -16,11 +16,26 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Pencil, RefreshCw, RotateCcw, Save, TrendingUp } from "lucide-react";
+import {
+  CheckCircle2,
+  Check,
+  Clock,
+  GripVertical,
+  MessagesSquare,
+  PauseCircle,
+  Pencil,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  TrendingUp,
+  UserPlus,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { DashboardFiltersBar } from "@/components/dashboard-filters";
-import { Badge, Button, Card, KPI, SectionHeader } from "@/components/ui-kit";
+import { Badge, Button, Card, Input, KPI, SectionHeader } from "@/components/ui-kit";
 import { Modal } from "@/components/modal";
 import { num, relativeTime } from "@/lib/format";
 import { operationsApi } from "@/lib/nexos-api";
@@ -48,6 +63,11 @@ const DASHBOARD_BIS = [
   "recent",
 ] as const;
 type DashboardBiId = (typeof DASHBOARD_BIS)[number];
+type DashboardPreferences = {
+  visible: DashboardBiId[];
+  order: DashboardBiId[];
+  labels: Partial<Record<DashboardBiId, string>>;
+};
 const BI_LABELS: Record<DashboardBiId, string> = {
   counters: "Contadores de registro",
   messages: "Mensagens do dia",
@@ -69,14 +89,31 @@ function Dashboard() {
     user?.permissions?.includes("dashboard.manage");
   const storageKey = `nexo.dashboard.bis.${user?.id ?? "anonymous"}`;
   const [editingDashboard, setEditingDashboard] = React.useState(false);
-  const [visibleBis, setVisibleBis] = React.useState<DashboardBiId[]>(() =>
-    loadDashboardBis(storageKey),
+  const [visibleBis, setVisibleBis] = React.useState<DashboardBiId[]>(
+    () => loadDashboardPreferences(storageKey).visible,
   );
   const [draftBis, setDraftBis] = React.useState<DashboardBiId[]>(visibleBis);
+  const [dashboardOrder, setDashboardOrder] = React.useState<DashboardBiId[]>(
+    () => loadDashboardPreferences(storageKey).order,
+  );
+  const [draftOrder, setDraftOrder] = React.useState<DashboardBiId[]>(dashboardOrder);
+  const [dashboardLabels, setDashboardLabels] = React.useState<
+    Partial<Record<DashboardBiId, string>>
+  >(() => loadDashboardPreferences(storageKey).labels);
+  const [draftLabels, setDraftLabels] =
+    React.useState<Partial<Record<DashboardBiId, string>>>(dashboardLabels);
+  const [editingBiId, setEditingBiId] = React.useState<DashboardBiId | null>(null);
+  const [editingBiTitle, setEditingBiTitle] = React.useState("");
+  const [draggingBiId, setDraggingBiId] = React.useState<DashboardBiId | null>(null);
   React.useEffect(() => {
-    const saved = loadDashboardBis(storageKey);
-    setVisibleBis(saved);
-    setDraftBis(saved);
+    const saved = loadDashboardPreferences(storageKey);
+    setVisibleBis(saved.visible);
+    setDraftBis(saved.visible);
+    setDashboardOrder(saved.order);
+    setDraftOrder(saved.order);
+    setDashboardLabels(saved.labels);
+    setDraftLabels(saved.labels);
+    setEditingBiId(null);
   }, [storageKey]);
   const [filters, setFilters] = React.useState<OperationalReportFilters>({
     ...DEFAULT_OPERATIONAL_FILTERS,
@@ -115,21 +152,59 @@ function Dashboard() {
     fila: "filaFila",
     leads: "filaLeads",
   };
+  const queueIconById: Record<QueueId, React.ComponentType<{ className?: string }>> = {
+    ativas: Play,
+    standby: PauseCircle,
+    fila: Clock,
+    leads: UserPlus,
+  };
   const queueCards = queuePrefs
     .filter((queue) => queue.enabled)
     .map((queue) => ({
       id: queue.id,
       label: queue.id === "ativas" ? `Conversas ${queue.label}` : queue.label,
       value: kpiValue(kpis[queueKpiById[queue.id]]),
+      Icon: queueIconById[queue.id],
     }));
+  const totalConversations =
+    queueCards.reduce((total, queue) => total + queue.value, 0) +
+    kpiValue(kpis.conversasEncerradas);
   const hasBi = (id: DashboardBiId) => visibleBis.includes(id);
+  const biLabel = (id: DashboardBiId) => dashboardLabels[id]?.trim() || BI_LABELS[id];
+  const dashboardPosition = (id: DashboardBiId) => dashboardOrder.indexOf(id);
+
+  const beginEditingBiTitle = (id: DashboardBiId) => {
+    setEditingBiId(id);
+    setEditingBiTitle(draftLabels[id]?.trim() || BI_LABELS[id]);
+  };
+
+  const saveEditingBiTitle = () => {
+    if (!editingBiId) return;
+    const title = editingBiTitle.trim();
+    if (!title) {
+      toast.error("Informe um título para o dashboard.");
+      return;
+    }
+    setDraftLabels((current) => ({ ...current, [editingBiId]: title }));
+    setEditingBiId(null);
+  };
+
+  const reorderDraftBis = (sourceId: DashboardBiId, targetId: DashboardBiId) => {
+    if (sourceId === targetId) return;
+    setDraftOrder((current) => {
+      const next = current.filter((id) => id !== sourceId);
+      next.splice(next.indexOf(targetId), 0, sourceId);
+      return next;
+    });
+  };
 
   return (
     <AppShell>
       <PageContainer className="max-w-none">
         <SectionHeader
           title="Dashboard"
-          subtitle="Panorama operacional com metricas consolidadas do banco Nexos."
+          subtitle="Panorama operacional com métricas consolidadas do banco Nexos."
+          subtitleClassName="hidden sm:block"
           actions={
             <div className="flex gap-2">
               <Button
@@ -148,11 +223,16 @@ function Dashboard() {
                   size="sm"
                   onClick={() => {
                     setDraftBis(visibleBis);
+                    setDraftOrder(dashboardOrder);
+                    setDraftLabels(dashboardLabels);
+                    setEditingBiId(null);
                     setEditingDashboard(true);
                   }}
+                  title="Editar Dashboard"
+                  aria-label="Editar Dashboard"
                 >
                   <Pencil className="h-3.5 w-3.5" />
-                  Editar Dashboard
+                  <span className="hidden sm:inline">Editar Dashboard</span>
                 </Button>
               )}
             </div>
@@ -164,204 +244,256 @@ function Dashboard() {
           onChange={(patch) => setFilters((current) => ({ ...current, ...patch }))}
         />
 
-        <div
-          className={`mb-6 grid gap-4 md:grid-cols-3 xl:grid-cols-5 ${hasBi("counters") ? "" : "hidden"}`}
-        >
-          {queueCards.map((queue) => (
-            <KPI key={queue.id} label={queue.label} value={num(queue.value)} tone="info" />
-          ))}
-          <KPI label="Fechadas" value={num(kpiValue(kpis.conversasEncerradas))} tone="success" />
-        </div>
-
-        <div className="mb-6 grid gap-4 lg:grid-cols-3">
-          <Card className={hasBi("messages") ? "lg:col-span-2" : "hidden"}>
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                  Mensagens do dia
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Tráfego de mensagens: {formatDate(data?.range.start)} a{" "}
-                  {formatDate(data?.range.end)}
-                </p>
-              </div>
-              <Badge tone="success">
-                <TrendingUp className="h-3 w-3" /> realtime
-              </Badge>
-            </div>
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={data?.charts.messagesByHour ?? []}>
-                <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
-                <XAxis dataKey="hora" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Line
-                  type="monotone"
-                  dataKey="recebidas"
-                  name="Recebidas"
-                  stroke="#2563eb"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="enviadas"
-                  name="Enviadas"
-                  stroke="#16a34a"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="total"
-                  name="Total"
-                  stroke="#94a3b8"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </Card>
-
-          <Card className={hasBi("distribution") ? "" : "hidden"}>
-            <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
-              Distribuição de conversas
+        <div className="flex flex-col">
+          <div
+            style={{ order: dashboardPosition("counters") }}
+            className={`mb-6 ${hasBi("counters") ? "" : "hidden"}`}
+          >
+            <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              {biLabel("counters")}
             </p>
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Pie
-                  data={statusSerie}
-                  dataKey="total"
-                  nameKey="nome"
-                  innerRadius={48}
-                  outerRadius={82}
-                  paddingAngle={3}
-                >
-                  {statusSerie.map((item, index) => (
-                    <Cell key={item.nome} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-          </Card>
-        </div>
-
-        <div className="mb-6 grid gap-4 lg:grid-cols-4">
-          {[
-            {
-              id: "connection",
-              title: "Conversas por instancia",
-              data: data?.charts.byConnection ?? [],
-            },
-            { id: "customer", title: "Conversas por cliente", data: data?.charts.byCustomer ?? [] },
-            {
-              id: "department",
-              title: "Conversas por departamento",
-              data: data?.charts.byDepartment ?? [],
-            },
-            {
-              id: "tag",
-              title: "Conversas por etiqueta",
-              data: (data?.charts.byTag ?? []).map((item) => ({
-                ...item,
-                nome: `${item.nome} (${item.percentual ?? 0}%)`,
-              })),
-            },
-            { id: "agent", title: "Conversas por atendente", data: data?.charts.byAgent ?? [] },
-          ]
-            .filter((chart) => hasBi(chart.id as DashboardBiId))
-            .map((chart) => (
-              <Card key={chart.title}>
-                <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
-                  {chart.title}
-                </p>
-                {chart.data.length === 0 ? (
-                  <div className="flex h-[220px] items-center justify-center text-xs text-muted-foreground">
-                    Sem dados para o periodo.
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={chart.data}>
-                      <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
-                      <XAxis dataKey="nome" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                      <YAxis
-                        stroke="hsl(var(--muted-foreground))"
-                        fontSize={11}
-                        allowDecimals={false}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          background: "hsl(var(--popover))",
-                          border: "1px solid hsl(var(--border))",
-                          borderRadius: 8,
-                          fontSize: 12,
-                        }}
-                      />
-                      <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-                        {chart.data.map((item, index) => (
-                          <Cell
-                            key={`${item.nome}-${index}`}
-                            fill={item.cor || COLORS[index % COLORS.length]}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </Card>
-            ))}
-        </div>
-
-        <Card className={hasBi("recent") ? "p-0" : "hidden"}>
-          <div className="border-b border-border px-5 py-4">
-            <p className="text-sm font-semibold">Atividade recente</p>
-            <p className="text-xs text-muted-foreground">Ultimas conversas movimentadas.</p>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6">
+              {queueCards.map((queue) => {
+                const Icon = queue.Icon;
+                return (
+                  <KPI
+                    key={queue.id}
+                    label={queue.label}
+                    value={num(queue.value)}
+                    tone="info"
+                    icon={<Icon className="h-6 w-6" />}
+                  />
+                );
+              })}
+              <KPI
+                label="Fechadas"
+                value={num(kpiValue(kpis.conversasEncerradas))}
+                tone="success"
+                icon={<CheckCircle2 className="h-6 w-6" />}
+              />
+              <KPI
+                label="Total"
+                value={num(totalConversations)}
+                tone="info"
+                icon={<MessagesSquare className="h-6 w-6" />}
+              />
+            </div>
           </div>
-          <ul className="divide-y divide-border">
-            {recent.map((conversation) => (
-              <li key={conversation.id} className="flex items-center gap-3 px-5 py-3 text-sm">
-                <span className="h-2 w-2 rounded-full bg-primary" />
-                <span className="min-w-0 flex-1 truncate">
-                  <Link
-                    to="/inbox/$conversationId"
-                    params={{ conversationId: conversation.id }}
-                    className="font-medium hover:underline"
+
+          <div
+            style={{
+              order: Math.min(dashboardPosition("messages"), dashboardPosition("distribution")),
+            }}
+            className="mb-6 grid gap-4 lg:grid-cols-3"
+          >
+            <Card className={hasBi("messages") ? "lg:col-span-2" : "hidden"}>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground">
+                    {biLabel("messages")}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Tráfego de mensagens: {formatDate(data?.range.start)} a{" "}
+                    {formatDate(data?.range.end)}
+                  </p>
+                </div>
+                <Badge tone="success">
+                  <TrendingUp className="h-3 w-3" /> realtime
+                </Badge>
+              </div>
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={data?.charts.messagesByHour ?? []}>
+                  <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="hora" stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                  <YAxis
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={11}
+                    allowDecimals={false}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Line
+                    type="monotone"
+                    dataKey="recebidas"
+                    name="Recebidas"
+                    stroke="#2563eb"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="enviadas"
+                    name="Enviadas"
+                    stroke="#16a34a"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="total"
+                    name="Total"
+                    stroke="#94a3b8"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </Card>
+
+            <Card className={hasBi("distribution") ? "" : "hidden"}>
+              <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
+                {biLabel("distribution")}
+              </p>
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Tooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Pie
+                    data={statusSerie}
+                    dataKey="total"
+                    nameKey="nome"
+                    innerRadius={48}
+                    outerRadius={82}
+                    paddingAngle={3}
                   >
-                    {conversation.contact?.nome ?? "Contato"}
-                  </Link>
-                  <span className="ml-2 text-muted-foreground">
-                    {conversation.protocolo ? `#${conversation.protocolo}` : conversation.status}
-                  </span>
-                </span>
-                <span className="font-mono text-[11px] text-muted-foreground">
-                  ha {relativeTime(new Date(conversation.last_message_at).getTime())}
-                </span>
-              </li>
-            ))}
-            {!query.isLoading && recent.length === 0 && (
-              <li className="px-5 py-6 text-center text-xs text-muted-foreground">
-                Nenhuma atividade operacional encontrada.
-              </li>
-            )}
-          </ul>
-        </Card>
+                    {statusSerie.map((item, index) => (
+                      <Cell key={item.nome} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+            </Card>
+          </div>
+
+          <div
+            style={{
+              order: Math.min(
+                dashboardPosition("connection"),
+                dashboardPosition("customer"),
+                dashboardPosition("department"),
+                dashboardPosition("tag"),
+                dashboardPosition("agent"),
+              ),
+            }}
+            className="mb-6 grid gap-4 lg:grid-cols-4"
+          >
+            {[
+              {
+                id: "connection",
+                title: biLabel("connection"),
+                data: data?.charts.byConnection ?? [],
+              },
+              { id: "customer", title: biLabel("customer"), data: data?.charts.byCustomer ?? [] },
+              {
+                id: "department",
+                title: biLabel("department"),
+                data: data?.charts.byDepartment ?? [],
+              },
+              {
+                id: "tag",
+                title: biLabel("tag"),
+                data: (data?.charts.byTag ?? []).map((item) => ({
+                  ...item,
+                  nome: `${item.nome} (${item.percentual ?? 0}%)`,
+                })),
+              },
+              { id: "agent", title: biLabel("agent"), data: data?.charts.byAgent ?? [] },
+            ]
+              .filter((chart) => hasBi(chart.id as DashboardBiId))
+              .map((chart) => (
+                <Card key={chart.title}>
+                  <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
+                    {chart.title}
+                  </p>
+                  {chart.data.length === 0 ? (
+                    <div className="flex h-[220px] items-center justify-center text-xs text-muted-foreground">
+                      Sem dados para o periodo.
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={chart.data}>
+                        <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+                        <XAxis dataKey="nome" stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                        <YAxis
+                          stroke="hsl(var(--muted-foreground))"
+                          fontSize={11}
+                          allowDecimals={false}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: "hsl(var(--popover))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: 8,
+                            fontSize: 12,
+                          }}
+                        />
+                        <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                          {chart.data.map((item, index) => (
+                            <Cell
+                              key={`${item.nome}-${index}`}
+                              fill={item.cor || COLORS[index % COLORS.length]}
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </Card>
+              ))}
+          </div>
+
+          <div style={{ order: dashboardPosition("recent") }}>
+            <Card className={hasBi("recent") ? "p-0" : "hidden"}>
+              <div className="border-b border-border px-5 py-4">
+                <p className="text-sm font-semibold">{biLabel("recent")}</p>
+                <p className="text-xs text-muted-foreground">Ultimas conversas movimentadas.</p>
+              </div>
+              <ul className="divide-y divide-border">
+                {recent.map((conversation) => (
+                  <li key={conversation.id} className="flex items-center gap-3 px-5 py-3 text-sm">
+                    <span className="h-2 w-2 rounded-full bg-primary" />
+                    <span className="min-w-0 flex-1 truncate">
+                      <Link
+                        to="/inbox/$conversationId"
+                        params={{ conversationId: conversation.id }}
+                        className="font-medium hover:underline"
+                      >
+                        {conversation.contact?.nome ?? "Contato"}
+                      </Link>
+                      <span className="ml-2 text-muted-foreground">
+                        {conversation.protocolo
+                          ? `#${conversation.protocolo}`
+                          : conversation.status}
+                      </span>
+                    </span>
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      ha {relativeTime(new Date(conversation.last_message_at).getTime())}
+                    </span>
+                  </li>
+                ))}
+                {!query.isLoading && recent.length === 0 && (
+                  <li className="px-5 py-6 text-center text-xs text-muted-foreground">
+                    Nenhuma atividade operacional encontrada.
+                  </li>
+                )}
+              </ul>
+            </Card>
+          </div>
+        </div>
         <Modal
           open={editingDashboard}
           onClose={() => setEditingDashboard(false)}
@@ -369,19 +501,41 @@ function Dashboard() {
           size="md"
           footer={
             <div className="flex flex-wrap justify-end gap-3">
-              <Button variant="ghost" onClick={() => setDraftBis([...DASHBOARD_BIS])}>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setDraftBis([...DASHBOARD_BIS]);
+                  setDraftOrder([...DASHBOARD_BIS]);
+                  setDraftLabels({});
+                  setEditingBiId(null);
+                }}
+              >
                 <RotateCcw className="h-4 w-4" />
                 Restaurar padrão
               </Button>
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={() => setEditingDashboard(false)}>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setEditingBiId(null);
+                    setEditingDashboard(false);
+                  }}
+                >
                   Cancelar
                 </Button>
                 <Button
                   variant="primary"
                   onClick={() => {
-                    window.localStorage.setItem(storageKey, JSON.stringify(draftBis));
+                    const preferences: DashboardPreferences = {
+                      visible: draftBis,
+                      order: draftOrder,
+                      labels: draftLabels,
+                    };
+                    window.localStorage.setItem(storageKey, JSON.stringify(preferences));
                     setVisibleBis(draftBis);
+                    setDashboardOrder(draftOrder);
+                    setDashboardLabels(draftLabels);
+                    setEditingBiId(null);
                     setEditingDashboard(false);
                     toast.success("Dashboard atualizado.");
                   }}
@@ -397,11 +551,31 @@ function Dashboard() {
             Os filtros são obrigatórios e permanecem sempre visíveis.
           </p>
           <div className="space-y-2">
-            {DASHBOARD_BIS.map((id) => (
-              <label
+            {draftOrder.map((id, index) => (
+              <div
                 key={id}
-                className="flex cursor-pointer gap-3 rounded-lg border border-border p-3"
+                draggable={editingBiId !== id}
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", id);
+                  setDraggingBiId(id);
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const sourceId = event.dataTransfer.getData("text/plain") as DashboardBiId;
+                  if (DASHBOARD_BIS.includes(sourceId)) reorderDraftBis(sourceId, id);
+                  setDraggingBiId(null);
+                }}
+                onDragEnd={() => setDraggingBiId(null)}
+                className={`flex min-h-11 items-center gap-2 rounded-lg border border-border px-2 py-1.5 transition ${
+                  draggingBiId === id ? "opacity-50" : ""
+                }`}
               >
+                <div className="flex shrink-0 cursor-grab items-center gap-1 text-muted-foreground active:cursor-grabbing">
+                  <GripVertical className="h-3.5 w-3.5" />
+                  <span className="w-3 text-center font-mono text-xs">{index + 1}</span>
+                </div>
                 <input
                   type="checkbox"
                   checked={draftBis.includes(id)}
@@ -412,10 +586,64 @@ function Dashboard() {
                         : current.filter((item) => item !== id),
                     )
                   }
-                  className="mt-0.5 h-4 w-4 accent-primary"
+                  className="h-4 w-4 shrink-0 accent-primary"
+                  aria-label={`Exibir ${draftLabels[id]?.trim() || BI_LABELS[id]}`}
                 />
-                <span className="text-sm font-medium">{BI_LABELS[id]}</span>
-              </label>
+                {editingBiId === id ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-1">
+                    <Input
+                      autoFocus
+                      value={editingBiTitle}
+                      onChange={(event) => setEditingBiTitle(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") saveEditingBiTitle();
+                        if (event.key === "Escape") setEditingBiId(null);
+                      }}
+                      className="h-8 min-w-0 flex-1 text-sm"
+                      aria-label="Título do dashboard"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 shrink-0 p-0"
+                      title="Cancelar edição"
+                      aria-label="Cancelar edição"
+                      onClick={() => setEditingBiId(null)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 shrink-0 p-0"
+                      title="Salvar título"
+                      aria-label="Salvar título"
+                      onClick={saveEditingBiTitle}
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {draftLabels[id]?.trim() || BI_LABELS[id]}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 shrink-0 p-0"
+                      title="Editar título"
+                      aria-label={`Editar ${draftLabels[id]?.trim() || BI_LABELS[id]}`}
+                      onClick={() => beginEditingBiTitle(id)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  </>
+                )}
+              </div>
             ))}
           </div>
         </Modal>
@@ -448,18 +676,41 @@ function kpiValue(kpi: { value: number | null } | undefined) {
   return kpi?.value ?? 0;
 }
 
-function loadDashboardBis(storageKey: string): DashboardBiId[] {
-  if (typeof window === "undefined") return [...DASHBOARD_BIS];
+function loadDashboardPreferences(storageKey: string): DashboardPreferences {
+  const defaults: DashboardPreferences = {
+    visible: [...DASHBOARD_BIS],
+    order: [...DASHBOARD_BIS],
+    labels: {},
+  };
+  if (typeof window === "undefined") return defaults;
   try {
     const stored = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]") as unknown;
-    if (!Array.isArray(stored)) return [...DASHBOARD_BIS];
-    const selected = stored.filter(
-      (item): item is DashboardBiId =>
-        typeof item === "string" && DASHBOARD_BIS.includes(item as DashboardBiId),
-    );
-    return selected.length ? selected : [...DASHBOARD_BIS];
+    const normalizeIds = (value: unknown): DashboardBiId[] =>
+      Array.isArray(value)
+        ? value.filter(
+            (item): item is DashboardBiId =>
+              typeof item === "string" && DASHBOARD_BIS.includes(item as DashboardBiId),
+          )
+        : [];
+
+    if (Array.isArray(stored)) {
+      const visible = normalizeIds(stored);
+      return { ...defaults, visible: visible.length ? visible : defaults.visible };
+    }
+    if (!stored || typeof stored !== "object") return defaults;
+
+    const data = stored as Partial<DashboardPreferences>;
+    const visible = normalizeIds(data.visible);
+    const savedOrder = normalizeIds(data.order);
+    const order = [...savedOrder, ...DASHBOARD_BIS.filter((id) => !savedOrder.includes(id))];
+    const labels = Object.fromEntries(
+      Object.entries(data.labels ?? {}).filter(
+        ([id, value]) => DASHBOARD_BIS.includes(id as DashboardBiId) && typeof value === "string",
+      ),
+    ) as Partial<Record<DashboardBiId, string>>;
+    return { visible: visible.length ? visible : defaults.visible, order, labels };
   } catch {
-    return [...DASHBOARD_BIS];
+    return defaults;
   }
 }
 

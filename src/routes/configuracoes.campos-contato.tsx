@@ -166,7 +166,8 @@ function ContactFieldsSettings() {
   }, [groupFilter, orderedFields, query, requiredFilter, tabFilter, typeFilter]);
 
   const tabOptions = React.useMemo(
-    () => sortByOptionLabel(uniqueLabels(fields.map(displayFieldTab).filter(Boolean)), (tab) => tab),
+    () =>
+      sortByOptionLabel(uniqueLabels(fields.map(displayFieldTab).filter(Boolean)), (tab) => tab),
     [fields],
   );
   const groupOptions = React.useMemo(() => {
@@ -459,6 +460,7 @@ function ContactFieldsSettings() {
       </div>
       <ContactFieldFormModal
         open={create.open || !!editing || !!duplicating}
+        fields={fields}
         initial={editing ?? duplicating ?? undefined}
         clone={!!duplicating}
         onClose={() => {
@@ -500,23 +502,43 @@ function ContactFieldFormModal({
   onSubmit,
   initial,
   clone = false,
+  fields,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: FieldForm) => void | Promise<void>;
   initial?: ApiContactCustomField;
   clone?: boolean;
+  fields: ApiContactCustomField[];
 }) {
   const isMobile = useIsMobile();
   const [form, setForm] = React.useState<FieldForm>(emptyFieldForm());
+  const [labelError, setLabelError] = React.useState("");
+  const duplicateLabelError = (label: string) => {
+    const normalizedLabel = normalizeFieldName(label);
+    if (!normalizedLabel) return "";
+    return fields.some(
+      (field) =>
+        field.id !== (initial && !clone ? initial.id : undefined) &&
+        normalizeFieldName(field.label) === normalizedLabel,
+    )
+      ? "Já existe um campo adicional com este nome."
+      : "";
+  };
   React.useEffect(() => {
     if (!open) return;
     setForm(initial ? fieldToForm(initial, clone) : emptyFieldForm());
+    setLabelError("");
   }, [clone, initial, open]);
 
   const save = () => {
     if (form.label.trim().length < 2) {
       toast.error("Informe o nome do campo.");
+      return;
+    }
+    const duplicateError = duplicateLabelError(form.label);
+    if (duplicateError) {
+      setLabelError(duplicateError);
       return;
     }
     if (form.tabName.trim().length < 2) {
@@ -555,10 +577,14 @@ function ContactFieldFormModal({
       }
     >
       <div className="space-y-4">
-        <Field label="Nome *">
+        <Field label="Nome *" error={labelError || undefined}>
           <Input
             value={form.label}
-            onChange={(event) => setForm({ ...form, label: event.target.value })}
+            onChange={(event) => {
+              setForm({ ...form, label: event.target.value });
+              setLabelError(duplicateLabelError(event.target.value));
+            }}
+            aria-invalid={!!labelError}
           />
         </Field>
         <div className="grid grid-cols-[minmax(0,1fr)_8rem] gap-3">

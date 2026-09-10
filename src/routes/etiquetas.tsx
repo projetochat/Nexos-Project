@@ -65,9 +65,9 @@ function Page() {
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((etiqueta) => (
-            <div
+            <Card
               key={etiqueta.id}
-              className="flex items-center gap-3 rounded-lg border border-border bg-surface-1 p-3"
+              className="flex min-h-[86px] min-w-0 items-center gap-3 p-4 transition hover:border-primary/35 hover:bg-surface-1"
             >
               <span
                 className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
@@ -76,10 +76,12 @@ function Page() {
                 <Tag className="h-4 w-4" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold">{etiqueta.nome}</p>
+                <p className="truncate text-sm font-bold" title={etiqueta.nome}>
+                  {etiqueta.nome}
+                </p>
               </div>
               {canManageCatalog && (
-                <>
+                <div className="flex shrink-0 items-center gap-1">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -107,9 +109,9 @@ function Page() {
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
-                </>
+                </div>
               )}
-            </div>
+            </Card>
           ))}
           {isLoading && (
             <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
@@ -125,6 +127,7 @@ function Page() {
 
         <EtiquetaForm
           open={nova.open}
+          tags={etiquetas}
           onClose={nova.hide}
           onSubmit={async (data) => {
             const created = await crmApi.createTag(data);
@@ -140,6 +143,7 @@ function Page() {
         />
         <EtiquetaForm
           open={!!duplicating}
+          tags={etiquetas}
           initial={duplicating ?? undefined}
           clone
           onClose={() => setDuplicating(null)}
@@ -157,6 +161,7 @@ function Page() {
         />
         <EtiquetaForm
           open={!!editing}
+          tags={etiquetas}
           initial={editing ?? undefined}
           onClose={() => setEditing(null)}
           onSubmit={async (data) => {
@@ -222,24 +227,44 @@ function EtiquetaForm({
   onSubmit,
   initial,
   clone = false,
+  tags,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: { name: string; color?: string }) => Promise<void>;
   initial?: ApiTag;
   clone?: boolean;
+  tags: ApiTag[];
 }) {
   const [name, setName] = React.useState("");
   const [color, setColor] = React.useState("#3B82F6");
   const [busy, setBusy] = React.useState(false);
+  const [nameError, setNameError] = React.useState("");
+  const duplicateNameError = (value: string) => {
+    const normalizedName = normalizeSearch(value);
+    if (!normalizedName) return "";
+    return tags.some(
+      (tag) =>
+        tag.id !== (initial && !clone ? initial.id : undefined) &&
+        normalizeSearch(tag.nome) === normalizedName,
+    )
+      ? "Já existe uma etiqueta com este nome."
+      : "";
+  };
 
   React.useEffect(() => {
     setName(initial ? (clone ? `${initial.nome} - Cópia` : initial.nome) : "");
     setColor(initial?.cor ?? "#3B82F6");
+    setNameError("");
   }, [clone, initial, open]);
 
   const submit = async () => {
     if (name.trim().length < 2) return toast.error("Informe o nome.");
+    const duplicateError = duplicateNameError(name);
+    if (duplicateError) {
+      setNameError(duplicateError);
+      return;
+    }
     setBusy(true);
     try {
       await onSubmit({ name: name.trim(), color: completeHexColor(color) });
@@ -274,9 +299,16 @@ function EtiquetaForm({
         </div>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
-        <Field label="Nome *">
-          <Input value={name} onChange={(event) => setName(event.target.value)} />
+      <div className="grid grid-cols-[minmax(7rem,1fr)_10.5rem] gap-3">
+        <Field label="Nome *" error={nameError || undefined}>
+          <Input
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+              setNameError(duplicateNameError(event.target.value));
+            }}
+            aria-invalid={!!nameError}
+          />
         </Field>
         <Field label="Cor">
           <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">

@@ -3931,6 +3931,8 @@ function TagMultiSelect({
   flow?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [availableTagIds, setAvailableTagIds] = React.useState<string[]>([]);
+  const [allSelectedByAction, setAllSelectedByAction] = React.useState(false);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const selectedTags = tags.filter((tag) => selectedIds.includes(tag.id));
 
@@ -3944,16 +3946,35 @@ function TagMultiSelect({
   }, [open]);
 
   const toggle = (id: string) => {
+    setAllSelectedByAction(false);
     onChange(
       selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id],
     );
+  };
+  const toggleAll = () => {
+    if (allSelectedByAction) {
+      onChange([]);
+      setAllSelectedByAction(false);
+      return;
+    }
+    const ids = availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id);
+    onChange(Array.from(new Set([...selectedIds, ...ids])));
+    setAllSelectedByAction(true);
   };
 
   return (
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() =>
+          setOpen((current) => {
+            if (!current) {
+              setAvailableTagIds(tags.map((tag) => tag.id));
+              setAllSelectedByAction(false);
+            }
+            return !current;
+          })
+        }
         className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm text-foreground outline-none transition focus:border-primary"
       >
         <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
@@ -4023,12 +4044,24 @@ function TagMultiSelect({
               onPointerDown={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                onChange([]);
+                toggleAll();
               }}
-              disabled={selectedIds.length === 0}
-              className="flex items-center justify-center gap-1 rounded-md border border-destructive/30 bg-white px-2 py-2 text-xs font-medium text-destructive hover:bg-destructive/5 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={tags.length === 0}
+              className={`flex items-center justify-center gap-1 rounded-md border px-2 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                allSelectedByAction
+                  ? "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20"
+                  : "border-success/40 bg-success/10 text-success hover:bg-success/20"
+              }`}
             >
-              <X className="h-3 w-3" /> Limpar seleção
+              {allSelectedByAction ? (
+                <>
+                  <X className="h-3 w-3" /> Limpar seleção
+                </>
+              ) : (
+                <>
+                  <Check className="h-3 w-3" /> Selecionar todos
+                </>
+              )}
             </button>
             <button
               type="button"

@@ -137,20 +137,22 @@ function QuickRepliesPage() {
                   key={reply.id}
                   className="relative h-full overflow-hidden transition hover:border-primary/35 hover:bg-surface-1"
                 >
-                  <div className="min-h-0 min-w-0 overflow-hidden pb-10 pr-1">
+                  <div
+                    className={`flex h-full min-h-0 min-w-0 flex-col overflow-hidden ${canManageCatalog ? "pr-32" : ""}`}
+                  >
                     <p className="font-mono text-sm text-primary">
                       /{reply.atalho.replace(/^\//, "")}
                     </p>
-                    <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground/90">
+                    <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-foreground/90">
                       {previewQuickReplyText(reply.texto)}
                     </p>
-                    <p className="mt-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+                    <p className="mt-auto truncate pt-2 text-[10px] uppercase tracking-widest text-muted-foreground">
                       {reply.department?.nome ?? "compartilhada"}
                       {reply.close_on_send ? " · encerra conversa" : ""}
                     </p>
                   </div>
                   {canManageCatalog && (
-                    <div className="absolute bottom-3 right-3 flex gap-1">
+                    <div className="absolute right-4 top-4 flex gap-1 sm:right-6 sm:top-6">
                       <Button
                         variant="ghost"
                         size="icon"
@@ -174,6 +176,7 @@ function QuickRepliesPage() {
                         size="icon"
                         title="Remover"
                         aria-label="Remover"
+                        className="hover:!bg-destructive hover:!text-destructive-foreground"
                         onClick={() => setConfirming(reply)}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -196,6 +199,7 @@ function QuickRepliesPage() {
           onClose={closeEditor}
           initial={editing ?? duplicating}
           clone={!!duplicating}
+          existingReplies={items}
           onSaved={() => {
             refresh();
             qc.invalidateQueries({ queryKey: ["nexos", "quick-replies", "composer"] });
@@ -205,9 +209,14 @@ function QuickRepliesPage() {
 
         <ConfirmDialog
           open={!!confirming}
-          title="Remover atalho?"
-          description={confirming ? `/${confirming.atalho.replace(/^\//, "")} será arquivado.` : ""}
-          confirmLabel="Remover"
+          title="Excluir atalho?"
+          description={
+            confirming
+              ? `Deseja realmente excluir o atalho "/${confirming.atalho.replace(/^\//, "")}"?`
+              : ""
+          }
+          confirmLabel="Excluir"
+          destructive
           onClose={() => setConfirming(null)}
           onConfirm={async () => {
             if (!confirming) return;
@@ -232,12 +241,14 @@ function QuickReplyEditor({
   onClose,
   initial,
   clone = false,
+  existingReplies,
   onSaved,
 }: {
   open: boolean;
   onClose: () => void;
   initial: ApiQuickReply | null;
   clone?: boolean;
+  existingReplies: ApiQuickReply[];
   onSaved: () => void;
 }) {
   const [atalho, setAtalho] = React.useState("");
@@ -246,7 +257,20 @@ function QuickReplyEditor({
   const [closeOnSend, setCloseOnSend] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<"mensagem" | "variaveis">("mensagem");
   const [busy, setBusy] = React.useState(false);
+  const [shortcutError, setShortcutError] = React.useState("");
   const fileRef = React.useRef<HTMLInputElement>(null);
+
+  const duplicateShortcutError = (value: string) => {
+    const shortcut = sanitizeQuickReplyShortcut(value);
+    if (!shortcut) return "";
+    return existingReplies.some(
+      (reply) =>
+        reply.id !== (initial && !clone ? initial.id : undefined) &&
+        sanitizeQuickReplyShortcut(reply.atalho) === shortcut,
+    )
+      ? "Já existe uma mensagem rápida com este atalho."
+      : "";
+  };
 
   React.useEffect(() => {
     if (!open) return;
@@ -264,6 +288,7 @@ function QuickReplyEditor({
     );
     setCloseOnSend(initial?.close_on_send ?? false);
     setActiveTab("mensagem");
+    setShortcutError("");
   }, [clone, open, initial]);
 
   const save = async () => {
@@ -271,6 +296,11 @@ function QuickReplyEditor({
     const content = texto.trim();
     if (!shortcut) return toast.error("Informe o atalho.");
     if (!content) return toast.error("Informe o texto.");
+    const duplicateError = duplicateShortcutError(shortcut);
+    if (duplicateError) {
+      setShortcutError(duplicateError);
+      return;
+    }
     setBusy(true);
     try {
       if (initial && !clone) {
@@ -316,6 +346,12 @@ function QuickReplyEditor({
       size="lg"
       footer={
         <>
+          <div className="mr-auto">
+            <QuickReplyFormLog
+              createdAt={initial && !clone ? initial.createdAt : undefined}
+              updatedAt={initial && !clone ? initial.updatedAt : undefined}
+            />
+          </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
@@ -326,13 +362,25 @@ function QuickReplyEditor({
       }
     >
       <div className="space-y-3">
-        <Field label="Atalho *" hint="Somente letras, sem barra. Ex.: bd, bt, obg">
+        <Field
+          label="Atalho *"
+          hint="Somente letras, sem barra. Ex.: bd, bt, obg"
+          error={shortcutError || undefined}
+        >
           <Input
             value={atalho}
-            onChange={(event) => setAtalho(sanitizeQuickReplyShortcut(event.target.value))}
-            onBlur={() => setAtalho((value) => sanitizeQuickReplyShortcut(value))}
+            onChange={(event) => {
+              const value = sanitizeQuickReplyShortcut(event.target.value);
+              setAtalho(value);
+              setShortcutError(duplicateShortcutError(value));
+            }}
+            onBlur={() => {
+              setAtalho((value) => sanitizeQuickReplyShortcut(value));
+              setShortcutError(duplicateShortcutError(atalho));
+            }}
             placeholder="bd"
             maxLength={40}
+            aria-invalid={!!shortcutError}
           />
         </Field>
         <div className="flex border-b border-border">
@@ -495,4 +543,34 @@ function formatFileSize(size: number) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function QuickReplyFormLog({
+  createdAt,
+  updatedAt,
+}: {
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}) {
+  if (!createdAt && !updatedAt) return <span aria-hidden="true" />;
+  return (
+    <div className="min-w-0 text-left text-[11px] leading-4 text-muted-foreground sm:text-xs sm:leading-5">
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Criado:</span> {formatDateTime(createdAt)}
+      </div>
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Editado:</span> {formatDateTime(updatedAt)}
+      </div>
+    </div>
+  );
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  })
+    .format(new Date(value))
+    .replace(",", "");
 }

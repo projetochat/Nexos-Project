@@ -12,6 +12,7 @@ import {
   Plus,
   RefreshCw,
   ShieldCheck,
+  Trash2,
   UserMinus,
   UserPlus,
   X,
@@ -132,7 +133,7 @@ function GroupsPage() {
           subtitle={`${num(total)} grupos de WhatsApp conectados.`}
           actions={
             <Button variant="primary" size="sm" onClick={create.show}>
-              <Plus className="h-3.5 w-3.5" /> Criar Grupos
+              <Plus className="h-3.5 w-3.5" /> Criar Grupo
             </Button>
           }
         />
@@ -311,18 +312,34 @@ function GroupCard({
             {num(group.participantsCount)} participante(s)
           </p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          title="Abrir conversa"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenChat();
-          }}
-          onDoubleClick={(event) => event.stopPropagation()}
-        >
-          <MessageSquareMore className="h-4 w-4" />
-        </Button>
+        <div className="flex shrink-0 gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Abrir conversa"
+            aria-label="Abrir conversa"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenChat();
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <MessageSquareMore className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Editar grupo"
+            aria-label="Editar grupo"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDetail();
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
       <div className="mt-4 space-y-2 text-xs text-muted-foreground">
         <p className="flex items-center gap-1.5">
@@ -361,8 +378,8 @@ function CreateGroupModal({
   const [name, setName] = React.useState("");
   const [connectionId, setConnectionId] = React.useState("");
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
-  const [query, setQuery] = React.useState("");
-  const [participantTab, setParticipantTab] = React.useState<"contacts" | "selected">("contacts");
+  const [availableQuery, setAvailableQuery] = React.useState("");
+  const [selectedQuery, setSelectedQuery] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
@@ -370,13 +387,13 @@ function CreateGroupModal({
     setName("");
     setConnectionId(instances[0]?.id ?? "");
     setSelectedIds([]);
-    setQuery("");
-    setParticipantTab("contacts");
+    setAvailableQuery("");
+    setSelectedQuery("");
     setBusy(false);
   }, [instances, open]);
 
   const filteredContacts = React.useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = availableQuery.trim().toLowerCase();
     const selected = new Set(selectedIds);
     const digits = q.replace(/\D/g, "");
     return contacts.filter((contact) => {
@@ -388,11 +405,11 @@ function CreateGroupModal({
         (digits && contact.normalizedPhone.includes(digits))
       );
     });
-  }, [contacts, query, selectedIds]);
+  }, [availableQuery, contacts, selectedIds]);
 
   const selectedContacts = React.useMemo(() => {
     const selected = new Set(selectedIds);
-    const q = query.trim().toLowerCase();
+    const q = selectedQuery.trim().toLowerCase();
     const digits = q.replace(/\D/g, "");
     return contacts.filter((contact) => {
       if (!selected.has(contact.id)) return false;
@@ -403,7 +420,7 @@ function CreateGroupModal({
         (digits && contact.normalizedPhone.includes(digits))
       );
     });
-  }, [contacts, query, selectedIds]);
+  }, [contacts, selectedIds, selectedQuery]);
 
   const addContact = (id: string) => {
     setSelectedIds((current) => (current.includes(id) ? current : [...current, id]));
@@ -432,14 +449,14 @@ function CreateGroupModal({
       open={open}
       onClose={onClose}
       title="Criar Grupos"
-      size="lg"
+      size="xl"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
           <Button variant="primary" size="sm" onClick={submit} disabled={busy}>
-            {busy ? "Criando..." : "Criar Grupos"}
+            {busy ? "Criando..." : "Criar Grupo"}
           </Button>
         </>
       }
@@ -447,7 +464,11 @@ function CreateGroupModal({
       <div className="space-y-4">
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Nome do grupo *">
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
+            <Input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Digite o nome do grupo"
+            />
           </Field>
           <Field label="Instância *">
             <Select value={connectionId} onChange={(event) => setConnectionId(event.target.value)}>
@@ -459,100 +480,97 @@ function CreateGroupModal({
             </Select>
           </Field>
         </div>
-        <Field label="Participantes *">
-          <SearchInput
-            value={query}
-            onChange={setQuery}
-            placeholder="Buscar contato ou WhatsApp..."
-          />
-        </Field>
-        <div className="flex border-b border-border text-sm">
-          <button
-            type="button"
-            className={`border-b px-3 py-2 transition ${
-              participantTab === "contacts"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-            onClick={() => setParticipantTab("contacts")}
-          >
-            Contatos
-          </button>
-          <button
-            type="button"
-            className={`border-b px-3 py-2 transition ${
-              participantTab === "selected"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-            onClick={() => setParticipantTab("selected")}
-          >
-            Selecionados
-          </button>
-        </div>
-        <div className="max-h-72 overflow-y-auto rounded-lg border border-border p-1">
-          {participantTab === "contacts" &&
-            filteredContacts.map((contact) => (
-              <div
-                key={contact.id}
-                className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
-              >
-                <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={32} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{contact.nome}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {contact.telefone}
-                  </span>
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    addContact(contact.id);
-                  }}
-                >
-                  <UserPlus className="h-3.5 w-3.5" /> Adicionar
-                </Button>
-              </div>
-            ))}
-          {participantTab === "selected" &&
-            selectedContacts.map((contact) => (
-              <div
-                key={contact.id}
-                className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
-              >
-                <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={32} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{contact.nome}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {contact.telefone}
-                  </span>
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    removeContact(contact.id);
-                  }}
-                >
-                  <UserMinus className="h-3.5 w-3.5" /> Remover
-                </Button>
-              </div>
-            ))}
-          {participantTab === "contacts" && filteredContacts.length === 0 && (
-            <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-              Nenhum contato encontrado.
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="rounded-xl border border-border p-3 sm:p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <h3 className="text-lg font-semibold">Contatos disponíveis</h3>
+              <Badge tone="default">{num(filteredContacts.length)}</Badge>
             </div>
-          )}
-          {participantTab === "selected" && selectedContacts.length === 0 && (
-            <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-              Nenhum participante selecionado.
+            <SearchInput
+              value={availableQuery}
+              onChange={setAvailableQuery}
+              placeholder="Buscar contato ou WhatsApp..."
+            />
+            <div className="mt-3 max-h-[28rem] divide-y divide-border overflow-y-auto">
+              {filteredContacts.map((contact) => (
+                <div key={contact.id} className="flex items-center gap-3 py-2.5 text-sm">
+                  <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={40} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{contact.nome}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {contact.telefone}
+                    </span>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={() => addContact(contact.id)}
+                  >
+                    <UserPlus className="h-3.5 w-3.5" /> Adicionar
+                  </Button>
+                </div>
+              ))}
+              {filteredContacts.length === 0 && (
+                <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                  Nenhum contato encontrado.
+                </div>
+              )}
             </div>
-          )}
+          </section>
+
+          <section className="rounded-xl border border-border p-3 sm:p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold">Contatos selecionados</h3>
+                <Badge tone="default">{num(selectedIds.length)}</Badge>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                className="text-destructive hover:text-destructive"
+                disabled={selectedIds.length === 0}
+                onClick={() => setSelectedIds([])}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Limpar todos
+              </Button>
+            </div>
+            <SearchInput
+              value={selectedQuery}
+              onChange={setSelectedQuery}
+              placeholder="Buscar nos selecionados..."
+            />
+            <div className="mt-3 max-h-[28rem] divide-y divide-border overflow-y-auto">
+              {selectedContacts.map((contact) => (
+                <div key={contact.id} className="flex items-center gap-3 py-2.5 text-sm">
+                  <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={40} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{contact.nome}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {contact.telefone}
+                    </span>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    type="button"
+                    title={`Remover ${contact.nome}`}
+                    aria-label={`Remover ${contact.nome}`}
+                    className="text-destructive hover:!bg-destructive hover:!text-destructive-foreground"
+                    onClick={() => removeContact(contact.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              {selectedContacts.length === 0 && (
+                <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                  Nenhum participante selecionado.
+                </div>
+              )}
+            </div>
+          </section>
         </div>
       </div>
     </Modal>
@@ -576,12 +594,13 @@ function GroupDetailModal({
 }) {
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
+  const [availableQuery, setAvailableQuery] = React.useState("");
+  const [selectedQuery, setSelectedQuery] = React.useState("");
   const [query, setQuery] = React.useState("");
   const [selectedContactIds, setSelectedContactIds] = React.useState<string[]>([]);
-  const [busy, setBusy] = React.useState<string | null>(null);
   const [addingParticipants, setAddingParticipants] = React.useState(false);
-  const [tab, setTab] = React.useState<"general" | "participants">("general");
-  const [viewMode, setViewMode] = React.useState(true);
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const viewMode = React.useMemo(() => Boolean(group?.id), [group?.id]);
   const [editingName, setEditingName] = React.useState(false);
   const [editingDescription, setEditingDescription] = React.useState(false);
   const initializedGroupIdRef = React.useRef<string | null>(null);
@@ -595,12 +614,9 @@ function GroupDetailModal({
     initializedGroupIdRef.current = group.id;
     setName(group.name);
     setDescription(group.description ?? "");
-    setQuery("");
-    setSelectedContactIds([]);
+    setAvailableQuery("");
+    setSelectedQuery("");
     setBusy(null);
-    setAddingParticipants(false);
-    setTab("general");
-    setViewMode(true);
     setEditingName(false);
     setEditingDescription(false);
   }, [group]);
@@ -618,7 +634,7 @@ function GroupDetailModal({
   }, [group]);
 
   const availableContacts = React.useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = availableQuery.trim().toLowerCase();
     const digits = q.replace(/\D/g, "");
     return contacts.filter((contact) => {
       const contactDigits = onlyDigits(contact.normalizedPhone || contact.telefone);
@@ -630,7 +646,21 @@ function GroupDetailModal({
         (digits.length > 0 && contactDigits.includes(digits))
       );
     });
-  }, [activeParticipantKeys, contacts, query]);
+  }, [activeParticipantKeys, availableQuery, contacts]);
+
+  const selectedParticipants = React.useMemo(() => {
+    const q = selectedQuery.trim().toLowerCase();
+    const digits = q.replace(/\D/g, "");
+    return (group?.participants ?? []).filter((participant) => {
+      if (!q) return true;
+      const phone = participant.phone ?? participant.externalParticipantId;
+      return (
+        participant.name.toLowerCase().includes(q) ||
+        phone.toLowerCase().includes(q) ||
+        (digits.length > 0 && onlyDigits(phone).includes(digits))
+      );
+    });
+  }, [group?.participants, selectedQuery]);
 
   const run = async (action: string, callback: () => Promise<void>) => {
     setBusy(action);
@@ -676,18 +706,20 @@ function GroupDetailModal({
     setEditingDescription(false);
   };
 
-  const addParticipants = () => {
-    if (!group || !selectedContactIds.length) return;
-    void run("participants", async () => {
+  const addParticipant = (contactId: string) => {
+    if (!group) return;
+    void run(`participant:${contactId}`, async () => {
       const updated = await groupsApi.updateParticipants(group.id, {
         action: "add",
-        participantContactIds: selectedContactIds,
+        participantContactIds: [contactId],
       });
-      setSelectedContactIds([]);
-      setQuery("");
       onGroupChange(updated);
-      toast.success("Participante(s) adicionado(s)");
+      toast.success("Participante adicionado");
     });
+  };
+
+  const addParticipants = () => {
+    if (selectedContactIds.length === 1) addParticipant(selectedContactIds[0]);
   };
 
   const updateParticipant = (
@@ -721,22 +753,16 @@ function GroupDetailModal({
     <Modal
       open={!!group}
       onClose={onClose}
-      title={viewMode ? "Visualizar Grupo" : "Edição de Grupo"}
-      size="lg"
+      title="Edição de Grupo"
+      size="xl"
       footer={
         group ? (
           <div className="flex w-full items-center justify-between gap-3">
             <EntityFormLog createdAt={group.createdAt} updatedAt={group.updatedAt} />
             <div className="flex shrink-0 items-center gap-2">
-              {viewMode ? (
-                <Button variant="secondary" size="sm" onClick={() => setViewMode(false)}>
-                  <Pencil className="h-3.5 w-3.5" /> Editar
-                </Button>
-              ) : (
-                <Button variant="destructive" size="sm" onClick={leaveGroup} disabled={!!busy}>
-                  <LogOut className="h-3.5 w-3.5" /> Sair do grupo
-                </Button>
-              )}
+              <Button variant="destructive" size="sm" onClick={leaveGroup} disabled={!!busy}>
+                <LogOut className="h-3.5 w-3.5" /> Sair do grupo
+              </Button>
               <Button variant="primary" size="sm" onClick={() => onOpenChat(group)}>
                 <MessageSquareMore className="h-3.5 w-3.5" /> Abrir conversa
               </Button>
@@ -747,16 +773,7 @@ function GroupDetailModal({
     >
       {group && (
         <div className="space-y-4">
-          <div className="flex border-b border-border text-sm">
-            <GroupModalTab active={tab === "general"} onClick={() => setTab("general")}>
-              Geral
-            </GroupModalTab>
-            <GroupModalTab active={tab === "participants"} onClick={() => setTab("participants")}>
-              Participantes
-            </GroupModalTab>
-          </div>
-
-          {tab === "general" && (
+          <div className="space-y-4">
             <div className="space-y-4">
               <div className="flex items-start gap-3">
                 <Avatar name={group.name} src={group.imageUrl ?? undefined} size={56} />
@@ -783,23 +800,17 @@ function GroupDetailModal({
                         </button>
                       )}
                     </div>
-                    {!viewMode && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title={editingName ? "Salvar nome" : "Editar nome"}
-                        aria-label={editingName ? "Salvar nome" : "Editar nome"}
-                        onClick={editingName ? saveName : () => setEditingName(true)}
-                        disabled={busy === "name"}
-                        className="h-9 w-9"
-                      >
-                        {editingName ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <Pencil className="h-4 w-4" />
-                        )}
-                      </Button>
-                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title={editingName ? "Salvar nome" : "Editar nome"}
+                      aria-label={editingName ? "Salvar nome" : "Editar nome"}
+                      onClick={editingName ? saveName : () => setEditingName(true)}
+                      disabled={busy === "name"}
+                      className="h-9 w-9"
+                    >
+                      {editingName ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                    </Button>
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {num(group.participantsCount)} participante(s) cadastrados
@@ -839,170 +850,267 @@ function GroupDetailModal({
                       </button>
                     )}
                   </div>
-                  {!viewMode && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title={editingDescription ? "Salvar descrição" : "Editar descrição"}
-                      aria-label={editingDescription ? "Salvar descrição" : "Editar descrição"}
-                      onClick={
-                        editingDescription ? saveDescription : () => setEditingDescription(true)
-                      }
-                      disabled={busy === "description"}
-                      className="h-10 w-10 self-center"
-                    >
-                      {editingDescription ? (
-                        <Check className="h-4 w-4" />
-                      ) : (
-                        <Pencil className="h-4 w-4" />
-                      )}
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title={editingDescription ? "Salvar descrição" : "Editar descrição"}
+                    aria-label={editingDescription ? "Salvar descrição" : "Editar descrição"}
+                    onClick={
+                      editingDescription ? saveDescription : () => setEditingDescription(true)
+                    }
+                    disabled={busy === "description"}
+                    className="h-10 w-10 self-center"
+                  >
+                    {editingDescription ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <Pencil className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
               </Field>
-            </div>
-          )}
-
-          {tab === "participants" && (
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold">Participantes</h3>
-                {!viewMode && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      if (addingParticipants && selectedContactIds.length > 0) {
-                        addParticipants();
-                        return;
-                      }
-                      setAddingParticipants((current) => !current);
-                    }}
-                    disabled={busy === "participants"}
-                  >
-                    <UserPlus className="h-3.5 w-3.5" />
-                    {addingParticipants && selectedContactIds.length > 0
-                      ? `Adicionar (${selectedContactIds.length})`
-                      : "Adicionar"}
-                  </Button>
-                )}
-              </div>
-
-              {addingParticipants && (
-                <div className="mb-3 rounded-lg border border-border bg-surface-1 p-3">
-                  <SearchInput
-                    value={query}
-                    onChange={setQuery}
-                    placeholder="Buscar contato ou WhatsApp..."
-                  />
-                  <div className="mt-2 max-h-36 overflow-y-auto rounded-lg border border-border bg-card p-1">
-                    {availableContacts.slice(0, 50).map((contact) => {
-                      const active = selectedContactIds.includes(contact.id);
-                      return (
-                        <button
-                          key={contact.id}
-                          type="button"
-                          onClick={() =>
-                            setSelectedContactIds((current) =>
-                              active
-                                ? current.filter((item) => item !== contact.id)
-                                : [...current, contact.id],
-                            )
+              {!viewMode && (
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold">Participantes</h3>
+                    {!viewMode && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          if (addingParticipants && selectedContactIds.length > 0) {
+                            addParticipants();
+                            return;
                           }
-                          className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm transition hover:bg-surface-2"
-                        >
-                          <span
-                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                              active ? "border-primary bg-primary text-white" : "border-border"
-                            }`}
-                          >
-                            {active && <Check className="h-3 w-3" />}
-                          </span>
-                          <Avatar
-                            name={contact.nome}
-                            src={contact.avatar_url ?? undefined}
-                            size={28}
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate font-medium">{contact.nome}</span>
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {contact.telefone}
-                            </span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                    {availableContacts.length === 0 && (
-                      <div className="px-3 py-5 text-center text-sm text-muted-foreground">
-                        Nenhum contato disponível.
+                          setAddingParticipants((current) => !current);
+                        }}
+                        disabled={busy === "participants"}
+                      >
+                        <UserPlus className="h-3.5 w-3.5" />
+                        {addingParticipants && selectedContactIds.length > 0
+                          ? `Adicionar (${selectedContactIds.length})`
+                          : "Adicionar"}
+                      </Button>
+                    )}
+                  </div>
+
+                  {addingParticipants && (
+                    <div className="mb-3 rounded-lg border border-border bg-surface-1 p-3">
+                      <SearchInput
+                        value={query}
+                        onChange={setQuery}
+                        placeholder="Buscar contato ou WhatsApp..."
+                      />
+                      <div className="mt-2 max-h-36 overflow-y-auto rounded-lg border border-border bg-card p-1">
+                        {availableContacts.slice(0, 50).map((contact) => {
+                          const active = selectedContactIds.includes(contact.id);
+                          return (
+                            <button
+                              key={contact.id}
+                              type="button"
+                              onClick={() =>
+                                setSelectedContactIds((current) =>
+                                  active
+                                    ? current.filter((item) => item !== contact.id)
+                                    : [...current, contact.id],
+                                )
+                              }
+                              className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm transition hover:bg-surface-2"
+                            >
+                              <span
+                                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                                  active ? "border-primary bg-primary text-white" : "border-border"
+                                }`}
+                              >
+                                {active && <Check className="h-3 w-3" />}
+                              </span>
+                              <Avatar
+                                name={contact.nome}
+                                src={contact.avatar_url ?? undefined}
+                                size={28}
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate font-medium">{contact.nome}</span>
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  {contact.telefone}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                        {availableContacts.length === 0 && (
+                          <div className="px-3 py-5 text-center text-sm text-muted-foreground">
+                            Nenhum contato disponível.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="max-h-[22rem] overflow-y-auto rounded-lg border border-border">
+                    {group.participants.map((participant) => (
+                      <div
+                        key={participant.id}
+                        className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0 hover:bg-surface-1"
+                      >
+                        <Avatar name={participant.name} size={32} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{participant.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {formatParticipantPhone(
+                              participant.phone ?? participant.externalParticipantId,
+                            )}
+                          </p>
+                        </div>
+                        {(participant.isAdmin || participant.isSuperAdmin) && (
+                          <Badge tone="success">
+                            <ShieldCheck className="h-3 w-3" />
+                            {participant.isSuperAdmin ? "Super admin" : "Admin"}
+                          </Badge>
+                        )}
+                        {!viewMode && (
+                          <div className="flex shrink-0 gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title={participant.isAdmin ? "Remover admin" : "Tornar admin"}
+                              aria-label={participant.isAdmin ? "Remover admin" : "Tornar admin"}
+                              onClick={() =>
+                                updateParticipant(
+                                  participant,
+                                  participant.isAdmin ? "demote" : "promote",
+                                )
+                              }
+                              disabled={!!busy || participant.isSuperAdmin}
+                              className="h-8 w-8"
+                            >
+                              <Crown className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Remover participante"
+                              aria-label="Remover participante"
+                              onClick={() => updateParticipant(participant, "remove")}
+                              disabled={!!busy || participant.isSuperAdmin}
+                              className="h-8 w-8"
+                            >
+                              <UserMinus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {group.participants.length === 0 && (
+                      <div className="p-6 text-center text-sm text-muted-foreground">
+                        Nenhum participante identificado ainda.
                       </div>
                     )}
                   </div>
                 </div>
               )}
-
-              <div className="max-h-[22rem] overflow-y-auto rounded-lg border border-border">
-                {group.participants.map((participant) => (
-                  <div
-                    key={participant.id}
-                    className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0 hover:bg-surface-1"
-                  >
-                    <Avatar name={participant.name} size={32} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{participant.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {formatParticipantPhone(
-                          participant.phone ?? participant.externalParticipantId,
-                        )}
-                      </p>
-                    </div>
-                    {(participant.isAdmin || participant.isSuperAdmin) && (
-                      <Badge tone="success">
-                        <ShieldCheck className="h-3 w-3" />
-                        {participant.isSuperAdmin ? "Super admin" : "Admin"}
-                      </Badge>
-                    )}
-                    {!viewMode && (
-                      <div className="flex shrink-0 gap-1">
+              <div className="grid gap-4 lg:grid-cols-2">
+                <section className="rounded-xl border border-border p-3 sm:p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <h3 className="text-lg font-semibold">Contatos disponíveis</h3>
+                    <Badge tone="default">{num(availableContacts.length)}</Badge>
+                  </div>
+                  <SearchInput
+                    value={availableQuery}
+                    onChange={setAvailableQuery}
+                    placeholder="Buscar contato ou WhatsApp..."
+                  />
+                  <div className="mt-3 max-h-80 divide-y divide-border overflow-y-auto">
+                    {availableContacts.map((contact) => (
+                      <div key={contact.id} className="flex items-center gap-3 py-2.5 text-sm">
+                        <Avatar
+                          name={contact.nome}
+                          src={contact.avatar_url ?? undefined}
+                          size={40}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{contact.nome}</span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {contact.telefone}
+                          </span>
+                        </span>
                         <Button
                           variant="ghost"
-                          size="icon"
-                          title={participant.isAdmin ? "Remover admin" : "Tornar admin"}
-                          aria-label={participant.isAdmin ? "Remover admin" : "Tornar admin"}
-                          onClick={() =>
-                            updateParticipant(
-                              participant,
-                              participant.isAdmin ? "demote" : "promote",
-                            )
-                          }
-                          disabled={!!busy || participant.isSuperAdmin}
-                          className="h-8 w-8"
+                          size="sm"
+                          onClick={() => addParticipant(contact.id)}
+                          disabled={!!busy}
                         >
-                          <Crown className="h-3.5 w-3.5" />
+                          <UserPlus className="h-3.5 w-3.5" /> Adicionar
                         </Button>
+                      </div>
+                    ))}
+                    {availableContacts.length === 0 && (
+                      <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+                        Nenhum contato disponível.
+                      </p>
+                    )}
+                  </div>
+                </section>
+                <section className="rounded-xl border border-border p-3 sm:p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-semibold">Contatos selecionados</h3>
+                      <Badge tone="default">{num(group.participantsCount)}</Badge>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      disabled={(group?.participants.length ?? 0) === 0 || !!busy}
+                      onClick={() => {
+                        group?.participants.forEach((participant) =>
+                          updateParticipant(participant, "remove"),
+                        );
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Limpar todos
+                    </Button>
+                  </div>
+                  <SearchInput
+                    value={selectedQuery}
+                    onChange={setSelectedQuery}
+                    placeholder="Buscar nos selecionados..."
+                  />
+                  <div className="mt-3 max-h-80 divide-y divide-border overflow-y-auto">
+                    {selectedParticipants.map((participant) => (
+                      <div key={participant.id} className="flex items-center gap-3 py-2.5 text-sm">
+                        <Avatar name={participant.name} size={40} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{participant.name}</span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {formatParticipantPhone(
+                              participant.phone ?? participant.externalParticipantId,
+                            )}
+                          </span>
+                        </span>
                         <Button
                           variant="ghost"
                           size="icon"
                           title="Remover participante"
                           aria-label="Remover participante"
+                          className="text-destructive hover:!bg-destructive hover:!text-destructive-foreground"
                           onClick={() => updateParticipant(participant, "remove")}
                           disabled={!!busy || participant.isSuperAdmin}
-                          className="h-8 w-8"
                         >
-                          <UserMinus className="h-3.5 w-3.5" />
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
+                    ))}
+                    {selectedParticipants.length === 0 && (
+                      <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+                        Nenhum participante selecionado.
+                      </p>
                     )}
                   </div>
-                ))}
-                {group.participants.length === 0 && (
-                  <div className="p-6 text-center text-sm text-muted-foreground">
-                    Nenhum participante identificado ainda.
-                  </div>
-                )}
+                </section>
               </div>
             </div>
-          )}
+          </div>
         </div>
       )}
     </Modal>

@@ -34,16 +34,6 @@ import {
   sanitizeTicketHtml,
 } from "./ticket-sanitizer";
 
-const allowedMimeTypes = new Set(
-  (
-    process.env.NEXOS_STORAGE_ALLOWED_MIME_TYPES ??
-    "image/jpeg,image/png,image/webp,application/pdf,text/plain"
-  )
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean),
-);
-
 const transitions: Record<TicketStatus, TicketStatus[]> = {
   ABERTO: ["EM_ANDAMENTO", "CANCELADO"],
   EM_ANDAMENTO: ["AGUARDANDO", "RESOLVIDO", "CANCELADO"],
@@ -627,12 +617,6 @@ export class TicketsService {
 
   private validateAttachment(mimeType: string, sizeBytes: number) {
     const limit = this.maxAttachmentSizeBytes();
-    if (!allowedMimeTypes.has(mimeType))
-      throw canonicalException(
-        HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-        "ATTACHMENT_MIME_NOT_ALLOWED",
-        "Tipo de arquivo não permitido.",
-      );
     if (sizeBytes > limit) {
       throw canonicalException(
         HttpStatus.PAYLOAD_TOO_LARGE,
