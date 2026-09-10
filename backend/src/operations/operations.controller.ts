@@ -11,8 +11,17 @@ import { OperationsService } from "./operations.service";
 
 class OperationalQueryDto {
   @IsOptional()
-  @IsIn(["today", "yesterday", "7d", "30d", "custom"])
-  period?: "today" | "yesterday" | "7d" | "30d" | "custom";
+  @IsIn(["today", "yesterday", "week", "month", "previous_month", "year", "7d", "30d", "custom"])
+  period?:
+    | "today"
+    | "yesterday"
+    | "week"
+    | "month"
+    | "previous_month"
+    | "year"
+    | "7d"
+    | "30d"
+    | "custom";
 
   @IsOptional()
   @IsString()
@@ -41,6 +50,10 @@ class OperationalQueryDto {
   @IsOptional()
   @IsString()
   customerId?: string;
+
+  @IsOptional()
+  @IsString()
+  connectionId?: string;
 
   @IsOptional()
   @IsString()

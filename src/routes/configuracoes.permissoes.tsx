@@ -27,7 +27,7 @@ function PermissoesSettings() {
                 {role.name}
               </Badge>
               <span className="text-xs text-muted-foreground">
-                {role.permissionIds.length} permissoes ativas
+                {role.permissionIds.length} permissões ativas
               </span>
             </div>
             <Button variant="ghost" size="sm" className="self-start sm:self-auto">

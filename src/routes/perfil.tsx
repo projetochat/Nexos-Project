@@ -29,7 +29,7 @@ function PerfilPage() {
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
   const roleMeta = user ? ROLE_META[user.role] : null;
-  const displayName = user?.nome ?? "Usuario";
+  const displayName = user?.nome ?? "Usuário";
   const initialsScope = user?.empresaNome ?? roleMeta?.scope ?? "Nexo";
 
   const saveAvatar = async (file: File | undefined) => {
@@ -96,7 +96,7 @@ function PerfilPage() {
       <PageContainer>
         <SectionHeader
           title="Seu perfil"
-          subtitle="Informacoes do usuario autenticado nesta sessao."
+          subtitle="Informações do usuário autenticado nesta sessão."
         />
 
         <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -128,7 +128,7 @@ function PerfilPage() {
             <div className="mt-3 flex flex-wrap justify-center gap-1.5">
               <Badge tone="success">Online</Badge>
               <Badge tone="brand" dot={false}>
-                {roleMeta?.label ?? "Usuario"}
+                {roleMeta?.label ?? "Usuário"}
               </Badge>
             </div>
             <div className="mt-6 w-full border-t border-border pt-4 text-left">
@@ -138,7 +138,7 @@ function PerfilPage() {
                   <dd className="text-right font-medium">{user?.empresaNome ?? "Nexo"}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Permissoes</dt>
+                  <dt className="text-muted-foreground">Permissões</dt>
                   <dd className="font-mono font-semibold">{user?.permissions?.length ?? 0}</dd>
                 </div>
                 <div className="flex justify-between">
@@ -156,7 +156,7 @@ function PerfilPage() {
                 <Input value={displayName} readOnly />
               </Field>
               <Field label="Perfil">
-                <Input value={roleMeta?.label ?? "Usuario"} readOnly />
+                <Input value={roleMeta?.label ?? "Usuário"} readOnly />
               </Field>
               <Field label="E-mail">
                 <Input value={user?.email ?? ""} readOnly />
@@ -172,7 +172,7 @@ function PerfilPage() {
             </div>
             <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
               <Button variant="primary" disabled>
-                Dados sincronizados pela sessao
+                Dados sincronizados pela sessão
               </Button>
             </div>
           </Card>

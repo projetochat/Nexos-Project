@@ -12,7 +12,16 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import { closedConversationWhere, OperationsMetricsService } from "./operations-metrics.service";
 
 type OperationalQuery = {
-  period?: "today" | "yesterday" | "7d" | "30d" | "custom";
+  period?:
+    | "today"
+    | "yesterday"
+    | "week"
+    | "month"
+    | "previous_month"
+    | "year"
+    | "7d"
+    | "30d"
+    | "custom";
   start?: string;
   end?: string;
   q?: string;
@@ -20,6 +29,7 @@ type OperationalQuery = {
   assignedMembershipId?: string;
   status?: string;
   customerId?: string;
+  connectionId?: string;
   contactId?: string;
   page?: number;
   pageSize?: number;
@@ -510,7 +520,7 @@ export class OperationsService {
       byCustomer: [...customerCounts.values()],
       byConnection: byConnection.map((row) => {
         const connection = connections.find((item) => item.id === row.connectionId);
-        return { nome: connection?.name ?? "Sem instancia", total: row._count._all };
+        return { nome: connection?.name ?? "Sem instância", total: row._count._all };
       }),
     };
   }
@@ -543,6 +553,7 @@ function conversationWhere(
   if (query.assignedMembershipId) where.assignedMembershipId = query.assignedMembershipId;
   if (query.contactId) where.contactId = query.contactId;
   if (query.customerId) where.contact = { customerId: query.customerId };
+  if (query.connectionId) where.connectionId = query.connectionId;
   const q = query.q?.trim();
   if (q) {
     where.AND = [
@@ -568,7 +579,7 @@ function parseConversationStatus(status?: string) {
   if (!Object.values(ConversationStatus).includes(normalized as ConversationStatus)) {
     throw new BadRequestException({
       code: "OPERATIONS_STATUS_INVALID",
-      message: "Status de conversa invalido.",
+      message: "Status de conversa inválido.",
     });
   }
   return normalized as ConversationStatus;
@@ -634,12 +645,33 @@ function periodRange(query: OperationalQuery, fallback: OperationalQuery["period
   const startOfToday = new Date(now);
   startOfToday.setHours(0, 0, 0, 0);
   if (period === "custom" && query.start && query.end) {
-    return { start: new Date(query.start), end: new Date(query.end) };
+    const start = new Date(`${query.start}T00:00:00`);
+    const end = new Date(`${query.end}T00:00:00`);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
   }
   if (period === "yesterday") {
     const start = new Date(startOfToday);
     start.setDate(start.getDate() - 1);
     return { start, end: startOfToday };
+  }
+  if (period === "week") {
+    const start = new Date(startOfToday);
+    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    return { start, end: now };
+  }
+  if (period === "month") {
+    const start = new Date(startOfToday.getFullYear(), startOfToday.getMonth(), 1);
+    return { start, end: now };
+  }
+  if (period === "previous_month") {
+    const start = new Date(startOfToday.getFullYear(), startOfToday.getMonth() - 1, 1);
+    const end = new Date(startOfToday.getFullYear(), startOfToday.getMonth(), 1);
+    return { start, end };
+  }
+  if (period === "year") {
+    const start = new Date(startOfToday.getFullYear(), 0, 1);
+    return { start, end: now };
   }
   if (period === "7d" || period === "30d") {
     const start = new Date(startOfToday);

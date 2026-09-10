@@ -26,6 +26,27 @@ type DepartamentoFormData = {
   color?: string;
 };
 
+function normalizeDepartmentName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("pt-BR");
+}
+
+function duplicateDepartmentName(name: string, departments: ApiDepartment[]) {
+  const existingNames = new Set(
+    departments.map((department) => normalizeDepartmentName(department.name)),
+  );
+  let duplicateName = `${name} - Cópia`;
+  let count = 2;
+  while (existingNames.has(normalizeDepartmentName(duplicateName))) {
+    duplicateName = `${name} - Cópia (${count++})`;
+  }
+  return duplicateName;
+}
+
 function departmentWithLogFallback(department: ApiDepartment, previous?: ApiDepartment | null) {
   const now = new Date().toISOString();
   return {
@@ -133,7 +154,7 @@ function Page() {
           <Card className="p-8 text-center text-sm text-muted-foreground">Carregando...</Card>
         ) : isError ? (
           <Card className="p-8 text-center text-sm text-destructive">
-            Nao foi possivel carregar departamentos.
+            Não foi possível carregar departamentos.
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -194,6 +215,7 @@ function Page() {
 
         <DepartamentoForm
           open={novo.open}
+          departments={departamentos}
           onClose={novo.hide}
           onSubmit={(data) => save.mutate({ data })}
         />
@@ -201,12 +223,14 @@ function Page() {
           open={!!duplicating}
           initial={duplicating ?? undefined}
           clone
+          departments={departamentos}
           onClose={() => setDuplicating(null)}
           onSubmit={(data) => save.mutate({ data })}
         />
         <DepartamentoForm
           open={!!editing}
           initial={editing ?? undefined}
+          departments={departamentos}
           onClose={() => setEditing(null)}
           onSubmit={(data) => editing && save.mutate({ id: editing.id, data })}
         />
@@ -230,12 +254,14 @@ function DepartamentoForm({
   onSubmit,
   initial,
   clone = false,
+  departments,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: DepartamentoFormData) => void;
   initial?: ApiDepartment;
   clone?: boolean;
+  departments: ApiDepartment[];
 }) {
   const [form, setForm] = React.useState<DepartamentoFormData>({});
   const [error, setError] = React.useState("");
@@ -243,19 +269,29 @@ function DepartamentoForm({
     setForm(
       initial
         ? {
-            name: clone ? `Copia de ${initial.name}` : initial.name,
+            name: clone ? duplicateDepartmentName(initial.name, departments) : initial.name,
             description: initial.description,
             color: initial.color,
           }
         : { color: "#3B82F6" },
     );
     setError("");
-  }, [clone, initial, open]);
+  }, [clone, departments, initial, open]);
 
   const submit = () => {
     if (!form.name || form.name.trim().length < 2) {
       setError("Informe o nome.");
-      toast.error("Nome obrigatorio.");
+      toast.error("Nome obrigatório.");
+      return;
+    }
+    const normalizedName = normalizeDepartmentName(form.name);
+    const hasDuplicate = departments.some(
+      (department) =>
+        department.id !== initial?.id &&
+        normalizeDepartmentName(department.name) === normalizedName,
+    );
+    if (hasDuplicate) {
+      setError("Já existe um departamento com este nome.");
       return;
     }
     onSubmit({ ...form, color: completeHexColor(form.color) });
@@ -265,7 +301,13 @@ function DepartamentoForm({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial && !clone ? "Editar Departamento" : "Novo departamento"}
+      title={
+        initial && !clone
+          ? "Editar Departamento"
+          : clone
+            ? "Duplicar Departamento"
+            : "Novo Departamento"
+      }
       size="md"
       footer={
         <div className="flex w-full items-center justify-between gap-4">
@@ -286,11 +328,14 @@ function DepartamentoForm({
       }
     >
       <div className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_150px]">
+        <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(0,0.65fr)] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_150px]">
           <Field label="Nome *">
             <Input
               value={form.name ?? ""}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, name: e.target.value });
+                setError("");
+              }}
             />
             {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
           </Field>

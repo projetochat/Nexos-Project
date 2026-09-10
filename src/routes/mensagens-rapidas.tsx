@@ -37,6 +37,15 @@ type QuickReplyAttachment = {
   size: number;
   dataUrl: string;
 };
+const MESSAGE_VARIABLES = [
+  ["{{cumprimento}}", "Bom dia, Boa tarde e Boa noite. Será apresentado conforme a hora do dia."],
+  ["{{nome}}", "Nome do Contato."],
+  ["{{telefone}}", "Telefone do Contato."],
+  ["{{email}}", "E-mail do Contato."],
+  ["{{instancia}}", "Instância da conversa."],
+  ["{{cliente}}", "Cliente do Contato."],
+  ["{{departamento}}", "Departamento do Contato."],
+] as const;
 
 function QuickRepliesPage() {
   const qc = useQueryClient();
@@ -126,9 +135,9 @@ function QuickRepliesPage() {
               {filtered.map((reply) => (
                 <Card
                   key={reply.id}
-                  className="flex h-full items-stretch justify-between gap-3 overflow-hidden transition hover:border-primary/35 hover:bg-surface-1"
+                  className="relative h-full overflow-hidden transition hover:border-primary/35 hover:bg-surface-1"
                 >
-                  <div className="min-h-0 min-w-0 flex-1 overflow-hidden pr-1">
+                  <div className="min-h-0 min-w-0 overflow-hidden pb-10 pr-1">
                     <p className="font-mono text-sm text-primary">
                       /{reply.atalho.replace(/^\//, "")}
                     </p>
@@ -141,7 +150,7 @@ function QuickRepliesPage() {
                     </p>
                   </div>
                   {canManageCatalog && (
-                    <div className="flex shrink-0 gap-1">
+                    <div className="absolute bottom-3 right-3 flex gap-1">
                       <Button
                         variant="ghost"
                         size="icon"
@@ -235,6 +244,7 @@ function QuickReplyEditor({
   const [texto, setTexto] = React.useState("");
   const [attachment, setAttachment] = React.useState<QuickReplyAttachment | null>(null);
   const [closeOnSend, setCloseOnSend] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<"mensagem" | "variaveis">("mensagem");
   const [busy, setBusy] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
@@ -253,10 +263,11 @@ function QuickReplyEditor({
         : null,
     );
     setCloseOnSend(initial?.close_on_send ?? false);
+    setActiveTab("mensagem");
   }, [clone, open, initial]);
 
   const save = async () => {
-    const shortcut = atalho.trim().replace(/^\//, "").toLowerCase();
+    const shortcut = sanitizeQuickReplyShortcut(atalho);
     const content = texto.trim();
     if (!shortcut) return toast.error("Informe o atalho.");
     if (!content) return toast.error("Informe o texto.");
@@ -315,94 +326,143 @@ function QuickReplyEditor({
       }
     >
       <div className="space-y-3">
-        <Field label="Atalho *" hint="Sem barra. Ex.: bd, bt, obg">
+        <Field label="Atalho *" hint="Somente letras, sem barra. Ex.: bd, bt, obg">
           <Input
             value={atalho}
-            onChange={(event) => setAtalho(event.target.value)}
+            onChange={(event) => setAtalho(sanitizeQuickReplyShortcut(event.target.value))}
+            onBlur={() => setAtalho((value) => sanitizeQuickReplyShortcut(value))}
             placeholder="bd"
+            maxLength={40}
           />
         </Field>
-        <Field label="Mensagem *">
-          <textarea
-            rows={8}
-            value={texto}
-            onChange={(event) => setTexto(event.target.value)}
-            className="min-h-48 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring"
-            placeholder="Bom dia! Como posso ajudar?"
-          />
-        </Field>
-        <div className="rounded-lg border border-border bg-surface-1 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Arquivo</p>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                {attachment
-                  ? `${attachment.fileName} (${formatFileSize(attachment.size)})`
-                  : "Nenhum arquivo anexado."}
-              </p>
+        <div className="flex border-b border-border">
+          <button
+            type="button"
+            onClick={() => setActiveTab("mensagem")}
+            className={`border-b-2 px-3 py-2 text-xs font-medium ${activeTab === "mensagem" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+          >
+            Mensagem
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("variaveis")}
+            className={`border-b-2 px-3 py-2 text-xs font-medium ${activeTab === "variaveis" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+          >
+            Dicionário de Variáveis
+          </button>
+        </div>
+        {activeTab === "mensagem" ? (
+          <div className="space-y-3">
+            <Field label="Mensagem *">
+              <textarea
+                rows={8}
+                value={texto}
+                onChange={(event) => setTexto(event.target.value)}
+                className="min-h-48 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring"
+                placeholder="Bom dia! Como posso ajudar?"
+              />
+            </Field>
+            <div className="rounded-lg border border-border bg-surface-1 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Arquivo</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {attachment
+                      ? `${attachment.fileName} (${formatFileSize(attachment.size)})`
+                      : "Nenhum arquivo anexado."}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {attachment && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Remover arquivo"
+                      aria-label="Remover arquivo"
+                      onClick={() => setAttachment(null)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Anexar arquivo"
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    <Paperclip className="h-4 w-4" /> Anexar
+                  </Button>
+                </div>
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                className="hidden"
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (!file) return;
+                  try {
+                    setAttachment(await readAttachment(file));
+                  } catch (error) {
+                    toast.error((error as Error).message);
+                  }
+                }}
+              />
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {attachment && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="Remover arquivo"
-                  aria-label="Remover arquivo"
-                  onClick={() => setAttachment(null)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                title="Anexar arquivo"
-                onClick={() => fileRef.current?.click()}
-              >
-                <Paperclip className="h-4 w-4" /> Anexar
-              </Button>
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm transition hover:bg-surface-2">
+              <input
+                type="checkbox"
+                checked={closeOnSend}
+                onChange={(event) => setCloseOnSend(event.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-primary"
+              />
+              <span>
+                <span className="flex items-center gap-1 font-medium">
+                  <Info className="h-4 w-4 text-primary" /> Encerrar conversa
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Ao enviar este atalho no chat, a conversa será encerrada automaticamente.
+                </span>
+              </span>
+            </label>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-border bg-surface-1">
+            <p className="border-b border-border px-3 py-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Variáveis disponíveis
+            </p>
+            <div className="divide-y divide-border">
+              {MESSAGE_VARIABLES.map(([variable, description]) => (
+                <div key={variable} className="flex items-center gap-3 px-3 py-2 text-xs">
+                  <code
+                    onDoubleClick={() => {
+                      void navigator.clipboard?.writeText(variable);
+                      toast.success("Variável copiada.");
+                    }}
+                    title="Dê duplo clique para copiar"
+                    className="cursor-copy select-text rounded bg-background px-2 py-1 font-mono text-foreground"
+                  >
+                    {variable}
+                  </code>
+                  <span className="text-muted-foreground">{description}</span>
+                </div>
+              ))}
             </div>
           </div>
-          <input
-            ref={fileRef}
-            type="file"
-            className="hidden"
-            onChange={async (event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (!file) return;
-              try {
-                setAttachment(await readAttachment(file));
-              } catch (error) {
-                toast.error((error as Error).message);
-              }
-            }}
-          />
-        </div>
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm transition hover:bg-surface-2">
-          <input
-            type="checkbox"
-            checked={closeOnSend}
-            onChange={(event) => setCloseOnSend(event.target.checked)}
-            className="mt-0.5 h-4 w-4 accent-primary"
-          />
-          <span>
-            <span className="flex items-center gap-1 font-medium">
-              <Info className="h-4 w-4 text-primary" /> Encerrar conversa
-            </span>
-            <span className="mt-1 block text-xs text-muted-foreground">
-              Ao enviar este atalho no chat, a conversa será encerrada automaticamente.
-            </span>
-          </span>
-        </label>
+        )}
       </div>
     </Modal>
   );
 }
 
 function duplicateShortcut(value: string, clone: boolean) {
-  const shortcut = value.replace(/^\//, "");
-  return clone ? `${shortcut}-copia` : shortcut;
+  const shortcut = sanitizeQuickReplyShortcut(value);
+  return clone ? `${shortcut}copia` : shortcut;
+}
+
+function sanitizeQuickReplyShortcut(value: string) {
+  return value.replace(/[^\p{L}]/gu, "").toLocaleLowerCase("pt-BR");
 }
 
 function previewQuickReplyText(value: string) {
@@ -416,7 +476,7 @@ function readAttachment(file: File): Promise<QuickReplyAttachment> {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result !== "string") {
-        reject(new Error("Nao foi possivel carregar o arquivo."));
+        reject(new Error("Não foi possível carregar o arquivo."));
         return;
       }
       resolve({
@@ -426,7 +486,7 @@ function readAttachment(file: File): Promise<QuickReplyAttachment> {
         dataUrl: reader.result,
       });
     };
-    reader.onerror = () => reject(new Error("Nao foi possivel carregar o arquivo."));
+    reader.onerror = () => reject(new Error("Não foi possível carregar o arquivo."));
     reader.readAsDataURL(file);
   });
 }

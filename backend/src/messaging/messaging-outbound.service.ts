@@ -600,12 +600,12 @@ export class MessagingOutboundService {
       where: { tenantId: current.tenantId, conversationId, id: messageId },
       include: { conversation: { include: { connection: true, contact: true } } },
     });
-    if (!message) throw new NotFoundException("Mensagem nao encontrada.");
+    if (!message) throw new NotFoundException("Mensagem não encontrada.");
     if (!message.providerMessageId) {
       throw new BadRequestException({
         statusCode: 422,
         code: "MESSAGE_PROVIDER_ID_MISSING",
-        message: "Mensagem ainda nao possui ID do provedor.",
+        message: "Mensagem ainda não possui ID do provedor.",
       });
     }
     const connection = message.conversation.connection;
@@ -683,7 +683,7 @@ export class MessagingOutboundService {
       },
       include,
     });
-    if (!conversation) throw new NotFoundException("Conversa nao encontrada.");
+    if (!conversation) throw new NotFoundException("Conversa não encontrada.");
     return conversation;
   }
 
@@ -709,7 +709,7 @@ export class MessagingOutboundService {
         (item) => item.departmentId === departmentId,
       );
       if (!inDepartment)
-        throw new BadRequestException("Atendente nao pertence ao departamento da conversa.");
+        throw new BadRequestException("Atendente não pertence ao departamento da conversa.");
     }
   }
 
@@ -717,7 +717,7 @@ export class MessagingOutboundService {
     if (current.roleKey === "tenant_admin") return;
     const allowed = await this.allowedDepartmentIds(this.prisma, current);
     if (!allowed.includes(departmentId)) {
-      throw new ForbiddenException("Departamento fora do escopo operacional do usuario.");
+      throw new ForbiddenException("Departamento fora do escopo operacional do usuário.");
     }
   }
 
@@ -739,7 +739,7 @@ export class MessagingOutboundService {
         where: { id: conversation.connectionId, tenantId },
       });
       if (!connection) {
-        throw new BadRequestException("Connection da conversa nao pertence a este tenant.");
+        throw new BadRequestException("Connection da conversa não pertence a este tenant.");
       }
       return connection;
     }
@@ -776,7 +776,7 @@ export class MessagingOutboundService {
     current: AuthenticatedUser,
   ) {
     if (conversation.status === ConversationStatus.FECHADA) {
-      throw new BadRequestException("Conversa encerrada nao aceita novas mensagens.");
+      throw new BadRequestException("Conversa encerrada não aceita novas mensagens.");
     }
     if (conversation.status === ConversationStatus.AGUARDANDO) {
       throw new BadRequestException("Retome a conversa antes de enviar mensagem.");
@@ -786,7 +786,7 @@ export class MessagingOutboundService {
       throw new BadRequestException("Conversa precisa estar assumida antes do envio.");
     }
     if (conversation.assignedMembershipId !== current.membershipId) {
-      throw new ForbiddenException("Apenas o atendente responsavel pode enviar mensagens.");
+      throw new ForbiddenException("Apenas o atendente responsável pode enviar mensagens.");
     }
   }
 
@@ -919,14 +919,14 @@ export class MessagingOutboundService {
       throw new BadRequestException({
         statusCode: 422,
         code: "QUOTED_MESSAGE_INVALID",
-        message: "Mensagem citada invalida para esta conversa.",
+        message: "Mensagem citada invalida para está conversa.",
       });
     }
     if (!quoted.providerMessageId) {
       throw new BadRequestException({
         statusCode: 422,
         code: "MESSAGE_PROVIDER_ID_MISSING",
-        message: "Mensagem citada ainda nao possui ID do provedor.",
+        message: "Mensagem citada ainda não possui ID do provedor.",
       });
     }
     return quoted;

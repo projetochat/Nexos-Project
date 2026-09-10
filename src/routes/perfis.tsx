@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, ShieldCheck, Copy } from "lucide-react";
+import { Plus, Pencil, Trash2, ShieldCheck, Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -34,11 +34,11 @@ type PermissionField = { id: string; label: string };
 
 const PERMISSION_GROUPS: Array<{ title: string; tab: PermissionTab; items: PermissionField[] }> = [
   {
-    title: "Administracao",
+    title: "Administração",
     tab: "chat",
     items: [
-      { id: "users.read", label: "Ver usuarios" },
-      { id: "users.manage", label: "Gerenciar usuarios" },
+      { id: "users.read", label: "Ver usuários" },
+      { id: "users.manage", label: "Gerenciar usuários" },
       { id: "departments.read", label: "Ver departamentos" },
       { id: "departments.manage", label: "Gerenciar departamentos" },
       { id: "roles.read", label: "Ver perfis" },
@@ -55,7 +55,7 @@ const PERMISSION_GROUPS: Array<{ title: string; tab: PermissionTab; items: Permi
       { id: "chat.contacts.edit", label: "Editar contato" },
       { id: "chat.contacts.block", label: "Bloquear contatos" },
       { id: "chat.customer_link.edit", label: "Editar vinculo de cliente" },
-      { id: "chat.phone.read", label: "Visualizar numero" },
+      { id: "chat.phone.read", label: "Visualizar número" },
       { id: "chat.leads.read", label: "Visualizar leads" },
       { id: "leads.manage", label: "Gerenciar leads" },
     ],
@@ -131,11 +131,11 @@ const SHIFT_LABELS = {
   night: "Turno noite",
 } as const;
 const TIMEZONE_OPTIONS = [
-  { value: "America/Sao_Paulo", label: "Fuso horario de Sao Paulo (GMT-3)" },
-  { value: "America/Manaus", label: "Fuso horario de Manaus (GMT-4)" },
-  { value: "America/Rio_Branco", label: "Fuso horario do Acre (GMT-5)" },
-  { value: "America/Fortaleza", label: "Fuso horario de Fortaleza (GMT-3)" },
-  { value: "America/Noronha", label: "Fuso horario de Fernando de Noronha (GMT-2)" },
+  { value: "America/Sao_Paulo", label: "Fuso horário de São Paulo (GMT-3)" },
+  { value: "America/Manaus", label: "Fuso horário de Manaus (GMT-4)" },
+  { value: "America/Rio_Branco", label: "Fuso horário do Acre (GMT-5)" },
+  { value: "America/Fortaleza", label: "Fuso horário de Fortaleza (GMT-3)" },
+  { value: "America/Noronha", label: "Fuso horário de Fernando de Noronha (GMT-2)" },
   { value: "UTC", label: "UTC (GMT+0)" },
 ];
 const LANGUAGE_OPTIONS = [
@@ -166,11 +166,20 @@ function roleColor(role: ApiRole) {
   return metadata.color ?? DEFAULT_ROLE_COLOR;
 }
 
+function normalizeRoleName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("pt-BR");
+}
+
 function duplicateRoleDraft(role: ApiRole, roles: ApiRole[]): ApiRole {
-  const existingNames = new Set(roles.map((item) => item.name));
-  let name = `Copia de ${role.name}`;
+  const existingNames = new Set(roles.map((item) => normalizeRoleName(item.name)));
+  let name = `${role.name} - Cópia`;
   let count = 2;
-  while (existingNames.has(name)) name = `Copia (${count++}) de ${role.name}`;
+  while (existingNames.has(normalizeRoleName(name))) name = `${role.name} - Cópia (${count++})`;
   return {
     ...role,
     id: "",
@@ -342,7 +351,7 @@ function Page() {
           subtitle={`${num(items.length)} perfis cadastrados.`}
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>
-              <Plus className="h-3.5 w-3.5" /> Novo Perfil
+              <Plus className="h-3.5 w-3.5" /> Novo Perfil de Acesso
             </Button>
           }
         />
@@ -390,8 +399,8 @@ function Page() {
                         size="sm"
                         className="duplicate-action-button"
                         onClick={() => setDuplicating(duplicateRoleDraft(p, items))}
-                        title="Duplicar perfil"
-                        aria-label={`Duplicar perfil ${p.name}`}
+                        title="Duplicar Perfil de Acesso"
+                        aria-label={`Duplicar Perfil de Acesso ${p.name}`}
                       >
                         <Copy className="h-3.5 w-3.5" />
                       </Button>
@@ -423,6 +432,7 @@ function Page() {
 
         <PerfilForm
           open={novo.open}
+          roles={items}
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
           onClose={novo.hide}
@@ -430,6 +440,7 @@ function Page() {
         />
         <PerfilForm
           open={!!editing}
+          roles={items}
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
           initial={editing ?? undefined}
@@ -438,6 +449,7 @@ function Page() {
         />
         <PerfilForm
           open={!!duplicating}
+          roles={items}
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
           initial={duplicating ?? undefined}
@@ -465,6 +477,7 @@ function PerfilForm({
   onSubmit,
   initial,
   clone = false,
+  roles,
   departamentos,
   connections,
 }: {
@@ -473,6 +486,7 @@ function PerfilForm({
   onSubmit: (data: PerfilFormData) => void;
   initial?: ApiRole;
   clone?: boolean;
+  roles: ApiRole[];
   departamentos: { id: string; name: string }[];
   connections: ApiMessagingConnection[];
 }) {
@@ -532,6 +546,15 @@ function PerfilForm({
       setError("Informe o nome.");
       return;
     }
+    const normalizedName = normalizeRoleName(form.name);
+    const hasDuplicate = roles.some(
+      (role) => role.id !== initial?.id && normalizeRoleName(role.name) === normalizedName,
+    );
+    if (hasDuplicate) {
+      setError("Já existe um perfil de acesso com este nome.");
+      setActiveTab("geral");
+      return;
+    }
     onSubmit(form);
   };
 
@@ -583,8 +606,8 @@ function PerfilForm({
         initial?.id && !clone
           ? "Editar Perfil de Acesso"
           : clone
-            ? "Duplicar Perfil"
-            : "Novo Perfil"
+            ? "Duplicar Perfil de Acesso"
+            : "Novo Perfil de Acesso"
       }
       size="xl"
       footer={
@@ -612,7 +635,10 @@ function PerfilForm({
           <GeneralTab
             form={form}
             error={error}
-            onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
+            onChange={(patch) => {
+              setForm((current) => ({ ...current, ...patch }));
+              if (patch.name !== undefined) setError("");
+            }}
           />
         )}
 
@@ -699,7 +725,7 @@ function GeneralTab({
 }) {
   return (
     <section className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-[1fr_220px]">
+      <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(0,0.65fr)] gap-3 md:gap-4 md:grid-cols-[1fr_220px]">
         <Field label="Nome *">
           <Input
             value={form.name}
@@ -829,7 +855,7 @@ function PermissionSettings({
 
       <section>
         <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Permissoes
+          Permissões
         </h3>
         <div className="space-y-4">
           {PERMISSION_GROUPS.filter((group) => group.tab === tab).map((group) => (
@@ -932,6 +958,9 @@ function WorkScheduleEditor({
   value: WorkSchedule;
   onChange: (value: WorkSchedule) => void;
 }) {
+  const [editing, setEditing] = React.useState(false);
+  const [selectedDay, setSelectedDay] = React.useState<WeekDay | null>(null);
+
   const updateShift = (day: WeekDay, shift: ShiftKey, patch: Partial<WorkShift>) => {
     onChange({
       ...value,
@@ -945,40 +974,81 @@ function WorkScheduleEditor({
     });
   };
 
+  const copyDayToAll = (sourceDay: WeekDay) => {
+    const source = value.days[sourceDay];
+    const days = { ...value.days };
+
+    WEEK_DAYS.forEach((day) => {
+      if (day === sourceDay) return;
+      days[day] = { ...value.days[day] };
+      (Object.keys(SHIFT_LABELS) as ShiftKey[]).forEach((shift) => {
+        const targetShift = value.days[day][shift];
+        if (!targetShift.active) return;
+        days[day][shift] = {
+          ...targetShift,
+          start: source[shift].start,
+          end: source[shift].end,
+        };
+      });
+    });
+
+    onChange({ ...value, days });
+  };
+
+  const toggleEditing = () => {
+    setEditing((current) => !current);
+    setSelectedDay(null);
+  };
+
   return (
     <section>
-      <div className="mb-3 flex items-center gap-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
           <input
             type="checkbox"
             checked={value.noSchedule}
+            disabled={!editing}
             onChange={(event) => onChange({ ...value, noSchedule: event.target.checked })}
             className="h-4 w-4 accent-primary"
           />
           Sem jornada
         </label>
+        <Button type="button" variant="ghost" size="sm" onClick={toggleEditing}>
+          {editing ? (
+            <>
+              <Check className="h-3.5 w-3.5" />
+              Concluir
+            </>
+          ) : (
+            <>
+              <Pencil className="h-3.5 w-3.5" />
+              Editar
+            </>
+          )}
+        </Button>
       </div>
-      <div className="overflow-hidden rounded-lg border border-border">
-        <table className="w-full table-fixed text-xs">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full min-w-[900px] table-fixed text-xs">
           <thead className="bg-surface-2 text-[11px] uppercase tracking-widest text-muted-foreground">
             <tr>
               <th className="w-20 px-2 py-2 text-left">Dia</th>
               {Object.values(SHIFT_LABELS).map((label) => (
-                <th key={label} className="px-2 py-2 text-left" colSpan={3}>
+                <th key={label} className="px-2 py-2 text-center" colSpan={3}>
                   {label}
                 </th>
               ))}
+              <th className="w-12 px-2 py-2" aria-label="Ações" rowSpan={2} />
             </tr>
             <tr>
               <th />
               {Object.keys(SHIFT_LABELS).flatMap((shift) => [
-                <th key={`${shift}-active`} className="w-12 px-2 py-2 text-left">
+                <th key={`${shift}-active`} className="w-12 px-2 py-2 text-center">
                   Ativo
                 </th>,
-                <th key={`${shift}-start`} className="px-2 py-2 text-left">
+                <th key={`${shift}-start`} className="px-2 py-2 text-center">
                   Inicio
                 </th>,
-                <th key={`${shift}-end`} className="px-2 py-2 text-left">
+                <th key={`${shift}-end`} className="px-2 py-2 text-center">
                   Fim
                 </th>,
               ])}
@@ -992,40 +1062,58 @@ function WorkScheduleEditor({
                   const item = value.days[day][shift];
                   return (
                     <React.Fragment key={`${day}-${shift}`}>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2 text-center">
                         <input
                           type="checkbox"
                           checked={item.active}
-                          disabled={value.noSchedule}
-                          onChange={(event) =>
-                            updateShift(day, shift, { active: event.target.checked })
-                          }
+                          disabled={!editing || value.noSchedule}
+                          onChange={(event) => {
+                            setSelectedDay(day);
+                            updateShift(day, shift, { active: event.target.checked });
+                          }}
                           className="h-4 w-4 accent-primary"
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2 text-center">
                         <Input
                           type="time"
                           value={item.start}
-                          disabled={value.noSchedule || !item.active}
-                          className="px-2"
+                          disabled={!editing || value.noSchedule || !item.active}
+                          className="w-full appearance-none px-2 text-center [&::-webkit-calendar-picker-indicator]:hidden"
+                          onFocus={() => setSelectedDay(day)}
                           onChange={(event) =>
                             updateShift(day, shift, { start: event.target.value })
                           }
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2 text-center">
                         <Input
                           type="time"
                           value={item.end}
-                          disabled={value.noSchedule || !item.active}
-                          className="px-2"
+                          disabled={!editing || value.noSchedule || !item.active}
+                          className="w-full appearance-none px-2 text-center [&::-webkit-calendar-picker-indicator]:hidden"
+                          onFocus={() => setSelectedDay(day)}
                           onChange={(event) => updateShift(day, shift, { end: event.target.value })}
                         />
                       </td>
                     </React.Fragment>
                   );
                 })}
+                <td className="px-2 py-2 text-center">
+                  {editing && selectedDay === day && !value.noSchedule && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => copyDayToAll(day)}
+                      title="Copiar para todos"
+                      aria-label="Copiar para todos"
+                      className="px-2"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

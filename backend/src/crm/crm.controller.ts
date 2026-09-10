@@ -499,7 +499,7 @@ export class CrmController {
       select: { id: true },
     });
     if (fields.length !== fieldIds.length) {
-      throw new BadRequestException("Alguns campos adicionais nao foram encontrados.");
+      throw new BadRequestException("Alguns campos adicionais não foram encontrados.");
     }
     await this.prisma.$transaction(
       fieldIds.map((id, position) =>
@@ -569,7 +569,7 @@ export class CrmController {
     const total = await this.prisma.contact.count({ where: contactWhere });
     if (!total) throw new BadRequestException("Selecione ao menos um contato.");
     if (!allFiltered && total !== contactIds.length)
-      throw new BadRequestException("Alguns contatos nao foram encontrados.");
+      throw new BadRequestException("Alguns contatos não foram encontrados.");
 
     const targetContactIds =
       allFiltered && (dto.customFields !== undefined || dto.tagIds !== undefined)
@@ -659,7 +659,7 @@ export class CrmController {
     const activeRegisteredItems = preview.ignoredItems.filter(
       (item) =>
         item.normalizedPhone &&
-        ["Contato ja cadastrado ativo", "Contato já cadastrado ativo"].includes(item.reason),
+        ["Contato já cadastrado ativo", "Contato já cadastrado ativo"].includes(item.reason),
     );
     const candidates = [
       ...preview.items.filter((item) => selectedPhones.has(item.normalizedPhone)),
@@ -1073,7 +1073,7 @@ export class CrmController {
       }
       throw new ConflictException({
         code: "CONTACT_ALREADY_EXISTS",
-        message: "Ja existe um contato ativo com este telefone.",
+        message: "Já existe um contato ativo com este telefone.",
       });
     }
     if (existing?.archivedAt) {
@@ -1298,7 +1298,7 @@ export class CrmController {
       where: { id, tenantId, archivedAt: null },
       include: customerInclude,
     });
-    if (!customer) throw new NotFoundException("Cliente nao encontrado.");
+    if (!customer) throw new NotFoundException("Cliente não encontrado.");
     return customer;
   }
 
@@ -1326,7 +1326,7 @@ export class CrmController {
       where: { id, tenantId, archivedAt: null },
       include: contactInclude,
     });
-    if (!contact) throw new NotFoundException("Contato nao encontrado.");
+    if (!contact) throw new NotFoundException("Contato não encontrado.");
     return contact;
   }
 
@@ -1409,7 +1409,7 @@ export class CrmController {
         if (resolvedFallback) instanceIds = [resolvedFallback];
       }
       const missing = instanceKeys.some((key) => !connectionByKey.has(key));
-      if (missing) throw new BadRequestException("Instancia inexistente para este tenant.");
+      if (missing) throw new BadRequestException("Instância inexistente para este tenant.");
     }
     const instance = instanceIds[0] ?? fallbackInstance;
 
@@ -1523,7 +1523,7 @@ export class CrmController {
           name: name ?? "",
           phone: rawPhone,
           normalizedPhone: null,
-          reason: "Telefone invalido",
+          reason: "Telefone inválido",
           importable: false,
         });
       }
@@ -1564,7 +1564,7 @@ export class CrmController {
     const items = candidates.filter((item) => !activePhones.has(item.normalizedPhone));
     ignoredItems = ignoredItems.map((item) =>
       item.importable && item.normalizedPhone && activePhones.has(item.normalizedPhone)
-        ? { ...item, reason: "Contato ja cadastrado ativo", importable: false }
+        ? { ...item, reason: "Contato já cadastrado ativo", importable: false }
         : item,
     );
     ignoredItems.push(
@@ -1574,7 +1574,7 @@ export class CrmController {
           name: item.name,
           phone: item.normalizedPhone,
           normalizedPhone: item.normalizedPhone,
-          reason: "Contato ja cadastrado ativo",
+          reason: "Contato já cadastrado ativo",
           importable: false,
         })),
     );
@@ -1614,17 +1614,17 @@ export class CrmController {
     if (!connections.length) {
       throw new BadRequestException(
         connectionKey
-          ? "Instancia WhatsApp conectada nao encontrada."
-          : "Nenhuma instancia WhatsApp conectada para importar agenda.",
+          ? "Instância WhatsApp conectada não encontrada."
+          : "Nenhuma instância WhatsApp conectada para importar agenda.",
       );
     }
     if (!connectionKey && connections.length > 1) {
-      throw new BadRequestException("Selecione uma instancia WhatsApp para importar agenda.");
+      throw new BadRequestException("Selecione uma instância WhatsApp para importar agenda.");
     }
 
     const connection = connections[0];
     if (!connection.externalReference) {
-      throw new BadRequestException("Instancia WhatsApp sem referencia Evolution.");
+      throw new BadRequestException("Instância WhatsApp sem referencia Evolution.");
     }
     return connection as typeof connection & { externalReference: string };
   }
@@ -1638,7 +1638,7 @@ export class CrmController {
         : await this.prisma.contactProfile.findFirst({
             where: { id, tenantId, archivedAt: null },
           });
-    if (!item) throw new NotFoundException("Item nao encontrado.");
+    if (!item) throw new NotFoundException("Item não encontrado.");
   }
 
   private async assertContactCatalogNameAvailable(
@@ -1725,11 +1725,11 @@ export class CrmController {
     const groupName =
       dto.groupName === undefined ? (partial ? undefined : "") : dto.groupName.trim();
     if (tabName?.toLowerCase() === "geral") {
-      throw new BadRequestException("A aba Geral e reservada para os campos padrao do contato.");
+      throw new BadRequestException("A aba Geral é reservada para os campos padrão do contato.");
     }
     if (groupName?.toLowerCase() === "dados do contato") {
       throw new BadRequestException(
-        "Este agrupamento e reservado para os campos padrao do contato.",
+        "Este agrupamento é reservado para os campos padrão do contato.",
       );
     }
     return {
@@ -1757,7 +1757,7 @@ export class CrmController {
     const field = await this.prisma.contactCustomField.findFirst({
       where: { id, tenantId, archivedAt: null },
     });
-    if (!field) throw new NotFoundException("Campo adicional nao encontrado.");
+    if (!field) throw new NotFoundException("Campo adicional não encontrado.");
     return field;
   }
 
@@ -1818,7 +1818,7 @@ export class CrmController {
       where: { tenantId, id: { in: fieldIds }, archivedAt: null },
     });
     if (fields.length !== fieldIds.length) {
-      throw new BadRequestException("Alguns campos adicionais nao foram encontrados.");
+      throw new BadRequestException("Alguns campos adicionais não foram encontrados.");
     }
     for (const field of fields) {
       const raw = values[field.id];
@@ -1995,7 +1995,7 @@ function parseContactCustomFieldType(value: string) {
   if (["TEXT", "NUMBER", "CHECKBOX", "LIST", "DATE"].includes(normalized)) {
     return normalized as ContactCustomFieldType;
   }
-  throw new BadRequestException("Tipo de campo invalido.");
+  throw new BadRequestException("Tipo de campo inválido.");
 }
 
 function normalizeContactCustomFieldValue(
@@ -2081,9 +2081,9 @@ function unique<T>(items: T[]) {
 function pagination(query: PaginationDto) {
   const page = Number(query.page ?? 1);
   const pageSize = Number(query.pageSize ?? 25);
-  if (!Number.isInteger(page) || page < 1) throw new BadRequestException("Pagina invalida.");
+  if (!Number.isInteger(page) || page < 1) throw new BadRequestException("Página invalida.");
   if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 10000) {
-    throw new BadRequestException("Tamanho de pagina invalido.");
+    throw new BadRequestException("Tamanho de página inválido.");
   }
   return { page, pageSize, skip: (page - 1) * pageSize };
 }
@@ -2225,7 +2225,7 @@ function handlePrismaError(error: unknown): never {
   if (isPrismaError(error, "P2002")) {
     throw new ConflictException({
       code: "CONTACT_ALREADY_EXISTS",
-      message: "Ja existe um contato ativo com este telefone.",
+      message: "Já existe um contato ativo com este telefone.",
     });
   }
   throw error;

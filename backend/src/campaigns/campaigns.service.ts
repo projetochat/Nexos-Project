@@ -151,13 +151,13 @@ export class CampaignsService {
     if (!MUTABLE_STATUSES.includes(existing.status as (typeof MUTABLE_STATUSES)[number])) {
       throw canonicalConflict(
         "CAMPAIGN_IMMUTABLE_AFTER_START",
-        "A campanha nao pode ser alterada apos o inicio.",
+        "A campanha não pode ser alterada após o início.",
       );
     }
     if (EXECUTION_LOCKED_STATUSES.includes(existing.status as never)) {
       throw canonicalConflict(
         "CAMPAIGN_IMMUTABLE_AFTER_START",
-        "A campanha nao pode ser alterada apos o inicio.",
+        "A campanha não pode ser alterada após o início.",
       );
     }
     const audience = dto.audience ? this.normalizeAudience(dto.audience) : null;
@@ -201,7 +201,7 @@ export class CampaignsService {
     ) {
       throw canonicalConflict(
         "CAMPAIGN_ARCHIVE_INVALID",
-        "Campanha em execucao nao pode ser arquivada.",
+        "Campanha em execução não pode ser arquivada.",
       );
     }
     return this.serialize(
@@ -276,7 +276,7 @@ export class CampaignsService {
     if (!Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) {
       throw canonicalBadRequest(
         "CAMPAIGN_SCHEDULED_AT_INVALID",
-        "Nao e permitido agendar para horario passado.",
+        "Não é permitido agendar para horário passado.",
       );
     }
     const campaign = await this.findCampaign(id, current.tenantId);
@@ -499,7 +499,7 @@ export class CampaignsService {
       where: { id: contactId, tenantId: current.tenantId, archivedAt: null },
       select: { id: true },
     });
-    if (!contact) throw new NotFoundException("Contato nao encontrado.");
+    if (!contact) throw new NotFoundException("Contato não encontrado.");
     const preference = await this.prisma.contactMessagingPreference.upsert({
       where: {
         tenantId_contactId_channel: {
@@ -1030,14 +1030,14 @@ export class CampaignsService {
     const connection = await this.prisma.messagingConnection.findFirst({
       where: { id: connectionId, tenantId },
     });
-    if (!connection) throw new BadRequestException("A conexao selecionada nao pertence ao tenant.");
+    if (!connection) throw new BadRequestException("A conexão selecionada não pertence ao tenant.");
     if (
       connection.providerType !== MessagingProviderType.EVOLUTION ||
       connection.status !== MessagingConnectionStatus.CONNECTED
     ) {
       throw canonicalBadRequest(
         "CAMPAIGN_CONNECTION_UNAVAILABLE",
-        "A conexao selecionada nao esta disponivel.",
+        "A conexão selecionada não está disponivel.",
       );
     }
     return connection;
@@ -1143,7 +1143,7 @@ export class CampaignsService {
       where: { id, tenantId, archivedAt: null },
       include: { connection: true },
     });
-    if (!campaign) throw new NotFoundException("Campanha nao encontrada.");
+    if (!campaign) throw new NotFoundException("Campanha não encontrada.");
     return campaign;
   }
 
@@ -1280,7 +1280,7 @@ type NormalizedAudience = {
 
 function cleanText(value: string, max: number) {
   const text = value.trim();
-  if (!text) throw new BadRequestException("Texto obrigatorio.");
+  if (!text) throw new BadRequestException("Texto obrigatório.");
   return text.slice(0, max);
 }
 

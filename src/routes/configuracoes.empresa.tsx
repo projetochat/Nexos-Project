@@ -1,28 +1,26 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { Eye, EyeOff, Lock } from "lucide-react";
 import { toast } from "sonner";
-import { Alert, Button, Card, Field, Input, Select } from "@/components/ui-kit";
+import { Alert, Button, Card, Field, Input } from "@/components/ui-kit";
 import { organizationApi } from "@/lib/nexos-api";
-import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/configuracoes/empresa")({
   component: EmpresaSettings,
 });
 
 function EmpresaSettings() {
-  const user = useSession((state) => state.user);
+  const { data: company, isLoading: isLoadingCompany } = useQuery({
+    queryKey: ["nexos", "company"],
+    queryFn: organizationApi.getCompany,
+  });
   const [savingPassword, setSavingPassword] = React.useState(false);
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
-  const [showCurrentPassword, setShowCurrentPassword] = React.useState(false);
   const [showNewPassword, setShowNewPassword] = React.useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
-
-  const saveCompany = () => {
-    toast.success("Dados cadastrais sincronizados.");
-  };
 
   const savePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
@@ -56,30 +54,27 @@ function EmpresaSettings() {
       <Card>
         <p className="text-sm font-semibold">Perfil da empresa</p>
         <p className="text-xs text-muted-foreground">
-          Estas informações serão preenchidas automaticamente após a aquisição do software.
+          Dados cadastrais fixos vinculados ao cadastro da empresa.
         </p>
         <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <Field label="Nome da empresa">
+            <Input value={company?.name ?? ""} readOnly disabled={isLoadingCompany} />
+          </Field>
           <Field label="Razão social">
-            <Input value="Empresa Teste" readOnly />
+            <Input value={company?.legalName ?? ""} readOnly disabled={isLoadingCompany} />
+          </Field>
+          <Field label="Nome do responsável">
+            <Input value={company?.responsibleName ?? ""} readOnly disabled={isLoadingCompany} />
           </Field>
           <Field label="CNPJ">
-            <Input value="12.345.678/0001-90" readOnly />
+            <Input value={company?.document ?? ""} readOnly disabled={isLoadingCompany} />
           </Field>
           <Field label="Fuso horário">
-            <Select value="America/Sao_Paulo" disabled>
-              <option value="America/Sao_Paulo">America/Sao_Paulo (GMT-3)</option>
-            </Select>
+            <Input value={company?.timezone ?? ""} readOnly disabled={isLoadingCompany} />
           </Field>
           <Field label="Idioma padrão">
-            <Select value="pt-BR" disabled>
-              <option value="pt-BR">Português (BR)</option>
-            </Select>
+            <Input value={company?.locale ?? ""} readOnly disabled={isLoadingCompany} />
           </Field>
-        </div>
-        <div className="mt-6 flex justify-end border-t border-border pt-4">
-          <Button variant="primary" onClick={saveCompany}>
-            Salvar alterações
-          </Button>
         </div>
       </Card>
 
@@ -89,10 +84,9 @@ function EmpresaSettings() {
             <Lock className="h-7 w-7" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-foreground">Troca de senha</h2>
-            <p className="text-sm text-muted-foreground">
-              Altere a senha do usuário administrador do sistema.
-            </p>
+            <h2 className="text-xl font-semibold text-foreground">
+              Credencias do Usuário Administrador
+            </h2>
           </div>
         </div>
 
@@ -101,14 +95,19 @@ function EmpresaSettings() {
             tone="info"
             title="Este usuário é o administrador do sistema, possui acesso total a todas as funcionalidades e não está vinculado a nenhum grupo de permissões."
           >
-            Utilize o e-mail e a nova senha abaixo para acessar o sistema.
+            Utilize as credenciais abaixo para acessar o sistema.
           </Alert>
         </div>
 
         <div className="mt-4 space-y-4">
           <Field label="E-mail de acesso *">
             <div className="relative">
-              <Input value={user?.email ?? ""} readOnly className="pr-10" />
+              <Input
+                value={company?.accessEmail ?? ""}
+                readOnly
+                disabled={isLoadingCompany}
+                className="pr-10"
+              />
               <Lock className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
           </Field>
@@ -118,8 +117,9 @@ function EmpresaSettings() {
               <PasswordInput
                 value={currentPassword}
                 onChange={setCurrentPassword}
-                visible={showCurrentPassword}
-                onToggle={() => setShowCurrentPassword((current) => !current)}
+                visible={false}
+                canToggle={false}
+                onToggle={() => undefined}
                 autoComplete="current-password"
               />
             </Field>
@@ -159,12 +159,14 @@ function PasswordInput({
   value,
   onChange,
   visible,
+  canToggle = true,
   onToggle,
   autoComplete,
 }: {
   value: string;
   onChange: (value: string) => void;
   visible: boolean;
+  canToggle?: boolean;
   onToggle: () => void;
   autoComplete: string;
 }) {
@@ -177,15 +179,17 @@ function PasswordInput({
         autoComplete={autoComplete}
         className="pr-10"
       />
-      <button
-        type="button"
-        onClick={onToggle}
-        className="absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center text-muted-foreground transition hover:text-foreground"
-        aria-label={visible ? "Ocultar senha" : "Mostrar senha"}
-        title={visible ? "Ocultar senha" : "Mostrar senha"}
-      >
-        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-      </button>
+      {canToggle && (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center text-muted-foreground transition hover:text-foreground"
+          aria-label={visible ? "Ocultar senha" : "Mostrar senha"}
+          title={visible ? "Ocultar senha" : "Mostrar senha"}
+        >
+          {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      )}
     </div>
   );
 }

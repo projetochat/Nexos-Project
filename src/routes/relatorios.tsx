@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Download } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { ReportFiltersBar } from "@/components/report-filters";
@@ -25,7 +25,7 @@ import {
 import { onRealtimeEvent } from "@/lib/realtime/client";
 
 export const Route = createFileRoute("/relatorios")({
-  head: () => ({ meta: [{ title: "Relatorios - Nexo" }] }),
+  head: () => ({ meta: [{ title: "Relatórios - Nexo" }] }),
   component: Page,
 });
 
@@ -36,10 +36,11 @@ function Page() {
   const [filters, setFilters] = React.useState<OperationalReportFilters>(
     DEFAULT_OPERATIONAL_FILTERS,
   );
-  const { data, isLoading } = useQuery({
+  const query = useQuery({
     queryKey: ["operations", "reports", filters],
     queryFn: () => operationsApi.report({ ...filters, pageSize: 50 }),
   });
+  const { data, isLoading } = query;
   React.useEffect(
     () =>
       onRealtimeEvent((event) => {
@@ -61,7 +62,7 @@ function Page() {
       anchor.download = `nexos-atendimento-${new Date().toISOString().slice(0, 10)}.${extension(format)}`;
       anchor.click();
       URL.revokeObjectURL(url);
-      toast.success("Relatorio exportado");
+      toast.success("Relatório exportado");
     } catch (error) {
       toast.error((error as Error).message);
     }
@@ -71,10 +72,20 @@ function Page() {
     <AppShell>
       <PageContainer>
         <SectionHeader
-          title="Relatorios"
+          title="Relatórios"
           subtitle="Indicadores de atendimento consolidados a partir do banco Nexos."
           actions={
             <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void query.refetch()}
+                disabled={query.isFetching}
+                title="Atualizar indicadores"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${query.isFetching ? "animate-spin" : ""}`} />
+                Atualizar
+              </Button>
               <Button variant="secondary" size="sm" onClick={() => exportFile("csv")}>
                 <Download className="h-3.5 w-3.5" /> CSV
               </Button>

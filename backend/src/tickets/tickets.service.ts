@@ -100,7 +100,7 @@ export class TicketsService {
     const relations = await this.resolveRelations(dto, current);
     const html = sanitizeTicketHtml(dto.descriptionHtml);
     const descriptionText = htmlToText(html);
-    if (!descriptionText) throw new BadRequestException("Descricao do chamado obrigatoria.");
+    if (!descriptionText) throw new BadRequestException("Descrição do chamado obrigatoria.");
     const ticket = await this.prisma.$transaction(async (tx) => {
       const counter = await tx.ticketProtocolCounter.upsert({
         where: { tenantId: current.tenantId },
@@ -289,7 +289,7 @@ export class TicketsService {
     const ticket = await this.findVisibleTicket(id, current);
     const html = sanitizeTicketHtml(dto.bodyHtml);
     const bodyText = htmlToText(html);
-    if (!bodyText) throw new BadRequestException("Comentario obrigatorio.");
+    if (!bodyText) throw new BadRequestException("Comentário obrigatório.");
     const comment = await this.prisma.ticketComment.create({
       data: {
         tenantId: current.tenantId,
@@ -336,7 +336,7 @@ export class TicketsService {
       throw canonicalException(
         HttpStatus.UNSUPPORTED_MEDIA_TYPE,
         "ATTACHMENT_MIME_MISMATCH",
-        "Tipo de arquivo nao permitido.",
+        "Tipo de arquivo não permitido.",
       );
     }
 
@@ -392,7 +392,7 @@ export class TicketsService {
       throw canonicalException(
         HttpStatus.SERVICE_UNAVAILABLE,
         "ATTACHMENT_STORAGE_FAILED",
-        "Nao foi possivel armazenar o arquivo.",
+        "Não foi possível armazenar o arquivo.",
       );
     }
   }
@@ -415,13 +415,13 @@ export class TicketsService {
     const ticket = await this.findVisibleTicket(id, current);
     const attachment = await this.findAttachment(ticket.id, attachmentId, current);
     if (attachment.status !== TicketAttachmentStatus.READY || attachment.deletedAt)
-      throw new NotFoundException("Anexo nao encontrado.");
+      throw new NotFoundException("Anexo não encontrado.");
     const object = await this.storage.headObject(attachment.objectKey);
     if (!object.exists) {
       throw canonicalException(
         HttpStatus.CONFLICT,
         "ATTACHMENT_OBJECT_MISSING",
-        "Arquivo do anexo nao encontrado no storage.",
+        "Arquivo do anexo não encontrado no storage.",
       );
     }
     const stored = await this.storage.getDownloadObject(attachment.objectKey);
@@ -483,7 +483,7 @@ export class TicketsService {
   private async findVisibleTicket(id: string, current: AuthenticatedUser) {
     const where = await this.applyVisibility({ id, tenantId: current.tenantId }, current);
     const ticket = await this.prisma.ticket.findFirst({ where, include: ticketInclude });
-    if (!ticket) throw new NotFoundException("Chamado nao encontrado.");
+    if (!ticket) throw new NotFoundException("Chamado não encontrado.");
     return ticket;
   }
 
@@ -500,16 +500,16 @@ export class TicketsService {
     departmentId: string | null | undefined,
     current: AuthenticatedUser,
   ) {
-    if (!departmentId) throw new BadRequestException("Departamento invalido.");
+    if (!departmentId) throw new BadRequestException("Departamento inválido.");
     const department = await this.prisma.department.findFirst({
       where: { tenantId: current.tenantId, id: departmentId, active: true },
     });
-    if (!department) throw new BadRequestException("Departamento invalido.");
+    if (!department) throw new BadRequestException("Departamento inválido.");
     if (
       current.roleKey !== "tenant_admin" &&
       !(await this.allowedDepartmentIds(current)).includes(departmentId)
     ) {
-      throw new ForbiddenException("Departamento fora do escopo do usuario.");
+      throw new ForbiddenException("Departamento fora do escopo do usuário.");
     }
     return departmentId;
   }
@@ -528,13 +528,13 @@ export class TicketsService {
         departments: { some: { departmentId } },
       },
     });
-    if (!membership) throw new BadRequestException("Responsavel invalido para o departamento.");
+    if (!membership) throw new BadRequestException("Responsável inválido para o departamento.");
     if (
       current.roleKey !== "tenant_admin" &&
       current.membershipId !== membershipId &&
       !(current.permissions ?? []).includes("tickets.assign")
     ) {
-      throw new ForbiddenException("Usuario sem permissao para atribuir este chamado.");
+      throw new ForbiddenException("Usuário sem permissão para atribuir este chamado.");
     }
     return membershipId;
   }
@@ -558,7 +558,7 @@ export class TicketsService {
         where: { tenantId: current.tenantId, id: dto.requesterContactId },
         select: { id: true, customerId: true },
       });
-      if (!contact) throw new BadRequestException("Contact invalido.");
+      if (!contact) throw new BadRequestException("Contact inválido.");
       data.requesterContactId = contact.id;
       data.customerId = dto.customerId ?? contact.customerId ?? undefined;
     } else if (dto.requesterContactId === null) data.requesterContactId = null;
@@ -566,7 +566,7 @@ export class TicketsService {
       const customer = await this.prisma.customer.findFirst({
         where: { tenantId: current.tenantId, id: dto.customerId },
       });
-      if (!customer) throw new BadRequestException("Customer invalido.");
+      if (!customer) throw new BadRequestException("Customer inválido.");
       data.customerId = customer.id;
     } else if (dto.customerId === null) data.customerId = null;
     if (dto.conversationId) {
@@ -583,11 +583,11 @@ export class TicketsService {
             conversation.assignedMembershipId === current.membershipId
           )
         ) {
-          throw new ForbiddenException("Conversation fora do escopo do usuario.");
+          throw new ForbiddenException("Conversation fora do escopo do usuário.");
         }
       }
       if (data.requesterContactId && data.requesterContactId !== conversation.contactId) {
-        throw new BadRequestException("Contact nao pertence a Conversation.");
+        throw new BadRequestException("Contact não pertence a Conversation.");
       }
       if (!data.requesterContactId) data.requesterContactId = conversation.contactId;
       if (!data.customerId && conversation.contact?.customerId) {
@@ -631,7 +631,7 @@ export class TicketsService {
       throw canonicalException(
         HttpStatus.UNSUPPORTED_MEDIA_TYPE,
         "ATTACHMENT_MIME_NOT_ALLOWED",
-        "Tipo de arquivo nao permitido.",
+        "Tipo de arquivo não permitido.",
       );
     if (sizeBytes > limit) {
       throw canonicalException(
@@ -650,7 +650,7 @@ export class TicketsService {
     const attachment = await this.prisma.ticketAttachment.findFirst({
       where: { tenantId: current.tenantId, ticketId, id: attachmentId },
     });
-    if (!attachment) throw new NotFoundException("Anexo nao encontrado.");
+    if (!attachment) throw new NotFoundException("Anexo não encontrado.");
     return attachment;
   }
 }

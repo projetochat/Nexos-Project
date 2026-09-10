@@ -65,7 +65,7 @@ const STATUS_LABEL: Record<ApiCampaignStatus, string> = {
   PAUSED: "Pausada",
   CANCELLING: "Cancelando",
   CANCELLED: "Cancelada",
-  COMPLETED: "Concluida",
+  COMPLETED: "Concluída",
   FAILED: "Falhou",
 };
 
@@ -174,7 +174,7 @@ function Page() {
     },
     onError: (error) =>
       toast.error(
-        error instanceof Error ? error.message : "Nao foi possivel atualizar a campanha.",
+        error instanceof Error ? error.message : "Não foi possível atualizar a campanha.",
       ),
   });
 
@@ -187,7 +187,7 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Campanhas"
-          subtitle="Disparos WhatsApp com audiencia real, snapshot e fila confiavel."
+          subtitle="Disparos WhatsApp com audiência real, snapshot e fila confiavel."
           actions={
             <>
               <Button variant="outline" size="sm" onClick={() => invalidateCampaigns()}>
@@ -205,7 +205,7 @@ function Page() {
             <SearchInput
               value={filters.search}
               onChange={(search) => setFilters({ ...filters, search })}
-              placeholder="Buscar por nome ou descricao"
+              placeholder="Buscar por nome ou descrição"
             />
             <Select
               value={filters.status}
@@ -294,7 +294,7 @@ function Page() {
           destructive={confirming?.action === "cancel"}
           description={confirming ? confirmationText(confirming.action, confirming.campaign) : ""}
           confirmLabel={
-            confirming?.action === "start" ? "Confirmar inicio" : "Confirmar cancelamento"
+            confirming?.action === "start" ? "Confirmar início" : "Confirmar cancelamento"
           }
           onClose={() => setConfirming(null)}
           onConfirm={() => confirming && actionMutation.mutate(confirming)}
@@ -324,14 +324,20 @@ function CampaignRow({
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onDoubleClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        onSelect();
+      }}
+      title="Clique duas vezes para visualizar a campanha"
       className={`w-full rounded-lg border bg-card p-4 text-left shadow-card transition hover:border-primary/60 ${selected ? "border-primary" : "border-border"}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{campaign.name}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {campaign.connection?.name ?? "Conexao indisponivel"} ·{" "}
+            {campaign.connection?.name ?? "Conexão indisponivel"} ·{" "}
             {fmtDate(Date.parse(campaign.createdAt))}
           </p>
         </div>
@@ -388,7 +394,7 @@ function CampaignDetail({
             <h2 className="truncate text-lg font-semibold">{campaign.name}</h2>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {campaign.description || "Sem descricao"}
+            {campaign.description || "Sem descrição"}
           </p>
         </div>
         <Badge tone={STATUS_TONE[campaign.status]}>{STATUS_LABEL[campaign.status]}</Badge>
@@ -593,7 +599,7 @@ function CampaignEditor({
     },
     onError: (error) =>
       toast.error(
-        error instanceof Error ? error.message : "Nao foi possivel calcular a audiencia.",
+        error instanceof Error ? error.message : "Não foi possível calcular a audiência.",
       ),
   });
   const createMutation = useMutation({
@@ -621,7 +627,7 @@ function CampaignEditor({
       onCreated(campaign);
     },
     onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel criar a campanha."),
+      toast.error(error instanceof Error ? error.message : "Não foi possível criar a campanha."),
   });
 
   const canPreview =
@@ -677,7 +683,7 @@ function CampaignEditor({
       }
     >
       <div className="mb-4 grid grid-cols-5 gap-2 text-center text-xs">
-        {["Identificacao", "Mensagem", "Publico", "Conexao", "Revisao"].map((label, index) => (
+        {["Identificação", "Mensagem", "Público", "Conexão", "Revisão"].map((label, index) => (
           <span
             key={label}
             className={`rounded border px-2 py-1 ${step === index + 1 ? "border-primary text-primary" : "border-border text-muted-foreground"}`}
@@ -695,7 +701,7 @@ function CampaignEditor({
               onChange={(event) => setForm({ ...form, name: event.target.value })}
             />
           </Field>
-          <Field label="Descricao">
+          <Field label="Descrição">
             <Textarea
               rows={3}
               value={form.description}
@@ -723,7 +729,7 @@ function CampaignEditor({
       )}
       {step === 3 && (
         <div className="grid gap-4">
-          <Field label="Tipo de publico">
+          <Field label="Tipo de público">
             <Select
               value={form.audienceType}
               onChange={(event) =>
@@ -793,9 +799,9 @@ function CampaignEditor({
               onChange={(event) => setForm({ ...form, scheduledAt: event.target.value })}
             />
           </Field>
-          <Alert tone="warning" title="Confirmacao obrigatoria">
-            O start imediato fica disponivel no detalhe apos o rascunho ser criado. Agendamento
-            exige preview e confirmacao.
+          <Alert tone="warning" title="Confirmação obrigatória">
+            O start imediato fica disponível no detalhe após o rascunho ser criado. Agendamento
+            exige preview e confirmação.
           </Alert>
         </div>
       )}

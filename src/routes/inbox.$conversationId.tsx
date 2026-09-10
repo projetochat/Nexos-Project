@@ -23,6 +23,7 @@ import {
   SmilePlus,
   Archive,
 } from "lucide-react";
+import { toast as systemToast } from "sonner";
 // Notificações desativadas nesta tela — nenhum toast deve aparecer no chat.
 const toast = {
   success: (_?: unknown) => {},
@@ -40,6 +41,7 @@ import {
   messageApi,
   organizationApi,
   quickReplyApi,
+  ticketApi,
   type ApiConversationStatus as ConvStatus,
   type ApiMessage,
   type ApiQuickReply as QuickReply,
@@ -221,13 +223,33 @@ function ConversationPage() {
   };
 
   const handleGerarChamado = async () => {
-    if (!user || !conv.contact) return;
+    if (!user || !conv.protocolo) return;
+    const departmentId = conv.department_id;
+    if (!departmentId) {
+      systemToast.error("Defina um departamento para a conversa antes de gerar o chamado.");
+      return;
+    }
+
     setGerando(true);
     try {
-      navigate({ to: "/chamados", search: { conversationId: conv.id } });
-      toast.success("Formulário de chamado aberto");
+      const ticket = await ticketApi.create({
+        title: `Chamado aberto pelo Chat - ${conv.protocolo}`,
+        descriptionHtml: `<p>Chamado gerado a partir da conversa ${conv.protocolo}.</p>`,
+        category: "SUPORTE",
+        priority: "NORMAL",
+        departmentId,
+        requesterContactId: conv.contact_id,
+        customerId: conv.contact?.customer_id ?? conv.contact?.customer?.id ?? null,
+        conversationId: conv.id,
+        // O chamado nasce na fila do departamento. A atribuição da conversa pode estar
+        // desatualizada ou não pertencer ao departamento, o que bloqueava a criação.
+        assignedMembershipId: null,
+      });
+      await qc.invalidateQueries({ queryKey: ["tickets"] });
+      navigate({ to: "/chamados", search: { conversationId: undefined, ticketId: ticket.id } });
+      systemToast.success(`Chamado ${ticket.protocol} gerado`);
     } catch (e) {
-      toast.error((e as Error).message || "Não foi possível abrir o chamado.");
+      systemToast.error((e as Error).message || "Não foi possível gerar o chamado.");
     } finally {
       setGerando(false);
     }
@@ -413,15 +435,20 @@ function ConversationPage() {
               variant="secondary"
               size="sm"
               onClick={handleGerarChamado}
-              disabled={gerando}
+              disabled={gerando || !conv.protocolo}
               className="w-full"
             >
-              <Ticket className="h-3.5 w-3.5" /> {gerando ? "Abrindo…" : "Criar chamado"}
+              <Ticket className="h-3.5 w-3.5" /> {gerando ? "Gerando…" : "Gerar Chamado"}
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate({ to: "/chamados", search: { conversationId: conv.id } })}
+              onClick={() =>
+                navigate({
+                  to: "/chamados",
+                  search: { conversationId: conv.id, ticketId: undefined },
+                })
+              }
               className="w-full"
             >
               Ver chamados relacionados

@@ -81,7 +81,7 @@ export class MessagingConnectionsService {
     }
     const config = evolutionConfigFromEnv();
     if (!assertEvolutionConfigured(config)) {
-      throw new BadRequestException("Evolution API nao configurada.");
+      throw new BadRequestException("Evolution API não configurada.");
     }
 
     const instanceName = cleanInstanceName(dto.name, current.tenantId, { unique: true });
@@ -97,11 +97,11 @@ export class MessagingConnectionsService {
         instanceName: sanitizeInstanceName(instanceName),
         providerError: sanitizeProviderError(error),
       });
-      throw providerUnavailableForUi(error, "Nao foi possivel criar a instancia na Evolution.");
+      throw providerUnavailableForUi(error, "Não foi possível criar a instância na Evolution.");
     }
     if (!config.webhookPublicUrl || !config.webhookSecret) {
       await this.evolution.deleteInstance(instanceName).catch(() => undefined);
-      throw new BadRequestException("Webhook Evolution nao configurado.");
+      throw new BadRequestException("Webhook Evolution não configurado.");
     }
     await this.ensureWebhookConfiguredSafely(instanceName, "pending-create");
 
@@ -187,12 +187,12 @@ export class MessagingConnectionsService {
       connection.providerType !== MessagingProviderType.EVOLUTION ||
       !connection.externalReference
     ) {
-      throw new BadRequestException("Connection nao e Evolution.");
+      throw new BadRequestException("Connection não é Evolution.");
     }
     const instance = await this.evolution.findInstance(connection.externalReference);
     if (!instance) {
       await this.markOrphan(connection.id);
-      throw new BadRequestException("INSTANCE_NOT_FOUND: instance Evolution nao encontrada.");
+      throw new BadRequestException("INSTANCE_NOT_FOUND: instance Evolution não encontrada.");
     }
     const response = await this.evolution.connect(connection.externalReference);
     await this.ensureWebhookConfiguredSafely(connection.externalReference, connection.id);
@@ -216,7 +216,7 @@ export class MessagingConnectionsService {
   async update(id: string, dto: UpdateMessagingConnectionDto, current: AuthenticatedUser) {
     const connection = await this.findTenantConnection(id, current.tenantId);
     if (connection.archivedAt || connection.status === MessagingConnectionStatus.REMOVED) {
-      throw new BadRequestException("Connection removida nao pode ser editada.");
+      throw new BadRequestException("Connection removida não pode ser editada.");
     }
     const updated = await this.prisma.messagingConnection.update({
       where: { tenantId_id: { tenantId: current.tenantId, id: connection.id } },
@@ -245,14 +245,14 @@ export class MessagingConnectionsService {
       connection.providerType !== MessagingProviderType.EVOLUTION ||
       !connection.externalReference
     ) {
-      throw new BadRequestException("Connection nao e Evolution.");
+      throw new BadRequestException("Connection não é Evolution.");
     }
     if (
       connection.status !== MessagingConnectionStatus.CONNECTED &&
       !connection.ownerPhoneNormalized
     ) {
       throw new BadRequestException(
-        "Instancia ainda nao possui conexao concluida para desconectar.",
+        "Instância ainda não possui conexão concluída para desconectar.",
       );
     }
     if (connection.status === MessagingConnectionStatus.DISCONNECTED) {
@@ -330,7 +330,7 @@ export class MessagingConnectionsService {
       connection.providerType !== MessagingProviderType.EVOLUTION ||
       !connection.externalReference
     ) {
-      throw new BadRequestException("Connection nao e Evolution.");
+      throw new BadRequestException("Connection não é Evolution.");
     }
 
     const providerDelete = await this.deleteEvolutionInstanceForRemoval(
@@ -447,7 +447,7 @@ export class MessagingConnectionsService {
   async ensureWebhookConfigured(instanceName: string) {
     const config = evolutionConfigFromEnv();
     if (!config.webhookPublicUrl || !config.webhookSecret) {
-      throw new BadRequestException("Webhook Evolution nao configurado.");
+      throw new BadRequestException("Webhook Evolution não configurado.");
     }
     await this.evolution.setWebhook({
       instanceName,
@@ -576,7 +576,7 @@ export class MessagingConnectionsService {
     const connection = await this.prisma.messagingConnection.findFirst({
       where: { id, tenantId },
     });
-    if (!connection) throw new NotFoundException("Connection nao encontrada.");
+    if (!connection) throw new NotFoundException("Connection não encontrada.");
     return connection;
   }
 
@@ -684,7 +684,7 @@ export class MessagingConnectionsService {
   }
 }
 
-const INSTANCE_REMOVAL_CLOSE_MESSAGE = "Conversa encerrada via remoção da instancia";
+const INSTANCE_REMOVAL_CLOSE_MESSAGE = "Conversa encerrada via remoção da instância";
 const CONNECTED_GROUP_LIGHT_SYNC_DELAY_MS = 10 * 1000;
 
 type RemoveConnectionOptions = {
@@ -725,7 +725,7 @@ export function cleanInstanceName(
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 50);
-  if (!base) throw new BadRequestException("Nome da instance invalido.");
+  if (!base) throw new BadRequestException("Nome da instance inválido.");
   if (options.unique) return `${tenantId.slice(0, 8)}-${base}-${randomUUID().slice(0, 8)}`;
   return `${tenantId.slice(0, 8)}-${base}`;
 }
@@ -749,7 +749,7 @@ function normalizeLogoUrl(value: string | null | undefined) {
   if (value === null || value.trim() === "") return null;
   const trimmed = value.trim();
   if (!/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(trimmed)) {
-    throw new BadRequestException("Logo da instancia invalida.");
+    throw new BadRequestException("Logo da instância invalida.");
   }
   return trimmed;
 }

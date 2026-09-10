@@ -155,7 +155,7 @@ export class QuickRepliesController {
     const allowed = await this.allowedDepartmentIds(current);
     if (query.departmentId) {
       if (current.roleKey !== "tenant_admin" && !allowed.includes(query.departmentId)) {
-        throw new ForbiddenException("Departamento fora do escopo operacional do usuario.");
+        throw new ForbiddenException("Departamento fora do escopo operacional do usuário.");
       }
       return { ...where, OR: [{ departmentId: null }, { departmentId: query.departmentId }] };
     }
@@ -172,7 +172,7 @@ export class QuickRepliesController {
     if (current.roleKey !== "tenant_admin") {
       const allowed = await this.allowedDepartmentIds(current);
       if (!allowed.includes(departmentId)) {
-        throw new ForbiddenException("Departamento fora do escopo operacional do usuario.");
+        throw new ForbiddenException("Departamento fora do escopo operacional do usuário.");
       }
     }
     return departmentId;
@@ -190,7 +190,7 @@ export class QuickRepliesController {
     const reply = await this.prisma.quickReply.findFirst({
       where: { id, tenantId, archivedAt: null },
     });
-    if (!reply) throw new NotFoundException("Resposta rapida nao encontrada.");
+    if (!reply) throw new NotFoundException("Resposta rápida não encontrada.");
     return reply;
   }
 
@@ -213,7 +213,7 @@ export class QuickRepliesController {
     if (duplicate) {
       throw new ConflictException({
         code: "QUICK_REPLY_SHORTCUT_ALREADY_EXISTS",
-        message: "Ja existe uma resposta rapida com este atalho neste escopo.",
+        message: "Já existe uma resposta rápida com este atalho neste escopo.",
       });
     }
   }
@@ -255,21 +255,22 @@ function clean(value: string) {
 }
 
 function normalizeShortcut(value: string) {
-  const shortcut = normalizeShortcutDisplay(value).toLowerCase();
-  if (!shortcut) throw new BadRequestException("Atalho invalido.");
+  const shortcut = clean(value).toLocaleLowerCase("pt-BR");
+  if (!/^\p{L}+$/u.test(shortcut)) {
+    throw new BadRequestException("O atalho deve conter somente letras.");
+  }
   return shortcut;
 }
 
 function normalizeShortcutDisplay(value: string) {
-  const trimmed = clean(value);
-  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return `/${normalizeShortcut(value)}`;
 }
 
 function handleUniqueShortcut(error: unknown): never {
   if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
     throw new ConflictException({
       code: "QUICK_REPLY_SHORTCUT_ALREADY_EXISTS",
-      message: "Ja existe uma resposta rapida com este atalho neste escopo.",
+      message: "Já existe uma resposta rápida com este atalho neste escopo.",
     });
   }
   throw error;

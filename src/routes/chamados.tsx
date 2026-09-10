@@ -1,7 +1,32 @@
 import * as React from "react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, Paperclip, Plus, Ticket, Trash2 } from "lucide-react";
+import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
+  Bold,
+  ChevronDown,
+  Download,
+  Eye,
+  Expand,
+  Italic,
+  List,
+  ListIndentDecrease,
+  ListIndentIncrease,
+  ListOrdered,
+  Paperclip,
+  Pencil,
+  Plus,
+  Redo2,
+  Strikethrough,
+  Ticket,
+  Trash2,
+  Type,
+  Underline,
+  Undo2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -42,6 +67,7 @@ import { sortByOptionLabel } from "@/lib/sort-options";
 export const Route = createFileRoute("/chamados")({
   validateSearch: (search) => ({
     conversationId: typeof search.conversationId === "string" ? search.conversationId : undefined,
+    ticketId: typeof search.ticketId === "string" ? search.ticketId : undefined,
   }),
   head: () => ({
     meta: [
@@ -108,6 +134,10 @@ function ChamadosPage() {
   React.useEffect(() => {
     if (search.conversationId) setNewTicketOpen(true);
   }, [search.conversationId, setNewTicketOpen]);
+
+  React.useEffect(() => {
+    if (search.ticketId) setSelectedId(search.ticketId);
+  }, [search.ticketId]);
 
   return (
     <AppShell>
@@ -187,7 +217,8 @@ function ChamadosPage() {
                     <tr
                       key={ticket.id}
                       className="cursor-pointer border-b border-border/60 hover:bg-surface-1"
-                      onClick={() => setSelectedId(ticket.id)}
+                      onDoubleClick={() => setSelectedId(ticket.id)}
+                      title="Clique duas vezes para visualizar o chamado"
                     >
                       <td className="px-4 py-3 font-mono text-xs">{ticket.protocol}</td>
                       <td className="px-4 py-3">
@@ -248,7 +279,6 @@ function TicketEditor({
   initialConversationId?: string;
 }) {
   const options = useTicketOptions(open);
-  const currentUser = useSessionUserName();
   const initialConversation = useQuery({
     queryKey: ["tickets", "prefill-conversation", initialConversationId],
     queryFn: () => conversationApi.get(initialConversationId!),
@@ -269,6 +299,7 @@ function TicketEditor({
   const [customerId, setCustomerId] = React.useState("");
   const [conversationId, setConversationId] = React.useState("");
   const [assignedMembershipId, setAssignedMembershipId] = React.useState("");
+  const [attachment, setAttachment] = React.useState<File | null>(null);
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
@@ -282,6 +313,7 @@ function TicketEditor({
     setCustomerId("");
     setConversationId(initialConversationId ?? "");
     setAssignedMembershipId("");
+    setAttachment(null);
   }, [open, initialConversationId, options.departments]);
 
   React.useEffect(() => {
@@ -310,7 +342,7 @@ function TicketEditor({
     try {
       const ticket = await ticketApi.create({
         title: title.trim(),
-        descriptionHtml: textToHtml(description),
+        descriptionHtml: /<[^>]+>/.test(description) ? description : textToHtml(description),
         category,
         priority,
         departmentId,
@@ -319,6 +351,7 @@ function TicketEditor({
         conversationId: conversationId || null,
         assignedMembershipId: assignedMembershipId || null,
       });
+      if (attachment) await ticketApi.uploadAttachment(ticket.id, attachment);
       toast.success(`${ticket.protocol} criado`);
       onSaved(ticket);
     } catch (error) {
@@ -332,7 +365,7 @@ function TicketEditor({
     <Modal
       open={open}
       onClose={onClose}
-      title="Novo chamado"
+      title="Novo Chamado"
       size="xl"
       footer={
         <>
@@ -340,117 +373,92 @@ function TicketEditor({
             Cancelar
           </Button>
           <Button variant="primary" size="sm" disabled={busy} onClick={submit}>
-            {busy ? "Criando..." : "Criar chamado"}
+            {busy ? "Criando..." : "Criar Chamado"}
           </Button>
         </>
       }
     >
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="ID chamado">
-          <Input value="Será gerado ao abrir" readOnly />
-        </Field>
-        <Field label="Status *">
-          <Input value="Novo" readOnly />
-        </Field>
-        <Field label="Tipo *">
-          <Select
-            value={category}
-            onChange={(event) => setCategory(event.target.value as ApiTicketCategory)}
-          >
-            {categories.map((item) => (
-              <option key={item} value={item}>
-                {categoryLabel(item)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Cliente *">
-          <Select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
-            <option value="">Selecione...</option>
-            {options.customers.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.nome}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Solicitante *">
-          <Select value={contactId} onChange={(event) => setContactId(event.target.value)}>
-            <option value="">Selecione...</option>
-            {options.contacts.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.nome}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Departamento *">
-          <Select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
-            <option value="">Selecione...</option>
-            {options.departments.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Data/hora de abertura">
-          <Input value={new Date().toLocaleString("pt-BR")} readOnly />
-        </Field>
-        <Field label="Prioridade">
-          <Select
-            value={priority}
-            onChange={(event) => setPriority(event.target.value as ApiTicketPriority)}
-          >
-            {priorities.map((item) => (
-              <option key={item} value={item}>
-                {priorityLabel(item)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <div className="md:col-span-2">
-          <Field label="Usuário de abertura">
-            <Input value={currentUser} readOnly />
+      <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-3">
+          <Field label="Cliente *">
+            <Select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+              <option value="">Selecione...</option>
+              {options.customers.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.nome}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Departamento *">
+            <Select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
+              <option value="">Selecione...</option>
+              {options.departments.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Solicitante *">
+            <Select value={contactId} onChange={(event) => setContactId(event.target.value)}>
+              <option value="">Selecione...</option>
+              {options.contacts.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.nome}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Field label="Tipo *">
+            <Select
+              value={category}
+              onChange={(event) => setCategory(event.target.value as ApiTicketCategory)}
+            >
+              {categories.map((item) => (
+                <option key={item} value={item}>
+                  {categoryLabel(item)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Prioridade">
+            <Select
+              value={priority}
+              onChange={(event) => setPriority(event.target.value as ApiTicketPriority)}
+            >
+              {priorities.map((item) => (
+                <option key={item} value={item}>
+                  {priorityLabel(item)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Data/hora de abertura">
+            <Input value={new Date().toLocaleString("pt-BR")} readOnly />
           </Field>
         </div>
         <Field label="Título *">
           <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={180} />
         </Field>
-        <Field label="Conversation">
-          <Select
-            value={conversationId}
-            onChange={(event) => setConversationId(event.target.value)}
-          >
-            <option value="">Sem conversation</option>
-            {options.conversations.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.protocolo ?? item.id.slice(0, 8)} · {item.contact?.nome ?? "Contato"}
-              </option>
-            ))}
-          </Select>
+        <Field label="Descrição *">
+          <RichTextEditor value={description} onChange={setDescription} />
         </Field>
-        <Field label="Responsável">
-          <Select
-            value={assignedMembershipId}
-            onChange={(event) => setAssignedMembershipId(event.target.value)}
-          >
-            <option value="">Fila</option>
-            {options.users.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.user.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <div className="md:col-span-2">
-          <Field label="Descrição *">
-            <textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              className="min-h-[180px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+        <div className="rounded-lg border border-dashed border-border bg-surface-1 p-4">
+          <p className="mb-2 text-sm font-medium">
+            Anexo <span className="font-normal text-muted-foreground">(opcional)</span>
+          </p>
+          <label className="flex min-h-20 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card text-sm text-muted-foreground hover:border-primary hover:text-primary">
+            <Paperclip className="h-4 w-4" />
+            {attachment ? attachment.name : "Escolher arquivos"}
+            <input
+              type="file"
+              className="hidden"
+              onChange={(event) => setAttachment(event.target.files?.[0] ?? null)}
             />
-          </Field>
+          </label>
         </div>
       </div>
     </Modal>
@@ -484,7 +492,12 @@ function TicketDetail({
   });
   const [comment, setComment] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [viewMode, setViewMode] = React.useState(true);
   const item = ticket.data;
+
+  React.useEffect(() => {
+    setViewMode(true);
+  }, [ticketId]);
 
   const refresh = () => {
     ticket.refetch();
@@ -511,44 +524,64 @@ function TicketDetail({
     <Modal
       open={!!ticketId}
       onClose={onClose}
-      title={item ? `${item.protocol} · ${item.title}` : "Chamado"}
+      title={item ? `${viewMode ? "Visualizar" : "Editar"} chamado · ${item.protocol}` : "Chamado"}
       size="xl"
+      footer={
+        item && viewMode ? (
+          <Button variant="secondary" size="sm" onClick={() => setViewMode(false)}>
+            <Pencil className="h-3.5 w-3.5" /> Editar
+          </Button>
+        ) : undefined
+      }
     >
       {!item ? (
         <div>Carregando...</div>
       ) : (
         <div className="space-y-5">
           <div className="grid gap-3 md:grid-cols-4">
-            <Select
-              value={item.status}
-              onChange={async (event) => {
-                await ticketApi.updateStatus(item.id, event.target.value as ApiTicketStatus);
-                refresh();
-              }}
-            >
-              {statuses.map((status) => (
-                <option key={status} value={status}>
-                  {statusLabel(status)}
-                </option>
-              ))}
-            </Select>
-            <Select
-              value={item.priority}
-              onChange={async (event) => {
-                await ticketApi.update(item.id, {
-                  priority: event.target.value as ApiTicketPriority,
-                });
-                refresh();
-              }}
-            >
-              {priorities.map((priority) => (
-                <option key={priority} value={priority}>
-                  {priorityLabel(priority)}
-                </option>
-              ))}
-            </Select>
-            <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
-            <Badge tone={priorityTone(item.priority)}>{priorityLabel(item.priority)}</Badge>
+            {viewMode ? (
+              <>
+                <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
+                <Badge tone={priorityTone(item.priority)}>{priorityLabel(item.priority)}</Badge>
+              </>
+            ) : (
+              <>
+                <Select
+                  value={item.status}
+                  onChange={async (event) => {
+                    await ticketApi.updateStatus(item.id, event.target.value as ApiTicketStatus);
+                    refresh();
+                  }}
+                >
+                  {statuses.map((status) => (
+                    <option key={status} value={status}>
+                      {statusLabel(status)}
+                    </option>
+                  ))}
+                </Select>
+                <Select
+                  value={item.priority}
+                  onChange={async (event) => {
+                    await ticketApi.update(item.id, {
+                      priority: event.target.value as ApiTicketPriority,
+                    });
+                    refresh();
+                  }}
+                >
+                  {priorities.map((priority) => (
+                    <option key={priority} value={priority}>
+                      {priorityLabel(priority)}
+                    </option>
+                  ))}
+                </Select>
+              </>
+            )}
+            {!viewMode && (
+              <>
+                <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
+                <Badge tone={priorityTone(item.priority)}>{priorityLabel(item.priority)}</Badge>
+              </>
+            )}
           </div>
           <Card className="p-4">
             <p className="whitespace-pre-wrap text-sm">{item.descriptionText}</p>
@@ -586,32 +619,252 @@ function TicketDetail({
                 </Card>
               ))}
             </div>
-            <div className="mt-3 flex gap-2">
-              <Input
-                value={comment}
-                onChange={(event) => setComment(event.target.value)}
-                placeholder="Adicionar comentário interno"
-              />
-              <Button size="sm" onClick={addComment} disabled={busy}>
-                Comentar
-              </Button>
-            </div>
+            {!viewMode && (
+              <div className="mt-3 flex gap-2">
+                <Input
+                  value={comment}
+                  onChange={(event) => setComment(event.target.value)}
+                  placeholder="Adicionar comentário interno"
+                />
+                <Button size="sm" onClick={addComment} disabled={busy}>
+                  Comentar
+                </Button>
+              </div>
+            )}
           </section>
-          <Attachments ticketId={item.id} items={attachments.data ?? []} onChanged={refresh} />
+          <Attachments
+            ticketId={item.id}
+            items={attachments.data ?? []}
+            onChanged={refresh}
+            readOnly={viewMode}
+          />
         </div>
       )}
     </Modal>
   );
 }
 
+function RichTextEditor({
+  value,
+  onChange,
+  expanded = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  expanded?: boolean;
+}) {
+  const editorRef = React.useRef<HTMLDivElement>(null);
+  const selectionRef = React.useRef<Range | null>(null);
+  const [fullscreen, setFullscreen] = React.useState(false);
+  const [fontName, setFontName] = React.useState("Arial");
+  const [fontSize, setFontSize] = React.useState("3");
+  const [fontColor, setFontColor] = React.useState("#111827");
+  const [alignment, setAlignment] = React.useState("justifyLeft");
+
+  React.useEffect(() => {
+    const editor = editorRef.current;
+    if (editor && document.activeElement !== editor && editor.innerHTML !== value)
+      editor.innerHTML = value;
+  }, [value]);
+
+  const sync = () => onChange(editorRef.current?.innerHTML ?? "");
+  const saveSelection = () => {
+    const selection = window.getSelection();
+    const editor = editorRef.current;
+    if (!selection?.rangeCount || !editor) return;
+    const range = selection.getRangeAt(0);
+    if (editor.contains(range.commonAncestorContainer)) selectionRef.current = range.cloneRange();
+  };
+  const run = (command: string, commandValue?: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const selection = window.getSelection();
+    if (selection && selectionRef.current) {
+      selection.removeAllRanges();
+      selection.addRange(selectionRef.current);
+    }
+    if (command === "insertUnorderedList" && !editor.textContent?.trim()) {
+      editor.innerHTML = "<ul><li><br></li></ul>";
+    } else {
+      document.execCommand(command, false, commandValue);
+    }
+    saveSelection();
+    sync();
+  };
+  const alignmentIcon =
+    alignment === "justifyCenter" ? (
+      <AlignCenter className="h-4 w-4" />
+    ) : alignment === "justifyRight" ? (
+      <AlignRight className="h-4 w-4" />
+    ) : alignment === "justifyFull" ? (
+      <AlignJustify className="h-4 w-4" />
+    ) : (
+      <AlignLeft className="h-4 w-4" />
+    );
+  const tool = (title: string, command: string, icon: React.ReactNode) => (
+    <button
+      type="button"
+      title={title}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={() => run(command)}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
+    >
+      {icon}
+    </button>
+  );
+  const editor = (
+    <div className="overflow-hidden rounded-lg border border-border bg-surface-1 focus-within:ring-2 focus-within:ring-ring">
+      <div className="border-b border-border bg-card px-2 py-1.5">
+        <div className="flex flex-wrap items-center gap-0.5 rounded-xl bg-surface-2 px-2 py-1 shadow-sm">
+          {tool("Desfazer", "undo", <Undo2 className="h-4 w-4" />)}
+          {tool("Refazer", "redo", <Redo2 className="h-4 w-4" />)}
+          <EditorDivider />
+          <select
+            title="Tipo da fonte"
+            value={fontName}
+            onMouseDown={saveSelection}
+            onChange={(event) => {
+              setFontName(event.target.value);
+              run("fontName", event.target.value);
+            }}
+            className="h-8 max-w-28 rounded-md bg-transparent px-2 text-xs outline-none hover:bg-card"
+          >
+            <option value="Arial">Sans Serif</option>
+            <option value="Times New Roman">Serif</option>
+            <option value="Courier New">Largura fixa</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Verdana">Verdana</option>
+          </select>
+          <select
+            title="Tamanho da fonte"
+            value={fontSize}
+            onMouseDown={saveSelection}
+            onChange={(event) => {
+              setFontSize(event.target.value);
+              run("fontSize", event.target.value);
+            }}
+            className="h-8 w-11 rounded-md bg-transparent px-1 text-xs outline-none hover:bg-card"
+          >
+            <option value="2">P</option>
+            <option value="3">M</option>
+            <option value="5">G</option>
+            <option value="7">EG</option>
+          </select>
+          <span className="inline-flex h-8 w-6 items-center justify-center text-muted-foreground">
+            <Type className="h-4 w-4" />
+          </span>
+          <EditorDivider />
+          {tool("Negrito", "bold", <Bold className="h-4 w-4" />)}
+          {tool("Itálico", "italic", <Italic className="h-4 w-4" />)}
+          {tool("Sublinhado", "underline", <Underline className="h-4 w-4" />)}
+          {tool("Riscado", "strikeThrough", <Strikethrough className="h-4 w-4" />)}
+          <label
+            className="relative inline-flex h-8 w-9 items-center justify-center"
+            title="Cor do texto"
+          >
+            <span className="border-b-2 font-semibold" style={{ borderColor: fontColor }}>
+              A
+            </span>
+            <input
+              type="color"
+              value={fontColor}
+              onMouseDown={saveSelection}
+              onChange={(event) => {
+                setFontColor(event.target.value);
+                run("foreColor", event.target.value);
+              }}
+              className="absolute inset-0 cursor-pointer opacity-0"
+            />
+          </label>
+          <EditorDivider />
+          <select
+            title="Alinhamento"
+            value={alignment}
+            onMouseDown={saveSelection}
+            onChange={(event) => {
+              setAlignment(event.target.value);
+              run(event.target.value);
+            }}
+            className="h-8 w-9 rounded-md bg-transparent text-xs outline-none hover:bg-card"
+          >
+            <option value="justifyLeft">E</option>
+            <option value="justifyCenter">C</option>
+            <option value="justifyRight">D</option>
+            <option value="justifyFull">J</option>
+          </select>
+          <span className="-ml-9 pointer-events-none inline-flex h-8 w-8 items-center justify-center text-muted-foreground">
+            {alignmentIcon}
+            <ChevronDown className="h-3 w-3" />
+          </span>
+          {tool("Lista numerada", "insertOrderedList", <ListOrdered className="h-4 w-4" />)}
+          {tool("Marcadores", "insertUnorderedList", <List className="h-4 w-4" />)}
+          {tool("Diminuir recuo", "outdent", <ListIndentDecrease className="h-4 w-4" />)}
+          {tool("Aumentar recuo", "indent", <ListIndentIncrease className="h-4 w-4" />)}
+          {!expanded && (
+            <button
+              type="button"
+              title="Maximizar"
+              onClick={() => setFullscreen(true)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
+            >
+              <Expand className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        onBlur={saveSelection}
+        onInput={() => {
+          saveSelection();
+          sync();
+        }}
+        onKeyUp={saveSelection}
+        onMouseUp={saveSelection}
+        data-placeholder="Descreva os detalhes do chamado..."
+        className={`w-full overflow-y-auto px-3 py-2 text-sm outline-none empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 ${expanded ? "h-[62vh]" : "h-44"}`}
+      />
+    </div>
+  );
+  return (
+    <>
+      {editor}
+      {!expanded && (
+        <Modal
+          open={fullscreen}
+          onClose={() => setFullscreen(false)}
+          title="Editar Texto HTML"
+          size="xl"
+          footer={
+            <Button variant="primary" size="sm" onClick={() => setFullscreen(false)}>
+              Concluir
+            </Button>
+          }
+        >
+          <RichTextEditor value={value} onChange={onChange} expanded />
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function EditorDivider() {
+  return <span className="mx-1 h-5 w-px bg-border" />;
+}
+
 function Attachments({
   ticketId,
   items,
   onChanged,
+  readOnly,
 }: {
   ticketId: string;
   items: ApiTicketAttachment[];
   onChanged: () => void;
+  readOnly: boolean;
 }) {
   const [busy, setBusy] = React.useState(false);
   const upload = async (file: File | undefined) => {
@@ -654,15 +907,17 @@ function Attachments({
     <section>
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Anexos privados</h3>
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-surface-1">
-          <Paperclip className="h-3.5 w-3.5" /> {busy ? "Enviando..." : "Anexar"}
-          <input
-            type="file"
-            className="hidden"
-            disabled={busy}
-            onChange={(event) => upload(event.target.files?.[0])}
-          />
-        </label>
+        {!readOnly && (
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-surface-1">
+            <Paperclip className="h-3.5 w-3.5" /> {busy ? "Enviando..." : "Anexar"}
+            <input
+              type="file"
+              className="hidden"
+              disabled={busy}
+              onChange={(event) => upload(event.target.files?.[0])}
+            />
+          </label>
+        )}
       </div>
       <div className="space-y-2">
         {items.map((item) => (
@@ -693,17 +948,19 @@ function Attachments({
               >
                 <Download className="h-4 w-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Remover anexo"
-                onClick={async () => {
-                  await ticketApi.deleteAttachment(ticketId, item.id);
-                  onChanged();
-                }}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              {!readOnly && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Remover anexo"
+                  onClick={async () => {
+                    await ticketApi.deleteAttachment(ticketId, item.id);
+                    onChanged();
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </Card>
         ))}
@@ -742,10 +999,16 @@ function useTicketOptions(enabled: boolean) {
     enabled,
   });
   return {
-    departments: sortByOptionLabel(departments.data ?? ([] as ApiDepartment[]), (item) => item.name),
+    departments: sortByOptionLabel(
+      departments.data ?? ([] as ApiDepartment[]),
+      (item) => item.name,
+    ),
     users: sortByOptionLabel(users.data ?? ([] as ApiUserMembership[]), (item) => item.user.name),
     contacts: sortByOptionLabel(contacts.data?.items ?? ([] as ApiContact[]), (item) => item.nome),
-    customers: sortByOptionLabel(customers.data?.items ?? ([] as ApiCustomer[]), (item) => item.nome),
+    customers: sortByOptionLabel(
+      customers.data?.items ?? ([] as ApiCustomer[]),
+      (item) => item.nome,
+    ),
     conversations: sortByOptionLabel(
       conversations.data?.items ?? [],
       (item) => `${item.protocolo ?? ""} ${item.contact?.nome ?? "Contato"}`,

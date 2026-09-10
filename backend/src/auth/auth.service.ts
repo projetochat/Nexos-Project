@@ -46,7 +46,7 @@ export class AuthService {
     if (user.status !== "ACTIVE") {
       throw new ForbiddenException({
         code: "USER_INACTIVE",
-        message: "Usuario inativo.",
+        message: "Usuário inativo.",
       });
     }
 
@@ -98,7 +98,7 @@ export class AuthService {
     if (!requestedTenantSlug && activeMemberships.length > 1) {
       throw new ForbiddenException({
         code: "TENANT_SELECTION_REQUIRED",
-        message: "Selecione a organizacao para continuar.",
+        message: "Selecione a organização para continuar.",
         tenants: activeMemberships.map((item) => ({
           id: item.tenant.id,
           slug: item.tenant.slug,
@@ -114,13 +114,13 @@ export class AuthService {
     if (!membership) {
       throw new ForbiddenException({
         code: "USER_WITHOUT_ACTIVE_MEMBERSHIP",
-        message: "Seu usuario nao possui acesso a nenhuma organizacao ativa.",
+        message: "Seu usuário não possui acesso a nenhuma organização ativa.",
       });
     }
     if (!["ACTIVE", "TRIAL"].includes(membership.tenant.status)) {
       throw new ForbiddenException({
         code: "TENANT_INACTIVE",
-        message: "Organizacao suspensa ou encerrada.",
+        message: "Organização suspensa ou encerrada.",
       });
     }
     const permissions = membership.role.permissions.map((item) => item.permissionId);
@@ -167,13 +167,13 @@ export class AuthService {
 
   async refresh(refreshToken: string) {
     const payload = await this.verifyToken(refreshToken, "JWT_REFRESH_SECRET");
-    if (payload.typ !== "refresh") throw new UnauthorizedException("Refresh token invalido.");
+    if (payload.typ !== "refresh") throw new UnauthorizedException("Refresh token inválido.");
 
     if (!payload.membershipId && payload.platformRole !== "USER") {
       const user = await this.prisma.user.findFirst({
         where: { id: payload.sub, status: "ACTIVE", platformRole: { not: "USER" } },
       });
-      if (!user) throw new UnauthorizedException("Sessao expirada.");
+      if (!user) throw new UnauthorizedException("Sessão expirada.");
       return {
         accessToken: await this.signToken(
           {
@@ -197,7 +197,7 @@ export class AuthService {
       include: { user: true, tenant: true, role: true },
     });
     if (!membership || membership.status !== "ACTIVE" || membership.user.status !== "ACTIVE") {
-      throw new UnauthorizedException("Sessao expirada.");
+      throw new UnauthorizedException("Sessão expirada.");
     }
     if (!["ACTIVE", "TRIAL"].includes(membership.tenant.status)) {
       throw new UnauthorizedException("Tenant inativo.");
@@ -207,7 +207,7 @@ export class AuthService {
       payload.iatMs &&
       payload.iatMs < membership.tenant.authRevokedAt.getTime()
     ) {
-      throw new UnauthorizedException("Sessao revogada.");
+      throw new UnauthorizedException("Sessão revogada.");
     }
     if (payload.impersonationSessionId) {
       const session = await this.prisma.impersonationSession.findFirst({
@@ -220,7 +220,7 @@ export class AuthService {
           expiresAt: { gt: new Date() },
         },
       });
-      if (!session) throw new UnauthorizedException("Sessao de impersonacao expirada.");
+      if (!session) throw new UnauthorizedException("Sessão de impersonação expirada.");
     }
 
     return {
@@ -271,7 +271,7 @@ export class AuthService {
       include: { user: true },
     });
     if (!record || record.user.status !== "ACTIVE") {
-      throw new UnauthorizedException("Token de redefinicao invalido ou expirado.");
+      throw new UnauthorizedException("Token de redefinição inválido ou expirado.");
     }
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -292,7 +292,7 @@ export class AuthService {
       where: { tokenHash, status: "PENDING", expiresAt: { gt: new Date() } },
       include: { tenant: true, role: true },
     });
-    if (!invitation) throw new UnauthorizedException("Convite invalido ou expirado.");
+    if (!invitation) throw new UnauthorizedException("Convite inválido ou expirado.");
 
     await this.prisma.$transaction(async (tx) => {
       let user = await tx.user.findUnique({ where: { email: invitation.email } });
@@ -491,7 +491,7 @@ export class AuthService {
     this.recordFailedLogin(email);
     return new UnauthorizedException({
       code: "INVALID_CREDENTIALS",
-      message: "E-mail ou senha invalidos.",
+      message: "É-mail ou senha invalidos.",
     });
   }
 
@@ -503,7 +503,7 @@ export class AuthService {
       throw new HttpException(
         {
           code: "TOO_MANY_LOGIN_ATTEMPTS",
-          message: "Muitas tentativas de acesso. Aguarde e tente novamente.",
+          message: "Muitas tentativas de acesso. Aguarde é tente novamente.",
         },
         HttpStatus.TOO_MANY_REQUESTS,
       );

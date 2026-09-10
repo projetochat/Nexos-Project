@@ -158,7 +158,7 @@ export class TagsController {
 
   private async findTagOrThrow(id: string, tenantId: string) {
     const tag = await this.prisma.tag.findFirst({ where: { id, tenantId, archivedAt: null } });
-    if (!tag) throw new NotFoundException("Etiqueta nao encontrada.");
+    if (!tag) throw new NotFoundException("Etiqueta não encontrada.");
     return tag;
   }
 
@@ -186,7 +186,7 @@ export class TagsController {
       where: { id, tenantId, archivedAt: null },
       select: { id: true },
     });
-    if (!contact) throw new NotFoundException("Contato nao encontrado.");
+    if (!contact) throw new NotFoundException("Contato não encontrado.");
     return contact;
   }
 
@@ -195,7 +195,7 @@ export class TagsController {
       where: { id, tenantId, archivedAt: null },
       include: { tags: { include: { tag: true }, where: { tag: { archivedAt: null } } } },
     });
-    if (!contact) throw new NotFoundException("Contato nao encontrado.");
+    if (!contact) throw new NotFoundException("Contato não encontrado.");
     return contact;
   }
 }
@@ -206,7 +206,7 @@ function clean(value: string) {
 
 function normalizeName(value: string) {
   const normalized = clean(value).toLowerCase();
-  if (!normalized) throw new BadRequestException("Nome de etiqueta invalido.");
+  if (!normalized) throw new BadRequestException("Nome de etiqueta inválido.");
   return normalized;
 }
 

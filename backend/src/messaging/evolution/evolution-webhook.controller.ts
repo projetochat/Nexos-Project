@@ -161,7 +161,7 @@ export class EvolutionWebhookController {
         authResult: "invalid_jwt_key",
         httpResult: 401,
       });
-      throw new UnauthorizedException("Webhook token invalido.");
+      throw new UnauthorizedException("Webhook token inválido.");
     }
     const [scheme, token] = authorization?.split(" ") ?? [];
     if (scheme !== "Bearer" || !token) {
@@ -194,7 +194,7 @@ export class EvolutionWebhookController {
         authResult: "invalid_token",
         httpResult: 401,
       });
-      throw new UnauthorizedException("Webhook token invalido.");
+      throw new UnauthorizedException("Webhook token inválido.");
     }
   }
 }

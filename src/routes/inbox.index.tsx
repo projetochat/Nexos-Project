@@ -384,7 +384,11 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                         </p>
                         <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                           <span className="truncate">
-                            {[instanceLabel || "Sem instância", c.department?.nome, c.agent?.nome || "sem atendente"]
+                            {[
+                              instanceLabel || "Sem instância",
+                              c.department?.nome,
+                              c.agent?.nome || "sem atendente",
+                            ]
                               .filter(Boolean)
                               .join(" - ")}
                           </span>
@@ -513,7 +517,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
   const submit = async () => {
     if (!user) return toast.error("Sessão inválida.");
     if (!firstMsg.trim()) return toast.error("Escreva a primeira mensagem.");
-    if (!selectedConnectionId) return toast.error("Selecione uma conexao WhatsApp conectada.");
+    if (!selectedConnectionId) return toast.error("Selecione uma conexão WhatsApp conectada.");
     setBusy(true);
     try {
       let contactId = selectedContact?.id;
@@ -632,13 +636,13 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
       )}
 
       <div className="mt-3">
-        <Field label="Conexao WhatsApp">
+        <Field label="Conexão WhatsApp">
           <Select
             value={selectedConnectionId}
             onChange={(e) => setSelectedConnectionId(e.target.value)}
           >
             {availableConnections.length === 0 ? (
-              <option value="">Nenhuma instancia conectada disponivel.</option>
+              <option value="">Nenhuma instancia conectada disponível.</option>
             ) : (
               availableConnections.map((connection) => (
                 <option key={connection.id} value={connection.id}>
@@ -787,5 +791,5 @@ function MultiSelect({
 function realtimeLabel(status: string) {
   if (status === "connected") return "Tempo real conectado";
   if (status === "connecting" || status === "reconnecting") return "Reconectando";
-  return "Atualizacao periodica ativa";
+  return "Atualização periódica ativa";
 }

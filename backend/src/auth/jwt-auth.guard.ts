@@ -22,7 +22,7 @@ export class JwtAuthGuard implements CanActivate {
     if (scheme !== "Bearer" || !token) throw new UnauthorizedException("Token ausente.");
 
     const payload = await this.verifyAccessToken(token);
-    if (payload.typ !== "access") throw new UnauthorizedException("Token invalido.");
+    if (payload.typ !== "access") throw new UnauthorizedException("Token inválido.");
 
     request.user = {
       userId: payload.sub,
@@ -42,7 +42,7 @@ export class JwtAuthGuard implements CanActivate {
     try {
       return await this.auth.verifyToken(token, "JWT_SECRET");
     } catch {
-      throw new UnauthorizedException("Token invalido.");
+      throw new UnauthorizedException("Token inválido.");
     }
   }
 }

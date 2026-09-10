@@ -73,7 +73,7 @@ function Page() {
                   </div>
                 </div>
                 <Badge tone={queue.prioridade === "alta" ? "warning" : "success"}>
-                  {queue.prioridade === "alta" ? "Atencao" : "Saudavel"}
+                  {queue.prioridade === "alta" ? "Atenção" : "Saudavel"}
                 </Badge>
               </div>
 

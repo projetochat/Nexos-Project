@@ -1,13 +1,6 @@
 import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  Building2,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  RefreshCw,
-} from "lucide-react";
+import { Building2, CheckCircle2, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { AdminContainer } from "@/components/admin-shell";
 import {
@@ -30,7 +23,7 @@ export const Route = createFileRoute("/admin/empresas")({
   component: EmpresasSaaS,
 });
 
-const steps = ["Empresa", "Slug", "Regiao", "Admin", "Plano", "Vigencia", "Revisao", "Confirmacao"];
+const steps = ["Empresa", "Slug", "Região", "Admin", "Plano", "Vigência", "Revisão", "Confirmação"];
 
 type TenantForm = {
   name: string;
@@ -119,7 +112,7 @@ function EmpresasSaaS() {
       load();
     } catch (err) {
       setError((err as Error).message);
-      toast.error("Criacao transacional nao concluida");
+      toast.error("Criação transacional não concluída");
     } finally {
       setCreating(false);
     }
@@ -141,7 +134,7 @@ function EmpresasSaaS() {
       />
 
       {error && (
-        <Alert tone="destructive" title="Operacao nao concluida">
+        <Alert tone="destructive" title="Operação não concluída">
           {error}
         </Alert>
       )}
@@ -212,7 +205,7 @@ function EmpresasSaaS() {
         <Card>
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold">Criacao de tenant</h2>
+              <h2 className="text-sm font-semibold">Criação de tenant</h2>
               <p className="mt-1 text-xs text-muted-foreground">
                 Etapa {step + 1} de {steps.length}: {steps[step]}
               </p>
@@ -291,10 +284,10 @@ function EmpresasSaaS() {
             </Field>
           )}
           {step === 5 && (
-            <Field label="Vigencia">
+            <Field label="Vigência">
               <Select value={form.trial} onChange={(e) => update("trial", e.target.value)}>
                 <option value="trial">Trial conforme plano</option>
-                <option value="active">Ativar administrativamente apos criacao</option>
+                <option value="active">Ativar administrativamente após criação</option>
               </Select>
             </Field>
           )}
@@ -302,9 +295,9 @@ function EmpresasSaaS() {
             <div className="space-y-2 text-sm">
               <Review label="Tenant" value={form.name} />
               <Review label="Slug" value={form.slug} />
-              <Review label="Regiao" value={`${form.timezone} / ${form.locale}`} />
+              <Review label="Região" value={`${form.timezone} / ${form.locale}`} />
               <Review label="Admin" value={`${form.adminName} - ${form.adminEmail}`} />
-              <Review label="Plano" value={selectedPlan?.name ?? "Nao selecionado"} />
+              <Review label="Plano" value={selectedPlan?.name ?? "Não selecionado"} />
             </div>
           )}
           {step === 7 && created && (
@@ -340,7 +333,7 @@ function EmpresasSaaS() {
               </Button>
             ) : step === 6 ? (
               <Button disabled={!canContinue || creating} onClick={submit}>
-                <CheckCircle2 className="h-4 w-4" /> Confirmar criacao
+                <CheckCircle2 className="h-4 w-4" /> Confirmar criação
               </Button>
             ) : (
               <Button
@@ -351,7 +344,7 @@ function EmpresasSaaS() {
                   setStep(0);
                 }}
               >
-                Nova criacao
+                Nova criação
               </Button>
             )}
           </div>

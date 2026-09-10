@@ -14,6 +14,7 @@ export type OperationsMetricFilters = {
   departmentId?: string;
   assignedMembershipId?: string;
   customerId?: string;
+  connectionId?: string;
   contactId?: string;
 };
 
@@ -29,6 +30,10 @@ export class OperationsMetricsService {
 
   async snapshot(tenantId: string, range: OperationsRange, filters: OperationsMetricFilters = {}) {
     const conversationScope = conversationMetricScope(tenantId, filters);
+    const queueConversationScope: Prisma.ConversationWhereInput = {
+      ...conversationScope,
+      createdAt: { gte: range.start, lt: range.end },
+    };
     const leadScope = leadMetricScope(tenantId, filters);
     const [
       abertas,
@@ -47,12 +52,16 @@ export class OperationsMetricsService {
       contatosAtivos,
       departamentosAtivos,
       instanciasConectadas,
+      filaAtivas,
+      filaStandby,
+      filaFila,
+      filaLeads,
       firstResponseRows,
       attendanceRows,
     ] = await this.prisma.$transaction([
       this.prisma.conversation.count({
         where: {
-          ...conversationScope,
+          ...queueConversationScope,
           status: { in: [...ACTIVE_CONVERSATION_STATUSES] },
           archivedAt: null,
         },
@@ -61,7 +70,11 @@ export class OperationsMetricsService {
         where: { ...closedConversationWhere(tenantId, range), ...conversationScope },
       }),
       this.prisma.conversation.count({
-        where: { ...conversationScope, status: ConversationStatus.AGUARDANDO, archivedAt: null },
+        where: {
+          ...queueConversationScope,
+          status: ConversationStatus.AGUARDANDO,
+          archivedAt: null,
+        },
       }),
       this.prisma.conversation.count({
         where: { ...conversationScope, status: ConversationStatus.EM_ANDAMENTO, archivedAt: null },
@@ -138,6 +151,35 @@ export class OperationsMetricsService {
       this.prisma.messagingConnection.count({
         where: { tenantId, status: MessagingConnectionStatus.CONNECTED, archivedAt: null },
       }),
+      this.prisma.conversation.count({
+        where: {
+          ...queueConversationScope,
+          assignedMembershipId: { not: null },
+          status: { notIn: [ConversationStatus.FECHADA, ConversationStatus.AGUARDANDO] },
+          archivedAt: null,
+        },
+      }),
+      this.prisma.conversation.count({
+        where: { ...conversationScope, status: ConversationStatus.AGUARDANDO, archivedAt: null },
+      }),
+      this.prisma.conversation.count({
+        where: {
+          ...queueConversationScope,
+          assignedMembershipId: null,
+          protocol: { not: null },
+          status: ConversationStatus.ABERTA,
+          archivedAt: null,
+        },
+      }),
+      this.prisma.conversation.count({
+        where: {
+          ...conversationScope,
+          assignedMembershipId: null,
+          protocol: null,
+          status: { not: ConversationStatus.FECHADA },
+          archivedAt: null,
+        },
+      }),
       this.prisma.conversation.findMany({
         where: {
           ...conversationScope,
@@ -193,6 +235,10 @@ export class OperationsMetricsService {
       atendentesOcupados: emAtendimento,
       departamentosAtivos,
       instanciasConectadas,
+      filaAtivas,
+      filaStandby,
+      filaFila,
+      filaLeads,
     };
   }
 
@@ -203,35 +249,53 @@ export class OperationsMetricsService {
       createdAt: { gte: range.start, lt: range.end },
       department: { active: true },
     };
-    const [byDepartment, byAgent, byCustomer, byConnection] = await Promise.all([
-      this.prisma.conversation.groupBy({
-        by: ["departmentId"],
-        where: conversationRange,
-        _count: { _all: true },
-      }),
-      this.prisma.conversation.groupBy({
-        by: ["assignedMembershipId"],
-        where: conversationRange,
-        _count: { _all: true },
-      }),
-      this.prisma.conversation.findMany({
-        where: conversationRange,
-        select: {
-          contact: { select: { customer: { select: { id: true, name: true, color: true } } } },
-        },
-      }),
-      this.prisma.conversation.groupBy({
-        by: ["connectionId"],
-        where: conversationRange,
-        _count: { _all: true },
-      }),
-    ]);
+    const [byDepartment, byAgent, byCustomer, byConnection, taggedConversations, messages] =
+      await Promise.all([
+        this.prisma.conversation.groupBy({
+          by: ["departmentId"],
+          where: conversationRange,
+          _count: { _all: true },
+        }),
+        this.prisma.conversation.groupBy({
+          by: ["assignedMembershipId"],
+          where: conversationRange,
+          _count: { _all: true },
+        }),
+        this.prisma.conversation.findMany({
+          where: conversationRange,
+          select: {
+            contact: { select: { customer: { select: { id: true, name: true, color: true } } } },
+          },
+        }),
+        this.prisma.conversation.groupBy({
+          by: ["connectionId"],
+          where: conversationRange,
+          _count: { _all: true },
+        }),
+        this.prisma.conversation.findMany({
+          where: conversationRange,
+          select: {
+            contact: {
+              select: { tags: { where: { tag: { archivedAt: null } }, select: { tag: true } } },
+            },
+          },
+        }),
+        this.prisma.message.findMany({
+          where: {
+            tenantId,
+            createdAt: { gte: range.start, lt: range.end },
+            conversation: { ...conversationMetricScope(tenantId, filters), archivedAt: null },
+          },
+          select: { createdAt: true, direction: true },
+        }),
+      ]);
     const [departments, memberships, connections] = await Promise.all([
       this.prisma.department.findMany({ where: { tenantId, active: true } }),
       this.prisma.tenantMembership.findMany({ where: { tenantId }, include: { user: true } }),
       this.prisma.messagingConnection.findMany({ where: { tenantId, archivedAt: null } }),
     ]);
     const customerCounts = new Map<string, { nome: string; cor: string; total: number }>();
+    const tagCounts = new Map<string, { nome: string; cor: string; total: number }>();
     for (const row of byCustomer) {
       const customer = row.contact.customer;
       if (!customer) continue;
@@ -242,6 +306,29 @@ export class OperationsMetricsService {
       };
       item.total += 1;
       customerCounts.set(customer.id, item);
+    }
+    for (const conversation of taggedConversations) {
+      for (const item of conversation.contact.tags) {
+        const current = tagCounts.get(item.tag.id) ?? {
+          nome: item.tag.name,
+          cor: item.tag.color,
+          total: 0,
+        };
+        current.total += 1;
+        tagCounts.set(item.tag.id, current);
+      }
+    }
+    const messagesByHour = Array.from({ length: 24 }, (_, hour) => ({
+      hora: `${String(hour).padStart(2, "0")}h`,
+      recebidas: 0,
+      enviadas: 0,
+      total: 0,
+    }));
+    for (const message of messages) {
+      const item = messagesByHour[message.createdAt.getHours()];
+      item.total += 1;
+      if (message.direction === MessageDirection.INBOUND) item.recebidas += 1;
+      if (message.direction === MessageDirection.OUTBOUND) item.enviadas += 1;
     }
     return {
       byDepartment: byDepartment.map((row) => {
@@ -259,8 +346,16 @@ export class OperationsMetricsService {
       byCustomer: [...customerCounts.values()],
       byConnection: byConnection.map((row) => {
         const connection = connections.find((item) => item.id === row.connectionId);
-        return { nome: connection?.name ?? "Sem instancia", total: row._count._all };
+        return { nome: connection?.name ?? "Sem instância", total: row._count._all };
       }),
+      byTag: [...tagCounts.values()].map((item) => ({
+        ...item,
+        percentual:
+          taggedConversations.length === 0
+            ? 0
+            : Math.round((item.total / taggedConversations.length) * 10_000) / 100,
+      })),
+      messagesByHour,
     };
   }
 
@@ -270,7 +365,7 @@ export class OperationsMetricsService {
       conversasEncerradas: "FECHADA com closedAt preenchido no periodo, archivedAt null.",
       conversasAguardando: "AGUARDANDO, archivedAt null.",
       leadsAtivos: "NEW, QUEUED ou ASSIGNED, sem conversa FECHADA com closedAt preenchido.",
-      novosLeads: "Lead criado no periodo e vinculado a conversa nao arquivada do tenant.",
+      novosLeads: "Lead criado no periodo é vinculado a conversa não arquivada do tenant.",
       leadsConvertidos: "CONVERTED com convertedAt no periodo.",
       leadsPerdidos: "DISCARDED com discardedAt no periodo.",
     };
@@ -293,6 +388,7 @@ function conversationMetricScope(tenantId: string, filters: OperationsMetricFilt
     ...(filters.assignedMembershipId ? { assignedMembershipId: filters.assignedMembershipId } : {}),
     ...(filters.contactId ? { contactId: filters.contactId } : {}),
     ...(filters.customerId ? { contact: { customerId: filters.customerId } } : {}),
+    ...(filters.connectionId ? { connectionId: filters.connectionId } : {}),
   } satisfies Prisma.ConversationWhereInput;
 }
 
@@ -303,6 +399,7 @@ function leadMetricScope(tenantId: string, filters: OperationsMetricFilters) {
     ...(filters.assignedMembershipId ? { assignedMembershipId: filters.assignedMembershipId } : {}),
     ...(filters.contactId ? { contactId: filters.contactId } : {}),
     ...(filters.customerId ? { contact: { customerId: filters.customerId } } : {}),
+    ...(filters.connectionId ? { conversation: { connectionId: filters.connectionId } } : {}),
   } satisfies Prisma.LeadWhereInput;
 }
 

@@ -56,7 +56,7 @@ export class PermissionsGuard implements CanActivate {
       current.iatMs &&
       current.iatMs < membership.tenant.authRevokedAt.getTime()
     ) {
-      throw new UnauthorizedException("Sessao revogada.");
+      throw new UnauthorizedException("Sessão revogada.");
     }
     if (current.impersonationSessionId) {
       const session = await this.prisma.impersonationSession.findFirst({
@@ -69,12 +69,12 @@ export class PermissionsGuard implements CanActivate {
           expiresAt: { gt: new Date() },
         },
       });
-      if (!session) throw new UnauthorizedException("Sessao de impersonacao expirada.");
+      if (!session) throw new UnauthorizedException("Sessão de impersonação expirada.");
     }
 
     const granted = new Set(membership.role.permissions.map((item) => item.permissionId));
     const allowed = required.every((permission) => granted.has(permission));
-    if (!allowed) throw new ForbiddenException("Permissao insuficiente.");
+    if (!allowed) throw new ForbiddenException("Permissão insuficiente.");
 
     request.user.roleId = membership.roleId;
     request.user.roleKey = membership.role.key;

@@ -8,7 +8,8 @@ import {
   Check,
   Copy,
   Eye,
-  Info,
+  Infinity as InfinityIcon,
+  MessageCircle,
   Pencil,
   Plus,
   Power,
@@ -32,7 +33,6 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { Modal, useDisclosure } from "@/components/modal";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
@@ -101,9 +101,9 @@ function Page() {
           value: connection.qrCodeBase64,
           status: connection.status,
         });
-        toast.success("Conexao criada. Leia o QR Code para concluir.");
+        toast.success("Conexão criada. Leia o QR Code para concluir.");
       } else {
-        toast.success("Conexao criada");
+        toast.success("Conexão criada");
       }
       novo.hide();
     },
@@ -114,6 +114,30 @@ function Page() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] }),
     onError: (e) => toast.error((e as Error).message),
   });
+
+  React.useEffect(() => {
+    if (!qr) return;
+    let active = true;
+
+    const syncConnectionStatus = async () => {
+      try {
+        const updated = await connectionsApi.status(qr.connectionId);
+        if (!active) return;
+        qc.setQueryData<ApiMessagingConnection[]>(["nexos", "messaging-connections"], (current) =>
+          current?.map((item) => (item.id === updated.id ? updated : item)),
+        );
+      } catch {
+        // A leitura em segundo plano não deve interromper a leitura do QR Code.
+      }
+    };
+
+    void syncConnectionStatus();
+    const intervalId = window.setInterval(() => void syncConnectionStatus(), 3_000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [qc, qr]);
   const update = useMutation({
     mutationFn: ({
       connection,
@@ -154,7 +178,7 @@ function Page() {
     mutationFn: connectionsApi.logout,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
-      toast.success("Conexao desconectada");
+      toast.success("Conexão desconectada");
     },
     onError: (e) => toast.error((e as Error).message),
   });
@@ -172,7 +196,7 @@ function Page() {
       qc.invalidateQueries({ queryKey: ["operations", "history"] });
       qc.invalidateQueries({ queryKey: ["nexos", "groups"] });
       setRemoving(null);
-      toast.success("Conexao removida");
+      toast.success("Conexão removida");
     },
     onError: (e) => toast.error(connectionRemoveErrorMessage(e)),
   });
@@ -216,7 +240,7 @@ function Page() {
                         <p className="mt-1 font-mono text-xs text-muted-foreground">
                           {connection.ownerPhone
                             ? maskBrazilPhone(connection.ownerPhone)
-                            : "Sem numero"}
+                            : "Sem número"}
                         </p>
                       </div>
                     </div>
@@ -343,7 +367,7 @@ function Page() {
 
 function diagnosticLabel(reason: string) {
   const labels: Record<string, string> = {
-    INSTANCE_NOT_FOUND: "Instance nao encontrada na Evolution",
+    INSTANCE_NOT_FOUND: "Instance não encontrada na Evolution",
   };
   return labels[reason] ?? reason;
 }
@@ -360,17 +384,28 @@ function ConnectionForm({
   busy: boolean;
 }) {
   const [name, setName] = React.useState("");
+  const [connectionType, setConnectionType] = React.useState<"qr-code">("qr-code");
+  const canCreate = name.trim().length > 0;
+
   React.useEffect(() => {
     if (!open) {
       setName("");
+      setConnectionType("qr-code");
     }
   }, [open]);
+
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canCreate || busy) return;
+    onSubmit({ name: name.trim() });
+  };
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="Nova instância WhatsApp"
+      size="lg"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -379,23 +414,57 @@ function ConnectionForm({
           <Button
             variant="primary"
             size="sm"
-            onClick={() => onSubmit({ name })}
-            disabled={busy || name.trim().length < 2}
+            type="submit"
+            form="new-whatsapp-instance-form"
+            disabled={busy || !canCreate}
           >
             Criar
           </Button>
         </>
       }
     >
-      <div className="space-y-4">
-        <Field label="Nome">
+      <form id="new-whatsapp-instance-form" className="space-y-5" onSubmit={submit}>
+        <fieldset>
+          <legend className="mb-2.5 text-sm font-semibold">Tipo de conexão</legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              aria-pressed={connectionType === "qr-code"}
+              onClick={() => setConnectionType("qr-code")}
+              className="group flex min-h-36 flex-col items-center justify-center rounded-xl border border-border bg-surface-1 p-4 text-center outline-none transition hover:border-emerald-500 hover:bg-emerald-500/10 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/30 data-[selected=true]:border-emerald-500 data-[selected=true]:bg-emerald-500/10"
+              data-selected={connectionType === "qr-code"}
+            >
+              <span className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-surface-3 text-muted-foreground transition group-hover:bg-emerald-500 group-hover:text-white group-data-[selected=true]:bg-emerald-500 group-data-[selected=true]:text-white">
+                <MessageCircle className="h-6 w-6" aria-hidden="true" />
+              </span>
+              <span className="text-base font-semibold">QR Code</span>
+              <span className="mt-0.5 text-sm text-muted-foreground">Conexão via celular</span>
+            </button>
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              title="A integração com a API Oficial estará disponível em breve."
+              className="flex min-h-36 cursor-not-allowed flex-col items-center justify-center rounded-xl border border-border bg-surface-1 p-4 text-center opacity-50"
+            >
+              <span className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-surface-3 text-muted-foreground">
+                <InfinityIcon className="h-7 w-7" aria-hidden="true" />
+              </span>
+              <span className="text-base font-semibold">API Oficial</span>
+              <span className="mt-0.5 text-sm text-muted-foreground">Meta Business</span>
+            </button>
+          </div>
+        </fieldset>
+        <Field label="Nome *">
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Suporte WhatsApp"
+            placeholder="Digite o nome da instância"
+            required
+            autoFocus
           />
         </Field>
-      </div>
+      </form>
     </Modal>
   );
 }
@@ -414,7 +483,7 @@ type ConnectionSettingsFormData = {
   notes: string | null;
 };
 
-type ConnectionSettingsTab = "general" | "greeting" | "absence";
+type ConnectionSettingsTab = "general" | "greeting" | "absence" | "variables";
 
 type ServiceHoursRow = {
   day: string;
@@ -433,6 +502,7 @@ const TIMEZONE_OPTIONS = [
 ];
 
 const CONNECTION_MESSAGE_VARIABLES = [
+  "{{cumprimento}}",
   "{{nome}}",
   "{{telefone}}",
   "{{email}}",
@@ -440,6 +510,34 @@ const CONNECTION_MESSAGE_VARIABLES = [
   "{{cliente}}",
   "{{instancia}}",
 ];
+
+const CONNECTION_MESSAGE_VARIABLE_DESCRIPTIONS: Record<string, string> = {
+  "{{cumprimento}}": "Bom dia, Boa tarde e Boa noite. Será apresentado conforme a hora do dia.",
+  "{{nome}}": "Nome do contato.",
+  "{{telefone}}": "Telefone do contato.",
+  "{{email}}": "E-mail do contato.",
+  "{{instancia}}": "Instância da conversa.",
+  "{{cliente}}": "Cliente do contato.",
+  "{{departamento}}": "Departamento do contato.",
+};
+
+const NEW_CONTACT_MESSAGE_PLACEHOLDER = `Olá!
+Seja bem-vindo(a)
+
+Poderia informar seu nome para iniciarmos o atendimento?`;
+
+const EXISTING_CONTACT_MESSAGE_PLACEHOLDER = `{{cumprimento}} *{{nome}}*!
+Tudo bem?
+
+Já identificamos você na nossa base, informe seu problema que logo iremos te atender.`;
+
+const ABSENCE_MESSAGE_PLACEHOLDER = `Olá *{{nome}}*,
+Tudo bem?
+
+Estamos fora do horário de atendimento.
+Retornaremos assim que possível.
+
+Equipe Nexus`;
 
 const WEEKDAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 
@@ -504,10 +602,8 @@ function ConnectionSettingsModal({
       color: connection.color || "#22c55e",
       logoUrl: connection.logoUrl ?? null,
       welcomeEnabled: connection.welcomeEnabled ?? false,
-      welcomeNewMessage:
-        connection.welcomeNewMessage ||
-        "Ola! Seja bem-vindo(a). Poderia informar seu nome para iniciarmos o atendimento?",
-      welcomeExistingMessage: connection.welcomeExistingMessage || "Ola {{nome}},\nTudo bem?",
+      welcomeNewMessage: connection.welcomeNewMessage ?? "",
+      welcomeExistingMessage: connection.welcomeExistingMessage ?? "",
       notes: connection.notes || "",
     });
   }, [connection]);
@@ -545,7 +641,7 @@ function ConnectionSettingsModal({
       <Modal
         open={!!connection}
         onClose={onClose}
-        title="Editar instância"
+        title="Editar Instância"
         size="lg"
         footer={
           <div className="flex w-full items-center justify-between gap-2">
@@ -567,7 +663,7 @@ function ConnectionSettingsModal({
         }
       >
         <div className="space-y-5">
-          <div className="flex border-b border-border text-sm">
+          <div className="flex overflow-x-auto border-b border-border text-sm">
             <TabButton active={tab === "general"} onClick={() => setTab("general")}>
               Geral
             </TabButton>
@@ -576,6 +672,9 @@ function ConnectionSettingsModal({
             </TabButton>
             <TabButton active={tab === "absence"} onClick={() => setTab("absence")}>
               Mensagem de Ausência
+            </TabButton>
+            <TabButton active={tab === "variables"} onClick={() => setTab("variables")}>
+              Dicionário de Variáveis
             </TabButton>
           </div>
 
@@ -614,7 +713,7 @@ function ConnectionSettingsModal({
                         const logo = logoPreview ?? form.logoUrl;
                         setLogoMenuOpen(false);
                         if (!logo) {
-                          toast.info("Nenhum logo cadastrado para esta instância.");
+                          toast.info("Nenhum logo cadastrado para está instância.");
                           return;
                         }
                         setLogoPreviewOpen(true);
@@ -661,7 +760,7 @@ function ConnectionSettingsModal({
                   />
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid grid-cols-[minmax(0,1fr)_130px] gap-4 sm:grid-cols-[minmax(0,1.35fr)_minmax(150px,0.75fr)] md:grid-cols-2">
                   <Field label="Telefone *">
                     <Input
                       value={connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""}
@@ -736,30 +835,14 @@ function ConnectionSettingsModal({
                     ))}
                   </Select>
                 </Field>
-                <label className="block">
-                  <span className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    Agente de IA
-                    <TooltipProvider delayDuration={150}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex h-4 w-4 items-center justify-center rounded-full text-primary transition hover:bg-primary/10"
-                            aria-label="Informação sobre Agente de IA"
-                          >
-                            <Info className="h-3.5 w-3.5" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                          Será preenchida pelos agentes cadastrados no módulo de IA.
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </span>
+                <Field
+                  label="Agente de IA"
+                  hint="Será preenchido pelos agentes cadastrados no módulo de IA."
+                >
                   <Select value={aiAgentId} onChange={(event) => setAiAgentId(event.target.value)}>
                     <option value="">- Selecione um agente -</option>
                   </Select>
-                </label>
+                </Field>
               </div>
             </div>
           )}
@@ -781,6 +864,7 @@ function ConnectionSettingsModal({
                   value={form.welcomeNewMessage ?? ""}
                   onChange={(event) => setForm({ ...form, welcomeNewMessage: event.target.value })}
                   disabled={!form.welcomeEnabled}
+                  placeholder={NEW_CONTACT_MESSAGE_PLACEHOLDER}
                 />
               </Field>
               <Field label="Mensagem para contato existente">
@@ -791,9 +875,9 @@ function ConnectionSettingsModal({
                     setForm({ ...form, welcomeExistingMessage: event.target.value })
                   }
                   disabled={!form.welcomeEnabled}
+                  placeholder={EXISTING_CONTACT_MESSAGE_PLACEHOLDER}
                 />
               </Field>
-              <VariableTokens customFields={contactCustomFields} />
             </div>
           )}
 
@@ -814,13 +898,14 @@ function ConnectionSettingsModal({
                   value={absenceMessage}
                   onChange={(event) => setAbsenceMessage(event.target.value)}
                   disabled={!absenceEnabled}
-                  placeholder="Olá {{nome}}, estamos fora do horário de atendimento. Retornaremos assim que possível."
+                  placeholder={ABSENCE_MESSAGE_PLACEHOLDER}
                 />
               </Field>
-              <VariableTokens customFields={contactCustomFields} />
               <ServiceHoursTable rows={serviceHours} onChange={setServiceHours} />
             </div>
           )}
+
+          {tab === "variables" && <VariableDictionary customFields={contactCustomFields} />}
         </div>
       </Modal>
       <CameraCaptureModal
@@ -853,7 +938,7 @@ function TabButton({
   return (
     <button
       type="button"
-      className={`border-b px-3 py-3 text-left transition ${
+      className={`shrink-0 border-b px-3 py-3 text-left transition ${
         active
           ? "border-primary text-primary"
           : "border-transparent text-muted-foreground hover:text-foreground"
@@ -1074,20 +1159,26 @@ function LogoPreviewModal({
   );
 }
 
-function VariableTokens({ customFields }: { customFields: ApiContactCustomField[] }) {
-  const tokens = React.useMemo(
+function VariableDictionary({ customFields }: { customFields: ApiContactCustomField[] }) {
+  const variables = React.useMemo(
     () => mergeMessageVariables(CONNECTION_MESSAGE_VARIABLES, customFields),
     [customFields],
   );
 
   return (
-    <div className="rounded-lg border border-border bg-surface-1 p-3">
-      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+    <div className="overflow-hidden rounded-lg border border-border bg-surface-1">
+      <p className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
         Variáveis Disponíveis
       </p>
-      <div className="mt-2 flex flex-wrap gap-2 text-xs">
-        {tokens.map((token) => (
-          <VariableTokenButton key={token} token={token} />
+      <div className="divide-y divide-border">
+        {variables.map(({ token, description }) => (
+          <div
+            key={token}
+            className="grid gap-2 px-3 py-2 text-xs sm:grid-cols-[10.5rem_minmax(0,1fr)] sm:items-center sm:gap-3"
+          >
+            <VariableTokenButton token={token} />
+            <span className="text-muted-foreground">{description}</span>
+          </div>
         ))}
       </div>
     </div>
@@ -1134,12 +1225,20 @@ function VariableTokenButton({ token }: { token: string }) {
 }
 
 function mergeMessageVariables(baseTokens: string[], customFields: ApiContactCustomField[]) {
-  const tokens = new Set(baseTokens);
+  const variables = baseTokens.map((token) => ({
+    token,
+    description: CONNECTION_MESSAGE_VARIABLE_DESCRIPTIONS[token] ?? "Variável disponível.",
+  }));
+  const knownTokens = new Set(baseTokens);
+
   customFields.forEach((field) => {
     const token = customFieldVariableToken(field.label);
-    if (token) tokens.add(token);
+    if (!token || knownTokens.has(token)) return;
+    knownTokens.add(token);
+    variables.push({ token, description: `Campo adicional: ${field.label}.` });
   });
-  return Array.from(tokens);
+
+  return variables;
 }
 
 function customFieldVariableToken(label: string) {
@@ -1161,32 +1260,33 @@ function ServiceHoursTable({
   onChange: (rows: ServiceHoursRow[]) => void;
 }) {
   const [editing, setEditing] = React.useState(false);
+  const [selectedRow, setSelectedRow] = React.useState<number | null>(null);
 
   const updateRow = (index: number, patch: Partial<ServiceHoursRow>) => {
     onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
   };
 
-  const copyToAll = (source: ServiceHoursRow) => {
+  const copyToAll = (sourceIndex: number) => {
+    const source = rows[sourceIndex];
     onChange(
-      rows.map((row) => ({
-        ...row,
-        active: source.active,
-        start: source.start,
-        end: source.end,
-      })),
+      rows.map((row, index) =>
+        index !== sourceIndex && row.active
+          ? { ...row, start: source.start, end: source.end }
+          : row,
+      ),
     );
+  };
+
+  const toggleEditing = () => {
+    setEditing((current) => !current);
+    setSelectedRow(null);
   };
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs font-medium text-muted-foreground">Horário de Atendimento</p>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => setEditing((current) => !current)}
-        >
+        <Button type="button" variant="ghost" size="sm" onClick={toggleEditing}>
           {editing ? (
             <>
               <Check className="h-3.5 w-3.5" />
@@ -1201,75 +1301,89 @@ function ServiceHoursTable({
         </Button>
       </div>
       <div className="overflow-hidden rounded-lg border border-border">
-        <table className="w-full min-w-[420px] border-collapse text-sm">
+        <table className="w-full table-fixed border-collapse text-sm">
           <thead className="bg-surface-1 text-[11px] uppercase tracking-widest text-muted-foreground">
             <tr>
-              <th className="px-3 py-3 text-left font-semibold">Dia da semana</th>
-              <th className="px-3 py-3 text-left font-semibold">Ativo</th>
-              <th className="px-3 py-3 text-left font-semibold">Início</th>
-              <th className="px-3 py-3 text-left font-semibold">Fim</th>
-              <th className="px-3 py-3 text-right font-semibold">Ações</th>
+              <th className="w-[35%] px-2 py-3 text-left font-semibold sm:w-[29%] sm:px-3">
+                Dia da semana
+              </th>
+              <th className="w-[14%] px-1 py-3 text-center font-semibold sm:w-[13%] sm:px-3">
+                Ativo
+              </th>
+              <th className="w-[25%] px-1 py-3 text-center font-semibold sm:w-[19%] sm:px-3">
+                Início
+              </th>
+              <th className="w-[26%] px-1 py-3 text-center font-semibold sm:w-[19%] sm:px-3">
+                Fim
+              </th>
+              <th className="hidden w-[20%] px-1 py-3 sm:table-cell sm:px-3" aria-label="Ações" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {rows.map((row, index) => (
               <tr key={row.day} className="transition hover:bg-surface-1/60">
-                <td className="px-3 py-2">{row.day}</td>
-                <td className="px-3 py-2">
+                <td className="px-2 py-2 sm:px-3">{row.day}</td>
+                <td className="px-1 py-2 text-center sm:px-3">
                   <input
                     type="checkbox"
                     checked={row.active}
-                    onChange={(event) => updateRow(index, { active: event.target.checked })}
+                    onChange={(event) => {
+                      setSelectedRow(index);
+                      updateRow(index, { active: event.target.checked });
+                    }}
+                    disabled={!editing}
                     className="h-4 w-4 accent-primary"
                     aria-label={`Ativar atendimento em ${row.day}`}
                   />
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-1 py-2 text-center sm:px-3">
                   <Input
                     type="text"
                     inputMode="numeric"
                     value={row.start}
                     placeholder="00:00"
                     disabled={!editing || !row.active}
+                    onFocus={() => setSelectedRow(index)}
                     onChange={(event) =>
                       updateRow(index, { start: sanitizeServiceHourDraft(event.target.value) })
                     }
                     onBlur={(event) =>
                       updateRow(index, { start: formatServiceHourDraft(event.target.value) })
                     }
-                    className="w-32"
+                    className="w-full min-w-0 px-1 text-center sm:w-24 sm:px-3"
                   />
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-1 py-2 text-center sm:px-3">
                   <Input
                     type="text"
                     inputMode="numeric"
                     value={row.end}
                     placeholder="00:00"
                     disabled={!editing || !row.active}
+                    onFocus={() => setSelectedRow(index)}
                     onChange={(event) =>
                       updateRow(index, { end: sanitizeServiceHourDraft(event.target.value) })
                     }
                     onBlur={(event) =>
                       updateRow(index, { end: formatServiceHourDraft(event.target.value) })
                     }
-                    className="w-32"
+                    className="w-full min-w-0 px-1 text-center sm:w-24 sm:px-3"
                   />
                 </td>
-                <td className="px-3 py-2 text-right">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={!editing}
-                    onClick={() => copyToAll(row)}
-                    title={`Copiar horário de ${row.day} para todos`}
-                    aria-label={`Copiar horário de ${row.day} para todos`}
-                    className="px-2"
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                    <span className="hidden xl:inline">Copiar para todos</span>
-                  </Button>
+                <td className="hidden px-1 py-2 text-center sm:table-cell sm:px-3">
+                  {editing && selectedRow === index && row.active && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => copyToAll(index)}
+                      title="Copiar para todos"
+                      aria-label="Copiar para todos"
+                      className="px-2"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -1364,7 +1478,7 @@ function RemoveConnectionModal({
     <Modal
       open={!!connection}
       onClose={onClose}
-      title="Remover conexao"
+      title="Remover conexão"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
@@ -1385,8 +1499,8 @@ function RemoveConnectionModal({
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           <p className="font-medium">{connection?.name}</p>
           <p className="mt-1">
-            A conexao sera indisponibilizada para novos envios e campanhas. Se o historico nao for
-            removido, as conversas ativas dessa instancia serao encerradas e mantidas no historico.
+            A conexao será indisponibilizada para novos envios e campanhas. Se o histórico não for
+            removido, as conversas ativas dessa instancia serão encerradas e mantidas no histórico.
           </p>
         </div>
         <div className="space-y-2">

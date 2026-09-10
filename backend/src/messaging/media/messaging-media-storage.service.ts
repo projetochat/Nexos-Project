@@ -34,7 +34,7 @@ export class MessagingMediaStorageService {
     }
   > {
     if (this.provider !== "local") {
-      throw new ServiceUnavailableException("Storage externo de mensagens nao configurado.");
+      throw new ServiceUnavailableException("Storage externo de mensagens não configurado.");
     }
     const declaredMimeType = header(input.req, "content-type").split(";")[0].trim().toLowerCase();
     const declaredSize = Number(
@@ -50,7 +50,7 @@ export class MessagingMediaStorageService {
       throw new UnsupportedMediaTypeException({
         statusCode: HttpStatus.UNSUPPORTED_MEDIA_TYPE,
         code: "MESSAGE_MEDIA_MIME_MISMATCH",
-        message: "Tipo real do arquivo nao confere com o declarado.",
+        message: "Tipo real do arquivo não confere com o declarado.",
       });
     }
     const checksum = createHash("sha256").update(body).digest("hex");
@@ -81,7 +81,7 @@ export class MessagingMediaStorageService {
     validatePolicy(input.messageType, mimeType, input.body.byteLength);
     const detected = detectMimeType(input.body, mimeType);
     if (detected && detected !== mimeType) {
-      throw new UnsupportedMediaTypeException("Tipo real do arquivo recebido nao confere.");
+      throw new UnsupportedMediaTypeException("Tipo real do arquivo recebido não confere.");
     }
     const checksum = createHash("sha256").update(input.body).digest("hex");
     const fileName = sanitizeFileName(input.fileName ?? `media-${randomUUID()}`);
@@ -143,7 +143,7 @@ function storageProvider() {
 function validatePolicy(type: MessageType, mimeType: string, sizeBytes: number) {
   const allowed = allowedMimeTypes(type);
   if (!allowed.has(mimeType))
-    throw new UnsupportedMediaTypeException("Tipo de midia nao permitido.");
+    throw new UnsupportedMediaTypeException("Tipo de mídia não permitido.");
   if (sizeBytes > maxSizeBytes(type))
     throw new PayloadTooLargeException("Arquivo excede o limite permitido.");
 }

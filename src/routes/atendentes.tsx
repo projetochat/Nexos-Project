@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Copy,
   Eye,
+  EyeOff,
   Pencil,
   Plus,
   Trash2,
@@ -180,7 +181,63 @@ function AtendentesPage() {
           </div>
         </Card>
 
-        <Card className="overflow-visible p-4 md:overflow-hidden md:rounded-lg md:p-0">
+        <div className="space-y-3 md:hidden">
+          {isLoading && (
+            <Card className="p-8 text-center text-sm text-muted-foreground">Carregando...</Card>
+          )}
+          {!isLoading &&
+            paginated.map((a) => {
+              const perfil = perfis.find((p) => p.id === a.perfilId);
+              return (
+                <Card key={a.id} className="p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar name={a.nome} src={a.avatarUrl} size={40} />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold">{a.nome}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {perfil?.name ?? "-"}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">{a.email}</p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDuplicating(a)}
+                        title="Duplicar"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditing(a)}
+                        title="Editar"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleting(a)}
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          {!isLoading && filtered.length === 0 && (
+            <Card className="p-8 text-center text-sm text-muted-foreground">Nenhum resultado.</Card>
+          )}
+        </div>
+
+        <Card className="hidden overflow-visible p-4 md:block md:overflow-hidden md:rounded-lg md:p-0">
           <table className="w-full table-fixed overflow-hidden rounded-lg text-sm">
             <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
               <tr>
@@ -366,6 +423,7 @@ function AtendenteForm({
 }) {
   const [form, setForm] = React.useState<Partial<Atendente>>({});
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [showPassword, setShowPassword] = React.useState(false);
   const [photoMenuOpen, setPhotoMenuOpen] = React.useState(false);
   const [cameraOpen, setCameraOpen] = React.useState(false);
   const [photoPreviewOpen, setPhotoPreviewOpen] = React.useState(false);
@@ -391,6 +449,7 @@ function AtendenteForm({
           },
     );
     setErrors({});
+    setShowPassword(false);
     setPhotoMenuOpen(false);
     setCameraOpen(false);
     setPhotoPreviewOpen(false);
@@ -424,11 +483,11 @@ function AtendenteForm({
     if (!form.nome || form.nome.trim().length < 3) errs.nome = "Informe o nome.";
     if (!form.perfilId) errs.perfilId = "Selecione um perfil.";
     if (!form.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email))
-      errs.email = "E-mail invalido.";
+      errs.email = "E-mail inválido.";
     if ((!initial || clone) && (!form.senha || form.senha.length < 6))
-      errs.senha = "Senha minima de 6 caracteres.";
+      errs.senha = "Senha mínima de 6 caracteres.";
     if (form.senha && form.senha.length > 0 && form.senha.length < 6)
-      errs.senha = "Senha minima de 6 caracteres.";
+      errs.senha = "Senha mínima de 6 caracteres.";
     if (Object.keys(errs).length) {
       setErrors(errs);
       toast.error("Verifique os campos.");
@@ -437,17 +496,15 @@ function AtendenteForm({
     onSubmit(form);
   };
 
+  const canShowPassword = !initial || clone || Boolean(form.senha);
+
   return (
     <>
       <Modal
         open={open}
         onClose={onClose}
         title={
-          initial && !clone
-            ? "Editar Atendente"
-            : clone
-              ? "Duplicar Atendente"
-              : "Cadastrar Atendente"
+          initial && !clone ? "Editar Atendente" : clone ? "Duplicar Atendente" : "Novo Atendente"
         }
         size="lg"
         footer={
@@ -582,12 +639,29 @@ function AtendenteForm({
                 )}
               </Field>
               <Field label={initial && !clone ? "Senha (deixe em branco para manter)" : "Senha *"}>
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  value={form.senha ?? ""}
-                  onChange={(e) => setForm({ ...form, senha: e.target.value })}
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    value={form.senha ?? ""}
+                    onChange={(e) => {
+                      if (initial && !clone && !e.target.value) setShowPassword(false);
+                      setForm({ ...form, senha: e.target.value });
+                    }}
+                    className={canShowPassword ? "pr-10" : ""}
+                  />
+                  {canShowPassword && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((current) => !current)}
+                      className="absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center text-muted-foreground transition hover:text-foreground"
+                      aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                      title={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  )}
+                </div>
                 {errors.senha && (
                   <span className="mt-1 block text-[11px] text-destructive">{errors.senha}</span>
                 )}

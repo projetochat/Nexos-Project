@@ -1,5 +1,14 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Building2, Clock, ListPlus, Plug, Shield, SlidersHorizontal, Users } from "lucide-react";
+import {
+  Building2,
+  Clock,
+  CreditCard,
+  ListPlus,
+  Plug,
+  Shield,
+  SlidersHorizontal,
+  Users,
+} from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { SectionHeader } from "@/components/ui-kit";
 
@@ -9,6 +18,7 @@ export const Route = createFileRoute("/configuracoes")({
 
 const TABS = [
   { to: "/configuracoes/empresa", label: "Empresa", icon: Building2 },
+  { to: "/configuracoes/financeiro", label: "Financeiro", icon: CreditCard },
   { to: "/configuracoes/geral", label: "Filas do Chat", icon: SlidersHorizontal },
   { to: "/configuracoes/usuarios", label: "Usuários", icon: Users },
   { to: "/configuracoes/permissoes", label: "Permissões", icon: Shield },

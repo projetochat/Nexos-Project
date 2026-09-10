@@ -32,6 +32,8 @@ import {
   ShieldCheck,
   Wifi,
   UsersRound,
+  User,
+  CalendarClock,
 } from "lucide-react";
 import { LogoMark, Avatar, Badge } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
@@ -100,6 +102,7 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
       { to: "/departamentos", label: "Departamentos", icon: Network },
       { to: "/etiquetas", label: "Etiquetas", icon: Tag },
       { to: "/mensagens-rapidas", label: "Mensagens Rápidas", icon: Zap },
+      { to: "/agendamentos", label: "Agendamentos", icon: CalendarClock },
       { to: "/campanhas", label: "Campanhas", icon: Megaphone },
     ],
   },
@@ -128,6 +131,7 @@ const NAV_PERMISSIONS: Record<string, string[]> = {
   "/departamentos": ["departments.read", "departments.manage"],
   "/etiquetas": ["chat.tags.use", "chat.tags.manage"],
   "/mensagens-rapidas": ["chat.quick_replies.read", "chat.quick_replies.manage"],
+  "/agendamentos": ["automations.read", "automations.manage"],
   "/campanhas": ["campaigns.read", "campaigns.manage"],
   "/filas": ["conversations.manage"],
   "/bi": ["crm.read", "conversations.read", "campaigns.read", "tickets.read"],
@@ -172,6 +176,7 @@ const LABELS: Record<string, string> = {
   atendentes: "Atendentes",
   departamentos: "Departamentos",
   etiquetas: "Etiquetas",
+  agendamentos: "Agendamentos",
   campanhas: "Campanhas",
   historico: "Histórico de Conversas",
   "mensagens-rapidas": "Mensagens Rápidas",
@@ -481,7 +486,7 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
             }}
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
           >
-            <Users className="h-4 w-4" /> Meu perfil
+            <User className="h-4 w-4" /> Meu Perfil
           </button>
           <button
             onClick={() => {
@@ -491,15 +496,6 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
           >
             <CircleQuestionMark className="h-4 w-4" /> Central de Ajuda
-          </button>
-          <button
-            onClick={() => {
-              setOpen(false);
-              navigate({ to: "/configuracoes" });
-            }}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
-          >
-            <Settings className="h-4 w-4" /> Configurações
           </button>
           <div className="my-1 h-px bg-border" />
           <button
@@ -583,7 +579,15 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         )}
       </nav>
       <div className={`shrink-0 border-t border-border ${collapsed ? "px-2" : "px-3"} py-3`}>
-        {sysNav.length > 0 && <NavSection title="Sistema" items={sysNav} collapsed={collapsed} />}
+        {sysNav.length > 0 && (
+          <div
+            className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}
+          >
+            {sysNav.map((item) => (
+              <NavLink key={item.to} item={item} collapsed={collapsed} />
+            ))}
+          </div>
+        )}
         {isOperator && (
           <div className="mt-3 border-t border-border pt-3">
             <SidebarBottomActions collapsed={collapsed} onToggle={onToggle} toggleOnly={false} />
@@ -641,7 +645,7 @@ function UserMenu() {
             }}
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
           >
-            <Users className="h-4 w-4" /> Meu perfil
+            <User className="h-4 w-4" /> Meu Perfil
           </button>
           <button
             onClick={() => {
@@ -651,15 +655,6 @@ function UserMenu() {
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
           >
             <CircleQuestionMark className="h-4 w-4" /> Central de Ajuda
-          </button>
-          <button
-            onClick={() => {
-              setOpen(false);
-              navigate({ to: "/configuracoes" });
-            }}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
-          >
-            <Settings className="h-4 w-4" /> Configurações
           </button>
           <div className="my-1 h-px bg-border" />
           <button
@@ -884,6 +879,8 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
 function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
   const role = useSession((s) => s.user?.role);
   const permissions = useSession((s) => s.user?.permissions);
+  const logout = useSession((s) => s.logout);
+  const navigate = useNavigate();
   const isOperator = role === "operator";
   const mainNav = isOperator ? filterForOperator(principalNav) : principalNav;
   const sysNav = isOperator ? filterForOperator(sistemaNav) : sistemaNav;
@@ -953,18 +950,28 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
             </div>
           )}
         </nav>
-        {sysNav.length > 0 && (
-          <div className="shrink-0 border-t border-border px-3 py-2">
-            <p className="mb-0.5 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Sistema
-            </p>
-            <div className="space-y-0.5 pl-3">
+        <div className="shrink-0 border-t border-border px-3 py-2">
+          {sysNav.length > 0 && (
+            <div className="space-y-0.5">
               {sysNav.map((item) => (
                 <MobileNavLink key={item.to} item={item} onClose={onClose} />
               ))}
             </div>
-          </div>
-        )}
+          )}
+          <button
+            type="button"
+            onClick={async () => {
+              await signOut();
+              logout();
+              onClose();
+              navigate({ to: "/login" });
+            }}
+            className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-destructive transition hover:bg-destructive/10"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            Sair
+          </button>
+        </div>
       </aside>
     </>
   );

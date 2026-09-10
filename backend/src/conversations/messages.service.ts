@@ -71,7 +71,7 @@ export class MessagesService {
           select: { id: true, createdAt: true },
         })
       : null;
-    if (query.cursor && !cursor) throw new BadRequestException("Cursor de mensagens invalido.");
+    if (query.cursor && !cursor) throw new BadRequestException("Cursor de mensagens inválido.");
 
     const items = await this.prisma.message.findMany({
       where: {
@@ -127,7 +127,7 @@ export class MessagesService {
         mediaFileName: true,
       },
     });
-    if (!message?.mediaStorageKey) throw new NotFoundException("Midia nao encontrada.");
+    if (!message?.mediaStorageKey) throw new NotFoundException("Mídia não encontrada.");
     return {
       body: await this.mediaStorage.readObject(message.mediaStorageKey),
       mimeType: message.mediaMimeType ?? "application/octet-stream",
@@ -234,7 +234,7 @@ export class MessagesService {
       },
       include,
     });
-    if (!conversation) throw new NotFoundException("Conversa nao encontrada.");
+    if (!conversation) throw new NotFoundException("Conversa não encontrada.");
     return conversation;
   }
 
@@ -260,7 +260,7 @@ export class MessagesService {
         (item) => item.departmentId === departmentId,
       );
       if (!inDepartment)
-        throw new BadRequestException("Atendente nao pertence ao departamento da conversa.");
+        throw new BadRequestException("Atendente não pertence ao departamento da conversa.");
     }
   }
 
@@ -268,7 +268,7 @@ export class MessagesService {
     if (current.roleKey === "tenant_admin") return;
     const allowed = await this.allowedDepartmentIds(this.prisma, current);
     if (!allowed.includes(departmentId)) {
-      throw new ForbiddenException("Departamento fora do escopo operacional do usuario.");
+      throw new ForbiddenException("Departamento fora do escopo operacional do usuário.");
     }
   }
 
@@ -309,7 +309,7 @@ export class MessagesService {
     current: AuthenticatedUser,
   ) {
     if (conversation.status === ConversationStatus.FECHADA) {
-      throw new BadRequestException("Conversa encerrada nao aceita novas mensagens.");
+      throw new BadRequestException("Conversa encerrada não aceita novas mensagens.");
     }
     if (conversation.status === ConversationStatus.AGUARDANDO) {
       throw new BadRequestException("Retome a conversa antes de enviar mensagem.");
@@ -319,7 +319,7 @@ export class MessagesService {
       throw new BadRequestException("Conversa precisa estar assumida antes do envio.");
     }
     if (conversation.assignedMembershipId !== current.membershipId) {
-      throw new ForbiddenException("Apenas o atendente responsavel pode enviar mensagens.");
+      throw new ForbiddenException("Apenas o atendente responsável pode enviar mensagens.");
     }
   }
 

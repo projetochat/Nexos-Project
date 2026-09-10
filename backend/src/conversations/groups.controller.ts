@@ -187,7 +187,7 @@ export class GroupsController {
       },
       include: groupInclude,
     });
-    if (!group) throw new NotFoundException("Grupo nao encontrado.");
+    if (!group) throw new NotFoundException("Grupo não encontrado.");
     return serializeGroup(group);
   }
 
@@ -207,7 +207,7 @@ export class GroupsController {
       },
     });
     if (!connection?.externalReference) {
-      throw new BadRequestException("Selecione uma instancia WhatsApp conectada.");
+      throw new BadRequestException("Selecione uma instância WhatsApp conectada.");
     }
 
     const contacts = await this.prisma.contact.findMany({
@@ -230,7 +230,7 @@ export class GroupsController {
     });
     const groupJid = result.groupJid;
     if (!groupJid)
-      throw new BadRequestException("Evolution nao retornou o identificador do grupo.");
+      throw new BadRequestException("Evolution não retornou o identificador do grupo.");
 
     const group = await this.prisma.$transaction(async (tx) => {
       const contact = await tx.contact.upsert({
@@ -516,12 +516,12 @@ export class GroupsController {
       },
       include: groupInclude,
     });
-    if (!group) throw new NotFoundException("Grupo nao encontrado.");
+    if (!group) throw new NotFoundException("Grupo não encontrado.");
     if (!group.externalChatId?.endsWith("@g.us") || !group.connection?.externalReference) {
-      throw new BadRequestException("Grupo sem instancia WhatsApp conectada.");
+      throw new BadRequestException("Grupo sem instância WhatsApp conectada.");
     }
     if (group.connection.status !== MessagingConnectionStatus.CONNECTED) {
-      throw new BadRequestException("A instancia do grupo precisa estar conectada.");
+      throw new BadRequestException("A instância do grupo precisa estar conectada.");
     }
     return group;
   }
@@ -537,7 +537,7 @@ export class GroupsController {
       },
       include: groupInclude,
     });
-    if (!group) throw new NotFoundException("Grupo nao encontrado.");
+    if (!group) throw new NotFoundException("Grupo não encontrado.");
     return serializeGroup(group);
   }
 }

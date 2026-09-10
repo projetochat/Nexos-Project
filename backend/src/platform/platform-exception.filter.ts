@@ -73,7 +73,7 @@ function mapPlatformError(error: unknown): {
         code,
         message: safeMessage(
           body.message,
-          "Nao foi possivel processar a requisicao de plataforma.",
+          "Não foi possível processar a requisição de plataforma.",
         ),
         details: body.details,
       };
@@ -82,14 +82,14 @@ function mapPlatformError(error: unknown): {
       return {
         status,
         code: "PLATFORM_RESOURCE_NOT_FOUND",
-        message: safeMessage(body.message, "Recurso do plano de controle nao encontrado."),
+        message: safeMessage(body.message, "Recurso do plano de controle não encontrado."),
       };
     }
     return {
       status,
       code:
         status === HttpStatus.BAD_REQUEST ? "PLATFORM_QUERY_INVALID" : "PLATFORM_UNEXPECTED_ERROR",
-      message: safeMessage(body.message, "Nao foi possivel processar a requisicao de plataforma."),
+      message: safeMessage(body.message, "Não foi possível processar a requisição de plataforma."),
     };
   }
 
@@ -106,7 +106,7 @@ function mapPlatformError(error: unknown): {
       return {
         status: HttpStatus.NOT_FOUND,
         code: "PLATFORM_RESOURCE_NOT_FOUND",
-        message: "Recurso do plano de controle nao encontrado.",
+        message: "Recurso do plano de controle não encontrado.",
       };
     }
     if (["P1000", "P1001", "P1002", "P1017"].includes(error.code)) {

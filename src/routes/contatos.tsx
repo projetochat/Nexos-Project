@@ -2043,7 +2043,7 @@ function AgendaImportPreviewModal({
       {
         key: "invalid_phone",
         label: "Telefone inválido",
-        reasons: ["Telefone invalido"],
+        reasons: ["Telefone inválido"],
       },
     ],
     [],
@@ -2078,7 +2078,7 @@ function AgendaImportPreviewModal({
     () =>
       ignoredItems
         .filter((item) =>
-          ["Contato ja cadastrado ativo", "Contato já cadastrado ativo"].includes(item.reason),
+          ["Contato já cadastrado ativo", "Contato já cadastrado ativo"].includes(item.reason),
         )
         .filter((item) => item.normalizedPhone)
         .map((item) => ({
@@ -2820,11 +2820,11 @@ export function ContactFormModal({
     const errs: Record<string, string> = {};
     if (!nome.trim() || nome.trim().length < 2) errs.nome = "Informe o nome.";
     if (!isValidPhoneForCountry(telefone, countryCode)) errs.telefone = "WhatsApp inválido.";
-    if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = "E-mail invalido.";
+    if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = "E-mail inválido.";
     const normalizedCustomFields = normalizeCustomFieldValues(customFields, customFieldDefinitions);
     for (const field of customFieldDefinitions) {
       if (field.required && !String(normalizedCustomFields[field.id] ?? "").trim())
-        errs[`custom_${field.id}`] = "Campo obrigatorio.";
+        errs[`custom_${field.id}`] = "Campo obrigatório.";
     }
     if (Object.keys(errs).length) {
       setErrors(errs);
@@ -3545,7 +3545,7 @@ function DepartmentFormModal({
   const save = async () => {
     if (!form.name || form.name.trim().length < 2) {
       setError("Informe o nome.");
-      toast.error("Nome obrigatorio.");
+      toast.error("Nome obrigatório.");
       return;
     }
     await onSubmit({ ...form, name: form.name.trim() });
@@ -5418,7 +5418,7 @@ function CustomerFormModal({
   const save = async () => {
     const errs: Record<string, string> = {};
     if (!form.nome || form.nome.trim().length < 2) errs.nome = "Informe o nome.";
-    if (form.email?.trim() && !isValidEmail(form.email)) errs.email = "E-mail invalido.";
+    if (form.email?.trim() && !isValidEmail(form.email)) errs.email = "E-mail inválido.";
     if (Object.keys(errs).length) {
       setErrors(errs);
       toast.error("Preencha os campos obrigatórios.");

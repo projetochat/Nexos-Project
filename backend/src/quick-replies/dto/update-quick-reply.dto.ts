@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString, IsUUID, Length } from "class-validator";
+import { IsBoolean, IsOptional, IsString, IsUUID, Length, Matches } from "class-validator";
 
 export class UpdateQuickReplyDto {
   @IsOptional()
@@ -9,6 +9,7 @@ export class UpdateQuickReplyDto {
   @IsOptional()
   @IsString()
   @Length(1, 40)
+  @Matches(/^\p{L}+$/u, { message: "O atalho deve conter somente letras." })
   shortcut?: string;
 
   @IsOptional()

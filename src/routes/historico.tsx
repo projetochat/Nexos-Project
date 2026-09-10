@@ -102,7 +102,7 @@ function HistoricoPage() {
       <div className="flex h-full min-h-0 w-full flex-col gap-4 p-4 md:p-6">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-lg font-semibold">Historico de conversas</h1>
+            <h1 className="text-lg font-semibold">Histórico de conversas</h1>
             <p className="text-xs text-muted-foreground">
               Consulta operacional de conversas encerradas por periodo, protocolo, contato,
               atendente e departamento.
@@ -151,7 +151,13 @@ function HistoricoPage() {
                   <li key={conversation.id}>
                     <button
                       type="button"
-                      onClick={() => setActiveId(conversation.id)}
+                      onDoubleClick={() => setActiveId(conversation.id)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") return;
+                        event.preventDefault();
+                        setActiveId(conversation.id);
+                      }}
+                      title="Clique duas vezes para visualizar a conversa"
                       className={`flex w-full items-start gap-3 border-b border-border/60 px-3 py-3 text-left transition ${
                         selected ? "bg-surface-2" : "hover:bg-surface-1"
                       }`}
@@ -216,7 +222,7 @@ function HistoricoPage() {
                       type="button"
                       onClick={() => active.contact && setPanelOpen((current) => !current)}
                       aria-expanded={panelOpen}
-                      aria-label="Abrir informacoes do contato"
+                      aria-label="Abrir informações do contato"
                       className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1 py-0.5 text-left transition hover:bg-surface-2/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
                     >
                       <Avatar name={active.contact?.nome ?? "?"} size={40} />
@@ -284,7 +290,7 @@ function HistoricoPage() {
               </>
             ) : (
               <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
-                Selecione uma conversa para visualizar o historico.
+                Selecione uma conversa para visualizar o histórico.
               </div>
             )}
           </section>

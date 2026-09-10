@@ -62,6 +62,7 @@ export class DepartmentsController {
   @Post()
   @RequirePermissions("departments.manage")
   async create(@Body() dto: CreateDepartmentDto, @CurrentUser() current: AuthenticatedUser) {
+    const name = dto.name.trim();
     const department = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
@@ -72,10 +73,11 @@ export class DepartmentsController {
         "maxDepartments",
         await tx.department.count({ where: { tenantId: current.tenantId, active: true } }),
       );
+      await this.ensureNameAvailable(tx, current.tenantId, name);
       return tx.department.create({
         data: {
           tenantId: current.tenantId,
-          name: dto.name.trim(),
+          name,
           description: dto.description?.trim() || null,
           color: dto.color ?? "#3B82F6",
           active: dto.active ?? true,
@@ -92,15 +94,20 @@ export class DepartmentsController {
     @Body() dto: UpdateDepartmentDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    await this.findDepartmentOrThrow(id, current.tenantId);
-    const department = await this.prisma.department.update({
-      where: { id },
-      data: {
-        name: dto.name?.trim(),
-        description: dto.description === undefined ? undefined : dto.description.trim() || null,
-        color: dto.color,
-        active: dto.active,
-      },
+    const existing = await this.findDepartmentOrThrow(id, current.tenantId);
+    const department = await this.prisma.$transaction(async (tx) => {
+      if (dto.name !== undefined) {
+        await this.ensureNameAvailable(tx, current.tenantId, dto.name.trim(), existing.id);
+      }
+      return tx.department.update({
+        where: { id },
+        data: {
+          name: dto.name?.trim(),
+          description: dto.description === undefined ? undefined : dto.description.trim() || null,
+          color: dto.color,
+          active: dto.active,
+        },
+      });
     });
     return this.serialize(department);
   }
@@ -152,8 +159,29 @@ export class DepartmentsController {
 
   private async findDepartmentOrThrow(id: string, tenantId: string) {
     const department = await this.prisma.department.findFirst({ where: { id, tenantId } });
-    if (!department) throw new NotFoundException("Departamento nao encontrado.");
+    if (!department) throw new NotFoundException("Departamento não encontrado.");
     return department;
+  }
+
+  private async ensureNameAvailable(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    name: string,
+    excludeDepartmentId?: string,
+  ) {
+    const normalizedName = normalizeDepartmentName(name);
+    const departments = await tx.department.findMany({
+      where: { tenantId },
+      select: { id: true, name: true },
+    });
+    const duplicate = departments.find(
+      (department) =>
+        department.id !== excludeDepartmentId &&
+        normalizeDepartmentName(department.name) === normalizedName,
+    );
+    if (duplicate) {
+      throw new BadRequestException("Já existe um departamento com este nome.");
+    }
   }
 
   private serialize(department: {
@@ -177,4 +205,13 @@ export class DepartmentsController {
       updatedAt: department.updatedAt.toISOString(),
     };
   }
+}
+
+function normalizeDepartmentName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("pt-BR");
 }

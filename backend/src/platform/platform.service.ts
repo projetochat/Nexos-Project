@@ -184,7 +184,7 @@ export class PlatformService {
         auditLogs: { take: 20, orderBy: { createdAt: "desc" } },
       },
     });
-    if (!tenant) throw new NotFoundException("Tenant nao encontrado.");
+    if (!tenant) throw new NotFoundException("Tenant não encontrado.");
     return {
       ...serializeTenant(tenant),
       usage: await this.entitlements.getUsage(id),
@@ -206,6 +206,7 @@ export class PlatformService {
           status: "TRIAL",
           timezone: dto.timezone ?? "America/Sao_Paulo",
           locale: dto.locale ?? "pt-BR",
+          technicalEmail: dto.admin.email.toLowerCase().trim(),
           activatedAt: new Date(),
         },
       });
@@ -349,7 +350,7 @@ export class PlatformService {
         _count: { select: { subscriptions: true } },
       },
     });
-    if (!plan) throw new NotFoundException("Plano nao encontrado.");
+    if (!plan) throw new NotFoundException("Plano não encontrado.");
     return plan;
   }
 
@@ -379,7 +380,7 @@ export class PlatformService {
 
   async updatePlan(id: string, dto: UpdatePlanDto, current: AuthenticatedUser) {
     const existing = await this.prisma.plan.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException("Plano nao encontrado.");
+    if (!existing) throw new NotFoundException("Plano não encontrado.");
     const plan = await this.prisma.plan.update({
       where: { id },
       data: {
@@ -502,7 +503,7 @@ export class PlatformService {
         invoices: { orderBy: { createdAt: "desc" }, take: 20 },
       },
     });
-    if (!subscription) throw new NotFoundException("Assinatura nao encontrada.");
+    if (!subscription) throw new NotFoundException("Assinatura não encontrada.");
     return subscription;
   }
 
@@ -511,7 +512,7 @@ export class PlatformService {
       where: { id },
       include: { plan: true },
     });
-    if (!existing) throw new NotFoundException("Assinatura nao encontrada.");
+    if (!existing) throw new NotFoundException("Assinatura não encontrada.");
     let nextPlan = existing.plan;
     if (dto.planId && dto.planId !== existing.planId) {
       nextPlan = await this.activePlanOrThrow(dto.planId);
@@ -550,7 +551,7 @@ export class PlatformService {
 
   async cancelSubscription(id: string, dto: CancelSubscriptionDto, current: AuthenticatedUser) {
     const existing = await this.prisma.tenantSubscription.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException("Assinatura nao encontrada.");
+    if (!existing) throw new NotFoundException("Assinatura não encontrada.");
     const updated = await this.prisma.tenantSubscription.update({
       where: { id },
       data: dto.cancelAtPeriodEnd
@@ -609,7 +610,7 @@ export class PlatformService {
       where: { id },
       include: { tenant: true, subscription: { include: { plan: true } } },
     });
-    if (!invoice) throw new NotFoundException("Fatura nao encontrada.");
+    if (!invoice) throw new NotFoundException("Fatura não encontrada.");
     return invoice;
   }
 
@@ -699,7 +700,7 @@ export class PlatformService {
         tenant: { select: { id: true, slug: true, name: true } },
       },
     });
-    if (!log) throw new NotFoundException("Evento de auditoria nao encontrado.");
+    if (!log) throw new NotFoundException("Evento de auditoria não encontrado.");
     return log;
   }
 
@@ -713,7 +714,7 @@ export class PlatformService {
       },
       include: { tenant: true },
     });
-    if (!membership) throw new BadRequestException("Membership invalida para impersonacao.");
+    if (!membership) throw new BadRequestException("Membership invalida para impersonação.");
     const ttl = readPositiveInteger(this.config, "NEXOS_IMPERSONATION_TTL_MINUTES", 15);
     const session = await this.prisma.$transaction(async (tx) => {
       await tx.impersonationSession.updateMany({
@@ -751,7 +752,7 @@ export class PlatformService {
     const existing = await this.prisma.impersonationSession.findFirst({
       where: { id, actorUserId: current.userId },
     });
-    if (!existing) throw new NotFoundException("Sessao de impersonacao nao encontrada.");
+    if (!existing) throw new NotFoundException("Sessão de impersonação não encontrada.");
     const session = await this.prisma.impersonationSession.update({
       where: { id: existing.id },
       data: { status: "STOPPED", stoppedAt: new Date() },
@@ -845,7 +846,7 @@ export class PlatformService {
 
   private async requireTenant(id: string) {
     const tenant = await this.prisma.tenant.findUnique({ where: { id } });
-    if (!tenant) throw new NotFoundException("Tenant nao encontrado.");
+    if (!tenant) throw new NotFoundException("Tenant não encontrado.");
     return tenant;
   }
 

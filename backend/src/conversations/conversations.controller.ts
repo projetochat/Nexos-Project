@@ -134,7 +134,7 @@ export class ConversationsController {
     const assignToSelf = dto.assignToSelf ?? false;
     if (assignToSelf && !connection) {
       throw new BadRequestException(
-        "Nenhuma instancia WhatsApp conectada para iniciar a conversa.",
+        "Nenhuma instância WhatsApp conectada para iniciar a conversa.",
       );
     }
     const status = assignToSelf ? ConversationStatus.EM_ANDAMENTO : ConversationStatus.ABERTA;
@@ -399,7 +399,7 @@ export class ConversationsController {
       conversation.status === ConversationStatus.FECHADA &&
       target !== ConversationStatus.FECHADA
     ) {
-      throw new BadRequestException("Conversa encerrada nao pode ser reaberta por este endpoint.");
+      throw new BadRequestException("Conversa encerrada não pode ser reaberta por este endpoint.");
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -609,7 +609,7 @@ export class ConversationsController {
       where: { AND: [where, { id }] },
       include: conversationInclude,
     });
-    if (!conversation) throw new NotFoundException("Conversa nao encontrada.");
+    if (!conversation) throw new NotFoundException("Conversa não encontrada.");
     return conversation;
   }
 
@@ -685,7 +685,7 @@ export class ConversationsController {
     if (current.roleKey === "tenant_admin") return;
     const allowed = await this.allowedDepartmentIds(current);
     if (!allowed.includes(departmentId)) {
-      throw new ForbiddenException("Departamento fora do escopo operacional do usuario.");
+      throw new ForbiddenException("Departamento fora do escopo operacional do usuário.");
     }
   }
 
@@ -730,7 +730,7 @@ export class ConversationsController {
         (item) => item.departmentId === departmentId,
       );
       if (!inDepartment)
-        throw new BadRequestException("Atendente nao pertence ao departamento da conversa.");
+        throw new BadRequestException("Atendente não pertence ao departamento da conversa.");
     }
   }
 
@@ -932,7 +932,7 @@ function assignmentSystemNote(
   }
   if (before.status === ConversationStatus.AGUARDANDO) return "Conversa retomada.";
   if (targetName) return `Conversa transferida para ${targetName}.`;
-  return "Responsavel pela conversa atualizado.";
+  return "Responsável pela conversa atualizado.";
 }
 
 function statusSystemNote(status: ConversationStatus) {

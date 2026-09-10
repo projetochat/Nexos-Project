@@ -470,6 +470,27 @@ export type ApiMessagingConnection = {
   qrCodeBase64?: string | null;
 };
 
+export type ApiCompanyProfile = {
+  name: string;
+  legalName: string | null;
+  document: string | null;
+  timezone: string;
+  locale: string;
+  accessEmail: string | null;
+  responsibleName: string | null;
+};
+
+export type ApiFinancialPayment = {
+  paymentId: string;
+  subscriptionId: string;
+  service: string;
+  referenceAt: string;
+  paidAt: string | null;
+  amountCents: number;
+  currency: string;
+  status: "DRAFT" | "OPEN" | "PAID" | "VOID" | "OVERDUE";
+};
+
 export type ApiTicketStatus =
   | "ABERTO"
   | "EM_ANDAMENTO"
@@ -611,7 +632,16 @@ export type ApiCampaignRecipient = {
   updatedAt: string;
 };
 
-export type OperationalPeriod = "today" | "yesterday" | "7d" | "30d" | "custom";
+export type OperationalPeriod =
+  | "today"
+  | "yesterday"
+  | "week"
+  | "month"
+  | "previous_month"
+  | "year"
+  | "7d"
+  | "30d"
+  | "custom";
 
 export type OperationalFilters = {
   period: OperationalPeriod;
@@ -622,6 +652,7 @@ export type OperationalFilters = {
   assignedMembershipId?: string;
   status?: ApiConversationStatus;
   customerId?: string;
+  connectionId?: string;
   contactId?: string;
 };
 
@@ -636,6 +667,14 @@ export type ApiOperationsChartItem = {
   cor?: string;
   total: number;
   resolvidas?: number;
+  percentual?: number;
+};
+
+export type ApiOperationsHourlyMessage = {
+  hora: string;
+  recebidas: number;
+  enviadas: number;
+  total: number;
 };
 
 export type ApiOperationsDashboard = {
@@ -646,6 +685,8 @@ export type ApiOperationsDashboard = {
     byAgent: ApiOperationsChartItem[];
     byCustomer: ApiOperationsChartItem[];
     byConnection: ApiOperationsChartItem[];
+    byTag: ApiOperationsChartItem[];
+    messagesByHour: ApiOperationsHourlyMessage[];
   };
   recent: ApiConversation[];
 };
@@ -840,10 +881,18 @@ async function fetchNexos(path: string, init: RequestInit = {}, attachAuthorizat
   }
   const token = attachAuthorization ? localStorage.getItem(ACCESS_KEY) : null;
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  return fetch(`${nexosApiBaseUrl()}${path}`, {
-    ...init,
-    headers,
-  });
+  try {
+    return await fetch(`${nexosApiBaseUrl()}${path}`, {
+      ...init,
+      headers,
+    });
+  } catch {
+    throw new NexosApiError(
+      "Não foi possível conectar ao sistema. Verifique sua internet e tente novamente.",
+      0,
+      "NETWORK_ERROR",
+    );
+  }
 }
 
 export async function healthCheck() {
@@ -857,6 +906,8 @@ export async function healthCheck() {
 }
 
 export const organizationApi = {
+  getCompany: () => apiRequest<ApiCompanyProfile>("/company"),
+  listFinancialPayments: () => apiRequest<ApiFinancialPayment[]>("/company/financial"),
   listDepartments: () => apiRequest<ApiDepartment[]>("/departments"),
   createDepartment: (data: { name: string; description?: string | null; color?: string }) =>
     apiRequest<ApiDepartment>("/departments", { method: "POST", body: JSON.stringify(data) }),
@@ -1887,33 +1938,30 @@ async function readError(response: Response) {
       error?: string;
       details?: unknown;
     };
-    const codeMessage = nexosMessageFromCode(data.code);
-    const message = Array.isArray(data.message)
-      ? data.message.join(", ")
-      : data.message ||
-        codeMessage ||
-        data.error ||
-        authMessageFromStatus(response.status, data.code);
-    if (message) return new NexosApiError(message, response.status, data.code, data.details);
-    const mapped = authMessageFromStatus(response.status, data.code);
-    if (mapped) return new NexosApiError(mapped, response.status, data.code, data.details);
-    return new NexosApiError("Erro na API Nexos.", response.status, data.code, data.details);
+    const candidate = Array.isArray(data.message) ? data.message.join(", ") : data.message;
+    const message =
+      (isHelpfulApiMessage(candidate) && candidate) ||
+      nexosMessageFromCode(data.code) ||
+      apiMessageFromStatus(response.status, data.code);
+    return new NexosApiError(message, response.status, data.code, data.details);
   } catch {
-    return new NexosApiError("Erro na API Nexos.", response.status);
+    return new NexosApiError(apiMessageFromStatus(response.status), response.status);
   }
 }
 
 async function authErrorFromResponse(response: Response) {
   try {
     const data = (await response.json()) as { code?: string; message?: string | string[] };
+    const candidate = Array.isArray(data.message) ? data.message.join(", ") : data.message;
     return new Error(
       authMessageFromStatus(response.status, data.code) ??
-        (Array.isArray(data.message) ? data.message.join(", ") : data.message) ??
-        "Ocorreu um erro interno ao autenticar.",
+        (isHelpfulApiMessage(candidate) ? candidate : null) ??
+        "Não foi possível concluir a autenticação. Tente novamente em alguns instantes.",
     );
   } catch {
     return new Error(
-      authMessageFromStatus(response.status) ?? "Ocorreu um erro interno ao autenticar.",
+      authMessageFromStatus(response.status) ??
+        "Não foi possível concluir a autenticação. Tente novamente em alguns instantes.",
     );
   }
 }
@@ -1932,14 +1980,44 @@ function authMessageFromStatus(status: number, code?: string) {
   if (status === 401) return "E-mail ou senha invalidos.";
   if (status === 403) {
     if (code === "USER_WITHOUT_ACTIVE_MEMBERSHIP") {
-      return "Seu usuario nao possui acesso a nenhuma organizacao ativa.";
+      return "Seu usuário não possui acesso a nenhuma organização ativa.";
     }
-    if (code === "TENANT_INACTIVE") return "A organizacao vinculada ao usuario esta inativa.";
-    return "Seu usuario nao possui permissao para acessar este ambiente.";
+    if (code === "TENANT_INACTIVE") return "A organização vinculada ao usuário está inativa.";
+    return "Seu usuário não possui permissão para acessar este ambiente.";
   }
   if (status === 429) return "Muitas tentativas de acesso. Aguarde e tente novamente.";
-  if (status >= 500) return "Ocorreu um erro interno ao autenticar.";
+  if (status >= 500)
+    return "Não foi possível concluir a autenticação. Tente novamente em alguns instantes.";
   return null;
+}
+
+function apiMessageFromStatus(status: number, code?: string) {
+  if (status === 0 || code === "NETWORK_ERROR") {
+    return "Não foi possível conectar ao sistema. Verifique sua internet e tente novamente.";
+  }
+  if (status === 400 || status === 422) {
+    return "Não foi possível concluir a ação. Revise os dados informados e tente novamente.";
+  }
+  if (status === 401) return "Sua sessão expirou. Entre novamente para continuar.";
+  if (status === 403) return "Você não possui permissão para realizar esta ação.";
+  if (status === 404) return "O registro não foi encontrado ou não está mais disponível.";
+  if (status === 409) return "Já existe um registro com essas informações.";
+  if (status === 413) return "O arquivo ou conteúdo enviado é maior do que o permitido.";
+  if (status === 429)
+    return "Muitas solicitações em pouco tempo. Aguarde alguns instantes e tente novamente.";
+  if (status === 502 || status === 503 || status === 504) {
+    return "O serviço está temporariamente indisponível. Tente novamente em alguns instantes.";
+  }
+  if (status >= 500)
+    return "Não foi possível concluir a ação agora. Tente novamente em alguns instantes.";
+  return "Não foi possível concluir a solicitação. Tente novamente.";
+}
+
+function isHelpfulApiMessage(message: unknown): message is string {
+  if (typeof message !== "string" || !message.trim()) return false;
+  return !/(internal( server)? error|erro interno|unexpected error|unknown error|prisma|stack trace)/i.test(
+    message,
+  );
 }
 
 async function refreshAccessToken() {

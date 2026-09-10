@@ -84,7 +84,7 @@ function TenantDetailPage() {
       load();
     } catch (err) {
       setError((err as Error).message);
-      toast.error("Operacao recusada pela Platform API");
+      toast.error("Operação recusada pela Platform API");
     } finally {
       setBusy(null);
     }
@@ -115,7 +115,7 @@ function TenantDetailPage() {
       navigate({ to: "/" });
     } catch (err) {
       setError((err as Error).message);
-      toast.error("Impersonacao nao iniciada");
+      toast.error("Impersonação não iniciada");
     } finally {
       setBusy(null);
     }
@@ -167,13 +167,13 @@ function TenantDetailPage() {
         }
       />
       {error && (
-        <Alert tone="destructive" title="Operacao recusada">
+        <Alert tone="destructive" title="Operação recusada">
           {error}
         </Alert>
       )}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-4">
-        <Metric label="Usuarios ativos" value={tenant.usage.activeUsers} />
+        <Metric label="Usuários ativos" value={tenant.usage.activeUsers} />
         <Metric label="Departamentos" value={tenant.usage.departments} />
         <Metric label="Connections" value={tenant.usage.connections} />
         <Metric label="Storage" value={`${Math.ceil(tenant.usage.storageBytes / 1024)} KB`} />
@@ -188,8 +188,8 @@ function TenantDetailPage() {
               <Info label="Nome exibido" value={tenant.detail.displayName ?? tenant.name} />
               <Info label="Timezone" value={tenant.detail.timezone} />
               <Info label="Locale" value={tenant.detail.locale} />
-              <Info label="Billing" value={tenant.detail.billingEmail ?? "Nao informado"} />
-              <Info label="Tecnico" value={tenant.detail.technicalEmail ?? "Nao informado"} />
+              <Info label="Billing" value={tenant.detail.billingEmail ?? "Não informado"} />
+              <Info label="Técnico" value={tenant.detail.technicalEmail ?? "Não informado"} />
             </div>
           </Card>
 
@@ -218,7 +218,7 @@ function TenantDetailPage() {
             <h2 className="text-sm font-semibold">Usuarios e departamentos</h2>
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
               <List
-                title="Usuarios"
+                title="Usuários"
                 items={tenant.detail.users.map((item) => `${item.user.name} - ${item.role.name}`)}
               />
               <List
@@ -243,7 +243,7 @@ function TenantDetailPage() {
                 title="Faturas"
                 items={tenant.detail.invoices.map((item) => `${item.number} - ${item.status}`)}
               />
-              <Info label="Campanhas no periodo" value={String(tenant.usage.campaignsThisPeriod)} />
+              <Info label="Campanhas no período" value={String(tenant.usage.campaignsThisPeriod)} />
               <Info label="Tickets" value={String(tenant.usage.tickets)} />
             </div>
           </Card>
@@ -273,13 +273,13 @@ function TenantDetailPage() {
 
         <div className="space-y-6">
           <Card>
-            <h2 className="text-sm font-semibold">Governanca</h2>
+            <h2 className="text-sm font-semibold">Governança</h2>
             <div className="mt-4 space-y-3">
-              <Field label="Motivo obrigatorio">
+              <Field label="Motivo obrigatório">
                 <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
               </Field>
-              <Alert tone="warning" title="Impacto da suspensao">
-                Login e sessoes operacionais sao bloqueados. Dados sao preservados e webhooks
+              <Alert tone="warning" title="Impacto da suspensão">
+                Login e sessões operacionais sao bloqueados. Dados sao preservados e webhooks
                 continuam observaveis.
               </Alert>
               <Field label="Digite SUSPENDER para suspender">
@@ -303,8 +303,8 @@ function TenantDetailPage() {
           <Card>
             <h2 className="text-sm font-semibold">Termination</h2>
             <div className="mt-4 space-y-3">
-              <Alert tone="destructive" title="Operacao de alto risco">
-                Nao faz hard delete, mas bloqueia login e operacoes. Exige tenant suspenso, motivo e
+              <Alert tone="destructive" title="Operação de alto risco">
+                Não faz hard delete, mas bloqueia login e operações. Exige tenant suspenso, motivo e
                 slug exato.
               </Alert>
               <Field label="Digite o slug do tenant">
@@ -318,7 +318,7 @@ function TenantDetailPage() {
                   className="mt-1"
                 />
                 <span>
-                  Confirmo ciencia de que os dados serao preservados e o login sera bloqueado.
+                  Confirmo ciência de que os dados serão preservados e o login será bloqueado.
                 </span>
               </label>
               <Button
@@ -341,7 +341,10 @@ function TenantDetailPage() {
             <div className="mt-4 space-y-3">
               <Field label="Membership autorizada">
                 <Select value={membershipId} onChange={(e) => setMembershipId(e.target.value)}>
-                  {sortByOptionLabel(tenant.detail.users, (item) => `${item.user.name} ${item.role.name}`).map((item) => (
+                  {sortByOptionLabel(
+                    tenant.detail.users,
+                    (item) => `${item.user.name} ${item.role.name}`,
+                  ).map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.user.name} - {item.role.name}
                     </option>
@@ -415,5 +418,5 @@ function List({ title, items }: { title: string; items: string[] }) {
 }
 
 function formatDate(value: string | null) {
-  return value ? fmtDate(new Date(value).getTime()) : "Nao registrado";
+  return value ? fmtDate(new Date(value).getTime()) : "Não registrado";
 }

@@ -34,6 +34,7 @@ import { Route as AtendimentoRouteImport } from './routes/atendimento'
 import { Route as AtendentesRouteImport } from './routes/atendentes'
 import { Route as AjudaRouteImport } from './routes/ajuda'
 import { Route as AgenteIaRouteImport } from './routes/agente-ia'
+import { Route as AgendamentosRouteImport } from './routes/agendamentos'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as InboxIndexRouteImport } from './routes/inbox.index'
@@ -48,6 +49,7 @@ import { Route as ConfiguracoesMensagensRouteImport } from './routes/configuraco
 import { Route as ConfiguracoesIntegracoesRouteImport } from './routes/configuracoes.integracoes'
 import { Route as ConfiguracoesHorariosRouteImport } from './routes/configuracoes.horarios'
 import { Route as ConfiguracoesGeralRouteImport } from './routes/configuracoes.geral'
+import { Route as ConfiguracoesFinanceiroRouteImport } from './routes/configuracoes.financeiro'
 import { Route as ConfiguracoesEmpresaRouteImport } from './routes/configuracoes.empresa'
 import { Route as ConfiguracoesCamposContatoRouteImport } from './routes/configuracoes.campos-contato'
 import { Route as AtendimentoPerfilRouteImport } from './routes/atendimento.perfil'
@@ -192,6 +194,11 @@ const AgenteIaRoute = AgenteIaRouteImport.update({
   path: '/agente-ia',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AgendamentosRoute = AgendamentosRouteImport.update({
+  id: '/agendamentos',
+  path: '/agendamentos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -261,6 +268,11 @@ const ConfiguracoesHorariosRoute = ConfiguracoesHorariosRouteImport.update({
 const ConfiguracoesGeralRoute = ConfiguracoesGeralRouteImport.update({
   id: '/geral',
   path: '/geral',
+  getParentRoute: () => ConfiguracoesRoute,
+} as any)
+const ConfiguracoesFinanceiroRoute = ConfiguracoesFinanceiroRouteImport.update({
+  id: '/financeiro',
+  path: '/financeiro',
   getParentRoute: () => ConfiguracoesRoute,
 } as any)
 const ConfiguracoesEmpresaRoute = ConfiguracoesEmpresaRouteImport.update({
@@ -358,6 +370,7 @@ const AdminEmpresasTenantIdRoute = AdminEmpresasTenantIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/agendamentos': typeof AgendamentosRoute
   '/agente-ia': typeof AgenteIaRoute
   '/ajuda': typeof AjudaRoute
   '/atendentes': typeof AtendentesRoute
@@ -400,6 +413,7 @@ export interface FileRoutesByFullPath {
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
   '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
+  '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/horarios': typeof ConfiguracoesHorariosRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
@@ -416,6 +430,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/agendamentos': typeof AgendamentosRoute
   '/agente-ia': typeof AgenteIaRoute
   '/ajuda': typeof AjudaRoute
   '/atendentes': typeof AtendentesRoute
@@ -455,6 +470,7 @@ export interface FileRoutesByTo {
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
   '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
+  '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/horarios': typeof ConfiguracoesHorariosRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
@@ -473,6 +489,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/agendamentos': typeof AgendamentosRoute
   '/agente-ia': typeof AgenteIaRoute
   '/ajuda': typeof AjudaRoute
   '/atendentes': typeof AtendentesRoute
@@ -515,6 +532,7 @@ export interface FileRoutesById {
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
   '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
+  '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/horarios': typeof ConfiguracoesHorariosRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
@@ -534,6 +552,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/agendamentos'
     | '/agente-ia'
     | '/ajuda'
     | '/atendentes'
@@ -576,6 +595,7 @@ export interface FileRouteTypes {
     | '/atendimento/perfil'
     | '/configuracoes/campos-contato'
     | '/configuracoes/empresa'
+    | '/configuracoes/financeiro'
     | '/configuracoes/geral'
     | '/configuracoes/horarios'
     | '/configuracoes/integracoes'
@@ -592,6 +612,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/agendamentos'
     | '/agente-ia'
     | '/ajuda'
     | '/atendentes'
@@ -631,6 +652,7 @@ export interface FileRouteTypes {
     | '/atendimento/perfil'
     | '/configuracoes/campos-contato'
     | '/configuracoes/empresa'
+    | '/configuracoes/financeiro'
     | '/configuracoes/geral'
     | '/configuracoes/horarios'
     | '/configuracoes/integracoes'
@@ -648,6 +670,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/agendamentos'
     | '/agente-ia'
     | '/ajuda'
     | '/atendentes'
@@ -690,6 +713,7 @@ export interface FileRouteTypes {
     | '/atendimento/perfil'
     | '/configuracoes/campos-contato'
     | '/configuracoes/empresa'
+    | '/configuracoes/financeiro'
     | '/configuracoes/geral'
     | '/configuracoes/horarios'
     | '/configuracoes/integracoes'
@@ -708,6 +732,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  AgendamentosRoute: typeof AgendamentosRoute
   AgenteIaRoute: typeof AgenteIaRoute
   AjudaRoute: typeof AjudaRoute
   AtendentesRoute: typeof AtendentesRoute
@@ -912,6 +937,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AgenteIaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/agendamentos': {
+      id: '/agendamentos'
+      path: '/agendamentos'
+      fullPath: '/agendamentos'
+      preLoaderRoute: typeof AgendamentosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin': {
       id: '/admin'
       path: '/admin'
@@ -1008,6 +1040,13 @@ declare module '@tanstack/react-router' {
       path: '/geral'
       fullPath: '/configuracoes/geral'
       preLoaderRoute: typeof ConfiguracoesGeralRouteImport
+      parentRoute: typeof ConfiguracoesRoute
+    }
+    '/configuracoes/financeiro': {
+      id: '/configuracoes/financeiro'
+      path: '/financeiro'
+      fullPath: '/configuracoes/financeiro'
+      preLoaderRoute: typeof ConfiguracoesFinanceiroRouteImport
       parentRoute: typeof ConfiguracoesRoute
     }
     '/configuracoes/empresa': {
@@ -1206,6 +1245,7 @@ const AtendimentoRouteWithChildren = AtendimentoRoute._addFileChildren(
 interface ConfiguracoesRouteChildren {
   ConfiguracoesCamposContatoRoute: typeof ConfiguracoesCamposContatoRoute
   ConfiguracoesEmpresaRoute: typeof ConfiguracoesEmpresaRoute
+  ConfiguracoesFinanceiroRoute: typeof ConfiguracoesFinanceiroRoute
   ConfiguracoesGeralRoute: typeof ConfiguracoesGeralRoute
   ConfiguracoesHorariosRoute: typeof ConfiguracoesHorariosRoute
   ConfiguracoesIntegracoesRoute: typeof ConfiguracoesIntegracoesRoute
@@ -1219,6 +1259,7 @@ interface ConfiguracoesRouteChildren {
 const ConfiguracoesRouteChildren: ConfiguracoesRouteChildren = {
   ConfiguracoesCamposContatoRoute: ConfiguracoesCamposContatoRoute,
   ConfiguracoesEmpresaRoute: ConfiguracoesEmpresaRoute,
+  ConfiguracoesFinanceiroRoute: ConfiguracoesFinanceiroRoute,
   ConfiguracoesGeralRoute: ConfiguracoesGeralRoute,
   ConfiguracoesHorariosRoute: ConfiguracoesHorariosRoute,
   ConfiguracoesIntegracoesRoute: ConfiguracoesIntegracoesRoute,
@@ -1248,6 +1289,7 @@ const InboxRouteWithChildren = InboxRoute._addFileChildren(InboxRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  AgendamentosRoute: AgendamentosRoute,
   AgenteIaRoute: AgenteIaRoute,
   AjudaRoute: AjudaRoute,
   AtendentesRoute: AtendentesRoute,

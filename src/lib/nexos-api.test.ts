@@ -65,10 +65,12 @@ describe("nexos-api auth client", () => {
     );
   });
 
-  it("surfaces network failures distinctly", async () => {
+  it("returns a clear message for network failures", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
 
-    await expect(loginWithNexosApi("admin@nexo.app", "demo1234")).rejects.toThrow("fetch failed");
+    await expect(loginWithNexosApi("admin@nexo.app", "demo1234")).rejects.toThrow(
+      "Não foi possível conectar ao sistema. Verifique sua internet e tente novamente.",
+    );
   });
 
   it("distinguishes missing membership", async () => {
@@ -77,21 +79,47 @@ describe("nexos-api auth client", () => {
       vi.fn().mockResolvedValue(
         responseJson(403, {
           code: "USER_WITHOUT_ACTIVE_MEMBERSHIP",
-          message: "Seu usuario nao possui acesso a nenhuma organizacao ativa.",
+          message: "Seu usuário não possui acesso a nenhuma organização ativa.",
         }),
       ),
     );
 
     await expect(loginWithNexosApi("sem-membership@nexo.app", "demo1234")).rejects.toThrow(
-      "Seu usuario nao possui acesso a nenhuma organizacao ativa.",
+      "Seu usuário não possui acesso a nenhuma organização ativa.",
     );
   });
 
-  it("distinguishes internal authentication errors", async () => {
+  it("returns a clear message for internal authentication errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(responseJson(500, {})));
 
     await expect(loginWithNexosApi("admin@nexo.app", "demo1234")).rejects.toThrow(
-      "Ocorreu um erro interno ao autenticar.",
+      "Não foi possível concluir a autenticação. Tente novamente em alguns instantes.",
+    );
+  });
+
+  it("does not expose internal server messages in application requests", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(responseJson(500, { message: "Internal Server Error" })),
+    );
+
+    await expect(apiRequest("/roles")).rejects.toThrow(
+      "Não foi possível concluir a ação agora. Tente novamente em alguns instantes.",
+    );
+  });
+
+  it("keeps a useful domain message returned by the API", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          responseJson(409, { message: "Já existe um perfil de acesso com este nome." }),
+        ),
+    );
+
+    await expect(apiRequest("/roles")).rejects.toThrow(
+      "Já existe um perfil de acesso com este nome.",
     );
   });
 

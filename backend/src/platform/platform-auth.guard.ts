@@ -87,14 +87,14 @@ export class PlatformAuthGuard implements CanActivate {
     if (!user) {
       throw new ForbiddenException({
         code: "PLATFORM_ACCESS_DENIED",
-        message: "Usuario sem papel ativo no plano de controle.",
+        message: "Usuário sem papel ativo no plano de controle.",
       });
     }
     const permissions = grants[user.platformRole] ?? [];
     if (required?.length && !required.every((permission) => permissions.includes(permission))) {
       throw new ForbiddenException({
         code: "PLATFORM_PERMISSION_DENIED",
-        message: "Permissao insuficiente no plano de controle.",
+        message: "Permissão insuficiente no plano de controle.",
       });
     }
     if (required?.some((permission) => highRiskPermissions.has(permission))) {
@@ -105,7 +105,7 @@ export class PlatformAuthGuard implements CanActivate {
       if (activeImpersonation) {
         throw new ForbiddenException({
           code: "IMPERSONATION_HIGH_RISK_ACTION_BLOCKED",
-          message: "A acao deve ser executada fora de uma sessao de impersonacao.",
+          message: "A ação deve ser executada fora de uma sessão de impersonação.",
         });
       }
     }

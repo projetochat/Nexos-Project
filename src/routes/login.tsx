@@ -85,7 +85,7 @@ function LoginPage() {
 
           <h2 className="text-3xl font-semibold tracking-tight">Acesse o ambiente Nexos.</h2>
           <p className="mt-3 max-w-md text-sm text-muted-foreground">
-            A autenticacao usa a API e o banco configurados para homologacao. A sessao e validada
+            A autenticacao usa a API e o banco configurados para homologação. A sessão e validada
             antes de liberar as rotas protegidas.
           </p>
 
@@ -96,7 +96,7 @@ function LoginPage() {
               ) : (
                 <AlertCircle className="h-4 w-4 text-warning" />
               )}
-              Ambiente de homologacao
+              Ambiente de homologação
             </div>
             <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
               <span>API: {health ? "online" : "indisponivel"}</span>
@@ -114,11 +114,11 @@ function LoginPage() {
 
           <div className="rounded-2xl border border-border bg-card p-8 shadow-elevated">
             <div className="mb-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Ambiente de homologacao
+              Ambiente de homologação
             </div>
             <h1 className="text-2xl font-semibold tracking-tight">Entrar no Nexos</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Use uma conta ativa vinculada a uma organizacao de homologacao.
+              Use uma conta ativa vinculada a uma organização de homologação.
             </p>
 
             <form onSubmit={handleLogin} className="mt-6 space-y-4">
@@ -195,7 +195,10 @@ function LoginPage() {
 
 function normalizeLoginError(error: unknown) {
   if (error instanceof TypeError) {
-    return "Nao foi possivel conectar a API Nexos. Verifique se o backend esta em execucao.";
+    return "Não foi possível conectar ao sistema. Verifique sua internet e tente novamente.";
   }
-  return (error as Error).message || "Ocorreu um erro interno ao autenticar.";
+  return (
+    (error as Error).message ||
+    "Não foi possível concluir a autenticação. Tente novamente em alguns instantes."
+  );
 }

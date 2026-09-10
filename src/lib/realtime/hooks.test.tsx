@@ -87,7 +87,7 @@ function user(): SessionUser {
     email: "admin@nexo.app",
     role: "admin",
     empresaId: "tenant-a",
-    empresaNome: "Homologacao",
+    empresaNome: "Homologação",
     permissions: ["conversations.read"],
   };
 }

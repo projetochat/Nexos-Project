@@ -55,7 +55,8 @@ export class RolesController {
   @RequirePermissions("roles.manage")
   async create(@Body() dto: CreateRoleDto, @CurrentUser() current: AuthenticatedUser) {
     this.assertPermissions(dto.permissionIds);
-    const key = (dto.key ?? dto.name)
+    const name = dto.name.trim();
+    const key = (dto.key ?? name)
       .trim()
       .toLowerCase()
       .normalize("NFD")
@@ -65,12 +66,13 @@ export class RolesController {
     if (!key) throw new BadRequestException("Key de role invalida.");
 
     const role = await this.prisma.$transaction(async (tx) => {
+      await this.ensureNameAvailable(tx, current.tenantId, name);
       await this.ensurePermissions(tx, dto.permissionIds);
       return tx.role.create({
         data: {
           tenantId: current.tenantId,
           key,
-          name: dto.name.trim(),
+          name,
           description: dto.description?.trim() || null,
           metadata:
             dto.metadata === undefined ? undefined : JSON.parse(JSON.stringify(dto.metadata)),
@@ -95,6 +97,9 @@ export class RolesController {
     const existing = await this.findRoleOrThrow(id, current.tenantId);
     if (dto.permissionIds) this.assertPermissions(dto.permissionIds);
     const role = await this.prisma.$transaction(async (tx) => {
+      if (dto.name !== undefined) {
+        await this.ensureNameAvailable(tx, current.tenantId, dto.name.trim(), existing.id);
+      }
       if (dto.permissionIds) {
         await this.ensurePermissions(tx, dto.permissionIds);
         await tx.rolePermission.deleteMany({ where: { roleId: existing.id } });
@@ -127,7 +132,7 @@ export class RolesController {
     const inUse = await this.prisma.tenantMembership.count({
       where: { tenantId: current.tenantId, roleId: id },
     });
-    if (inUse > 0) throw new BadRequestException("Role em uso por usuarios.");
+    if (inUse > 0) throw new BadRequestException("Role em uso por usuários.");
     await this.prisma.role.delete({ where: { id } });
     return { ok: true };
   }
@@ -137,7 +142,7 @@ export class RolesController {
       where: { id, tenantId },
       include: { permissions: true },
     });
-    if (!role) throw new NotFoundException("Role nao encontrada.");
+    if (!role) throw new NotFoundException("Role não encontrada.");
     return role;
   }
 
@@ -156,6 +161,25 @@ export class RolesController {
         }),
       ),
     );
+  }
+
+  private async ensureNameAvailable(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    name: string,
+    excludeRoleId?: string,
+  ) {
+    const normalizedName = normalizeRoleName(name);
+    const roles = await tx.role.findMany({
+      where: { tenantId },
+      select: { id: true, name: true },
+    });
+    const duplicate = roles.find(
+      (role) => role.id !== excludeRoleId && normalizeRoleName(role.name) === normalizedName,
+    );
+    if (duplicate) {
+      throw new BadRequestException("Já existe um perfil de acesso com este nome.");
+    }
   }
 
   private serialize(role: {
@@ -183,4 +207,13 @@ export class RolesController {
       permissionIds: role.permissions.map((permission) => permission.permissionId),
     };
   }
+}
+
+function normalizeRoleName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("pt-BR");
 }

@@ -192,7 +192,7 @@ function AutomationForm({
         </Field>
       </div>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <Field label="Acao">
+        <Field label="Ação">
           <Select
             value={actionType}
             onChange={(event) => setActionType(event.target.value as AutomationActionInput)}

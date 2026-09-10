@@ -229,7 +229,7 @@ export class GroupsSyncService implements OnModuleDestroy {
         connection.id,
         connectionFailed ? "PARTIAL_ERROR" : "SUCCESS",
         connectionSynced,
-        connectionFailed ? "Alguns grupos nao puderam ser sincronizados." : null,
+        connectionFailed ? "Alguns grupos não puderam ser sincronizados." : null,
       );
     }
 

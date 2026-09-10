@@ -7,31 +7,81 @@ import {
   CartesianGrid,
   Cell,
   ResponsiveContainer,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { CheckCircle2, Clock, MessageSquare, TrendingUp, Users } from "lucide-react";
+import { Pencil, RefreshCw, RotateCcw, Save, TrendingUp } from "lucide-react";
+import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { ReportFiltersBar } from "@/components/report-filters";
-import { Badge, Card, KPI, SectionHeader } from "@/components/ui-kit";
+import { DashboardFiltersBar } from "@/components/dashboard-filters";
+import { Badge, Button, Card, KPI, SectionHeader } from "@/components/ui-kit";
+import { Modal } from "@/components/modal";
 import { num, relativeTime } from "@/lib/format";
 import { operationsApi } from "@/lib/nexos-api";
 import {
   DEFAULT_OPERATIONAL_FILTERS,
+  datesForOperationalPeriod,
   type OperationalReportFilters,
 } from "@/lib/operational-filters";
+import { useQueuePrefs, type QueueId } from "@/lib/queue-prefs";
+import { useSession } from "@/lib/session";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 
 export const Route = createFileRoute("/")({ component: Dashboard });
 
 const COLORS = ["#2563eb", "#0f766e", "#9333ea", "#d97706", "#16a34a", "#dc2626"];
+const DASHBOARD_BIS = [
+  "counters",
+  "messages",
+  "distribution",
+  "connection",
+  "customer",
+  "department",
+  "tag",
+  "agent",
+  "recent",
+] as const;
+type DashboardBiId = (typeof DASHBOARD_BIS)[number];
+const BI_LABELS: Record<DashboardBiId, string> = {
+  counters: "Contadores de registro",
+  messages: "Mensagens do dia",
+  distribution: "Distribuição de conversas",
+  connection: "Conversas por instância",
+  customer: "Conversas por cliente",
+  department: "Conversas por departamento",
+  tag: "Conversas por etiqueta",
+  agent: "Conversas por atendente",
+  recent: "Atividade recente",
+};
 
 function Dashboard() {
   const queryClient = useQueryClient();
+  const user = useSession((state) => state.user);
+  const canEditDashboard =
+    user?.role === "admin" ||
+    user?.role === "super_admin" ||
+    user?.permissions?.includes("dashboard.manage");
+  const storageKey = `nexo.dashboard.bis.${user?.id ?? "anonymous"}`;
+  const [editingDashboard, setEditingDashboard] = React.useState(false);
+  const [visibleBis, setVisibleBis] = React.useState<DashboardBiId[]>(() =>
+    loadDashboardBis(storageKey),
+  );
+  const [draftBis, setDraftBis] = React.useState<DashboardBiId[]>(visibleBis);
+  React.useEffect(() => {
+    const saved = loadDashboardBis(storageKey);
+    setVisibleBis(saved);
+    setDraftBis(saved);
+  }, [storageKey]);
   const [filters, setFilters] = React.useState<OperationalReportFilters>({
     ...DEFAULT_OPERATIONAL_FILTERS,
     period: "today",
+    ...datesForOperationalPeriod("today"),
   });
   const query = useQuery({
     queryKey: ["operations", "dashboard", filters],
@@ -40,6 +90,7 @@ function Dashboard() {
   });
   const data = query.data;
   const kpis = data?.kpis ?? {};
+  const queuePrefs = useQueuePrefs();
 
   React.useEffect(
     () =>
@@ -58,41 +109,80 @@ function Dashboard() {
     { nome: "Encerradas", total: kpiValue(kpis.conversasEncerradas) },
   ];
   const recent = data?.recent ?? [];
+  const queueKpiById: Record<QueueId, keyof typeof kpis> = {
+    ativas: "filaAtivas",
+    standby: "filaStandby",
+    fila: "filaFila",
+    leads: "filaLeads",
+  };
+  const queueCards = queuePrefs
+    .filter((queue) => queue.enabled)
+    .map((queue) => ({
+      id: queue.id,
+      label: queue.id === "ativas" ? `Conversas ${queue.label}` : queue.label,
+      value: kpiValue(kpis[queueKpiById[queue.id]]),
+    }));
+  const hasBi = (id: DashboardBiId) => visibleBis.includes(id);
 
   return (
     <AppShell>
-      <PageContainer>
+      <PageContainer className="max-w-none">
         <SectionHeader
           title="Dashboard"
           subtitle="Panorama operacional com metricas consolidadas do banco Nexos."
+          actions={
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void query.refetch()}
+                disabled={query.isFetching}
+                title="Atualizar indicadores"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${query.isFetching ? "animate-spin" : ""}`} />
+                Atualizar
+              </Button>
+              {canEditDashboard && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setDraftBis(visibleBis);
+                    setEditingDashboard(true);
+                  }}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Editar Dashboard
+                </Button>
+              )}
+            </div>
+          }
         />
 
-        <ReportFiltersBar
+        <DashboardFiltersBar
           value={filters}
           onChange={(patch) => setFilters((current) => ({ ...current, ...patch }))}
         />
 
-        <div className="mb-6 grid gap-4 md:grid-cols-3 xl:grid-cols-5">
-          <KPI label="Conversas abertas" value={num(kpiValue(kpis.conversasAbertas))} tone="info" />
-          <KPI
-            label="Em atendimento"
-            value={num(kpiValue(kpis.conversasEmAtendimento))}
-            tone="info"
-          />
-          <KPI label="Aguardando" value={num(kpiValue(kpis.conversasAguardando))} tone="warning" />
-          <KPI label="Novos leads" value={num(kpiValue(kpis.novosLeads))} tone="info" />
-          <KPI label="Encerradas" value={num(kpiValue(kpis.conversasEncerradas))} tone="success" />
+        <div
+          className={`mb-6 grid gap-4 md:grid-cols-3 xl:grid-cols-5 ${hasBi("counters") ? "" : "hidden"}`}
+        >
+          {queueCards.map((queue) => (
+            <KPI key={queue.id} label={queue.label} value={num(queue.value)} tone="info" />
+          ))}
+          <KPI label="Fechadas" value={num(kpiValue(kpis.conversasEncerradas))} tone="success" />
         </div>
 
         <div className="mb-6 grid gap-4 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
+          <Card className={hasBi("messages") ? "lg:col-span-2" : "hidden"}>
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                  Conversas por departamento
+                  Mensagens do dia
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Periodo: {formatDate(data?.range.start)} a {formatDate(data?.range.end)}
+                  Tráfego de mensagens: {formatDate(data?.range.start)} a{" "}
+                  {formatDate(data?.range.end)}
                 </p>
               </div>
               <Badge tone="success">
@@ -100,9 +190,9 @@ function Dashboard() {
               </Badge>
             </div>
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={data?.charts.byDepartment ?? []}>
+              <LineChart data={data?.charts.messagesByHour ?? []}>
                 <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
-                <XAxis dataKey="nome" stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                <XAxis dataKey="hora" stroke="hsl(var(--muted-foreground))" fontSize={11} />
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} allowDecimals={false} />
                 <Tooltip
                   contentStyle={{
@@ -112,27 +202,41 @@ function Dashboard() {
                     fontSize: 12,
                   }}
                 />
-                <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-                  {(data?.charts.byDepartment ?? []).map((item, index) => (
-                    <Cell
-                      key={`${item.nome}-${index}`}
-                      fill={item.cor || COLORS[index % COLORS.length]}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Line
+                  type="monotone"
+                  dataKey="recebidas"
+                  name="Recebidas"
+                  stroke="#2563eb"
+                  strokeWidth={2}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="enviadas"
+                  name="Enviadas"
+                  stroke="#16a34a"
+                  strokeWidth={2}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="total"
+                  name="Total"
+                  stroke="#94a3b8"
+                  strokeWidth={2}
+                  dot={false}
+                />
+              </LineChart>
             </ResponsiveContainer>
           </Card>
 
-          <Card>
+          <Card className={hasBi("distribution") ? "" : "hidden"}>
             <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
-              Distribuicao por status
+              Distribuição de conversas
             </p>
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={statusSerie}>
-                <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
-                <XAxis dataKey="nome" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} allowDecimals={false} />
+              <PieChart>
                 <Tooltip
                   contentStyle={{
                     background: "hsl(var(--popover))",
@@ -141,83 +245,91 @@ function Dashboard() {
                     fontSize: 12,
                   }}
                 />
-                <Bar dataKey="total" fill="#2563eb" radius={[6, 6, 0, 0]} />
-              </BarChart>
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Pie
+                  data={statusSerie}
+                  dataKey="total"
+                  nameKey="nome"
+                  innerRadius={48}
+                  outerRadius={82}
+                  paddingAngle={3}
+                >
+                  {statusSerie.map((item, index) => (
+                    <Cell key={item.nome} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+              </PieChart>
             </ResponsiveContainer>
           </Card>
         </div>
 
         <div className="mb-6 grid gap-4 lg:grid-cols-4">
-          <Snapshot
-            icon={<MessageSquare className="h-3.5 w-3.5" />}
-            label="Mensagens recebidas"
-            value={kpiValue(kpis.mensagensRecebidas)}
-          />
-          <Snapshot
-            icon={<Users className="h-3.5 w-3.5" />}
-            label="Clientes ativos"
-            value={kpiValue(kpis.clientesAtivos)}
-          />
-          <Snapshot
-            icon={<Clock className="h-3.5 w-3.5" />}
-            label="1a resposta media"
-            value={formatMinutes(kpis.tempoMedioPrimeiraRespostaMin?.value)}
-          />
-          <Snapshot
-            icon={<CheckCircle2 className="h-3.5 w-3.5" />}
-            label="SLA operacional"
-            value={`${kpiValue(kpis.sla)}%`}
-          />
-        </div>
-
-        <div className="mb-6 grid gap-4 lg:grid-cols-3">
           {[
-            { title: "Conversas por cliente", data: data?.charts.byCustomer ?? [] },
-            { title: "Conversas por instancia", data: data?.charts.byConnection ?? [] },
-            { title: "Conversas por atendente", data: data?.charts.byAgent ?? [] },
-          ].map((chart) => (
-            <Card key={chart.title}>
-              <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
-                {chart.title}
-              </p>
-              {chart.data.length === 0 ? (
-                <div className="flex h-[220px] items-center justify-center text-xs text-muted-foreground">
-                  Sem dados para o periodo.
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={chart.data}>
-                    <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
-                    <XAxis dataKey="nome" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                    <YAxis
-                      stroke="hsl(var(--muted-foreground))"
-                      fontSize={11}
-                      allowDecimals={false}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "hsl(var(--popover))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                    />
-                    <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-                      {chart.data.map((item, index) => (
-                        <Cell
-                          key={`${item.nome}-${index}`}
-                          fill={item.cor || COLORS[index % COLORS.length]}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </Card>
-          ))}
+            {
+              id: "connection",
+              title: "Conversas por instancia",
+              data: data?.charts.byConnection ?? [],
+            },
+            { id: "customer", title: "Conversas por cliente", data: data?.charts.byCustomer ?? [] },
+            {
+              id: "department",
+              title: "Conversas por departamento",
+              data: data?.charts.byDepartment ?? [],
+            },
+            {
+              id: "tag",
+              title: "Conversas por etiqueta",
+              data: (data?.charts.byTag ?? []).map((item) => ({
+                ...item,
+                nome: `${item.nome} (${item.percentual ?? 0}%)`,
+              })),
+            },
+            { id: "agent", title: "Conversas por atendente", data: data?.charts.byAgent ?? [] },
+          ]
+            .filter((chart) => hasBi(chart.id as DashboardBiId))
+            .map((chart) => (
+              <Card key={chart.title}>
+                <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
+                  {chart.title}
+                </p>
+                {chart.data.length === 0 ? (
+                  <div className="flex h-[220px] items-center justify-center text-xs text-muted-foreground">
+                    Sem dados para o periodo.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={chart.data}>
+                      <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+                      <XAxis dataKey="nome" stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                      <YAxis
+                        stroke="hsl(var(--muted-foreground))"
+                        fontSize={11}
+                        allowDecimals={false}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: "hsl(var(--popover))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: 8,
+                          fontSize: 12,
+                        }}
+                      />
+                      <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                        {chart.data.map((item, index) => (
+                          <Cell
+                            key={`${item.nome}-${index}`}
+                            fill={item.cor || COLORS[index % COLORS.length]}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </Card>
+            ))}
         </div>
 
-        <Card className="p-0">
+        <Card className={hasBi("recent") ? "p-0" : "hidden"}>
           <div className="border-b border-border px-5 py-4">
             <p className="text-sm font-semibold">Atividade recente</p>
             <p className="text-xs text-muted-foreground">Ultimas conversas movimentadas.</p>
@@ -250,6 +362,63 @@ function Dashboard() {
             )}
           </ul>
         </Card>
+        <Modal
+          open={editingDashboard}
+          onClose={() => setEditingDashboard(false)}
+          title="Editar Dashboard"
+          size="md"
+          footer={
+            <div className="flex flex-wrap justify-end gap-3">
+              <Button variant="ghost" onClick={() => setDraftBis([...DASHBOARD_BIS])}>
+                <RotateCcw className="h-4 w-4" />
+                Restaurar padrão
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={() => setEditingDashboard(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    window.localStorage.setItem(storageKey, JSON.stringify(draftBis));
+                    setVisibleBis(draftBis);
+                    setEditingDashboard(false);
+                    toast.success("Dashboard atualizado.");
+                  }}
+                >
+                  <Save className="h-4 w-4" />
+                  Salvar
+                </Button>
+              </div>
+            </div>
+          }
+        >
+          <p className="mb-3 text-sm text-muted-foreground">
+            Os filtros são obrigatórios e permanecem sempre visíveis.
+          </p>
+          <div className="space-y-2">
+            {DASHBOARD_BIS.map((id) => (
+              <label
+                key={id}
+                className="flex cursor-pointer gap-3 rounded-lg border border-border p-3"
+              >
+                <input
+                  type="checkbox"
+                  checked={draftBis.includes(id)}
+                  onChange={(event) =>
+                    setDraftBis((current) =>
+                      event.target.checked
+                        ? [...current, id]
+                        : current.filter((item) => item !== id),
+                    )
+                  }
+                  className="mt-0.5 h-4 w-4 accent-primary"
+                />
+                <span className="text-sm font-medium">{BI_LABELS[id]}</span>
+              </label>
+            ))}
+          </div>
+        </Modal>
       </PageContainer>
     </AppShell>
   );
@@ -277,6 +446,21 @@ function Snapshot({
 
 function kpiValue(kpi: { value: number | null } | undefined) {
   return kpi?.value ?? 0;
+}
+
+function loadDashboardBis(storageKey: string): DashboardBiId[] {
+  if (typeof window === "undefined") return [...DASHBOARD_BIS];
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]") as unknown;
+    if (!Array.isArray(stored)) return [...DASHBOARD_BIS];
+    const selected = stored.filter(
+      (item): item is DashboardBiId =>
+        typeof item === "string" && DASHBOARD_BIS.includes(item as DashboardBiId),
+    );
+    return selected.length ? selected : [...DASHBOARD_BIS];
+  } catch {
+    return [...DASHBOARD_BIS];
+  }
 }
 
 function formatMinutes(value: number | null | undefined) {

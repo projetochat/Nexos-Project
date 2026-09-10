@@ -49,7 +49,7 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Etiquetas"
-          subtitle={`${num(etiquetas.length)} etiquetas para classificar contatos e conversas.`}
+          subtitle={`${num(etiquetas.length)} etiquetas cadastradas.`}
           actions={
             canManageCatalog ? (
               <Button variant="primary" size="sm" onClick={nova.show}>
@@ -234,7 +234,7 @@ function EtiquetaForm({
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
-    setName(initial ? (clone ? `Copia de ${initial.nome}` : initial.nome) : "");
+    setName(initial ? (clone ? `${initial.nome} - Cópia` : initial.nome) : "");
     setColor(initial?.cor ?? "#3B82F6");
   }, [clone, initial, open]);
 
@@ -254,7 +254,7 @@ function EtiquetaForm({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial && !clone ? "Editar Etiqueta" : "Nova Etiqueta"}
+      title={initial && !clone ? "Editar Etiqueta" : clone ? "Duplicar Etiqueta" : "Nova Etiqueta"}
       size="sm"
       footer={
         <div className="flex w-full items-center justify-between gap-4">

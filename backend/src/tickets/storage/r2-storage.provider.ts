@@ -7,7 +7,7 @@ export class R2StorageProvider extends FileStorageProvider {
 
   async createUpload(request: UploadRequest) {
     if (!process.env.R2_BUCKET)
-      throw new ServiceUnavailableException("Storage R2 nao configurado.");
+      throw new ServiceUnavailableException("Storage R2 não configurado.");
     return {
       uploadUrl: `r2://${process.env.R2_BUCKET}/${request.objectKey}`,
       objectKey: request.objectKey,
@@ -26,7 +26,7 @@ export class R2StorageProvider extends FileStorageProvider {
 
   async deleteObject(): Promise<void> {
     if (!process.env.R2_BUCKET)
-      throw new ServiceUnavailableException("Storage R2 nao configurado.");
+      throw new ServiceUnavailableException("Storage R2 não configurado.");
   }
 
   async headObject() {

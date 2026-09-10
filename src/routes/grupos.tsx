@@ -294,12 +294,13 @@ function GroupCard({
     <div
       role="button"
       tabIndex={0}
-      onClick={onDetail}
+      onDoubleClick={onDetail}
       onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
+        if (event.key !== "Enter") return;
         event.preventDefault();
         onDetail();
       }}
+      title="Clique duas vezes para visualizar o grupo"
       className="flex min-h-40 flex-col rounded-lg border border-border bg-card p-4 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md"
     >
       <div className="flex items-start gap-3">
@@ -318,6 +319,7 @@ function GroupCard({
             event.stopPropagation();
             onOpenChat();
           }}
+          onDoubleClick={(event) => event.stopPropagation()}
         >
           <MessageSquareMore className="h-4 w-4" />
         </Button>
@@ -579,17 +581,26 @@ function GroupDetailModal({
   const [busy, setBusy] = React.useState<string | null>(null);
   const [addingParticipants, setAddingParticipants] = React.useState(false);
   const [tab, setTab] = React.useState<"general" | "participants">("general");
+  const [viewMode, setViewMode] = React.useState(true);
   const [editingName, setEditingName] = React.useState(false);
   const [editingDescription, setEditingDescription] = React.useState(false);
+  const initializedGroupIdRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    setName(group?.name ?? "");
-    setDescription(group?.description ?? "");
+    if (!group) {
+      initializedGroupIdRef.current = null;
+      return;
+    }
+    if (initializedGroupIdRef.current === group.id) return;
+    initializedGroupIdRef.current = group.id;
+    setName(group.name);
+    setDescription(group.description ?? "");
     setQuery("");
     setSelectedContactIds([]);
     setBusy(null);
     setAddingParticipants(false);
     setTab("general");
+    setViewMode(true);
     setEditingName(false);
     setEditingDescription(false);
   }, [group]);
@@ -651,7 +662,7 @@ function GroupDetailModal({
       });
       onGroupChange(updated);
       setEditingDescription(false);
-      toast.success("Descricao do grupo atualizada");
+      toast.success("Descrição do grupo atualizada");
     });
   };
 
@@ -701,7 +712,7 @@ function GroupDetailModal({
     if (!confirmed) return;
     void run("leave", async () => {
       await groupsApi.leave(group.id);
-      toast.success("Voce saiu do grupo");
+      toast.success("Você saiu do grupo");
       await onGroupLeft();
     });
   };
@@ -710,16 +721,22 @@ function GroupDetailModal({
     <Modal
       open={!!group}
       onClose={onClose}
-      title="Edição de Grupo"
+      title={viewMode ? "Visualizar Grupo" : "Edição de Grupo"}
       size="lg"
       footer={
         group ? (
           <div className="flex w-full items-center justify-between gap-3">
             <EntityFormLog createdAt={group.createdAt} updatedAt={group.updatedAt} />
             <div className="flex shrink-0 items-center gap-2">
-              <Button variant="destructive" size="sm" onClick={leaveGroup} disabled={!!busy}>
-                <LogOut className="h-3.5 w-3.5" /> Sair do grupo
-              </Button>
+              {viewMode ? (
+                <Button variant="secondary" size="sm" onClick={() => setViewMode(false)}>
+                  <Pencil className="h-3.5 w-3.5" /> Editar
+                </Button>
+              ) : (
+                <Button variant="destructive" size="sm" onClick={leaveGroup} disabled={!!busy}>
+                  <LogOut className="h-3.5 w-3.5" /> Sair do grupo
+                </Button>
+              )}
               <Button variant="primary" size="sm" onClick={() => onOpenChat(group)}>
                 <MessageSquareMore className="h-3.5 w-3.5" /> Abrir conversa
               </Button>
@@ -766,17 +783,23 @@ function GroupDetailModal({
                         </button>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title={editingName ? "Salvar nome" : "Editar nome"}
-                      aria-label={editingName ? "Salvar nome" : "Editar nome"}
-                      onClick={editingName ? saveName : () => setEditingName(true)}
-                      disabled={busy === "name"}
-                      className="h-9 w-9"
-                    >
-                      {editingName ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-                    </Button>
+                    {!viewMode && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title={editingName ? "Salvar nome" : "Editar nome"}
+                        aria-label={editingName ? "Salvar nome" : "Editar nome"}
+                        onClick={editingName ? saveName : () => setEditingName(true)}
+                        disabled={busy === "name"}
+                        className="h-9 w-9"
+                      >
+                        {editingName ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Pencil className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {num(group.participantsCount)} participante(s) cadastrados
@@ -816,23 +839,25 @@ function GroupDetailModal({
                       </button>
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    title={editingDescription ? "Salvar descrição" : "Editar descrição"}
-                    aria-label={editingDescription ? "Salvar descrição" : "Editar descrição"}
-                    onClick={
-                      editingDescription ? saveDescription : () => setEditingDescription(true)
-                    }
-                    disabled={busy === "description"}
-                    className="h-10 w-10 self-center"
-                  >
-                    {editingDescription ? (
-                      <Check className="h-4 w-4" />
-                    ) : (
-                      <Pencil className="h-4 w-4" />
-                    )}
-                  </Button>
+                  {!viewMode && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title={editingDescription ? "Salvar descrição" : "Editar descrição"}
+                      aria-label={editingDescription ? "Salvar descrição" : "Editar descrição"}
+                      onClick={
+                        editingDescription ? saveDescription : () => setEditingDescription(true)
+                      }
+                      disabled={busy === "description"}
+                      className="h-10 w-10 self-center"
+                    >
+                      {editingDescription ? (
+                        <Check className="h-4 w-4" />
+                      ) : (
+                        <Pencil className="h-4 w-4" />
+                      )}
+                    </Button>
+                  )}
                 </div>
               </Field>
             </div>
@@ -842,23 +867,25 @@ function GroupDetailModal({
             <div>
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold">Participantes</h3>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    if (addingParticipants && selectedContactIds.length > 0) {
-                      addParticipants();
-                      return;
-                    }
-                    setAddingParticipants((current) => !current);
-                  }}
-                  disabled={busy === "participants"}
-                >
-                  <UserPlus className="h-3.5 w-3.5" />
-                  {addingParticipants && selectedContactIds.length > 0
-                    ? `Adicionar (${selectedContactIds.length})`
-                    : "Adicionar"}
-                </Button>
+                {!viewMode && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      if (addingParticipants && selectedContactIds.length > 0) {
+                        addParticipants();
+                        return;
+                      }
+                      setAddingParticipants((current) => !current);
+                    }}
+                    disabled={busy === "participants"}
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    {addingParticipants && selectedContactIds.length > 0
+                      ? `Adicionar (${selectedContactIds.length})`
+                      : "Adicionar"}
+                  </Button>
+                )}
               </div>
 
               {addingParticipants && (
@@ -935,32 +962,37 @@ function GroupDetailModal({
                         {participant.isSuperAdmin ? "Super admin" : "Admin"}
                       </Badge>
                     )}
-                    <div className="flex shrink-0 gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title={participant.isAdmin ? "Remover admin" : "Tornar admin"}
-                        aria-label={participant.isAdmin ? "Remover admin" : "Tornar admin"}
-                        onClick={() =>
-                          updateParticipant(participant, participant.isAdmin ? "demote" : "promote")
-                        }
-                        disabled={!!busy || participant.isSuperAdmin}
-                        className="h-8 w-8"
-                      >
-                        <Crown className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Remover participante"
-                        aria-label="Remover participante"
-                        onClick={() => updateParticipant(participant, "remove")}
-                        disabled={!!busy || participant.isSuperAdmin}
-                        className="h-8 w-8"
-                      >
-                        <UserMinus className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                    {!viewMode && (
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title={participant.isAdmin ? "Remover admin" : "Tornar admin"}
+                          aria-label={participant.isAdmin ? "Remover admin" : "Tornar admin"}
+                          onClick={() =>
+                            updateParticipant(
+                              participant,
+                              participant.isAdmin ? "demote" : "promote",
+                            )
+                          }
+                          disabled={!!busy || participant.isSuperAdmin}
+                          className="h-8 w-8"
+                        >
+                          <Crown className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Remover participante"
+                          aria-label="Remover participante"
+                          onClick={() => updateParticipant(participant, "remove")}
+                          disabled={!!busy || participant.isSuperAdmin}
+                          className="h-8 w-8"
+                        >
+                          <UserMinus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))}
                 {group.participants.length === 0 && (

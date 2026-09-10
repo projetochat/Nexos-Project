@@ -175,6 +175,61 @@ export class UsersController {
     return this.serializeMembership(updated);
   }
 
+  @Get("company")
+  async company(@CurrentUser() current: AuthenticatedUser) {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({
+      where: { id: current.tenantId },
+      include: {
+        users: {
+          where: { status: "ACTIVE" },
+          orderBy: { createdAt: "asc" },
+          include: { user: true, role: true },
+        },
+      },
+    });
+    const administrator =
+      tenant.users.find((membership) => membership.role.key === "tenant_admin") ?? tenant.users[0];
+    const accessEmail = tenant.technicalEmail ?? administrator?.user.email ?? null;
+
+    // Consolida cadastros legados: após a primeira leitura, o e-mail deixa de depender da sessão.
+    if (!tenant.technicalEmail && accessEmail) {
+      await this.prisma.tenant.update({
+        where: { id: tenant.id },
+        data: { technicalEmail: accessEmail },
+      });
+    }
+
+    return {
+      name: tenant.name,
+      legalName: tenant.legalName,
+      document: tenant.document,
+      timezone: tenant.timezone,
+      locale: tenant.locale,
+      accessEmail,
+      responsibleName: administrator?.user.name ?? null,
+    };
+  }
+
+  @Get("company/financial")
+  async financial(@CurrentUser() current: AuthenticatedUser) {
+    const invoices = await this.prisma.invoice.findMany({
+      where: { tenantId: current.tenantId },
+      orderBy: [{ dueAt: "desc" }, { createdAt: "desc" }],
+      include: { subscription: { include: { plan: true } } },
+    });
+
+    return invoices.map((invoice) => ({
+      paymentId: invoice.number,
+      subscriptionId: invoice.subscriptionId,
+      service: invoice.subscription.plan.name,
+      referenceAt: invoice.dueAt,
+      paidAt: invoice.paidAt,
+      amountCents: invoice.totalCents,
+      currency: invoice.currency,
+      status: invoice.status,
+    }));
+  }
+
   @Get("users")
   @UseGuards(PermissionsGuard)
   @RequirePermissions("users.read")
@@ -229,7 +284,7 @@ export class UsersController {
         const existing = await tx.tenantMembership.findUnique({
           where: { tenantId_userId: { tenantId: current.tenantId, userId: user.id } },
         });
-        if (existing) throw new BadRequestException("Usuario ja pertence a este tenant.");
+        if (existing) throw new BadRequestException("Usuário já pertence a este tenant.");
         user = await tx.user.update({
           where: { id: user.id },
           data: {
@@ -404,7 +459,7 @@ export class UsersController {
     const role = await this.prisma.role.findUnique({
       where: { tenantId_key: { tenantId, key: "agent" } },
     });
-    if (!role) throw new BadRequestException("Role padrao nao encontrada.");
+    if (!role) throw new BadRequestException("Role padrão não encontrada.");
     return role.id;
   }
 
@@ -428,7 +483,7 @@ export class UsersController {
       where: { id, tenantId },
       include: { user: true, role: true, departments: { include: { department: true } } },
     });
-    if (!membership) throw new NotFoundException("Usuario nao encontrado.");
+    if (!membership) throw new NotFoundException("Usuário não encontrado.");
     return membership;
   }
 
