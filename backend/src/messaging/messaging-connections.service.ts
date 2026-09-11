@@ -161,12 +161,21 @@ export class MessagingConnectionsService {
     }
     const ownerExternalId = instance.ownerJid ?? null;
     const ownerPhoneNormalized = normalizeOwnerPhone(ownerExternalId);
+    const profilePictureUrl =
+      translatedStatus === MessagingConnectionStatus.CONNECTED
+        ? await this.fetchProfilePictureUrlSafely({
+            instanceName: connection.externalReference,
+            ownerExternalId,
+            ownerPhoneNormalized,
+          })
+        : undefined;
     const updated = await this.prisma.messagingConnection.update({
       where: { id: connection.id },
       data: {
         status: translatedStatus,
         ownerExternalId: ownerExternalId ?? undefined,
         ownerPhoneNormalized: ownerPhoneNormalized ?? undefined,
+        logoUrl: profilePictureUrl,
       },
     });
     if (updated.status !== connection.status) {
@@ -237,7 +246,6 @@ export class MessagingConnectionsService {
       data: {
         name: dto.name?.trim(),
         color: normalizeColor(dto.color),
-        logoUrl: normalizeLogoUrl(dto.logoUrl),
         welcomeEnabled,
         welcomeNewMessage,
         welcomeExistingMessage,
@@ -251,6 +259,59 @@ export class MessagingConnectionsService {
       connectionId: updated.id,
       status: updated.status.toLowerCase(),
       updatedAt: updated.updatedAt,
+    });
+    return this.serialize(updated);
+  }
+
+  async refreshProfilePicture(id: string, current: AuthenticatedUser) {
+    const connection = await this.findTenantConnection(id, current.tenantId);
+    const { instanceName } = this.profilePictureLookupTarget(connection);
+    const number = profilePictureLookupNumber(connection);
+    if (!number) throw new BadRequestException("O número da instância não está disponível.");
+    const logoUrl = await this.evolution.fetchProfilePictureUrl({
+      instanceName,
+      number,
+    });
+    const updated = await this.prisma.messagingConnection.update({
+      where: { id: connection.id },
+      data: { logoUrl },
+    });
+    return this.serialize(updated);
+  }
+
+  async updateProfilePicture(
+    id: string,
+    imageDataUrl: string | undefined,
+    current: AuthenticatedUser,
+  ) {
+    const connection = await this.findTenantConnection(id, current.tenantId);
+    const { instanceName } = this.profilePictureLookupTarget(connection);
+    const image = decodeProfilePictureDataUrl(imageDataUrl);
+    await this.evolution.updateProfilePicture({
+      instanceName,
+      media: image.body,
+      mimeType: image.mimeType,
+      fileName: image.fileName,
+    });
+    const profilePictureUrl = await this.fetchProfilePictureUrlSafely({
+      instanceName,
+      ownerExternalId: connection.ownerExternalId,
+      ownerPhoneNormalized: connection.ownerPhoneNormalized,
+    });
+    const updated = await this.prisma.messagingConnection.update({
+      where: { id: connection.id },
+      data: { logoUrl: profilePictureUrl ?? imageDataUrl },
+    });
+    return this.serialize(updated);
+  }
+
+  async removeProfilePicture(id: string, current: AuthenticatedUser) {
+    const connection = await this.findTenantConnection(id, current.tenantId);
+    const { instanceName } = this.profilePictureLookupTarget(connection);
+    await this.evolution.removeProfilePicture(instanceName);
+    const updated = await this.prisma.messagingConnection.update({
+      where: { id: connection.id },
+      data: { logoUrl: null },
     });
     return this.serialize(updated);
   }
@@ -517,6 +578,14 @@ export class MessagingConnectionsService {
     if (status === MessagingConnectionStatus.CONNECTED && current.externalReference) {
       await this.ensureWebhookConfiguredSafely(current.externalReference, current.id);
     }
+    const profilePictureUrl =
+      status === MessagingConnectionStatus.CONNECTED
+        ? await this.fetchProfilePictureUrlSafely({
+            instanceName: current.externalReference,
+            ownerExternalId: owner?.ownerExternalId ?? current.ownerExternalId,
+            ownerPhoneNormalized: owner?.ownerPhoneNormalized ?? current.ownerPhoneNormalized,
+          })
+        : undefined;
     if (status === MessagingConnectionStatus.CONNECTED && owner?.ownerPhoneNormalized) {
       const duplicateOwner = await this.prisma.messagingConnection.findFirst({
         where: {
@@ -546,7 +615,7 @@ export class MessagingConnectionsService {
     }
     const updated = await this.prisma.messagingConnection.update({
       where: { id },
-      data: { status, ...ownerData },
+      data: { status, ...ownerData, logoUrl: profilePictureUrl },
     });
     if (updated.status !== current.status) {
       this.realtime?.publishConnectionStatusUpdated({
@@ -585,6 +654,47 @@ export class MessagingConnectionsService {
         connectionId,
         error: sanitizeEnsureError(error),
       });
+    }
+  }
+
+  private profilePictureLookupTarget(connection: ConnectionWithArchive) {
+    if (
+      connection.providerType !== MessagingProviderType.EVOLUTION ||
+      !connection.externalReference ||
+      connection.status !== MessagingConnectionStatus.CONNECTED
+    ) {
+      throw new BadRequestException(
+        "Conecte a instância ao WhatsApp antes de gerenciar a foto de perfil.",
+      );
+    }
+    if (!profilePictureLookupNumber(connection)) {
+      throw new BadRequestException(
+        "O número da instância ainda não está disponível. Atualize o status e tente novamente.",
+      );
+    }
+    return { instanceName: connection.externalReference };
+  }
+
+  private async fetchProfilePictureUrlSafely(input: {
+    instanceName: string | null;
+    ownerExternalId: string | null | undefined;
+    ownerPhoneNormalized: string | null | undefined;
+  }) {
+    if (!input.instanceName) return undefined;
+    const number = input.ownerExternalId ?? input.ownerPhoneNormalized;
+    if (!number) return undefined;
+    try {
+      return await this.evolution.fetchProfilePictureUrl({
+        instanceName: input.instanceName,
+        number,
+      });
+    } catch (error) {
+      this.logger.debug({
+        event: "messaging.connection.profile_picture_sync_failed",
+        instanceName: sanitizeInstanceName(input.instanceName),
+        error: sanitizeEnsureError(error),
+      });
+      return undefined;
     }
   }
 
@@ -762,16 +872,6 @@ function normalizeColor(value: string | null | undefined) {
   return /^#[0-9a-f]{6}$/i.test(trimmed) ? trimmed : "#22c55e";
 }
 
-function normalizeLogoUrl(value: string | null | undefined) {
-  if (value === undefined) return undefined;
-  if (value === null || value.trim() === "") return null;
-  const trimmed = value.trim();
-  if (!/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(trimmed)) {
-    throw new BadRequestException("Logo da instância invalida.");
-  }
-  return trimmed;
-}
-
 function cleanOptionalText(value: string | null | undefined) {
   if (value === undefined) return undefined;
   const trimmed = value?.trim();
@@ -781,6 +881,28 @@ function cleanOptionalText(value: string | null | undefined) {
 function normalizeOwnerPhone(value: string | null) {
   const phone = phoneFromRemoteIdentity(value);
   return phone ? `+${phone}` : null;
+}
+
+function profilePictureLookupNumber(connection: {
+  ownerExternalId?: string | null;
+  ownerPhoneNormalized?: string | null;
+}) {
+  return connection.ownerExternalId ?? connection.ownerPhoneNormalized ?? null;
+}
+
+function decodeProfilePictureDataUrl(value: string | undefined) {
+  const match = value?.match(/^data:image\/(png|jpeg|jpg|webp);base64,([a-z0-9+/=]+)$/i);
+  if (!match) throw new BadRequestException("Selecione uma imagem válida.");
+  const body = Buffer.from(match[2], "base64");
+  if (!body.length || body.length > 2 * 1024 * 1024) {
+    throw new BadRequestException("A imagem deve ter no máximo 2 MB.");
+  }
+  const subtype = match[1].toLowerCase() === "jpg" ? "jpeg" : match[1].toLowerCase();
+  return {
+    body,
+    mimeType: `image/${subtype}`,
+    fileName: `foto-perfil.${subtype}`,
+  };
 }
 
 function sanitizeEnsureError(error: unknown) {

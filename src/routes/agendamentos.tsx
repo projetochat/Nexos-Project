@@ -121,7 +121,7 @@ function SchedulingPage() {
   };
   return (
     <AppShell>
-      <PageContainer className="max-w-none">
+      <PageContainer>
         <SectionHeader
           title="Agendamentos"
           subtitle={`${num(items.length)} agendamento(s) cadastrado(s).`}
@@ -275,9 +275,14 @@ function SchedulingPage() {
         />
         <ConfirmDialog
           open={!!removing}
-          title="Excluir agendamento?"
+          title="Excluir Agendamento?"
           destructive
-          description={`Deseja realmente excluir o agendamento "${removing?.title ?? ""}"?`}
+          description={
+            <p>
+              Deseja realmente excluir o agendamento{" "}
+              <strong className="font-semibold text-foreground">"{removing?.title ?? ""}"</strong>?
+            </p>
+          }
           confirmLabel="Excluir"
           onClose={() => setRemoving(null)}
           onConfirm={() => {
@@ -464,10 +469,10 @@ function ScheduleMobileCard({
           size="sm"
           title="Excluir"
           aria-label="Excluir"
-          className="text-destructive hover:text-destructive"
+          className="trash-action"
           onClick={onRemove}
         >
-          <Trash2 className="h-4 w-4" />
+          <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </div>
     </Card>
@@ -551,10 +556,10 @@ function ScheduleRow({
             variant="ghost"
             size="sm"
             title="Excluir"
-            className="text-destructive hover:text-destructive"
+            className="trash-action"
             onClick={onRemove}
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </div>
       </td>

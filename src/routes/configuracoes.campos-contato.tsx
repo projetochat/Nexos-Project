@@ -325,7 +325,6 @@ function ContactFieldsSettings() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-8 p-0"
                     title="Editar"
                     onClick={() => setEditing(field)}
                   >
@@ -334,7 +333,7 @@ function ContactFieldsSettings() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-8 p-0"
+                    className="trash-action"
                     title="Excluir"
                     onClick={() => setDeleting(field)}
                   >
@@ -440,6 +439,7 @@ function ContactFieldsSettings() {
                         variant="ghost"
                         size="sm"
                         title="Excluir"
+                        className="trash-action"
                         onClick={() => setDeleting(field)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -472,7 +472,7 @@ function ContactFieldsSettings() {
       />
       <ConfirmDialog
         open={!!deleting}
-        title="Excluir campo?"
+        title="Excluir Campo?"
         description={
           <p>
             Esta ação removerá o campo adicional{" "}

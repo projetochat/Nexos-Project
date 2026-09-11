@@ -431,6 +431,16 @@
     border-radius: 6px;
   }
 
+  /*
+   * Campos já comunicam foco pela própria borda. O anel global adicionava
+   * uma segunda borda externa, especialmente perceptível em modais.
+   */
+  :where(input, textarea, select, [role="combobox"], [role="textbox"]):focus-visible {
+    outline: none;
+    box-shadow: none;
+    border-color: var(--color-primary);
+  }
+
   .topbar-search-input:focus-visible {
     box-shadow: none;
   }
@@ -503,6 +513,25 @@ button[title*="Excluir"]:hover svg,
 button[aria-label*="Excluir"]:hover svg,
 button[title*="Arquivar"]:hover svg,
 button[aria-label*="Arquivar"]:hover svg {
+  color: var(--color-destructive);
+}
+
+/* Acao de lixeira padronizada a partir da listagem de contatos. */
+button.trash-action {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background-color: var(--surface-2);
+}
+
+button.trash-action svg.lucide-trash-2 {
+  color: var(--foreground);
+}
+
+button.trash-action:hover {
+  background-color: var(--surface-3);
+}
+
+button.trash-action:hover svg.lucide-trash-2 {
   color: var(--color-destructive);
 }
 

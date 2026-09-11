@@ -195,6 +195,7 @@ function Page() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="trash-action"
                       title="Excluir departamento"
                       aria-label={`Excluir departamento ${d.name}`}
                       onClick={() => setDeleting(d)}
@@ -236,9 +237,14 @@ function Page() {
         />
         <ConfirmDialog
           open={!!deleting}
-          title="Excluir departamento?"
+          title="Excluir Departamento?"
           destructive
-          description={`Deseja realmente excluir o departamento "${deleting?.name ?? ""}"?`}
+          description={
+            <p>
+              Deseja realmente excluir o departamento{" "}
+              <strong className="font-semibold text-foreground">"{deleting?.name ?? ""}"</strong>?
+            </p>
+          }
           confirmLabel="Excluir"
           onClose={() => setDeleting(null)}
           onConfirm={() => deleting && remove.mutate(deleting.id)}

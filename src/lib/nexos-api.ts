@@ -1436,7 +1436,6 @@ export const connectionsApi = {
     data: {
       name?: string;
       color?: string | null;
-      logoUrl?: string | null;
       welcomeEnabled?: boolean;
       welcomeNewMessage?: string | null;
       welcomeExistingMessage?: string | null;
@@ -1448,6 +1447,19 @@ export const connectionsApi = {
     apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
+    }),
+  updateProfilePicture: (id: string, imageDataUrl: string) =>
+    apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/profile-picture`, {
+      method: "POST",
+      body: JSON.stringify({ imageDataUrl }),
+    }),
+  refreshProfilePicture: (id: string) =>
+    apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/profile-picture/refresh`, {
+      method: "POST",
+    }),
+  removeProfilePicture: (id: string) =>
+    apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/profile-picture`, {
+      method: "DELETE",
     }),
   status: (id: string) => apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/status`),
   qr: (id: string) =>

@@ -1,5 +1,18 @@
+import { AsYouType, parsePhoneNumberFromString } from "libphonenumber-js/min";
+
 export function onlyDigits(value: string) {
   return value.replace(/\D/g, "");
+}
+
+export function formatPhoneForDisplay(value: string) {
+  const digits = onlyDigits(value);
+  if (!digits) return "";
+
+  const phone = parsePhoneNumberFromString(`+${digits}`);
+  if (!phone?.country || !phone.nationalNumber) return value.trim();
+
+  const nationalNumber = new AsYouType(phone.country).input(String(phone.nationalNumber));
+  return `+${phone.countryCallingCode} ${nationalNumber}`.trim();
 }
 
 export function maskBrazilPhone(value: string) {

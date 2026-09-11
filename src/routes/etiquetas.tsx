@@ -103,6 +103,7 @@ function Page() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    className="trash-action"
                     title="Excluir"
                     aria-label={`Excluir ${etiqueta.nome}`}
                     onClick={() => setDeleting(etiqueta)}
@@ -212,7 +213,8 @@ function DeleteLinkedContactCatalogMessage({ name }: { name?: string | null }) {
   return (
     <div className="space-y-2">
       <p>
-        Deseja realmente excluir o cadastro <strong>"{selectedName}"</strong>?
+        Deseja realmente excluir a etiqueta{" "}
+        <strong className="font-semibold text-foreground">"{selectedName}"</strong>?
       </p>
       <p className="text-xs italic text-muted-foreground">
         Os Contatos vinculados serão desvinculados.

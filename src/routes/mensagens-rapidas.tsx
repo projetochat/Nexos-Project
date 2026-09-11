@@ -91,14 +91,14 @@ function QuickRepliesPage() {
 
   return (
     <AppShell>
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
+      <div className="mx-auto w-full max-w-[96rem] px-3 py-6 sm:px-4 md:px-6 md:py-8 lg:px-8 xl:px-10 2xl:px-12">
         <SectionHeader
           title="Mensagens Rápidas"
           subtitle="Atalhos que aparecem digitando / no chat."
           actions={
             canManageCatalog ? (
               <Button variant="primary" size="sm" onClick={openNew}>
-                <Plus className="h-3.5 w-3.5" /> Nova
+                <Plus className="h-3.5 w-3.5" /> Nova Mensagem Rápida
               </Button>
             ) : null
           }
@@ -131,7 +131,7 @@ function QuickRepliesPage() {
                 placeholder="Buscar atalho ou texto..."
               />
             </Card>
-            <div className="grid auto-rows-[9.5rem] gap-3 md:grid-cols-2">
+            <div className="grid auto-rows-[9.5rem] gap-3 md:grid-cols-2 xl:grid-cols-3">
               {filtered.map((reply) => (
                 <Card
                   key={reply.id}
@@ -155,7 +155,7 @@ function QuickRepliesPage() {
                     <div className="absolute right-4 top-4 flex gap-1 sm:right-6 sm:top-6">
                       <Button
                         variant="ghost"
-                        size="icon"
+                        size="sm"
                         title="Duplicar"
                         aria-label="Duplicar"
                         onClick={() => openDuplicate(reply)}
@@ -164,7 +164,7 @@ function QuickRepliesPage() {
                       </Button>
                       <Button
                         variant="ghost"
-                        size="icon"
+                        size="sm"
                         title="Editar"
                         aria-label="Editar"
                         onClick={() => openEdit(reply)}
@@ -176,10 +176,10 @@ function QuickRepliesPage() {
                         size="icon"
                         title="Remover"
                         aria-label="Remover"
-                        className="hover:!bg-destructive hover:!text-destructive-foreground"
+                        className="trash-action"
                         onClick={() => setConfirming(reply)}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   )}
@@ -209,11 +209,19 @@ function QuickRepliesPage() {
 
         <ConfirmDialog
           open={!!confirming}
-          title="Excluir atalho?"
+          title="Excluir Atalho?"
           description={
-            confirming
-              ? `Deseja realmente excluir o atalho "/${confirming.atalho.replace(/^\//, "")}"?`
-              : ""
+            confirming ? (
+              <p>
+                Deseja realmente excluir o atalho{" "}
+                <strong className="font-semibold text-foreground">
+                  "/{confirming.atalho.replace(/^\//, "")}"
+                </strong>
+                ?
+              </p>
+            ) : (
+              ""
+            )
           }
           confirmLabel="Excluir"
           destructive
@@ -255,7 +263,6 @@ function QuickReplyEditor({
   const [texto, setTexto] = React.useState("");
   const [attachment, setAttachment] = React.useState<QuickReplyAttachment | null>(null);
   const [closeOnSend, setCloseOnSend] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState<"mensagem" | "variaveis">("mensagem");
   const [busy, setBusy] = React.useState(false);
   const [shortcutError, setShortcutError] = React.useState("");
   const fileRef = React.useRef<HTMLInputElement>(null);
@@ -287,7 +294,6 @@ function QuickReplyEditor({
         : null,
     );
     setCloseOnSend(initial?.close_on_send ?? false);
-    setActiveTab("mensagem");
     setShortcutError("");
   }, [clone, open, initial]);
 
@@ -341,7 +347,7 @@ function QuickReplyEditor({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial && !clone ? "Editar atalho" : "Novo atalho"}
+      title={initial && !clone ? "Editar Atalho" : "Novo Atalho"}
       description="Atalhos curtos aceleram respostas."
       size="lg"
       footer={
@@ -364,7 +370,7 @@ function QuickReplyEditor({
       <div className="space-y-3">
         <Field
           label="Atalho *"
-          hint="Somente letras, sem barra. Ex.: bd, bt, obg"
+          hint="Somente letras e hífen, sem barra. Ex.: bom-dia, bt, obg"
           error={shortcutError || undefined}
         >
           <Input
@@ -383,30 +389,13 @@ function QuickReplyEditor({
             aria-invalid={!!shortcutError}
           />
         </Field>
-        <div className="flex border-b border-border">
-          <button
-            type="button"
-            onClick={() => setActiveTab("mensagem")}
-            className={`border-b-2 px-3 py-2 text-xs font-medium ${activeTab === "mensagem" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
-          >
-            Mensagem
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("variaveis")}
-            className={`border-b-2 px-3 py-2 text-xs font-medium ${activeTab === "variaveis" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
-          >
-            Dicionário de Variáveis
-          </button>
-        </div>
-        {activeTab === "mensagem" ? (
-          <div className="space-y-3">
+        <div className="space-y-3">
             <Field label="Mensagem *">
               <textarea
                 rows={8}
                 value={texto}
                 onChange={(event) => setTexto(event.target.value)}
-                className="min-h-48 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring"
+                className="min-h-48 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary"
                 placeholder="Bom dia! Como posso ajudar?"
               />
             </Field>
@@ -474,31 +463,7 @@ function QuickReplyEditor({
                 </span>
               </span>
             </label>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-border bg-surface-1">
-            <p className="border-b border-border px-3 py-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Variáveis disponíveis
-            </p>
-            <div className="divide-y divide-border">
-              {MESSAGE_VARIABLES.map(([variable, description]) => (
-                <div key={variable} className="flex items-center gap-3 px-3 py-2 text-xs">
-                  <code
-                    onDoubleClick={() => {
-                      void navigator.clipboard?.writeText(variable);
-                      toast.success("Variável copiada.");
-                    }}
-                    title="Dê duplo clique para copiar"
-                    className="cursor-copy select-text rounded bg-background px-2 py-1 font-mono text-foreground"
-                  >
-                    {variable}
-                  </code>
-                  <span className="text-muted-foreground">{description}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        </div>
       </div>
     </Modal>
   );
@@ -510,7 +475,7 @@ function duplicateShortcut(value: string, clone: boolean) {
 }
 
 function sanitizeQuickReplyShortcut(value: string) {
-  return value.replace(/[^\p{L}]/gu, "").toLocaleLowerCase("pt-BR");
+  return value.replace(/[^\p{L}-]/gu, "").toLocaleLowerCase("pt-BR");
 }
 
 function previewQuickReplyText(value: string) {

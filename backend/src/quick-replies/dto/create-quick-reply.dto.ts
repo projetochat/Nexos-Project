@@ -7,7 +7,7 @@ export class CreateQuickReplyDto {
 
   @IsString()
   @Length(1, 40)
-  @Matches(/^\p{L}+$/u, { message: "O atalho deve conter somente letras." })
+  @Matches(/^[\p{L}-]+$/u, { message: "O atalho deve conter somente letras e hífen." })
   shortcut!: string;
 
   @IsString()

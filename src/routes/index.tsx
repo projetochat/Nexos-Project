@@ -508,6 +508,7 @@ function Dashboard() {
                   setDraftOrder([...DASHBOARD_BIS]);
                   setDraftLabels({});
                   setEditingBiId(null);
+                  toast.success("Configurações restauradas para o padrão do sistema.");
                 }}
               >
                 <RotateCcw className="h-4 w-4" />
@@ -591,28 +592,28 @@ function Dashboard() {
                 />
                 {editingBiId === id ? (
                   <div className="flex min-w-0 flex-1 items-center gap-1">
-                    <Input
-                      autoFocus
-                      value={editingBiTitle}
-                      onChange={(event) => setEditingBiTitle(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") saveEditingBiTitle();
-                        if (event.key === "Escape") setEditingBiId(null);
-                      }}
-                      className="h-8 min-w-0 flex-1 text-sm"
-                      aria-label="Título do dashboard"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 shrink-0 p-0"
-                      title="Cancelar edição"
-                      aria-label="Cancelar edição"
-                      onClick={() => setEditingBiId(null)}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
+                    <div className="relative min-w-0 flex-1">
+                      <Input
+                        autoFocus
+                        value={editingBiTitle}
+                        onChange={(event) => setEditingBiTitle(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") saveEditingBiTitle();
+                          if (event.key === "Escape") setEditingBiId(null);
+                        }}
+                        className="h-8 min-w-0 pr-9 text-sm"
+                        aria-label="Título do dashboard"
+                      />
+                      <button
+                        type="button"
+                        className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                        title="Cancelar edição"
+                        aria-label="Cancelar edição"
+                        onClick={() => setEditingBiId(null)}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"

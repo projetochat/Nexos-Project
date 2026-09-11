@@ -43,6 +43,7 @@ import {
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
 import { num } from "@/lib/format";
+import { formatPhoneForDisplay } from "@/lib/input-masks";
 import {
   conversationApi,
   crmApi,
@@ -265,7 +266,7 @@ function ChamadosPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="hover:!bg-destructive hover:!text-destructive-foreground"
+                            className="trash-action"
                             title="Excluir chamado"
                             aria-label={`Excluir chamado ${ticket.protocol}`}
                             onClick={(event) => {
@@ -323,8 +324,14 @@ function ChamadosPage() {
         />
         <ConfirmDialog
           open={!!deletingTicket}
-          title="Excluir chamado?"
-          description={`O chamado ${deletingTicket?.protocol ?? ""} será excluído da listagem. Deseja continuar?`}
+          title="Excluir Chamado?"
+          description={
+            <p>
+              O chamado{" "}
+              <strong className="font-semibold text-foreground">"{deletingTicket?.protocol ?? ""}"</strong>{" "}
+              será excluído da listagem. Deseja continuar?
+            </p>
+          }
           confirmLabel="Excluir"
           destructive
           onClose={() => setDeletingTicket(null)}
@@ -384,7 +391,19 @@ function TicketEditor({
   const [assignedMembershipId, setAssignedMembershipId] = React.useState("");
   const [attachment, setAttachment] = React.useState<File | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const initializedSessionRef = React.useRef<string | null>(null);
+  const conversationPrefillRef = React.useRef<string | null>(null);
+  const descriptionPrefillRef = React.useRef<string | null>(null);
+  const dirtyFieldsRef = React.useRef({
+    title: false,
+    description: false,
+    department: false,
+    requester: false,
+    customer: false,
+    assignee: false,
+  });
   const defaultDepartmentId = options.departments[0]?.id ?? "";
+  const sessionKey = `${initialTicket?.id ?? "new"}:${clone}:${initialConversationId ?? ""}`;
   const requesterContacts = useQuery({
     queryKey: ["tickets", "requester-contacts", requesterSearch],
     queryFn: () => crmApi.listContacts({ q: requesterSearch.trim() || undefined, pageSize: 20 }),
@@ -392,7 +411,24 @@ function TicketEditor({
   });
 
   React.useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedSessionRef.current = null;
+      conversationPrefillRef.current = null;
+      descriptionPrefillRef.current = null;
+      return;
+    }
+    if (initializedSessionRef.current === sessionKey) return;
+    initializedSessionRef.current = sessionKey;
+    conversationPrefillRef.current = null;
+    descriptionPrefillRef.current = null;
+    dirtyFieldsRef.current = {
+      title: false,
+      description: false,
+      department: false,
+      requester: false,
+      customer: false,
+      assignee: false,
+    };
     setTitle(initialTicket ? (clone ? `${initialTicket.title} - Cópia` : initialTicket.title) : "");
     setDescription(initialTicket?.descriptionHtmlSanitized ?? initialTicket?.descriptionText ?? "");
     setCategory(initialTicket?.category ?? "SUPORTE");
@@ -405,7 +441,7 @@ function TicketEditor({
     setConversationId(initialTicket?.conversation?.id ?? initialConversationId ?? "");
     setAssignedMembershipId(initialTicket?.assignedMembership?.id ?? "");
     setAttachment(null);
-  }, [clone, initialConversationId, initialTicket, open]);
+  }, [clone, initialConversationId, initialTicket, open, sessionKey]);
 
   React.useEffect(() => {
     if (!open || initialTicket || initialConversationId || departmentId || !defaultDepartmentId)
@@ -416,21 +452,40 @@ function TicketEditor({
   React.useEffect(() => {
     const conversation = initialConversation.data;
     if (!open || initialTicket || !conversation) return;
+    const prefillKey = `${sessionKey}:${conversation.id}`;
+    if (conversationPrefillRef.current === prefillKey) return;
+    conversationPrefillRef.current = prefillKey;
+
     setConversationId(conversation.id);
-    setContactId(conversation.contact_id ?? "");
-    setRequesterSearch(conversation.contact?.nome ?? "");
-    setCustomerId(conversation.contact?.customer_id ?? conversation.contact?.customer?.id ?? "");
-    setDepartmentId(conversation.department_id ?? defaultDepartmentId);
-    setAssignedMembershipId(conversation.assigned_membership_id ?? "");
-    setTitle(`Chamado aberto pelo Chat - ${conversation.protocolo ?? conversation.id.slice(0, 8)}`);
-  }, [defaultDepartmentId, initialConversation.data, initialTicket, open]);
+    if (!dirtyFieldsRef.current.requester) {
+      setContactId(conversation.contact_id ?? "");
+      setRequesterSearch(conversation.contact?.nome ?? "");
+    }
+    if (!dirtyFieldsRef.current.customer) {
+      setCustomerId(conversation.contact?.customer_id ?? conversation.contact?.customer?.id ?? "");
+    }
+    if (!dirtyFieldsRef.current.department) {
+      setDepartmentId(conversation.department_id ?? defaultDepartmentId);
+    }
+    if (!dirtyFieldsRef.current.assignee) {
+      setAssignedMembershipId(conversation.assigned_membership_id ?? "");
+    }
+    if (!dirtyFieldsRef.current.title) {
+      setTitle(`Chamado aberto pelo Chat - ${conversation.protocolo ?? conversation.id.slice(0, 8)}`);
+    }
+  }, [defaultDepartmentId, initialConversation.data, initialTicket, open, sessionKey]);
 
   React.useEffect(() => {
     const conversation = initialConversation.data;
     const messages = initialMessages.data;
     if (!open || initialTicket || !conversation || !messages?.length) return;
-    setDescription(buildConversationTicketDescription(conversation, messages));
-  }, [initialConversation.data, initialMessages.data, initialTicket, open]);
+    const prefillKey = `${sessionKey}:${conversation.id}`;
+    if (descriptionPrefillRef.current === prefillKey) return;
+    descriptionPrefillRef.current = prefillKey;
+    if (!dirtyFieldsRef.current.description) {
+      setDescription(buildConversationTicketDescription(conversation, messages));
+    }
+  }, [initialConversation.data, initialMessages.data, initialTicket, open, sessionKey]);
 
   const submit = async () => {
     if (!title.trim()) return toast.error("Informe o título.");
@@ -501,7 +556,13 @@ function TicketEditor({
       <div className="space-y-4">
         <div className="grid gap-4 md:grid-cols-3">
           <Field label="Cliente *">
-            <Select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+            <Select
+              value={customerId}
+              onChange={(event) => {
+                dirtyFieldsRef.current.customer = true;
+                setCustomerId(event.target.value);
+              }}
+            >
               <option value="">Selecione...</option>
               {options.customers.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -511,7 +572,13 @@ function TicketEditor({
             </Select>
           </Field>
           <Field label="Departamento *">
-            <Select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}>
+            <Select
+              value={departmentId}
+              onChange={(event) => {
+                dirtyFieldsRef.current.department = true;
+                setDepartmentId(event.target.value);
+              }}
+            >
               <option value="">Selecione...</option>
               {options.departments.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -529,6 +596,7 @@ function TicketEditor({
               <SearchInput
                 value={requesterSearch}
                 onChange={(value) => {
+                  dirtyFieldsRef.current.requester = true;
                   setRequesterSearch(value);
                   setContactId("");
                   setRequesterResultsOpen(true);
@@ -547,6 +615,7 @@ function TicketEditor({
                         className="flex w-full items-center justify-between gap-3 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-1"
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => {
+                          dirtyFieldsRef.current.requester = true;
                           setContactId(item.id);
                           setRequesterSearch(item.nome);
                           setRequesterResultsOpen(false);
@@ -554,7 +623,7 @@ function TicketEditor({
                       >
                         <span className="min-w-0 truncate font-medium">{item.nome}</span>
                         <span className="shrink-0 text-xs text-muted-foreground">
-                          {item.telefone || item.email || "Sem telefone"}
+                          {item.telefone ? formatPhoneForDisplay(item.telefone) : item.email || "Sem telefone"}
                         </span>
                       </button>
                     ))
@@ -598,10 +667,23 @@ function TicketEditor({
           </Field>
         </div>
         <Field label="Título *">
-          <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={180} />
+          <Input
+            value={title}
+            onChange={(event) => {
+              dirtyFieldsRef.current.title = true;
+              setTitle(event.target.value);
+            }}
+            maxLength={180}
+          />
         </Field>
-        <Field label="Descrição *">
-          <RichTextEditor value={description} onChange={setDescription} />
+        <Field label="Descrição *" asLabel={false}>
+          <RichTextEditor
+            value={description}
+            onChange={(value) => {
+              dirtyFieldsRef.current.description = true;
+              setDescription(value);
+            }}
+          />
         </Field>
         <div className="rounded-lg border border-dashed border-border bg-surface-1 p-4">
           <p className="mb-2 text-sm font-medium">
@@ -686,7 +768,7 @@ function TicketDetail({
     <Modal
       open={!!ticketId}
       onClose={onClose}
-      title={item ? `${viewMode ? "Visualizar" : "Editar"} chamado · ${item.protocol}` : "Chamado"}
+      title={item ? `${viewMode ? "Visualizar" : "Editar"} Chamado · ${item.protocol}` : "Chamado"}
       size="xl"
       footer={
         item && viewMode ? (
@@ -876,7 +958,7 @@ function RichTextEditor({
     </button>
   );
   const editor = (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface-1 focus-within:ring-2 focus-within:ring-ring">
+    <div className="overflow-hidden rounded-lg border border-border bg-surface-1 focus-within:border-primary">
       <div className="border-b border-border bg-card px-2 py-1.5">
         <div className="flex flex-wrap items-center gap-0.5 rounded-xl bg-surface-2 px-2 py-1 shadow-sm">
           {tool("Desfazer", "undo", <Undo2 className="h-4 w-4" />)}
@@ -1110,14 +1192,15 @@ function Attachments({
               {!readOnly && (
                 <Button
                   variant="ghost"
-                  size="icon"
+                  size="sm"
+                  className="trash-action"
                   aria-label="Remover anexo"
                   onClick={async () => {
                     await ticketApi.deleteAttachment(ticketId, item.id);
                     onChanged();
                   }}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               )}
             </div>

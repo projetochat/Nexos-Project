@@ -149,8 +149,8 @@ function AutomationRow({
         <Button variant="outline" size="sm" onClick={onToggle}>
           {rule.status === "active" ? "Pausar" : "Ativar"}
         </Button>
-        <Button variant="ghost" size="icon" onClick={onArchive} aria-label="Arquivar automacao">
-          <Trash2 className="h-4 w-4" />
+        <Button variant="ghost" size="sm" className="trash-action" onClick={onArchive} aria-label="Arquivar automacao">
+          <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </div>
     </div>

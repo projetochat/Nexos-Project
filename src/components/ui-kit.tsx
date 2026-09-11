@@ -88,14 +88,18 @@ export function Badge({
   );
 }
 
-export function Input({ className = "", ...rest }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      className={`min-h-10 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
-      {...rest}
-    />
-  );
-}
+export const Input = React.forwardRef<
+  HTMLInputElement,
+  React.InputHTMLAttributes<HTMLInputElement>
+>(({ className = "", ...rest }, ref) => (
+  <input
+    ref={ref}
+    className={`min-h-10 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
+    {...rest}
+  />
+));
+
+Input.displayName = "Input";
 
 export function SearchInput({
   value,
@@ -169,17 +173,18 @@ export function Field({
   hint,
   error,
   children,
+  asLabel = true,
 }: {
   label: string;
   hint?: string;
   error?: string;
   children: React.ReactNode;
+  asLabel?: boolean;
 }) {
   const requiredMarkIndex = label.indexOf("*");
   const hasRequiredMark = requiredMarkIndex >= 0;
-
-  return (
-    <label className="block">
+  const content = (
+    <>
       <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
         {hasRequiredMark ? (
           <>
@@ -197,8 +202,10 @@ export function Field({
       ) : hint ? (
         <span className="mt-1 block text-[11px] text-muted-foreground">{hint}</span>
       ) : null}
-    </label>
+    </>
   );
+
+  return asLabel ? <label className="block">{content}</label> : <div className="block">{content}</div>;
 }
 
 export function Avatar({

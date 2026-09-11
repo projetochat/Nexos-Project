@@ -207,7 +207,7 @@ function defaultWorkSchedule(): WorkSchedule {
       night: { active: false, start: "19:00", end: "22:00" },
     };
   }
-  return { noSchedule: false, days };
+  return { noSchedule: true, days };
 }
 
 type PerfilFormData = {
@@ -416,6 +416,7 @@ function Page() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="trash-action"
                         onClick={() => setDeleting(p)}
                         title="Excluir perfil"
                         aria-label={`Excluir perfil ${p.name}`}
@@ -459,9 +460,14 @@ function Page() {
         />
         <ConfirmDialog
           open={!!deleting}
-          title="Excluir perfil?"
+          title="Excluir Perfil?"
           destructive
-          description={`Deseja realmente excluir o perfil "${deleting?.name ?? ""}"?`}
+          description={
+            <p>
+              Deseja realmente excluir o perfil{" "}
+              <strong className="font-semibold text-foreground">"{deleting?.name ?? ""}"</strong>?
+            </p>
+          }
           confirmLabel="Excluir"
           onClose={() => setDeleting(null)}
           onConfirm={() => deleting && remove.mutate(deleting.id)}
@@ -963,9 +969,6 @@ function WorkScheduleEditor({
   value: WorkSchedule;
   onChange: (value: WorkSchedule) => void;
 }) {
-  const [editing, setEditing] = React.useState(false);
-  const [selectedDay, setSelectedDay] = React.useState<WeekDay | null>(null);
-
   const updateShift = (day: WeekDay, shift: ShiftKey, patch: Partial<WorkShift>) => {
     onChange({
       ...value,
@@ -979,30 +982,24 @@ function WorkScheduleEditor({
     });
   };
 
-  const copyDayToAll = (sourceDay: WeekDay) => {
+  const copyShiftToAll = (sourceDay: WeekDay, shift: ShiftKey) => {
     const source = value.days[sourceDay];
     const days = { ...value.days };
 
     WEEK_DAYS.forEach((day) => {
       if (day === sourceDay) return;
-      days[day] = { ...value.days[day] };
-      (Object.keys(SHIFT_LABELS) as ShiftKey[]).forEach((shift) => {
-        const targetShift = value.days[day][shift];
-        if (!targetShift.active) return;
-        days[day][shift] = {
+      const targetShift = value.days[day][shift];
+      days[day] = {
+        ...value.days[day],
+        [shift]: {
           ...targetShift,
           start: source[shift].start,
           end: source[shift].end,
-        };
-      });
+        },
+      };
     });
 
     onChange({ ...value, days });
-  };
-
-  const toggleEditing = () => {
-    setEditing((current) => !current);
-    setSelectedDay(null);
   };
 
   return (
@@ -1015,42 +1012,22 @@ function WorkScheduleEditor({
             onChange={(event) => {
               const noSchedule = event.target.checked;
               onChange({ ...value, noSchedule });
-              if (noSchedule) {
-                setEditing(false);
-                setSelectedDay(null);
-              }
             }}
             className="h-4 w-4 accent-primary"
           />
           Sem jornada
         </label>
-        {!value.noSchedule && (
-          <Button type="button" variant="ghost" size="sm" onClick={toggleEditing}>
-            {editing ? (
-              <>
-                <Check className="h-3.5 w-3.5" />
-                Concluir
-              </>
-            ) : (
-              <>
-                <Pencil className="h-3.5 w-3.5" />
-                Editar
-              </>
-            )}
-          </Button>
-        )}
       </div>
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[900px] table-fixed text-xs">
           <thead className="bg-surface-2 text-[11px] uppercase tracking-widest text-muted-foreground">
             <tr>
-              <th className="w-20 px-2 py-2 text-left">Dia</th>
+              <th className="w-24 px-2 py-2 text-left">Dia</th>
               {Object.values(SHIFT_LABELS).map((label) => (
                 <th key={label} className="px-2 py-2 text-center" colSpan={3}>
                   {label}
                 </th>
               ))}
-              <th className="w-12 px-2 py-2" aria-label="Ações" rowSpan={2} />
             </tr>
             <tr>
               <th />
@@ -1059,7 +1036,7 @@ function WorkScheduleEditor({
                   Ativo
                 </th>,
                 <th key={`${shift}-start`} className="px-2 py-2 text-center">
-                  Inicio
+                  Início
                 </th>,
                 <th key={`${shift}-end`} className="px-2 py-2 text-center">
                   Fim
@@ -1076,57 +1053,65 @@ function WorkScheduleEditor({
                   return (
                     <React.Fragment key={`${day}-${shift}`}>
                       <td className="px-2 py-2 text-center">
+                        <div className="flex items-center justify-center gap-1">
                         <input
                           type="checkbox"
                           checked={item.active}
-                          disabled={!editing || value.noSchedule}
+                          disabled={value.noSchedule}
                           onChange={(event) => {
-                            setSelectedDay(day);
                             updateShift(day, shift, { active: event.target.checked });
                           }}
                           className="h-4 w-4 accent-primary"
                         />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={value.noSchedule}
+                            onClick={() => copyShiftToAll(day, shift)}
+                            title={`Copiar turno ${SHIFT_LABELS[shift]} para todos os dias`}
+                            aria-label={`Copiar turno ${SHIFT_LABELS[shift]} para todos os dias`}
+                            className="h-7 w-7 p-0"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </td>
                       <td className="px-2 py-2 text-center">
                         <Input
-                          type="time"
+                          type="text"
+                          inputMode="numeric"
                           value={item.start}
-                          disabled={!editing || value.noSchedule || !item.active}
-                          className="w-full appearance-none px-2 text-center [&::-webkit-calendar-picker-indicator]:hidden"
-                          onFocus={() => setSelectedDay(day)}
+                          placeholder="00:00"
+                          disabled={value.noSchedule || !item.active}
+                          className="w-full px-2 text-center"
                           onChange={(event) =>
-                            updateShift(day, shift, { start: event.target.value })
+                            updateShift(day, shift, { start: sanitizeWorkHourDraft(event.target.value) })
+                          }
+                          onBlur={(event) =>
+                            updateShift(day, shift, { start: formatWorkHourDraft(event.target.value) })
                           }
                         />
                       </td>
                       <td className="px-2 py-2 text-center">
                         <Input
-                          type="time"
+                          type="text"
+                          inputMode="numeric"
                           value={item.end}
-                          disabled={!editing || value.noSchedule || !item.active}
-                          className="w-full appearance-none px-2 text-center [&::-webkit-calendar-picker-indicator]:hidden"
-                          onFocus={() => setSelectedDay(day)}
-                          onChange={(event) => updateShift(day, shift, { end: event.target.value })}
+                          placeholder="00:00"
+                          disabled={value.noSchedule || !item.active}
+                          className="w-full px-2 text-center"
+                          onChange={(event) =>
+                            updateShift(day, shift, { end: sanitizeWorkHourDraft(event.target.value) })
+                          }
+                          onBlur={(event) =>
+                            updateShift(day, shift, { end: formatWorkHourDraft(event.target.value) })
+                          }
                         />
                       </td>
                     </React.Fragment>
                   );
                 })}
-                <td className="px-2 py-2 text-center">
-                  {editing && selectedDay === day && !value.noSchedule && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyDayToAll(day)}
-                      title="Copiar para todos"
-                      aria-label="Copiar para todos"
-                      className="px-2"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </td>
               </tr>
             ))}
           </tbody>
@@ -1134,6 +1119,20 @@ function WorkScheduleEditor({
       </div>
     </section>
   );
+}
+
+function sanitizeWorkHourDraft(value: string) {
+  return value.replace(/[^\d:]/g, "").slice(0, 5);
+}
+
+function formatWorkHourDraft(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const padded =
+    digits.length <= 2 ? digits.padStart(2, "0").padEnd(4, "0") : digits.padStart(4, "0");
+  const hour = Math.min(23, Number(padded.slice(0, 2)));
+  const minute = Math.min(59, Number(padded.slice(2, 4)));
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 function EntityFormLog({

@@ -99,7 +99,7 @@ function HistoricoPage() {
 
   return (
     <AppShellFull>
-      <div className="flex h-full min-h-0 w-full flex-col gap-4 p-4 md:p-6">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[96rem] flex-col gap-4 px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8 xl:px-10 2xl:px-12">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-lg font-semibold">Histórico de conversas</h1>

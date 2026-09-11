@@ -42,6 +42,7 @@ import { Route as ConfiguracoesIndexRouteImport } from './routes/configuracoes.i
 import { Route as AtendimentoIndexRouteImport } from './routes/atendimento.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as InboxConversationIdRouteImport } from './routes/inbox.$conversationId'
+import { Route as ConfiguracoesVariaveisRouteImport } from './routes/configuracoes.variaveis'
 import { Route as ConfiguracoesUsuariosRouteImport } from './routes/configuracoes.usuarios'
 import { Route as ConfiguracoesSegurancaRouteImport } from './routes/configuracoes.seguranca'
 import { Route as ConfiguracoesPermissoesRouteImport } from './routes/configuracoes.permissoes'
@@ -234,6 +235,11 @@ const InboxConversationIdRoute = InboxConversationIdRouteImport.update({
   path: '/$conversationId',
   getParentRoute: () => InboxRoute,
 } as any)
+const ConfiguracoesVariaveisRoute = ConfiguracoesVariaveisRouteImport.update({
+  id: '/variaveis',
+  path: '/variaveis',
+  getParentRoute: () => ConfiguracoesRoute,
+} as any)
 const ConfiguracoesUsuariosRoute = ConfiguracoesUsuariosRouteImport.update({
   id: '/usuarios',
   path: '/usuarios',
@@ -421,6 +427,7 @@ export interface FileRoutesByFullPath {
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/usuarios': typeof ConfiguracoesUsuariosRoute
+  '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin/': typeof AdminIndexRoute
   '/atendimento/': typeof AtendimentoIndexRoute
@@ -478,6 +485,7 @@ export interface FileRoutesByTo {
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/usuarios': typeof ConfiguracoesUsuariosRoute
+  '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin': typeof AdminIndexRoute
   '/atendimento': typeof AtendimentoIndexRoute
@@ -540,6 +548,7 @@ export interface FileRoutesById {
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/usuarios': typeof ConfiguracoesUsuariosRoute
+  '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin/': typeof AdminIndexRoute
   '/atendimento/': typeof AtendimentoIndexRoute
@@ -603,6 +612,7 @@ export interface FileRouteTypes {
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/usuarios'
+    | '/configuracoes/variaveis'
     | '/inbox/$conversationId'
     | '/admin/'
     | '/atendimento/'
@@ -660,6 +670,7 @@ export interface FileRouteTypes {
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/usuarios'
+    | '/configuracoes/variaveis'
     | '/inbox/$conversationId'
     | '/admin'
     | '/atendimento'
@@ -721,6 +732,7 @@ export interface FileRouteTypes {
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/usuarios'
+    | '/configuracoes/variaveis'
     | '/inbox/$conversationId'
     | '/admin/'
     | '/atendimento/'
@@ -993,6 +1005,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InboxConversationIdRouteImport
       parentRoute: typeof InboxRoute
     }
+    '/configuracoes/variaveis': {
+      id: '/configuracoes/variaveis'
+      path: '/variaveis'
+      fullPath: '/configuracoes/variaveis'
+      preLoaderRoute: typeof ConfiguracoesVariaveisRouteImport
+      parentRoute: typeof ConfiguracoesRoute
+    }
     '/configuracoes/usuarios': {
       id: '/configuracoes/usuarios'
       path: '/usuarios'
@@ -1253,6 +1272,7 @@ interface ConfiguracoesRouteChildren {
   ConfiguracoesPermissoesRoute: typeof ConfiguracoesPermissoesRoute
   ConfiguracoesSegurancaRoute: typeof ConfiguracoesSegurancaRoute
   ConfiguracoesUsuariosRoute: typeof ConfiguracoesUsuariosRoute
+  ConfiguracoesVariaveisRoute: typeof ConfiguracoesVariaveisRoute
   ConfiguracoesIndexRoute: typeof ConfiguracoesIndexRoute
 }
 
@@ -1267,6 +1287,7 @@ const ConfiguracoesRouteChildren: ConfiguracoesRouteChildren = {
   ConfiguracoesPermissoesRoute: ConfiguracoesPermissoesRoute,
   ConfiguracoesSegurancaRoute: ConfiguracoesSegurancaRoute,
   ConfiguracoesUsuariosRoute: ConfiguracoesUsuariosRoute,
+  ConfiguracoesVariaveisRoute: ConfiguracoesVariaveisRoute,
   ConfiguracoesIndexRoute: ConfiguracoesIndexRoute,
 }
 

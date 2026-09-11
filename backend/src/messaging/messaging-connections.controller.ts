@@ -63,6 +63,28 @@ export class MessagingConnectionsController {
     return this.connections.update(id, dto, current);
   }
 
+  @Post(":id/profile-picture")
+  @RequirePermissions("connections.manage")
+  updateProfilePicture(
+    @Param("id") id: string,
+    @Body() dto: { imageDataUrl?: string },
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.connections.updateProfilePicture(id, dto.imageDataUrl, current);
+  }
+
+  @Post(":id/profile-picture/refresh")
+  @RequirePermissions("connections.read")
+  refreshProfilePicture(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.refreshProfilePicture(id, current);
+  }
+
+  @Delete(":id/profile-picture")
+  @RequirePermissions("connections.manage")
+  removeProfilePicture(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.removeProfilePicture(id, current);
+  }
+
   @Get(":id/status")
   @RequirePermissions("connections.read")
   status(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {

@@ -9,7 +9,7 @@ export class UpdateQuickReplyDto {
   @IsOptional()
   @IsString()
   @Length(1, 40)
-  @Matches(/^\p{L}+$/u, { message: "O atalho deve conter somente letras." })
+  @Matches(/^[\p{L}-]+$/u, { message: "O atalho deve conter somente letras e hífen." })
   shortcut?: string;
 
   @IsOptional()

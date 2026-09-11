@@ -78,6 +78,31 @@ function Page() {
     queryFn: crmApi.listContactCustomFields,
   });
   const visibleItems = items.filter((item) => item.status !== "removed");
+  const profileSyncAttempted = React.useRef(new Set<string>());
+
+  React.useEffect(() => {
+    const pending = items.filter(
+      (item) =>
+        item.status === "connected" &&
+        !item.logoUrl &&
+        !profileSyncAttempted.current.has(item.id),
+    );
+    if (pending.length === 0) return;
+    pending.forEach((item) => profileSyncAttempted.current.add(item.id));
+    void Promise.all(
+      pending.map((item) =>
+        connectionsApi.status(item.id).catch(() => null),
+      ),
+    ).then((updated) => {
+      const byId = new Map(
+        updated.filter((item): item is ApiMessagingConnection => item !== null).map((item) => [item.id, item]),
+      );
+      if (byId.size === 0) return;
+      qc.setQueryData<ApiMessagingConnection[]>(["nexos", "messaging-connections"], (current) =>
+        current?.map((item) => byId.get(item.id) ?? item),
+      );
+    });
+  }, [items, qc]);
 
   React.useEffect(() => {
     if (!qr) return;
@@ -210,7 +235,7 @@ function Page() {
           subtitle={`${num(visibleItems.length)} instâncias cadastradas.`}
           actions={
             <Button variant="primary" size="sm" onClick={novo.show}>
-              <Plus className="h-3.5 w-3.5" /> Nova instância
+              <Plus className="h-3.5 w-3.5" /> Nova Instância
             </Button>
           }
         />
@@ -326,7 +351,7 @@ function Page() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-destructive hover:text-destructive"
+                      className="trash-action"
                       onClick={() => setRemoving(connection)}
                       disabled={remove.isPending}
                       title="Remover"
@@ -363,8 +388,14 @@ function Page() {
         />
         <ConfirmDialog
           open={!!disconnecting}
-          title="Desligar instância?"
-          description={`Deseja desligar a instância “${disconnecting?.name ?? ""}”? Será necessário conectá-la novamente para enviar e receber mensagens.`}
+          title="Desligar Instância?"
+          description={
+            <p>
+              Deseja desligar a instância{" "}
+              <strong className="font-semibold text-foreground">"{disconnecting?.name ?? ""}"</strong>?
+              Será necessário conectá-la novamente para enviar e receber mensagens.
+            </p>
+          }
           confirmLabel="Desligar"
           destructive
           onClose={() => setDisconnecting(null)}
@@ -416,8 +447,8 @@ function ConnectionForm({
     <Modal
       open={open}
       onClose={onClose}
-      title="Nova instância WhatsApp"
-      size="lg"
+      title="Nova Instância WhatsApp"
+      size="xl"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -443,7 +474,7 @@ function ConnectionForm({
               type="button"
               aria-pressed={connectionType === "qr-code"}
               onClick={() => setConnectionType("qr-code")}
-              className="group flex min-h-32 flex-col items-center justify-center rounded-xl border border-border bg-surface-1 p-3 text-center outline-none transition hover:border-emerald-500 hover:bg-emerald-500/10 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/30 data-[selected=true]:border-emerald-500 data-[selected=true]:bg-emerald-500/10 sm:min-h-36 sm:p-4"
+              className="group flex min-h-32 flex-col items-center justify-center rounded-xl border border-border bg-surface-1 p-3 text-center outline-none transition hover:border-emerald-500 hover:bg-emerald-500/10 focus-visible:border-emerald-500 data-[selected=true]:border-emerald-500 data-[selected=true]:bg-emerald-500/10 sm:min-h-36 sm:p-4"
               data-selected={connectionType === "qr-code"}
             >
               <span className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-surface-3 text-muted-foreground transition group-hover:bg-emerald-500 group-hover:text-white group-data-[selected=true]:bg-emerald-500 group-data-[selected=true]:text-white">
@@ -474,7 +505,6 @@ function ConnectionForm({
             onChange={(e) => setName(e.target.value)}
             placeholder="Digite o nome da instância"
             required
-            autoFocus
           />
         </Field>
       </form>
@@ -489,7 +519,6 @@ type RemoveConnectionOptions = {
 type ConnectionSettingsFormData = {
   name: string;
   color: string | null;
-  logoUrl: string | null;
   welcomeEnabled: boolean;
   welcomeNewMessage: string | null;
   welcomeExistingMessage: string | null;
@@ -498,7 +527,7 @@ type ConnectionSettingsFormData = {
   notes: string | null;
 };
 
-type ConnectionSettingsTab = "general" | "greeting" | "absence" | "variables";
+type ConnectionSettingsTab = "general" | "greeting" | "absence";
 
 type ServiceHoursRow = {
   day: string;
@@ -579,6 +608,7 @@ function ConnectionSettingsModal({
   onSubmit: (connection: ApiMessagingConnection, data: ConnectionSettingsFormData) => void;
 }) {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const qc = useQueryClient();
   const logoButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const [tab, setTab] = React.useState<ConnectionSettingsTab>("general");
   const [logoMenuOpen, setLogoMenuOpen] = React.useState(false);
@@ -588,13 +618,13 @@ function ConnectionSettingsModal({
   const [timezone, setTimezone] = React.useState("America/Sao_Paulo");
   const [aiAgentId, setAiAgentId] = React.useState("");
   const [absenceEnabled, setAbsenceEnabled] = React.useState(false);
+  const [absenceActivation, setAbsenceActivation] = React.useState(0);
   const [absenceMessage, setAbsenceMessage] = React.useState("");
   const [serviceHours, setServiceHours] = React.useState<ServiceHoursRow[]>(defaultServiceHours);
   const [showWelcomeValidation, setShowWelcomeValidation] = React.useState(false);
   const [form, setForm] = React.useState<ConnectionSettingsFormData>({
     name: "",
     color: "#22c55e",
-    logoUrl: null,
     welcomeEnabled: false,
     welcomeNewMessage: "",
     welcomeExistingMessage: "",
@@ -613,13 +643,13 @@ function ConnectionSettingsModal({
     setTimezone("America/Sao_Paulo");
     setAiAgentId("");
     setAbsenceEnabled(connection.absenceEnabled ?? false);
+    setAbsenceActivation(0);
     setAbsenceMessage(connection.absenceMessage ?? "");
     setServiceHours(defaultServiceHours());
     setShowWelcomeValidation(false);
     setForm({
       name: connection.name,
       color: connection.color || "#22c55e",
-      logoUrl: connection.logoUrl ?? null,
       welcomeEnabled: connection.welcomeEnabled ?? false,
       welcomeNewMessage: connection.welcomeNewMessage ?? "",
       welcomeExistingMessage: connection.welcomeExistingMessage ?? "",
@@ -629,15 +659,24 @@ function ConnectionSettingsModal({
     });
   }, [connection]);
 
-  const applyLogoDataUrl = (dataUrl: string | null) => {
-    setLogoPreview(dataUrl);
-    setForm((current) => ({ ...current, logoUrl: dataUrl }));
+  const applyConnectionUpdate = (updated: ApiMessagingConnection) => {
+    setLogoPreview(updated.logoUrl ?? null);
+    qc.setQueryData<ApiMessagingConnection[]>(["nexos", "messaging-connections"], (items) =>
+      items?.map((item) => (item.id === updated.id ? updated : item)),
+    );
+  };
+
+  const updateWhatsAppProfilePicture = async (dataUrl: string) => {
+    if (!connection) return;
+    const updated = await connectionsApi.updateProfilePicture(connection.id, dataUrl);
+    applyConnectionUpdate(updated);
+    toast.success("Foto de perfil do WhatsApp atualizada.");
   };
 
   const handleLogoFile = async (file?: File | null) => {
     if (!file) return;
     try {
-      applyLogoDataUrl(await readImageAsCompressedDataUrl(file));
+      await updateWhatsAppProfilePicture(await readImageAsCompressedDataUrl(file));
       setLogoMenuOpen(false);
     } catch (error) {
       toast.error((error as Error).message);
@@ -659,7 +698,6 @@ function ConnectionSettingsModal({
       ...form,
       name: form.name.trim(),
       color: completeHexColor(form.color, "#22c55e"),
-      logoUrl: form.logoUrl,
       welcomeNewMessage: form.welcomeNewMessage?.trim() || null,
       welcomeExistingMessage: form.welcomeExistingMessage?.trim() || null,
       absenceEnabled,
@@ -674,7 +712,7 @@ function ConnectionSettingsModal({
         open={!!connection}
         onClose={onClose}
         title="Editar Instância"
-        size="lg"
+        size="xl"
         footer={
           <div className="flex w-full items-center justify-between gap-2">
             <EntityFormLog createdAt={connection?.createdAt} updatedAt={connection?.updatedAt} />
@@ -705,9 +743,6 @@ function ConnectionSettingsModal({
             <TabButton active={tab === "absence"} onClick={() => setTab("absence")}>
               Mensagem de Ausência
             </TabButton>
-            <TabButton active={tab === "variables"} onClick={() => setTab("variables")}>
-              Dicionário de Variáveis
-            </TabButton>
           </div>
 
           {tab === "general" && (
@@ -719,16 +754,16 @@ function ConnectionSettingsModal({
                     type="button"
                     className="group relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-xs font-semibold text-muted-foreground"
                     onClick={() => setLogoMenuOpen((open) => !open)}
-                    aria-label="Opções do logo"
+                    aria-label="Gerenciar foto de perfil do WhatsApp"
                   >
                     {logoPreview ? (
                       <img
                         src={logoPreview}
-                        alt="Logo da instância"
+                        alt="Foto de perfil do WhatsApp"
                         className="h-full w-full object-cover"
                       />
                     ) : (
-                      <span className="px-4">{connection?.name || "Logo"}</span>
+                      <MessageCircle className="h-10 w-10 text-[#25D366]" aria-label="WhatsApp" />
                     )}
                     <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-white opacity-0 transition group-hover:opacity-100">
                       <Camera className="h-8 w-8" />
@@ -742,16 +777,31 @@ function ConnectionSettingsModal({
                     <LogoMenuButton
                       icon={<Eye className="h-4 w-4" />}
                       onClick={() => {
-                        const logo = logoPreview ?? form.logoUrl;
                         setLogoMenuOpen(false);
-                        if (!logo) {
-                          toast.info("Nenhum logo cadastrado para está instância.");
+                        if (!logoPreview) {
+                          toast.info("Esta instância não possui foto de perfil no WhatsApp.");
                           return;
                         }
                         setLogoPreviewOpen(true);
                       }}
                     >
-                      Mostrar logo
+                      Mostrar foto do WhatsApp
+                    </LogoMenuButton>
+                    <LogoMenuButton
+                      icon={<RefreshCw className="h-4 w-4" />}
+                      onClick={async () => {
+                        if (!connection) return;
+                        try {
+                          applyConnectionUpdate(await connectionsApi.refreshProfilePicture(connection.id));
+                          toast.success("Foto sincronizada com o perfil do WhatsApp.");
+                        } catch (error) {
+                          toast.error((error as Error).message);
+                        } finally {
+                          setLogoMenuOpen(false);
+                        }
+                      }}
+                    >
+                      Sincronizar com WhatsApp
                     </LogoMenuButton>
                     <LogoMenuButton
                       icon={<Camera className="h-4 w-4" />}
@@ -760,24 +810,31 @@ function ConnectionSettingsModal({
                         setCameraOpen(true);
                       }}
                     >
-                      Tirar foto
+                      Atualizar foto do WhatsApp
                     </LogoMenuButton>
                     <LogoMenuButton
                       icon={<Upload className="h-4 w-4" />}
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      Carregar foto
+                      Escolher foto para o WhatsApp
                     </LogoMenuButton>
                     <div className="my-1 border-t border-border" />
                     <LogoMenuButton
-                      icon={<Trash2 className="h-4 w-4" />}
-                      onClick={() => {
-                        setLogoPreview(null);
-                        setForm((current) => ({ ...current, logoUrl: null }));
-                        setLogoMenuOpen(false);
+                      className="trash-action"
+                      icon={<Trash2 className="h-3.5 w-3.5" />}
+                      onClick={async () => {
+                        if (!connection) return;
+                        try {
+                          applyConnectionUpdate(await connectionsApi.removeProfilePicture(connection.id));
+                          toast.success("Foto removida do perfil do WhatsApp.");
+                        } catch (error) {
+                          toast.error((error as Error).message);
+                        } finally {
+                          setLogoMenuOpen(false);
+                        }
                       }}
                     >
-                      Remover foto
+                      Remover foto do WhatsApp
                     </LogoMenuButton>
                   </FloatingLogoMenu>
                   <input
@@ -905,9 +962,9 @@ function ConnectionSettingsModal({
                     : undefined
                 }
               >
-                <div className="space-y-2">
+                <div>
                   <Textarea
-                    rows={4}
+                    rows={6}
                     value={form.welcomeNewMessage ?? ""}
                     onChange={(event) =>
                       setForm({ ...form, welcomeNewMessage: event.target.value })
@@ -920,9 +977,6 @@ function ConnectionSettingsModal({
                     }
                     placeholder={NEW_CONTACT_MESSAGE_PLACEHOLDER}
                   />
-                  {!form.welcomeEnabled && (
-                    <CopyPlaceholderButton value={NEW_CONTACT_MESSAGE_PLACEHOLDER} />
-                  )}
                 </div>
               </Field>
               <Field
@@ -939,9 +993,9 @@ function ConnectionSettingsModal({
                     : undefined
                 }
               >
-                <div className="space-y-2">
+                <div>
                   <Textarea
-                    rows={4}
+                    rows={6}
                     value={form.welcomeExistingMessage ?? ""}
                     onChange={(event) =>
                       setForm({ ...form, welcomeExistingMessage: event.target.value })
@@ -954,9 +1008,6 @@ function ConnectionSettingsModal({
                     }
                     placeholder={EXISTING_CONTACT_MESSAGE_PLACEHOLDER}
                   />
-                  {!form.welcomeEnabled && (
-                    <CopyPlaceholderButton value={EXISTING_CONTACT_MESSAGE_PLACEHOLDER} />
-                  )}
                 </div>
               </Field>
             </div>
@@ -968,13 +1019,16 @@ function ConnectionSettingsModal({
                 <input
                   type="checkbox"
                   checked={absenceEnabled}
-                  onChange={(event) => setAbsenceEnabled(event.target.checked)}
+                  onChange={(event) => {
+                    setAbsenceEnabled(event.target.checked);
+                    if (event.target.checked) setAbsenceActivation((current) => current + 1);
+                  }}
                   className="h-4 w-4 accent-primary"
                 />
                 Ativar mensagem de ausência
               </label>
               <Field label="Mensagem de Ausência">
-                <div className="space-y-2">
+                <div>
                   <Textarea
                     rows={6}
                     value={absenceMessage}
@@ -982,32 +1036,33 @@ function ConnectionSettingsModal({
                     disabled={!absenceEnabled}
                     placeholder={ABSENCE_MESSAGE_PLACEHOLDER}
                   />
-                  {!absenceEnabled && <CopyPlaceholderButton value={ABSENCE_MESSAGE_PLACEHOLDER} />}
                 </div>
               </Field>
               <ServiceHoursTable
                 rows={serviceHours}
                 onChange={setServiceHours}
                 enabled={absenceEnabled}
+                focusStartSignal={absenceActivation}
               />
             </div>
           )}
 
-          {tab === "variables" && <VariableDictionary customFields={contactCustomFields} />}
         </div>
       </Modal>
       <CameraCaptureModal
         open={cameraOpen}
         onClose={() => setCameraOpen(false)}
         onCapture={(dataUrl) => {
-          applyLogoDataUrl(dataUrl);
+          void updateWhatsAppProfilePicture(dataUrl).catch((error) =>
+            toast.error((error as Error).message),
+          );
           setCameraOpen(false);
         }}
       />
       <LogoPreviewModal
         open={logoPreviewOpen}
-        title={form.name ? `Logo de ${form.name}` : "Logo da instância"}
-        src={logoPreview ?? form.logoUrl}
+        title={form.name ? `Logo de ${form.name}` : "Logo da Instância"}
+        src={logoPreview}
         onClose={() => setLogoPreviewOpen(false)}
       />
     </>
@@ -1042,15 +1097,17 @@ function LogoMenuButton({
   icon,
   onClick,
   children,
+  className = "",
 }: {
   icon: React.ReactNode;
   onClick: () => void;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-3 px-4 py-2 text-left text-foreground transition hover:bg-surface-1"
+      className={"flex w-full items-center gap-3 px-4 py-2 text-left text-foreground transition hover:bg-surface-1 " + className}
       onClick={onClick}
     >
       <span className="text-muted-foreground">{icon}</span>
@@ -1190,7 +1247,7 @@ function CameraCaptureModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Tirar foto"
+      title="Tirar Foto"
       size="md"
       footer={
         <>
@@ -1400,13 +1457,16 @@ function ServiceHoursTable({
   rows,
   onChange,
   enabled,
+  focusStartSignal,
 }: {
   rows: ServiceHoursRow[];
   onChange: (rows: ServiceHoursRow[]) => void;
   enabled: boolean;
+  focusStartSignal: number;
 }) {
   const [editing, setEditing] = React.useState(false);
   const [selectedRow, setSelectedRow] = React.useState<number | null>(null);
+  const mondayStartRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (!enabled) {
@@ -1414,6 +1474,13 @@ function ServiceHoursTable({
       setSelectedRow(null);
     }
   }, [enabled]);
+
+  React.useEffect(() => {
+    if (!enabled || focusStartSignal === 0) return;
+    setEditing(true);
+    setSelectedRow(0);
+    requestAnimationFrame(() => mondayStartRef.current?.focus());
+  }, [enabled, focusStartSignal]);
 
   const updateRow = (index: number, patch: Partial<ServiceHoursRow>) => {
     onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
@@ -1494,6 +1561,7 @@ function ServiceHoursTable({
                 </td>
                 <td className="px-1 py-2 text-center sm:px-3">
                   <Input
+                    ref={index === 0 ? mondayStartRef : undefined}
                     type="text"
                     inputMode="numeric"
                     value={row.start}
@@ -1634,15 +1702,16 @@ function RemoveConnectionModal({
     <Modal
       open={!!connection}
       onClose={onClose}
-      title="Remover conexão"
+      title="Remover Instância?"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
             Cancelar
           </Button>
           <Button
-            variant="destructive"
+            variant="ghost"
             size="sm"
+            className="trash-action"
             onClick={() => connection && onConfirm(connection, { removeConversationHistory })}
             disabled={busy || !canConfirm}
           >
@@ -1653,7 +1722,9 @@ function RemoveConnectionModal({
     >
       <div className="space-y-4">
         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-          <p className="font-medium">{connection?.name}</p>
+          <p className="font-medium">
+            Instância: <strong className="font-semibold">"{connection?.name}"</strong>
+          </p>
           <p className="mt-1">
             A conexão será indisponibilizada para novos envios e campanhas. Se o histórico não for
             removido, as conversas ativas desta instância serão encerradas e mantidas no histórico.
@@ -1698,19 +1769,19 @@ function InstanceLogo({ connection }: { connection: ApiMessagingConnection }) {
         connection.logoUrl
           ? undefined
           : {
-              backgroundColor: `${connection.color ?? "#22C55E"}24`,
-              color: connection.color ?? "#22C55E",
+              backgroundColor: "#25D36624",
+              color: "#25D366",
             }
       }
     >
       {connection.logoUrl ? (
         <img
           src={connection.logoUrl}
-          alt={`Logo de ${connection.name}`}
+          alt={`Foto de perfil do WhatsApp de ${connection.name}`}
           className="h-full w-full object-cover"
         />
       ) : (
-        initials(connection.name)
+        <MessageCircle className="h-5 w-5" aria-label="WhatsApp" />
       )}
     </span>
   );

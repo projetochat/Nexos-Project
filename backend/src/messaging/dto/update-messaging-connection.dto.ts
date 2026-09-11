@@ -13,10 +13,6 @@ export class UpdateMessagingConnectionDto {
   color?: string | null;
 
   @IsOptional()
-  @IsString()
-  logoUrl?: string | null;
-
-  @IsOptional()
   @IsBoolean()
   welcomeEnabled?: boolean;
 

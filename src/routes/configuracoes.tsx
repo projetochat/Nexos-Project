@@ -4,6 +4,7 @@ import {
   Clock,
   CreditCard,
   ListPlus,
+  Braces,
   Plug,
   Shield,
   SlidersHorizontal,
@@ -25,13 +26,14 @@ const TABS = [
   { to: "/configuracoes/integracoes", label: "Integrações", icon: Plug },
   { to: "/configuracoes/horarios", label: "Horários", icon: Clock },
   { to: "/configuracoes/campos-contato", label: "Campos Adicionais", icon: ListPlus },
+  { to: "/configuracoes/variaveis", label: "Variáveis", icon: Braces },
 ] as const;
 
 function ConfiguracoesLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   return (
     <AppShell>
-      <PageContainer className="max-w-[96rem] overflow-x-hidden lg:px-6 xl:px-8">
+      <PageContainer className="overflow-x-hidden">
         <SectionHeader title="Configurações" />
 
         <div className="grid min-w-0 gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5">

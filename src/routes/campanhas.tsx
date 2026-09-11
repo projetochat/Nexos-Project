@@ -290,7 +290,7 @@ function Page() {
 
         <ConfirmDialog
           open={!!confirming}
-          title={confirming?.action === "start" ? "Iniciar campanha?" : "Cancelar campanha?"}
+          title={confirming?.action === "start" ? "Iniciar Campanha?" : "Cancelar Campanha?"}
           destructive={confirming?.action === "cancel"}
           description={confirming ? confirmationText(confirming.action, confirming.campaign) : ""}
           confirmLabel={
@@ -457,7 +457,7 @@ function CampaignDetail({
           <Copy className="h-3.5 w-3.5" /> Duplicar
         </Button>
         {canArchive && (
-          <Button size="sm" variant="ghost" onClick={() => onAction("archive", campaign)}>
+          <Button size="sm" variant="ghost" className="trash-action" onClick={() => onAction("archive", campaign)}>
             <Trash2 className="h-3.5 w-3.5" /> Arquivar
           </Button>
         )}
@@ -640,7 +640,7 @@ function CampaignEditor({
     <Modal
       open={open}
       onClose={onClose}
-      title="Nova campanha"
+      title="Nova Campanha"
       size="xl"
       footer={
         <>

@@ -1,11 +1,11 @@
 import * as React from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Inbox, Users, Clock, Search, Bell, User, LogOut, MessageCircleMore } from "lucide-react";
+import { Inbox, Users, Clock, Search, Bell, User, LogOut, MessageCircleMore, Moon } from "lucide-react";
 import { LogoMark, Avatar } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
+import { useTheme } from "./theme-provider";
 import { useSession, ROLE_META } from "@/lib/session";
-import { ThemeToggle } from "./app-shell";
 
 /* ============================================================
    Nexo · Operator Shell (Central de Atendimento)
@@ -63,6 +63,8 @@ function UserMenu() {
               Online · {user ? ROLE_META[user.role].label : ""}
             </div>
           </div>
+          <ThemeModeMenuItem />
+          <div className="my-1 h-px bg-border" />
           <button
             onClick={() => {
               logout();
@@ -75,6 +77,30 @@ function UserMenu() {
         </div>
       )}
     </div>
+  );
+}
+
+function ThemeModeMenuItem() {
+  const { resolved, toggle } = useTheme();
+  const isDark = resolved === "dark";
+  return (
+    <button
+      onClick={toggle}
+      role="switch"
+      aria-checked={isDark}
+      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
+    >
+      <Moon className="h-4 w-4" />
+      <span className="flex-1 text-left">Modo escuro</span>
+      <span
+        aria-hidden="true"
+        className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${isDark ? "bg-primary" : "bg-muted"}`}
+      >
+        <span
+          className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isDark ? "translate-x-4" : "translate-x-0"}`}
+        />
+      </span>
+    </button>
   );
 }
 
@@ -101,7 +127,6 @@ function Topbar() {
             placeholder="Buscar conversa ou cliente…"
           />
         </div>
-        <ThemeToggle />
         <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground">
           <Bell className="h-4 w-4" />
           <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-primary animate-pulse-ring" />

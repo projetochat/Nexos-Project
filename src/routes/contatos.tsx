@@ -1586,7 +1586,7 @@ function ContatosPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-destructive hover:text-destructive"
+                          className="trash-action"
                           title="Excluir"
                           onClick={() => setDeleting(contact)}
                         >
@@ -1716,7 +1716,7 @@ function ContatosPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-destructive hover:text-destructive"
+                            className="trash-action"
                             title="Excluir"
                             onClick={() => setDeleting(contact)}
                           >
@@ -1900,7 +1900,7 @@ function ContatosPage() {
         />
         <ConfirmDialog
           open={!!deleting}
-          title="Excluir contato?"
+          title="Excluir Contato?"
           description={
             deleting ? (
               <div className="space-y-3">
@@ -1911,7 +1911,8 @@ function ContatosPage() {
                 </p>
                 <div className="space-y-1 text-foreground">
                   <p>
-                    <strong>Nome: </strong> {deleting.nome}
+                    <strong>Nome: </strong>{" "}
+                    <strong className="font-semibold text-foreground">"{deleting.nome}"</strong>
                   </p>
                   <p>
                     <strong>Whatsapp: </strong> {formatPhoneWithDdi(deleting.telefone)}
@@ -2917,7 +2918,7 @@ export function ContactFormModal({
                     )}
                   </Field>
                   <Field label="WhatsApp *">
-                    <div className="flex h-9 overflow-hidden rounded-md border border-input bg-transparent shadow-sm transition-colors focus-within:ring-1 focus-within:ring-ring">
+                    <div className="flex h-9 overflow-hidden rounded-md border border-input bg-transparent transition-colors focus-within:border-primary">
                       <CountryCodeSelect
                         value={countryCode}
                         onChange={handleCountryCodeChange}
@@ -3264,6 +3265,7 @@ function CustomersManagerModal({
                   <Button
                     variant="ghost"
                     size="sm"
+                    className="trash-action"
                     title="Excluir"
                     onClick={() => setDeleting(customer)}
                   >
@@ -3478,6 +3480,7 @@ function DepartmentsManagerModal({
                 <Button
                   variant="ghost"
                   size="sm"
+                  className="trash-action"
                   title="Excluir"
                   onClick={() => setDeleting(department)}
                 >
@@ -3732,6 +3735,7 @@ function ContactProfilesManagerModal({
                 <Button
                   variant="ghost"
                   size="sm"
+                  className="trash-action"
                   title="Excluir"
                   onClick={() => setDeleting(profile)}
                 >
@@ -3783,7 +3787,8 @@ function DeleteLinkedContactCatalogMessage({
   return (
     <div className="space-y-2">
       <p>
-        Deseja realmente excluir o cadastro <strong>"{selectedName}"</strong>?
+        Deseja realmente excluir o cadastro de {entityLabel}{" "}
+        <strong className="font-semibold text-foreground">"{selectedName}"</strong>?
       </p>
       <p className="text-xs italic text-muted-foreground">
         Os Contatos vinculados serão desvinculados.
@@ -3886,7 +3891,7 @@ function InstanceMultiSelect({
               </div>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-2 border-t border-border bg-popover p-2">
+          <div className="border-t border-border bg-popover p-2">
             <button
               type="button"
               onPointerDown={(event) => {
@@ -3932,7 +3937,6 @@ function TagMultiSelect({
 }) {
   const [open, setOpen] = React.useState(false);
   const [availableTagIds, setAvailableTagIds] = React.useState<string[]>([]);
-  const [allSelectedByAction, setAllSelectedByAction] = React.useState(false);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const selectedTags = tags.filter((tag) => selectedIds.includes(tag.id));
 
@@ -3946,20 +3950,18 @@ function TagMultiSelect({
   }, [open]);
 
   const toggle = (id: string) => {
-    setAllSelectedByAction(false);
     onChange(
       selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id],
     );
   };
   const toggleAll = () => {
-    if (allSelectedByAction) {
+    const availableIds = availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id);
+    const allSelected = availableIds.length > 0 && availableIds.every((id) => selectedIds.includes(id));
+    if (allSelected) {
       onChange([]);
-      setAllSelectedByAction(false);
       return;
     }
-    const ids = availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id);
-    onChange(Array.from(new Set([...selectedIds, ...ids])));
-    setAllSelectedByAction(true);
+    onChange(Array.from(new Set([...selectedIds, ...availableIds])));
   };
 
   return (
@@ -3970,7 +3972,6 @@ function TagMultiSelect({
           setOpen((current) => {
             if (!current) {
               setAvailableTagIds(tags.map((tag) => tag.id));
-              setAllSelectedByAction(false);
             }
             return !current;
           })
@@ -4047,32 +4048,19 @@ function TagMultiSelect({
                 toggleAll();
               }}
               disabled={tags.length === 0}
-              className={`flex items-center justify-center gap-1 rounded-md border px-2 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                allSelectedByAction
-                  ? "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20"
-                  : "border-success/40 bg-success/10 text-success hover:bg-success/20"
-              }`}
+              className="flex items-center justify-center gap-1 rounded-md border border-success/50 bg-white px-2 py-2 text-xs font-medium text-success transition hover:bg-success/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {allSelectedByAction ? (
+              {(availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id)).every((id) =>
+                selectedIds.includes(id),
+              ) ? (
                 <>
-                  <X className="h-3 w-3" /> Limpar seleção
+                  <X className="h-3 w-3" /> Remover todas
                 </>
               ) : (
                 <>
                   <Check className="h-3 w-3" /> Selecionar todos
                 </>
               )}
-            </button>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setOpen(false);
-              }}
-              className="flex items-center justify-center gap-1 rounded-md border border-primary/30 bg-white px-2 py-2 text-xs font-medium text-primary hover:bg-primary/5"
-            >
-              <Check className="h-3 w-3" /> Confirmar seleção
             </button>
           </div>
         </div>
@@ -4242,7 +4230,7 @@ function CustomListMultiSelect({
                 type="checkbox"
                 checked={checked}
                 onChange={() => toggle(option)}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                className="h-4 w-4 rounded border-border text-primary focus:ring-0 focus:outline-none"
               />
               <span className="min-w-0 flex-1 break-words">{option}</span>
             </label>

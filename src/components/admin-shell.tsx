@@ -19,13 +19,13 @@ import {
   ShieldCheck,
   Sparkles,
   Command,
+  Moon,
 } from "lucide-react";
 import { LogoMark, Avatar } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
 import { useTheme } from "./theme-provider";
 import { useSession, ROLE_META } from "@/lib/session";
-import { ThemeToggle } from "./app-shell";
 
 /* ============================================================
    Nexo · Admin Shell (Painel Super Admin — Plataforma SaaS)
@@ -222,6 +222,8 @@ function UserMenu() {
               <ShieldCheck className="h-3 w-3" /> {user ? ROLE_META[user.role].label : ""}
             </div>
           </div>
+          <ThemeModeMenuItem />
+          <div className="my-1 h-px bg-border" />
           <button
             onClick={() => {
               logout();
@@ -234,6 +236,30 @@ function UserMenu() {
         </div>
       )}
     </div>
+  );
+}
+
+function ThemeModeMenuItem() {
+  const { resolved, toggle } = useTheme();
+  const isDark = resolved === "dark";
+  return (
+    <button
+      onClick={toggle}
+      role="switch"
+      aria-checked={isDark}
+      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
+    >
+      <Moon className="h-4 w-4" />
+      <span className="flex-1 text-left">Modo escuro</span>
+      <span
+        aria-hidden="true"
+        className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${isDark ? "bg-primary" : "bg-muted"}`}
+      >
+        <span
+          className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isDark ? "translate-x-4" : "translate-x-0"}`}
+        />
+      </span>
+    </button>
   );
 }
 
@@ -287,7 +313,6 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         </kbd>
       </div>
 
-      <ThemeToggle />
       <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground">
         <Bell className="h-4 w-4" />
         <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-accent animate-pulse-ring" />
@@ -328,5 +353,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 }
 
 export function AdminContainer({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`mx-auto w-full max-w-7xl px-4 py-6 md:px-6 md:py-8 lg:px-8 ${className}`}>{children}</div>;
+  return (
+    <div className={`mx-auto w-full max-w-[96rem] px-3 py-6 sm:px-4 md:px-6 md:py-8 lg:px-8 xl:px-10 2xl:px-12 ${className}`}>
+      {children}
+    </div>
+  );
 }

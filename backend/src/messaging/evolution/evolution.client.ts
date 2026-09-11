@@ -277,6 +277,23 @@ export class EvolutionClient {
     return extractProfilePictureUrl(response);
   }
 
+  updateProfilePicture(input: {
+    instanceName: string;
+    media: Buffer;
+    mimeType: string;
+    fileName: string;
+  }) {
+    const form = new FormData();
+    form.set("file", new Blob([input.media], { type: input.mimeType }), input.fileName);
+    return this.requestForm<unknown>(`/chat/updateProfilePicture/${input.instanceName}`, form);
+  }
+
+  removeProfilePicture(instanceName: string) {
+    return this.request<unknown>(`/chat/removeProfilePicture/${instanceName}`, {
+      method: "DELETE",
+    });
+  }
+
   async getBase64FromMediaMessage(input: {
     instanceName: string;
     message: unknown;

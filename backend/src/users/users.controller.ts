@@ -328,6 +328,7 @@ export class UsersController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const existing = await this.findMembershipOrThrow(id, current.tenantId);
+    this.assertMasterMembershipProtected(existing);
     if (dto.roleId) await this.assertRoleInTenant(dto.roleId, current.tenantId);
     if (dto.departmentIds)
       await this.assertDepartmentsInTenant(dto.departmentIds, current.tenantId);
@@ -454,12 +455,19 @@ export class UsersController {
 
   private async setMembershipStatus(id: string, tenantId: string, status: "ACTIVE" | "DISABLED") {
     const membership = await this.findMembershipOrThrow(id, tenantId);
+    this.assertMasterMembershipProtected(membership);
     const updated = await this.prisma.tenantMembership.update({
       where: { id: membership.id },
       data: { status },
       include: { user: true, role: true, departments: { include: { department: true } } },
     });
     return this.serializeMembership(updated);
+  }
+
+  private assertMasterMembershipProtected(membership: { role: { key: string } }) {
+    if (membership.role.key === "tenant_admin") {
+      throw new BadRequestException("O usuário master não pode ser alterado por esta tela.");
+    }
   }
 
   private async defaultRoleId(tenantId: string) {

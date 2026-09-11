@@ -53,29 +53,27 @@ function LoginPage() {
       />
       <div className="pointer-events-none absolute inset-0 hidden bg-white/10 lg:block" />
       <div
-        className="relative h-[34svh] min-h-64 max-h-80 bg-cover bg-center lg:hidden"
-        style={{
-          backgroundImage: "url('/login-mobile-background.jpg')",
-          backgroundPosition: "center 58%",
-        }}
+        className="pointer-events-none absolute inset-0 bg-cover bg-center lg:hidden"
+        style={{ backgroundImage: "url('/login-mobile-background.jpg')" }}
         aria-hidden="true"
       />
+      <div className="pointer-events-none absolute inset-0 bg-white/20 lg:hidden" />
 
-      <div className="relative mx-auto grid w-full max-w-[1500px] items-center gap-10 px-4 pb-6 lg:min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(460px,0.95fr)] lg:px-12 lg:py-10 xl:gap-20">
+      <div className="relative mx-auto grid min-h-dvh w-full max-w-[1320px] items-end gap-6 px-4 py-5 sm:items-center sm:py-8 lg:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)] lg:px-10 lg:py-8 xl:gap-14">
         <div className="hidden lg:block" aria-hidden="true" />
 
-        <div className="mx-auto w-full max-w-[560px]">
-          <div className="rounded-[1.75rem] border border-slate-200/90 bg-white/90 p-7 shadow-[0_24px_70px_rgba(15,42,90,0.13)] backdrop-blur sm:p-12">
-            <div className="text-sm font-bold uppercase tracking-[0.14em] text-slate-500">
+        <div className="mx-auto w-full max-w-[420px] lg:max-w-[460px]">
+          <div className="rounded-2xl border border-slate-200/90 bg-white/90 p-5 shadow-[0_18px_52px_rgba(15,42,90,0.13)] backdrop-blur sm:p-7 lg:rounded-[1.5rem] lg:p-8">
+            <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 sm:text-sm">
               Ambiente de produção
             </div>
-            <h1 className="mt-3 text-4xl font-bold tracking-tight text-[#071535] sm:text-5xl">
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#071535] sm:text-4xl">
               Entrar no Nexus
             </h1>
 
-            <form onSubmit={handleLogin} className="mt-9 space-y-5">
+            <form onSubmit={handleLogin} className="mt-6 space-y-4 sm:mt-7">
               <div>
-                <label htmlFor="email" className="mb-2 block text-lg font-semibold text-slate-500">
+                <label htmlFor="email" className="mb-1.5 block text-base font-semibold text-slate-500">
                   E-mail
                 </label>
                 <input
@@ -87,7 +85,7 @@ function LoginPage() {
                   autoComplete="email"
                   aria-invalid={Boolean(error)}
                   aria-describedby={error ? "login-error" : undefined}
-                  className="h-16 w-full rounded-2xl border border-slate-200 bg-[#eff6ff] px-5 text-xl text-[#071535] outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  className="h-12 w-full rounded-xl border border-slate-200 bg-[#eff6ff] px-4 text-base text-[#071535] outline-none transition placeholder:text-slate-400 focus:border-blue-500 sm:h-14 sm:text-lg"
                   required
                 />
               </div>
@@ -95,7 +93,7 @@ function LoginPage() {
               <div>
                 <label
                   htmlFor="password"
-                  className="mb-2 block text-lg font-semibold text-slate-500"
+                  className="mb-1.5 block text-base font-semibold text-slate-500"
                 >
                   Senha
                 </label>
@@ -109,16 +107,16 @@ function LoginPage() {
                     autoComplete="current-password"
                     aria-invalid={Boolean(error)}
                     aria-describedby={error ? "login-error" : undefined}
-                    className="h-16 w-full rounded-2xl border border-slate-200 bg-[#eff6ff] px-5 pr-16 text-xl text-[#071535] outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-[#eff6ff] px-4 pr-12 text-base text-[#071535] outline-none transition placeholder:text-slate-400 focus:border-blue-500 sm:h-14 sm:text-lg"
                     required
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((value) => !value)}
-                    className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 transition hover:bg-white hover:text-[#071535]"
+                    className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white hover:text-[#071535]"
                     aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                   >
-                    {showPassword ? <EyeOff className="h-6 w-6" /> : <Eye className="h-6 w-6" />}
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
               </div>
@@ -136,7 +134,7 @@ function LoginPage() {
               )}
 
               <button
-                className="flex h-16 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#0e55ef] via-[#176ef2] to-[#37b4e8] text-xl font-semibold text-white shadow-[0_10px_24px_rgba(23,105,238,0.25)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
+                className="flex h-12 w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#0e55ef] via-[#176ef2] to-[#37b4e8] text-base font-semibold text-white shadow-[0_8px_18px_rgba(23,105,238,0.25)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 sm:h-14 sm:text-lg"
                 type="submit"
                 disabled={loading}
               >

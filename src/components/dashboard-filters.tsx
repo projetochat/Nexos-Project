@@ -56,7 +56,7 @@ export function DashboardFiltersBar({
 
   return (
     <Card className="mb-6 p-4">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr]">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr]">
         <FilterField label="Instância">
           <Select
             value={value.connectionId ?? ""}
@@ -119,7 +119,7 @@ export function DashboardFiltersBar({
             readOnly={!isCustom}
             aria-readonly={!isCustom}
             onChange={(event) => onChange({ start: event.target.value })}
-            className={`min-w-0 px-2 text-xs sm:px-3 sm:text-sm ${!isCustom ? "cursor-not-allowed text-muted-foreground" : ""}`}
+            className={`min-w-0 px-2 text-right text-xs sm:px-3 sm:text-sm ${!isCustom ? "cursor-not-allowed text-muted-foreground" : ""}`}
           />
         </FilterField>
         <FilterField label="Dt. final" className="min-w-0">
@@ -129,7 +129,7 @@ export function DashboardFiltersBar({
             readOnly={!isCustom}
             aria-readonly={!isCustom}
             onChange={(event) => onChange({ end: event.target.value })}
-            className={`min-w-0 px-2 text-xs sm:px-3 sm:text-sm ${!isCustom ? "cursor-not-allowed text-muted-foreground" : ""}`}
+            className={`min-w-0 px-2 text-right text-xs sm:px-3 sm:text-sm ${!isCustom ? "cursor-not-allowed text-muted-foreground" : ""}`}
           />
         </FilterField>
       </div>

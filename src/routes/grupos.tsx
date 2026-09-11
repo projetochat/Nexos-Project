@@ -48,6 +48,22 @@ export const Route = createFileRoute("/grupos")({ component: GroupsPage });
 const DEFAULT_PAGE_SIZE = 12;
 const PAGE_SIZE_OPTIONS = [12, 24, 48, 96] as const;
 const EMPTY_FILTER_VALUE = "__empty__";
+const CONTACTS_FETCH_PAGE_SIZE = 10000;
+
+async function listAllContacts() {
+  const firstPage = await crmApi.listContacts({ page: 1, pageSize: CONTACTS_FETCH_PAGE_SIZE });
+  const contacts = [...firstPage.items];
+
+  for (let currentPage = 2; currentPage <= firstPage.totalPages; currentPage += 1) {
+    const response = await crmApi.listContacts({
+      page: currentPage,
+      pageSize: CONTACTS_FETCH_PAGE_SIZE,
+    });
+    contacts.push(...response.items);
+  }
+
+  return contacts;
+}
 
 function GroupsPage() {
   const navigate = useNavigate();
@@ -72,7 +88,7 @@ function GroupsPage() {
       const [groupResponse, options, contactResponse] = await Promise.all([
         groupsApi.list({ q: query, page, pageSize, connectionId: instanceFilter }),
         crmApi.contactOptions(),
-        crmApi.listContacts({ pageSize: 1000 }),
+        listAllContacts(),
       ]);
       setGroups(groupResponse.items);
       setTotal(groupResponse.total);
@@ -83,7 +99,7 @@ function GroupsPage() {
           (instance) => instance.name,
         ),
       );
-      setContacts(sortByOptionLabel(contactResponse.items, (contact) => contact.nome));
+      setContacts(sortByOptionLabel(contactResponse, (contact) => contact.nome));
     } catch (error) {
       toast.error("Falha ao carregar grupos", { description: (error as Error).message });
     } finally {
@@ -529,7 +545,7 @@ function CreateGroupModal({
                 variant="ghost"
                 size="sm"
                 type="button"
-                className="text-destructive hover:text-destructive"
+                className="trash-action"
                 disabled={selectedIds.length === 0}
                 onClick={() => setSelectedIds([])}
               >
@@ -553,14 +569,14 @@ function CreateGroupModal({
                   </span>
                   <Button
                     variant="ghost"
-                    size="icon"
+                    size="sm"
                     type="button"
                     title={`Remover ${contact.nome}`}
                     aria-label={`Remover ${contact.nome}`}
-                    className="text-destructive hover:!bg-destructive hover:!text-destructive-foreground"
+                    className="trash-action"
                     onClick={() => removeContact(contact.id)}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               ))}
@@ -784,8 +800,8 @@ function GroupDetailModal({
                         value={name}
                         onChange={(event) => setName(event.target.value)}
                         readOnly={!editingName}
-                        disabled={busy === "name"}
-                        className={`min-h-9 ${editingName ? "pr-9" : ""}`}
+                        disabled={!editingName || busy === "name"}
+                        className={`min-h-9 ${editingName ? "pr-9" : "cursor-not-allowed bg-surface-2 text-foreground"}`}
                         placeholder="Nome do grupo"
                       />
                       {editingName && (
@@ -835,8 +851,8 @@ function GroupDetailModal({
                       value={description}
                       onChange={(event) => setDescription(event.target.value)}
                       readOnly={!editingDescription}
-                      disabled={busy === "description"}
-                      className={`min-h-20 ${editingDescription ? "pr-9" : ""}`}
+                      disabled={!editingDescription || busy === "description"}
+                      className={`min-h-20 ${editingDescription ? "pr-9" : "cursor-not-allowed bg-surface-2 text-foreground"}`}
                     />
                     {editingDescription && (
                       <button
@@ -902,7 +918,7 @@ function GroupDetailModal({
                         placeholder="Buscar contato ou WhatsApp..."
                       />
                       <div className="mt-2 max-h-36 overflow-y-auto rounded-lg border border-border bg-card p-1">
-                        {availableContacts.slice(0, 50).map((contact) => {
+                        {availableContacts.map((contact) => {
                           const active = selectedContactIds.includes(contact.id);
                           return (
                             <button
@@ -1060,7 +1076,7 @@ function GroupDetailModal({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-destructive hover:text-destructive"
+                      className="trash-action"
                       disabled={(group?.participants.length ?? 0) === 0 || !!busy}
                       onClick={() => {
                         group?.participants.forEach((participant) =>
@@ -1090,14 +1106,14 @@ function GroupDetailModal({
                         </span>
                         <Button
                           variant="ghost"
-                          size="icon"
+                          size="sm"
                           title="Remover participante"
                           aria-label="Remover participante"
-                          className="text-destructive hover:!bg-destructive hover:!text-destructive-foreground"
+                          className="trash-action"
                           onClick={() => updateParticipant(participant, "remove")}
                           disabled={!!busy || participant.isSuperAdmin}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     ))}

@@ -322,11 +322,13 @@ function TenantDetailPage() {
                 </span>
               </label>
               <Button
-                variant="destructive"
+                variant="ghost"
+                size="sm"
+                className="trash-action"
                 disabled={!canTerminate}
                 onClick={() => mutate("terminate")}
               >
-                <Trash2 className="h-4 w-4" /> Encerrar tenant
+                <Trash2 className="h-3.5 w-3.5" /> Encerrar tenant
               </Button>
               {activeImpersonation && (
                 <p className="text-xs text-destructive">

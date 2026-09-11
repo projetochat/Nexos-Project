@@ -493,7 +493,7 @@ function ConversationPage() {
       />
       <ConfirmDialog
         open={closing}
-        title="Encerrar conversa?"
+        title="Encerrar Conversa?"
         description="A conversa será marcada como encerrada. Se o cliente enviar uma nova mensagem, ela reabre automaticamente."
         confirmLabel="Encerrar"
         onClose={() => setClosing(false)}
@@ -1305,14 +1305,15 @@ function Composer({
             <p className="flex-1 text-xs text-muted-foreground">Áudio pronto. Envie ou descarte.</p>
             <Button
               variant="ghost"
-              size="icon"
+              size="sm"
+              className="trash-action"
               aria-label="Descartar"
               onClick={() => {
                 URL.revokeObjectURL(pendingAudio.url);
                 setPendingAudio(null);
               }}
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-3.5 w-3.5" />
             </Button>
             <Button variant="primary" size="sm" onClick={sendAudio}>
               <Send className="h-3.5 w-3.5" /> Enviar áudio
@@ -1793,7 +1794,7 @@ function TagsModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Etiquetas do contato"
+      title="Etiquetas do Contato"
       description="Selecione as etiquetas cadastradas para este contato."
       footer={
         <Button variant="ghost" size="sm" onClick={onClose}>
@@ -1924,7 +1925,7 @@ function TransferModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Transferir atendimento"
+      title="Transferir Atendimento"
       description="Escolha entre mover para outro departamento, transferir para outro atendente ou alterar o status."
       footer={
         <>

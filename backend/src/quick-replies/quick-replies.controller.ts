@@ -255,8 +255,8 @@ function clean(value: string) {
 
 function normalizeShortcut(value: string) {
   const shortcut = clean(value).toLocaleLowerCase("pt-BR");
-  if (!/^\p{L}+$/u.test(shortcut)) {
-    throw new BadRequestException("O atalho deve conter somente letras.");
+  if (!/^[\p{L}-]+$/u.test(shortcut)) {
+    throw new BadRequestException("O atalho deve conter somente letras e hífen.");
   }
   return shortcut;
 }

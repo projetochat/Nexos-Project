@@ -196,7 +196,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <AppShellFull>
-      <div className="flex h-full min-h-0">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[96rem] px-3 sm:px-4 md:px-6 lg:px-8 xl:px-10 2xl:px-12">
         <aside
           className={`${activeId ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-r border-border md:w-[380px] xl:w-[440px]`}
         >
@@ -558,7 +558,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
     <Modal
       open={open}
       onClose={onClose}
-      title="Nova conversa"
+      title="Nova Conversa"
       description="Selecione um contato existente ou cadastre um novo."
       footer={
         <>
@@ -667,7 +667,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
             rows={3}
             value={firstMsg}
             onChange={(e) => setFirstMsg(e.target.value)}
-            className="w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring"
+            className="w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary"
             placeholder="Olá! Como posso ajudar?"
           />
         </Field>

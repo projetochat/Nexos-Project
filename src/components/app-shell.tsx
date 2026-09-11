@@ -14,7 +14,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Command,
-  Sun,
   Moon,
   LogOut,
   Menu,
@@ -46,7 +45,7 @@ import { onRealtimeEvent } from "@/lib/realtime/client";
 /* ============================================================
    Nexo · App Shell (Painel Administrativo da Empresa)
    Sidebar refinada: rail colapsado 56px, tooltips, trigger no
-   topbar, persistência em localStorage. Theme toggle, user menu.
+   topbar, persistência em localStorage e menu de perfil.
    ============================================================ */
 
 type NavItem = {
@@ -392,7 +391,6 @@ function SidebarBottomActions({
   onToggle: () => void;
   toggleOnly?: boolean;
 }) {
-  const { resolved, toggle: toggleTheme } = useTheme();
   return (
     <div
       className={`flex ${
@@ -400,17 +398,7 @@ function SidebarBottomActions({
       }`}
     >
       {!toggleOnly && (
-        <>
-          <NotificationsButton compact />
-          <button
-            onClick={toggleTheme}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
-            aria-label="Alternar tema"
-            title={`Trocar para tema ${resolved === "dark" ? "claro" : "escuro"}`}
-          >
-            {resolved === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </button>
-        </>
+        <NotificationsButton compact />
       )}
       <button
         onClick={onToggle}
@@ -488,6 +476,9 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
           >
             <User className="h-4 w-4" /> Meu Perfil
           </button>
+          <div className="my-1 h-px bg-border" />
+          <ThemeModeMenuItem />
+          <div className="my-1 h-px bg-border" />
           <button
             onClick={() => {
               setOpen(false);
@@ -648,6 +639,9 @@ function UserMenu() {
           >
             <User className="h-4 w-4" /> Meu Perfil
           </button>
+          <div className="my-1 h-px bg-border" />
+          <ThemeModeMenuItem />
+          <div className="my-1 h-px bg-border" />
           <button
             onClick={() => {
               setOpen(false);
@@ -675,17 +669,27 @@ function UserMenu() {
   );
 }
 
-/* ---------- Theme toggle ---------- */
-export function ThemeToggle() {
+/* ---------- Theme setting ---------- */
+function ThemeModeMenuItem() {
   const { resolved, toggle } = useTheme();
+  const isDark = resolved === "dark";
   return (
     <button
       onClick={toggle}
-      className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
-      aria-label="Alternar tema"
-      title={`Trocar para tema ${resolved === "dark" ? "claro" : "escuro"}`}
+      role="switch"
+      aria-checked={isDark}
+      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
     >
-      {resolved === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      <Moon className="h-4 w-4" />
+      <span className="flex-1 text-left">Modo escuro</span>
+      <span
+        aria-hidden="true"
+        className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${isDark ? "bg-primary" : "bg-muted"}`}
+      >
+        <span
+          className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isDark ? "translate-x-4" : "translate-x-0"}`}
+        />
+      </span>
     </button>
   );
 }
@@ -748,7 +752,7 @@ function Topbar({
 
       <ConnectionPill status={conn} />
 
-      <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-1.5 transition focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-ring md:flex md:w-64 xl:w-80">
+      <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-1.5 transition focus-within:border-primary md:flex md:w-64 xl:w-80">
         <Search className="h-4 w-4 text-muted-foreground" />
         <input
           className="topbar-search-input w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
@@ -758,8 +762,6 @@ function Topbar({
           <Command className="h-3 w-3" />K
         </kbd>
       </div>
-
-      <ThemeToggle />
 
       <NotificationsButton />
 
@@ -1138,7 +1140,7 @@ export function PageContainer({
 }) {
   return (
     <div
-      className={`mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-6 md:px-6 md:py-8 lg:px-8 ${className}`}
+      className={`mx-auto w-full max-w-[96rem] px-3 py-4 sm:px-4 sm:py-6 md:px-6 md:py-8 lg:px-8 xl:px-10 2xl:px-12 ${className}`}
     >
       {children}
     </div>

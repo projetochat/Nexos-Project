@@ -45,6 +45,7 @@ type Atendente = {
   email: string;
   cargo: string;
   perfilId: string;
+  perfilKey: string;
   status: keyof typeof TONE;
   csat: number;
   emAtendimento: number;
@@ -210,6 +211,7 @@ function AtendentesPage() {
                         <p className="truncate text-xs text-muted-foreground">{a.email}</p>
                       </div>
                     </div>
+                    {a.perfilKey !== "tenant_admin" && (
                     <div className="flex shrink-0 gap-1">
                       <Button
                         variant="ghost"
@@ -230,13 +232,14 @@ function AtendentesPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-destructive hover:text-destructive"
+                        className="trash-action"
                         onClick={() => setDeleting(a)}
                         title="Excluir"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
+                    )}
                   </div>
                 </Card>
               );
@@ -290,6 +293,7 @@ function AtendentesPage() {
                         </Badge>
                       </td>
                       <td className="px-3 py-3 sm:px-4">
+                        {a.perfilKey !== "tenant_admin" && (
                         <div className="flex justify-center gap-1">
                           <Button
                             variant="ghost"
@@ -312,7 +316,7 @@ function AtendentesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-destructive hover:text-destructive"
+                            className="trash-action"
                             onClick={() => setDeleting(a)}
                             title="Excluir"
                             aria-label="Excluir"
@@ -320,6 +324,7 @@ function AtendentesPage() {
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -406,9 +411,14 @@ function AtendentesPage() {
         />
         <ConfirmDialog
           open={!!deleting}
-          title="Excluir atendente?"
+          title="Excluir Atendente?"
           destructive
-          description={`Deseja realmente excluir o atendente "${deleting?.nome ?? ""}"?`}
+          description={
+            <p>
+              Deseja realmente excluir o atendente{" "}
+              <strong className="font-semibold text-foreground">"{deleting?.nome ?? ""}"</strong>?
+            </p>
+          }
           confirmLabel="Excluir"
           onClose={() => setDeleting(null)}
           onConfirm={() => deleting && remove.mutate(deleting.id)}
@@ -605,7 +615,8 @@ function AtendenteForm({
               </PhotoMenuButton>
               <div className="my-1 border-t border-border" />
               <PhotoMenuButton
-                icon={<Trash2 className="h-4 w-4" />}
+                className="trash-action"
+                icon={<Trash2 className="h-3.5 w-3.5" />}
                 onClick={() => {
                   setForm({ ...form, avatarUrl: undefined });
                   setPhotoMenuOpen(false);
@@ -728,7 +739,7 @@ function AtendenteForm({
       />
       <PhotoPreviewModal
         open={photoPreviewOpen}
-        title={form.nome ? `Foto de ${form.nome}` : "Foto do atendente"}
+        title={form.nome ? `Foto de ${form.nome}` : "Foto do Atendente"}
         src={form.avatarUrl}
         onClose={() => setPhotoPreviewOpen(false)}
       />
@@ -740,15 +751,17 @@ function PhotoMenuButton({
   icon,
   onClick,
   children,
+  className = "",
 }: {
   icon: React.ReactNode;
   onClick: () => void;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-3 px-4 py-2 text-left text-foreground transition hover:bg-surface-1"
+      className={"flex w-full items-center gap-3 px-4 py-2 text-left text-foreground transition hover:bg-surface-1 " + className}
       onClick={onClick}
     >
       <span className="text-muted-foreground">{icon}</span>
@@ -888,7 +901,7 @@ function AtendenteCameraModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Tirar foto"
+      title="Tirar Foto"
       size="md"
       footer={
         <>
@@ -1006,6 +1019,7 @@ function toAtendente(membership: ApiUserMembership): Atendente {
     email: membership.user.email,
     cargo: membership.role.name,
     perfilId: membership.role.id,
+    perfilKey: membership.role.key,
     status: active ? "online" : "offline",
     csat: 0,
     emAtendimento: 0,
