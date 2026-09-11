@@ -475,10 +475,8 @@ function ContactFieldsSettings() {
         title="Excluir Campo?"
         description={
           <p>
-            Esta ação removerá o campo adicional{" "}
-            <strong className="font-semibold text-foreground">"{deleting?.label ?? ""}"</strong>.
-            <br />
-            Deseja realmente continuar?
+            Deseja realmente excluir o campo adicional "
+            <strong className="font-semibold text-foreground">{deleting?.label ?? ""}</strong>"?
           </p>
         }
         destructive

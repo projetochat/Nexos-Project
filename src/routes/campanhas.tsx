@@ -188,6 +188,7 @@ function Page() {
         <SectionHeader
           title="Campanhas"
           subtitle="Disparos WhatsApp com audiência real, snapshot e fila confiavel."
+          subtitleClassName="hidden sm:block"
           actions={
             <>
               <Button variant="outline" size="sm" onClick={() => invalidateCampaigns()}>
@@ -201,12 +202,14 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_180px_220px]">
-            <SearchInput
-              value={filters.search}
-              onChange={(search) => setFilters({ ...filters, search })}
-              placeholder="Buscar por nome ou descrição"
-            />
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(220px,1fr)_180px_220px]">
+            <div className="col-span-2 lg:col-span-1">
+              <SearchInput
+                value={filters.search}
+                onChange={(search) => setFilters({ ...filters, search })}
+                placeholder="Buscar por nome ou descrição"
+              />
+            </div>
             <Select
               value={filters.status}
               onChange={(event) =>

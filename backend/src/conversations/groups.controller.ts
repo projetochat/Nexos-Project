@@ -11,7 +11,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { IsArray, IsIn, IsOptional, IsString, IsUUID, Length } from "class-validator";
+import { IsArray, IsIn, IsOptional, IsString, IsUUID, Length, MaxLength } from "class-validator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -25,6 +25,7 @@ import {
   Prisma,
 } from "../generated/prisma";
 import { EvolutionClient } from "../messaging/evolution/evolution.client";
+import { MessagingProviderError } from "../messaging/messaging.contracts";
 import { PrismaService } from "../prisma/prisma.service";
 import { GroupsSyncService } from "./groups-sync.service";
 
@@ -57,6 +58,15 @@ class CreateGroupDto {
   @IsArray()
   @IsUUID(undefined, { each: true })
   participantContactIds!: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  imageDataUrl?: string;
 }
 
 class SyncGroupsDto {
@@ -73,7 +83,7 @@ class UpdateGroupNameDto {
 
 class UpdateGroupDescriptionDto {
   @IsString()
-  @Length(0, 512)
+  @Length(0, 2000)
   description!: string;
 }
 
@@ -155,16 +165,15 @@ export class GroupsController {
           : {}),
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [allItems, total] = await this.prisma.$transaction([
       this.prisma.conversation.findMany({
         where,
-        skip,
-        take: pageSize,
-        orderBy: [{ groupName: "asc" }, { createdAt: "desc" }],
+        orderBy: { createdAt: "desc" },
         include: groupInclude,
       }),
       this.prisma.conversation.count({ where }),
     ]);
+    const items = allItems.sort(compareGroupsByName).slice(skip, skip + pageSize);
 
     return paginated(
       items.map((item) => serializeGroup(item)),
@@ -221,6 +230,8 @@ export class GroupsController {
     });
     if (!contacts.length) throw new BadRequestException("Nenhum participante valido encontrado.");
 
+    const description = dto.description?.trim() ?? "";
+    const imageDataUrl = validateGroupImageDataUrl(dto.imageDataUrl);
     const result = await this.evolution.createGroup({
       instanceName: connection.externalReference,
       subject: dto.name.trim(),
@@ -244,6 +255,7 @@ export class GroupsController {
           name: dto.name.trim(),
           phone: groupJid,
           instance: connection.externalReference,
+          avatarUrl: imageDataUrl ?? undefined,
           archivedAt: null,
         },
         create: {
@@ -252,6 +264,7 @@ export class GroupsController {
           phone: groupJid,
           normalizedPhone: `group:${groupJid}`,
           instance: connection.externalReference,
+          avatarUrl: imageDataUrl ?? undefined,
         },
       });
 
@@ -269,6 +282,11 @@ export class GroupsController {
             data: {
               contactId: contact.id,
               groupName: dto.name.trim(),
+              groupImageUrl: imageDataUrl ?? undefined,
+              groupMetadataJson: {
+                ...groupMetadataObject(existingConversation.groupMetadataJson),
+                description,
+              },
               isGroup: true,
               conversationType: ConversationType.GROUP,
               archivedAt: null,
@@ -286,6 +304,8 @@ export class GroupsController {
               externalChatId: groupJid,
               externalGroupId: groupJid,
               groupName: dto.name.trim(),
+              groupImageUrl: imageDataUrl ?? undefined,
+              groupMetadataJson: { description },
             },
             include: groupInclude,
           });
@@ -323,7 +343,35 @@ export class GroupsController {
       });
     });
 
-    return serializeGroup(group);
+    const warnings: string[] = [];
+    if (imageDataUrl) {
+      try {
+        await retryNewGroupMetadataUpdate(() =>
+          this.evolution.updateGroupPicture({
+            instanceName: connection.externalReference!,
+            groupJid,
+            image: imageDataUrl,
+          }),
+        );
+      } catch {
+        warnings.push("A foto não pôde ser aplicada no WhatsApp, mas o grupo foi criado.");
+      }
+    }
+    if (description) {
+      try {
+        await retryNewGroupMetadataUpdate(() =>
+          this.evolution.updateGroupDescription({
+            instanceName: connection.externalReference!,
+            groupJid,
+            description,
+          }),
+        );
+      } catch {
+        warnings.push("A descrição não pôde ser aplicada no WhatsApp, mas o grupo foi criado.");
+      }
+    }
+
+    return { ...serializeGroup(group), warnings };
   }
 
   @Patch(":id/name")
@@ -544,6 +592,7 @@ export class GroupsController {
 
 function serializeGroup(group: GroupConversation) {
   const name = group.groupName || group.contact.name || "Grupo WhatsApp";
+  const activeParticipants = group.participants.filter((participant) => participant.active);
   return {
     id: group.id,
     tenantId: group.tenantId,
@@ -554,16 +603,17 @@ function serializeGroup(group: GroupConversation) {
     description: groupDescription(group.groupMetadataJson),
     createdAt: groupCreatedAt(group),
     updatedAt: group.updatedAt,
-    participantsCount: group.participants.filter((participant) => participant.active).length,
+    participantsCount: activeParticipants.length,
     connection: group.connection
       ? {
           id: group.connection.id,
           name: group.connection.name,
           externalReference: group.connection.externalReference,
           status: group.connection.status,
+          color: group.connection.color,
         }
       : null,
-    participants: group.participants.map((participant) => ({
+    participants: activeParticipants.map((participant) => ({
       id: participant.id,
       name: participant.displayName || participant.phone || participant.externalParticipantId,
       phone: participant.phone,
@@ -578,6 +628,20 @@ function serializeGroup(group: GroupConversation) {
   };
 }
 
+function compareGroupsByName(a: GroupConversation, b: GroupConversation) {
+  const normalizeName = (group: GroupConversation) =>
+    (group.groupName || group.contact.name || "Grupo WhatsApp")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("pt-BR");
+  const comparison = normalizeName(a).localeCompare(normalizeName(b), "pt-BR", {
+    sensitivity: "base",
+    numeric: true,
+  });
+  if (comparison !== 0) return comparison;
+  return b.createdAt.getTime() - a.createdAt.getTime();
+}
+
 function groupDescription(value: Prisma.JsonValue | null) {
   const metadata = groupMetadataObject(value);
   const description = metadata.description;
@@ -588,6 +652,38 @@ function groupMetadataObject(value: Prisma.JsonValue | null) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, Prisma.JsonValue>)
     : {};
+}
+
+async function retryNewGroupMetadataUpdate(operation: () => Promise<unknown>) {
+  let lastError: unknown;
+  for (const delayMs of [350, 700, 0]) {
+    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryNewGroupMetadataUpdate(error)) throw error;
+    }
+  }
+  throw lastError;
+}
+
+function shouldRetryNewGroupMetadataUpdate(error: unknown) {
+  return (
+    error instanceof MessagingProviderError &&
+    (error.retryable || error.httpStatus === 404)
+  );
+}
+
+function validateGroupImageDataUrl(value: string | undefined) {
+  if (!value) return undefined;
+  const match = value.match(/^data:image\/(png|jpeg|jpg|webp);base64,([a-z0-9+/=]+)$/i);
+  if (!match) throw new BadRequestException("Selecione uma imagem válida.");
+  const image = Buffer.from(match[2], "base64");
+  if (!image.length || image.length > 2 * 1024 * 1024) {
+    throw new BadRequestException("A imagem deve ter no máximo 2 MB.");
+  }
+  return value;
 }
 
 function groupCreatedAt(group: GroupConversation) {

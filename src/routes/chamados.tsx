@@ -150,12 +150,14 @@ function ChamadosPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid gap-3 md:grid-cols-[1fr_180px_180px]">
-            <SearchInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Buscar protocolo, título, contact ou customer"
-            />
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-[1fr_180px_180px]">
+            <div className="col-span-2 md:col-span-1">
+              <SearchInput
+                value={query}
+                onChange={setQuery}
+                placeholder="Buscar protocolo, título, contact ou customer"
+              />
+            </div>
             <Select
               value={status}
               onChange={(event) => setStatus(event.target.value as ApiTicketStatus | "")}
@@ -327,9 +329,8 @@ function ChamadosPage() {
           title="Excluir Chamado?"
           description={
             <p>
-              O chamado{" "}
-              <strong className="font-semibold text-foreground">"{deletingTicket?.protocol ?? ""}"</strong>{" "}
-              será excluído da listagem. Deseja continuar?
+              Deseja realmente excluir o chamado "
+              <strong className="font-semibold text-foreground">{deletingTicket?.protocol ?? ""}</strong>"?
             </p>
           }
           confirmLabel="Excluir"

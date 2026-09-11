@@ -555,13 +555,21 @@ export class CampaignsService {
       );
       return { rescheduled: true };
     }
-    if (!statusIn(campaign.status, [CampaignStatus.SCHEDULED, CampaignStatus.QUEUED]))
+    if (
+      !statusIn(campaign.status, [
+        CampaignStatus.SCHEDULED,
+        CampaignStatus.QUEUED,
+        CampaignStatus.RUNNING,
+      ])
+    )
       return { skipped: true, status: campaign.status };
-    const claimed = await this.prisma.campaign.updateMany({
-      where: { id: campaign.id, status: { in: [CampaignStatus.SCHEDULED, CampaignStatus.QUEUED] } },
-      data: { status: CampaignStatus.RUNNING, startedAt: campaign.startedAt ?? new Date() },
-    });
-    if (claimed.count !== 1) return { skipped: true };
+    if (campaign.status !== CampaignStatus.RUNNING) {
+      const claimed = await this.prisma.campaign.updateMany({
+        where: { id: campaign.id, status: { in: [CampaignStatus.SCHEDULED, CampaignStatus.QUEUED] } },
+        data: { status: CampaignStatus.RUNNING, startedAt: campaign.startedAt ?? new Date() },
+      });
+      if (claimed.count !== 1) return { skipped: true };
+    }
     const batchSize = readCampaignRuntimeConfig(this.config).batchSize;
     const recipients = await this.prisma.campaignRecipient.findMany({
       where: { campaignId: campaign.id, status: CampaignRecipientStatus.PENDING },
@@ -569,10 +577,11 @@ export class CampaignsService {
       take: batchSize,
     });
     for (const recipient of recipients) {
-      await this.prisma.campaignRecipient.updateMany({
+      const recipientClaim = await this.prisma.campaignRecipient.updateMany({
         where: { id: recipient.id, status: CampaignRecipientStatus.PENDING },
         data: { status: CampaignRecipientStatus.QUEUED, queuedAt: new Date() },
       });
+      if (recipientClaim.count !== 1) continue;
       await this.campaignQueue.enqueue({
         kind: "campaign.recipient.send",
         tenantId: campaign.tenantId,

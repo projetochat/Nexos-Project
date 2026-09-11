@@ -380,6 +380,11 @@ function ContatosPage() {
   const [totalPages, setTotalPages] = React.useState(1);
   const [editing, setEditing] = React.useState<Contact | null>(null);
   const [deleting, setDeleting] = React.useState<Contact | null>(null);
+  const [conversationChoice, setConversationChoice] = React.useState<{
+    contact: Contact;
+    instances: ContactInstanceOption[];
+  } | null>(null);
+  const [openingConversation, setOpeningConversation] = React.useState(false);
   const create = useDisclosure();
   const visibleInstances = React.useMemo(
     () =>
@@ -555,31 +560,38 @@ function ContatosPage() {
     ? customFieldDefinitions.find((field) => field.id === bulkMode.slice("custom:".length))
     : undefined;
 
-  const openConversation = async (contact: Contact) => {
+  const startConversation = async (contact: Contact, connectionId: string) => {
+    setOpeningConversation(true);
     try {
-      const connectionId =
-        contact.instanceIds
-          ?.map((value) =>
-            instances.find(
-              (instance) =>
-                instance.value === value ||
-                instance.id === value ||
-                instance.externalReference === value ||
-                instance.name === value,
-            ),
-          )
-          .find((instance) => instance?.status?.toUpperCase() === "CONNECTED")?.id ??
-        contact.instanceIds?.[0] ??
-        null;
       const conversation = await conversationApi.create({
         contactId: contact.id,
         connectionId,
         assignToSelf: true,
       });
+      setConversationChoice(null);
       navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
     } catch (e) {
       toast.error("Falha ao abrir conversa", { description: (e as Error).message });
+    } finally {
+      setOpeningConversation(false);
     }
+  };
+
+  const openConversation = (contact: Contact) => {
+    const connectedInstances = resolveContactInstances(contact.instanceIds, instances).filter(
+      (instance) => isConnectedInstanceStatus(instance.status),
+    );
+    if (connectedInstances.length === 0) {
+      toast.error("Nenhuma instância conectada", {
+        description: "Vincule uma instância conectada ao contato para iniciar a conversa.",
+      });
+      return;
+    }
+    if (connectedInstances.length === 1) {
+      void startConversation(contact, connectedInstances[0].id);
+      return;
+    }
+    setConversationChoice({ contact, instances: connectedInstances });
   };
 
   const exportContacts = async (format: "csv" | "xlsx" = "csv") => {
@@ -1845,6 +1857,45 @@ function ContatosPage() {
             }
           }}
         />
+        <Modal
+          open={!!conversationChoice}
+          onClose={() => !openingConversation && setConversationChoice(null)}
+          title="Escolher Instância"
+          description={
+            conversationChoice
+              ? `Selecione a instância para iniciar a conversa com ${conversationChoice.contact.nome}.`
+              : undefined
+          }
+          size="sm"
+          footer={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setConversationChoice(null)}
+              disabled={openingConversation}
+            >
+              Cancelar
+            </Button>
+          }
+        >
+          <div className="space-y-2">
+            {conversationChoice?.instances.map((instance) => (
+              <Button
+                key={instance.id}
+                variant="secondary"
+                className="w-full justify-start"
+                onClick={() => void startConversation(conversationChoice.contact, instance.id)}
+                disabled={openingConversation}
+              >
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: instance.color ?? "#22c55e" }}
+                />
+                {instance.name}
+              </Button>
+            ))}
+          </div>
+        </Modal>
         <ImportContactsModal
           open={importModal.open}
           onClose={importModal.hide}
@@ -2775,7 +2826,12 @@ export function ContactFormModal({
     setAvatarUrl(initial?.avatar_url ?? null);
     setContactDepartmentId(initial?.contactDepartmentId ?? "");
     setContactProfileId(initial?.contactProfileId ?? "");
-    setInstanceIds(initial?.instanceIds ?? (initial?.instancia ? [initial.instancia] : []));
+    setInstanceIds(
+      canonicalContactInstanceIds(
+        initial?.instanceIds ?? (initial?.instancia ? [initial.instancia] : []),
+        instances,
+      ),
+    );
     setTagIds(initial?.tags.map((tag) => tag.id) ?? []);
     setCustomFields(initial?.customFields ?? {});
     setActiveContactTab("Geral");
@@ -2785,7 +2841,7 @@ export function ContactFormModal({
       .listContactCustomFields()
       .then(setCustomFieldDefinitions)
       .catch(() => setCustomFieldDefinitions([]));
-  }, [initial, open]);
+  }, [initial, instances, open]);
 
   const contactTabs = React.useMemo(
     () => uniqueLabels(["Geral", ...customFieldDefinitions.map(normalizeContactCustomFieldTab)]),
@@ -2832,6 +2888,11 @@ export function ContactFormModal({
       toast.error("Preencha os campos obrigatórios.");
       return;
     }
+    const validInstanceIds = canonicalContactInstanceIds(instanceIds, instances);
+    if (validInstanceIds.length !== instanceIds.length) {
+      setInstanceIds(validInstanceIds);
+      toast.info("Referências antigas de instância foram removidas deste contato.");
+    }
     void onSubmit({
       nome: nome.trim(),
       telefone,
@@ -2840,7 +2901,7 @@ export function ContactFormModal({
       email: email.trim() || null,
       contactDepartmentId: contactDepartmentId || null,
       contactProfileId: contactProfileId || null,
-      instanceIds,
+      instanceIds: validInstanceIds,
       tag_ids: tagIds,
       customFields: normalizedCustomFields,
       avatarUrl,
@@ -3847,7 +3908,7 @@ function InstanceMultiSelect({
               >
                 <span
                   className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: instance.color ?? "#64748b" }}
+                  style={{ backgroundColor: instance.color ?? "#22c55e" }}
                 />
                 {instance.name}
               </span>
@@ -3879,7 +3940,7 @@ function InstanceMultiSelect({
                   </span>
                   <span
                     className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: instance.color ?? "#64748b" }}
+                    style={{ backgroundColor: instance.color ?? "#22c55e" }}
                   />
                   <span className="truncate">{instance.name}</span>
                 </button>
@@ -5603,6 +5664,27 @@ function departmentPayload(data: DepartamentoFormData) {
     description: data.description?.trim() || null,
     color: completeHexColor(data.color, "#3B82F6"),
   };
+}
+
+function resolveContactInstances(values: string[] | undefined, instances: ContactInstanceOption[]) {
+  const byKey = new Map<string, ContactInstanceOption>();
+  for (const instance of instances) {
+    for (const key of [instance.id, instance.value, instance.externalReference, instance.name]) {
+      if (key) byKey.set(key, instance);
+    }
+  }
+  return Array.from(
+    new Map(
+      (values ?? [])
+        .map((value) => byKey.get(value))
+        .filter((instance): instance is ContactInstanceOption => Boolean(instance))
+        .map((instance) => [instance.id, instance]),
+    ).values(),
+  );
+}
+
+function canonicalContactInstanceIds(values: string[] | undefined, instances: ContactInstanceOption[]) {
+  return resolveContactInstances(values, instances).map((instance) => instance.id);
 }
 
 // eslint-disable-next-line react-refresh/only-export-components

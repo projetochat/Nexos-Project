@@ -230,7 +230,17 @@ export function Avatar({
       className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-brand font-semibold text-white shadow-card ${className}`}
       style={{ width: size, height: size, fontSize: size * 0.38 }}
     >
-      {src ? <img src={src} alt={name} className="h-full w-full object-cover" /> : initials}
+      {src ? (
+        <img
+          src={src}
+          alt={name}
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        initials
+      )}
     </span>
   );
 }

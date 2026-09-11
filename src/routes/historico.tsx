@@ -112,16 +112,18 @@ function HistoricoPage() {
 
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[380px_1fr]">
           <aside className="flex min-h-0 flex-col rounded-xl border border-border bg-card shadow-card">
-            <div className="grid gap-2 border-b border-border p-3">
-              <SearchInput
-                value={search}
-                onChange={(value) => {
-                  setSearch(value);
-                  setPage(1);
-                }}
-                placeholder="Buscar protocolo, contato..."
-              />
-              <div className="grid gap-2">
+            <div className="grid grid-cols-2 gap-2 border-b border-border p-3">
+              <div className="col-span-2">
+                <SearchInput
+                  value={search}
+                  onChange={(value) => {
+                    setSearch(value);
+                    setPage(1);
+                  }}
+                  placeholder="Buscar protocolo, contato..."
+                />
+              </div>
+              <div>
                 <Select
                   value={period}
                   onChange={(event) => setPeriod(event.target.value as OperationalPeriod)}

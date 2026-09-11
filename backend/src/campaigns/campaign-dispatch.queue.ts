@@ -28,10 +28,11 @@ export class CampaignDispatchQueue implements OnModuleDestroy {
   }
 
   async enqueue(job: CampaignDispatchJob, options: JobsOptions = {}) {
+    const jobId = campaignJobId(job);
     return this.getQueue().add(job.kind, job, {
       ...CAMPAIGN_JOB_OPTIONS,
       ...options,
-      jobId: campaignJobId(job),
+      ...(jobId ? { jobId } : {}),
     });
   }
 
@@ -59,7 +60,9 @@ export class CampaignDispatchQueue implements OnModuleDestroy {
   }
 }
 
-export function campaignJobId(job: CampaignDispatchJob) {
+export function campaignJobId(job: CampaignDispatchJob): string | undefined {
   if (job.kind === "campaign.recipient.send") return `campaign-recipient-${job.recipientId}`;
-  return `${job.kind.replaceAll(".", "-")}-${job.campaignId}`;
+  // Preparation and finalization are recurring coordination jobs. Reusing their ID while
+  // completed jobs are retained makes BullMQ ignore the next cycle, stalling campaigns.
+  return undefined;
 }

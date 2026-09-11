@@ -196,7 +196,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <AppShellFull>
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-[96rem] px-3 sm:px-4 md:px-6 lg:px-8 xl:px-10 2xl:px-12">
+      <div className="flex h-full min-h-0 w-full">
         <aside
           className={`${activeId ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-r border-border md:w-[380px] xl:w-[440px]`}
         >

@@ -4,6 +4,7 @@ import { Check, Database, Phone, Users } from "lucide-react";
 import { AdminContainer } from "@/components/admin-shell";
 import { Badge, Card, SectionHeader } from "@/components/ui-kit";
 import { platformApi, type PlatformPlan } from "@/lib/nexos-api";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/planos")({
   head: () => ({ meta: [{ title: "Planos · Nexo Admin" }] }),
@@ -28,7 +29,7 @@ function PlanosAdmin() {
       />
       {error && <Card className="border-destructive/40 text-sm text-destructive">{error}</Card>}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {plans.map((plan) => (
+        {sortByOptionLabel(plans, (plan) => plan.name).map((plan) => (
           <Card key={plan.id}>
             <div className="flex items-center justify-between">
               <div>

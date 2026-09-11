@@ -122,6 +122,7 @@ export type InboundMessageEvent = {
     remoteJid?: string | null;
     profilePictureUrl?: string | null;
     normalizedPhoneCandidates?: string[];
+    identitySource?: string | null;
   };
 };
 

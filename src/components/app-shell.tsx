@@ -15,6 +15,7 @@ import {
   PanelLeftOpen,
   Command,
   Moon,
+  Sun,
   LogOut,
   Menu,
   X,
@@ -680,8 +681,8 @@ function ThemeModeMenuItem() {
       aria-checked={isDark}
       className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
     >
-      <Moon className="h-4 w-4" />
-      <span className="flex-1 text-left">Modo escuro</span>
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      <span className="flex-1 text-left">{isDark ? "Modo Claro" : "Modo Escuro"}</span>
       <span
         aria-hidden="true"
         className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${isDark ? "bg-primary" : "bg-muted"}`}

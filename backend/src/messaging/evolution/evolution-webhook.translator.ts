@@ -81,7 +81,13 @@ export class EvolutionWebhookTranslator {
       conversationType === "GROUP"
         ? (stringValue(key?.participant) ?? readString(data, "participant"))
         : remoteJid;
-    const participantPhone = phoneFromRemoteIdentity(participantExternalId);
+    const participantIdentity = resolvePhoneIdentity([
+      participantExternalId,
+      stringValue(key?.participantPn),
+      readString(data, "participantPn"),
+      payload.sender,
+    ]);
+    const participantPhone = participantIdentity?.phone ?? null;
     const participantLid = participantExternalId?.endsWith("@lid") ? participantExternalId : null;
     const rawMessage = readRecord(data, "message");
     const message = unwrapMessage(rawMessage);
@@ -108,10 +114,18 @@ export class EvolutionWebhookTranslator {
       content.caption ??
       readNestedString(data, ["message", "conversation"]) ??
       readNestedString(data, ["message", "extendedTextMessage", "text"]);
-    const phone =
+    const senderIdentity =
       conversationType === "GROUP"
-        ? (participantPhone ?? payload.sender ?? remoteJid)
-        : (phoneFromRemoteIdentity(remoteJid) ?? payload.sender);
+        ? participantIdentity
+        : resolvePhoneIdentity([
+            remoteJid,
+            stringValue(key?.remoteJidAlt),
+            stringValue(key?.participantPn),
+            readString(data, "senderPn"),
+            readString(data, "participantPn"),
+            payload.sender,
+          ]);
+    const phone = senderIdentity?.phone ?? null;
     if (
       !externalMessageId ||
       !remoteJid ||
@@ -122,7 +136,8 @@ export class EvolutionWebhookTranslator {
       if (!remoteJid || !phone) return { kind: "ignored", reason: "MISSING_REMOTE_IDENTITY" };
       return { kind: "ignored", reason: "INVALID_PAYLOAD" };
     }
-    const normalizedPhoneCandidates = normalizeRemotePhoneCandidates(phone);
+    if (!senderIdentity) return { kind: "ignored", reason: "MISSING_REMOTE_IDENTITY" };
+    const normalizedPhoneCandidates = senderIdentity.candidates;
     const quoted = extractQuoted(message, readRecord(data, "contextInfo"));
 
     return {
@@ -161,6 +176,7 @@ export class EvolutionWebhookTranslator {
           remoteJid,
           profilePictureUrl: extractProfilePictureUrl(data),
           normalizedPhoneCandidates,
+          identitySource: senderIdentity.source,
         },
       },
     };
@@ -443,8 +459,32 @@ function ownerJid(data: Record<string, unknown> | undefined) {
 }
 
 function normalizeOwnerPhone(value: string | null) {
-  const phone = phoneFromJid(value);
-  return phone ? `+${phone}` : null;
+  return resolvePhoneIdentity([value])?.candidates[0] ?? null;
+}
+
+function resolvePhoneIdentity(values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const identity = value?.trim();
+    if (!identity || isGroupRemoteIdentity(identity) || isLidRemoteIdentity(identity)) continue;
+    const phone = phoneFromRemoteIdentity(identity) ?? identity;
+    if (!phone) continue;
+    try {
+      const candidates = normalizeRemotePhoneCandidates(phone);
+      if (candidates.length) return { phone, candidates, source: identitySource(identity) };
+    } catch {
+      // Identidades técnicas ou incompletas não devem rejeitar todo o webhook.
+    }
+  }
+  return null;
+}
+
+function isLidRemoteIdentity(value: string) {
+  return value.toLowerCase().endsWith("@lid");
+}
+
+function identitySource(value: string) {
+  if (value.includes("@")) return value.split("@")[1]?.toLowerCase() ?? "jid";
+  return "phone";
 }
 
 function isGroupJid(value: string | null) {

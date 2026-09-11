@@ -16,6 +16,7 @@ import {
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
 import { quickReplyApi, type ApiQuickReply } from "@/lib/nexos-api";
 import { useChatPerms } from "@/lib/perms";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/mensagens-rapidas")({
   component: QuickRepliesPage,
@@ -63,8 +64,10 @@ function QuickRepliesPage() {
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((item) => `${item.atalho} ${item.texto}`.toLowerCase().includes(q));
+    const matchingItems = q
+      ? items.filter((item) => `${item.atalho} ${item.texto}`.toLowerCase().includes(q))
+      : items;
+    return sortByOptionLabel(matchingItems, (item) => item.atalho);
   }, [items, query]);
 
   const refresh = () => qc.invalidateQueries({ queryKey: quickRepliesQueryKey });
@@ -95,6 +98,7 @@ function QuickRepliesPage() {
         <SectionHeader
           title="Mensagens Rápidas"
           subtitle="Atalhos que aparecem digitando / no chat."
+          subtitleClassName="hidden sm:block"
           actions={
             canManageCatalog ? (
               <Button variant="primary" size="sm" onClick={openNew}>
@@ -209,7 +213,7 @@ function QuickRepliesPage() {
 
         <ConfirmDialog
           open={!!confirming}
-          title="Excluir Atalho?"
+          title="Excluir Mensagem Rápida?"
           description={
             confirming ? (
               <p>
@@ -347,7 +351,7 @@ function QuickReplyEditor({
     <Modal
       open={open}
       onClose={onClose}
-      title={initial && !clone ? "Editar Atalho" : "Novo Atalho"}
+      title={clone ? "Duplicar Mensagem Rápida" : initial ? "Editar Mensagem Rápida" : "Nova Mensagem Rápida"}
       description="Atalhos curtos aceleram respostas."
       size="lg"
       footer={
@@ -471,7 +475,9 @@ function QuickReplyEditor({
 
 function duplicateShortcut(value: string, clone: boolean) {
   const shortcut = sanitizeQuickReplyShortcut(value);
-  return clone ? `${shortcut}copia` : shortcut;
+  if (!clone) return shortcut;
+  const base = shortcut.replace(/-+$/, "");
+  return base ? `${base}-copia` : "copia";
 }
 
 function sanitizeQuickReplyShortcut(value: string) {

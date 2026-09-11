@@ -35,6 +35,49 @@ describe("EvolutionClient", () => {
     );
   });
 
+  it("updates a group picture with the current Evolution contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ success: true }));
+    globalThis.fetch = fetchMock;
+
+    await new EvolutionClient().updateGroupPicture({
+      instanceName: "instance-a",
+      groupJid: "120363428119237023@g.us",
+      image: "data:image/jpeg;base64,aGVsbG8=",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://evolution.local/group/updateGroupPicture/instance-a?groupJid=120363428119237023%40g.us",
+      expect.objectContaining({
+        method: "PUT",
+        headers: expect.objectContaining({ apikey: "test-key" }),
+        body: JSON.stringify({
+          groupJid: "120363428119237023@g.us",
+          image: "aGVsbG8=",
+        }),
+      }),
+    );
+  });
+
+  it("falls back to the legacy group-picture endpoint when PUT is unavailable", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ message: "Method not allowed" }, 405))
+      .mockResolvedValueOnce(response({ success: true }));
+    globalThis.fetch = fetchMock;
+
+    await new EvolutionClient().updateGroupPicture({
+      instanceName: "instance-a",
+      groupJid: "120363428119237023@g.us",
+      image: "data:image/jpeg;base64,aGVsbG8=",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://evolution.local/group/updateGroupPicture/instance-a?groupJid=120363428119237023%40g.us",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("sends reactions with Evolution v2.3.7 root key/reaction payload", async () => {
     const fetchMock = vi.fn().mockResolvedValue(response({ key: { id: "MSG1" }, status: "SENT" }));
     globalThis.fetch = fetchMock;

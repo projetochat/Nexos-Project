@@ -387,6 +387,56 @@ export class CrmController {
     );
   }
 
+  // Keep this endpoint outside `/contacts/:id`: some router builds resolve dynamic
+  // contact routes before nested static paths, treating "picker" as a contact id.
+  @Get("group-contact-picker")
+  @RequirePermissions("crm.read")
+  async listContactsForGroupPicker(
+    @Query() query: PaginationDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(50, Math.max(1, query.pageSize ?? 50));
+    const q = query.q?.trim();
+    const digits = q?.replace(/\D/g, "") ?? "";
+    const where: Prisma.ContactWhereInput = {
+      tenantId: current.tenantId,
+      archivedAt: null,
+      NOT: { normalizedPhone: { startsWith: "group:" } },
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              { phone: { contains: q, mode: "insensitive" } },
+              ...(digits ? [{ normalizedPhone: { contains: digits } }] : []),
+            ],
+          }
+        : {}),
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.contact.findMany({
+        where,
+        select: { id: true, name: true, phone: true, normalizedPhone: true, avatarUrl: true },
+        orderBy: { name: "asc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.contact.count({ where }),
+    ]);
+    return paginated(
+      items.map((contact) => ({
+        id: contact.id,
+        nome: contact.name,
+        telefone: contact.phone,
+        normalizedPhone: contact.normalizedPhone,
+        avatar_url: contact.avatarUrl,
+      })),
+      total,
+      page,
+      pageSize,
+    );
+  }
+
   @Get("contacts/options")
   @RequirePermissions("crm.read")
   async contactOptions(@CurrentUser() current: AuthenticatedUser) {

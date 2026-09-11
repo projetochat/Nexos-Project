@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Card, Button, Avatar, Badge } from "@/components/ui-kit";
 import { organizationApi } from "@/lib/nexos-api";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/configuracoes/usuarios")({
   component: UsuariosSettings,
@@ -28,7 +29,7 @@ function UsuariosSettings() {
       <ul className="divide-y divide-border">
         {isLoading && <li className="p-4 text-sm text-muted-foreground">Carregando...</li>}
         {!isLoading &&
-          users.map((membership) => (
+          sortByOptionLabel(users, (membership) => membership.user.name).map((membership) => (
             <li
               key={membership.id}
               className="flex flex-wrap items-center gap-3 p-4 sm:flex-nowrap sm:gap-4"

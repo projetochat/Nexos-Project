@@ -50,7 +50,7 @@ export function ReportFiltersBar({
 
   return (
     <Card className="mb-6 p-4">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <div>
           <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
             Periodo
@@ -116,7 +116,7 @@ export function ReportFiltersBar({
             ))}
           </Select>
         </div>
-        <div>
+        <div className="col-span-2 xl:col-span-1">
           <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
             Busca
           </label>

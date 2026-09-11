@@ -206,6 +206,11 @@ export type ApiContact = {
   lifecycle?: "created" | "restored";
 };
 
+export type ApiGroupContactPickerItem = Pick<
+  ApiContact,
+  "id" | "nome" | "telefone" | "normalizedPhone" | "avatar_url"
+>;
+
 export type ApiAgendaImportContact = {
   id: string;
   name: string;
@@ -258,6 +263,7 @@ export type ApiConversation = {
     providerType: "development" | "evolution" | "meta_cloud";
     status: "disconnected" | "connecting" | "connected" | "error";
     externalReference: string | null;
+    color: string | null;
   } | null;
 };
 
@@ -288,10 +294,12 @@ export type ApiWhatsappGroup = {
     name: string;
     externalReference: string | null;
     status: string;
+    color: string | null;
   } | null;
   participants: ApiWhatsappGroupParticipant[];
   lastMessagePreview: string | null;
   lastMessageAt: string | null;
+  warnings?: string[];
 };
 
 export type ApiQuickReply = {
@@ -997,6 +1005,23 @@ export const crmApi = {
 
   listContacts: (params: ListContactsParams = {}) =>
     apiRequest<PaginatedResponse<ApiContact>>(`/crm/contacts${queryString(params)}`),
+  listContactsForGroupPicker: async (
+    params: { q?: string; page?: number; pageSize?: number } = {},
+  ): Promise<PaginatedResponse<ApiGroupContactPickerItem>> => {
+    try {
+      return await apiRequest<PaginatedResponse<ApiGroupContactPickerItem>>(
+        `/crm/group-contact-picker${queryString(params)}`,
+      );
+    } catch (error) {
+      // Allows the screen to keep working while an already-running backend is
+      // restarted with the lightweight picker endpoint.
+      if (!(error instanceof NexosApiError) || error.status !== 404) throw error;
+      const legacyPage = await apiRequest<PaginatedResponse<ApiContact>>(
+        `/crm/contacts${queryString(params)}`,
+      );
+      return legacyPage;
+    }
+  },
   getContact: (id: string) => apiRequest<ApiContact>(`/crm/contacts/${id}`),
   createContact: (data: ContactPayload) =>
     apiRequest<ApiContact>("/crm/contacts", { method: "POST", body: JSON.stringify(data) }),
@@ -1132,7 +1157,13 @@ export const groupsApi = {
   list: (params: ListParams & { connectionId?: string } = {}) =>
     apiRequest<PaginatedResponse<ApiWhatsappGroup>>(`/groups${queryString(params)}`),
   detail: (id: string) => apiRequest<ApiWhatsappGroup>(`/groups/${id}`),
-  create: (data: { name: string; connectionId: string; participantContactIds: string[] }) =>
+  create: (data: {
+    name: string;
+    connectionId: string;
+    participantContactIds: string[];
+    description?: string;
+    imageDataUrl?: string;
+  }) =>
     apiRequest<ApiWhatsappGroup>("/groups", { method: "POST", body: JSON.stringify(data) }),
   updateName: (id: string, data: { name: string }) =>
     apiRequest<ApiWhatsappGroup>(`/groups/${id}/name`, {

@@ -62,7 +62,7 @@ function EmpresasSaaS() {
   const load = React.useCallback(() => {
     Promise.all([platformApi.tenants({ q, pageSize: 50 }), platformApi.plans({ pageSize: 50 })])
       .then(([tenants, planList]) => {
-        setRows(tenants.items);
+        setRows(sortByOptionLabel(tenants.items, (tenant) => tenant.name));
         setPlans(planList.items.filter((plan) => plan.status === "ACTIVE"));
         setError(null);
         setForm((current) => ({

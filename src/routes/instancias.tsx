@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Camera,
-  Check,
   Copy,
   Eye,
   Infinity as InfinityIcon,
@@ -36,6 +35,7 @@ import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
+import { sortByOptionLabel } from "@/lib/sort-options";
 import {
   connectionsApi,
   crmApi,
@@ -77,7 +77,10 @@ function Page() {
     queryKey: ["nexos", "contact-custom-fields"],
     queryFn: crmApi.listContactCustomFields,
   });
-  const visibleItems = items.filter((item) => item.status !== "removed");
+  const visibleItems = sortByOptionLabel(
+    items.filter((item) => item.status !== "removed"),
+    (item) => item.name,
+  );
   const profileSyncAttempted = React.useRef(new Set<string>());
 
   React.useEffect(() => {
@@ -449,6 +452,7 @@ function ConnectionForm({
       onClose={onClose}
       title="Nova Instância WhatsApp"
       size="xl"
+      className="lg:max-w-5xl"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -622,6 +626,7 @@ function ConnectionSettingsModal({
   const [absenceMessage, setAbsenceMessage] = React.useState("");
   const [serviceHours, setServiceHours] = React.useState<ServiceHoursRow[]>(defaultServiceHours);
   const [showWelcomeValidation, setShowWelcomeValidation] = React.useState(false);
+  const [showAbsenceValidation, setShowAbsenceValidation] = React.useState(false);
   const [form, setForm] = React.useState<ConnectionSettingsFormData>({
     name: "",
     color: "#22c55e",
@@ -647,6 +652,7 @@ function ConnectionSettingsModal({
     setAbsenceMessage(connection.absenceMessage ?? "");
     setServiceHours(defaultServiceHours());
     setShowWelcomeValidation(false);
+    setShowAbsenceValidation(false);
     setForm({
       name: connection.name,
       color: connection.color || "#22c55e",
@@ -694,6 +700,12 @@ function ConnectionSettingsModal({
       toast.error("Preencha as mensagens de saudação para salvar.");
       return;
     }
+    if (absenceEnabled && !absenceMessage.trim()) {
+      setTab("absence");
+      setShowAbsenceValidation(true);
+      toast.error("Preencha a mensagem de ausência para salvar.");
+      return;
+    }
     onSubmit(connection, {
       ...form,
       name: form.name.trim(),
@@ -713,6 +725,7 @@ function ConnectionSettingsModal({
         onClose={onClose}
         title="Editar Instância"
         size="xl"
+        className="lg:max-w-5xl"
         footer={
           <div className="flex w-full items-center justify-between gap-2">
             <EntityFormLog createdAt={connection?.createdAt} updatedAt={connection?.updatedAt} />
@@ -733,7 +746,7 @@ function ConnectionSettingsModal({
         }
       >
         <div className="space-y-5">
-          <div className="flex overflow-x-auto border-b border-border text-sm">
+          <div className="grid grid-cols-3 border-b border-border text-sm sm:flex sm:overflow-x-auto">
             <TabButton active={tab === "general"} onClick={() => setTab("general")}>
               Geral
             </TabButton>
@@ -1021,19 +1034,31 @@ function ConnectionSettingsModal({
                   checked={absenceEnabled}
                   onChange={(event) => {
                     setAbsenceEnabled(event.target.checked);
+                    setShowAbsenceValidation(false);
                     if (event.target.checked) setAbsenceActivation((current) => current + 1);
                   }}
                   className="h-4 w-4 accent-primary"
                 />
                 Ativar mensagem de ausência
               </label>
-              <Field label="Mensagem de Ausência">
+              <Field
+                label={absenceEnabled ? "Mensagem de Ausência *" : "Mensagem de Ausência"}
+                error={
+                  showAbsenceValidation && absenceEnabled && !absenceMessage.trim()
+                    ? "Preencha a mensagem de ausência."
+                    : undefined
+                }
+              >
                 <div>
                   <Textarea
                     rows={6}
                     value={absenceMessage}
-                    onChange={(event) => setAbsenceMessage(event.target.value)}
+                    onChange={(event) => {
+                      setAbsenceMessage(event.target.value);
+                      setShowAbsenceValidation(false);
+                    }}
                     disabled={!absenceEnabled}
+                    aria-invalid={showAbsenceValidation && absenceEnabled && !absenceMessage.trim()}
                     placeholder={ABSENCE_MESSAGE_PLACEHOLDER}
                   />
                 </div>
@@ -1081,7 +1106,7 @@ function TabButton({
   return (
     <button
       type="button"
-      className={`shrink-0 border-b px-3 py-3 text-left transition ${
+      className={`min-w-0 border-b px-2 py-2 text-center leading-tight transition sm:shrink-0 sm:px-3 sm:py-3 sm:text-left sm:leading-normal ${
         active
           ? "border-primary text-primary"
           : "border-transparent text-muted-foreground hover:text-foreground"
@@ -1464,20 +1489,17 @@ function ServiceHoursTable({
   enabled: boolean;
   focusStartSignal: number;
 }) {
-  const [editing, setEditing] = React.useState(false);
   const [selectedRow, setSelectedRow] = React.useState<number | null>(null);
   const mondayStartRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (!enabled) {
-      setEditing(false);
       setSelectedRow(null);
     }
   }, [enabled]);
 
   React.useEffect(() => {
     if (!enabled || focusStartSignal === 0) return;
-    setEditing(true);
     setSelectedRow(0);
     requestAnimationFrame(() => mondayStartRef.current?.focus());
   }, [enabled, focusStartSignal]);
@@ -1497,56 +1519,34 @@ function ServiceHoursTable({
     );
   };
 
-  const toggleEditing = () => {
-    setEditing((current) => !current);
-    setSelectedRow(null);
-  };
-
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-medium text-muted-foreground">Horário de Atendimento</p>
-        {enabled && (
-          <Button type="button" variant="ghost" size="sm" onClick={toggleEditing}>
-            {editing ? (
-              <>
-                <Check className="h-3.5 w-3.5" />
-                Concluir
-              </>
-            ) : (
-              <>
-                <Pencil className="h-3.5 w-3.5" />
-                Editar
-              </>
-            )}
-          </Button>
-        )}
-      </div>
+      <p className="text-xs font-medium text-muted-foreground">Horário de Atendimento</p>
       <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full table-fixed border-collapse text-sm">
-          <thead className="bg-surface-1 text-[11px] uppercase tracking-widest text-muted-foreground">
+          <thead className="bg-surface-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground sm:text-[11px] sm:tracking-widest">
             <tr>
-              <th className="w-[35%] px-2 py-3 text-left font-semibold sm:w-[29%] sm:px-3">
+              <th className="w-[20%] px-1.5 py-2 text-left font-semibold sm:w-[29%] sm:px-3 sm:py-3">
                 <span className="sm:hidden">Dia</span>
                 <span className="hidden sm:inline">Dia da semana</span>
               </th>
-              <th className="w-[14%] px-1 py-3 text-center font-semibold sm:w-[23%] sm:px-3">
+              <th className="w-[16%] px-1 py-2 text-center font-semibold sm:w-[23%] sm:px-3 sm:py-3">
                 Ativo
               </th>
-              <th className="w-[25%] px-1 py-3 text-center font-semibold sm:w-[19%] sm:px-3">
+              <th className="w-[22%] px-0.5 py-2 text-center font-semibold sm:w-[19%] sm:px-3 sm:py-3">
                 Início
               </th>
-              <th className="w-[26%] px-1 py-3 text-center font-semibold sm:w-[19%] sm:px-3">
+              <th className="w-[22%] px-0.5 py-2 text-center font-semibold sm:w-[19%] sm:px-3 sm:py-3">
                 Fim
               </th>
-              <th className="hidden w-[10%] px-1 py-3 sm:table-cell sm:px-3" aria-label="Ações" />
+              <th className="w-[20%] px-0 py-2 text-center sm:px-3 sm:py-3" aria-label="Ações" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {rows.map((row, index) => (
               <tr key={row.day} className="transition hover:bg-surface-1/60">
-                <td className="px-2 py-2 sm:px-3">{row.day}</td>
-                <td className="px-1 py-2 text-center sm:px-3">
+                <td className="px-1.5 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm">{row.day}</td>
+                <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
                   <input
                     type="checkbox"
                     checked={row.active}
@@ -1554,19 +1554,19 @@ function ServiceHoursTable({
                       setSelectedRow(index);
                       updateRow(index, { active: event.target.checked });
                     }}
-                    disabled={!editing}
+                    disabled={!enabled}
                     className="h-4 w-4 accent-primary"
                     aria-label={`Ativar atendimento em ${row.day}`}
                   />
                 </td>
-                <td className="px-1 py-2 text-center sm:px-3">
+                <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
                   <Input
                     ref={index === 0 ? mondayStartRef : undefined}
                     type="text"
                     inputMode="numeric"
                     value={row.start}
                     placeholder="00:00"
-                    disabled={!editing || !row.active}
+                    disabled={!enabled || !row.active}
                     onFocus={() => setSelectedRow(index)}
                     onChange={(event) =>
                       updateRow(index, { start: sanitizeServiceHourDraft(event.target.value) })
@@ -1574,16 +1574,16 @@ function ServiceHoursTable({
                     onBlur={(event) =>
                       updateRow(index, { start: formatServiceHourDraft(event.target.value) })
                     }
-                    className="w-full min-w-0 px-1 text-center sm:w-24 sm:px-3"
+                    className="!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:w-24 sm:px-3 sm:!text-sm"
                   />
                 </td>
-                <td className="px-1 py-2 text-center sm:px-3">
+                <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
                   <Input
                     type="text"
                     inputMode="numeric"
                     value={row.end}
                     placeholder="00:00"
-                    disabled={!editing || !row.active}
+                    disabled={!enabled || !row.active}
                     onFocus={() => setSelectedRow(index)}
                     onChange={(event) =>
                       updateRow(index, { end: sanitizeServiceHourDraft(event.target.value) })
@@ -1591,11 +1591,11 @@ function ServiceHoursTable({
                     onBlur={(event) =>
                       updateRow(index, { end: formatServiceHourDraft(event.target.value) })
                     }
-                    className="w-full min-w-0 px-1 text-center sm:w-24 sm:px-3"
+                    className="!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:w-24 sm:px-3 sm:!text-sm"
                   />
                 </td>
-                <td className="hidden px-1 py-2 text-center sm:table-cell sm:px-3">
-                  {editing && selectedRow === index && row.active && (
+                <td className="px-0 py-1.5 text-center sm:px-3 sm:py-2">
+                  {enabled && selectedRow === index && row.active && (
                     <Button
                       type="button"
                       variant="ghost"
@@ -1603,7 +1603,7 @@ function ServiceHoursTable({
                       onClick={() => copyToAll(index)}
                       title="Copiar para todos"
                       aria-label="Copiar para todos"
-                      className="px-2"
+                      className="h-8 w-8 min-h-8 px-0 sm:w-auto sm:px-2"
                     >
                       <Copy className="h-3.5 w-3.5" />
                     </Button>

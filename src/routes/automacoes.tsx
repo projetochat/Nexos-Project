@@ -24,7 +24,7 @@ import { num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/automacoes")({
-  head: () => ({ meta: [{ title: "Automacoes - Nexo" }] }),
+  head: () => ({ meta: [{ title: "Automações - Nexo" }] }),
   component: Page,
 });
 
@@ -50,18 +50,21 @@ function Page() {
     queryKey: departmentsQueryKey,
     queryFn: organizationApi.listDepartments,
   });
-  const rules = data?.items ?? [];
+  const rules = React.useMemo(
+    () => sortByOptionLabel(data?.items ?? [], (rule) => rule.name),
+    [data?.items],
+  );
   const refresh = () => qc.invalidateQueries({ queryKey: automationQueryKey });
 
   return (
     <AppShell>
       <PageContainer>
         <SectionHeader
-          title="Automacoes"
+          title="Automações"
           subtitle={`${num(rules.length)} regras configuradas no tenant.`}
           actions={
             <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-              <Plus className="h-3.5 w-3.5" /> Nova automacao
+              <Plus className="h-3.5 w-3.5" /> Nova automação
             </Button>
           }
         />
@@ -72,7 +75,7 @@ function Page() {
             onCancel={() => setCreating(false)}
             onSubmit={async (payload) => {
               await automationApi.create(payload);
-              toast.success("Automacao criada");
+              toast.success("Automação criada");
               setCreating(false);
               refresh();
             }}
@@ -89,12 +92,12 @@ function Page() {
                   await automationApi.update(rule.id, {
                     status: rule.status === "active" ? "DISABLED" : "ACTIVE",
                   });
-                  toast.success("Automacao atualizada");
+                  toast.success("Automação atualizada");
                   refresh();
                 }}
                 onArchive={async () => {
                   await automationApi.archive(rule.id);
-                  toast.success("Automacao arquivada");
+                  toast.success("Automação arquivada");
                   refresh();
                 }}
               />
@@ -104,7 +107,7 @@ function Page() {
             )}
             {!isLoading && rules.length === 0 && (
               <div className="p-8 text-center text-sm text-muted-foreground">
-                Nenhuma automacao cadastrada.
+                Nenhuma automação cadastrada.
               </div>
             )}
           </div>
@@ -149,7 +152,7 @@ function AutomationRow({
         <Button variant="outline" size="sm" onClick={onToggle}>
           {rule.status === "active" ? "Pausar" : "Ativar"}
         </Button>
-        <Button variant="ghost" size="sm" className="trash-action" onClick={onArchive} aria-label="Arquivar automacao">
+        <Button variant="ghost" size="sm" className="trash-action" onClick={onArchive} aria-label="Arquivar automação">
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </div>

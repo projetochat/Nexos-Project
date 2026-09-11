@@ -64,10 +64,10 @@ describe("EvolutionWebhookTranslator", () => {
         instance: "tenant-support",
         destination: "http://host.docker.internal:3001/api/webhooks/evolution",
         date_time: "2026-03-04T12:34:56.789Z",
-        sender: "5511999999999@s.whatsapp.net",
+        sender: "5511999987654@s.whatsapp.net",
         data: {
           key: {
-            remoteJid: "5511999999999@s.whatsapp.net",
+            remoteJid: "5511999987654@s.whatsapp.net",
             fromMe: false,
             id: "3EB0C7B4E7A2B8E6D4F1",
           },
@@ -86,10 +86,10 @@ describe("EvolutionWebhookTranslator", () => {
       kind: "inbound",
       event: {
         externalMessageId: "3EB0C7B4E7A2B8E6D4F1",
-        sender: { phone: "5511999999999", normalizedPhone: "+5511999999999" },
+        sender: { phone: "5511999987654", normalizedPhone: "+5511999987654" },
         metadata: {
-          remoteJid: "5511999999999@s.whatsapp.net",
-          normalizedPhoneCandidates: ["+5511999999999", "+551199999999"],
+          remoteJid: "5511999987654@s.whatsapp.net",
+          normalizedPhoneCandidates: ["+5511999987654", "+551199987654"],
         },
         content: "Hello, I need help with my order",
       },
@@ -102,7 +102,7 @@ describe("EvolutionWebhookTranslator", () => {
         event: "MESSAGES_UPSERT",
         instance: "tenant-support",
         data: {
-          key: { remoteJid: "551199999999:7@c.us", fromMe: false, id: "MSG-CUS" },
+          key: { remoteJid: "551199998765:7@c.us", fromMe: false, id: "MSG-CUS" },
           message: { conversation: "Oi" },
         },
       },
@@ -112,12 +112,51 @@ describe("EvolutionWebhookTranslator", () => {
     expect(result).toMatchObject({
       kind: "inbound",
       event: {
-        sender: { phone: "551199999999", normalizedPhone: "+551199999999" },
+        sender: { phone: "551199998765", normalizedPhone: "+5511999998765" },
         metadata: {
-          normalizedPhoneCandidates: ["+551199999999", "+5511999999999"],
+          normalizedPhoneCandidates: ["+5511999998765", "+551199998765"],
         },
       },
     });
+  });
+
+  it("uses the alternate phone when a direct message arrives with a LID identity", () => {
+    const result = translator.translate(
+      {
+        event: "messages.upsert",
+        instance: "tenant-support",
+        sender: "5511999987654@s.whatsapp.net",
+        data: {
+          key: { remoteJid: "12345678901234567890@lid", fromMe: false, id: "LID-1" },
+          message: { conversation: "Olá" },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        sender: { phone: "5511999987654", normalizedPhone: "+5511999987654" },
+        metadata: { identitySource: "s.whatsapp.net" },
+      },
+    });
+  });
+
+  it("ignores a LID-only message instead of throwing a phone validation error", () => {
+    expect(
+      translator.translate(
+        {
+          event: "messages.upsert",
+          instance: "tenant-support",
+          data: {
+            key: { remoteJid: "12345678901234567890@lid", fromMe: false, id: "LID-ONLY" },
+            message: { conversation: "Olá" },
+          },
+        },
+        connection,
+      ),
+    ).toMatchObject({ kind: "ignored", reason: "MISSING_REMOTE_IDENTITY" });
   });
 
   it("normalizes group messages with group chat and participant identity", () => {
@@ -407,7 +446,7 @@ describe("EvolutionWebhookTranslator", () => {
       kind: "connection",
       status: MessagingConnectionStatus.CONNECTED,
       ownerExternalId: "551199990000@s.whatsapp.net",
-      ownerPhoneNormalized: "+551199990000",
+      ownerPhoneNormalized: "+5511999990000",
     });
   });
 

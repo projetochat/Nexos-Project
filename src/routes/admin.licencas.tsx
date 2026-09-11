@@ -4,6 +4,7 @@ import { KeyRound } from "lucide-react";
 import { AdminContainer } from "@/components/admin-shell";
 import { Badge, Card, SectionHeader } from "@/components/ui-kit";
 import { platformApi, type PlatformTenant } from "@/lib/nexos-api";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/licencas")({
   head: () => ({ meta: [{ title: "Licenças · Nexo Admin" }] }),
@@ -16,7 +17,7 @@ function LicencasAdmin() {
   React.useEffect(() => {
     platformApi
       .tenants({ pageSize: 50 })
-      .then((data) => setRows(data.items))
+      .then((data) => setRows(sortByOptionLabel(data.items, (tenant) => tenant.name)))
       .catch((err) => setError((err as Error).message));
   }, []);
 

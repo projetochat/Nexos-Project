@@ -17,6 +17,7 @@ import {
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import { num } from "@/lib/format";
 import { organizationApi, type ApiDepartment } from "@/lib/nexos-api";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/departamentos")({ component: Page });
 
@@ -115,7 +116,7 @@ function Page() {
     onError: (error) => toast.error((error as Error).message),
   });
 
-  const filtered = departamentos.filter((d) => {
+  const filtered = sortByOptionLabel(departamentos, (department) => department.name).filter((d) => {
     if (activeFilter === "active" && !d.active) return false;
     if (activeFilter === "inactive" && d.active) return false;
     if (
@@ -140,8 +141,10 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-            <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="col-span-2 md:col-span-1">
+              <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
+            </div>
             <Select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value)}>
               <option value="active">Ativos</option>
               <option value="all">Todos</option>

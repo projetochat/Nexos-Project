@@ -56,12 +56,14 @@ function FinanceiroSettings() {
       </div>
 
       <div className="space-y-4 p-4 sm:p-6">
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Pesquisar por serviço, ID, referência ou status..."
-          />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="col-span-2 md:col-span-1">
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Pesquisar por serviço, ID, referência ou status..."
+            />
+          </div>
           <div className="relative">
             <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Select

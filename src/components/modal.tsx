@@ -10,6 +10,7 @@ export function Modal({
   description,
   children,
   size = "md",
+  className,
   footer,
 }: {
   open: boolean;
@@ -18,6 +19,7 @@ export function Modal({
   description?: React.ReactNode;
   children?: React.ReactNode;
   size?: "sm" | "md" | "lg" | "xl";
+  className?: string;
   footer?: React.ReactNode;
 }) {
   React.useEffect(() => {
@@ -49,7 +51,7 @@ export function Modal({
       <div
         role="dialog"
         aria-modal="true"
-        className={`relative z-10 flex max-h-[calc(100dvh-1rem)] w-full ${widths[size]} flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl`}
+        className={`relative z-10 flex max-h-[calc(100dvh-1rem)] w-full ${widths[size]} flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl ${className ?? ""}`}
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
           <div className="min-w-0">

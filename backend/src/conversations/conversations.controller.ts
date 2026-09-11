@@ -637,8 +637,25 @@ export class ConversationsController {
     current: AuthenticatedUser,
     contact?: { instance: string | null; instanceIds: string[] },
   ) {
+    // An explicit choice made in the UI must always win.  Including the
+    // contact's other instances in this query made `findFirst` return the
+    // oldest connection instead of the selected one, which in turn reopened
+    // the conversation from a different WhatsApp instance.
+    if (connectionId) {
+      const selectedConnection = await this.prisma.messagingConnection.findFirst({
+        where: {
+          id: connectionId,
+          tenantId: current.tenantId,
+          archivedAt: null,
+        },
+      });
+      if (!selectedConnection) {
+        throw new BadRequestException("Connection inexistente para este tenant.");
+      }
+      return this.assertUsableConversationConnection(selectedConnection);
+    }
+
     const connectionKeys = uniqueValues([
-      connectionId,
       ...(contact?.instanceIds ?? []),
       contact?.instance,
     ]);
@@ -658,10 +675,16 @@ export class ConversationsController {
         })
       : null;
 
-    if (!connection) {
-      if (connectionId) throw new BadRequestException("Connection inexistente para este tenant.");
-      return null;
-    }
+    if (!connection) return null;
+    return this.assertUsableConversationConnection(connection);
+  }
+
+  private assertUsableConversationConnection(connection: {
+    id: string;
+    providerType: MessagingProviderType;
+    externalReference: string | null;
+    status: MessagingConnectionStatus;
+  }) {
     if (
       connection.providerType !== MessagingProviderType.EVOLUTION ||
       !connection.externalReference
@@ -832,6 +855,7 @@ export class ConversationsController {
             providerType: conversation.connection.providerType.toLowerCase(),
             status: conversation.connection.status.toLowerCase(),
             externalReference: conversation.connection.externalReference,
+            color: conversation.connection.color,
           }
         : null,
     };

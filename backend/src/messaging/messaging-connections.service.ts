@@ -241,6 +241,14 @@ export class MessagingConnectionsService {
         "Preencha as mensagens para novo contato e contato existente antes de ativar a saudação.",
       );
     }
+    const absenceEnabled = dto.absenceEnabled ?? connection.absenceEnabled;
+    const absenceMessage =
+      dto.absenceMessage === undefined
+        ? connection.absenceMessage
+        : cleanOptionalText(dto.absenceMessage);
+    if (absenceEnabled && !absenceMessage) {
+      throw new BadRequestException("Preencha a mensagem de ausência antes de ativá-la.");
+    }
     const updated = await this.prisma.messagingConnection.update({
       where: { tenantId_id: { tenantId: current.tenantId, id: connection.id } },
       data: {
@@ -249,8 +257,8 @@ export class MessagingConnectionsService {
         welcomeEnabled,
         welcomeNewMessage,
         welcomeExistingMessage,
-        absenceEnabled: dto.absenceEnabled,
-        absenceMessage: cleanOptionalText(dto.absenceMessage),
+        absenceEnabled,
+        absenceMessage,
         notes: cleanOptionalText(dto.notes),
       },
     });

@@ -205,6 +205,28 @@
   max-width: 100%;
 }
 
+/* O controle nativo de data do Chromium ignora `text-align` no conteúdo interno. */
+input.dashboard-date-input::-webkit-datetime-edit,
+input.dashboard-date-input::-webkit-datetime-edit-fields-wrapper {
+  text-align: center;
+}
+
+input.dashboard-date-input::-webkit-datetime-edit {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+}
+
+input.dashboard-date-input::-webkit-datetime-edit-fields-wrapper {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+}
+
+input.dashboard-date-input::-webkit-date-and-time-value {
+  text-align: center;
+}
+
 @media (max-width: 639px) {
   .table-fixed {
     font-size: 0.75rem;

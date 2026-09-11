@@ -217,6 +217,19 @@ export class EvolutionClient {
     );
   }
 
+  async updateGroupPicture(input: { instanceName: string; groupJid: string; image: string }) {
+    const path = `/group/updateGroupPicture/${input.instanceName}?groupJid=${encodeURIComponent(input.groupJid)}`;
+    const body = { groupJid: input.groupJid, image: rawBase64Image(input.image) };
+
+    try {
+      return await this.request<unknown>(path, { method: "PUT", body });
+    } catch (error) {
+      // Evolution v2 uses PUT, while older installations still expose this endpoint as POST.
+      if (!isLegacyGroupPictureRoute(error)) throw error;
+      return this.request<unknown>(path, { method: "POST", body });
+    }
+  }
+
   updateGroupParticipants(input: {
     instanceName: string;
     groupJid: string;
@@ -406,6 +419,18 @@ async function readJson(response: Response) {
   } catch {
     return text;
   }
+}
+
+function rawBase64Image(value: string) {
+  const dataUrl = /^data:image\/[a-z0-9.+-]+;base64,([a-z0-9+/=\r\n]+)$/i.exec(value);
+  return (dataUrl?.[1] ?? value).replace(/\s+/g, "");
+}
+
+function isLegacyGroupPictureRoute(error: unknown) {
+  return (
+    error instanceof MessagingProviderError &&
+    (error.httpStatus === 404 || error.httpStatus === 405)
+  );
 }
 
 function extractGroupInfo(value: unknown): {

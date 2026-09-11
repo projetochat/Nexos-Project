@@ -279,7 +279,7 @@ function Page() {
   const novo = useDisclosure();
   const memberCountByRoleId = React.useMemo(() => countRoleMembers(memberships), [memberships]);
 
-  const filtered = items.filter((p) => {
+  const filtered = sortByOptionLabel(items, (perfil) => perfil.name).filter((p) => {
     if (
       query &&
       !(p.name + " " + (p.description ?? "")).toLowerCase().includes(query.toLowerCase())

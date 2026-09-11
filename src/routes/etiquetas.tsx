@@ -9,6 +9,7 @@ import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
 import { num } from "@/lib/format";
 import { crmApi, type ApiTag } from "@/lib/nexos-api";
 import { useChatPerms } from "@/lib/perms";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/etiquetas")({ component: Page });
 
@@ -39,8 +40,10 @@ function Page() {
 
   const filtered = React.useMemo(() => {
     const q = normalizeSearch(query);
-    if (!q) return etiquetas;
-    return etiquetas.filter((tag) => normalizeSearch(tag.nome).includes(q));
+    const matchingTags = q
+      ? etiquetas.filter((tag) => normalizeSearch(tag.nome).includes(q))
+      : etiquetas;
+    return sortByOptionLabel(matchingTags, (tag) => tag.nome);
   }, [etiquetas, query]);
   const refresh = () => qc.invalidateQueries({ queryKey: tagsQueryKey });
 
@@ -282,7 +285,7 @@ function EtiquetaForm({
       open={open}
       onClose={onClose}
       title={initial && !clone ? "Editar Etiqueta" : clone ? "Duplicar Etiqueta" : "Nova Etiqueta"}
-      size="sm"
+      size="md"
       footer={
         <div className="flex w-full items-center justify-between gap-4">
           <EntityFormLog
@@ -301,7 +304,7 @@ function EtiquetaForm({
         </div>
       }
     >
-      <div className="grid grid-cols-[minmax(7rem,1fr)_10.5rem] gap-3">
+      <div className="grid grid-cols-[minmax(7rem,1fr)_10.5rem] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_11rem]">
         <Field label="Nome *" error={nameError || undefined}>
           <Input
             value={name}
@@ -313,20 +316,19 @@ function EtiquetaForm({
           />
         </Field>
         <Field label="Cor">
-          <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
+          <div className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 transition focus-within:border-primary">
             <input
               type="color"
               value={completeHexColor(color)}
               onChange={(event) => setColor(normalizeHexColor(event.target.value))}
-              className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+              className="h-6 w-9 shrink-0 cursor-pointer rounded border border-border bg-transparent"
             />
-            <input
-              type="text"
+            <Input
               value={color}
               onChange={(event) => setColor(normalizeHexColor(event.target.value))}
               placeholder={completeHexColor("#3B82F6")}
               maxLength={7}
-              className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+              className="min-h-0 min-w-0 flex-1 border-0 bg-transparent px-1 py-0 font-mono text-xs uppercase focus:border-0"
             />
           </div>
         </Field>

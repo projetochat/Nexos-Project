@@ -136,7 +136,7 @@ function AtendentesPage() {
     onError: (error) => toast.error((error as Error).message),
   });
 
-  const filtered = atendentes.filter((a) => {
+  const filtered = sortByOptionLabel(atendentes, (atendente) => atendente.nome).filter((a) => {
     if (perfilFilter && a.perfilId !== perfilFilter) return false;
     if (ativoFilter === "active" && !a.ativo) return false;
     if (ativoFilter === "inactive" && a.ativo) return false;

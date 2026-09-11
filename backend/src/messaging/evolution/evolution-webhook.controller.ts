@@ -58,7 +58,6 @@ export class EvolutionWebhookController {
       eventType: payload.event ?? null,
       authStrategy,
       authResult,
-      httpResult: 200,
     });
     if (!payload.instance) return { ok: true, ignored: "missing_instance" };
 
@@ -75,7 +74,22 @@ export class EvolutionWebhookController {
       return { ok: true, ignored: "CONNECTION_NOT_FOUND" };
     }
 
-    const translated = this.translator.translate(payload, connection);
+    let translated;
+    try {
+      translated = this.translator.translate(payload, connection);
+    } catch (error) {
+      this.logger.warn({
+        event: "evolution.webhook.translation_ignored",
+        requestId,
+        instanceName: payload.instance,
+        connectionId: connection.id,
+        tenantId: connection.tenantId,
+        ignoredReason: "TRANSLATION_FAILED",
+        error: error instanceof Error ? error.message : "Unknown translation failure",
+        httpResult: 200,
+      });
+      return { ok: true, ignored: "TRANSLATION_FAILED" };
+    }
     this.logger.log({
       event: "evolution.webhook.translated",
       requestId,

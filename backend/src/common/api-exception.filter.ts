@@ -7,6 +7,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { Prisma } from "../generated/prisma";
+import { MessagingErrorCode, MessagingProviderError } from "../messaging/messaging.contracts";
 import { randomUUID } from "node:crypto";
 
 type ApiError = {
@@ -53,7 +54,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
   }
 }
 
-function mapApiError(error: unknown): ApiError {
+export function mapApiError(error: unknown): ApiError {
   if (error instanceof HttpException) {
     const status = error.getStatus();
     const response = error.getResponse();
@@ -101,10 +102,45 @@ function mapApiError(error: unknown): ApiError {
     };
   }
 
+  if (error instanceof MessagingProviderError) {
+    return mapMessagingProviderError(error);
+  }
+
   return {
     status: HttpStatus.INTERNAL_SERVER_ERROR,
     code: "INTERNAL_ERROR",
     message: "Não foi possível concluir a ação agora. Tente novamente em alguns instantes.",
+  };
+}
+
+function mapMessagingProviderError(error: MessagingProviderError): ApiError {
+  if (
+    error.code === MessagingErrorCode.INVALID_RECIPIENT ||
+    error.code === MessagingErrorCode.INVALID_PROVIDER_PAYLOAD ||
+    error.code === MessagingErrorCode.PROVIDER_VALIDATION_ERROR
+  ) {
+    return {
+      status: HttpStatus.BAD_REQUEST,
+      code: error.code,
+      message:
+        "O WhatsApp não aceitou os dados para criar o grupo. Revise os participantes e tente novamente.",
+    };
+  }
+
+  if (error.code === MessagingErrorCode.RATE_LIMITED) {
+    return {
+      status: HttpStatus.TOO_MANY_REQUESTS,
+      code: error.code,
+      message:
+        "O WhatsApp está limitando temporariamente novas ações nesta instância. Aguarde alguns minutos e tente novamente.",
+    };
+  }
+
+  return {
+    status: HttpStatus.SERVICE_UNAVAILABLE,
+    code: error.code,
+    message:
+      "Não foi possível confirmar a criação do grupo no WhatsApp neste momento. Verifique a conexão da instância e tente novamente.",
   };
 }
 
