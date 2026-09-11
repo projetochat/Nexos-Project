@@ -24,6 +24,7 @@ import {
   Card,
   Field,
   Input,
+  InstanceFilterSelect,
   SearchInput,
   SectionHeader,
   Select,
@@ -134,7 +135,9 @@ function SchedulingPage() {
         <Card className="mb-4 p-4">
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(16rem,1fr)_10rem_10rem_12rem_12rem]">
             <div className="col-span-2 xl:col-span-1">
-              <SearchInput value={query} onChange={setQuery} placeholder="Buscar agendamento..." />
+              <Field label="Busca">
+                <SearchInput value={query} onChange={setQuery} placeholder="Buscar agendamento..." />
+              </Field>
             </div>
             <Filter
               label="Tipo"
@@ -154,12 +157,17 @@ function SchedulingPage() {
                 ["completed", "Concluída"],
               ]}
             />
-            <Filter
-              label="Instância"
+            <Field label="Instância">
+              <InstanceFilterSelect
               value={connectionId}
               onChange={setConnectionId}
-              options={connections.map((item) => [item.id, item.name])}
-            />
+              options={connections.map((connection) => ({
+                value: connection.id,
+                label: connection.name,
+                color: connection.color,
+              }))}
+              />
+            </Field>
             <Filter
               label="Departamento"
               value={departmentId}

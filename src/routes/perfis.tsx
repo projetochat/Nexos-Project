@@ -357,7 +357,9 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <SearchInput value={query} onChange={setQuery} placeholder="Buscar perfil..." />
+          <Field label="Busca">
+            <SearchInput value={query} onChange={setQuery} placeholder="Buscar perfil..." />
+          </Field>
         </Card>
 
         {isLoading ? (

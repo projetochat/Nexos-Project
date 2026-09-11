@@ -25,6 +25,109 @@ export function Card({
   );
 }
 
+export type InstanceFilterOption = {
+  value: string;
+  label: string;
+  color?: string | null;
+};
+
+export function InstanceFilterSelect({
+  value,
+  onChange,
+  options,
+  extraOptions = [],
+  allLabel = "Todas",
+  className = "",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: InstanceFilterOption[];
+  extraOptions?: InstanceFilterOption[];
+  allLabel?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const allOptions = [...extraOptions, ...options];
+  const selected = allOptions.find((option) => option.value === value);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDocumentPointerDown = (event: MouseEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocumentPointerDown);
+    return () => document.removeEventListener("mousedown", onDocumentPointerDown);
+  }, [open]);
+
+  const choose = (nextValue: string) => {
+    onChange(nextValue);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm text-foreground transition hover:border-primary/50 focus:border-primary focus:outline-none"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          {selected && (
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: selected.color ?? "#22c55e" }}
+            />
+          )}
+          <span className="truncate">{selected?.label ?? allLabel}</span>
+        </span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 max-h-64 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-card"
+        >
+          <button
+            type="button"
+            role="option"
+            aria-selected={!value}
+            onClick={() => choose("")}
+            className={`flex w-full items-center rounded-md px-2.5 py-2 text-left text-sm transition hover:bg-surface-1 ${
+              !value ? "bg-surface-1 text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            {allLabel}
+          </button>
+          {allOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={value === option.value}
+              onClick={() => choose(option.value)}
+              className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition hover:bg-surface-1 ${
+                value === option.value ? "bg-surface-1 text-foreground" : "text-muted-foreground"
+              }`}
+            >
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: option.color ?? "#22c55e" }}
+              />
+              <span className="truncate">{option.label}</span>
+            </button>
+          ))}
+          {allOptions.length === 0 && (
+            <p className="px-2.5 py-3 text-sm text-muted-foreground">Nenhuma instância disponível.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Button({
   variant = "primary",
   size = "md",

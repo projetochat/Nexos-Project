@@ -185,7 +185,7 @@ export const useStore = create<State>((set, get) => ({
   createCampanha: (d) => {
     const c: Campanha = {
       id: genId("camp"),
-      nome: d.nome ?? "Nova campanha",
+      nome: d.nome ?? "Nova Campanha",
       status: "rascunho",
       publico: d.publico ?? 0,
       enviadas: 0,

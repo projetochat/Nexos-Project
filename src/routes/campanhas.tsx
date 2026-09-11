@@ -12,6 +12,7 @@ import {
   EmptyState,
   Field,
   Input,
+  InstanceFilterSelect,
   SearchInput,
   Select,
   SectionHeader,
@@ -195,7 +196,7 @@ function Page() {
                 <RefreshCw className="h-3.5 w-3.5" /> Atualizar
               </Button>
               <Button variant="primary" size="sm" onClick={createModal.show}>
-                <Plus className="h-3.5 w-3.5" /> Nova campanha
+                <Plus className="h-3.5 w-3.5" /> Nova Campanha
               </Button>
             </>
           }
@@ -204,36 +205,41 @@ function Page() {
         <Card className="mb-4 p-4">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-[minmax(220px,1fr)_180px_220px]">
             <div className="col-span-2 lg:col-span-1">
-              <SearchInput
-                value={filters.search}
-                onChange={(search) => setFilters({ ...filters, search })}
-                placeholder="Buscar por nome ou descrição"
-              />
+              <Field label="Busca">
+                <SearchInput
+                  value={filters.search}
+                  onChange={(search) => setFilters({ ...filters, search })}
+                  placeholder="Buscar por nome ou descrição"
+                />
+              </Field>
             </div>
-            <Select
-              value={filters.status}
-              onChange={(event) =>
-                setFilters({ ...filters, status: event.target.value as CampaignFilters["status"] })
-              }
-            >
-              <option value="ALL">Todos os status</option>
-              {Object.entries(STATUS_LABEL).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </Select>
-            <Select
-              value={filters.connectionId}
-              onChange={(event) => setFilters({ ...filters, connectionId: event.target.value })}
-            >
-              <option value="">Todas as conexoes</option>
-              {sortedConnections.map((connection) => (
-                <option key={connection.id} value={connection.id}>
-                  {connection.name}
-                </option>
-              ))}
-            </Select>
+            <Field label="Status">
+              <Select
+                value={filters.status}
+                onChange={(event) =>
+                  setFilters({ ...filters, status: event.target.value as CampaignFilters["status"] })
+                }
+              >
+                <option value="ALL">Todos</option>
+                {Object.entries(STATUS_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Instância">
+              <InstanceFilterSelect
+                value={filters.connectionId}
+                allLabel="Todas"
+                onChange={(connectionId) => setFilters({ ...filters, connectionId })}
+                options={sortedConnections.map((connection) => ({
+                  value: connection.id,
+                  label: connection.name,
+                  color: connection.color,
+                }))}
+              />
+            </Field>
           </div>
         </Card>
 

@@ -208,16 +208,28 @@ function GroupsPage() {
       <PageContainer className="max-w-[96rem] lg:px-8 xl:px-10 2xl:px-12">
         <SectionHeader
           title="Gerenciar Grupos"
-          subtitle={`${num(total)} grupos de WhatsApp conectados.`}
+          subtitle={`${num(total)} grupos de WhatsApp.`}
           actions={
-            <Button variant="primary" size="sm" onClick={create.show}>
-              <Plus className="h-3.5 w-3.5" /> Criar Grupo
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void syncGroups()}
+                disabled={syncing}
+                title="Atualizar grupos"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+                {syncing ? "Atualizando..." : "Atualizar"}
+              </Button>
+              <Button variant="primary" size="sm" onClick={create.show}>
+                <Plus className="h-3.5 w-3.5" /> Criar Grupo
+              </Button>
+            </div>
           }
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)_auto] md:items-end">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)]">
             <div className="col-span-2 md:col-span-1">
               <Field label="Busca">
                 <SearchInput
@@ -235,16 +247,6 @@ function GroupsPage() {
                 emptyLabel="Todas"
               />
             </Field>
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={() => void syncGroups()}
-              disabled={syncing}
-              className="self-end"
-            >
-              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Atualizando..." : "Atualizar"}
-            </Button>
           </div>
         </Card>
 
@@ -411,7 +413,7 @@ function GroupCard({
       title="Clique duas vezes para visualizar o grupo"
       className="flex min-h-40 flex-col rounded-lg border border-border bg-card p-4 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md"
     >
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 sm:flex">
+      <div className="flex items-start gap-3">
         <Avatar name={group.name} src={group.imageUrl ?? undefined} size={48} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-foreground">{group.name}</p>
@@ -419,7 +421,21 @@ function GroupCard({
             {num(group.participantsCount)} participante(s)
           </p>
         </div>
-        <div className="col-span-2 flex min-w-0 justify-end gap-1 sm:col-auto sm:ml-auto sm:justify-start">
+      </div>
+      <div className="mt-4 space-y-2 text-xs text-muted-foreground">
+        <p className="flex items-center gap-1.5">
+          <CalendarDays className="h-3.5 w-3.5" /> Criado em {formatDate(group.createdAt)}
+        </p>
+        {group.connection && (
+          <p className="truncate">
+            Instância: <span className="text-foreground">{group.connection.name}</span>
+          </p>
+        )}
+        {group.lastMessagePreview && (
+          <p className="mb-3 line-clamp-2 italic">{group.lastMessagePreview}</p>
+        )}
+      </div>
+      <div className="mt-auto flex justify-end gap-1 border-t border-border pt-3">
           <Button
             variant="ghost"
             size="sm"
@@ -460,20 +476,6 @@ function GroupCard({
           >
             <LogOut className="h-4 w-4" />
           </Button>
-        </div>
-      </div>
-      <div className="mt-4 space-y-2 text-xs text-muted-foreground">
-        <p className="flex items-center gap-1.5">
-          <CalendarDays className="h-3.5 w-3.5" /> Criado em {formatDate(group.createdAt)}
-        </p>
-        {group.connection && (
-          <p className="truncate">
-            Instância: <span className="text-foreground">{group.connection.name}</span>
-          </p>
-        )}
-        {group.lastMessagePreview && (
-          <p className="line-clamp-2 italic">{group.lastMessagePreview}</p>
-        )}
       </div>
     </div>
   );
@@ -727,7 +729,7 @@ function CreateGroupModal({
           </Field>
         </div>
         <div className="grid gap-4 lg:grid-cols-2">
-          <section className="rounded-xl border border-border p-3 sm:p-4">
+          <section className="order-2 rounded-xl border border-border p-3 sm:p-4 lg:order-1">
             <div className="mb-3 flex items-center gap-2">
               <h3 className="text-lg font-semibold">Contatos disponíveis</h3>
               <Badge tone="default">{num(picker.total)}</Badge>
@@ -772,22 +774,12 @@ function CreateGroupModal({
             />
           </section>
 
-          <section className="rounded-xl border border-border p-3 sm:p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
+          <section className="order-1 rounded-xl border border-border p-3 sm:p-4 lg:order-2">
+            <div className="mb-3 flex items-center gap-2">
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-semibold">Contatos selecionados</h3>
                 <Badge tone="default">{num(selectedContacts.length)}</Badge>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                type="button"
-                className="trash-action"
-                disabled={selectedContacts.length === 0}
-                onClick={() => setSelectedContacts([])}
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Remover todos
-              </Button>
             </div>
             <SearchInput
               value={selectedQuery}
@@ -1073,9 +1065,9 @@ function GroupDetailModal({
       size="xl"
       footer={
         group ? (
-          <div className="flex w-full items-center justify-between gap-3">
+          <div className="flex w-full items-center justify-between gap-2 sm:gap-3">
             <EntityFormLog createdAt={group.createdAt} updatedAt={group.updatedAt} />
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <Button variant="ghost" size="sm" onClick={onClose} disabled={!!busy}>
                 Cancelar
               </Button>
@@ -1088,18 +1080,28 @@ function GroupDetailModal({
       }
     >
       {group && (
-        <div className="space-y-4">
-          <div className="space-y-4">
-            <div className="space-y-4">
-              <div className="grid grid-cols-[8.25rem_minmax(0,1fr)] items-start gap-x-6 gap-y-4">
+        <div className="space-y-3 sm:space-y-4">
+          <div className="space-y-3 sm:space-y-4">
+            <div className="space-y-3 sm:space-y-4">
+              <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-[8.25rem_minmax(0,1fr)] sm:gap-x-6 sm:gap-y-4">
                 <Avatar
                   name={group.name}
                   src={group.imageUrl ?? undefined}
                   size={132}
-                  className="row-span-2 self-center"
+                  className="!h-24 !w-24 !text-4xl justify-self-center sm:!h-[132px] sm:!w-[132px] sm:!text-[50px] sm:row-span-2 sm:self-center"
                 />
+                <span
+                  className="inline-flex h-8 max-w-full justify-self-center items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 text-xs font-medium text-foreground sm:hidden"
+                  title={`Instância: ${group.connection?.name ?? "-"}`}
+                >
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: group.connection?.color ?? "#22c55e" }}
+                  />
+                  <span className="truncate">{group.connection?.name ?? "-"}</span>
+                </span>
                 <div className="min-w-0 flex-1">
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
                     <div className="relative min-w-0 flex-1">
                       {editingName ? (
                         <>
@@ -1139,7 +1141,7 @@ function GroupDetailModal({
                         {editingName ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
                       </Button>
                       <span
-                        className="inline-flex h-9 max-w-44 shrink-0 items-center gap-1 rounded-full border border-border bg-surface-2 px-3 text-sm font-medium text-foreground"
+                        className="hidden h-9 max-w-44 shrink-0 items-center gap-1 rounded-full border border-border bg-surface-2 px-3 text-sm font-medium text-foreground sm:inline-flex"
                         title={`Instância: ${group.connection?.name ?? "-"}`}
                       >
                         <span
@@ -1149,13 +1151,13 @@ function GroupDetailModal({
                         <span className="truncate">{group.connection?.name ?? "-"}</span>
                       </span>
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    {num(group.participantsCount)} participante(s) cadastrados
+                  <p className="text-xs text-muted-foreground sm:text-sm">
+                    {num(group.participantsCount)} participante(s)
                   </p>
               </div>
 
               <Field label="Descrição">
-                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_2.75rem]">
+                <div className="grid grid-cols-[minmax(0,1fr)_2.75rem] gap-2">
                   <div className="relative min-w-0">
                     {editingDescription ? (
                       <>
@@ -1166,7 +1168,7 @@ function GroupDetailModal({
                           value={description}
                           onChange={(event) => setDescription(event.target.value)}
                           disabled={busy === "description"}
-                          className="min-h-20 pr-9"
+                          className="min-h-16 pr-9 sm:min-h-20"
                         />
                         <button
                           type="button"
@@ -1179,7 +1181,7 @@ function GroupDetailModal({
                         </button>
                       </>
                     ) : (
-                      <p className="min-h-20 break-words whitespace-pre-wrap py-2 text-sm text-foreground">
+                      <p className="min-h-14 break-words whitespace-pre-wrap py-1.5 text-sm text-foreground sm:min-h-20 sm:py-2">
                         {description || "Sem descrição"}
                       </p>
                     )}
@@ -1193,7 +1195,7 @@ function GroupDetailModal({
                       editingDescription ? saveDescription : () => setEditingDescription(true)
                     }
                     disabled={busy === "description"}
-                    className="h-10 w-10 self-center"
+                    className="h-9 w-9 self-center sm:h-10 sm:w-10"
                   >
                     {editingDescription ? (
                       <Check className="h-4 w-4" />
@@ -1347,9 +1349,9 @@ function GroupDetailModal({
                 </div>
               )}
               <div className="grid gap-4 lg:grid-cols-2">
-                <section className="rounded-xl border border-border p-3 sm:p-4">
+                <section className="order-2 rounded-xl border border-border p-2.5 sm:p-4 lg:order-1">
                   <div className="mb-3 flex items-center gap-2">
-                    <h3 className="text-lg font-semibold">Contatos disponíveis</h3>
+                    <h3 className="text-base font-semibold sm:text-lg">Contatos disponíveis</h3>
                     <Badge tone="default">{num(picker.total)}</Badge>
                   </div>
                   <SearchInput
@@ -1357,13 +1359,14 @@ function GroupDetailModal({
                     onChange={setAvailableQuery}
                     placeholder="Buscar contato ou WhatsApp..."
                   />
-                  <div className="mt-3 max-h-80 divide-y divide-border overflow-y-auto">
+                  <div className="mt-2 max-h-56 divide-y divide-border overflow-y-auto sm:mt-3 sm:max-h-80">
                     {availableContacts.map((contact) => (
-                      <div key={contact.id} className="flex items-center gap-3 py-2.5 text-sm">
+                      <div key={contact.id} className="flex items-center gap-2 py-2 text-xs sm:gap-3 sm:py-2.5 sm:text-sm">
                         <Avatar
                           name={contact.nome}
                           src={contact.avatar_url ?? undefined}
                           size={40}
+                          className="!h-8 !w-8 !text-xs sm:!h-10 sm:!w-10 sm:!text-[15px]"
                         />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-medium">{contact.nome}</span>
@@ -1395,16 +1398,16 @@ function GroupDetailModal({
                     onPageChange={picker.setPage}
                   />
                 </section>
-                <section className="rounded-xl border border-border p-3 sm:p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
+                <section className="order-1 rounded-xl border border-border p-2.5 sm:p-4 lg:order-2">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-semibold">Contatos selecionados</h3>
+                      <h3 className="text-sm font-semibold sm:text-lg">Contatos selecionados</h3>
                       <Badge tone="default">{num(group.participantsCount)}</Badge>
                     </div>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="trash-action"
+                      className="trash-action h-7 min-h-7 px-2 text-[11px] sm:h-auto sm:min-h-8 sm:px-2.5 sm:text-xs"
                       disabled={
                         !group.participants.some((participant) => !participant.isSuperAdmin) ||
                         !!busy
@@ -1419,10 +1422,14 @@ function GroupDetailModal({
                     onChange={setSelectedQuery}
                     placeholder="Buscar nos selecionados..."
                   />
-                  <div className="mt-3 max-h-80 divide-y divide-border overflow-y-auto">
+                  <div className="mt-2 max-h-56 divide-y divide-border overflow-y-auto sm:mt-3 sm:max-h-80">
                     {selectedParticipantsPage.map((participant) => (
-                      <div key={participant.id} className="flex items-center gap-3 py-2.5 text-sm">
-                        <Avatar name={participant.name} size={40} />
+                      <div key={participant.id} className="flex items-center gap-2 py-2 text-xs sm:gap-3 sm:py-2.5 sm:text-sm">
+                        <Avatar
+                          name={participant.name}
+                          size={40}
+                          className="!h-8 !w-8 !text-xs sm:!h-10 sm:!w-10 sm:!text-[15px]"
+                        />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-medium">{participant.name}</span>
                           <span className="block truncate text-xs text-muted-foreground">
@@ -1449,9 +1456,9 @@ function GroupDetailModal({
                             )
                           }
                           disabled={!!busy || participant.isSuperAdmin}
-                          className={
+                          className={`h-8 w-8 sm:h-9 sm:w-9 ${
                             participant.isAdmin ? "hover:text-destructive" : "hover:text-success"
-                          }
+                          }`}
                         >
                           <Crown className="h-3.5 w-3.5" />
                         </Button>
@@ -1460,7 +1467,7 @@ function GroupDetailModal({
                           size="icon"
                           title="Remover participante"
                           aria-label="Remover participante"
-                          className="trash-action"
+                          className="trash-action h-8 w-8 sm:h-9 sm:w-9"
                           onClick={() => updateParticipant(participant, "remove")}
                           disabled={!!busy || participant.isSuperAdmin}
                         >

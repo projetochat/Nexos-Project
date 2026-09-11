@@ -38,14 +38,26 @@ function VariablesSettingsPage() {
       <p className="mt-1 hidden text-sm text-muted-foreground sm:block">
         Use estas variáveis em mensagens rápidas, saudações e mensagens de ausência.
       </p>
-      <Card className="mt-4 divide-y divide-border overflow-hidden p-0">
+      <Card padding={false} className="mt-4 divide-y divide-border overflow-hidden">
         {variables.map(({ token, description }) => (
-          <div key={token} className="flex items-center justify-between gap-3 px-4 py-3">
+          <div
+            key={token}
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:px-4"
+          >
             <div className="min-w-0">
-              <code className="rounded bg-surface-2 px-2 py-1 font-mono text-sm text-foreground">{token}</code>
+              <code className="inline-block max-w-full break-all rounded bg-surface-2 px-2 py-1 font-mono text-sm text-foreground">
+                {token}
+              </code>
               <p className="mt-2 text-sm text-muted-foreground">{description}</p>
             </div>
-            <Button type="button" variant="ghost" size="sm" onClick={() => void copy(token)} title="Copiar variável">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void copy(token)}
+              title="Copiar variável"
+              className="shrink-0 self-center"
+            >
               <Copy className="h-3.5 w-3.5" /> Copiar
             </Button>
           </div>

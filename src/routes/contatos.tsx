@@ -58,6 +58,7 @@ import {
   Card,
   Field,
   Input,
+  InstanceFilterSelect,
   SearchInput,
   SectionHeader,
   Select,
@@ -1159,21 +1160,19 @@ function ContatosPage() {
                 placeholder="Buscar por nome, WhatsApp ou empresa..."
               />
             </div>
-            <FilterSelect label="Instância" value={instanciaFilter} onChange={setInstanciaFilter}>
-              {[
-                <option key="all" value="">
-                  Todas
-                </option>,
-                <option key="empty" value={EMPTY_FILTER_VALUE}>
-                  - Sem instância -
-                </option>,
-                ...visibleInstances.map((option) => (
-                  <option key={option.id} value={option.value}>
-                    {option.name}
-                  </option>
-                )),
-              ]}
-            </FilterSelect>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Instância</span>
+              <InstanceFilterSelect
+                value={instanciaFilter}
+                onChange={setInstanciaFilter}
+                extraOptions={[{ value: EMPTY_FILTER_VALUE, label: "- Sem instância -" }]}
+                options={visibleInstances.map((option) => ({
+                  value: option.value,
+                  label: option.name,
+                  color: option.color,
+                }))}
+              />
+            </label>
             <FilterSelect label="Empresa" value={clienteFilter} onChange={setClienteFilter}>
               {[
                 <option key="all" value="">
@@ -3874,6 +3873,13 @@ function InstanceMultiSelect({
       (key) => key && selectedIds.includes(key),
     ),
   );
+  const count = selectedInstances.length;
+  const summary =
+    count === 0
+      ? "- Selecione -"
+      : count === 1
+        ? selectedInstances[0]?.name ?? "1 selecionada"
+        : `${count} selecionadas`;
 
   React.useEffect(() => {
     if (!open) return;
@@ -3895,31 +3901,44 @@ function InstanceMultiSelect({
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm outline-none transition focus:border-primary"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm outline-none transition hover:border-primary/50 focus:border-primary ${
+          count > 0 ? "text-foreground" : "text-muted-foreground"
+        }`}
       >
-        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-          {selectedInstances.length === 0 ? (
-            <span className="text-muted-foreground">- Selecione -</span>
-          ) : (
-            selectedInstances.map((instance) => (
-              <span
-                key={instance.value}
-                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
-              >
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: instance.color ?? "#22c55e" }}
-                />
-                {instance.name}
-              </span>
-            ))
+        <span className="flex min-w-0 items-center gap-2">
+          {count === 1 && selectedInstances[0] && (
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: selectedInstances[0].color ?? "#22c55e" }}
+            />
           )}
+          <span className="truncate">{summary}</span>
         </span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="flex shrink-0 items-center gap-1">
+          {count > 0 && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(event) => {
+                event.stopPropagation();
+                onChange([]);
+              }}
+              className="rounded p-0.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+              aria-label="Limpar seleção"
+            >
+              <X className="h-3.5 w-3.5" />
+            </span>
+          )}
+          <ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
+        </span>
       </button>
       {open && (
-        <div className="absolute bottom-full z-[90] mb-2 flex max-h-[min(22rem,calc(100vh-10rem))] w-full flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl">
-          <div className="min-h-0 overflow-auto p-1">
+        <div
+          role="listbox"
+          className="absolute bottom-full z-[90] mb-2 max-h-[min(22rem,calc(100vh-10rem))] w-full overflow-auto rounded-lg border border-border bg-card p-1 shadow-card"
+        >
             {instances.map((instance) => {
               const active = [instance.value, instance.id, instance.externalReference].some(
                 (key) => key && selectedIds.includes(key),
@@ -3929,17 +3948,23 @@ function InstanceMultiSelect({
                   key={instance.value}
                   type="button"
                   onClick={() => toggle(instance.value)}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
+                  role="option"
+                  aria-selected={active}
+                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition hover:bg-surface-1 ${
+                    active ? "text-foreground" : "text-muted-foreground"
+                  }`}
                 >
                   <span
-                    className={`flex h-4 w-4 items-center justify-center rounded border ${
-                      active ? "border-primary bg-primary text-white" : "border-border"
+                    className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-surface-1"
                     }`}
                   >
-                    {active && <Check className="h-3 w-3" />}
+                    {active && <Check className="h-2.5 w-2.5" />}
                   </span>
                   <span
-                    className="h-2 w-2 rounded-full"
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
                     style={{ backgroundColor: instance.color ?? "#22c55e" }}
                   />
                   <span className="truncate">{instance.name}</span>
@@ -3951,32 +3976,6 @@ function InstanceMultiSelect({
                 Nenhuma instância cadastrada.
               </div>
             )}
-          </div>
-          <div className="border-t border-border bg-popover p-2">
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onChange([]);
-              }}
-              disabled={selectedIds.length === 0}
-              className="flex items-center justify-center gap-1 rounded-md border border-destructive/30 bg-white px-2 py-2 text-xs font-medium text-destructive hover:bg-destructive/5 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <X className="h-3 w-3" /> Limpar seleção
-            </button>
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setOpen(false);
-              }}
-              className="flex items-center justify-center gap-1 rounded-md border border-primary/30 bg-white px-2 py-2 text-xs font-medium text-primary hover:bg-primary/5"
-            >
-              <Check className="h-3 w-3" /> Confirmar seleção
-            </button>
-          </div>
         </div>
       )}
     </div>

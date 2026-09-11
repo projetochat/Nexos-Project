@@ -2,7 +2,7 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, CreditCard } from "lucide-react";
-import { Badge, Card, SearchInput, Select } from "@/components/ui-kit";
+import { Badge, Card, Field, SearchInput, Select } from "@/components/ui-kit";
 import { organizationApi, type ApiFinancialPayment } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/configuracoes/financeiro")({
@@ -58,27 +58,31 @@ function FinanceiroSettings() {
       <div className="space-y-4 p-4 sm:p-6">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
           <div className="col-span-2 md:col-span-1">
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder="Pesquisar por serviço, ID, referência ou status..."
-            />
+            <Field label="Busca">
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder="Pesquisar por serviço, ID, referência ou status..."
+              />
+            </Field>
           </div>
-          <div className="relative">
-            <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Select
-              value={period}
-              onChange={(event) => setPeriod(event.target.value)}
-              className="pl-9"
-            >
-              <option value="all">Todos os períodos</option>
-              {periods.map((item) => (
-                <option key={item} value={item}>
-                  {formatReference(`${item}-01T00:00:00.000Z`)}
-                </option>
-              ))}
-            </Select>
-          </div>
+          <Field label="Período">
+            <div className="relative">
+              <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Select
+                value={period}
+                onChange={(event) => setPeriod(event.target.value)}
+                className="pl-9"
+              >
+                <option value="all">Todos os períodos</option>
+                {periods.map((item) => (
+                  <option key={item} value={item}>
+                    {formatReference(`${item}-01T00:00:00.000Z`)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </Field>
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-border">

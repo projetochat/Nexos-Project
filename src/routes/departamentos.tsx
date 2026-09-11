@@ -143,13 +143,17 @@ function Page() {
         <Card className="mb-4 p-4">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
             <div className="col-span-2 md:col-span-1">
-              <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
+              <Field label="Busca">
+                <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
+              </Field>
             </div>
-            <Select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value)}>
-              <option value="active">Ativos</option>
-              <option value="all">Todos</option>
-              <option value="inactive">Inativos</option>
-            </Select>
+            <Field label="Status">
+              <Select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value)}>
+                <option value="active">Ativos</option>
+                <option value="all">Todos</option>
+                <option value="inactive">Inativos</option>
+              </Select>
+            </Field>
           </div>
         </Card>
 

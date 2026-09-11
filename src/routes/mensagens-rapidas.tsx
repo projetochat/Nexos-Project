@@ -129,11 +129,13 @@ function QuickRepliesPage() {
         ) : (
           <>
             <Card className="mb-4 p-4">
-              <SearchInput
-                value={query}
-                onChange={setQuery}
-                placeholder="Buscar atalho ou texto..."
-              />
+              <Field label="Busca">
+                <SearchInput
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Buscar atalho ou texto..."
+                />
+              </Field>
             </Card>
             <div className="grid auto-rows-[9.5rem] gap-3 md:grid-cols-2 xl:grid-cols-3">
               {filtered.map((reply) => (

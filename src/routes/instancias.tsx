@@ -1500,8 +1500,9 @@ function ServiceHoursTable({
 
   React.useEffect(() => {
     if (!enabled || focusStartSignal === 0) return;
-    setSelectedRow(0);
-    requestAnimationFrame(() => mondayStartRef.current?.focus());
+    requestAnimationFrame(() =>
+      mondayStartRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }),
+    );
   }, [enabled, focusStartSignal]);
 
   const updateRow = (index: number, patch: Partial<ServiceHoursRow>) => {

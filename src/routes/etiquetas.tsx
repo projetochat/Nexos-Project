@@ -63,7 +63,9 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <SearchInput value={query} onChange={setQuery} placeholder="Buscar etiqueta..." />
+          <Field label="Busca">
+            <SearchInput value={query} onChange={setQuery} placeholder="Buscar etiqueta..." />
+          </Field>
         </Card>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">

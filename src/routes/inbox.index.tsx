@@ -146,6 +146,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
         .map((connection) => ({
           id: connectionInstanceValue(connection),
           label: connection.name || connectionDisplayLabel(connection),
+          color: connection.color,
         }))
         .filter((option) => option.id)
         .sort((a, b) => compareOptionLabels(a.label, b.label)),
@@ -159,12 +160,12 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   // Clientes distintos para o filtro "Cliente" (nome do cliente cadastrado).
   const clientesList = React.useMemo(() => {
     const seen = new Set<string>();
-    const out: { id: string; nome: string }[] = [];
+    const out: { id: string; nome: string; cor: string }[] = [];
     for (const c of customers) {
       const nome = (c.nome ?? "").trim();
       if (nome && !seen.has(c.id)) {
         seen.add(c.id);
-        out.push({ id: c.id, nome });
+        out.push({ id: c.id, nome, cor: c.cor });
       }
     }
     return sortByOptionLabel(out, (item) => item.nome);
@@ -251,7 +252,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
               <MultiSelect
                 label="Cliente"
                 placeholder="Todos"
-                options={clientesList.map((c) => ({ id: c.id, label: c.nome }))}
+                options={clientesList.map((c) => ({ id: c.id, label: c.nome, color: c.cor }))}
                 selected={selectedClientes}
                 onChange={setSelectedClientes}
                 emptyHint="Nenhum cliente cadastrado."
@@ -676,7 +677,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
   );
 }
 
-type MultiSelectOption = { id: string; label: string };
+type MultiSelectOption = { id: string; label: string; color?: string | null };
 
 function MultiSelect({
   label,
@@ -732,7 +733,17 @@ function MultiSelect({
           count > 0 ? "text-foreground" : "text-muted-foreground"
         }`}
       >
-        <span className="truncate">{summary}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          {count === 1 && options.find((option) => selected.has(option.id))?.color && (
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{
+                backgroundColor: options.find((option) => selected.has(option.id))?.color ?? "#22c55e",
+              }}
+            />
+          )}
+          <span className="truncate">{summary}</span>
+        </span>
         <div className="flex items-center gap-1">
           {count > 0 && (
             <span
@@ -778,6 +789,12 @@ function MultiSelect({
                 >
                   {active && <Check className="h-2.5 w-2.5" />}
                 </span>
+                {o.color && (
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: o.color }}
+                  />
+                )}
                 <span className="truncate">{o.label}</span>
               </button>
             );

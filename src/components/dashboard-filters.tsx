@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, Input, Select } from "@/components/ui-kit";
+import { Card, Input, InstanceFilterSelect, Select } from "@/components/ui-kit";
 import { connectionsApi, crmApi, organizationApi, type OperationalPeriod } from "@/lib/nexos-api";
 import {
   datesForOperationalPeriod,
@@ -58,17 +58,15 @@ export function DashboardFiltersBar({
     <Card className="mb-6 p-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr]">
         <FilterField label="Instância">
-          <Select
+          <InstanceFilterSelect
             value={value.connectionId ?? ""}
-            onChange={(event) => onChange({ connectionId: event.target.value || undefined })}
-          >
-            <option value="">Todas</option>
-            {sortedConnections.map((connection) => (
-              <option key={connection.id} value={connection.id}>
-                {connection.name}
-              </option>
-            ))}
-          </Select>
+            onChange={(connectionId) => onChange({ connectionId: connectionId || undefined })}
+            options={sortedConnections.map((connection) => ({
+              value: connection.id,
+              label: connection.name,
+              color: connection.color,
+            }))}
+          />
         </FilterField>
         <FilterField label="Cliente">
           <Select
@@ -112,29 +110,116 @@ export function DashboardFiltersBar({
             ))}
           </Select>
         </FilterField>
-        <FilterField label="Dt. inicial" className="min-w-0">
-          <Input
-            type="date"
+        <FilterField label="Dt. Inicial" className="min-w-0">
+          <DashboardDateInput
             value={start}
             readOnly={!isCustom}
-            aria-readonly={!isCustom}
-            onChange={(event) => onChange({ start: event.target.value })}
-            className={`dashboard-date-input min-w-0 px-2 text-center text-xs sm:px-3 sm:text-sm ${!isCustom ? "cursor-not-allowed text-muted-foreground" : ""}`}
+            onChange={(date) => onChange({ start: date })}
           />
         </FilterField>
-        <FilterField label="Dt. final" className="min-w-0">
-          <Input
-            type="date"
+        <FilterField label="Dt. Final" className="min-w-0">
+          <DashboardDateInput
             value={end}
             readOnly={!isCustom}
-            aria-readonly={!isCustom}
-            onChange={(event) => onChange({ end: event.target.value })}
-            className={`dashboard-date-input min-w-0 px-2 text-center text-xs sm:px-3 sm:text-sm ${!isCustom ? "cursor-not-allowed text-muted-foreground" : ""}`}
+            onChange={(date) => onChange({ end: date })}
           />
         </FilterField>
       </div>
     </Card>
   );
+}
+
+function DashboardDateInput({
+  value,
+  readOnly,
+  onChange,
+}: {
+  value: string;
+  readOnly: boolean;
+  onChange: (date: string) => void;
+}) {
+  const isMobile = useMobileViewport();
+  const [draft, setDraft] = React.useState(() => formatDateMask(value));
+
+  React.useEffect(() => setDraft(formatDateMask(value)), [value]);
+
+  const className = `dashboard-date-input min-w-0 px-2 text-center text-xs sm:px-3 sm:text-sm ${
+    readOnly ? "cursor-not-allowed text-muted-foreground" : ""
+  }`;
+
+  if (!isMobile) {
+    return (
+      <Input
+        type="date"
+        value={value}
+        readOnly={readOnly}
+        aria-readonly={readOnly}
+        onChange={(event) => onChange(event.target.value)}
+        className={className}
+      />
+    );
+  }
+
+  return (
+    <Input
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      placeholder="DD/MM/AAAA"
+      value={draft}
+      readOnly={readOnly}
+      aria-readonly={readOnly}
+      onChange={(event) => {
+        const next = maskDate(event.target.value);
+        setDraft(next);
+        const isoDate = dateMaskToIso(next);
+        if (isoDate) onChange(isoDate);
+      }}
+      onBlur={() => setDraft(formatDateMask(value))}
+      className={className}
+    />
+  );
+}
+
+function useMobileViewport() {
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  React.useEffect(() => {
+    const media = window.matchMedia("(max-width: 639px)");
+    const update = () => setIsMobile(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  return isMobile;
+}
+
+function formatDateMask(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : "";
+}
+
+function maskDate(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function dateMaskToIso(value: string) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value);
+  if (!match) return null;
+  const [, day, month, year] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (
+    date.getUTCFullYear() !== Number(year) ||
+    date.getUTCMonth() !== Number(month) - 1 ||
+    date.getUTCDate() !== Number(day)
+  ) {
+    return null;
+  }
+  return `${year}-${month}-${day}`;
 }
 
 function FilterField({
@@ -148,7 +233,7 @@ function FilterField({
 }) {
   return (
     <div className={className}>
-      <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
+      <label className="mb-1 block text-xs font-medium text-muted-foreground">
         {label}
       </label>
       {children}

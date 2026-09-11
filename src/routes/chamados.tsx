@@ -152,34 +152,40 @@ function ChamadosPage() {
         <Card className="mb-4 p-4">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-[1fr_180px_180px]">
             <div className="col-span-2 md:col-span-1">
-              <SearchInput
-                value={query}
-                onChange={setQuery}
-                placeholder="Buscar protocolo, título, contact ou customer"
-              />
+              <Field label="Busca">
+                <SearchInput
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Buscar protocolo, título, contact ou customer"
+                />
+              </Field>
             </div>
-            <Select
-              value={status}
-              onChange={(event) => setStatus(event.target.value as ApiTicketStatus | "")}
-            >
-              <option value="">Todos os status</option>
-              {statuses.map((item) => (
-                <option key={item} value={item}>
-                  {statusLabel(item)}
-                </option>
-              ))}
-            </Select>
-            <Select
-              value={priority}
-              onChange={(event) => setPriority(event.target.value as ApiTicketPriority | "")}
-            >
-              <option value="">Todas prioridades</option>
-              {priorities.map((item) => (
-                <option key={item} value={item}>
-                  {priorityLabel(item)}
-                </option>
-              ))}
-            </Select>
+            <Field label="Status">
+              <Select
+                value={status}
+                onChange={(event) => setStatus(event.target.value as ApiTicketStatus | "")}
+              >
+                <option value="">Todos os status</option>
+                {statuses.map((item) => (
+                  <option key={item} value={item}>
+                    {statusLabel(item)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Prioridade">
+              <Select
+                value={priority}
+                onChange={(event) => setPriority(event.target.value as ApiTicketPriority | "")}
+              >
+                <option value="">Todas prioridades</option>
+                {priorities.map((item) => (
+                  <option key={item} value={item}>
+                    {priorityLabel(item)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
           </div>
         </Card>
 
