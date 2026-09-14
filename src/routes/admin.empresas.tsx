@@ -19,7 +19,7 @@ import { fmtDate } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/empresas")({
-  head: () => ({ meta: [{ title: "Tenants - Nexo Admin" }] }),
+  head: () => ({ meta: [{ title: "Tenants - Trixus Admin" }] }),
   component: EmpresasSaaS,
 });
 
@@ -100,6 +100,7 @@ function EmpresasSaaS() {
         timezone: form.timezone,
         locale: form.locale,
         planId: form.planId,
+        initialStatus: form.trial === "active" ? "ACTIVE" : "TRIAL",
         admin: {
           name: form.adminName,
           email: form.adminEmail,
@@ -125,7 +126,7 @@ function EmpresasSaaS() {
     <AdminContainer>
       <SectionHeader
         title="Tenants"
-        subtitle="Gestao real de organizacoes, planos, status e limites via Nexos Platform API."
+        subtitle="Gestão de organizações, planos, status e limites pela Plataforma Trixus."
         actions={
           <Button onClick={() => setStep(0)}>
             <Plus className="h-4 w-4" /> Novo tenant

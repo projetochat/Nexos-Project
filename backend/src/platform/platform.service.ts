@@ -43,6 +43,7 @@ import type {
   StartImpersonationDto,
   TerminateTenantDto,
   UpdatePlanDto,
+  UpdatePlatformSettingsDto,
   UpdateSubscriptionDto,
   UpdateTenantDto,
 } from "./platform.dto";
@@ -53,6 +54,13 @@ const activeSubscriptionStatuses: SubscriptionStatus[] = [
   "PAST_DUE",
   "SUSPENDED",
 ];
+
+const PLATFORM_SETTINGS_KEY = "defaults";
+const DEFAULT_PLATFORM_SETTINGS = {
+  defaultTrialDays: 14,
+  defaultSubscriptionPeriodDays: 30,
+  defaultCurrency: "BRL",
+} as const;
 
 const tenantTransitions: Record<TenantStatus, TenantStatus[]> = {
   PROVISIONING: ["TRIAL", "ACTIVE", "SUSPENDED"],
@@ -195,27 +203,37 @@ export class PlatformService {
   async createTenant(dto: CreateTenantDto, current: AuthenticatedUser) {
     const slug = normalizeSlug(dto.slug);
     const plan = await this.activePlanOrThrow(dto.planId);
+    const administratorEmail = dto.admin.email.toLowerCase().trim();
+    const initialStatus = dto.initialStatus ?? "TRIAL";
+    const settings = await this.settings();
     const passwordHash = await hash(dto.admin.password, 12);
     const created = await this.prisma.$transaction(async (tx) => {
+      const existingAdministrator = await tx.user.findUnique({
+        where: { email: administratorEmail },
+        include: { memberships: { select: { id: true } } },
+      });
+      if (existingAdministrator?.memberships.length) {
+        throw new ConflictException("O e-mail do administrador já está vinculado a outra empresa.");
+      }
       const tenant = await tx.tenant.create({
         data: {
           name: dto.name.trim(),
           legalName: dto.name.trim(),
           displayName: dto.name.trim(),
           slug,
-          status: "TRIAL",
+          status: initialStatus,
           timezone: dto.timezone ?? "America/Sao_Paulo",
           locale: dto.locale ?? "pt-BR",
-          technicalEmail: dto.admin.email.toLowerCase().trim(),
+          technicalEmail: administratorEmail,
           activatedAt: new Date(),
         },
       });
       const roles = await seedTenantRoles(tx, tenant.id);
       const user = await tx.user.upsert({
-        where: { email: dto.admin.email.toLowerCase().trim() },
+        where: { email: administratorEmail },
         update: { name: dto.admin.name.trim(), passwordHash, status: "ACTIVE" },
         create: {
-          email: dto.admin.email.toLowerCase().trim(),
+          email: administratorEmail,
           name: dto.admin.name.trim(),
           passwordHash,
           status: "ACTIVE",
@@ -228,9 +246,12 @@ export class PlatformService {
         data: {
           tenantId: tenant.id,
           planId: plan.id,
-          status: "TRIALING",
-          trialEndsAt: addDays(new Date(), plan.trialDays || 14),
-          currentPeriodEnd: addDays(new Date(), 30),
+          status: initialStatus === "ACTIVE" ? "ACTIVE" : "TRIALING",
+          trialEndsAt:
+            initialStatus === "TRIAL"
+              ? addDays(new Date(), plan.trialDays || settings.defaultTrialDays)
+              : null,
+          currentPeriodEnd: addDays(new Date(), settings.defaultSubscriptionPeriodDays),
           limitsSnapshot: coerceLimits(plan.limits),
           featuresSnapshot: coerceFeatures(plan.features),
           createdByUserId: current.userId,
@@ -254,7 +275,7 @@ export class PlatformService {
       targetType: "tenant",
       targetId: created.tenant.id,
       tenantId: created.tenant.id,
-      metadata: { slug, planId: plan.id, membershipId: created.membership.id },
+      metadata: { slug, planId: plan.id, membershipId: created.membership.id, initialStatus },
     });
     return this.tenantDetail(created.tenant.id);
   }
@@ -279,6 +300,30 @@ export class PlatformService {
       tenantId: id,
     });
     return tenant;
+  }
+
+  async settings() {
+    const setting = await this.prisma.platformSetting.findUnique({
+      where: { key: PLATFORM_SETTINGS_KEY },
+    });
+    return normalizePlatformSettings(setting?.value);
+  }
+
+  async updateSettings(dto: UpdatePlatformSettingsDto, current: AuthenticatedUser) {
+    const value = normalizePlatformSettings(dto);
+    await this.prisma.platformSetting.upsert({
+      where: { key: PLATFORM_SETTINGS_KEY },
+      update: { value, updatedByUserId: current.userId },
+      create: { key: PLATFORM_SETTINGS_KEY, value, updatedByUserId: current.userId },
+    });
+    await this.audit.record({
+      actor: current,
+      action: "platform.settings.updated",
+      targetType: "platform_setting",
+      targetId: PLATFORM_SETTINGS_KEY,
+      metadata: value,
+    });
+    return value;
   }
 
   suspendTenant(id: string, dto: ReasonDto, current: AuthenticatedUser) {
@@ -364,6 +409,7 @@ export class PlatformService {
         status: dto.status ?? "DRAFT",
         billingPeriod: dto.billingPeriod ?? "MANUAL",
         priceCents: dto.priceCents,
+        trialDays: dto.trialDays ?? 0,
         features: data.features,
         limits: data.limits,
       },
@@ -387,6 +433,7 @@ export class PlatformService {
         name: dto.name?.trim(),
         description: nullable(dto.description),
         status: dto.status,
+        trialDays: dto.trialDays,
         ...(dto.features || dto.limits
           ? validatePlanConfig(dto.features ?? existing.features, dto.limits ?? existing.limits)
           : {}),
@@ -422,6 +469,7 @@ export class PlatformService {
   ) {
     await this.requireTenant(tenantId);
     const plan = await this.activePlanOrThrow(dto.planId);
+    const settings = await this.settings();
     const subscription = await this.prisma.$transaction(async (tx) => {
       await tx.tenantSubscription.updateMany({
         where: { tenantId, status: { in: activeSubscriptionStatuses } },
@@ -434,7 +482,7 @@ export class PlatformService {
           status: dto.status ?? "ACTIVE",
           currentPeriodEnd: dto.currentPeriodEnd
             ? new Date(dto.currentPeriodEnd)
-            : addDays(new Date(), 30),
+            : addDays(new Date(), settings.defaultSubscriptionPeriodDays),
           limitsSnapshot: coerceLimits(plan.limits),
           featuresSnapshot: coerceFeatures(plan.features),
           createdByUserId: current.userId,
@@ -619,12 +667,13 @@ export class PlatformService {
       where: { id: dto.subscriptionId, tenantId: dto.tenantId },
     });
     if (!subscription) throw new BadRequestException("Assinatura invalida para o tenant.");
+    const settings = await this.settings();
     const invoice = await this.prisma.invoice.create({
       data: {
         tenantId: dto.tenantId,
         subscriptionId: dto.subscriptionId,
         number: await this.nextInvoiceNumber(),
-        currency: dto.currency ?? "BRL",
+        currency: dto.currency ?? settings.defaultCurrency,
         subtotalCents: dto.subtotalCents,
         discountCents: dto.discountCents ?? 0,
         totalCents: Math.max(0, dto.subtotalCents - (dto.discountCents ?? 0)),
@@ -898,6 +947,25 @@ function normalizeSlug(value: string) {
 function nullable(value?: string | null) {
   if (value === undefined) return undefined;
   return value?.trim() || null;
+}
+
+function normalizePlatformSettings(value: unknown) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const settings = source as Record<string, unknown>;
+  const readInteger = (key: "defaultTrialDays" | "defaultSubscriptionPeriodDays") => {
+    const candidate = Number(settings[key]);
+    return Number.isInteger(candidate) && candidate > 0
+      ? candidate
+      : DEFAULT_PLATFORM_SETTINGS[key];
+  };
+  const currency = typeof settings.defaultCurrency === "string" ? settings.defaultCurrency : "";
+  return {
+    defaultTrialDays: Math.min(90, readInteger("defaultTrialDays")),
+    defaultSubscriptionPeriodDays: Math.min(366, readInteger("defaultSubscriptionPeriodDays")),
+    defaultCurrency: /^[A-Z]{3}$/.test(currency)
+      ? currency
+      : DEFAULT_PLATFORM_SETTINGS.defaultCurrency,
+  };
 }
 
 function addDays(date: Date, days: number) {

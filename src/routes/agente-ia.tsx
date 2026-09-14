@@ -7,9 +7,9 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/agente-ia")({
   head: () => ({
     meta: [
-      { title: "Agente de IA · Nexo" },
+      { title: "Agente de IA · Trixus" },
       { name: "description", content: "Configure agentes de IA para atendimento automatizado." },
-      { property: "og:title", content: "Agente de IA · Nexo" },
+      { property: "og:title", content: "Agente de IA · Trixus" },
       { property: "og:description", content: "Configure agentes de IA para atendimento automatizado." },
     ],
   }),

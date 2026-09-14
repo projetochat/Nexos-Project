@@ -72,8 +72,8 @@ export const Route = createFileRoute("/chamados")({
   }),
   head: () => ({
     meta: [
-      { title: "Chamados · Nexo" },
-      { name: "description", content: "Chamados tenant-scoped via Nexos API." },
+      { title: "Chamados · Trixus" },
+      { name: "description", content: "Chamados gerenciados pela API Trixus." },
     ],
   }),
   component: ChamadosPage,

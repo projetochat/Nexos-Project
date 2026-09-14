@@ -8,7 +8,7 @@ import { useTheme } from "./theme-provider";
 import { useSession, ROLE_META } from "@/lib/session";
 
 /* ============================================================
-   Nexo · Operator Shell (Central de Atendimento)
+   Trixus · Operator Shell (Central de Atendimento)
    Interface minimalista dedicada ao operador. Sem administração.
    ============================================================ */
 
@@ -111,7 +111,7 @@ function Topbar() {
       <div className="flex min-w-0 items-center gap-2">
         <LogoMark size={22} />
         <div className="hidden min-w-0 md:block">
-          <div className="text-sm font-semibold tracking-tight">Nexo</div>
+          <div className="text-sm font-semibold tracking-tight">Trixus</div>
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
             Central de Atendimento
           </div>

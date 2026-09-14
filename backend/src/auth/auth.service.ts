@@ -83,7 +83,7 @@ export class AuthService {
         tenant: {
           id: "platform",
           slug: "platform",
-          name: "Nexos Platform",
+          name: "Trixus Platform",
         },
         membership: {
           id: "",

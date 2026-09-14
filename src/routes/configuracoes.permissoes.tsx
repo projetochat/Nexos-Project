@@ -30,9 +30,11 @@ function PermissoesSettings() {
                 {role.permissionIds.length} permissões ativas
               </span>
             </div>
-            <Button variant="ghost" size="sm" className="self-start sm:self-auto">
-              Editar
-            </Button>
+            {role.key !== "tenant_admin" && (
+              <Button variant="ghost" size="sm" className="self-start sm:self-auto">
+                Editar
+              </Button>
+            )}
           </div>
           <ul className="mt-4 grid gap-2 border-t border-border pt-4 md:grid-cols-2">
             {role.permissionIds.map((permission) => (

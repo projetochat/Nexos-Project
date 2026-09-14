@@ -5,12 +5,14 @@ import { Eye, EyeOff, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, Button, Card, Field, Input } from "@/components/ui-kit";
 import { organizationApi } from "@/lib/nexos-api";
+import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/configuracoes/empresa")({
   component: EmpresaSettings,
 });
 
 function EmpresaSettings() {
+  const sessionUser = useSession((state) => state.user);
   const { data: company, isLoading: isLoadingCompany } = useQuery({
     queryKey: ["nexos", "company"],
     queryFn: organizationApi.getCompany,
@@ -37,7 +39,11 @@ function EmpresaSettings() {
     }
     setSavingPassword(true);
     try {
-      await organizationApi.updateMyProfile({ currentPassword, newPassword });
+      await organizationApi.updateAdministratorCredentials({
+        currentPassword,
+        newPassword,
+        confirmPassword,
+      });
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -78,79 +84,81 @@ function EmpresaSettings() {
         </div>
       </Card>
 
-      <Card>
-        <div className="flex items-start gap-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Lock className="h-7 w-7" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-foreground">
-              Credencias do Usuário Administrador
-            </h2>
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <Alert
-            tone="info"
-            title="Este usuário é o administrador do sistema, possui acesso total a todas as funcionalidades e não está vinculado a nenhum grupo de permissões."
-          >
-            Utilize as credenciais abaixo para acessar o sistema.
-          </Alert>
-        </div>
-
-        <div className="mt-4 space-y-4">
-          <Field label="E-mail de acesso *">
-            <div className="relative">
-              <Input
-                value={company?.accessEmail ?? ""}
-                readOnly
-                disabled={isLoadingCompany}
-                className="pr-10"
-              />
-              <Lock className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      {sessionUser?.role === "admin" && company?.canManageAdministratorCredentials && (
+        <Card>
+          <div className="flex items-start gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Lock className="h-7 w-7" />
             </div>
-          </Field>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Senha atual *">
-              <PasswordInput
-                value={currentPassword}
-                onChange={setCurrentPassword}
-                visible={false}
-                canToggle={false}
-                onToggle={() => undefined}
-                autoComplete="current-password"
-              />
-            </Field>
-            <Field label="Nova senha *">
-              <PasswordInput
-                value={newPassword}
-                onChange={setNewPassword}
-                visible={showNewPassword}
-                onToggle={() => setShowNewPassword((current) => !current)}
-                autoComplete="new-password"
-              />
-            </Field>
-            <Field label="Confirmar nova senha *">
-              <PasswordInput
-                value={confirmPassword}
-                onChange={setConfirmPassword}
-                visible={showConfirmPassword}
-                onToggle={() => setShowConfirmPassword((current) => !current)}
-                autoComplete="new-password"
-              />
-            </Field>
+            <div className="min-w-0">
+              <h2 className="text-xl font-semibold text-foreground">
+                Credenciais do Usuário Administrador
+              </h2>
+            </div>
           </div>
-        </div>
 
-        <div className="mt-6 flex justify-end border-t border-border pt-4">
-          <Button variant="primary" size="lg" onClick={savePassword} disabled={savingPassword}>
-            <Lock className="h-4 w-4" />
-            {savingPassword ? "Confirmando..." : "Confirmar nova senha"}
-          </Button>
-        </div>
-      </Card>
+          <div className="mt-4">
+            <Alert
+              tone="info"
+              title="Este usuário possui acesso a todas as funcionalidades permitidas pelo plano da empresa."
+            >
+              Utilize as credenciais abaixo para acessar o sistema.
+            </Alert>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            <Field label="E-mail de acesso *">
+              <div className="relative">
+                <Input
+                  value={company?.accessEmail ?? ""}
+                  readOnly
+                  disabled={isLoadingCompany}
+                  className="pr-10"
+                />
+                <Lock className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              </div>
+            </Field>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <Field label="Senha atual *">
+                <PasswordInput
+                  value={currentPassword}
+                  onChange={setCurrentPassword}
+                  visible={false}
+                  canToggle={false}
+                  onToggle={() => undefined}
+                  autoComplete="current-password"
+                />
+              </Field>
+              <Field label="Nova senha *">
+                <PasswordInput
+                  value={newPassword}
+                  onChange={setNewPassword}
+                  visible={showNewPassword}
+                  onToggle={() => setShowNewPassword((current) => !current)}
+                  autoComplete="new-password"
+                />
+              </Field>
+              <Field label="Confirmar nova senha *">
+                <PasswordInput
+                  value={confirmPassword}
+                  onChange={setConfirmPassword}
+                  visible={showConfirmPassword}
+                  onToggle={() => setShowConfirmPassword((current) => !current)}
+                  autoComplete="new-password"
+                />
+              </Field>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end border-t border-border pt-4">
+            <Button variant="primary" size="lg" onClick={savePassword} disabled={savingPassword}>
+              <Lock className="h-4 w-4" />
+              {savingPassword ? "Confirmando..." : "Confirmar nova senha"}
+            </Button>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

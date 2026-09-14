@@ -70,7 +70,7 @@ export class MessagingOutboundQueue implements OnModuleDestroy {
   }
 
   getQueue() {
-    if (!this.redis.enabled()) throw new Error("Nexos queue is disabled.");
+    if (!this.redis.enabled()) throw new Error("Trixus queue is disabled.");
     this.queue ??= new Queue<MessagingOutboundJob>(MESSAGING_OUTBOUND_QUEUE, {
       connection: this.redis.createConnection("nexos-outbound-queue"),
     });

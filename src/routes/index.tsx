@@ -166,11 +166,11 @@ function Dashboard() {
     { nome: "Encerradas", total: kpiValue(kpis.conversasEncerradas) },
   ];
   const recent = data?.recent ?? [];
-  const queueKpiById: Record<QueueId, keyof typeof kpis> = {
-    ativas: "filaAtivas",
-    standby: "filaStandby",
-    fila: "filaFila",
-    leads: "filaLeads",
+  const queueKpiById: Record<QueueId, [keyof typeof kpis, keyof typeof kpis]> = {
+    ativas: ["contadorAtivasAtuais", "filaAtivas"],
+    standby: ["contadorStandbyAtual", "filaStandby"],
+    fila: ["contadorFilaAtual", "filaFila"],
+    leads: ["contadorLeadsAtuais", "filaLeads"],
   };
   const queueIconById: Record<QueueId, React.ComponentType<{ className?: string }>> = {
     ativas: Play,
@@ -183,17 +183,21 @@ function Dashboard() {
     .map((queue) => ({
       id: queue.id,
       label: queue.label,
-      value: kpiValue(kpis[queueKpiById[queue.id]]),
+      value: kpiValue(
+        kpis[queueKpiById[queue.id][0]] ?? kpis[queueKpiById[queue.id][1]],
+      ),
       Icon: queueIconById[queue.id],
     }));
+  const closedConversations = kpiValue(kpis.contadorFechadasAtuais ?? kpis.conversasEncerradas);
   const totalConversations =
-    queueCards.reduce((total, queue) => total + queue.value, 0) +
-    kpiValue(kpis.conversasEncerradas);
+    kpis.conversasTotalAtual === undefined
+      ? queueCards.reduce((total, queue) => total + queue.value, 0) + closedConversations
+      : kpiValue(kpis.conversasTotalAtual);
   const hasBi = (id: DashboardBiId) => visibleBis.includes(id);
   const biLabel = (id: DashboardBiId) => dashboardLabels[id]?.trim() || BI_LABELS[id];
   const dashboardPosition = (id: DashboardBiId) => dashboardOrder.indexOf(id);
   const dashboardColumnClass = (id: DashboardBiId) => {
-    const columns = id === "counters" ? 4 : dashboardColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id];
+    const columns = dashboardColumnCount(id);
     return {
       1: "md:col-span-1",
       2: "md:col-span-2",
@@ -201,6 +205,8 @@ function Dashboard() {
       4: "md:col-span-4",
     }[columns];
   };
+  const dashboardColumnCount = (id: DashboardBiId): DashboardColumnCount =>
+    id === "counters" ? 4 : dashboardColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id];
   const messagesColumns = dashboardColumns.messages ?? DEFAULT_DASHBOARD_COLUMNS.messages;
   const compactMessagesChart = messagesColumns <= 2;
 
@@ -234,7 +240,7 @@ function Dashboard() {
       <PageContainer className="max-w-none">
         <SectionHeader
           title="Dashboard"
-          subtitle="Panorama operacional com métricas consolidadas do banco Nexos."
+          subtitle="Panorama operacional com métricas consolidadas do banco Trixus."
           subtitleClassName="hidden sm:block"
           actions={
             <div className="flex gap-2">
@@ -299,7 +305,7 @@ function Dashboard() {
               })}
               <KPI
                 label="Fechadas"
-                value={num(kpiValue(kpis.conversasEncerradas))}
+                value={num(closedConversations)}
                 tone="info"
                 icon={<CheckCircle2 className="h-6 w-6" />}
               />
@@ -439,52 +445,61 @@ function Dashboard() {
               { id: "agent", title: biLabel("agent"), data: data?.charts.byAgent ?? [] },
             ]
               .filter((chart) => hasBi(chart.id as DashboardBiId))
-              .map((chart) => (
-                <div
-                  key={chart.id}
-                  style={{ order: dashboardPosition(chart.id as DashboardBiId) }}
-                  className={dashboardColumnClass(chart.id as DashboardBiId)}
-                >
-                  <Card className="h-full">
-                  <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
-                    {chart.title}
-                  </p>
-                  {chart.data.length === 0 ? (
-                    <div className="flex h-[220px] items-center justify-center text-xs text-muted-foreground">
-                      Sem dados para o periodo.
-                    </div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height={220}>
-                      <BarChart data={chart.data}>
-                        <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
-                        <XAxis dataKey="nome" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                        <YAxis
-                          stroke="hsl(var(--muted-foreground))"
-                          fontSize={11}
-                          allowDecimals={false}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            background: "hsl(var(--popover))",
-                            border: "1px solid hsl(var(--border))",
-                            borderRadius: 8,
-                            fontSize: 12,
-                          }}
-                        />
-                        <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-                          {chart.data.map((item, index) => (
-                            <Cell
-                              key={`${item.nome}-${index}`}
-                              fill={item.cor || COLORS[index % COLORS.length]}
+              .map((chart) => {
+                const chartData = compactDashboardChartData(
+                  chart.data,
+                  dashboardColumnCount(chart.id as DashboardBiId),
+                );
+                const rotateLabels = chartData.length > 5 || chartData.some((item) => item.nome.length > 14);
+                return (
+                  <div
+                    key={chart.id}
+                    style={{ order: dashboardPosition(chart.id as DashboardBiId) }}
+                    className={dashboardColumnClass(chart.id as DashboardBiId)}
+                  >
+                    <Card className="h-full">
+                      <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
+                        {chart.title}
+                      </p>
+                      {chart.data.length === 0 ? (
+                        <div className="flex h-[270px] items-center justify-center text-xs text-muted-foreground">
+                          Sem dados para o periodo.
+                        </div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height={270}>
+                          <BarChart data={chartData}>
+                            <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+                            <XAxis
+                              dataKey="nome"
+                              stroke="hsl(var(--muted-foreground))"
+                              fontSize={11}
+                              interval={0}
+                              angle={rotateLabels ? -35 : 0}
+                              textAnchor={rotateLabels ? "end" : "middle"}
+                              height={rotateLabels ? 78 : 30}
+                              tickMargin={rotateLabels ? 8 : 0}
                             />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )}
-                  </Card>
-                </div>
-              ))}
+                            <YAxis
+                              stroke="hsl(var(--muted-foreground))"
+                              fontSize={11}
+                              allowDecimals={false}
+                            />
+                            <Tooltip content={<DashboardBarTooltip />} />
+                            <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                              {chartData.map((item, index) => (
+                                <Cell
+                                  key={`${item.nome}-${index}`}
+                                  fill={item.cor || COLORS[index % COLORS.length]}
+                                />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      )}
+                    </Card>
+                  </div>
+                );
+              })}
 
           <div
             style={{ order: dashboardPosition("recent") }}
@@ -738,6 +753,66 @@ function Snapshot({
 
 function kpiValue(kpi: { value: number | null } | undefined) {
   return kpi?.value ?? 0;
+}
+
+type DashboardChartDatum = {
+  nome: string;
+  total: number;
+  cor?: string | null;
+  detalhes?: DashboardChartDatum[];
+};
+
+function compactDashboardChartData(data: DashboardChartDatum[], columns: DashboardColumnCount) {
+  const maxItemsByColumn: Record<DashboardColumnCount, number> = {
+    1: 5,
+    2: 10,
+    3: 15,
+    4: 20,
+  };
+  const maxItems = maxItemsByColumn[columns];
+  if (data.length <= maxItems) return data;
+
+  const sorted = [...data].sort((first, second) => second.total - first.total);
+  const visible = sorted.slice(0, maxItems - 1);
+  const detalhes = sorted.slice(maxItems - 1);
+  return [
+    ...visible,
+    {
+      nome: "Outros",
+      total: detalhes.reduce((total, item) => total + item.total, 0),
+      cor: "#94a3b8",
+      detalhes,
+    },
+  ];
+}
+
+function DashboardBarTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ value?: number | string; payload?: DashboardChartDatum }>;
+}) {
+  const item = payload?.[0]?.payload;
+  if (!active || !item) return null;
+
+  return (
+    <div className="max-w-64 rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-lg">
+      <p className="font-semibold text-foreground">
+        {item.nome}: {num(item.total)}
+      </p>
+      {item.detalhes && (
+        <div className="mt-2 max-h-44 space-y-1 overflow-y-auto border-t border-border pt-2 text-muted-foreground">
+          {item.detalhes.map((detail) => (
+            <p key={detail.nome} className="flex items-center justify-between gap-4">
+              <span className="truncate">{detail.nome}</span>
+              <span className="shrink-0 font-medium text-foreground">{num(detail.total)}</span>
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function loadDashboardPreferences(storageKey: string): DashboardPreferences {

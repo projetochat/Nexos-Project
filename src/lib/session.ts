@@ -27,7 +27,7 @@ export type SessionUser = {
 };
 
 export const ROLE_META: Record<Role, { label: string; scope: string; home: string }> = {
-  super_admin: { label: "Super Admin", scope: "Plataforma Nexo", home: "/admin" },
+  super_admin: { label: "Super Admin", scope: "Plataforma Trixus", home: "/admin" },
   admin: { label: "Administrador", scope: "Empresa", home: "/" },
   supervisor: { label: "Supervisor", scope: "Empresa", home: "/" },
   operator: { label: "Atendente", scope: "Central de Atendimento", home: "/inbox" },

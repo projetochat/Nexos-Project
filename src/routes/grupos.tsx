@@ -6,7 +6,6 @@ import {
   Crown,
   Pencil,
   LogOut,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   MessageSquareMore,
@@ -29,12 +28,14 @@ import {
   Card,
   Field,
   Input,
+  InstanceFilterSelect,
   SearchInput,
   SectionHeader,
   Select,
   Textarea,
 } from "@/components/ui-kit";
 import {
+  conversationApi,
   crmApi,
   groupsApi,
   type ApiContactInstanceOption,
@@ -141,7 +142,9 @@ function GroupsPage() {
       .then((options) =>
         setInstances(
           sortByOptionLabel(
-            options.instances.filter((instance) => instance.status?.toUpperCase() === "CONNECTED"),
+            // Grupos já sincronizados continuam consultáveis mesmo depois que a instância é desligada.
+            // A API de opções retorna as conexões conectadas e desconectadas não arquivadas.
+            options.instances,
             (instance) => instance.name,
           ),
         ),
@@ -200,6 +203,17 @@ function GroupsPage() {
       toast.error("Falha ao atualizar grupos", { description: (error as Error).message });
     } finally {
       setSyncing(false);
+    }
+  };
+  const openGroupChat = async (group: ApiWhatsappGroup) => {
+    try {
+      await conversationApi.updateInboxArchive(group.conversationId, false);
+      navigate({
+        to: "/inbox/$conversationId",
+        params: { conversationId: group.conversationId },
+      });
+    } catch (error) {
+      toast.error("Não foi possível abrir a conversa", { description: (error as Error).message });
     }
   };
 
@@ -264,12 +278,7 @@ function GroupsPage() {
                 <GroupCard
                   key={group.id}
                   group={group}
-                  onOpenChat={() =>
-                    navigate({
-                      to: "/inbox/$conversationId",
-                      params: { conversationId: group.conversationId },
-                    })
-                  }
+                  onOpenChat={() => void openGroupChat(group)}
                   onDetail={() => setSelectedGroup(group)}
                   onLeave={() => setLeavingGroup(group)}
                 />
@@ -348,12 +357,7 @@ function GroupsPage() {
               current.map((item) => (item.id === updated.id ? updated : item)),
             );
           }}
-          onOpenChat={(group) =>
-            navigate({
-              to: "/inbox/$conversationId",
-              params: { conversationId: group.conversationId },
-            })
-          }
+          onOpenChat={(group) => void openGroupChat(group)}
         />
         <ConfirmDialog
           open={!!leavingGroup}
@@ -491,97 +495,18 @@ function InstanceSelect({
   emptyLabel: string;
   extraOptions?: Array<{ value: string; label: string }>;
 }) {
-  const [open, setOpen] = React.useState(false);
-  const rootRef = React.useRef<HTMLDivElement | null>(null);
-  const selectedInstance = instances.find((instance) => instance.id === value);
-  const selectedExtraOption = extraOptions.find((option) => option.value === value);
-
-  React.useEffect(() => {
-    if (!open) return;
-    const closeWhenClickingOutside = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", closeWhenClickingOutside);
-    return () => document.removeEventListener("mousedown", closeWhenClickingOutside);
-  }, [open]);
-
-  const choose = (nextValue: string) => {
-    onChange(nextValue);
-    setOpen(false);
-  };
-
   return (
-    <div ref={rootRef} className="relative">
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm transition focus:border-primary focus:outline-none"
-      >
-        {selectedInstance ? (
-          <span className="inline-flex min-w-0 items-center gap-1 text-sm font-medium text-foreground">
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ backgroundColor: selectedInstance.color ?? "#22c55e" }}
-            />
-            <span className="truncate">{selectedInstance.name}</span>
-          </span>
-        ) : (
-          <span className={selectedExtraOption ? "text-foreground" : "text-muted-foreground"}>
-            {selectedExtraOption?.label ?? emptyLabel}
-          </span>
-        )}
-        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-      </button>
-      {open && (
-        <div
-          role="listbox"
-          className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-xl"
-        >
-          {value && (
-            <button
-              type="button"
-              onClick={() => choose("")}
-              className="flex w-full items-center rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
-            >
-              {emptyLabel}
-            </button>
-          )}
-          {extraOptions.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => choose(option.value)}
-              className="flex w-full items-center rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
-            >
-              {option.label}
-            </button>
-          ))}
-          {instances.map((instance) => (
-            <button
-              key={instance.id}
-              type="button"
-              onClick={() => choose(instance.id)}
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1 ${
-                value === instance.id ? "bg-surface-1" : ""
-              }`}
-            >
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: instance.color ?? "#22c55e" }}
-              />
-              <span className="truncate">{instance.name}</span>
-            </button>
-          ))}
-          {instances.length === 0 && (
-            <p className="px-2 py-3 text-center text-xs text-muted-foreground">
-              Nenhuma instância conectada.
-            </p>
-          )}
-        </div>
-      )}
-    </div>
+    <InstanceFilterSelect
+      value={value}
+      onChange={onChange}
+      options={instances.map((instance) => ({
+        value: instance.id,
+        label: instance.name,
+        color: instance.color,
+      }))}
+      extraOptions={extraOptions}
+      allLabel={emptyLabel}
+    />
   );
 }
 
@@ -707,8 +632,8 @@ function CreateGroupModal({
         </>
       }
     >
-      <div className="space-y-4">
-        <div className="grid gap-3 md:grid-cols-2">
+      <div className="min-w-0 space-y-4">
+        <div className="grid min-w-0 gap-3 md:grid-cols-2">
           <Field label="Nome do grupo *">
             <Input
               value={name}
@@ -725,8 +650,8 @@ function CreateGroupModal({
             />
           </Field>
         </div>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <section className="order-2 rounded-xl border border-border p-3 sm:p-4 lg:order-1">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+          <section className="order-2 min-w-0 rounded-xl border border-border p-3 sm:p-4 lg:order-1">
             <div className="mb-3 flex items-center gap-2">
               <h3 className="text-lg font-semibold">Contatos disponíveis</h3>
               <Badge tone="default">{num(picker.total)}</Badge>
@@ -772,7 +697,7 @@ function CreateGroupModal({
           </section>
 
           {selectedContacts.length > 0 && (
-          <section className="order-1 rounded-xl border border-border p-3 sm:p-4 lg:order-2">
+          <section className="order-1 min-w-0 rounded-xl border border-border p-3 sm:p-4 lg:order-2">
             <div className="mb-3 flex items-center gap-2">
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-semibold">Contatos selecionados</h3>
@@ -1079,9 +1004,9 @@ function GroupDetailModal({
       }
     >
       {group && (
-        <div className="space-y-3 sm:space-y-4">
-          <div className="space-y-3 sm:space-y-4">
-            <div className="space-y-3 sm:space-y-4">
+        <div className="min-w-0 space-y-3 sm:space-y-4">
+          <div className="min-w-0 space-y-3 sm:space-y-4">
+            <div className="min-w-0 space-y-3 sm:space-y-4">
               <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-[8.25rem_minmax(0,1fr)] sm:gap-x-6 sm:gap-y-4">
                 <Avatar
                   name={group.name}
@@ -1347,8 +1272,8 @@ function GroupDetailModal({
                   </div>
                 </div>
               )}
-              <div className="grid gap-4 lg:grid-cols-2">
-                <section className="order-2 rounded-xl border border-border p-2.5 sm:p-4 lg:order-1">
+              <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+                <section className="order-2 min-w-0 rounded-xl border border-border p-2.5 sm:p-4 lg:order-1">
                   <div className="mb-3 flex items-center gap-2">
                     <h3 className="text-base font-semibold sm:text-lg">Contatos disponíveis</h3>
                     <Badge tone="default">{num(picker.total)}</Badge>
@@ -1397,7 +1322,7 @@ function GroupDetailModal({
                     onPageChange={picker.setPage}
                   />
                 </section>
-                <section className="order-1 rounded-xl border border-border p-2.5 sm:p-4 lg:order-2">
+                <section className="order-1 min-w-0 rounded-xl border border-border p-2.5 sm:p-4 lg:order-2">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2 sm:gap-3">
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-semibold sm:text-lg">Contatos selecionados</h3>

@@ -227,20 +227,20 @@ export class OperationsService {
       return {
         body: pdf(rows),
         contentType: "application/pdf",
-        filename: "nexos-atendimento.pdf",
+        filename: "trixus-atendimento.pdf",
       };
     }
     if (format === "xlsx") {
       return {
         body: xlsx(rows),
         contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename: "nexos-atendimento.xlsx",
+        filename: "trixus-atendimento.xlsx",
       };
     }
     return {
       body: csv(rows),
       contentType: "text/csv; charset=utf-8",
-      filename: "nexos-atendimento.csv",
+      filename: "trixus-atendimento.csv",
     };
   }
 
@@ -845,7 +845,7 @@ function xlsx(rows: Array<Record<string, string | number | null>>) {
 
 function pdf(rows: Array<Record<string, string | number | null>>) {
   const lines = [
-    "Nexos - Relatorio de atendimento",
+    "Trixus - Relatorio de atendimento",
     ...rows
       .slice(0, 60)
       .map((row) =>

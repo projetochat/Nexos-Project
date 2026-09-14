@@ -286,7 +286,7 @@ export const auditLogs: AuditLog[] = Array.from({ length: 40 }, (_, i) => {
   return {
     id: `aud-${i}`,
     actorId: "u-owner",
-    actorNome: i % 3 === 0 ? "Alex Nascimento" : "Sistema Nexo",
+    actorNome: i % 3 === 0 ? "Alex Nascimento" : "Sistema Trixus",
     acao: a.acao,
     entidade: a.entidade,
     entidadeId: tenants[i % tenants.length].id,

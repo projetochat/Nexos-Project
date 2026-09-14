@@ -585,7 +585,7 @@ Tudo bem?
 Estamos fora do horário de atendimento.
 Retornaremos assim que possível.
 
-Equipe Nexus`;
+Equipe Trixus`;
 
 const WEEKDAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 

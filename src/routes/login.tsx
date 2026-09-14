@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { currentRoleHome, signIn, useSession, type Role } from "@/lib/session";
 
 export const Route = createFileRoute("/login")({
-  head: () => ({ meta: [{ title: "Entrar - Nexo" }] }),
+  head: () => ({ meta: [{ title: "Entrar - Trixus" }] }),
   component: LoginPage,
 });
 
@@ -49,12 +49,12 @@ function LoginPage() {
     <div className="relative min-h-dvh overflow-hidden bg-[#f8fbff] text-[#071535]">
       <div
         className="pointer-events-none absolute inset-0 hidden bg-cover bg-center lg:block"
-        style={{ backgroundImage: "url('/login-desktop-background.jpg')" }}
+        style={{ backgroundImage: "url('/login-desktop-background.png')" }}
       />
       <div className="pointer-events-none absolute inset-0 hidden bg-white/10 lg:block" />
       <div
         className="pointer-events-none absolute inset-0 bg-cover bg-center lg:hidden"
-        style={{ backgroundImage: "url('/login-mobile-background.jpg')" }}
+        style={{ backgroundImage: "url('/login-mobile-background.png')" }}
         aria-hidden="true"
       />
       <div className="pointer-events-none absolute inset-0 bg-white/20 lg:hidden" />
@@ -68,7 +68,7 @@ function LoginPage() {
               Ambiente de produção
             </div>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#071535] sm:text-4xl">
-              Entrar no Nexus
+              Entrar no Trixus
             </h1>
 
             <form onSubmit={handleLogin} className="mt-6 space-y-4 sm:mt-7">

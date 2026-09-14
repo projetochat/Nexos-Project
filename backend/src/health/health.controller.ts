@@ -23,7 +23,7 @@ export class HealthController {
     const realtime = this.realtime.health();
     return {
       ok: true,
-      service: "nexos-api",
+      service: "trixus-api",
       database: "up",
       redis: redis.ok ? "up" : "down",
       queue: redis.ok ? "up" : "down",

@@ -4,7 +4,7 @@ import { AdminContainer } from "@/components/admin-shell";
 import { Card, SectionHeader } from "@/components/ui-kit";
 
 export const Route = createFileRoute("/admin/suporte")({
-  head: () => ({ meta: [{ title: "Suporte · Nexo Admin" }] }),
+  head: () => ({ meta: [{ title: "Suporte · Trixus Admin" }] }),
   component: SuporteAdmin,
 });
 

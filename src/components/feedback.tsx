@@ -3,7 +3,7 @@ import { AlertTriangle, WifiOff, RefreshCcw, Sparkles, Loader2 } from "lucide-re
 import { Card, Button } from "./ui-kit";
 
 /* ============================================================
-   Nexo · Feedback primitives
+   Trixus · Feedback primitives
    Loading, Skeletons, Errors, Empty & first-run states.
    ============================================================ */
 

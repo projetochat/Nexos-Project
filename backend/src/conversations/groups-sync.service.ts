@@ -482,6 +482,7 @@ export class GroupsSyncService implements OnModuleDestroy {
               groupName: group.subject,
               groupImageUrl: group.imageUrl ?? undefined,
               groupMetadataJson: metadata,
+              inboxArchivedAt: now,
             },
           });
 

@@ -488,6 +488,7 @@ export type ApiCompanyProfile = {
   locale: string;
   accessEmail: string | null;
   responsibleName: string | null;
+  canManageAdministratorCredentials: boolean;
 };
 
 export type ApiFinancialPayment = {
@@ -859,7 +860,7 @@ async function hydrateWithPlatformToken(stored: StoredImpersonation) {
   localStorage.setItem(REFRESH_KEY, stored.actorRefreshToken);
   localStorage.setItem(
     TENANT_KEY,
-    JSON.stringify({ id: "platform", slug: "platform", name: "Nexos Platform" }),
+    JSON.stringify({ id: "platform", slug: "platform", name: "Trixus Platform" }),
   );
   return {
     id: "platform",
@@ -867,7 +868,7 @@ async function hydrateWithPlatformToken(stored: StoredImpersonation) {
     email: "",
     role: "super_admin",
     empresaId: "platform",
-    empresaNome: "Nexos Platform",
+    empresaNome: "Trixus Platform",
     permissions: [],
   } satisfies SessionUser;
 }
@@ -983,6 +984,15 @@ export const organizationApi = {
     newPassword?: string;
   }) =>
     apiRequest<ApiUserMembership>("/me/profile", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  updateAdministratorCredentials: (data: {
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+  }) =>
+    apiRequest<{ ok: true }>("/company/administrator-credentials", {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
@@ -1163,8 +1173,7 @@ export const groupsApi = {
     participantContactIds: string[];
     description?: string;
     imageDataUrl?: string;
-  }) =>
-    apiRequest<ApiWhatsappGroup>("/groups", { method: "POST", body: JSON.stringify(data) }),
+  }) => apiRequest<ApiWhatsappGroup>("/groups", { method: "POST", body: JSON.stringify(data) }),
   updateName: (id: string, data: { name: string }) =>
     apiRequest<ApiWhatsappGroup>(`/groups/${id}/name`, {
       method: "PATCH",
@@ -1826,6 +1835,12 @@ export type PlatformHealth = {
   timestamp: string;
 };
 
+export type PlatformSettings = {
+  defaultTrialDays: number;
+  defaultSubscriptionPeriodDays: number;
+  defaultCurrency: string;
+};
+
 export type PlatformImpersonation = {
   id: string;
   tenant: { id: string; name: string; slug: string };
@@ -1847,6 +1862,12 @@ export type StoredImpersonation = {
 export const platformApi = {
   dashboard: () => apiRequest<PlatformDashboard>("/platform/dashboard"),
   health: () => apiRequest<PlatformHealth>("/platform/health"),
+  settings: () => apiRequest<PlatformSettings>("/platform/settings"),
+  updateSettings: (data: PlatformSettings) =>
+    apiRequest<PlatformSettings>("/platform/settings", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   tenants: (params: ListParams = {}) =>
     apiRequest<PaginatedResponse<PlatformTenant>>(`/platform/tenants${queryString(params)}`),
   tenant: (id: string) => apiRequest<PlatformTenantDetail>(`/platform/tenants/${id}`),
@@ -1856,10 +1877,25 @@ export const platformApi = {
     timezone?: string;
     locale?: string;
     planId: string;
+    initialStatus?: "TRIAL" | "ACTIVE";
     admin: { email: string; name: string; password: string };
   }) =>
     apiRequest<PlatformTenantDetail>("/platform/tenants", {
       method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateTenant: (
+    id: string,
+    data: {
+      name?: string;
+      legalName?: string;
+      displayName?: string;
+      billingEmail?: string;
+      technicalEmail?: string;
+    },
+  ) =>
+    apiRequest<PlatformTenant>(`/platform/tenants/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(data),
     }),
   suspendTenant: (id: string, reason: string) =>
@@ -1880,14 +1916,89 @@ export const platformApi = {
   plans: (params: ListParams = {}) =>
     apiRequest<PaginatedResponse<PlatformPlan>>(`/platform/plans${queryString(params)}`),
   plan: (id: string) => apiRequest<PlatformPlan>(`/platform/plans/${id}`),
+  createPlan: (data: {
+    code: string;
+    name: string;
+    description?: string;
+    status?: "DRAFT" | "ACTIVE";
+    billingPeriod?: "MONTHLY" | "YEARLY" | "MANUAL";
+    priceCents?: number;
+    trialDays?: number;
+    features: Record<string, boolean>;
+    limits: Record<string, number>;
+  }) => apiRequest<PlatformPlan>("/platform/plans", { method: "POST", body: JSON.stringify(data) }),
+  updatePlan: (
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      status?: "DRAFT" | "ACTIVE";
+      trialDays?: number;
+      features?: Record<string, boolean>;
+      limits?: Record<string, number>;
+    },
+  ) =>
+    apiRequest<PlatformPlan>(`/platform/plans/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  archivePlan: (id: string) =>
+    apiRequest<PlatformPlan>(`/platform/plans/${id}`, { method: "DELETE" }),
   subscriptions: (params: ListParams = {}) =>
     apiRequest<PaginatedResponse<PlatformSubscription>>(
       `/platform/subscriptions${queryString(params)}`,
     ),
   subscription: (id: string) => apiRequest<PlatformSubscription>(`/platform/subscriptions/${id}`),
+  createSubscription: (
+    tenantId: string,
+    data: {
+      planId: string;
+      status?: "TRIALING" | "ACTIVE";
+      currentPeriodEnd?: string;
+      reason?: string;
+    },
+  ) =>
+    apiRequest<PlatformSubscription>(`/platform/tenants/${tenantId}/subscriptions`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateSubscription: (
+    id: string,
+    data: {
+      planId?: string;
+      status?: "TRIALING" | "ACTIVE" | "PAST_DUE" | "SUSPENDED" | "EXPIRED";
+      reason?: string;
+    },
+  ) =>
+    apiRequest<PlatformSubscription>(`/platform/subscriptions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  cancelSubscription: (id: string, data: { reason: string; cancelAtPeriodEnd?: boolean }) =>
+    apiRequest<PlatformSubscription>(`/platform/subscriptions/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   invoices: (params: ListParams = {}) =>
     apiRequest<PaginatedResponse<PlatformInvoice>>(`/platform/invoices${queryString(params)}`),
   invoice: (id: string) => apiRequest<PlatformInvoice>(`/platform/invoices/${id}`),
+  createInvoice: (data: {
+    tenantId: string;
+    subscriptionId: string;
+    currency?: string;
+    subtotalCents: number;
+    discountCents?: number;
+    dueAt: string;
+  }) =>
+    apiRequest<PlatformInvoice>("/platform/invoices", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateInvoiceStatus: (id: string, status: "DRAFT" | "OPEN" | "PAID" | "VOID" | "OVERDUE") =>
+    apiRequest<PlatformInvoice>(`/platform/invoices/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
   auditLogs: (params: ListParams = {}) =>
     apiRequest<PaginatedResponse<PlatformAuditLog>>(`/platform/audit-logs${queryString(params)}`),
   auditLog: (id: string) => apiRequest<PlatformAuditLog>(`/platform/audit-logs/${id}`),
@@ -2108,7 +2219,7 @@ function restorePlatformTokens(stored: StoredImpersonation) {
   localStorage.setItem(REFRESH_KEY, stored.actorRefreshToken);
   localStorage.setItem(
     TENANT_KEY,
-    JSON.stringify({ id: "platform", slug: "platform", name: "Nexos Platform" }),
+    JSON.stringify({ id: "platform", slug: "platform", name: "Trixus Platform" }),
   );
 }
 

@@ -30,6 +30,7 @@ import {
   StartImpersonationDto,
   TerminateTenantDto,
   UpdatePlanDto,
+  UpdatePlatformSettingsDto,
   UpdateSubscriptionDto,
   UpdateTenantDto,
 } from "./platform.dto";
@@ -50,6 +51,21 @@ export class PlatformController {
   @RequirePlatformPermissions("platform.system.health.read")
   health() {
     return this.platform.health();
+  }
+
+  @Get("settings")
+  @RequirePlatformPermissions("platform.settings.read")
+  settings() {
+    return this.platform.settings();
+  }
+
+  @Patch("settings")
+  @RequirePlatformPermissions("platform.settings.update")
+  updateSettings(
+    @Body() dto: UpdatePlatformSettingsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.platform.updateSettings(dto, current);
   }
 
   @Get("tenants")

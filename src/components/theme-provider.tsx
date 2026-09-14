@@ -1,7 +1,7 @@
 import * as React from "react";
 
 /* ============================================================
-   Nexo · Theme Provider
+   Trixus · Theme Provider
    Alterna entre dark, light e system. Persistido em localStorage.
    Aplica classe "dark" ou "light" no <html> — ambos os temas
    estão definidos em src/styles.css via tokens semânticos.

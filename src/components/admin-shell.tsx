@@ -5,7 +5,6 @@ import {
   Building2,
   CreditCard,
   Receipt,
-  LifeBuoy,
   KeyRound,
   ScrollText,
   ShieldAlert,
@@ -29,7 +28,7 @@ import { useTheme } from "./theme-provider";
 import { useSession, ROLE_META } from "@/lib/session";
 
 /* ============================================================
-   Nexo · Admin Shell (Painel Super Admin — Plataforma SaaS)
+   Trixus · Admin Shell (Painel Super Admin — Plataforma SaaS)
    Ambiente exclusivo do proprietário. Não possui atendimento.
    ============================================================ */
 
@@ -48,7 +47,6 @@ const negocioNav: NavItem[] = [
 ];
 
 const operacoesNav: NavItem[] = [
-  { to: "/admin/suporte", label: "Suporte", icon: LifeBuoy },
   { to: "/admin/licencas", label: "Licenças", icon: KeyRound },
   { to: "/admin/monitoramento", label: "Monitoramento", icon: Activity },
 ];
@@ -60,7 +58,7 @@ const seguranca: NavItem[] = [
 ];
 
 const LABELS: Record<string, string> = {
-  admin: "Nexo Admin",
+  admin: "Trixus Admin",
   empresas: "Empresas",
   planos: "Planos",
   assinaturas: "Assinaturas",
@@ -162,7 +160,9 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
         collapsed ? "w-14" : "w-64"
       }`}
     >
-      <div className={`flex h-14 shrink-0 items-center border-b border-border ${collapsed ? "justify-center" : "px-4"}`}>
+      <div
+        className={`flex h-14 shrink-0 items-center border-b border-border ${collapsed ? "justify-center" : "px-4"}`}
+      >
         <Link to="/admin" className="flex items-center gap-2">
           <div className="relative">
             <LogoMark size={24} />
@@ -172,13 +172,15 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <div className="text-sm font-semibold leading-tight tracking-tight">Nexo</div>
+              <div className="text-sm font-semibold leading-tight tracking-tight">Trixus</div>
               <div className="text-[10px] uppercase tracking-widest text-accent">Admin</div>
             </div>
           )}
         </Link>
       </div>
-      <nav className={`flex flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden py-3 ${collapsed ? "px-2" : "px-3"}`}>
+      <nav
+        className={`flex flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden py-3 ${collapsed ? "px-2" : "px-3"}`}
+      >
         <NavSection title="Negócio" items={negocioNav} collapsed={collapsed} />
         <NavSection title="Operações" items={operacoesNav} collapsed={collapsed} />
         <div className="mt-auto">
@@ -298,7 +300,7 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       </nav>
       <div className="flex min-w-0 flex-1 items-center gap-2 md:hidden">
         <LogoMark size={22} />
-        <span className="truncate text-sm font-semibold">Nexo Admin</span>
+        <span className="truncate text-sm font-semibold">Trixus Admin</span>
       </div>
 
       <ConnectionPill status={conn} />
@@ -353,9 +355,17 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function AdminContainer({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+export function AdminContainer({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className={`mx-auto w-full max-w-[96rem] px-3 py-6 sm:px-4 md:px-6 md:py-8 lg:px-8 xl:px-10 2xl:px-12 ${className}`}>
+    <div
+      className={`mx-auto w-full max-w-[96rem] px-3 py-6 sm:px-4 md:px-6 md:py-8 lg:px-8 xl:px-10 2xl:px-12 ${className}`}
+    >
       {children}
     </div>
   );

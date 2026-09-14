@@ -6,7 +6,7 @@ import { fmtDateTime } from "@/lib/format";
 import { platformApi, type PlatformAuditLog } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/admin/logs")({
-  head: () => ({ meta: [{ title: "Logs · Nexo Admin" }] }),
+  head: () => ({ meta: [{ title: "Logs · Trixus Admin" }] }),
   component: LogsAdmin,
 });
 

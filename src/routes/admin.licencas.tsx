@@ -7,7 +7,7 @@ import { platformApi, type PlatformTenant } from "@/lib/nexos-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/licencas")({
-  head: () => ({ meta: [{ title: "Licenças · Nexo Admin" }] }),
+  head: () => ({ meta: [{ title: "Licenças · Trixus Admin" }] }),
   component: LicencasAdmin,
 });
 

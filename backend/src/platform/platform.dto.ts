@@ -78,6 +78,10 @@ export class CreateTenantDto {
   @IsNotEmpty()
   planId!: string;
 
+  @IsOptional()
+  @IsIn(["TRIAL", "ACTIVE"])
+  initialStatus?: "TRIAL" | "ACTIVE";
+
   @ValidateNested()
   @Type(() => InitialAdminDto)
   admin!: InitialAdminDto;
@@ -103,6 +107,24 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsEmail()
   technicalEmail?: string;
+}
+
+export class UpdatePlatformSettingsDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(90)
+  defaultTrialDays!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(366)
+  defaultSubscriptionPeriodDays!: number;
+
+  @IsString()
+  @Matches(/^[A-Z]{3}$/)
+  defaultCurrency!: string;
 }
 
 export class ReasonDto {
@@ -144,6 +166,13 @@ export class CreatePlanDto {
   @Min(0)
   priceCents?: number;
 
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(90)
+  trialDays?: number;
+
   @IsObject()
   features!: Record<string, unknown>;
 
@@ -163,6 +192,13 @@ export class UpdatePlanDto {
   @IsOptional()
   @IsIn(["DRAFT", "ACTIVE"])
   status?: "DRAFT" | "ACTIVE";
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(90)
+  trialDays?: number;
 
   @IsOptional()
   @IsObject()

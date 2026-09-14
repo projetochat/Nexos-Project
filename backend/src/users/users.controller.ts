@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Inject,
   NotFoundException,
@@ -60,6 +61,18 @@ class UpdateMyProfileDto {
   @IsString()
   @MinLength(6)
   newPassword?: string;
+}
+
+class UpdateAdministratorCredentialsDto {
+  @IsString()
+  currentPassword!: string;
+
+  @IsString()
+  @MinLength(6)
+  newPassword!: string;
+
+  @IsString()
+  confirmPassword!: string;
 }
 
 type MembershipWithRelations = {
@@ -156,6 +169,11 @@ export class UsersController {
       },
     });
     if (dto.newPassword) {
+      if (membership.role.key === "tenant_admin") {
+        throw new BadRequestException(
+          "Altere a senha do administrador em Credenciais do Usuário Administrador.",
+        );
+      }
       if (!dto.currentPassword) throw new BadRequestException("Informe a senha atual.");
       const validPassword = await compare(dto.currentPassword, membership.user.passwordHash);
       if (!validPassword) throw new BadRequestException("Senha atual invalida.");
@@ -175,6 +193,39 @@ export class UsersController {
     return this.serializeMembership(updated);
   }
 
+  @Patch("company/administrator-credentials")
+  async updateAdministratorCredentials(
+    @Body() dto: UpdateAdministratorCredentialsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    if (current.roleKey !== "tenant_admin" || current.impersonationSessionId) {
+      throw new ForbiddenException("Somente o Administrador pode alterar estas credenciais.");
+    }
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException("A confirmação da nova senha não confere.");
+    }
+    const membership = await this.prisma.tenantMembership.findFirstOrThrow({
+      where: {
+        id: current.membershipId,
+        tenantId: current.tenantId,
+        userId: current.userId,
+        status: "ACTIVE",
+      },
+      include: { user: true, role: true },
+    });
+    if (membership.role.key !== "tenant_admin") {
+      throw new ForbiddenException("Somente o Administrador pode alterar estas credenciais.");
+    }
+    if (!(await compare(dto.currentPassword, membership.user.passwordHash))) {
+      throw new BadRequestException("Senha atual inválida.");
+    }
+    await this.prisma.user.update({
+      where: { id: membership.userId },
+      data: { passwordHash: await hash(dto.newPassword, 12) },
+    });
+    return { ok: true };
+  }
+
   @Get("company")
   async company(@CurrentUser() current: AuthenticatedUser) {
     const tenant = await this.prisma.tenant.findUniqueOrThrow({
@@ -189,13 +240,13 @@ export class UsersController {
     });
     const administrator =
       tenant.users.find((membership) => membership.role.key === "tenant_admin") ?? tenant.users[0];
-    const accessEmail = tenant.technicalEmail ?? administrator?.user.email ?? null;
+    const administratorEmail = tenant.technicalEmail ?? administrator?.user.email ?? null;
 
     // Consolida cadastros legados: após a primeira leitura, o e-mail deixa de depender da sessão.
-    if (!tenant.technicalEmail && accessEmail) {
+    if (!tenant.technicalEmail && administratorEmail) {
       await this.prisma.tenant.update({
         where: { id: tenant.id },
-        data: { technicalEmail: accessEmail },
+        data: { technicalEmail: administratorEmail },
       });
     }
 
@@ -205,8 +256,9 @@ export class UsersController {
       document: tenant.document,
       timezone: tenant.timezone,
       locale: tenant.locale,
-      accessEmail,
+      accessEmail: current.roleKey === "tenant_admin" ? administratorEmail : null,
       responsibleName: administrator?.user.name ?? null,
+      canManageAdministratorCredentials: current.roleKey === "tenant_admin",
     };
   }
 
@@ -244,7 +296,13 @@ export class UsersController {
       },
     });
 
-    return memberships.map((membership) => this.serializeMembership(membership));
+    return memberships
+      .sort((left, right) => {
+        if (left.role.key === "tenant_admin") return -1;
+        if (right.role.key === "tenant_admin") return 1;
+        return left.user.name.localeCompare(right.user.name, "pt-BR", { sensitivity: "base" });
+      })
+      .map((membership) => this.serializeMembership(membership));
   }
 
   @Get("users/:id")
@@ -260,7 +318,7 @@ export class UsersController {
   @RequirePermissions("users.manage")
   async create(@Body() dto: CreateUserDto, @CurrentUser() current: AuthenticatedUser) {
     const roleId = dto.roleId ?? (await this.defaultRoleId(current.tenantId));
-    await this.assertRoleInTenant(roleId, current.tenantId);
+    await this.assertAssignableRole(roleId, current.tenantId);
     await this.assertDepartmentsInTenant(dto.departmentIds ?? [], current.tenantId);
 
     const passwordHash = await hash(dto.password, 12);
@@ -329,7 +387,7 @@ export class UsersController {
   ) {
     const existing = await this.findMembershipOrThrow(id, current.tenantId);
     this.assertMasterMembershipProtected(existing);
-    if (dto.roleId) await this.assertRoleInTenant(dto.roleId, current.tenantId);
+    if (dto.roleId) await this.assertAssignableRole(dto.roleId, current.tenantId);
     if (dto.departmentIds)
       await this.assertDepartmentsInTenant(dto.departmentIds, current.tenantId);
     const avatarUrl = normalizeAvatarUrl(dto.avatarUrl);
@@ -410,7 +468,7 @@ export class UsersController {
     @Body() dto: CreateInvitationDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    await this.assertRoleInTenant(dto.roleId, current.tenantId);
+    await this.assertAssignableRole(dto.roleId, current.tenantId);
     await this.assertDepartmentsInTenant(dto.departmentIds ?? [], current.tenantId);
     const token = randomBytes(32).toString("base64url");
     const email = dto.email.toLowerCase().trim();
@@ -481,6 +539,14 @@ export class UsersController {
   private async assertRoleInTenant(roleId: string, tenantId: string) {
     const role = await this.prisma.role.findFirst({ where: { id: roleId, tenantId } });
     if (!role) throw new BadRequestException("Role inexistente para este tenant.");
+    return role;
+  }
+
+  private async assertAssignableRole(roleId: string, tenantId: string) {
+    const role = await this.assertRoleInTenant(roleId, tenantId);
+    if (role.key === "tenant_admin") {
+      throw new BadRequestException("O perfil Administrador é reservado ao usuário administrador.");
+    }
   }
 
   private async assertDepartmentsInTenant(departmentIds: string[], tenantId: string) {

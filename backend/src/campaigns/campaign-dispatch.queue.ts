@@ -48,7 +48,7 @@ export class CampaignDispatchQueue implements OnModuleDestroy {
   }
 
   getQueue() {
-    if (!this.redis.enabled()) throw new Error("Nexos queue is disabled.");
+    if (!this.redis.enabled()) throw new Error("Trixus queue is disabled.");
     this.queue ??= new Queue<CampaignDispatchJob>(CAMPAIGN_DISPATCH_QUEUE, {
       connection: this.redis.createConnection("nexos-campaign-queue"),
     });

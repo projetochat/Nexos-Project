@@ -148,17 +148,39 @@ function DashboardDateInput({
   const className = `dashboard-date-input min-w-0 px-2 text-center text-xs sm:px-3 sm:text-sm ${
     readOnly ? "cursor-not-allowed text-muted-foreground" : ""
   }`;
+  const openNativePicker = () => {
+    const input = nativeDateInputRef.current;
+    if (!input || readOnly) return;
+    if (typeof input.showPicker === "function") input.showPicker();
+    else input.click();
+  };
 
   if (!isMobile) {
     return (
-      <Input
-        type="date"
-        value={value}
-        readOnly={readOnly}
-        aria-readonly={readOnly}
-        onChange={(event) => onChange(event.target.value)}
-        className={className}
-      />
+      <div className="relative min-w-0">
+        <Input
+          ref={nativeDateInputRef}
+          type="date"
+          value={value}
+          readOnly={readOnly}
+          aria-readonly={readOnly}
+          onClick={(event) => {
+            if (readOnly) event.preventDefault();
+          }}
+          onChange={(event) => onChange(event.target.value)}
+          className={`${className} pr-9 [&::-webkit-calendar-picker-indicator]:pointer-events-none [&::-webkit-calendar-picker-indicator]:opacity-0`}
+        />
+        <button
+          type="button"
+          disabled={readOnly}
+          title={readOnly ? "Selecione o período personalizado para alterar a data" : "Selecionar data"}
+          aria-label="Selecionar data"
+          onClick={openNativePicker}
+          className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <CalendarDays className="h-4 w-4" strokeWidth={2} />
+        </button>
+      </div>
     );
   }
 
@@ -186,15 +208,10 @@ function DashboardDateInput({
         disabled={readOnly}
         title={readOnly ? "Selecione o período personalizado para alterar a data" : "Selecionar data"}
         aria-label="Selecionar data"
-        onClick={() => {
-          const input = nativeDateInputRef.current;
-          if (!input) return;
-          if (typeof input.showPicker === "function") input.showPicker();
-          else input.click();
-        }}
+        onClick={openNativePicker}
         className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
       >
-        <CalendarDays className="h-4 w-4" />
+        <CalendarDays className="h-4 w-4" strokeWidth={2} />
       </button>
       <input
         ref={nativeDateInputRef}

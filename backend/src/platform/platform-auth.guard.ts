@@ -31,6 +31,8 @@ const grants: Record<string, PlatformPermission[]> = {
     "platform.impersonation.start",
     "platform.impersonation.stop",
     "platform.system.health.read",
+    "platform.settings.read",
+    "platform.settings.update",
   ],
   SUPPORT: [
     "platform.tenants.read",
@@ -62,6 +64,7 @@ const highRiskPermissions = new Set<PlatformPermission>([
   "platform.subscriptions.update",
   "platform.subscriptions.cancel",
   "platform.impersonation.start",
+  "platform.settings.update",
 ]);
 
 @Injectable()

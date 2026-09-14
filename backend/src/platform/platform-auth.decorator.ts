@@ -21,6 +21,8 @@ export const PLATFORM_PERMISSIONS = [
   "platform.impersonation.start",
   "platform.impersonation.stop",
   "platform.system.health.read",
+  "platform.settings.read",
+  "platform.settings.update",
 ] as const;
 
 export type PlatformPermission = (typeof PLATFORM_PERMISSIONS)[number];

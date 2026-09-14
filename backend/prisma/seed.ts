@@ -10,6 +10,53 @@ import {
   PrismaClient,
   PlatformRole,
 } from "../src/generated/prisma";
+
+const HOMOLOGATION_DEPARTMENTS = [
+  { name: "COMPRAS", color: "#2563EB", description: "Compras e fornecedores." },
+  { name: "LOGÍSTICA", color: "#16A34A", description: "Logística e operações." },
+  { name: "FINANCEIRO", color: "#F59E0B", description: "Demandas financeiras." },
+  { name: "COMERCIAL", color: "#7C3AED", description: "Oportunidades comerciais." },
+  { name: "TI", color: "#0891B2", description: "Tecnologia da informação." },
+  { name: "DIRETORIA", color: "#DC2626", description: "Diretoria." },
+] as const;
+
+const HOMOLOGATION_TAGS = [
+  { name: "ASS. TÉCNICA", color: "#2563EB" },
+  { name: "COMPRAS", color: "#16A34A" },
+  { name: "LOGÍSTICA", color: "#F59E0B" },
+  { name: "FINANCEIRO", color: "#7C3AED" },
+  { name: "COMERCIAL", color: "#0891B2" },
+  { name: "TI", color: "#DC2626" },
+  { name: "DIRETORIA", color: "#475569" },
+  { name: "VIP", color: "#7C3AED" },
+  { name: "CEO", color: "#0F172A" },
+  { name: "CAMPANHA NATAL", color: "#DC2626" },
+  { name: "CAMPANHA PÁSCOA", color: "#A855F7" },
+  { name: "CAMPANHA FÉRIAS", color: "#F97316" },
+  { name: "CAMPANHA MÊS 10 C/ 10%", color: "#059669" },
+] as const;
+
+const HOMOLOGATION_CUSTOMERS = [
+  "AGROCONTAR", "DIPS", "DINACO", "QRIAR", "VOCICAL", "SDE", "NORDESTE", "PESSOAL", "SOLUTI", "GOLDTEK", "AC ADVOGADOS", "ÍNTEGRA",
+] as const;
+
+const HOMOLOGATION_CONTACT_PROFILES = ["Proprietário", "Dietor", "Gestor Dpto", "Supervisor", "Colaborador"] as const;
+
+const HOMOLOGATION_STAFF = [
+  { name: "Douglas Flow iD", email: "douglas@flowid.com.br", role: "supervisor" },
+  { name: "Natã Flow iD", email: "nata.rabelo@flowid.com.br", role: "supervisor" },
+  { name: "Rafael Flow iD", email: "rafael.nunes@flowid.com.br", role: "agent" },
+  { name: "Rafaella Flow iD", email: "rafaella.camargo@flowid.com.br", role: "agent" },
+] as const;
+
+const HOMOLOGATION_QUICK_REPLIES = [
+  { title: "Bom dia", shortcut: "bd", content: "Bom dia, *{{nome}}*,\nTudo bem?\n\n## Em que podemos te ajudar?", closeOnSend: false },
+  { title: "Boa tarde", shortcut: "bt", content: "Boa tarde, *{{nome}}*,\nTudo bem?\n\n## Em que podemos te ajudar?", closeOnSend: false },
+  { title: "Boa noite", shortcut: "bn", content: "Boa noite, *{{nome}}*,\nTudo bem?\n\n## Em que podemos te ajudar?", closeOnSend: false },
+  { title: "Finalizar atendimento", shortcut: "f", content: "Seu atendimento será finalizado.\nEspero ter ajudado!\nCaso precise de um novo atendimento, basta nos acionar novamente.\n\nUm abraço!\n*Equipe Trixus* ✅", closeOnSend: true },
+  { title: "Finalizar por inatividade", shortcut: "fi", content: "Este atendimento será encerrado por falta de interação. Se ainda precisar de atendimento, basta nos acionar novamente.\n\n*Equipe Trixus* ✅", closeOnSend: true },
+  { title: "Atendimento inicial", shortcut: "ola", content: "{{cumprimento}} *{{nome}}*,\nTudo bem?\n\nBem vindo ao atendimento inicial do *Suporte Trixus*.\n\nNosso horário de funcionamento é de Segunda a Sexta:\n\n- 08:00h às 12:00h\n- 13:30h às 18:00h\n- Fuso horário de São Paulo (GMT-3)\n\nComo deseja o atendimento?", closeOnSend: false },
+] as const;
 import {
   AGENT_PERMISSIONS,
   PERMISSIONS,
@@ -140,33 +187,29 @@ async function seedPlatformAdmin() {
 async function seedHomologationMinimum() {
   const adminEmail = seedAdminEmail();
   const adminPassword = seedAdminPassword();
-  const agentEmail = seedAgentEmail();
-  const agentPassword = seedAgentPassword();
   const tenant = await prisma.tenant.upsert({
     where: { slug: "homologacao" },
-    update: { name: "Homologacao Nexos", status: "ACTIVE" },
+    update: { name: "Homologacao Trixus", status: "ACTIVE" },
     create: {
-      name: "Homologacao Nexos",
+      name: "Homologacao Trixus",
       slug: "homologacao",
       status: "ACTIVE",
-      legalName: "Homologacao Nexos",
-      displayName: "Homologacao Nexos",
+      legalName: "Homologacao Trixus",
+      displayName: "Homologacao Trixus",
       activatedAt: new Date(),
     },
   });
   const roles = await seedRoles(tenant.id);
-  const department = await seedDepartment(
-    tenant.id,
-    "Atendimento",
-    "#2563eb",
-    "Departamento minimo de homologacao.",
-  );
+  const departments = await seedHomologationCatalog(prisma, tenant.id);
   const passwordHash = await hash(adminPassword, 12);
-  const agentPasswordHash = await hash(agentPassword, 12);
   const admin = await seedUser(adminEmail, "Admin Homologacao", passwordHash);
-  const agent = await seedUser(agentEmail, "Atendente Homologacao", agentPasswordHash);
-  await seedMembership(tenant.id, admin.id, roles.tenant_admin.id, [department.id]);
-  await seedMembership(tenant.id, agent.id, roles.agent.id, [department.id]);
+  await seedMembership(
+    tenant.id,
+    admin.id,
+    roles.tenant_admin.id,
+    departments.map(({ id }) => id),
+  );
+  await seedHomologationOperationalData(prisma, tenant.id, roles, departments);
   await seedTenantSubscription(tenant.id, "plan_professional_homologation");
 }
 
@@ -175,7 +218,6 @@ async function seedProductionStaging() {
   const tenantSlug = productionStagingTenantSlug();
   const adminEmail = productionStagingAdminEmail();
   const adminPassword = productionStagingAdminPassword();
-  const departmentName = productionStagingDepartmentName();
   const planCode = process.env.STAGING_PLAN_CODE?.trim() || "professional";
   const plan = await prisma.plan.findUnique({ where: { code: planCode } });
   if (!plan || plan.status !== "ACTIVE") {
@@ -183,6 +225,7 @@ async function seedProductionStaging() {
   }
 
   const passwordHash = await hash(adminPassword, 12);
+  const staffPasswordHash = await hash(seedStaffPassword(), 12);
   const tenant = await prisma.$transaction(async (tx) => {
     const savedTenant = await tx.tenant.upsert({
       where: { slug: tenantSlug },
@@ -210,21 +253,7 @@ async function seedProductionStaging() {
       },
     });
     const roles = await seedRolesWithClient(tx, savedTenant.id);
-    const department = await tx.department.upsert({
-      where: { tenantId_name: { tenantId: savedTenant.id, name: departmentName } },
-      update: {
-        description: "Departamento inicial da empresa staging.",
-        color: "#3B82F6",
-        active: true,
-      },
-      create: {
-        tenantId: savedTenant.id,
-        name: departmentName,
-        description: "Departamento inicial da empresa staging.",
-        color: "#3B82F6",
-        active: true,
-      },
-    });
+    const departments = await seedHomologationCatalog(tx, savedTenant.id);
     const user = await tx.user.upsert({
       where: { email: adminEmail },
       update: {
@@ -251,20 +280,25 @@ async function seedProductionStaging() {
         status: "ACTIVE",
       },
     });
-    await tx.departmentMembership.upsert({
-      where: {
-        departmentId_membershipId: {
-          departmentId: department.id,
-          membershipId: membership.id,
-        },
-      },
-      update: {},
-      create: {
-        tenantId: savedTenant.id,
-        departmentId: department.id,
-        membershipId: membership.id,
-      },
-    });
+    await Promise.all(
+      departments.map((department) =>
+        tx.departmentMembership.upsert({
+          where: {
+            departmentId_membershipId: {
+              departmentId: department.id,
+              membershipId: membership.id,
+            },
+          },
+          update: {},
+          create: {
+            tenantId: savedTenant.id,
+            departmentId: department.id,
+            membershipId: membership.id,
+          },
+        }),
+      ),
+    );
+    await seedHomologationOperationalData(tx, savedTenant.id, roles, departments, staffPasswordHash);
     const subscription = await tx.tenantSubscription.findFirst({
       where: {
         tenantId: savedTenant.id,
@@ -517,6 +551,144 @@ async function seedDepartment(tenantId: string, name: string, color: string, des
   });
 }
 
+async function seedHomologationCatalog(
+  client: PrismaClient | Prisma.TransactionClient,
+  tenantId: string,
+  primaryDepartmentName = "COMPRAS",
+) {
+  const normalizedPrimaryName = normalizeSeedCatalogName(primaryDepartmentName);
+  const departments = [
+    {
+      ...HOMOLOGATION_DEPARTMENTS[0],
+      name: primaryDepartmentName,
+      description: "Departamento principal da homologacao.",
+    },
+    ...HOMOLOGATION_DEPARTMENTS.slice(1).filter(
+      (department) => normalizeSeedCatalogName(department.name) !== normalizedPrimaryName,
+    ),
+  ];
+
+  const savedDepartments = await Promise.all(
+    departments.map(({ name, color, description }) =>
+      client.department.upsert({
+        where: { tenantId_name: { tenantId, name } },
+        update: { color, description, active: true },
+        create: { tenantId, name, color, description, active: true },
+      }),
+    ),
+  );
+
+  await Promise.all(
+    HOMOLOGATION_TAGS.map(({ name, color }) => {
+      const normalizedName = normalizeSeedCatalogName(name);
+      return client.tag.upsert({
+        where: { tenantId_normalizedName: { tenantId, normalizedName } },
+        update: { name, color, archivedAt: null },
+        create: { tenantId, name, normalizedName, color },
+      });
+    }),
+  );
+
+  return savedDepartments;
+}
+
+async function seedHomologationOperationalData(
+  client: PrismaClient | Prisma.TransactionClient,
+  tenantId: string,
+  roles: Record<(typeof SYSTEM_ROLES)[number]["key"], { id: string }>,
+  departments: { id: string; name: string }[],
+  passwordHash?: string,
+) {
+  const staffPasswordHash = passwordHash ?? (await hash(seedStaffPassword(), 12));
+  const departmentIds = departments.map(({ id }) => id);
+
+  await Promise.all(
+    HOMOLOGATION_CUSTOMERS.map((name, index) =>
+      client.customer.upsert({
+        where: { tenantId_id: { tenantId, id: `seed-customer-${normalizeSeedCatalogName(name)}` } },
+        update: { name, archivedAt: null, color: HOMOLOGATION_TAGS[index % HOMOLOGATION_TAGS.length].color },
+        create: {
+          id: `seed-customer-${normalizeSeedCatalogName(name)}`,
+          tenantId,
+          name,
+          color: HOMOLOGATION_TAGS[index % HOMOLOGATION_TAGS.length].color,
+        },
+      }),
+    ),
+  );
+
+  await Promise.all(
+    HOMOLOGATION_DEPARTMENTS.map(({ name, color }) => {
+      const normalizedName = normalizeSeedCatalogName(name);
+      return client.contactDepartment.upsert({
+        where: { tenantId_normalizedName: { tenantId, normalizedName } },
+        update: { name, color, archivedAt: null },
+        create: { tenantId, name, normalizedName, color },
+      });
+    }),
+  );
+
+  await Promise.all(
+    HOMOLOGATION_CONTACT_PROFILES.map((name, index) => {
+      const normalizedName = normalizeSeedCatalogName(name);
+      return client.contactProfile.upsert({
+        where: { tenantId_normalizedName: { tenantId, normalizedName } },
+        update: { name, color: HOMOLOGATION_TAGS[index].color, archivedAt: null },
+        create: { tenantId, name, normalizedName, color: HOMOLOGATION_TAGS[index].color },
+      });
+    }),
+  );
+
+  for (const reply of HOMOLOGATION_QUICK_REPLIES) {
+    const normalizedShortcut = reply.shortcut.toLowerCase();
+    const existing = await client.quickReply.findFirst({
+      where: { tenantId, departmentId: null, normalizedShortcut },
+      select: { id: true },
+    });
+    const data = {
+      title: reply.title,
+      shortcut: reply.shortcut,
+      normalizedShortcut,
+      content: reply.content,
+      closeOnSend: reply.closeOnSend,
+      archivedAt: null,
+    };
+    if (existing) {
+      await client.quickReply.update({ where: { id: existing.id }, data });
+    } else {
+      await client.quickReply.create({ data: { tenantId, departmentId: null, ...data } });
+    }
+  }
+
+  for (const staff of HOMOLOGATION_STAFF) {
+    const user = await client.user.upsert({
+      where: { email: staff.email },
+      update: {
+        name: staff.name,
+        passwordHash: staffPasswordHash,
+        status: "ACTIVE",
+        platformRole: PlatformRole.USER,
+      },
+      create: {
+        email: staff.email,
+        name: staff.name,
+        passwordHash: staffPasswordHash,
+        status: "ACTIVE",
+        platformRole: PlatformRole.USER,
+      },
+    });
+    await seedMembershipWithClient(client, tenantId, user.id, roles[staff.role].id, departmentIds);
+  }
+}
+
+function normalizeSeedCatalogName(value: string) {
+  return value
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 async function seedUser(
   email: string,
   name: string,
@@ -579,15 +751,25 @@ async function seedMembership(
   roleId: string,
   departmentIds: string[],
 ) {
-  const membership = await prisma.tenantMembership.upsert({
+  return seedMembershipWithClient(prisma, tenantId, userId, roleId, departmentIds);
+}
+
+async function seedMembershipWithClient(
+  client: PrismaClient | Prisma.TransactionClient,
+  tenantId: string,
+  userId: string,
+  roleId: string,
+  departmentIds: string[],
+) {
+  const membership = await client.tenantMembership.upsert({
     where: { tenantId_userId: { tenantId, userId } },
     update: { roleId, status: "ACTIVE" },
     create: { tenantId, userId, roleId, status: "ACTIVE" },
   });
-  await prisma.departmentMembership.deleteMany({
+  await client.departmentMembership.deleteMany({
     where: { tenantId, membershipId: membership.id },
   });
-  await prisma.departmentMembership.createMany({
+  await client.departmentMembership.createMany({
     data: departmentIds.map((departmentId) => ({
       tenantId,
       membershipId: membership.id,
@@ -642,7 +824,7 @@ async function seedCrm(tenantId: string, departments: { id: string; name: string
       where: { id: palette.customerA },
       update: {
         tenantId,
-        name: isOrbit ? "Orbit Energia" : "Nexos Cafe",
+        name: isOrbit ? "Orbit Energia" : "Trixus Cafe",
         responsibleContactName: isOrbit ? "Bruna Martins" : "Ana Ribeiro",
         color: isOrbit ? "#0891b2" : "#2563eb",
         archivedAt: null,
@@ -650,8 +832,8 @@ async function seedCrm(tenantId: string, departments: { id: string; name: string
       create: {
         id: palette.customerA,
         tenantId,
-        name: isOrbit ? "Orbit Energia" : "Nexos Cafe",
-        email: isOrbit ? "contato@orbitenergia.example" : "contato@nexoscafe.example",
+        name: isOrbit ? "Orbit Energia" : "Trixus Cafe",
+        email: isOrbit ? "contato@orbitenergia.example" : "contato@trixuscafe.example",
         phone: isOrbit ? "(31) 4002-1000" : "(11) 4002-9000",
         notes: "Cliente seed do contrato funcional de CRM.",
         responsibleContactName: isOrbit ? "Bruna Martins" : "Ana Ribeiro",
@@ -714,7 +896,7 @@ async function seedCrm(tenantId: string, departments: { id: string; name: string
       update: {
         name: isOrbit ? "Marina Orbit" : "Marina Lopes",
         phone: isOrbit ? "(31) 99876-5001" : "(11) 99876-5001",
-        email: isOrbit ? "marina@orbitenergia.example" : "marina@nexoscafe.example",
+        email: isOrbit ? "marina@orbitenergia.example" : "marina@trixuscafe.example",
         customerId: customerA.id,
         departmentId: department.id,
         departmentName: department.name,
@@ -728,7 +910,7 @@ async function seedCrm(tenantId: string, departments: { id: string; name: string
         name: isOrbit ? "Marina Orbit" : "Marina Lopes",
         phone: isOrbit ? "(31) 99876-5001" : "(11) 99876-5001",
         normalizedPhone: isOrbit ? "+5531998765001" : "+5511998765001",
-        email: isOrbit ? "marina@orbitenergia.example" : "marina@nexoscafe.example",
+        email: isOrbit ? "marina@orbitenergia.example" : "marina@trixuscafe.example",
         customerId: customerA.id,
         departmentId: department.id,
         departmentName: department.name,
@@ -1093,16 +1275,21 @@ function seedAgentPassword() {
   return "demo1234";
 }
 
+function seedStaffPassword() {
+  const password = process.env.SEED_STAFF_PASSWORD ?? process.env.SEED_AGENT_PASSWORD;
+  if (password) return password;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("SEED_STAFF_PASSWORD must be configured in production.");
+  }
+  return "demo1234";
+}
+
 function productionStagingTenantName() {
   return process.env.STAGING_TENANT_NAME?.trim() || "Empresa Teste";
 }
 
 function productionStagingTenantSlug() {
   return normalizeSlug(process.env.STAGING_TENANT_SLUG?.trim() || "staging");
-}
-
-function productionStagingDepartmentName() {
-  return process.env.STAGING_DEPARTMENT_NAME?.trim() || "Atendimento";
 }
 
 function productionStagingAdminEmail() {

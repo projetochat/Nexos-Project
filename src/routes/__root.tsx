@@ -79,14 +79,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Nexo — Atendimento com clareza" },
+      { title: "Trixus — Atendimento com clareza" },
       {
         name: "description",
         content:
-          "Nexo é a plataforma SaaS de atendimento empresarial via WhatsApp: organize equipes, centralize conversas e transforme suporte em produtividade.",
+          "Trixus é a plataforma SaaS de atendimento empresarial via WhatsApp: organize equipes, centralize conversas e transforme suporte em produtividade.",
       },
-      { name: "author", content: "Nexo" },
-      { property: "og:title", content: "Nexo — Atendimento com clareza" },
+      { name: "author", content: "Trixus" },
+      { property: "og:title", content: "Trixus — Atendimento com clareza" },
       {
         property: "og:description",
         content:
@@ -97,7 +97,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/trixus-logo.png", type: "image/png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {

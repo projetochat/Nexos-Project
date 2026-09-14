@@ -7,7 +7,7 @@ import { num } from "@/lib/format";
 import { automationApi } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/chatbot")({
-  head: () => ({ meta: [{ title: "Chatbot - Nexo" }] }),
+  head: () => ({ meta: [{ title: "Chatbot - Trixus" }] }),
   component: Page,
 });
 
@@ -45,7 +45,7 @@ function Page() {
           </Card>
           <Card>
             <div className="text-xs uppercase text-muted-foreground">Fonte</div>
-            <div className="mt-2 text-2xl font-semibold text-success">Nexos API</div>
+            <div className="mt-2 text-2xl font-semibold text-success">Trixus API</div>
           </Card>
         </div>
 

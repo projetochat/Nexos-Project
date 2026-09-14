@@ -2,7 +2,7 @@ import * as React from "react";
 import { ChevronDown, Search, X } from "lucide-react";
 
 /* ============================================================
-   Nexo · UI Kit
+   Trixus · UI Kit
    Primitivos visuais compartilhados. Usa os tokens definidos em
    src/styles.css. Nenhum estilo hardcoded.
    ============================================================ */
@@ -461,23 +461,12 @@ export function EmptyState({
 
 export function LogoMark({ size = 28 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-label="Nexo">
-      <defs>
-        <linearGradient id="nexo-mark-grad" x1="0" y1="0" x2="32" y2="32">
-          <stop offset="0%" stopColor="oklch(0.62 0.22 275)" />
-          <stop offset="100%" stopColor="oklch(0.78 0.14 210)" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="30" height="30" rx="8" fill="url(#nexo-mark-grad)" opacity="0.15" />
-      <path
-        d="M8 22 L8 10 L16 22 L24 10 L24 22"
-        stroke="url(#nexo-mark-grad)"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <circle cx="16" cy="17" r="2.2" fill="url(#nexo-mark-grad)" />
-    </svg>
+    <img
+      src="/trixus-logo.png"
+      alt="Trixus"
+      width={size}
+      height={size}
+      className="shrink-0 object-contain"
+    />
   );
 }

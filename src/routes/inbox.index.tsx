@@ -139,7 +139,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   });
   const customers = React.useMemo(() => customersPage?.items ?? [], [customersPage?.items]);
 
-  const { connectedConnections: filterConnections } = useConnectedMessagingConnections();
+  const { allConnections: filterConnections } = useConnectedMessagingConnections();
   const instanciaOptions = React.useMemo(
     () =>
       filterConnections

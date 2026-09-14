@@ -306,6 +306,7 @@ export class GroupsController {
               groupName: dto.name.trim(),
               groupImageUrl: imageDataUrl ?? undefined,
               groupMetadataJson: { description },
+              inboxArchivedAt: new Date(),
             },
             include: groupInclude,
           });

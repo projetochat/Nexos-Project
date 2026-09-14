@@ -78,7 +78,15 @@ function AtendentesPage() {
     queryFn: organizationApi.listRoles,
   });
 
-  const atendentes = React.useMemo(() => memberships.map(toAtendente), [memberships]);
+  const atendentes = React.useMemo(
+    () =>
+      memberships.map(toAtendente).sort((a, b) => {
+        if (a.perfilKey === "tenant_admin") return -1;
+        if (b.perfilKey === "tenant_admin") return 1;
+        return a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" });
+      }),
+    [memberships],
+  );
   const [query, setQuery] = React.useState("");
   const [perfilFilter, setPerfilFilter] = React.useState("");
   const [ativoFilter, setAtivoFilter] = React.useState("");
@@ -136,7 +144,7 @@ function AtendentesPage() {
     onError: (error) => toast.error((error as Error).message),
   });
 
-  const filtered = sortByOptionLabel(atendentes, (atendente) => atendente.nome).filter((a) => {
+  const filtered = atendentes.filter((a) => {
     if (perfilFilter && a.perfilId !== perfilFilter) return false;
     if (ativoFilter === "active" && !a.ativo) return false;
     if (ativoFilter === "inactive" && a.ativo) return false;
@@ -212,33 +220,33 @@ function AtendentesPage() {
                       </div>
                     </div>
                     {a.perfilKey !== "tenant_admin" && (
-                    <div className="flex shrink-0 gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setDuplicating(a)}
-                        title="Duplicar"
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setEditing(a)}
-                        title="Editar"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="trash-action"
-                        onClick={() => setDeleting(a)}
-                        title="Excluir"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDuplicating(a)}
+                          title="Duplicar"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditing(a)}
+                          title="Editar"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="trash-action"
+                          onClick={() => setDeleting(a)}
+                          title="Excluir"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </Card>
@@ -294,36 +302,36 @@ function AtendentesPage() {
                       </td>
                       <td className="px-3 py-3 sm:px-4">
                         {a.perfilKey !== "tenant_admin" && (
-                        <div className="flex justify-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDuplicating(a)}
-                            title="Duplicar"
-                            aria-label="Duplicar"
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setEditing(a)}
-                            title="Editar"
-                            aria-label="Editar"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="trash-action"
-                            onClick={() => setDeleting(a)}
-                            title="Excluir"
-                            aria-label="Excluir"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                          <div className="flex justify-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDuplicating(a)}
+                              title="Duplicar"
+                              aria-label="Duplicar"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setEditing(a)}
+                              title="Editar"
+                              aria-label="Editar"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="trash-action"
+                              onClick={() => setDeleting(a)}
+                              title="Excluir"
+                              aria-label="Excluir"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -761,7 +769,10 @@ function PhotoMenuButton({
   return (
     <button
       type="button"
-      className={"flex w-full items-center gap-3 px-4 py-2 text-left text-foreground transition hover:bg-surface-1 " + className}
+      className={
+        "flex w-full items-center gap-3 px-4 py-2 text-left text-foreground transition hover:bg-surface-1 " +
+        className
+      }
       onClick={onClick}
     >
       <span className="text-muted-foreground">{icon}</span>

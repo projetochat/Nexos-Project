@@ -1,8 +1,10 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { createFileRoute } from "@tanstack/react-router";
-import { Camera } from "lucide-react";
+import { Camera, Eye, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
+import { Modal } from "@/components/modal";
 import {
   SectionHeader,
   Card,
@@ -23,28 +25,23 @@ export const Route = createFileRoute("/perfil")({
 function PerfilPage() {
   const user = useSession((state) => state.user);
   const [savingAvatar, setSavingAvatar] = React.useState(false);
+  const [photoMenuOpen, setPhotoMenuOpen] = React.useState(false);
+  const [cameraOpen, setCameraOpen] = React.useState(false);
+  const [photoPreviewOpen, setPhotoPreviewOpen] = React.useState(false);
   const [savingPassword, setSavingPassword] = React.useState(false);
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const photoButtonRef = React.useRef<HTMLButtonElement>(null);
   const roleMeta = user ? ROLE_META[user.role] : null;
   const displayName = user?.nome ?? "Usuário";
-  const initialsScope = user?.empresaNome ?? roleMeta?.scope ?? "Nexo";
+  const initialsScope = user?.empresaNome ?? roleMeta?.scope ?? "Trixus";
 
-  const saveAvatar = async (file: File | undefined) => {
-    if (!file || !user) return;
-    if (!/^image\/(png|jpe?g|webp)$/i.test(file.type)) {
-      toast.error("Use uma imagem PNG, JPG ou WebP.");
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("A imagem deve ter até 2 MB.");
-      return;
-    }
+  const saveAvatarUrl = async (avatarUrl: string | null) => {
+    if (!user) return;
     setSavingAvatar(true);
     try {
-      const avatarUrl = await readImageAsCompressedDataUrl(file);
       const updated = await organizationApi.updateMyProfile({ avatarUrl });
       useSession.setState((state) => ({
         user: state.user
@@ -55,11 +52,29 @@ function PerfilPage() {
             }
           : state.user,
       }));
-      toast.success("Foto de perfil atualizada.");
+      toast.success(avatarUrl ? "Foto de perfil atualizada." : "Foto de perfil removida.");
     } catch (error) {
       toast.error((error as Error).message || "Não foi possível salvar a foto.");
     } finally {
       setSavingAvatar(false);
+    }
+  };
+
+  const saveAvatar = async (file: File | undefined) => {
+    if (!file) return;
+    if (!/^image\/(png|jpe?g|webp)$/i.test(file.type)) {
+      toast.error("Use uma imagem PNG, JPG ou WebP.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("A imagem deve ter até 2 MB.");
+      return;
+    }
+    try {
+      await saveAvatarUrl(await readImageAsCompressedDataUrl(file));
+    } catch (error) {
+      toast.error((error as Error).message || "Não foi possível salvar a foto.");
+    } finally {
       if (inputRef.current) inputRef.current.value = "";
     }
   };
@@ -102,17 +117,66 @@ function PerfilPage() {
         <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
           <Card className="flex flex-col items-center text-center">
             <div className="relative">
-              <Avatar name={displayName} src={user?.avatarUrl} size={96} />
               <button
+                ref={photoButtonRef}
                 type="button"
                 disabled={savingAvatar}
-                onClick={() => inputRef.current?.click()}
-                className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:text-foreground disabled:opacity-60"
-                title="Alterar foto"
-                aria-label="Alterar foto"
+                onClick={() => setPhotoMenuOpen((current) => !current)}
+                className="group relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-sm font-semibold text-muted-foreground disabled:opacity-60"
+                title="Opções da foto"
+                aria-label="Opções da foto"
               >
-                <Camera className="h-4 w-4" />
+                <Avatar name={displayName} src={user?.avatarUrl} size={96} />
+                <span className="absolute inset-0 flex items-center justify-center bg-black/35 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                  <Camera className="h-8 w-8" />
+                </span>
               </button>
+              <ProfilePhotoMenu
+                open={photoMenuOpen}
+                anchorRef={photoButtonRef}
+                onClose={() => setPhotoMenuOpen(false)}
+              >
+                <ProfilePhotoMenuButton
+                  icon={<Eye className="h-4 w-4" />}
+                  onClick={() => {
+                    setPhotoMenuOpen(false);
+                    if (!user?.avatarUrl)
+                      return toast.info("Nenhuma foto cadastrada para este perfil.");
+                    setPhotoPreviewOpen(true);
+                  }}
+                >
+                  Mostrar foto
+                </ProfilePhotoMenuButton>
+                <ProfilePhotoMenuButton
+                  icon={<Camera className="h-4 w-4" />}
+                  onClick={() => {
+                    setPhotoMenuOpen(false);
+                    setCameraOpen(true);
+                  }}
+                >
+                  Tirar foto
+                </ProfilePhotoMenuButton>
+                <ProfilePhotoMenuButton
+                  icon={<Upload className="h-4 w-4" />}
+                  onClick={() => {
+                    setPhotoMenuOpen(false);
+                    inputRef.current?.click();
+                  }}
+                >
+                  Carregar foto
+                </ProfilePhotoMenuButton>
+                <div className="my-1 border-t border-border" />
+                <ProfilePhotoMenuButton
+                  className="trash-action"
+                  icon={<Trash2 className="h-3.5 w-3.5" />}
+                  onClick={() => {
+                    setPhotoMenuOpen(false);
+                    void saveAvatarUrl(null);
+                  }}
+                >
+                  Remover foto
+                </ProfilePhotoMenuButton>
+              </ProfilePhotoMenu>
               <input
                 ref={inputRef}
                 type="file"
@@ -135,7 +199,7 @@ function PerfilPage() {
               <dl className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Empresa</dt>
-                  <dd className="text-right font-medium">{user?.empresaNome ?? "Nexo"}</dd>
+                  <dd className="text-right font-medium">{user?.empresaNome ?? "Trixus"}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Permissões</dt>
@@ -212,8 +276,210 @@ function PerfilPage() {
             </div>
           </Card>
         </div>
+        <ProfileCameraModal
+          open={cameraOpen}
+          onClose={() => setCameraOpen(false)}
+          onCapture={(avatarUrl) => {
+            setCameraOpen(false);
+            void saveAvatarUrl(avatarUrl);
+          }}
+        />
+        <ProfilePhotoPreviewModal
+          open={photoPreviewOpen}
+          src={user?.avatarUrl}
+          onClose={() => setPhotoPreviewOpen(false)}
+        />
       </PageContainer>
     </AppShell>
+  );
+}
+
+function ProfilePhotoMenuButton({
+  icon,
+  onClick,
+  children,
+  className = "",
+}: {
+  icon: React.ReactNode;
+  onClick: () => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={`flex w-full items-center gap-3 px-4 py-2 text-left text-foreground transition hover:bg-surface-1 ${className}`}
+      onClick={onClick}
+    >
+      <span className="text-muted-foreground">{icon}</span>
+      {children}
+    </button>
+  );
+}
+
+function ProfilePhotoMenu({
+  open,
+  anchorRef,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const menuRef = React.useRef<HTMLDivElement | null>(null);
+  const [position, setPosition] = React.useState({ top: 0, left: 0 });
+
+  React.useEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const rect = anchorRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPosition({
+        top: Math.min(window.innerHeight - 220, rect.bottom + 8),
+        left: Math.max(12, Math.min(window.innerWidth - 204, rect.left)),
+      });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [anchorRef, open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || anchorRef.current?.contains(target)) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePress);
+  }, [anchorRef, onClose, open]);
+
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="fixed z-[260] w-48 rounded-lg border border-border bg-card py-2 text-sm shadow-xl"
+      style={{ top: position.top, left: position.left }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+function ProfileCameraModal({
+  open,
+  onClose,
+  onCapture,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCapture: (dataUrl: string) => void;
+}) {
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    setError(null);
+    const stopCamera = () => {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    };
+    navigator.mediaDevices
+      ?.getUserMedia({ video: { facingMode: "user" }, audio: false })
+      .then((stream) => {
+        if (cancelled) return stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          void videoRef.current.play();
+        }
+      })
+      .catch(() => setError("Não foi possível acessar a câmera neste dispositivo."));
+    return () => {
+      cancelled = true;
+      stopCamera();
+    };
+  }, [open]);
+
+  const capture = () => {
+    const video = videoRef.current;
+    if (!video?.videoWidth || !video.videoHeight)
+      return setError("A câmera ainda não está pronta.");
+    const ratio = Math.min(1, 512 / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(video.videoWidth * ratio));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * ratio));
+    const context = canvas.getContext("2d");
+    if (!context) return setError("Não foi possível capturar a imagem.");
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    onCapture(canvas.toDataURL("image/jpeg", 0.82));
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Tirar foto"
+      size="md"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" size="sm" onClick={capture} disabled={!!error}>
+            Capturar
+          </Button>
+        </>
+      }
+    >
+      {error ? (
+        <div className="rounded-lg border border-border bg-surface-1 p-6 text-center text-sm text-muted-foreground">
+          {error}
+        </div>
+      ) : (
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          className="aspect-video w-full rounded-lg border border-border bg-black object-cover"
+        />
+      )}
+    </Modal>
+  );
+}
+
+function ProfilePhotoPreviewModal({
+  open,
+  src,
+  onClose,
+}: {
+  open: boolean;
+  src?: string;
+  onClose: () => void;
+}) {
+  return (
+    <Modal open={open && !!src} onClose={onClose} title="Foto de perfil" size="md">
+      <div className="flex justify-center">
+        {src && (
+          <img
+            src={src}
+            alt="Foto de perfil"
+            className="max-h-[70vh] w-full max-w-sm rounded-xl border border-border object-contain"
+          />
+        )}
+      </div>
+    </Modal>
   );
 }
 

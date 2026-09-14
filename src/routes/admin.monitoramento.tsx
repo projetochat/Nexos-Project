@@ -15,7 +15,7 @@ import { Alert, Badge, Button, Card, SectionHeader } from "@/components/ui-kit";
 import { platformApi, type PlatformHealth } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/admin/monitoramento")({
-  head: () => ({ meta: [{ title: "Monitoramento - Nexo Admin" }] }),
+  head: () => ({ meta: [{ title: "Monitoramento - Trixus Admin" }] }),
   component: Monitoramento,
 });
 

@@ -64,6 +64,9 @@ export class RolesController {
       .replace(/[^a-z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "");
     if (!key) throw new BadRequestException("Key de role invalida.");
+    if (key === "tenant_admin" || normalizeRoleName(name) === "administrador") {
+      throw new BadRequestException("O nome Administrador é reservado para gestão do sistema.");
+    }
 
     const role = await this.prisma.$transaction(async (tx) => {
       await this.ensureNameAvailable(tx, current.tenantId, name);
@@ -95,6 +98,10 @@ export class RolesController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const existing = await this.findRoleOrThrow(id, current.tenantId);
+    this.assertAdministratorRoleProtected(existing);
+    if (dto.name !== undefined && normalizeRoleName(dto.name) === "administrador") {
+      throw new BadRequestException("O nome Administrador é reservado para gestão do sistema.");
+    }
     if (dto.permissionIds) this.assertPermissions(dto.permissionIds);
     const role = await this.prisma.$transaction(async (tx) => {
       if (dto.name !== undefined) {
@@ -128,7 +135,8 @@ export class RolesController {
   @Delete("roles/:id")
   @RequirePermissions("roles.manage")
   async remove(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    await this.findRoleOrThrow(id, current.tenantId);
+    const role = await this.findRoleOrThrow(id, current.tenantId);
+    this.assertAdministratorRoleProtected(role);
     const inUse = await this.prisma.tenantMembership.count({
       where: { tenantId: current.tenantId, roleId: id },
     });
@@ -149,6 +157,12 @@ export class RolesController {
   private assertPermissions(permissionIds: string[]) {
     const invalid = permissionIds.find((permissionId) => !isPermissionKey(permissionId));
     if (invalid) throw new BadRequestException(`Permission invalida: ${invalid}`);
+  }
+
+  private assertAdministratorRoleProtected(role: { key: string; name: string }) {
+    if (role.key === "tenant_admin" || normalizeRoleName(role.name) === "administrador") {
+      throw new BadRequestException("O perfil Administrador é reservado e não pode ser alterado.");
+    }
   }
 
   private async ensurePermissions(tx: Prisma.TransactionClient, permissionIds: string[]) {

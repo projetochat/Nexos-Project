@@ -209,6 +209,7 @@ export class MessagingInboundService {
           unreadCount: { increment: 1 },
           lastMessagePreview: truncatePreview(preview),
           lastMessageAt: event.occurredAt,
+          inboxArchivedAt: isGroup ? null : conversation.inboxArchivedAt,
           assignedMembershipId:
             conversation.status === ConversationStatus.FECHADA
               ? null

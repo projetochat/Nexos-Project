@@ -44,7 +44,7 @@ import { notificationApi, stopStoredPlatformImpersonation } from "@/lib/nexos-ap
 import { onRealtimeEvent } from "@/lib/realtime/client";
 
 /* ============================================================
-   Nexo · App Shell (Painel Administrativo da Empresa)
+   Trixus · App Shell (Painel Administrativo da Empresa)
    Sidebar refinada: rail colapsado 56px, tooltips, trigger no
    topbar, persistência em localStorage e menu de perfil.
    ============================================================ */
@@ -206,7 +206,7 @@ const LABELS: Record<string, string> = {
 function useBreadcrumbs() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const parts = pathname.split("/").filter(Boolean);
-  const crumbs = [{ href: "/", label: "Nexo" }];
+  const crumbs = [{ href: "/", label: "Trixus" }];
   let acc = "";
   for (const part of parts) {
     acc += "/" + part;
@@ -529,7 +529,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       >
         <Link to={isOperator ? "/inbox" : "/"} className="flex items-center gap-2">
           <LogoMark size={24} />
-          {!collapsed && <span className="text-sm font-semibold tracking-tight">Nexo</span>}
+          {!collapsed && <span className="text-sm font-semibold tracking-tight">Trixus</span>}
         </Link>
       </div>
 
@@ -748,7 +748,7 @@ function Topbar({
           <Menu className="h-4 w-4" />
         </button>
         <LogoMark size={22} />
-        <span className="truncate text-sm font-semibold">Nexo</span>
+        <span className="truncate text-sm font-semibold">Trixus</span>
       </div>
 
       <ConnectionPill status={conn} />
@@ -913,7 +913,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
             onClick={onClose}
           >
             <LogoMark size={24} />
-            <span className="text-sm font-semibold tracking-tight">Nexo</span>
+            <span className="text-sm font-semibold tracking-tight">Trixus</span>
           </Link>
           <button
             type="button"

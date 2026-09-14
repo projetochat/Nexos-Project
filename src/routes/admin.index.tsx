@@ -14,7 +14,7 @@ import { Badge, Card, SectionHeader } from "@/components/ui-kit";
 import { platformApi, type PlatformDashboard } from "@/lib/nexos-api";
 
 export const Route = createFileRoute("/admin/")({
-  head: () => ({ meta: [{ title: "Dashboard · Nexo Admin" }] }),
+  head: () => ({ meta: [{ title: "Dashboard · Trixus Admin" }] }),
   component: AdminDashboard,
 });
 
@@ -25,7 +25,7 @@ function AdminDashboard() {
     <AdminContainer>
       <SectionHeader
         title="Plano de controle SaaS"
-        subtitle="Métricas reais da Nexos API. Cobrança manual, sem gateway integrado."
+        subtitle="Métricas reais da API Trixus. Cobrança manual, sem gateway integrado."
       />
 
       {error && <Card className="border-destructive/40 text-sm text-destructive">{error}</Card>}

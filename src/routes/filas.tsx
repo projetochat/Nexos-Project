@@ -9,7 +9,7 @@ import { operationsApi } from "@/lib/nexos-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 
 export const Route = createFileRoute("/filas")({
-  head: () => ({ meta: [{ title: "Filas - Nexo" }] }),
+  head: () => ({ meta: [{ title: "Filas - Trixus" }] }),
   component: Page,
 });
 

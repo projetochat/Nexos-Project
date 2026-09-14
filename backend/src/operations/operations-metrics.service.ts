@@ -56,6 +56,12 @@ export class OperationsMetricsService {
       filaStandby,
       filaFila,
       filaLeads,
+      contadorAtivasAtuais,
+      contadorStandbyAtual,
+      contadorFilaAtual,
+      contadorLeadsAtuais,
+      contadorFechadasAtuais,
+      conversasTotalAtual,
       firstResponseRows,
       attendanceRows,
     ] = await this.prisma.$transaction([
@@ -180,6 +186,43 @@ export class OperationsMetricsService {
           archivedAt: null,
         },
       }),
+      this.prisma.conversation.count({
+        where: {
+          ...conversationScope,
+          assignedMembershipId: { not: null },
+          status: { notIn: [ConversationStatus.FECHADA, ConversationStatus.AGUARDANDO] },
+          archivedAt: null,
+        },
+      }),
+      this.prisma.conversation.count({
+        where: { ...conversationScope, status: ConversationStatus.AGUARDANDO, archivedAt: null },
+      }),
+      this.prisma.conversation.count({
+        where: {
+          ...conversationScope,
+          assignedMembershipId: null,
+          protocol: { not: null },
+          status: ConversationStatus.ABERTA,
+          archivedAt: null,
+        },
+      }),
+      this.prisma.lead.count({
+        where: {
+          ...leadScope,
+          status: { in: [...ACTIVE_LEAD_STATUSES] },
+          conversation: {
+            tenantId,
+            archivedAt: null,
+            OR: [{ status: { not: ConversationStatus.FECHADA } }, { closedAt: null }],
+          },
+        },
+      }),
+      this.prisma.conversation.count({
+        where: { ...closedConversationWhere(tenantId), ...conversationScope },
+      }),
+      this.prisma.conversation.count({
+        where: { ...conversationScope, archivedAt: null },
+      }),
       this.prisma.conversation.findMany({
         where: {
           ...conversationScope,
@@ -239,6 +282,12 @@ export class OperationsMetricsService {
       filaStandby,
       filaFila,
       filaLeads,
+      contadorAtivasAtuais,
+      contadorStandbyAtual,
+      contadorFilaAtual,
+      contadorLeadsAtuais,
+      contadorFechadasAtuais,
+      conversasTotalAtual,
     };
   }
 

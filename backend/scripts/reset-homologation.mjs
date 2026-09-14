@@ -138,6 +138,15 @@ async function validateCounts(databaseUrl) {
       users: await prisma.user.count({ where: { memberships: { some: { tenantId: tenant.id } } } }),
       memberships: await prisma.tenantMembership.count({ where: { tenantId: tenant.id } }),
       departments: await prisma.department.count({ where: { tenantId: tenant.id } }),
+      tags: await prisma.tag.count({ where: { tenantId: tenant.id, archivedAt: null } }),
+      customers: await prisma.customer.count({ where: { tenantId: tenant.id, archivedAt: null } }),
+      contactDepartments: await prisma.contactDepartment.count({
+        where: { tenantId: tenant.id, archivedAt: null },
+      }),
+      contactProfiles: await prisma.contactProfile.count({
+        where: { tenantId: tenant.id, archivedAt: null },
+      }),
+      quickReplies: await prisma.quickReply.count({ where: { tenantId: tenant.id, archivedAt: null } }),
       contacts: await prisma.contact.count({ where: { tenantId: tenant.id } }),
       conversations: await prisma.conversation.count({ where: { tenantId: tenant.id } }),
       messages: await prisma.message.count({ where: { tenantId: tenant.id } }),
@@ -148,9 +157,14 @@ async function validateCounts(databaseUrl) {
     };
     if (
       counts.tenants !== 1 ||
-      counts.users !== 2 ||
-      counts.memberships !== 2 ||
-      counts.departments !== 1 ||
+      counts.users !== 5 ||
+      counts.memberships !== 5 ||
+      counts.departments !== 6 ||
+      counts.tags !== 13 ||
+      counts.customers !== 12 ||
+      counts.contactDepartments !== 6 ||
+      counts.contactProfiles !== 5 ||
+      counts.quickReplies !== 6 ||
       counts.contacts !== 0 ||
       counts.conversations !== 0 ||
       counts.messages !== 0 ||

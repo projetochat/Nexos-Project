@@ -25,7 +25,7 @@ import {
 import { onRealtimeEvent } from "@/lib/realtime/client";
 
 export const Route = createFileRoute("/relatorios")({
-  head: () => ({ meta: [{ title: "Relatórios - Nexo" }] }),
+  head: () => ({ meta: [{ title: "Relatórios - Trixus" }] }),
   component: Page,
 });
 
@@ -59,7 +59,7 @@ function Page() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `nexos-atendimento-${new Date().toISOString().slice(0, 10)}.${extension(format)}`;
+      anchor.download = `trixus-atendimento-${new Date().toISOString().slice(0, 10)}.${extension(format)}`;
       anchor.click();
       URL.revokeObjectURL(url);
       toast.success("Relatório exportado");
@@ -73,7 +73,7 @@ function Page() {
       <PageContainer>
         <SectionHeader
           title="Relatórios"
-          subtitle="Indicadores de atendimento consolidados a partir do banco Nexos."
+          subtitle="Indicadores de atendimento consolidados a partir do banco Trixus."
           actions={
             <div className="flex flex-wrap gap-2">
               <Button

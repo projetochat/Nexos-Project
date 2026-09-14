@@ -22,6 +22,11 @@ describe("GroupsSyncService", () => {
       instanceName: "instance-a",
       groupJid: "120363@g.us",
     });
+    expect(prismaTx.conversation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ inboxArchivedAt: expect.any(Date) }),
+      }),
+    );
     expect(evolution.fetchProfilePictureUrl).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       synced: 1,
