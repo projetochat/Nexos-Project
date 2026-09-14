@@ -689,6 +689,30 @@ function ConnectionSettingsModal({
     }
   };
 
+  const showWhatsAppProfilePicture = () => {
+    if (!connection) return;
+    const hasCurrentPicture = Boolean(logoPreview);
+    setLogoMenuOpen(false);
+
+    if (hasCurrentPicture) {
+      setLogoPreviewOpen(true);
+    }
+
+    void connectionsApi
+      .refreshProfilePicture(connection.id)
+      .then((updated) => {
+        applyConnectionUpdate(updated);
+        if (!updated.logoUrl && !hasCurrentPicture) {
+          toast.info("Esta instância não possui foto de perfil no WhatsApp.");
+          return;
+        }
+        if (!hasCurrentPicture && updated.logoUrl) {
+          setLogoPreviewOpen(true);
+        }
+      })
+      .catch((error) => toast.error((error as Error).message));
+  };
+
   const save = () => {
     if (!connection || form.name.trim().length < 2) return;
     const missingWelcomeNewMessage = form.welcomeEnabled && !form.welcomeNewMessage?.trim();
@@ -765,9 +789,9 @@ function ConnectionSettingsModal({
                   <button
                     ref={logoButtonRef}
                     type="button"
-                    className="group relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-xs font-semibold text-muted-foreground"
+                    className="group relative flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-sm font-semibold text-muted-foreground"
                     onClick={() => setLogoMenuOpen((open) => !open)}
-                    aria-label="Gerenciar foto de perfil do WhatsApp"
+                    aria-label="Opções da foto"
                   >
                     {logoPreview ? (
                       <img
@@ -789,32 +813,9 @@ function ConnectionSettingsModal({
                   >
                     <LogoMenuButton
                       icon={<Eye className="h-4 w-4" />}
-                      onClick={() => {
-                        setLogoMenuOpen(false);
-                        if (!logoPreview) {
-                          toast.info("Esta instância não possui foto de perfil no WhatsApp.");
-                          return;
-                        }
-                        setLogoPreviewOpen(true);
-                      }}
+                      onClick={showWhatsAppProfilePicture}
                     >
-                      Mostrar foto do WhatsApp
-                    </LogoMenuButton>
-                    <LogoMenuButton
-                      icon={<RefreshCw className="h-4 w-4" />}
-                      onClick={async () => {
-                        if (!connection) return;
-                        try {
-                          applyConnectionUpdate(await connectionsApi.refreshProfilePicture(connection.id));
-                          toast.success("Foto sincronizada com o perfil do WhatsApp.");
-                        } catch (error) {
-                          toast.error((error as Error).message);
-                        } finally {
-                          setLogoMenuOpen(false);
-                        }
-                      }}
-                    >
-                      Sincronizar com WhatsApp
+                      Mostrar foto
                     </LogoMenuButton>
                     <LogoMenuButton
                       icon={<Camera className="h-4 w-4" />}
@@ -823,13 +824,13 @@ function ConnectionSettingsModal({
                         setCameraOpen(true);
                       }}
                     >
-                      Atualizar foto do WhatsApp
+                      Tirar foto
                     </LogoMenuButton>
                     <LogoMenuButton
                       icon={<Upload className="h-4 w-4" />}
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      Escolher foto para o WhatsApp
+                      Carregar foto
                     </LogoMenuButton>
                     <div className="my-1 border-t border-border" />
                     <LogoMenuButton
@@ -847,7 +848,7 @@ function ConnectionSettingsModal({
                         }
                       }}
                     >
-                      Remover foto do WhatsApp
+                      Remover foto
                     </LogoMenuButton>
                   </FloatingLogoMenu>
                   <input

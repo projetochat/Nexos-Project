@@ -53,7 +53,11 @@ export class OperationsService {
   ) {}
 
   async dashboard(current: AuthenticatedUser, query: OperationalQuery) {
-    const range = periodRange(query);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: current.tenantId },
+      select: { timezone: true },
+    });
+    const range = periodRange(query, "today", tenant?.timezone);
     const previous = previousRange(range);
     this.logger.log({
       event: "operations.dashboard.query",
@@ -639,46 +643,107 @@ function serializeConversation(
   };
 }
 
-function periodRange(query: OperationalQuery, fallback: OperationalQuery["period"] = "today") {
+function periodRange(
+  query: OperationalQuery,
+  fallback: OperationalQuery["period"] = "today",
+  timezone = "UTC",
+) {
   const period = query.period ?? fallback;
   const now = new Date();
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
+  const today = calendarDateInTimezone(now, timezone);
+  const startOfToday = startOfDayInTimezone(today.year, today.month, today.day, timezone);
   if (period === "custom" && query.start && query.end) {
-    const start = new Date(`${query.start}T00:00:00`);
-    const end = new Date(`${query.end}T00:00:00`);
-    end.setDate(end.getDate() + 1);
+    const startDate = parseDateValue(query.start);
+    const endDate = parseDateValue(query.end);
+    const start = startOfDayInTimezone(startDate.year, startDate.month, startDate.day, timezone);
+    const nextDate = shiftCalendarDate(endDate, 1);
+    const end = startOfDayInTimezone(nextDate.year, nextDate.month, nextDate.day, timezone);
     return { start, end };
   }
   if (period === "yesterday") {
-    const start = new Date(startOfToday);
-    start.setDate(start.getDate() - 1);
+    const yesterday = shiftCalendarDate(today, -1);
+    const start = startOfDayInTimezone(yesterday.year, yesterday.month, yesterday.day, timezone);
     return { start, end: startOfToday };
   }
   if (period === "week") {
-    const start = new Date(startOfToday);
-    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    const weekday = new Date(Date.UTC(today.year, today.month - 1, today.day)).getUTCDay();
+    const weekStart = shiftCalendarDate(today, -((weekday + 6) % 7));
+    const start = startOfDayInTimezone(weekStart.year, weekStart.month, weekStart.day, timezone);
     return { start, end: now };
   }
   if (period === "month") {
-    const start = new Date(startOfToday.getFullYear(), startOfToday.getMonth(), 1);
+    const start = startOfDayInTimezone(today.year, today.month, 1, timezone);
     return { start, end: now };
   }
   if (period === "previous_month") {
-    const start = new Date(startOfToday.getFullYear(), startOfToday.getMonth() - 1, 1);
-    const end = new Date(startOfToday.getFullYear(), startOfToday.getMonth(), 1);
+    const previousMonth = shiftCalendarDate({ ...today, day: 1 }, -1);
+    const start = startOfDayInTimezone(previousMonth.year, previousMonth.month, 1, timezone);
+    const end = startOfDayInTimezone(today.year, today.month, 1, timezone);
     return { start, end };
   }
   if (period === "year") {
-    const start = new Date(startOfToday.getFullYear(), 0, 1);
+    const start = startOfDayInTimezone(today.year, 1, 1, timezone);
     return { start, end: now };
   }
   if (period === "7d" || period === "30d") {
-    const start = new Date(startOfToday);
-    start.setDate(start.getDate() - (period === "7d" ? 6 : 29));
+    const date = shiftCalendarDate(today, -(period === "7d" ? 6 : 29));
+    const start = startOfDayInTimezone(date.year, date.month, date.day, timezone);
     return { start, end: now };
   }
   return { start: startOfToday, end: now };
+}
+
+type CalendarDate = { year: number; month: number; day: number };
+
+function calendarDateInTimezone(date: Date, timezone: string): CalendarDate {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((item) => item.type === type)?.value);
+  return { year: part("year"), month: part("month"), day: part("day") };
+}
+
+function startOfDayInTimezone(year: number, month: number, day: number, timezone: string) {
+  const utcMidnight = new Date(Date.UTC(year, month - 1, day));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(utcMidnight);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((item) => item.type === type)?.value);
+  const localizedAsUtc = Date.UTC(
+    part("year"),
+    part("month") - 1,
+    part("day"),
+    part("hour"),
+    part("minute"),
+    part("second"),
+  );
+  return new Date(utcMidnight.getTime() - (localizedAsUtc - utcMidnight.getTime()));
+}
+
+function parseDateValue(value: string): CalendarDate {
+  const [year, month, day] = value.split("-").map(Number);
+  return { year, month, day };
+}
+
+function shiftCalendarDate(date: CalendarDate, days: number): CalendarDate {
+  const shifted = new Date(Date.UTC(date.year, date.month - 1, date.day + days));
+  return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate() };
 }
 
 function previousRange(range: { start: Date; end: Date }) {

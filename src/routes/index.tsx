@@ -28,14 +28,13 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
-  TrendingUp,
   UserPlus,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { DashboardFiltersBar } from "@/components/dashboard-filters";
-import { Badge, Button, Card, Input, KPI, SectionHeader } from "@/components/ui-kit";
+import { Button, Card, Input, KPI, SectionHeader } from "@/components/ui-kit";
 import { Modal } from "@/components/modal";
 import { num, relativeTime } from "@/lib/format";
 import { operationsApi } from "@/lib/nexos-api";
@@ -63,14 +62,27 @@ const DASHBOARD_BIS = [
   "recent",
 ] as const;
 type DashboardBiId = (typeof DASHBOARD_BIS)[number];
+type DashboardColumnCount = 1 | 2 | 3 | 4;
 type DashboardPreferences = {
   visible: DashboardBiId[];
   order: DashboardBiId[];
   labels: Partial<Record<DashboardBiId, string>>;
+  columns: Partial<Record<DashboardBiId, DashboardColumnCount>>;
+};
+const DEFAULT_DASHBOARD_COLUMNS: Record<DashboardBiId, DashboardColumnCount> = {
+  counters: 4,
+  messages: 2,
+  distribution: 1,
+  connection: 1,
+  customer: 1,
+  department: 1,
+  tag: 1,
+  agent: 1,
+  recent: 4,
 };
 const BI_LABELS: Record<DashboardBiId, string> = {
   counters: "Contadores de registro",
-  messages: "Mensagens do dia",
+  messages: "Tráfego de mensagens",
   distribution: "Distribuição de conversas",
   connection: "Conversas por instância",
   customer: "Conversas por cliente",
@@ -102,6 +114,12 @@ function Dashboard() {
   >(() => loadDashboardPreferences(storageKey).labels);
   const [draftLabels, setDraftLabels] =
     React.useState<Partial<Record<DashboardBiId, string>>>(dashboardLabels);
+  const [dashboardColumns, setDashboardColumns] = React.useState<
+    Partial<Record<DashboardBiId, DashboardColumnCount>>
+  >(() => loadDashboardPreferences(storageKey).columns);
+  const [draftColumns, setDraftColumns] = React.useState<
+    Partial<Record<DashboardBiId, DashboardColumnCount>>
+  >(dashboardColumns);
   const [editingBiId, setEditingBiId] = React.useState<DashboardBiId | null>(null);
   const [editingBiTitle, setEditingBiTitle] = React.useState("");
   const [draggingBiId, setDraggingBiId] = React.useState<DashboardBiId | null>(null);
@@ -113,6 +131,8 @@ function Dashboard() {
     setDraftOrder(saved.order);
     setDashboardLabels(saved.labels);
     setDraftLabels(saved.labels);
+    setDashboardColumns(saved.columns);
+    setDraftColumns(saved.columns);
     setEditingBiId(null);
   }, [storageKey]);
   const [filters, setFilters] = React.useState<OperationalReportFilters>({
@@ -162,7 +182,7 @@ function Dashboard() {
     .filter((queue) => queue.enabled)
     .map((queue) => ({
       id: queue.id,
-      label: queue.id === "ativas" ? `Conversas ${queue.label}` : queue.label,
+      label: queue.label,
       value: kpiValue(kpis[queueKpiById[queue.id]]),
       Icon: queueIconById[queue.id],
     }));
@@ -172,6 +192,17 @@ function Dashboard() {
   const hasBi = (id: DashboardBiId) => visibleBis.includes(id);
   const biLabel = (id: DashboardBiId) => dashboardLabels[id]?.trim() || BI_LABELS[id];
   const dashboardPosition = (id: DashboardBiId) => dashboardOrder.indexOf(id);
+  const dashboardColumnClass = (id: DashboardBiId) => {
+    const columns = id === "counters" ? 4 : dashboardColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id];
+    return {
+      1: "md:col-span-1",
+      2: "md:col-span-2",
+      3: "md:col-span-3",
+      4: "md:col-span-4",
+    }[columns];
+  };
+  const messagesColumns = dashboardColumns.messages ?? DEFAULT_DASHBOARD_COLUMNS.messages;
+  const compactMessagesChart = messagesColumns <= 2;
 
   const beginEditingBiTitle = (id: DashboardBiId) => {
     setEditingBiId(id);
@@ -225,6 +256,7 @@ function Dashboard() {
                     setDraftBis(visibleBis);
                     setDraftOrder(dashboardOrder);
                     setDraftLabels(dashboardLabels);
+                    setDraftColumns(dashboardColumns);
                     setEditingBiId(null);
                     setEditingDashboard(true);
                   }}
@@ -244,10 +276,10 @@ function Dashboard() {
           onChange={(patch) => setFilters((current) => ({ ...current, ...patch }))}
         />
 
-        <div className="flex flex-col">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div
             style={{ order: dashboardPosition("counters") }}
-            className={`mb-6 ${hasBi("counters") ? "" : "hidden"}`}
+            className={`${dashboardColumnClass("counters")} ${hasBi("counters") ? "" : "hidden"}`}
           >
             <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               {biLabel("counters")}
@@ -268,7 +300,7 @@ function Dashboard() {
               <KPI
                 label="Fechadas"
                 value={num(kpiValue(kpis.conversasEncerradas))}
-                tone="success"
+                tone="info"
                 icon={<CheckCircle2 className="h-6 w-6" />}
               />
               <KPI
@@ -281,30 +313,30 @@ function Dashboard() {
           </div>
 
           <div
-            style={{
-              order: Math.min(dashboardPosition("messages"), dashboardPosition("distribution")),
-            }}
-            className="mb-6 grid gap-4 lg:grid-cols-3"
+            style={{ order: dashboardPosition("messages") }}
+            className={`${dashboardColumnClass("messages")} ${hasBi("messages") ? "" : "hidden"}`}
           >
-            <Card className={hasBi("messages") ? "lg:col-span-2" : "hidden"}>
-              <div className="mb-4 flex items-center justify-between gap-3">
+            <Card className="h-full">
+              <div className="mb-4">
                 <div>
                   <p className="text-xs uppercase tracking-widest text-muted-foreground">
                     {biLabel("messages")}
                   </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Tráfego de mensagens: {formatDate(data?.range.start)} a{" "}
-                    {formatDate(data?.range.end)}
-                  </p>
                 </div>
-                <Badge tone="success">
-                  <TrendingUp className="h-3 w-3" /> realtime
-                </Badge>
               </div>
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={data?.charts.messagesByHour ?? []}>
                   <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis dataKey="hora" stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                  <XAxis
+                    dataKey="hora"
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={11}
+                    interval={messagesColumns === 1 ? 3 : compactMessagesChart ? 0 : "preserveEnd"}
+                    angle={compactMessagesChart ? -45 : 0}
+                    textAnchor={compactMessagesChart ? "end" : "middle"}
+                    height={compactMessagesChart ? 48 : 30}
+                    tickMargin={compactMessagesChart ? 8 : 0}
+                  />
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
                     fontSize={11}
@@ -346,8 +378,13 @@ function Dashboard() {
                 </LineChart>
               </ResponsiveContainer>
             </Card>
+          </div>
 
-            <Card className={hasBi("distribution") ? "" : "hidden"}>
+          <div
+            style={{ order: dashboardPosition("distribution") }}
+            className={`${dashboardColumnClass("distribution")} ${hasBi("distribution") ? "" : "hidden"}`}
+          >
+            <Card className="h-full">
               <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
                 {biLabel("distribution")}
               </p>
@@ -379,19 +416,7 @@ function Dashboard() {
             </Card>
           </div>
 
-          <div
-            style={{
-              order: Math.min(
-                dashboardPosition("connection"),
-                dashboardPosition("customer"),
-                dashboardPosition("department"),
-                dashboardPosition("tag"),
-                dashboardPosition("agent"),
-              ),
-            }}
-            className="mb-6 grid gap-4 lg:grid-cols-4"
-          >
-            {[
+          {[
               {
                 id: "connection",
                 title: biLabel("connection"),
@@ -415,7 +440,12 @@ function Dashboard() {
             ]
               .filter((chart) => hasBi(chart.id as DashboardBiId))
               .map((chart) => (
-                <Card key={chart.title}>
+                <div
+                  key={chart.id}
+                  style={{ order: dashboardPosition(chart.id as DashboardBiId) }}
+                  className={dashboardColumnClass(chart.id as DashboardBiId)}
+                >
+                  <Card className="h-full">
                   <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
                     {chart.title}
                   </p>
@@ -452,12 +482,15 @@ function Dashboard() {
                       </BarChart>
                     </ResponsiveContainer>
                   )}
-                </Card>
+                  </Card>
+                </div>
               ))}
-          </div>
 
-          <div style={{ order: dashboardPosition("recent") }}>
-            <Card className={hasBi("recent") ? "p-0" : "hidden"}>
+          <div
+            style={{ order: dashboardPosition("recent") }}
+            className={`${dashboardColumnClass("recent")} ${hasBi("recent") ? "" : "hidden"}`}
+          >
+            <Card className="p-0">
               <div className="border-b border-border px-5 py-4">
                 <p className="text-sm font-semibold">{biLabel("recent")}</p>
                 <p className="text-xs text-muted-foreground">Ultimas conversas movimentadas.</p>
@@ -498,15 +531,16 @@ function Dashboard() {
           open={editingDashboard}
           onClose={() => setEditingDashboard(false)}
           title="Editar Dashboard"
-          size="md"
+          size="lg"
           footer={
             <div className="flex flex-wrap justify-end gap-3">
               <Button
                 variant="ghost"
                 onClick={() => {
-                  setDraftBis([...DASHBOARD_BIS]);
-                  setDraftOrder([...DASHBOARD_BIS]);
-                  setDraftLabels({});
+                    setDraftBis([...DASHBOARD_BIS]);
+                    setDraftOrder([...DASHBOARD_BIS]);
+                    setDraftLabels({});
+                    setDraftColumns(DEFAULT_DASHBOARD_COLUMNS);
                   setEditingBiId(null);
                   toast.success("Configurações restauradas para o padrão do sistema.");
                 }}
@@ -531,11 +565,13 @@ function Dashboard() {
                       visible: draftBis,
                       order: draftOrder,
                       labels: draftLabels,
+                      columns: { ...draftColumns, counters: 4 },
                     };
                     window.localStorage.setItem(storageKey, JSON.stringify(preferences));
                     setVisibleBis(draftBis);
                     setDashboardOrder(draftOrder);
                     setDashboardLabels(draftLabels);
+                    setDashboardColumns({ ...draftColumns, counters: 4 });
                     setEditingBiId(null);
                     setEditingDashboard(false);
                     toast.success("Dashboard atualizado.");
@@ -644,6 +680,33 @@ function Dashboard() {
                     </Button>
                   </>
                 )}
+                <div className="ml-2 hidden shrink-0 items-center gap-1 border-l border-border pl-3 text-xs text-muted-foreground md:flex">
+                  <span className="hidden sm:inline">Colunas</span>
+                  {id === "counters" ? (
+                    <span className="flex h-8 w-12 items-center justify-center rounded-md border border-border bg-surface-2 text-sm text-muted-foreground">
+                      4
+                    </span>
+                  ) : (
+                    <select
+                      value={draftColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id]}
+                      onChange={(event) =>
+                        setDraftColumns((current) => ({
+                          ...current,
+                          [id]: Number(event.target.value) as DashboardColumnCount,
+                        }))
+                      }
+                      onMouseDown={(event) => event.stopPropagation()}
+                      className="h-8 w-12 rounded-md border border-border bg-surface px-1 text-center text-sm text-foreground outline-none focus:border-primary"
+                      aria-label={`Quantidade de colunas de ${draftLabels[id]?.trim() || BI_LABELS[id]}`}
+                    >
+                      {[1, 2, 3, 4].map((columns) => (
+                        <option key={columns} value={columns}>
+                          {columns}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -682,6 +745,7 @@ function loadDashboardPreferences(storageKey: string): DashboardPreferences {
     visible: [...DASHBOARD_BIS],
     order: [...DASHBOARD_BIS],
     labels: {},
+    columns: DEFAULT_DASHBOARD_COLUMNS,
   };
   if (typeof window === "undefined") return defaults;
   try {
@@ -709,7 +773,16 @@ function loadDashboardPreferences(storageKey: string): DashboardPreferences {
         ([id, value]) => DASHBOARD_BIS.includes(id as DashboardBiId) && typeof value === "string",
       ),
     ) as Partial<Record<DashboardBiId, string>>;
-    return { visible: visible.length ? visible : defaults.visible, order, labels };
+    const columns = Object.fromEntries(
+      Object.entries(data.columns ?? {}).filter(
+        ([id, value]) =>
+          DASHBOARD_BIS.includes(id as DashboardBiId) &&
+          typeof value === "number" &&
+          value >= 1 &&
+          value <= 4,
+      ),
+    ) as Partial<Record<DashboardBiId, DashboardColumnCount>>;
+    return { visible: visible.length ? visible : defaults.visible, order, labels, columns };
   } catch {
     return defaults;
   }
@@ -718,9 +791,4 @@ function loadDashboardPreferences(storageKey: string): DashboardPreferences {
 function formatMinutes(value: number | null | undefined) {
   if (value == null) return "sem amostra";
   return `${num(value)} min`;
-}
-
-function formatDate(value?: string) {
-  if (!value) return "-";
-  return new Date(value).toLocaleDateString("pt-BR");
 }

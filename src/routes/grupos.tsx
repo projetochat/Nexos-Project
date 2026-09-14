@@ -250,8 +250,8 @@ function GroupsPage() {
           </div>
         </Card>
 
-        <Card padding={false} className="overflow-hidden">
-          <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3">
+        <Card padding={false} className="min-w-0 overflow-hidden">
+          <div className="grid min-w-0 gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3">
             {loading &&
               Array.from({ length: 6 }).map((_, index) => (
                 <div
@@ -411,9 +411,9 @@ function GroupCard({
         onDetail();
       }}
       title="Clique duas vezes para visualizar o grupo"
-      className="flex min-h-40 flex-col rounded-lg border border-border bg-card p-4 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md"
+      className="flex min-h-40 w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border border-border bg-card p-3 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md sm:p-4"
     >
-      <div className="flex items-start gap-3">
+      <div className="flex min-w-0 items-start gap-3">
         <Avatar name={group.name} src={group.imageUrl ?? undefined} size={48} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-foreground">{group.name}</p>
@@ -431,11 +431,8 @@ function GroupCard({
             Instância: <span className="text-foreground">{group.connection.name}</span>
           </p>
         )}
-        {group.lastMessagePreview && (
-          <p className="mb-3 line-clamp-2 italic">{group.lastMessagePreview}</p>
-        )}
       </div>
-      <div className="mt-auto flex justify-end gap-1 border-t border-border pt-3">
+      <div className="mt-4 flex min-w-0 justify-end gap-1 border-t border-border pt-3">
           <Button
             variant="ghost"
             size="sm"
@@ -774,6 +771,7 @@ function CreateGroupModal({
             />
           </section>
 
+          {selectedContacts.length > 0 && (
           <section className="order-1 rounded-xl border border-border p-3 sm:p-4 lg:order-2">
             <div className="mb-3 flex items-center gap-2">
               <div className="flex items-center gap-2">
@@ -816,6 +814,7 @@ function CreateGroupModal({
               )}
             </div>
           </section>
+          )}
         </div>
       </div>
     </Modal>

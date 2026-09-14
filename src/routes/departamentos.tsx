@@ -63,7 +63,7 @@ function Page() {
   const [duplicating, setDuplicating] = React.useState<ApiDepartment | null>(null);
   const [deleting, setDeleting] = React.useState<ApiDepartment | null>(null);
   const [query, setQuery] = React.useState("");
-  const [activeFilter, setActiveFilter] = React.useState("active");
+  const [activeFilter, setActiveFilter] = React.useState("all");
   const novo = useDisclosure();
 
   const {
@@ -149,8 +149,8 @@ function Page() {
             </div>
             <Field label="Status">
               <Select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value)}>
-                <option value="active">Ativos</option>
                 <option value="all">Todos</option>
+                <option value="active">Ativos</option>
                 <option value="inactive">Inativos</option>
               </Select>
             </Field>

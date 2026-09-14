@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
+import { CalendarDays } from "lucide-react";
 import { Card, Input, InstanceFilterSelect, Select } from "@/components/ui-kit";
 import { connectionsApi, crmApi, organizationApi, type OperationalPeriod } from "@/lib/nexos-api";
 import {
@@ -139,6 +140,7 @@ function DashboardDateInput({
   onChange: (date: string) => void;
 }) {
   const isMobile = useMobileViewport();
+  const nativeDateInputRef = React.useRef<HTMLInputElement>(null);
   const [draft, setDraft] = React.useState(() => formatDateMask(value));
 
   React.useEffect(() => setDraft(formatDateMask(value)), [value]);
@@ -161,23 +163,49 @@ function DashboardDateInput({
   }
 
   return (
-    <Input
-      type="text"
-      inputMode="numeric"
-      autoComplete="off"
-      placeholder="DD/MM/AAAA"
-      value={draft}
-      readOnly={readOnly}
-      aria-readonly={readOnly}
-      onChange={(event) => {
-        const next = maskDate(event.target.value);
-        setDraft(next);
-        const isoDate = dateMaskToIso(next);
-        if (isoDate) onChange(isoDate);
-      }}
-      onBlur={() => setDraft(formatDateMask(value))}
-      className={className}
-    />
+    <div className="relative min-w-0">
+      <Input
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder="DD/MM/AAAA"
+        value={draft}
+        readOnly={readOnly}
+        aria-readonly={readOnly}
+        onChange={(event) => {
+          const next = maskDate(event.target.value);
+          setDraft(next);
+          const isoDate = dateMaskToIso(next);
+          if (isoDate) onChange(isoDate);
+        }}
+        onBlur={() => setDraft(formatDateMask(value))}
+        className={`${className} pr-9`}
+      />
+      <button
+        type="button"
+        disabled={readOnly}
+        title={readOnly ? "Selecione o período personalizado para alterar a data" : "Selecionar data"}
+        aria-label="Selecionar data"
+        onClick={() => {
+          const input = nativeDateInputRef.current;
+          if (!input) return;
+          if (typeof input.showPicker === "function") input.showPicker();
+          else input.click();
+        }}
+        className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <CalendarDays className="h-4 w-4" />
+      </button>
+      <input
+        ref={nativeDateInputRef}
+        type="date"
+        value={value}
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(event) => onChange(event.target.value)}
+        className="pointer-events-none absolute h-px w-px opacity-0"
+      />
+    </div>
   );
 }
 
