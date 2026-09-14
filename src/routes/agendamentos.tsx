@@ -39,7 +39,7 @@ import {
   type ApiDepartment,
   type ApiMessagingConnection,
   type ApiUserMembership,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 import { num } from "@/lib/format";
 import { useQuery } from "@tanstack/react-query";
 
@@ -68,7 +68,7 @@ type Schedule = {
   assignedMembershipId: string;
   attachmentName: string | null;
 };
-const STORAGE_KEY = "nexo.schedules";
+const STORAGE_KEY = "trixus.schedules";
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
@@ -84,11 +84,11 @@ function SchedulingPage() {
   const [editing, setEditing] = React.useState<Schedule | null>(null);
   const [removing, setRemoving] = React.useState<Schedule | null>(null);
   const { data: connections = [] } = useQuery({
-    queryKey: ["nexos", "messaging-connections"],
+    queryKey: ["trixus", "messaging-connections"],
     queryFn: connectionsApi.list,
   });
   const { data: departments = [] } = useQuery({
-    queryKey: ["nexos", "departments"],
+    queryKey: ["trixus", "departments"],
     queryFn: organizationApi.listDepartments,
   });
   React.useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(items)), [items]);
@@ -596,12 +596,12 @@ function ScheduleForm({
     setMultipleContacts((item?.recipientIds?.length ?? 0) > 1);
   }, [item]);
   const contacts = useQuery({
-    queryKey: ["nexos", "schedule-contacts", contactSearch],
+    queryKey: ["trixus", "schedule-contacts", contactSearch],
     queryFn: () => crmApi.listContacts({ q: contactSearch || undefined, pageSize: 8 }),
     enabled: !!form && form.type === "message",
   });
   const users = useQuery({
-    queryKey: ["nexos", "schedule-users"],
+    queryKey: ["trixus", "schedule-users"],
     queryFn: organizationApi.listUsers,
     enabled: !!form,
   });
@@ -947,7 +947,7 @@ function ScheduleForm({
         </section>
         <section className="rounded-lg border border-border p-4">
           <p className="mb-2 text-sm font-semibold">
-            Anexo <span className="font-normal text-muted-foreground">(opcional)</span>
+            Atrixus <span className="font-normal text-muted-foreground">(opcional)</span>
           </p>
           <label className="flex min-h-20 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-surface-1 px-4 text-sm text-muted-foreground hover:border-primary hover:text-primary">
             <Paperclip className="h-4 w-4" />

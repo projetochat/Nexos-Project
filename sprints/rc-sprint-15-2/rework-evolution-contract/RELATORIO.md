@@ -4,9 +4,9 @@
 EVOLUTION CONTRACT REWORK REQUIRED
 
 ## 2. Resumo executivo
-Contrato outbound da Evolution API v2.3.7 corrigido em Nexos para texto, reply key, reacao, imagem, documento e audio/voice. O hotfix de resiliencia do worker foi preservado. Smokes diretos contra Evolution real passaram para texto, reacao, imagem, documento e audio.
+Contrato outbound da Evolution API v2.3.7 corrigido em Trixus para texto, reply key, reacao, imagem, documento e audio/voice. O hotfix de resiliencia do worker foi preservado. Smokes diretos contra Evolution real passaram para texto, reacao, imagem, documento e audio.
 
-O gate completo ainda nao pode ser aprovado porque a homologacao ponta a ponta Nexos -> Outbox -> Evolution -> WhatsApp -> Nexos, incluindo grupos e inbound media renderizada, nao foi executada.
+O gate completo ainda nao pode ser aprovado porque a homologacao ponta a ponta Trixus -> Outbox -> Evolution -> WhatsApp -> Trixus, incluindo grupos e inbound media renderizada, nao foi executada.
 
 ## 3. Evidencias fisicas originais
 - Texto falhava com `instance requires property "text"`.
@@ -26,7 +26,7 @@ Implementado `EvolutionRecipientNormalizer`: direct number/JID/LID e group `@g.u
 Payload corrigido para `number` e `text` no root. Smoke direto Evolution PASS.
 
 ## 8. Reply
-Outbound passa a enviar quoted provider key com `id`, `remoteJid`, `fromMe` e `participant` quando disponivel. Validacao fisica Nexos pendente.
+Outbound passa a enviar quoted provider key com `id`, `remoteJid`, `fromMe` e `participant` quando disponivel. Validacao fisica Trixus pendente.
 
 ## 9. Reacoes
 Payload corrigido para `key` e `reaction` no root. Add/remove diretos Evolution PASS.
@@ -41,13 +41,13 @@ Payload corrigido para multipart `file` em `/message/sendMedia`. Smoke direto Ev
 Audio/voice/PTT roteado para `/message/sendWhatsAppAudio` com multipart `file`. Smoke direto Evolution PASS; provider retornou `audio/ogg; codecs=opus` e `ptt=true`.
 
 ## 13. Midia inbound
-Pendente validacao Nexos fisica de download/storage/render.
+Pendente validacao Trixus fisica de download/storage/render.
 
 ## 14. Storage
 Storage outbound existente preservado; media file missing agora possui codigo canonico `MEDIA_FILE_MISSING`.
 
 ## 15. Endpoints de midia
-Endpoints Nexos existentes nao foram alterados neste rework.
+Endpoints Trixus existentes nao foram alterados neste rework.
 
 ## 16. Error classification
 400 de validacao Evolution com `requires property` agora vira `INVALID_PROVIDER_PAYLOAD`, `providerCode=VALIDATION_ERROR`, retryable=false.
@@ -71,13 +71,13 @@ Novos testes cobrem normalizacao, payloads, reply key, reacao e classificacao de
 `bun run verify`: frontend typecheck/build PASS.
 
 ## 23. Testes fisicos
-Smokes diretos Evolution PASS para texto, reacao, imagem, documento e audio. Homologacao completa Nexos pendente.
+Smokes diretos Evolution PASS para texto, reacao, imagem, documento e audio. Homologacao completa Trixus pendente.
 
 ## 24. Regressoes
 Nao houve alteracao intencional em Dashboard, Relatorios, CRM, Tickets, Campanhas, Automacoes, Bot, Control Plane, Planos, Assinaturas, Financeiro ou Filas operacionais.
 
 ## 25. Metricas
-N001 PASS. N002 PASS. N003 PASS. N004 PASS. N005 PASS. N006 PARTIAL. N007 PASS. N008 PASS direto Evolution. N009 PASS unitario. N010 PENDING Nexos fisico. N011 PENDING. N012 PASS. N013 PASS direto Evolution. N014 PASS direto Evolution. N015 PENDING. N016 PASS. N017 PASS direto Evolution. N018 PASS. N019 PASS direto Evolution. N020 PASS. N021 PASS direto Evolution. N022 PASS direto Evolution. N023-N030 PENDING inbound Nexos fisico. N031 PASS. N032 PASS. N033 PASS. N034 PASS. N035 PASS automatizado. N036 PASS. N037 PASS verify. N038 PASS automatizado. N039 PASS. N040 PASS build/typecheck. N041 PASS. N042 PASS. N043 PASS. N044 PENDING. N045 PENDING. N046 FAIL worktree sujo.
+N001 PASS. N002 PASS. N003 PASS. N004 PASS. N005 PASS. N006 PARTIAL. N007 PASS. N008 PASS direto Evolution. N009 PASS unitario. N010 PENDING Trixus fisico. N011 PENDING. N012 PASS. N013 PASS direto Evolution. N014 PASS direto Evolution. N015 PENDING. N016 PASS. N017 PASS direto Evolution. N018 PASS. N019 PASS direto Evolution. N020 PASS. N021 PASS direto Evolution. N022 PASS direto Evolution. N023-N030 PENDING inbound Trixus fisico. N031 PASS. N032 PASS. N033 PASS. N034 PASS. N035 PASS automatizado. N036 PASS. N037 PASS verify. N038 PASS automatizado. N039 PASS. N040 PASS build/typecheck. N041 PASS. N042 PASS. N043 PASS. N044 PENDING. N045 PENDING. N046 FAIL worktree sujo.
 
 ## 26. Arquivos alterados
 Principais: `evolution.client.ts`, `evolution-messaging.provider.ts`, `evolution-provider-error.classifier.ts`, `messaging.contracts.ts`, `messaging-outbound.service.ts`, specs e novos normalizer/factory.

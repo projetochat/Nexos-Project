@@ -77,7 +77,7 @@ import {
   type ApiContactInstanceOption,
   type ApiCustomer,
   type ApiTag,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/contatos")({ component: ContatosPage });
 
@@ -85,7 +85,7 @@ const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000, 10000] as const;
 const CUSTOMER_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 const DEFAULT_CUSTOMER_PAGE_SIZE = 10;
-const FAVORITE_COUNTRY_CODES_KEY = "nexo.favorite-country-codes";
+const FAVORITE_COUNTRY_CODES_KEY = "trixus.favorite-country-codes";
 const EMPTY_FILTER_VALUE = "__empty__";
 const COUNTRY_CODES = [
   { id: "br", code: "55", country: "Brasil", flag: "🇧🇷" },

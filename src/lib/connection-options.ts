@@ -1,4 +1,4 @@
-import type { ApiMessagingConnection } from "@/lib/nexos-api";
+import type { ApiMessagingConnection } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 const SUPPORTED_PROVIDER = "evolution";

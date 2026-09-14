@@ -7,9 +7,9 @@ const execute = process.argv.includes("--execute");
 const requestedQueues = readListArg("--queues") ?? ["messaging-outbound"];
 const graceMs = Number(readValueArg("--grace-ms") ?? 0);
 
-if (execute && process.env.NEXOS_CONFIRM_HOMOLOGATION_QUEUE_CLEANUP !== "messaging-outbound") {
+if (execute && process.env.TRIXUS_CONFIRM_HOMOLOGATION_QUEUE_CLEANUP !== "messaging-outbound") {
   throw new Error(
-    "Refusing queue cleanup. Set NEXOS_CONFIRM_HOMOLOGATION_QUEUE_CLEANUP=messaging-outbound.",
+    "Refusing queue cleanup. Set TRIXUS_CONFIRM_HOMOLOGATION_QUEUE_CLEANUP=messaging-outbound.",
   );
 }
 

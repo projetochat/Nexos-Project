@@ -1,7 +1,7 @@
 # Testes Automatizados
 
 Baseline antes do hotfix:
-- `bun run verify`: PASS em `nexos_0801`.
+- `bun run verify`: PASS em `trixus_0801`.
 
 Testes focados:
 - `messaging-outbound.worker.spec.ts`

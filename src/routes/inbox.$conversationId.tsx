@@ -46,7 +46,7 @@ import {
   type ApiMessage,
   type ApiQuickReply as QuickReply,
   type ApiTag as Tag,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 import { useSession } from "@/lib/session";
 import { fmtHM, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
@@ -74,18 +74,18 @@ function ConversationPage() {
   const navigate = useNavigate();
 
   const { data: conv } = useQuery({
-    queryKey: ["nexos", "conversations", conversationId],
+    queryKey: ["trixus", "conversations", conversationId],
     queryFn: () => conversationApi.get(conversationId),
   });
 
   const { data: mensagens = [] } = useQuery({
-    queryKey: ["nexos", "messages", conversationId],
+    queryKey: ["trixus", "messages", conversationId],
     queryFn: () => messageApi.list(conversationId, { limit: 50 }).then((page) => page.items),
     refetchInterval: 30_000,
   });
 
   const { data: memberships = [] } = useQuery({
-    queryKey: ["nexos", "users", "conversation-transfer"],
+    queryKey: ["trixus", "users", "conversation-transfer"],
     queryFn: organizationApi.listUsers,
   });
   const agents = React.useMemo(
@@ -107,7 +107,7 @@ function ConversationPage() {
     [agents],
   );
   const { data: apiDepartments = [] } = useQuery({
-    queryKey: ["nexos", "departments", "conversation-transfer"],
+    queryKey: ["trixus", "departments", "conversation-transfer"],
     queryFn: organizationApi.listDepartments,
   });
   const departments = React.useMemo(
@@ -195,8 +195,8 @@ function ConversationPage() {
       const hadProtocolo = !!conv.protocolo;
       await conversationApi.assign(conv.id, { self: true });
       if (isStandby) await conversationApi.updateStatus(conv.id, "em_andamento");
-      qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-      qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
+      qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
       toast.success(
         hadProtocolo || isStandby ? "Conversa retomada" : "Conversa iniciada — protocolo gerado",
       );
@@ -214,7 +214,7 @@ function ConversationPage() {
         assignToSelf: true,
         firstMessagePreview: "Nova conversa iniciada pelo atendimento.",
       });
-      qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
       toast.success("Nova conversa iniciada — protocolo gerado");
       navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
     } catch (e) {
@@ -260,8 +260,8 @@ function ConversationPage() {
     setArchivingInbox(true);
     try {
       await conversationApi.updateInboxArchive(conv.id, true);
-      await qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-      await qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
+      await qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+      await qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
       navigate({ to: "/inbox" });
     } catch (e) {
       toast.error((e as Error).message || "Não foi possível arquivar a conversa.");
@@ -408,9 +408,9 @@ function ConversationPage() {
               onCancelReply={() => setReplyTo(null)}
               onSent={() => {
                 setReplyTo(null);
-                qc.invalidateQueries({ queryKey: ["nexos", "messages", conv.id] });
-                qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-                qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
+                qc.invalidateQueries({ queryKey: ["trixus", "messages", conv.id] });
+                qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+                qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
               }}
             />
             <div className="pointer-events-none absolute inset-y-0 right-4 hidden items-center xl:flex">
@@ -470,23 +470,23 @@ function ConversationPage() {
         departments={departments.filter((d) => d.id !== conv.department_id)}
         onSubmitAgent={async (id) => {
           await conversationApi.assign(conv.id, { membershipId: id });
-          qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
           toast.success("Conversa transferida");
           transferModal.hide();
         }}
         onSubmitDepartment={async (id) => {
           await conversationApi.transferDepartment(conv.id, id);
-          qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
           toast.success("Conversa movida");
           transferModal.hide();
         }}
         onSubmitStatus={async (status) => {
           const label = status === "fila" ? filaLabel : standbyLabel;
           await conversationApi.updateStatus(conv.id, status === "fila" ? "aberta" : "aguardando");
-          qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
           toast.success(`Conversa movida para ${label}`);
           transferModal.hide();
         }}
@@ -499,8 +499,8 @@ function ConversationPage() {
         onClose={() => setClosing(false)}
         onConfirm={async () => {
           await conversationApi.updateStatus(conv.id, "fechada");
-          qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["nexos", "conversations", conv.id] });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
           toast.success("Conversa encerrada");
         }}
       />
@@ -558,7 +558,7 @@ function MessageBubble({
 
   const react = async (emoji: string | null) => {
     await messageApi.react(m.conversation_id, m.id, emoji);
-    qc.invalidateQueries({ queryKey: ["nexos", "messages", m.conversation_id] });
+    qc.invalidateQueries({ queryKey: ["trixus", "messages", m.conversation_id] });
   };
 
   const download = async () => {
@@ -1004,7 +1004,7 @@ function Composer({
   const typingStopTimerRef = React.useRef<number | null>(null);
 
   const { data: quickReplies = [] } = useQuery({
-    queryKey: ["nexos", "quick-replies", "composer"],
+    queryKey: ["trixus", "quick-replies", "composer"],
     queryFn: () => quickReplyApi.list(),
   });
 
@@ -1118,7 +1118,7 @@ function Composer({
         setText("");
         void messageApi
           .markRead(conversationId)
-          .then(() => qc.invalidateQueries({ queryKey: ["nexos", "conversations"] }));
+          .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
         onSent();
         return;
       } catch (e) {
@@ -1138,7 +1138,7 @@ function Composer({
       setPendingCloseAfter(false);
       void messageApi
         .markRead(conversationId)
-        .then(() => qc.invalidateQueries({ queryKey: ["nexos", "conversations"] }));
+        .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
       if (closeAfter) {
         try {
           await conversationApi.updateStatus(conversationId, "fechada");
@@ -1257,7 +1257,7 @@ function Composer({
       setPendingAudio(null);
       void messageApi
         .markRead(conversationId)
-        .then(() => qc.invalidateQueries({ queryKey: ["nexos", "conversations"] }));
+        .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
       onSent();
     } catch (e) {
       toast.error((e as Error).message);
@@ -1488,16 +1488,16 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
   const editModal = useDisclosure();
 
   const { data: contact } = useQuery({
-    queryKey: ["nexos", "contacts", contactId],
+    queryKey: ["trixus", "contacts", contactId],
     queryFn: () => crmApi.getContact(contactId),
   });
   const { data: customersPage } = useQuery({
-    queryKey: ["nexos", "customers", "contact-panel"],
+    queryKey: ["trixus", "customers", "contact-panel"],
     queryFn: () => crmApi.listCustomers({ pageSize: 100 }).then((page) => page.items),
     enabled: editModal.open,
   });
   const { data: contactOptions } = useQuery({
-    queryKey: ["nexos", "contacts", "options", "contact-panel"],
+    queryKey: ["trixus", "contacts", "options", "contact-panel"],
     queryFn: crmApi.contactOptions,
     enabled: editModal.open,
   });
@@ -1506,7 +1506,7 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
   const contactTags = contact?.tags ?? [];
 
   const { data: protocolos = [] } = useQuery({
-    queryKey: ["nexos", "contact_protocols", contactId],
+    queryKey: ["trixus", "contact_protocols", contactId],
     queryFn: async () => {
       const page = await conversationApi.list({
         contactId,
@@ -1686,7 +1686,7 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
         contactId={contactId}
         current={contactTags}
         canManageCatalog={perms.pode_editar_etiquetas}
-        onChanged={() => qc.invalidateQueries({ queryKey: ["nexos", "contacts", contactId] })}
+        onChanged={() => qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] })}
       />
       {contact && (
         <ContactFormModal
@@ -1705,22 +1705,22 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
           )}
           onCustomerCreated={(customer) => {
             qc.setQueryData(
-              ["nexos", "customers", "contact-panel"],
+              ["trixus", "customers", "contact-panel"],
               (current: (typeof customer)[] | undefined) =>
                 sortByOptionLabel([customer, ...(current ?? [])], (item) => item.nome),
             );
           }}
           onDepartmentSaved={() =>
-            qc.invalidateQueries({ queryKey: ["nexos", "contacts", "options", "contact-panel"] })
+            qc.invalidateQueries({ queryKey: ["trixus", "contacts", "options", "contact-panel"] })
           }
           onProfileSaved={() =>
-            qc.invalidateQueries({ queryKey: ["nexos", "contacts", "options", "contact-panel"] })
+            qc.invalidateQueries({ queryKey: ["trixus", "contacts", "options", "contact-panel"] })
           }
           onSubmit={async (data) => {
             await crmApi.updateContact(contactId, contactPayload(data));
-            qc.invalidateQueries({ queryKey: ["nexos", "contacts", contactId] });
-            qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-            qc.invalidateQueries({ queryKey: ["nexos", "contact_protocols", contactId] });
+            qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] });
+            qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+            qc.invalidateQueries({ queryKey: ["trixus", "contact_protocols", contactId] });
             editModal.hide();
           }}
         />
@@ -1756,7 +1756,7 @@ function TagsModal({
 }) {
   const qc = useQueryClient();
   const { data: allTags = [] } = useQuery({
-    queryKey: ["nexos", "tags"],
+    queryKey: ["trixus", "tags"],
     queryFn: crmApi.listTags,
     enabled: open,
   });
@@ -1783,7 +1783,7 @@ function TagsModal({
       await crmApi.assignContactTag(contactId, t.id);
       setNewName("");
       setCreating(false);
-      qc.invalidateQueries({ queryKey: ["nexos", "tags"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "tags"] });
       onChanged();
     } catch (e) {
       toast.error((e as Error).message);

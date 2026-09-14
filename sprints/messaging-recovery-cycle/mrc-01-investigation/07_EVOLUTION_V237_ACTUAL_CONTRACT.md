@@ -5,7 +5,7 @@ Version observed from running container:
 - image: `evoapicloud/evolution-api:v2.3.7`
 - API health version: `2.3.7`
 
-## Endpoints Used By Nexos Current Adapter
+## Endpoints Used By Trixus Current Adapter
 
 - `POST /message/sendText/{instanceName}`
 - `POST /message/sendMedia/{instanceName}`

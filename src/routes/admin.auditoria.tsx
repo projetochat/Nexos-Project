@@ -4,7 +4,7 @@ import { ShieldAlert } from "lucide-react";
 import { AdminContainer } from "@/components/admin-shell";
 import { Avatar, Card, SearchInput, SectionHeader } from "@/components/ui-kit";
 import { fmtDateTime } from "@/lib/format";
-import { platformApi, type PlatformAuditLog } from "@/lib/nexos-api";
+import { platformApi, type PlatformAuditLog } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/auditoria")({
   head: () => ({ meta: [{ title: "Auditoria · Trixus Admin" }] }),

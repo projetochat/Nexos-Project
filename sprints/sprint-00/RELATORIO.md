@@ -39,7 +39,7 @@ O MVP atual e um frontend React/TanStack Start preservavel, com fluxos reais/par
 | G3 | Mensagens | Supabase/data URL | API envio/historico | sim | sim | sim | sim | sim | P0 |
 | G4 | CRM | Supabase | API clientes/contatos | sim | nao | nao | nao | sim | P0 |
 | G5 | Instancias/canais | Supabase/simulado | adapters canais | sim | sim | sim | nao | sim | P1 |
-| G6 | Chamados | Supabase/HTML | API chamados/anexos | sim | talvez | talvez | sim | sim | P1 |
+| G6 | Chamados | Supabase/HTML | API chamados/atrixus | sim | talvez | talvez | sim | sim | P1 |
 | G7 | Campanhas | mock | campanhas + jobs | sim | talvez | sim | talvez | sim | P1 |
 | G8 | Super Admin | mock | tenants/planos/faturas | sim | nao | sim | nao | sim | P1 |
 | G9 | Relatorios | agregacao client | reporting backend | sim | talvez | sim | nao | sim | P2 |

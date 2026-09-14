@@ -27,6 +27,6 @@ Backend tests log webhook audit events with secret present and matching.
 
 ## Risks
 
-- Connection status in Nexos can be stale if Evolution state changes and metadata refresh is not executed.
+- Connection status in Trixus can be stale if Evolution state changes and metadata refresh is not executed.
 - Owner phone fields are not populated in observed rows, reducing forensic confidence.
 - No reconnect physical test was executed in MRC-01.

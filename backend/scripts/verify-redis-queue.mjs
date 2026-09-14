@@ -2,16 +2,16 @@ import { Queue, Worker } from "bullmq";
 import IORedis from "ioredis";
 
 const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
-const queueName = `nexos-smoke-${Date.now()}`;
+const queueName = `trixus-smoke-${Date.now()}`;
 const jobName = "smoke";
 const connection = new IORedis(redisUrl, {
-  connectionName: "nexos-queue-smoke",
+  connectionName: "trixus-queue-smoke",
   maxRetriesPerRequest: null,
   connectTimeout: 1_000,
 });
 const queue = new Queue(queueName, { connection });
 const workerConnection = new IORedis(redisUrl, {
-  connectionName: "nexos-queue-smoke-worker",
+  connectionName: "trixus-queue-smoke-worker",
   maxRetriesPerRequest: null,
   connectTimeout: 1_000,
 });
@@ -43,7 +43,7 @@ try {
       clearTimeout(timer);
       reject(error);
     });
-    queue.add(jobName, { ok: true }, { jobId: "nexos-smoke-job", removeOnComplete: true });
+    queue.add(jobName, { ok: true }, { jobId: "trixus-smoke-job", removeOnComplete: true });
   });
   console.log(JSON.stringify({ ok: true, queue: queueName, result }));
 } finally {

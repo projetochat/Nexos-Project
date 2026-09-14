@@ -46,7 +46,7 @@ function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-dvh overflow-hidden bg-[#f8fbff] text-[#071535]">
+    <div className="relative min-h-dvh overflow-x-hidden bg-[#f8fbff] text-[#071535]">
       <div
         className="pointer-events-none absolute inset-0 hidden bg-cover bg-center lg:block"
         style={{ backgroundImage: "url('/login-desktop-background.png')" }}
@@ -59,21 +59,18 @@ function LoginPage() {
       />
       <div className="pointer-events-none absolute inset-0 bg-white/20 lg:hidden" />
 
-      <div className="relative mx-auto grid min-h-dvh w-full max-w-[1320px] items-end gap-6 px-4 py-5 sm:items-center sm:py-8 lg:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)] lg:px-10 lg:py-8 xl:gap-14">
+      <div className="relative mx-auto grid min-h-dvh w-full max-w-[1320px] grid-rows-[minmax(13rem,32dvh)_1fr] items-center gap-6 px-4 py-5 sm:grid-rows-[minmax(15rem,34dvh)_1fr] sm:py-8 lg:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)] lg:grid-rows-none lg:px-10 lg:py-8 xl:gap-14">
         <div className="hidden lg:block" aria-hidden="true" />
 
-        <div className="mx-auto w-full max-w-[420px] lg:max-w-[460px]">
-          <div className="rounded-2xl border border-slate-200/90 bg-white/90 p-5 shadow-[0_18px_52px_rgba(15,42,90,0.13)] backdrop-blur sm:p-7 lg:rounded-[1.5rem] lg:p-8">
-            <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 sm:text-sm">
-              Ambiente de produção
-            </div>
+        <div className="row-start-2 mx-auto mt-4 w-full max-w-[420px] self-start lg:col-start-2 lg:row-auto lg:mt-0 lg:max-w-[460px] lg:self-center">
+          <div className="login-bank-gothic rounded-2xl border border-slate-200/90 bg-white/90 p-5 shadow-[0_18px_52px_rgba(15,42,90,0.13)] backdrop-blur sm:p-7 lg:rounded-[1.5rem] lg:p-8">
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#071535] sm:text-4xl">
               Entrar no Trixus
             </h1>
 
             <form onSubmit={handleLogin} className="mt-6 space-y-4 sm:mt-7">
               <div>
-                <label htmlFor="email" className="mb-1.5 block text-base font-semibold text-slate-500">
+                <label htmlFor="email" className="mb-1.5 block text-sm font-semibold text-slate-500">
                   E-mail
                 </label>
                 <input
@@ -85,7 +82,7 @@ function LoginPage() {
                   autoComplete="email"
                   aria-invalid={Boolean(error)}
                   aria-describedby={error ? "login-error" : undefined}
-                  className="h-12 w-full rounded-xl border border-slate-200 bg-[#eff6ff] px-4 text-base text-[#071535] outline-none transition placeholder:text-slate-400 focus:border-blue-500 sm:h-14 sm:text-lg"
+                  className="h-12 w-full rounded-xl border border-slate-200 bg-[#eff6ff] px-4 text-sm text-[#071535] outline-none transition placeholder:text-slate-400 focus:border-blue-500 sm:h-14 sm:text-base"
                   required
                 />
               </div>
@@ -93,7 +90,7 @@ function LoginPage() {
               <div>
                 <label
                   htmlFor="password"
-                  className="mb-1.5 block text-base font-semibold text-slate-500"
+                  className="mb-1.5 block text-sm font-semibold text-slate-500"
                 >
                   Senha
                 </label>
@@ -107,7 +104,7 @@ function LoginPage() {
                     autoComplete="current-password"
                     aria-invalid={Boolean(error)}
                     aria-describedby={error ? "login-error" : undefined}
-                    className="h-12 w-full rounded-xl border border-slate-200 bg-[#eff6ff] px-4 pr-12 text-base text-[#071535] outline-none transition placeholder:text-slate-400 focus:border-blue-500 sm:h-14 sm:text-lg"
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-[#eff6ff] px-4 pr-12 text-sm text-[#071535] outline-none transition placeholder:text-slate-400 focus:border-blue-500 sm:h-14 sm:text-base"
                     required
                   />
                   <button
@@ -134,7 +131,7 @@ function LoginPage() {
               )}
 
               <button
-                className="flex h-12 w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#0e55ef] via-[#176ef2] to-[#37b4e8] text-base font-semibold text-white shadow-[0_8px_18px_rgba(23,105,238,0.25)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 sm:h-14 sm:text-lg"
+                className="flex h-12 w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#0e55ef] via-[#176ef2] to-[#37b4e8] text-sm font-semibold text-white shadow-[0_8px_18px_rgba(23,105,238,0.25)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70 sm:h-14 sm:text-base"
                 type="submit"
                 disabled={loading}
               >

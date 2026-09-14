@@ -405,13 +405,13 @@ export class TicketsService {
     const ticket = await this.findVisibleTicket(id, current);
     const attachment = await this.findAttachment(ticket.id, attachmentId, current);
     if (attachment.status !== TicketAttachmentStatus.READY || attachment.deletedAt)
-      throw new NotFoundException("Anexo não encontrado.");
+      throw new NotFoundException("Atrixus não encontrado.");
     const object = await this.storage.headObject(attachment.objectKey);
     if (!object.exists) {
       throw canonicalException(
         HttpStatus.CONFLICT,
         "ATTACHMENT_OBJECT_MISSING",
-        "Arquivo do anexo não encontrado no storage.",
+        "Arquivo do atrixus não encontrado no storage.",
       );
     }
     const stored = await this.storage.getDownloadObject(attachment.objectKey);
@@ -621,20 +621,20 @@ export class TicketsService {
       throw canonicalException(
         HttpStatus.PAYLOAD_TOO_LARGE,
         "ATTACHMENT_TOO_LARGE",
-        `O arquivo excede o limite permitido de ${Number(process.env.NEXOS_STORAGE_MAX_FILE_SIZE_MB ?? 10)} MB.`,
+        `O arquivo excede o limite permitido de ${Number(process.env.TRIXUS_STORAGE_MAX_FILE_SIZE_MB ?? 10)} MB.`,
       );
     }
   }
 
   private maxAttachmentSizeBytes() {
-    return Number(process.env.NEXOS_STORAGE_MAX_FILE_SIZE_MB ?? 10) * 1024 * 1024;
+    return Number(process.env.TRIXUS_STORAGE_MAX_FILE_SIZE_MB ?? 10) * 1024 * 1024;
   }
 
   private async findAttachment(ticketId: string, attachmentId: string, current: AuthenticatedUser) {
     const attachment = await this.prisma.ticketAttachment.findFirst({
       where: { tenantId: current.tenantId, ticketId, id: attachmentId },
     });
-    if (!attachment) throw new NotFoundException("Anexo não encontrado.");
+    if (!attachment) throw new NotFoundException("Atrixus não encontrado.");
     return attachment;
   }
 }
@@ -743,7 +743,7 @@ async function readLimitedRequest(req: Request, limitBytes: number) {
       throw canonicalException(
         HttpStatus.PAYLOAD_TOO_LARGE,
         "ATTACHMENT_TOO_LARGE",
-        `O arquivo excede o limite permitido de ${Number(process.env.NEXOS_STORAGE_MAX_FILE_SIZE_MB ?? 10)} MB.`,
+        `O arquivo excede o limite permitido de ${Number(process.env.TRIXUS_STORAGE_MAX_FILE_SIZE_MB ?? 10)} MB.`,
       );
     }
     chunks.push(buffer);

@@ -13,7 +13,7 @@ describe("EvolutionWebhookTranslator", () => {
         instance: "tenant-support",
         data: {
           key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: false, id: "MSG1" },
-          message: { conversation: "Ola Nexos" },
+          message: { conversation: "Ola Trixus" },
           messageTimestamp: 1_709_550_600,
           pushName: "Cliente",
         },
@@ -27,7 +27,7 @@ describe("EvolutionWebhookTranslator", () => {
         tenantId: "tenant-a",
         connectionId: "connection-a",
         externalMessageId: "MSG1",
-        content: "Ola Nexos",
+        content: "Ola Trixus",
       },
     });
   });

@@ -1,31 +1,31 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: nexos-postgres
+    container_name: trixus-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: nexos
-      POSTGRES_USER: nexos
-      POSTGRES_PASSWORD: nexos_dev_password
+      POSTGRES_DB: trixus
+      POSTGRES_USER: trixus
+      POSTGRES_PASSWORD: trixus_dev_password
     ports:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nexos -d nexos"]
+      test: ["CMD-SHELL", "pg_isready -U trixus -d trixus"]
       interval: 5s
       timeout: 3s
       retries: 20
 
-  nexos-redis:
+  trixus-redis:
     image: redis:7.4-alpine
-    container_name: nexos-redis
+    container_name: trixus-redis
     restart: unless-stopped
     command: redis-server --port 6379 --appendonly yes
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
-      - nexos-redis-data:/data
+      - trixus-redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -34,7 +34,7 @@ services:
 
   evolution-postgres:
     image: postgres:15-alpine
-    container_name: nexos-evolution-postgres
+    container_name: trixus-evolution-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${EVOLUTION_POSTGRES_DATABASE:-evolution_db}
@@ -50,7 +50,7 @@ services:
 
   evolution-redis:
     image: redis:7.4-alpine
-    container_name: nexos-evolution-redis
+    container_name: trixus-evolution-redis
     restart: unless-stopped
     command: redis-server --port 6379 --appendonly yes
     volumes:
@@ -58,7 +58,7 @@ services:
 
   evolution-api:
     image: evoapicloud/evolution-api:v2.3.7
-    container_name: nexos-evolution-api
+    container_name: trixus-evolution-api
     restart: unless-stopped
     depends_on:
       evolution-postgres:
@@ -88,7 +88,7 @@ services:
 
 volumes:
   postgres-data:
-  nexos-redis-data:
+  trixus-redis-data:
   evolution-postgres-data:
   evolution-redis-data:
   evolution-instances:

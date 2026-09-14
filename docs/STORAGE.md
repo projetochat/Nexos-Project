@@ -9,10 +9,10 @@ Sprint 11 adiciona boundary privado de arquivos para Tickets.
 
 Configuracao:
 
-- `NEXOS_STORAGE_PROVIDER=local|r2`
-- `NEXOS_STORAGE_LOCAL_PATH`
-- `NEXOS_STORAGE_MAX_FILE_SIZE_MB`
-- `NEXOS_STORAGE_ALLOWED_MIME_TYPES`
+- `TRIXUS_STORAGE_PROVIDER=local|r2`
+- `TRIXUS_STORAGE_LOCAL_PATH`
+- `TRIXUS_STORAGE_MAX_FILE_SIZE_MB`
+- `TRIXUS_STORAGE_ALLOWED_MIME_TYPES`
 - `R2_ACCOUNT_ID`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
@@ -24,8 +24,8 @@ Secrets nunca devem ser logados.
 ## Decisao PRC-04
 
 O contrato aprovado para Tickets nesta PRC e storage privado local, com caminho fora do repositorio por
-`NEXOS_STORAGE_LOCAL_PATH`. Para deixar o sistema online em ambiente multi-instancia ou efemero, o deploy deve
-tratar R2/S3-compatible como item obrigatorio antes de aceitar anexos de tickets em producao.
+`TRIXUS_STORAGE_LOCAL_PATH`. Para deixar o sistema online em ambiente multi-instancia ou efemero, o deploy deve
+tratar R2/S3-compatible como item obrigatorio antes de aceitar atrixus de tickets em producao.
 
 ## Privacidade
 

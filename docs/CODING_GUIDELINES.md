@@ -28,7 +28,7 @@ Estas diretrizes refletem o estado atual do projeto.
 
 ## Dados e APIs
 
-- Preferir `src/lib/nexos-api.ts` para dominio operacional migrado.
+- Preferir `src/lib/trixus-api.ts` para dominio operacional migrado.
 - Nao adicionar novas queries Supabase em rotas operacionais.
 - Nao usar `supabaseAdmin` em codigo client-side.
 - Server functions privilegiadas devem importar `client.server.ts` dentro do handler.

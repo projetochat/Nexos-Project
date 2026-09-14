@@ -523,12 +523,12 @@ export class AuthService {
   private exposeLocalTokens() {
     return (
       process.env.NODE_ENV !== "production" ||
-      this.config.get<string>("NEXOS_EXPOSE_LOCAL_TOKENS") === "true"
+      this.config.get<string>("TRIXUS_EXPOSE_LOCAL_TOKENS") === "true"
     );
   }
 
   private publicAppUrl() {
-    return (this.config.get<string>("NEXOS_PUBLIC_APP_URL") ?? "http://localhost:5173").replace(
+    return (this.config.get<string>("TRIXUS_PUBLIC_APP_URL") ?? "http://localhost:5173").replace(
       /\/$/,
       "",
     );

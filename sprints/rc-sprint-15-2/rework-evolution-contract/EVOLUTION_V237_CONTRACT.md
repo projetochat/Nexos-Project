@@ -1,6 +1,6 @@
 # Evolution v2.3.7 Contract
 
-Source: local container `nexos-evolution-api`, image `evoapicloud/evolution-api:v2.3.7`.
+Source: local container `trixus-evolution-api`, image `evoapicloud/evolution-api:v2.3.7`.
 
 Primary local files:
 - `/evolution/dist/validate/message.schema.js`

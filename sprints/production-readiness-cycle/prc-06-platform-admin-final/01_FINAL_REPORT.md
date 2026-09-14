@@ -17,7 +17,7 @@ O modulo Platform Admin ja possuia a maior parte do fluxo funcional. A PRC-06 co
 - Criado guard `test:prc06-platform-admin-final-contract`.
 - Guard incluido no `verify`.
 - Cobertura e2e adicionada para bloquear downgrade de assinatura quando o consumo atual excede os limites do novo plano.
-- Notion atualizado no `Nexos Project - Control Center`.
+- Notion atualizado no `Trixus Project - Control Center`.
 - Documentacao atualizada em:
   - `docs/PLATFORM_ADMIN.md`
   - `docs/IMPERSONATION.md`
@@ -59,7 +59,7 @@ bun run --cwd backend test -- -t "blocks subscription downgrade when current ten
 BLOCKED
 ```
 
-Motivo: Docker Desktop nao estava ativo. A tentativa de subir `postgres` e `nexos-redis` falhou porque o pipe `dockerDesktopLinuxEngine` nao estava disponivel.
+Motivo: Docker Desktop nao estava ativo. A tentativa de subir `postgres` e `trixus-redis` falhou porque o pipe `dockerDesktopLinuxEngine` nao estava disponivel.
 
 Erro observado:
 
@@ -75,8 +75,8 @@ Sem o Postgres local em `127.0.0.1:5432`, a suite e2e nao consegue inicializar o
 Com Docker Desktop aberto:
 
 ```powershell
-cd "C:\Users\Rabel\Downloads\Nexos Project"
-docker compose up -d postgres nexos-redis
+cd "C:\Users\Rabel\Downloads\Trixus Project"
+docker compose up -d postgres trixus-redis
 bun run test:prc06-platform-admin-final-contract
 bun run --cwd backend test -- -t "blocks subscription downgrade when current tenant usage exceeds plan limits"
 bun run verify

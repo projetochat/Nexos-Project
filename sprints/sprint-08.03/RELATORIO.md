@@ -8,13 +8,13 @@ Gate final: `NOT READY TO RESUME PHYSICAL HOMOLOGATION`, porque a validacao UI f
 
 ## 2. Resumo executivo
 
-A causa funcional principal do login de homologacao foi corrigida: o frontend enviava `tenantSlug=acme` por padrao, enquanto o banco `nexos_0802` possui apenas o tenant `homologacao`. A tela de login deixou de ser demo, o cliente passou a autenticar sem tenant fixo, o backend ganhou `/api/auth/me`, erros canonicos, health mais diagnostico e seed admin configuravel.
+A causa funcional principal do login de homologacao foi corrigida: o frontend enviava `tenantSlug=acme` por padrao, enquanto o banco `trixus_0802` possui apenas o tenant `homologacao`. A tela de login deixou de ser demo, o cliente passou a autenticar sem tenant fixo, o backend ganhou `/api/auth/me`, erros canonicos, health mais diagnostico e seed admin configuravel.
 
 ## 3. Baseline
 
 - Baseline Sprint 08.02: `247ef9c07ff8c000ded4f065ccaf35acd5f982d2`
 - Branch: `sprint/08.03-auth-login-access-consolidation`
-- Reset `nexos_0802` presente.
+- Reset `trixus_0802` presente.
 - Contact restore preservado.
 - Redis/BullMQ/Outbox preservados.
 
@@ -38,7 +38,7 @@ Artefatos auditados:
 | ------------------------------ | -------------------- | ----------------------------------------------------------------------------- |
 | `src/routes/login.tsx`         | REWRITE / LEGACY MVP | Reescrito sem perfil demo, sem credenciais preenchidas e sem tenant `acme`    |
 | `src/lib/session.ts`           | KEEP / ADAPT         | Sessao unica Zustand mantida; logout real e sync multi-tab adicionados        |
-| `src/lib/nexos-api.ts`         | KEEP / ADAPT         | API URL unica, login sem tenant default, refresh e erros especificos          |
+| `src/lib/trixus-api.ts`         | KEEP / ADAPT         | API URL unica, login sem tenant default, refresh e erros especificos          |
 | `src/routes/__root.tsx`        | KEEP / ADAPT         | Bootstrap preservado e sync de logout entre abas adicionado                   |
 | `src/components/app-shell.tsx` | KEEP                 | Guards client-side preservados                                                |
 | `src/start.ts`                 | LEGACY ISOLATED      | Supabase auth attacher permanece para server functions legadas, fora do login |
@@ -59,13 +59,13 @@ Removido da tela `/login`:
 
 ## 7. Dead code removal
 
-Nao houve remocao ampla de bibliotecas Supabase porque ainda existem rotas MVP nao migradas. O legado de auth ficou isolado fora da tela de login e fora do fluxo operacional Nexos API.
+Nao houve remocao ampla de bibliotecas Supabase porque ainda existem rotas MVP nao migradas. O legado de auth ficou isolado fora da tela de login e fora do fluxo operacional Trixus API.
 
 ## 8. API client
 
-`src/lib/nexos-api.ts` agora:
+`src/lib/trixus-api.ts` agora:
 
-- usa `VITE_NEXOS_API_URL` com default `http://localhost:3001/api`;
+- usa `VITE_TRIXUS_API_URL` com default `http://localhost:3001/api`;
 - nao envia `tenantSlug` por padrao;
 - chama `/auth/me`;
 - tenta refresh automatico em 401 de chamadas autenticadas;
@@ -74,7 +74,7 @@ Nao houve remocao ampla de bibliotecas Supabase porque ainda existem rotas MVP n
 
 ## 9. API URL
 
-Variavel oficial: `VITE_NEXOS_API_URL`.
+Variavel oficial: `VITE_TRIXUS_API_URL`.
 
 Valor local: `http://localhost:3001/api`.
 
@@ -82,7 +82,7 @@ Valor local: `http://localhost:3001/api`.
 
 `GET /api/health` retorna `ok=true` quando API + database estao online. Redis e informado separadamente.
 
-API fisica em `nexos_0802`: PASS.
+API fisica em `trixus_0802`: PASS.
 
 ## 11. Login backend audit
 
@@ -143,7 +143,7 @@ SEED_ADMIN_PASSWORD
 Defaults locais:
 
 ```text
-admin@nexo.app
+admin@trixus.app
 demo1234
 ```
 
@@ -151,7 +151,7 @@ Defaults bloqueados em `NODE_ENV=production`.
 
 ## 21. Database verification
 
-Reset oficial `nexos_0802`: PASS.
+Reset oficial `trixus_0802`: PASS.
 
 Contagens:
 
@@ -211,10 +211,10 @@ JWT secrets preservados. Logs nao imprimem senha, JWT, refresh token, API key ou
 
 ## 29. API physical tests
 
-Executado contra backend real em `nexos_0802`:
+Executado contra backend real em `trixus_0802`:
 
 - health: PASS
-- login `admin@nexo.app` / `demo1234`: PASS
+- login `admin@trixus.app` / `demo1234`: PASS
 - tenant `homologacao`: PASS
 - membership `tenant_admin`: PASS
 - `/api/auth/me`: PASS
@@ -236,7 +236,7 @@ Logo, UI login real, F5, logout, back button e API offline visual ficam pendente
 Executados:
 
 - `bun --cwd backend vitest run test/app.e2e-spec.ts`: 36 tests PASS
-- `bunx vitest run src/lib/nexos-api.test.ts --environment jsdom`: 5 tests PASS
+- `bunx vitest run src/lib/trixus-api.test.ts --environment jsdom`: 5 tests PASS
 - `bun run backend:test`: 16 files, 92 tests PASS
 
 ## 32. Regressions
@@ -263,13 +263,13 @@ Verify final #1: PASS.
 
 Verify final #2: PASS.
 
-Observacao: verifies finais usam `nexos_0801` porque a suite ampla ainda depende de tenants demo `acme/orbit`. Smokes fisicos de API foram executados contra `nexos_0802`.
+Observacao: verifies finais usam `trixus_0801` porque a suite ampla ainda depende de tenants demo `acme/orbit`. Smokes fisicos de API foram executados contra `trixus_0802`.
 
 ## 36. Files created
 
 - `backend/.env.example`
 - `backend/scripts/verify-homologation-login.mjs`
-- `src/lib/nexos-api.test.ts`
+- `src/lib/trixus-api.test.ts`
 - `sprints/sprint-08.03/RELATORIO.md`
 
 ## 37. Files changed
@@ -283,7 +283,7 @@ Observacao: verifies finais usam `nexos_0801` porque a suite ampla ainda depende
 - `backend/src/health/health.controller.ts`
 - `backend/src/prisma/prisma.service.ts`
 - `backend/test/app.e2e-spec.ts`
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 - `src/lib/session.ts`
 - `src/routes/__root.tsx`
 - `src/routes/login.tsx`
@@ -319,7 +319,7 @@ Atualizados:
 | M06 | legacy MVP auth inventory | Registrado                | relatorio secao 5                              | PASS    |
 | M07 | mock auth removed         | Login real sem demo       | `src/routes/login.tsx`                         | PASS    |
 | M08 | dead auth code removed    | Legado isolado            | Supabase fora do login                         | PARTIAL |
-| M09 | single API base URL       | Implementado              | `VITE_NEXOS_API_URL`                           | PASS    |
+| M09 | single API base URL       | Implementado              | `VITE_TRIXUS_API_URL`                           | PASS    |
 | M10 | API health pre-login      | Implementado              | `/api/health` + UI health                      | PASS    |
 | M11 | network error mapping     | Implementado              | UI TypeError mapping                           | PASS    |
 | M12 | 401 mapping               | Implementado              | frontend/backend tests                         | PASS    |
@@ -338,12 +338,12 @@ Atualizados:
 | M25 | /me                       | Implementado              | `/api/auth/me`                                 | PASS    |
 | M26 | logout                    | Implementado              | E2E + frontend cleanup                         | PASS    |
 | M27 | database startup log      | Implementado              | `PrismaService` sanitized log                  | PASS    |
-| M28 | nexos_0802 assertion      | Implementado              | `SEED_MODE=homologation` guard                 | PASS    |
+| M28 | trixus_0802 assertion      | Implementado              | `SEED_MODE=homologation` guard                 | PASS    |
 | M29 | seed admin email          | Implementado              | `SEED_ADMIN_EMAIL`                             | PASS    |
 | M30 | seed admin password       | Implementado              | `SEED_ADMIN_PASSWORD`                          | PASS    |
 | M31 | seed docs                 | Atualizado                | docs/env examples                              | PASS    |
 | M32 | login smoke script        | Criado                    | `verify-homologation-login.mjs`                | PASS    |
-| M33 | API login real            | PASS                      | HTTP real `nexos_0802`                         | PASS    |
+| M33 | API login real            | PASS                      | HTTP real `trixus_0802`                         | PASS    |
 | M34 | API me real               | PASS                      | HTTP real `/auth/me`                           | PASS    |
 | M35 | UI login real             | Nao executado             | browser indisponivel                           | PARTIAL |
 | M36 | UI wrong password         | Nao executado fisicamente | backend/frontend tests cobrem                  | PARTIAL |
@@ -375,13 +375,13 @@ Atualizados:
 | M62 | me tests                  | PASS                      | E2E                                            | PASS    |
 | M63 | logout tests              | PASS                      | E2E stateless                                  | PASS    |
 | M64 | frontend offline test     | Implementado parcial      | TypeError path                                 | PARTIAL |
-| M65 | frontend 401 test         | PASS                      | nexos-api test                                 | PASS    |
-| M66 | frontend 403 test         | PASS                      | nexos-api test                                 | PASS    |
-| M67 | frontend 500 test         | PASS                      | nexos-api test                                 | PASS    |
-| M68 | frontend success test     | PASS                      | nexos-api test                                 | PASS    |
+| M65 | frontend 401 test         | PASS                      | trixus-api test                                 | PASS    |
+| M66 | frontend 403 test         | PASS                      | trixus-api test                                 | PASS    |
+| M67 | frontend 500 test         | PASS                      | trixus-api test                                 | PASS    |
+| M68 | frontend success test     | PASS                      | trixus-api test                                 | PASS    |
 | M69 | frontend F5 test          | Nao executado             | browser indisponivel                           | PARTIAL |
 | M70 | frontend logout test      | Nao executado fisicamente | code path implementado                         | PARTIAL |
-| M71 | reset nexos_0802          | PASS                      | reset oficial                                  | PASS    |
+| M71 | reset trixus_0802          | PASS                      | reset oficial                                  | PASS    |
 | M72 | seed homologation         | PASS                      | reset + audit                                  | PASS    |
 | M73 | physical API health       | PASS                      | Invoke-RestMethod                              | PASS    |
 | M74 | physical API login        | PASS                      | Invoke-RestMethod                              | PASS    |
@@ -413,7 +413,7 @@ Atualizados:
 - Auth ainda usa `localStorage`; HttpOnly cookie e melhoria futura.
 - Alguns fluxos MVP ainda usam Supabase, mas nao participam do login real.
 - Tenant inactive nao existe no schema; se virar regra de negocio, precisa migration.
-- E2E amplo ainda usa `nexos_0801` com massa demo `acme/orbit`.
+- E2E amplo ainda usa `trixus_0801` com massa demo `acme/orbit`.
 
 ## 42. Risks
 

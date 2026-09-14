@@ -37,7 +37,7 @@ import { DashboardFiltersBar } from "@/components/dashboard-filters";
 import { Button, Card, Input, KPI, SectionHeader } from "@/components/ui-kit";
 import { Modal } from "@/components/modal";
 import { num, relativeTime } from "@/lib/format";
-import { operationsApi } from "@/lib/nexos-api";
+import { operationsApi } from "@/lib/trixus-api";
 import {
   DEFAULT_OPERATIONAL_FILTERS,
   datesForOperationalPeriod,
@@ -99,7 +99,7 @@ function Dashboard() {
     user?.role === "admin" ||
     user?.role === "super_admin" ||
     user?.permissions?.includes("dashboard.manage");
-  const storageKey = `nexo.dashboard.bis.${user?.id ?? "anonymous"}`;
+  const storageKey = `trixus.dashboard.bis.${user?.id ?? "anonymous"}`;
   const [editingDashboard, setEditingDashboard] = React.useState(false);
   const [visibleBis, setVisibleBis] = React.useState<DashboardBiId[]>(
     () => loadDashboardPreferences(storageKey).visible,

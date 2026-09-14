@@ -22,10 +22,10 @@ export function readCampaignRuntimeConfig(
   config: Pick<ConfigService, "get">,
 ): CampaignRuntimeConfig {
   return {
-    concurrency: readPositiveInteger(config, "NEXOS_CAMPAIGN_CONCURRENCY", 2),
-    messagesPerMinute: readPositiveInteger(config, "NEXOS_CAMPAIGN_MESSAGES_PER_MINUTE", 12),
-    batchSize: Math.min(readPositiveInteger(config, "NEXOS_CAMPAIGN_BATCH_SIZE", 25), 100),
-    maxRecipients: readPositiveInteger(config, "NEXOS_CAMPAIGN_MAX_RECIPIENTS", 25),
+    concurrency: readPositiveInteger(config, "TRIXUS_CAMPAIGN_CONCURRENCY", 2),
+    messagesPerMinute: readPositiveInteger(config, "TRIXUS_CAMPAIGN_MESSAGES_PER_MINUTE", 12),
+    batchSize: Math.min(readPositiveInteger(config, "TRIXUS_CAMPAIGN_BATCH_SIZE", 25), 100),
+    maxRecipients: readPositiveInteger(config, "TRIXUS_CAMPAIGN_MAX_RECIPIENTS", 25),
   };
 }
 

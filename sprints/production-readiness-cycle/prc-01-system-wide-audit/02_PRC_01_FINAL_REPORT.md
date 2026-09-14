@@ -23,10 +23,10 @@ READY FOR PRC-02 LEGACY SURFACE CLEANUP
 
 2. Isolado o ambiente do `scripts/verify.mjs`:
    - `SEED_MODE` agora roda como `test` durante o verify;
-   - evita que um PowerShell de homologacao com `SEED_MODE=homologation` quebre os testes contra `nexos_1200`.
+   - evita que um PowerShell de homologacao com `SEED_MODE=homologation` quebre os testes contra `trixus_1200`.
 
 3. Atualizado banco de teste local:
-   - aplicada migration `20260812180000_conversation_inbox_archive` no banco `nexos_1200`;
+   - aplicada migration `20260812180000_conversation_inbox_archive` no banco `trixus_1200`;
    - corrigido drift que causava erro em `conversations.inboxArchivedAt`.
 
 4. Corrigido seed de roles de tenant:

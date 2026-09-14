@@ -38,7 +38,7 @@ export class CampaignDispatchQueue implements OnModuleDestroy {
 
   async health() {
     if (!this.redis.enabled()) return { ok: false, configured: false };
-    const connection = this.redis.createConnection("nexos-campaign-redis-health");
+    const connection = this.redis.createConnection("trixus-campaign-redis-health");
     try {
       const pong = await connection.ping();
       return { ok: pong === "PONG", configured: true };
@@ -50,7 +50,7 @@ export class CampaignDispatchQueue implements OnModuleDestroy {
   getQueue() {
     if (!this.redis.enabled()) throw new Error("Trixus queue is disabled.");
     this.queue ??= new Queue<CampaignDispatchJob>(CAMPAIGN_DISPATCH_QUEUE, {
-      connection: this.redis.createConnection("nexos-campaign-queue"),
+      connection: this.redis.createConnection("trixus-campaign-queue"),
     });
     return this.queue;
   }

@@ -5,7 +5,7 @@ import {
   connectionDisplayLabel,
   hasExampleInstanceName,
 } from "@/lib/connection-options";
-import type { ApiMessagingConnection } from "@/lib/nexos-api";
+import type { ApiMessagingConnection } from "@/lib/trixus-api";
 
 describe("connection options", () => {
   it("returns zero options for an empty API response and never invents examples", () => {

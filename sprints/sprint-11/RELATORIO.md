@@ -6,7 +6,7 @@ Sprint 11 implementada tecnicamente em modo backend/frontend/documentacao, com g
 
 ## 2. Resumo executivo
 
-Chamados deixou de usar Supabase/MVP no runtime operacional. Foi criado dominio `Ticket` no NestJS/Prisma, com workflow, comentarios internos, historico, anexos privados, storage abstraction, sanitizacao server-side e rota `/chamados` migrada para Nexos API.
+Chamados deixou de usar Supabase/MVP no runtime operacional. Foi criado dominio `Ticket` no NestJS/Prisma, com workflow, comentarios internos, historico, atrixus privados, storage abstraction, sanitizacao server-side e rota `/chamados` migrada para Trixus API.
 
 ## 3. Baseline Sprint 10
 
@@ -32,7 +32,7 @@ Commit base Sprint 10 consolidado: `35bea7d`.
 
 ## 6. Legacy audit
 
-Auditoria encontrou `/chamados` com `@/lib/mvp`, Supabase, `innerHTML`, `contentEditable`, `FileReader` e `insertHTML`. O arquivo foi reescrito para Nexos API.
+Auditoria encontrou `/chamados` com `@/lib/mvp`, Supabase, `innerHTML`, `contentEditable`, `FileReader` e `insertHTML`. O arquivo foi reescrito para Trixus API.
 
 ## 7. Unsafe HTML audit
 
@@ -52,15 +52,15 @@ Ticket vincula Department obrigatorio e, opcionalmente, assigned membership, Con
 
 ## 11. Comments
 
-Comentarios sao internos ao time Nexos e nao geram Message WhatsApp.
+Comentarios sao internos ao time Trixus e nao geram Message WhatsApp.
 
 ## 12. History
 
-Eventos registrados: abertura, update, status, atribuicao, departamento, comentarios e anexos.
+Eventos registrados: abertura, update, status, atribuicao, departamento, comentarios e atrixus.
 
 ## 13. Attachments
 
-Anexos possuem metadata privada, status `PENDING/READY/DELETED/REJECTED`, scan boundary e download autenticado.
+Atrixus possuem metadata privada, status `PENDING/READY/DELETED/REJECTED`, scan boundary e download autenticado.
 
 ## 14. Storage abstraction
 
@@ -68,7 +68,7 @@ Anexos possuem metadata privada, status `PENDING/READY/DELETED/REJECTED`, scan b
 
 ## 15. Local provider
 
-`LocalPrivateStorageProvider` grava fora do repositorio por `NEXOS_STORAGE_LOCAL_PATH` e bloqueia traversal.
+`LocalPrivateStorageProvider` grava fora do repositorio por `TRIXUS_STORAGE_LOCAL_PATH` e bloqueia traversal.
 
 ## 16. R2 provider
 
@@ -80,7 +80,7 @@ Frontend chama init, envia bytes no complete local e metadata passa a `READY`; b
 
 ## 18. Download security
 
-Download passa por JWT, tenant, visibilidade do Ticket e status do anexo.
+Download passa por JWT, tenant, visibilidade do Ticket e status do atrixus.
 
 ## 19. Sanitization
 
@@ -112,11 +112,11 @@ Eventos `ticket.*` adicionados ao backend/frontend. Publicacao ocorre apos persi
 
 ## 26. Frontend list
 
-`/chamados` lista via Nexos API com busca, status, prioridade, loading, empty e error via query.
+`/chamados` lista via Trixus API com busca, status, prioridade, loading, empty e error via query.
 
 ## 27. Frontend detail
 
-Detalhe exibe protocolo, status, prioridade, descricao texto, vinculos, comentarios e anexos.
+Detalhe exibe protocolo, status, prioridade, descricao texto, vinculos, comentarios e atrixus.
 
 ## 28. Editor
 
@@ -148,7 +148,7 @@ Criacao usa Contacts/Customers reais via APIs existentes.
 
 ## 34. Physical tests
 
-Nao executados nesta sessao: admin fisico, atendente fisico, XSS fisico, anexos fisicos, multiusuario, realtime offline e storage offline.
+Nao executados nesta sessao: admin fisico, atendente fisico, XSS fisico, atrixus fisicos, multiusuario, realtime offline e storage offline.
 
 ## 35. Regressions
 
@@ -176,7 +176,7 @@ Principais: `backend/src/tickets/*`, migration `20260804030000_ticketing_secure_
 
 ## 41. Files changed
 
-Prisma schema, AppModule, Health, Realtime, auth permissions, `/chamados`, Nexos API client, docs e sprints.
+Prisma schema, AppModule, Health, Realtime, auth permissions, `/chamados`, Trixus API client, docs e sprints.
 
 ## 42. Files removed
 
@@ -193,7 +193,7 @@ Docs gerais atualizados e novos docs Ticketing/Storage criados.
 | M01-M05 | Baseline, branch e verify inicial concluídos | preflight + `bun run verify` | PASS |
 | M06-M10 | Legacy/unsafe/data URL auditados e removidos de `/chamados` | `rg` + guarda anti-legado | PASS |
 | M11-M25 | Modelo Ticket, protocolo, workflow, relations, comments, history, attachments | Prisma + NestJS | PASS |
-| M26-M30 | Migration `nexos_1100`, `nexos_0802`, `nexos_0801` | migrate deploy sem reset | PASS |
+| M26-M30 | Migration `trixus_1100`, `trixus_0802`, `trixus_0801` | migrate deploy sem reset | PASS |
 | M31-M45 | APIs Ticket/comment/attachment | Controller/service + E2E | PASS |
 | M46-M51 | Sanitizacao e zero inline image runtime | sanitizer + route rewrite | PASS |
 | M52-M63 | Storage abstraction/local/R2/safe keys/MIME/size/scanner | storage providers | PASS |
@@ -213,7 +213,7 @@ Docs gerais atualizados e novos docs Ticketing/Storage criados.
 
 ## 46. Risks
 
-Gate fisico nao executado nesta sessao. Nao liberar Sprint 12 sem admin/agente fisico, XSS fisico, anexos, multiusuario, realtime offline e storage offline.
+Gate fisico nao executado nesta sessao. Nao liberar Sprint 12 sem admin/agente fisico, XSS fisico, atrixus, multiusuario, realtime offline e storage offline.
 
 ## 47. Commits
 
@@ -243,7 +243,7 @@ Teste que impede regressao: bootstrap real de `AppModule`, compile real de `Tick
 
 ### Evidencia fisica HTTP
 
-Backend iniciado em `nexos_0802` com tenant `homologacao`.
+Backend iniciado em `trixus_0802` com tenant `homologacao`.
 
 - HTTP fisico `GET /api/tickets`: `200`
 - HTTP fisico `POST /api/tickets`: `201`
@@ -264,8 +264,8 @@ Observacao: teste visual automatizado de UI nao foi executado nesta sessao porqu
 
 | Metrica | Meta | Resultado | Evidencia | Status |
 | --- | --- | --- | --- | --- |
-| M128 | Reproduzir falha fisica de listagem | Falha original reconhecida; GET reexecutado apos correcao | `GET /api/tickets -> 200` em `nexos_0802` | PASS |
-| M129 | Reproduzir falha fisica de criacao | Falha original reconhecida; POST reexecutado apos correcao | `POST /api/tickets -> 201` em `nexos_0802` | PASS |
+| M128 | Reproduzir falha fisica de listagem | Falha original reconhecida; GET reexecutado apos correcao | `GET /api/tickets -> 200` em `trixus_0802` | PASS |
+| M129 | Reproduzir falha fisica de criacao | Falha original reconhecida; POST reexecutado apos correcao | `POST /api/tickets -> 201` em `trixus_0802` | PASS |
 | M130 | Auditar constructor do controller | Constructor auditado | `tickets.controller.ts:35` | PASS |
 | M131 | Auditar import runtime do service | `TicketsService` importado como valor | `import { TicketsService }` | PASS |
 | M132 | Auditar providers do module | Service em providers e exports | `tickets.module.ts` | PASS |
@@ -295,9 +295,9 @@ Observacao: teste visual automatizado de UI nao foi executado nesta sessao porqu
 
 A Inbox ainda mantinha um placeholder operacional em `src/routes/inbox.$conversationId.tsx`: o botao de gerar chamado executava `window.alert` e lancava erro informando que a Inbox exigia a API oficial de Chamados, mesmo apos o dominio de Tickets estar disponivel. Isso impedia o fluxo real Inbox -> Chamados.
 
-O upload anterior de anexo usava o contrato `init + complete` com JSON/base64 (`contentBase64`). Para um PDF fisico de aproximadamente 249 KB, o payload crescia dentro de `application/json` e entrava pelo parser JSON do Express/Nest, gerando risco real de `request entity too large` antes da camada de storage. O novo contrato usa corpo binario direto em `POST /api/tickets/:id/attachments`, com `Content-Type` do arquivo, por exemplo `application/pdf`, e headers sanitizados `X-File-Name` e `X-File-Size`.
+O upload anterior de atrixus usava o contrato `init + complete` com JSON/base64 (`contentBase64`). Para um PDF fisico de aproximadamente 249 KB, o payload crescia dentro de `application/json` e entrava pelo parser JSON do Express/Nest, gerando risco real de `request entity too large` antes da camada de storage. O novo contrato usa corpo binario direto em `POST /api/tickets/:id/attachments`, com `Content-Type` do arquivo, por exemplo `application/pdf`, e headers sanitizados `X-File-Name` e `X-File-Size`.
 
-A inconsistenia de Attachment vinha da criacao antecipada de metadata `PENDING` no `init`, antes dos bytes estarem persistidos. A listagem tambem podia expor anexos nao prontos. Agora o endpoint unico valida tamanho/MIME/assinatura, grava o objeto, confirma `headObject`, marca `READY` somente depois da existencia fisica, publica realtime apenas apos `READY`, lista somente `READY` nao deletado e marca falhas como `REJECTED`/`DELETED` sem expor object key completo.
+A inconsistenia de Attachment vinha da criacao antecipada de metadata `PENDING` no `init`, antes dos bytes estarem persistidos. A listagem tambem podia expor atrixus nao prontos. Agora o endpoint unico valida tamanho/MIME/assinatura, grava o objeto, confirma `headObject`, marca `READY` somente depois da existencia fisica, publica realtime apenas apos `READY`, lista somente `READY` nao deletado e marca falhas como `REJECTED`/`DELETED` sem expor object key completo.
 
 ### Correcao aplicada
 
@@ -307,11 +307,11 @@ A inconsistenia de Attachment vinha da criacao antecipada de metadata `PENDING` 
 - Backend adicionou `POST /api/tickets/:id/attachments`, `GET .../download` e `GET .../inline`.
 - Backend aplica limite de 10 MB, allowlist de MIME, assinatura basica de arquivo, filename sanitizado e erro canonico.
 - Auditoria `backend/scripts/audit-ticket-attachments.mjs` lista status, existencia fisica e hash da object key, nunca o caminho completo.
-- Cleanup marcou como `DELETED` dois registros `PENDING` sem objeto em `nexos_0802`.
+- Cleanup marcou como `DELETED` dois registros `PENDING` sem objeto em `trixus_0802`.
 
 ### Evidencia fisica HTTP
 
-Ambiente fisico usado: backend em `3001`, banco `nexos_0802`, storage local.
+Ambiente fisico usado: backend em `3001`, banco `trixus_0802`, storage local.
 
 - Criacao de Ticket vinculado a Conversation: `POST /api/tickets -> 201`.
 - `conversationIdPresent=true`.

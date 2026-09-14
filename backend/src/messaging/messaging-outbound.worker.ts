@@ -37,13 +37,13 @@ export class MessagingOutboundWorker implements OnApplicationBootstrap, OnModule
 
   onApplicationBootstrap() {
     if (!this.redis.enabled()) return;
-    if (this.config.get<string>("NEXOS_QUEUE_WORKER_ENABLED") === "false") return;
+    if (this.config.get<string>("TRIXUS_QUEUE_WORKER_ENABLED") === "false") return;
 
     this.worker = new Worker<MessagingOutboundJob>(
       MESSAGING_OUTBOUND_QUEUE,
       (job) => this.process(job),
       {
-        connection: this.redis.createConnection("nexos-outbound-worker", { blocking: true }),
+        connection: this.redis.createConnection("trixus-outbound-worker", { blocking: true }),
         concurrency: this.concurrency(),
         metrics: { maxDataPoints: MetricsTime.ONE_WEEK * 2 },
       },
@@ -114,7 +114,7 @@ export class MessagingOutboundWorker implements OnApplicationBootstrap, OnModule
   }
 
   private concurrency() {
-    const value = Number(this.config.get<string>("NEXOS_OUTBOUND_WORKER_CONCURRENCY") ?? 5);
+    const value = Number(this.config.get<string>("TRIXUS_OUTBOUND_WORKER_CONCURRENCY") ?? 5);
     return Number.isFinite(value) && value > 0 ? value : 5;
   }
 

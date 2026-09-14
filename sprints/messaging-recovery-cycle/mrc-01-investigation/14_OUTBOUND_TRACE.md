@@ -21,6 +21,6 @@ Pre-normalized Evolution payloads were incompatible with v2.3.7. This explains p
 
 ## Remaining Gaps
 
-- No full Nexos UI/API -> Outbox -> Worker -> Evolution -> WhatsApp physical send was executed in MRC-01.
+- No full Trixus UI/API -> Outbox -> Worker -> Evolution -> WhatsApp physical send was executed in MRC-01.
 - No group outbound physical send was executed in MRC-01.
 - No retry under provider outage was executed in MRC-01.

@@ -10,7 +10,7 @@ import { ApiExceptionFilter } from "./common/api-exception.filter";
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const config = app.get(ConfigService);
-  const bodyLimit = config.get<string>("NEXOS_HTTP_BODY_LIMIT") ?? "100mb";
+  const bodyLimit = config.get<string>("TRIXUS_HTTP_BODY_LIMIT") ?? "100mb";
 
   app.use(helmet());
   app.useBodyParser("json", { limit: bodyLimit });

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Card, Button } from "@/components/ui-kit";
-import { crmApi, type ApiContactCustomField } from "@/lib/nexos-api";
+import { crmApi, type ApiContactCustomField } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/configuracoes/variaveis")({ component: VariablesSettingsPage });
 
@@ -22,7 +22,7 @@ type MessageVariable = { token: string; description: string };
 
 function VariablesSettingsPage() {
   const { data: customFields = [], isLoading: loadingCustomFields } = useQuery({
-    queryKey: ["nexos", "contact-custom-fields"],
+    queryKey: ["trixus", "contact-custom-fields"],
     queryFn: crmApi.listContactCustomFields,
   });
   const variables = React.useMemo(() => mergeVariables(customFields), [customFields]);

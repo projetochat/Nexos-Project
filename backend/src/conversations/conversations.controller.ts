@@ -19,7 +19,6 @@ import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import {
   ConversationStatus,
-  ConversationType,
   MembershipStatus,
   MessagingConnectionStatus,
   MessagingProviderType,
@@ -34,6 +33,7 @@ import { ListConversationsQueryDto } from "./dto/list-conversations-query.dto";
 import { TransferDepartmentDto } from "./dto/transfer-department.dto";
 import { UpdateConversationStatusDto } from "./dto/update-conversation-status.dto";
 import { MessagesService } from "./messages.service";
+import { conversationQueueScope } from "./conversation-queue-scope";
 
 const conversationInclude = {
   contact: {
@@ -886,35 +886,9 @@ function tabWhere(
     const canViewAllActive =
       current.roleKey === "tenant_admin" ||
       current.permissions?.includes("chat.conversations.view_all_active");
-    return {
-      OR: canViewAllActive
-        ? [
-            { assignedMembershipId: { not: null } },
-            { conversationType: ConversationType.GROUP, protocol: { not: null } },
-          ]
-        : [
-            { assignedMembershipId: current.membershipId },
-            { conversationType: ConversationType.GROUP, protocol: { not: null } },
-          ],
-      status: { notIn: [ConversationStatus.FECHADA, ConversationStatus.AGUARDANDO] },
-    };
+    return conversationQueueScope("ativas", canViewAllActive ? undefined : current.membershipId);
   }
-  if (tab === "standby") return { status: ConversationStatus.AGUARDANDO };
-  if (tab === "fila") {
-    return {
-      status: ConversationStatus.ABERTA,
-      assignedMembershipId: null,
-      protocol: { not: null },
-    };
-  }
-  if (tab === "leads") {
-    return {
-      assignedMembershipId: null,
-      status: { not: ConversationStatus.FECHADA },
-      protocol: null,
-    };
-  }
-  return {};
+  return conversationQueueScope(tab);
 }
 
 function parseStatus(status: "aberta" | "em_andamento" | "aguardando" | "fechada") {

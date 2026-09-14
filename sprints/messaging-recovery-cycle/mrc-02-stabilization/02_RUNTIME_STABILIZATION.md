@@ -4,14 +4,14 @@
 
 Official homologation database:
 
-- `nexos_0802`
+- `trixus_0802`
 
 Actions:
 
-- `.env` updated from `nexos` to `nexos_0802`.
-- `prisma migrate status` on `nexos_0802`: up to date.
+- `.env` updated from `trixus` to `trixus_0802`.
+- `prisma migrate status` on `trixus_0802`: up to date.
 - `prisma migrate deploy` applied `20260807013000_message_media_state`.
-- `nexos_1200` test database also migrated to eliminate e2e schema drift.
+- `trixus_1200` test database also migrated to eliminate e2e schema drift.
 
 ## Redis And BullMQ
 
@@ -19,7 +19,7 @@ Queue cleanup routine:
 
 ```bash
 bun run cleanup:homologation-queues
-NEXOS_CONFIRM_HOMOLOGATION_QUEUE_CLEANUP=messaging-outbound bun run cleanup:homologation-queues -- --execute
+TRIXUS_CONFIRM_HOMOLOGATION_QUEUE_CLEANUP=messaging-outbound bun run cleanup:homologation-queues -- --execute
 ```
 
 Final `messaging-outbound` counts:
@@ -41,6 +41,6 @@ Validated in controlled runtime window:
 - queue: up
 - realtime: up
 - storage: up
-- Evolution container could reach Nexos through `host.docker.internal`.
+- Evolution container could reach Trixus through `host.docker.internal`.
 
 Persistent background launch through the tool runner was blocked, so long-running runtime validation was not completed.

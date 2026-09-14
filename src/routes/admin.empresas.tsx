@@ -14,7 +14,7 @@ import {
   SectionHeader,
   Select,
 } from "@/components/ui-kit";
-import { platformApi, type PlatformPlan, type PlatformTenant } from "@/lib/nexos-api";
+import { platformApi, type PlatformPlan, type PlatformTenant } from "@/lib/trixus-api";
 import { fmtDate } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
 

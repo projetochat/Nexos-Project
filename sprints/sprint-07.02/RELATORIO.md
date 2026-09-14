@@ -64,24 +64,24 @@ Variaveis presentes em `.env`, sem valores logados: `DATABASE_URL`, `JWT_SECRET`
 
 ## 12. Database
 
-Banco principal local `nexos` possuia drift da Sprint 08. Para nao apagar dados, a validacao usou banco limpo `nexos_0702`.
+Banco principal local `trixus` possuia drift da Sprint 08. Para nao apagar dados, a validacao usou banco limpo `trixus_0702`.
 
-Migrations aplicadas em `nexos_0702`: 8 migrations ate `20260730100700_connections_permissions`.
+Migrations aplicadas em `trixus_0702`: 8 migrations ate `20260730100700_connections_permissions`.
 
 Migration Sprint 08 ausente da branch ativa.
 
-Seed executado com sucesso em `nexos_0702`.
+Seed executado com sucesso em `trixus_0702`.
 
 ## 13. Evolution infrastructure
 
 `docker compose up -d --remove-orphans` ativo com:
 
-- `nexos-postgres`
-- `nexos-evolution-postgres`
-- `nexos-evolution-redis`
-- `nexos-evolution-api`
+- `trixus-postgres`
+- `trixus-evolution-postgres`
+- `trixus-evolution-redis`
+- `trixus-evolution-api`
 
-Container orfao `nexos-redis` da Sprint 08 foi removido do ambiente Docker ativo.
+Container orfao `trixus-redis` da Sprint 08 foi removido do ambiente Docker ativo.
 
 ## 14. Evolution health
 
@@ -101,7 +101,7 @@ Browser control da sessao indisponivel. Playwright estava instalado, mas sem Chr
 
 ## 17. Connection create
 
-PASS. Criacao Evolution via API criou `MessagingConnection` e instance no provider. Evidencia: connection `53822720-ea22-4428-b406-45a1df0ed489`, instance sanitizada `4061f10e-nexos-0702-qr-*`.
+PASS. Criacao Evolution via API criou `MessagingConnection` e instance no provider. Evidencia: connection `53822720-ea22-4428-b406-45a1df0ed489`, instance sanitizada `4061f10e-trixus-0702-qr-*`.
 
 ## 18. Webhook registration
 
@@ -117,7 +117,7 @@ N/A nesta execucao. Exige scan fisico com WhatsApp de teste.
 
 ## 21. Outbound real
 
-N/A nesta execucao. Exige WhatsApp A conectado e WhatsApp B externo recebendo fisicamente `NEXOS-0702-OUT-001`.
+N/A nesta execucao. Exige WhatsApp A conectado e WhatsApp B externo recebendo fisicamente `TRIXUS-0702-OUT-001`.
 
 ## 22. Outbound persistence
 
@@ -210,7 +210,7 @@ Sem novas dependencias e sem aumento de fallback Supabase nesta Sprint.
 
 ## 43. Out-of-scope confirmation
 
-Nao foram implementados Redis/BullMQ Nexos, Transactional Outbox, worker, Socket.io, Meta Cloud API, R2, midia definitiva, bots, IA, billing, Kubernetes ou historical sync.
+Nao foram implementados Redis/BullMQ Trixus, Transactional Outbox, worker, Socket.io, Meta Cloud API, R2, midia definitiva, bots, IA, billing, Kubernetes ou historical sync.
 
 ## 44. Files created
 
@@ -305,7 +305,7 @@ Docs atualizados para refletir que a Sprint 07.02 corrigiu QR/orfa e preservou S
 ## 49. Technical debt
 
 - Validacao fisica WhatsApp precisa ser executada com WhatsApp A conectado e WhatsApp B controlado.
-- Ambiente local principal `nexos` contem drift da Sprint 08; usar banco limpo ou reset planejado antes de nova homologacao.
+- Ambiente local principal `trixus` contem drift da Sprint 08; usar banco limpo ou reset planejado antes de nova homologacao.
 - Browser visual headless requer instalar Chromium do Playwright.
 
 ## 50. Risks

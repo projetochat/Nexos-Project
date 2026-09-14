@@ -66,6 +66,17 @@ export class MessagingConnectionsService {
   }
 
   async createEvolution(dto: CreateEvolutionConnectionDto, current: AuthenticatedUser) {
+    const importHistoryEnabled = dto.importHistoryEnabled === true;
+    const importHistoryStartDate = parseImportStartDate(dto.importHistoryStartDate);
+    const importGroupsEnabled = dto.importGroupsEnabled === true;
+    const importGroupsStartDate = parseImportStartDate(dto.importGroupsStartDate);
+    if (importHistoryEnabled && !importHistoryStartDate) {
+      throw new BadRequestException("Informe a data inicial para importar o histórico de mensagens.");
+    }
+    if (importGroupsEnabled && !importGroupsStartDate) {
+      throw new BadRequestException("Informe a data inicial para importar mensagens de grupo.");
+    }
+
     if (this.entitlements) {
       await this.entitlements.assertTenantOperational(current.tenantId);
       const usage = await this.entitlements.getUsage(current.tenantId);
@@ -116,6 +127,10 @@ export class MessagingConnectionsService {
             response.instance?.status ?? response.instance?.connectionStatus,
           ),
           externalReference: instanceName,
+          importHistoryEnabled,
+          importHistoryStartDate: importHistoryEnabled ? importHistoryStartDate : null,
+          importGroupsEnabled,
+          importGroupsStartDate: importGroupsEnabled ? importGroupsStartDate : null,
         },
       });
     } catch (error) {
@@ -810,6 +825,10 @@ export class MessagingConnectionsService {
       absenceEnabled: connection.absenceEnabled,
       absenceMessage: connection.absenceMessage,
       notes: connection.notes,
+      importHistoryEnabled: connection.importHistoryEnabled,
+      importHistoryStartDate: connection.importHistoryStartDate,
+      importGroupsEnabled: connection.importGroupsEnabled,
+      importGroupsStartDate: connection.importGroupsStartDate,
       ownerPhoneMasked: maskPhone(connection.ownerPhoneNormalized),
       ownerPhone: connection.ownerPhoneNormalized,
       archivedAt: connection.archivedAt,
@@ -842,6 +861,12 @@ export function translateEvolutionState(value: string | null | undefined) {
   if (normalized === "close" || normalized === "closed")
     return MessagingConnectionStatus.DISCONNECTED;
   return MessagingConnectionStatus.ERROR;
+}
+
+function parseImportStartDate(value: string | undefined) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function translateInitialStatus(value: string | null | undefined) {

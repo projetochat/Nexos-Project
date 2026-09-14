@@ -6,7 +6,7 @@ Impersonacao e uma sessao platform temporaria, auditada e explicita.
 
 - Permitida para `ADMIN` e `SUPPORT` com permissao `platform.impersonation.start`.
 - Exige `tenantId`, `membershipId` e motivo.
-- TTL definido por `NEXOS_IMPERSONATION_TTL_MINUTES`, com fallback local de 15 minutos.
+- TTL definido por `TRIXUS_IMPERSONATION_TTL_MINUTES`, com fallback local de 15 minutos.
 - O ator real permanece como `actorUserId`.
 - A sessao grava `impersonation.started` e `impersonation.stopped`.
 

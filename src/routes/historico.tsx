@@ -13,7 +13,7 @@ import {
   operationsApi,
   type ApiMessage,
   type OperationalPeriod,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { ContactPanel } from "./inbox.$conversationId";
 

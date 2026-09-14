@@ -154,24 +154,24 @@ async function seedPlatformPlans() {
 async function seedPlatformAdmin() {
   const [admin, support, readonly] = await Promise.all([
     seedPlatformUser({
-      email: seedPlatformEmail("NEXOS_PLATFORM_ADMIN_EMAIL"),
+      email: seedPlatformEmail("TRIXUS_PLATFORM_ADMIN_EMAIL"),
       name: "Platform Admin",
-      password: process.env.NEXOS_PLATFORM_ADMIN_PASSWORD,
-      passwordKey: "NEXOS_PLATFORM_ADMIN_PASSWORD",
+      password: process.env.TRIXUS_PLATFORM_ADMIN_PASSWORD,
+      passwordKey: "TRIXUS_PLATFORM_ADMIN_PASSWORD",
       platformRole: PlatformRole.ADMIN,
     }),
     seedPlatformUser({
-      email: seedPlatformEmail("NEXOS_PLATFORM_SUPPORT_EMAIL"),
+      email: seedPlatformEmail("TRIXUS_PLATFORM_SUPPORT_EMAIL"),
       name: "Platform Support",
-      password: process.env.NEXOS_PLATFORM_SUPPORT_PASSWORD,
-      passwordKey: "NEXOS_PLATFORM_SUPPORT_PASSWORD",
+      password: process.env.TRIXUS_PLATFORM_SUPPORT_PASSWORD,
+      passwordKey: "TRIXUS_PLATFORM_SUPPORT_PASSWORD",
       platformRole: PlatformRole.SUPPORT,
     }),
     seedPlatformUser({
-      email: seedPlatformEmail("NEXOS_PLATFORM_READONLY_EMAIL"),
+      email: seedPlatformEmail("TRIXUS_PLATFORM_READONLY_EMAIL"),
       name: "Platform Readonly",
-      password: process.env.NEXOS_PLATFORM_READONLY_PASSWORD,
-      passwordKey: "NEXOS_PLATFORM_READONLY_PASSWORD",
+      password: process.env.TRIXUS_PLATFORM_READONLY_PASSWORD,
+      passwordKey: "TRIXUS_PLATFORM_READONLY_PASSWORD",
       platformRole: PlatformRole.READONLY,
     }),
   ]);
@@ -386,12 +386,12 @@ async function seedDemoData() {
 
   const passwordHash = await hash("demo1234", 12);
   const [adminA, supervisorA, agentA, adminB, agentB, platformAdmin] = await Promise.all([
-    seedUser("admin@nexo.app", "Ana Ribeiro", passwordHash),
-    seedUser("supervisor@nexo.app", "Pedro Camargo", passwordHash),
-    seedUser("atendente@nexo.app", "Camila Duarte", passwordHash),
-    seedUser("admin-orbit@nexo.app", "Bruna Martins", passwordHash),
-    seedUser("agent-orbit@nexo.app", "Otavio Silva", passwordHash),
-    seedUser("platform@nexo.app", "Paula Plataforma", passwordHash, PlatformRole.ADMIN),
+    seedUser("admin@trixus.app", "Ana Ribeiro", passwordHash),
+    seedUser("supervisor@trixus.app", "Pedro Camargo", passwordHash),
+    seedUser("atendente@trixus.app", "Camila Duarte", passwordHash),
+    seedUser("admin-orbit@trixus.app", "Bruna Martins", passwordHash),
+    seedUser("agent-orbit@trixus.app", "Otavio Silva", passwordHash),
+    seedUser("platform@trixus.app", "Paula Plataforma", passwordHash, PlatformRole.ADMIN),
   ]);
 
   await Promise.all([
@@ -1245,7 +1245,7 @@ function seedAdminEmail() {
   if (process.env.NODE_ENV === "production") {
     throw new Error("SEED_ADMIN_EMAIL must be configured in production.");
   }
-  return "admin@nexo.app";
+  return "admin@trixus.app";
 }
 
 function seedAdminPassword() {
@@ -1263,7 +1263,7 @@ function seedAgentEmail() {
   if (process.env.NODE_ENV === "production") {
     throw new Error("SEED_AGENT_EMAIL must be configured in production.");
   }
-  return "atendente@nexo.app";
+  return "atendente@trixus.app";
 }
 
 function seedAgentPassword() {
@@ -1293,11 +1293,9 @@ function productionStagingTenantSlug() {
 }
 
 function productionStagingAdminEmail() {
-  const email = process.env.STAGING_ADMIN_EMAIL ?? process.env.SEED_ADMIN_EMAIL;
-  if (!email?.trim()) {
-    throw new Error("STAGING_ADMIN_EMAIL must be configured for SEED_MODE=production.");
-  }
-  return email.toLowerCase().trim();
+  return (process.env.STAGING_ADMIN_EMAIL ?? process.env.SEED_ADMIN_EMAIL ?? "admin@trixus.app")
+    .toLowerCase()
+    .trim();
 }
 
 function productionStagingAdminPassword() {

@@ -24,7 +24,7 @@ Health reports:
 - No magic-bytes matrix was executed in MRC-01.
 - No physical inbound media download from Evolution was executed.
 - No authorized download/inline access matrix was executed.
-- No audio codec compatibility test was executed through Nexos.
+- No audio codec compatibility test was executed through Trixus.
 
 ## MRC-02 Requirement
 

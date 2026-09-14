@@ -19,7 +19,7 @@ APPROVED nem READY FOR RC SPRINT 16.
 
 - Pre-flight branch: `rc/15-operational-attendance`.
 - SHA inicial: `2a39b7a511b5a12de875c063e641a925c8e88a38`.
-- Verify inicial em `nexos_0801`: PASS duas vezes.
+- Verify inicial em `trixus_0801`: PASS duas vezes.
 - `bun run --cwd backend build`: PASS.
 - `bun run --cwd backend test`: PASS, 161 testes.
 - `bun run typecheck`: PASS.

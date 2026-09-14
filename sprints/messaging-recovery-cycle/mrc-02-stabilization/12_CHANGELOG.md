@@ -2,9 +2,9 @@
 
 ## Runtime
 
-- `.env` now points local runtime to `nexos_0802`.
+- `.env` now points local runtime to `trixus_0802`.
 - Added safe homologation queue cleanup script.
-- Applied migrations to `nexos_0802` and `nexos_1200`.
+- Applied migrations to `trixus_0802` and `trixus_1200`.
 
 ## Schema
 

@@ -9,9 +9,9 @@ Status formal: `NOT READY FOR SPRINT 09`
 ## Resultado
 
 Dropdowns reais, outbound real, admin e agente de homologacao permanecem aprovados. A connection local do
-Nexos aponta para a instancia Evolution conectada `26293569-whatsapp-nata-cffd5f5c`. O inbound real segue
+Trixus aponta para a instancia Evolution conectada `26293569-whatsapp-nata-cffd5f5c`. O inbound real segue
 bloqueado porque a Evolution/Baileys falhou ao decriptar mensagens antes de emitir `MESSAGES_UPSERT` para o
-webhook Nexos.
+webhook Trixus.
 
 ## Evidencias fisicas
 
@@ -22,10 +22,10 @@ webhook Nexos.
 - Instancia aberta: `26293569-whatsapp-nata-cffd5f5c`, state `open`.
 - Instancia antiga `26293569-homologacao-nata-018f43a5`: `404` em `connectionState` e webhook.
 - Webhook da instancia aberta: enabled, URL do backend local, eventos esperados.
-- Nexos `nexos_0802`: 2 usuarios, 2 memberships, 1 contato ativo, 2 conversas, 5 mensagens, 5 outbox events.
-- Login `admin@nexo.app` e `atendente@nexo.app` no tenant `homologacao`: aprovado via API.
+- Trixus `trixus_0802`: 2 usuarios, 2 memberships, 1 contato ativo, 2 conversas, 5 mensagens, 5 outbox events.
+- Login `admin@trixus.app` e `atendente@trixus.app` no tenant `homologacao`: aprovado via API.
 - Regressao `PATCH /api/conversations/:id/status`: aprovada em E2E focado.
-- Verificacao completa em `nexos_0801`: aprovada.
+- Verificacao completa em `trixus_0801`: aprovada.
 - Instancias antigas fechadas: chamadas via delete e marcadas como `REMOVED` em logs.
 - Logs `v2.3.7` ainda mostram `No session record`, `Invalid PreKey ID` e `No session found to decrypt message`; inbound segue bloqueado antes do webhook.
 
@@ -38,8 +38,8 @@ webhook Nexos.
 | M108 | WARN | Worktree tinha alteracao pre-existente em `public/favicon.ico`. |
 | M109 | PASS | `docker compose ps` inventariado. |
 | M110 | PASS | Volumes Docker inventariados. |
-| M111 | PASS | `nexos-evolution-api` inspecionado. |
-| M112 | PASS | Redis Nexos separado de Redis Evolution. |
+| M111 | PASS | `trixus-evolution-api` inspecionado. |
+| M112 | PASS | Redis Trixus separado de Redis Evolution. |
 | M113 | PASS | Backup Evolution criado antes do upgrade. |
 | M114 | PASS | Backup copiado para `backups/evolution-before-0804.dump`. |
 | M115 | PASS | Backup nao vazio validado. |
@@ -65,7 +65,7 @@ webhook Nexos.
 | M135 | PASS | Migrations Evolution aplicadas com sucesso. |
 | M136 | PASS | Health raiz retorna `version=2.3.7`. |
 | M137 | PASS | Connection state da instancia nova retorna `open`. |
-| M138 | PASS | Nexos lista uma connection operacional. |
+| M138 | PASS | Trixus lista uma connection operacional. |
 | M139 | PASS | Connection local aponta para a instancia nova. |
 | M140 | PASS | Reconcile por endpoint retornou `existsInProvider=true`. |
 | M141 | PASS | Owner externo persistido. |
@@ -79,7 +79,7 @@ webhook Nexos.
 | M149 | PASS | Instancias antigas chamadas via delete e marcadas `REMOVED` em logs. |
 | M150 | PASS | Nenhum volume removido. |
 | M151 | PASS | Nenhum Redis flush executado. |
-| M152 | PASS | Nenhum reset de `nexos_0802` executado. |
+| M152 | PASS | Nenhum reset de `trixus_0802` executado. |
 | M153 | PASS | Dropdowns continuam fonte `GET /api/messaging/connections`. |
 | M154 | PASS | Somente connection Evolution conectada aparece na API. |
 | M155 | PASS | Contrato webhook `jwt_key` mantido. |

@@ -3,19 +3,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   activatePlatformImpersonation,
   apiRequest,
-  clearNexosApiSession,
-  loginWithNexosApi,
-  logoutFromNexosApi,
+  clearTrixusApiSession,
+  loginWithTrixusApi,
+  logoutFromTrixusApi,
   platformApi,
   readStoredPlatformImpersonation,
   connectionsApi,
   stopStoredPlatformImpersonation,
-} from "./nexos-api";
+} from "./trixus-api";
 
-describe("nexos-api auth client", () => {
+describe("trixus-api auth client", () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    clearNexosApiSession();
+    clearTrixusApiSession();
   });
 
   it("stores tokens and maps the homologation login response", async () => {
@@ -27,27 +27,27 @@ describe("nexos-api auth client", () => {
           refreshToken: "refresh",
           user: {
             id: "user-a",
-            email: "admin@nexo.app",
+            email: "admin@trixus.app",
             name: "Admin Homologacao",
             roleId: "role-a",
             roleKey: "tenant_admin",
             platformRole: "USER",
           },
-          tenant: { id: "tenant-a", slug: "homologacao", name: "Homologacao Nexos" },
+          tenant: { id: "tenant-a", slug: "homologacao", name: "Homologacao Trixus" },
           membership: { id: "membership-a", role: "tenant_admin", roleId: "role-a" },
           permissions: ["users.manage"],
         }),
       ),
     );
 
-    await expect(loginWithNexosApi("admin@nexo.app", "demo1234")).resolves.toMatchObject({
-      email: "admin@nexo.app",
+    await expect(loginWithTrixusApi("admin@trixus.app", "demo1234")).resolves.toMatchObject({
+      email: "admin@trixus.app",
       role: "admin",
-      empresaNome: "Homologacao Nexos",
+      empresaNome: "Homologacao Trixus",
     });
 
-    expect(localStorage.getItem("nexo.api.accessToken")).toBe("access");
-    expect(localStorage.getItem("nexo.api.refreshToken")).toBe("refresh");
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("access");
+    expect(localStorage.getItem("trixus.api.refreshToken")).toBe("refresh");
   });
 
   it("distinguishes invalid credentials", async () => {
@@ -60,7 +60,7 @@ describe("nexos-api auth client", () => {
         ),
     );
 
-    await expect(loginWithNexosApi("admin@nexo.app", "wrong-password")).rejects.toThrow(
+    await expect(loginWithTrixusApi("admin@trixus.app", "wrong-password")).rejects.toThrow(
       "E-mail ou senha invalidos.",
     );
   });
@@ -68,7 +68,7 @@ describe("nexos-api auth client", () => {
   it("returns a clear message for network failures", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
 
-    await expect(loginWithNexosApi("admin@nexo.app", "demo1234")).rejects.toThrow(
+    await expect(loginWithTrixusApi("admin@trixus.app", "demo1234")).rejects.toThrow(
       "Não foi possível conectar ao sistema. Verifique sua internet e tente novamente.",
     );
   });
@@ -84,7 +84,7 @@ describe("nexos-api auth client", () => {
       ),
     );
 
-    await expect(loginWithNexosApi("sem-membership@nexo.app", "demo1234")).rejects.toThrow(
+    await expect(loginWithTrixusApi("sem-membership@trixus.app", "demo1234")).rejects.toThrow(
       "Seu usuário não possui acesso a nenhuma organização ativa.",
     );
   });
@@ -92,7 +92,7 @@ describe("nexos-api auth client", () => {
   it("returns a clear message for internal authentication errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(responseJson(500, {})));
 
-    await expect(loginWithNexosApi("admin@nexo.app", "demo1234")).rejects.toThrow(
+    await expect(loginWithTrixusApi("admin@trixus.app", "demo1234")).rejects.toThrow(
       "Não foi possível concluir a autenticação. Tente novamente em alguns instantes.",
     );
   });
@@ -124,8 +124,8 @@ describe("nexos-api auth client", () => {
   });
 
   it("uses one refresh request for concurrent 401 responses and retries each request once", async () => {
-    localStorage.setItem("nexo.api.accessToken", "old-access");
-    localStorage.setItem("nexo.api.refreshToken", "refresh");
+    localStorage.setItem("trixus.api.accessToken", "old-access");
+    localStorage.setItem("trixus.api.refreshToken", "refresh");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/auth/refresh")) {
@@ -145,12 +145,12 @@ describe("nexos-api auth client", () => {
       fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh")),
     ).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(5);
-    expect(localStorage.getItem("nexo.api.accessToken")).toBe("new-access");
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("new-access");
   });
 
   it("does not recursively refresh the refresh endpoint after a definitive 401", async () => {
-    localStorage.setItem("nexo.api.accessToken", "old-access");
-    localStorage.setItem("nexo.api.refreshToken", "refresh");
+    localStorage.setItem("trixus.api.accessToken", "old-access");
+    localStorage.setItem("trixus.api.refreshToken", "refresh");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/auth/refresh")) return responseJson(401, { message: "invalid refresh" });
@@ -164,13 +164,13 @@ describe("nexos-api auth client", () => {
       fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh")),
     ).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(localStorage.getItem("nexo.api.accessToken")).toBeNull();
-    expect(localStorage.getItem("nexo.api.refreshToken")).toBeNull();
+    expect(localStorage.getItem("trixus.api.accessToken")).toBeNull();
+    expect(localStorage.getItem("trixus.api.refreshToken")).toBeNull();
   });
 
   it("activates and stops a platform impersonation by restoring platform tokens", async () => {
-    localStorage.setItem("nexo.api.accessToken", "platform-access");
-    localStorage.setItem("nexo.api.refreshToken", "platform-refresh");
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
+    localStorage.setItem("trixus.api.refreshToken", "platform-refresh");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const authorization = new Headers(init?.headers).get("Authorization");
       expect(authorization).toBe("Bearer platform-access");
@@ -216,29 +216,29 @@ describe("nexos-api auth client", () => {
       {
         id: "platform-user",
         nome: "Platform Admin",
-        email: "platform@nexo.app",
+        email: "platform@trixus.app",
         role: "super_admin",
         empresaId: "platform",
-        empresaNome: "Nexos Platform",
+        empresaNome: "Trixus Platform",
         permissions: [],
       },
     );
 
     expect(user.role).toBe("admin");
-    expect(localStorage.getItem("nexo.api.accessToken")).toBe("tenant-access");
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("tenant-access");
     expect(readStoredPlatformImpersonation()?.id).toBe("session-a");
 
     await expect(stopStoredPlatformImpersonation()).resolves.toMatchObject({
       role: "super_admin",
-      email: "platform@nexo.app",
+      email: "platform@trixus.app",
     });
-    expect(localStorage.getItem("nexo.api.accessToken")).toBe("platform-access");
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("platform-access");
     expect(readStoredPlatformImpersonation()).toBeNull();
   });
 
   it("expires a local impersonation and restores platform credentials", async () => {
-    localStorage.setItem("nexo.api.accessToken", "platform-access");
-    localStorage.setItem("nexo.api.refreshToken", "platform-refresh");
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
+    localStorage.setItem("trixus.api.refreshToken", "platform-refresh");
     activatePlatformImpersonation(
       {
         id: "session-expired",
@@ -276,21 +276,21 @@ describe("nexos-api auth client", () => {
       {
         id: "platform-user",
         nome: "Platform Admin",
-        email: "platform@nexo.app",
+        email: "platform@trixus.app",
         role: "super_admin",
         empresaId: "platform",
-        empresaNome: "Nexos Platform",
+        empresaNome: "Trixus Platform",
         permissions: [],
       },
     );
 
     expect(readStoredPlatformImpersonation()).toBeNull();
-    expect(localStorage.getItem("nexo.api.accessToken")).toBe("platform-access");
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("platform-access");
   });
 
   it("stops server-side impersonation before logout clears local tokens", async () => {
-    localStorage.setItem("nexo.api.accessToken", "platform-access");
-    localStorage.setItem("nexo.api.refreshToken", "platform-refresh");
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
+    localStorage.setItem("trixus.api.refreshToken", "platform-refresh");
     activatePlatformImpersonation(
       {
         id: "session-logout",
@@ -328,10 +328,10 @@ describe("nexos-api auth client", () => {
       {
         id: "platform-user",
         nome: "Platform Admin",
-        email: "platform@nexo.app",
+        email: "platform@trixus.app",
         role: "super_admin",
         empresaId: "platform",
-        empresaNome: "Nexos Platform",
+        empresaNome: "Trixus Platform",
         permissions: [],
       },
     );
@@ -347,18 +347,18 @@ describe("nexos-api auth client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await logoutFromNexosApi();
+    await logoutFromTrixusApi();
 
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
       "http://localhost:3001/api/platform/impersonation/session-logout/stop",
       "http://localhost:3001/api/auth/logout",
     ]);
-    expect(localStorage.getItem("nexo.api.accessToken")).toBeNull();
+    expect(localStorage.getItem("trixus.api.accessToken")).toBeNull();
     expect(readStoredPlatformImpersonation()).toBeNull();
   });
 
   it("calls the canonical DELETE endpoint for connection removal", async () => {
-    localStorage.setItem("nexo.api.accessToken", "tenant-access");
+    localStorage.setItem("trixus.api.accessToken", "tenant-access");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe("http://localhost:3001/api/messaging/connections/connection-a");
       expect(init?.method).toBe("DELETE");
@@ -382,7 +382,7 @@ describe("nexos-api auth client", () => {
   });
 
   it("loads platform tenants with the platform token", async () => {
-    localStorage.setItem("nexo.api.accessToken", "platform-access");
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe("http://localhost:3001/api/platform/tenants?pageSize=20");
       expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer platform-access");
@@ -416,7 +416,7 @@ describe("nexos-api auth client", () => {
   });
 
   it("preserves platform empty states instead of treating them as errors", async () => {
-    localStorage.setItem("nexo.api.accessToken", "platform-access");
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
     vi.stubGlobal(
       "fetch",
       vi
@@ -433,7 +433,7 @@ describe("nexos-api auth client", () => {
   });
 
   it("surfaces canonical platform errors without converting them to empty lists", async () => {
-    localStorage.setItem("nexo.api.accessToken", "platform-access");
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(

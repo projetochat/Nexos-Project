@@ -1,4 +1,4 @@
-import type { ApiConversationStatus, OperationalPeriod } from "@/lib/nexos-api";
+import type { ApiConversationStatus, OperationalPeriod } from "@/lib/trixus-api";
 
 export type OperationalReportFilters = {
   period: OperationalPeriod;
@@ -31,6 +31,10 @@ export function datesForOperationalPeriod(period: OperationalPeriod) {
     end.setDate(end.getDate() - 1);
   } else if (period === "week") {
     start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  } else if (period === "previous_week") {
+    const daysSinceMonday = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - daysSinceMonday - 7);
+    end.setDate(end.getDate() - daysSinceMonday - 1);
   } else if (period === "month") {
     start.setDate(1);
   } else if (period === "previous_month") {
@@ -38,6 +42,9 @@ export function datesForOperationalPeriod(period: OperationalPeriod) {
     end.setDate(0);
   } else if (period === "year") {
     start.setMonth(0, 1);
+  } else if (period === "previous_year") {
+    start.setFullYear(start.getFullYear() - 1, 0, 1);
+    end.setFullYear(end.getFullYear() - 1, 11, 31);
   }
 
   return { start: dateValue(start), end: dateValue(end) };

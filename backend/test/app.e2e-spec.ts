@@ -28,7 +28,7 @@ import { TicketsController } from "../src/tickets/tickets.controller";
 import { TicketsModule } from "../src/tickets/tickets.module";
 import { TicketsService } from "../src/tickets/tickets.service";
 
-describe("Nexos API organization and RBAC", () => {
+describe("Trixus API organization and RBAC", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let jwt: JwtService;
@@ -43,21 +43,21 @@ describe("Nexos API organization and RBAC", () => {
   beforeAll(async () => {
     process.env.SEED_MODE = "test";
     const testDatabaseUrl = normalizeLocalPostgresUrl(
-      process.env.NEXOS_TEST_DATABASE_URL ??
-        "postgresql://nexos:nexos_dev_password@127.0.0.1:5432/nexos_1200?schema=public",
+      process.env.TRIXUS_TEST_DATABASE_URL ??
+        "postgresql://trixus:trixus_dev_password@127.0.0.1:5432/trixus_1200?schema=public",
     );
     process.env.DATABASE_URL = testDatabaseUrl;
-    process.env.NEXOS_TEST_DATABASE_URL = testDatabaseUrl;
+    process.env.TRIXUS_TEST_DATABASE_URL = testDatabaseUrl;
     process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test-access-secret-minimum-32-chars";
     process.env.JWT_REFRESH_SECRET =
       process.env.JWT_REFRESH_SECRET ?? "test-refresh-secret-minimum-32-chars";
     process.env.EVOLUTION_WEBHOOK_SECRET =
       process.env.EVOLUTION_WEBHOOK_SECRET ?? "test-evolution-webhook-secret";
-    process.env.NEXOS_CAMPAIGN_CONCURRENCY = "1";
-    process.env.NEXOS_CAMPAIGN_MESSAGES_PER_MINUTE = "5";
-    process.env.NEXOS_CAMPAIGN_BATCH_SIZE = "5";
-    process.env.NEXOS_CAMPAIGN_MAX_RECIPIENTS = "5";
-    process.env.NEXOS_QUEUE_WORKER_ENABLED = "false";
+    process.env.TRIXUS_CAMPAIGN_CONCURRENCY = "1";
+    process.env.TRIXUS_CAMPAIGN_MESSAGES_PER_MINUTE = "5";
+    process.env.TRIXUS_CAMPAIGN_BATCH_SIZE = "5";
+    process.env.TRIXUS_CAMPAIGN_MAX_RECIPIENTS = "5";
+    process.env.TRIXUS_QUEUE_WORKER_ENABLED = "false";
 
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true }), AppModule],
@@ -103,14 +103,14 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("authenticates and exposes current tenant context with permissions", async () => {
-    const token = await login("admin@nexo.app", "demo1234", "acme");
+    const token = await login("admin@trixus.app", "demo1234", "acme");
 
     await request(app.getHttpServer())
       .get("/api/me")
       .set("Authorization", `Bearer ${token}`)
       .expect(200)
       .expect(({ body }) => {
-        expect(body.user.email).toBe("admin@nexo.app");
+        expect(body.user.email).toBe("admin@trixus.app");
         expect(body.user.roleKey).toBe("tenant_admin");
         expect(body.tenant.slug).toBe("acme");
         expect(body.permissions).toContain("users.manage");
@@ -121,26 +121,26 @@ describe("Nexos API organization and RBAC", () => {
   it("authenticates with normalized email and auto-selects a single active membership", async () => {
     await request(app.getHttpServer())
       .post("/api/auth/login")
-      .send({ email: " Admin@Nexo.App ", password: "demo1234" })
+      .send({ email: " Admin@Trixus.App ", password: "demo1234" })
       .expect(201)
       .expect(({ body }) => {
         expect(body.accessToken).toEqual(expect.any(String));
         expect(body.refreshToken).toEqual(expect.any(String));
-        expect(body.user.email).toBe("admin@nexo.app");
+        expect(body.user.email).toBe("admin@trixus.app");
         expect(body.tenant.slug).toBe("acme");
         expect(body.membership.role).toBe("tenant_admin");
       });
   });
 
   it("exposes the official auth /me endpoint", async () => {
-    const token = await login("admin@nexo.app", "demo1234", "acme");
+    const token = await login("admin@trixus.app", "demo1234", "acme");
 
     await request(app.getHttpServer())
       .get("/api/auth/me")
       .set("Authorization", `Bearer ${token}`)
       .expect(200)
       .expect(({ body }) => {
-        expect(body.user.email).toBe("admin@nexo.app");
+        expect(body.user.email).toBe("admin@trixus.app");
         expect(body.tenant.slug).toBe("acme");
         expect(body.membership.role).toBe("tenant_admin");
       });
@@ -149,7 +149,7 @@ describe("Nexos API organization and RBAC", () => {
   it("refreshes an active session and accepts logout", async () => {
     const response = await request(app.getHttpServer())
       .post("/api/auth/login")
-      .send({ email: "admin@nexo.app", password: "demo1234", tenantSlug: "acme" })
+      .send({ email: "admin@trixus.app", password: "demo1234", tenantSlug: "acme" })
       .expect(201);
 
     await request(app.getHttpServer())
@@ -164,13 +164,13 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("rejects inactive users with a canonical error", async () => {
-    const user = await prisma.user.findUniqueOrThrow({ where: { email: "admin@nexo.app" } });
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: "admin@trixus.app" } });
     await prisma.user.update({ where: { id: user.id }, data: { status: "DISABLED" } });
 
     try {
       await request(app.getHttpServer())
         .post("/api/auth/login")
-        .send({ email: "admin@nexo.app", password: "demo1234", tenantSlug: "acme" })
+        .send({ email: "admin@trixus.app", password: "demo1234", tenantSlug: "acme" })
         .expect(403)
         .expect(({ body }) => {
           expect(body.code).toBe("USER_INACTIVE");
@@ -181,7 +181,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("rejects users without active membership with a canonical error", async () => {
-    const email = "sem-membership@nexo.app";
+    const email = "sem-membership@trixus.app";
     await prisma.user.upsert({
       where: { email },
       update: { passwordHash: await hash("demo1234", 12), status: "ACTIVE" },
@@ -207,9 +207,9 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("denies inactive memberships even when the token was previously valid", async () => {
-    const token = await login("atendente@nexo.app", "demo1234", "acme");
+    const token = await login("atendente@trixus.app", "demo1234", "acme");
     const membership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { user: { email: "atendente@nexo.app" }, tenant: { slug: "acme" } },
+      where: { user: { email: "atendente@trixus.app" }, tenant: { slug: "acme" } },
     });
 
     await prisma.tenantMembership.update({
@@ -227,29 +227,29 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("denies missing permissions and allows valid permissions", async () => {
-    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     await request(app.getHttpServer())
       .post("/api/departments")
       .set("Authorization", `Bearer ${agentToken}`)
       .send({ name: "Sem permissao", color: "#111111" })
       .expect(403);
 
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     await request(app.getHttpServer())
       .get("/api/users")
       .set("Authorization", `Bearer ${adminToken}`)
       .expect(200)
       .expect(({ body }) => {
         expect(
-          body.some((item: { user: { email: string } }) => item.user.email === "admin@nexo.app"),
+          body.some((item: { user: { email: string } }) => item.user.email === "admin@trixus.app"),
         ).toBe(true);
       });
   });
 
   it("blocks cross-tenant user and department access", async () => {
-    const acmeToken = await login("admin@nexo.app", "demo1234", "acme");
+    const acmeToken = await login("admin@trixus.app", "demo1234", "acme");
     const orbitMembership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenant: { slug: "orbit" }, user: { email: "agent-orbit@nexo.app" } },
+      where: { tenant: { slug: "orbit" }, user: { email: "agent-orbit@trixus.app" } },
     });
     const orbitDepartment = await prisma.department.findFirstOrThrow({
       where: { tenant: { slug: "orbit" } },
@@ -267,12 +267,12 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("blocks cross-tenant department membership assignment", async () => {
-    const acmeToken = await login("admin@nexo.app", "demo1234", "acme");
+    const acmeToken = await login("admin@trixus.app", "demo1234", "acme");
     const acmeDepartment = await prisma.department.findFirstOrThrow({
       where: { tenant: { slug: "acme" } },
     });
     const orbitMembership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenant: { slug: "orbit" }, user: { email: "agent-orbit@nexo.app" } },
+      where: { tenant: { slug: "orbit" }, user: { email: "agent-orbit@trixus.app" } },
     });
 
     await request(app.getHttpServer())
@@ -283,9 +283,9 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("blocks cross-tenant role assignment", async () => {
-    const acmeToken = await login("admin@nexo.app", "demo1234", "acme");
+    const acmeToken = await login("admin@trixus.app", "demo1234", "acme");
     const acmeMembership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenant: { slug: "acme" }, user: { email: "atendente@nexo.app" } },
+      where: { tenant: { slug: "acme" }, user: { email: "atendente@trixus.app" } },
     });
     const orbitRole = await prisma.role.findFirstOrThrow({
       where: { tenant: { slug: "orbit" }, key: "agent" },
@@ -299,13 +299,13 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("keeps platform admin separate from tenant admin", async () => {
-    const token = await login("platform@nexo.app", "demo1234", "acme");
+    const token = await login("platform@trixus.app", "demo1234", "acme");
 
     await request(app.getHttpServer())
       .post("/api/users")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        email: "blocked-platform-admin@nexo.app",
+        email: "blocked-platform-admin@trixus.app",
         name: "Blocked Platform",
         password: "demo1234",
       })
@@ -313,7 +313,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("protects platform API with server-side platform role", async () => {
-    const tenantAdminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const tenantAdminToken = await login("admin@trixus.app", "demo1234", "acme");
     await request(app.getHttpServer())
       .get("/api/platform/tenants")
       .set("Authorization", `Bearer ${tenantAdminToken}`)
@@ -322,7 +322,7 @@ describe("Nexos API organization and RBAC", () => {
         expect(body.code).toBe("PLATFORM_ACCESS_DENIED");
       });
 
-    const platformToken = await login("platform@nexo.app", "demo1234");
+    const platformToken = await login("platform@trixus.app", "demo1234");
     await request(app.getHttpServer())
       .get("/api/platform/tenants")
       .set("Authorization", `Bearer ${platformToken}`)
@@ -341,8 +341,8 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("serves all platform list APIs with string pagination and canonical failures", async () => {
-    const platformToken = await login("platform@nexo.app", "demo1234");
-    const tenantAdminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const platformToken = await login("platform@trixus.app", "demo1234");
+    const tenantAdminToken = await login("admin@trixus.app", "demo1234", "acme");
 
     const routes = [
       "/api/platform/dashboard",
@@ -398,7 +398,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("keeps platform list APIs stable with tenants without subscriptions and archived plans", async () => {
-    const platformToken = await login("platform@nexo.app", "demo1234");
+    const platformToken = await login("platform@trixus.app", "demo1234");
     const suffix = Date.now();
     const tenant = await prisma.tenant.create({
       data: {
@@ -468,8 +468,8 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("manages tenant suspension/reactivation and revokes old tenant sessions", async () => {
-    const platformToken = await login("platform@nexo.app", "demo1234");
-    const tenantToken = await login("admin-orbit@nexo.app", "demo1234", "orbit");
+    const platformToken = await login("platform@trixus.app", "demo1234");
+    const tenantToken = await login("admin-orbit@trixus.app", "demo1234", "orbit");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "orbit" } });
 
     await request(app.getHttpServer())
@@ -487,7 +487,7 @@ describe("Nexos API organization and RBAC", () => {
       .expect(401);
     await request(app.getHttpServer())
       .post("/api/auth/login")
-      .send({ email: "admin-orbit@nexo.app", password: "demo1234", tenantSlug: "orbit" })
+      .send({ email: "admin-orbit@trixus.app", password: "demo1234", tenantSlug: "orbit" })
       .expect(403)
       .expect(({ body }) => {
         expect(body.code).toBe("TENANT_INACTIVE");
@@ -504,7 +504,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("lists plans, creates manual invoices and writes sanitized audit logs", async () => {
-    const platformToken = await login("platform@nexo.app", "demo1234");
+    const platformToken = await login("platform@trixus.app", "demo1234");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const subscription = await prisma.tenantSubscription.findFirstOrThrow({
       where: { tenantId: tenant.id, status: { in: ["ACTIVE", "TRIALING"] } },
@@ -557,11 +557,11 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("enforces SUPPORT and READONLY platform permissions", async () => {
-    await ensurePlatformUser("platform-support@nexo.app", PlatformRole.SUPPORT);
-    await ensurePlatformUser("platform-readonly@nexo.app", PlatformRole.READONLY);
+    await ensurePlatformUser("platform-support@trixus.app", PlatformRole.SUPPORT);
+    await ensurePlatformUser("platform-readonly@trixus.app", PlatformRole.READONLY);
 
-    const supportToken = await login("platform-support@nexo.app", "demo1234");
-    const readonlyToken = await login("platform-readonly@nexo.app", "demo1234");
+    const supportToken = await login("platform-support@trixus.app", "demo1234");
+    const readonlyToken = await login("platform-readonly@trixus.app", "demo1234");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
 
     await request(app.getHttpServer())
@@ -585,7 +585,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("exposes platform detail APIs and protected health without sensitive values", async () => {
-    const platformToken = await login("platform@nexo.app", "demo1234");
+    const platformToken = await login("platform@trixus.app", "demo1234");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const plan = await prisma.plan.findFirstOrThrow({ where: { code: "professional" } });
     const subscription = await prisma.tenantSubscription.findFirstOrThrow({
@@ -604,7 +604,7 @@ describe("Nexos API organization and RBAC", () => {
     const audit = await prisma.platformAuditLog.create({
       data: {
         actorUserId: (
-          await prisma.user.findUniqueOrThrow({ where: { email: "platform@nexo.app" } })
+          await prisma.user.findUniqueOrThrow({ where: { email: "platform@trixus.app" } })
         ).id,
         actorPlatformRole: "ADMIN",
         action: "platform.health.test",
@@ -652,7 +652,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("rolls back tenant creation when initial admin provisioning fails", async () => {
-    const platformToken = await login("platform@nexo.app", "demo1234");
+    const platformToken = await login("platform@trixus.app", "demo1234");
     const plan = await prisma.plan.findFirstOrThrow({ where: { code: "starter" } });
     const slug = `rollback-${Date.now()}`;
     const response = await request(app.getHttpServer())
@@ -670,7 +670,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("blocks high-risk platform mutations while an impersonation session is active", async () => {
-    const platformToken = await login("platform@nexo.app", "demo1234");
+    const platformToken = await login("platform@trixus.app", "demo1234");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const membership = await prisma.tenantMembership.findFirstOrThrow({
       where: { tenantId: tenant.id, status: "ACTIVE" },
@@ -705,7 +705,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("blocks subscription downgrade when current tenant usage exceeds plan limits", async () => {
-    const platformToken = await login("platform@nexo.app", "demo1234");
+    const platformToken = await login("platform@trixus.app", "demo1234");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const subscription = await prisma.tenantSubscription.findFirstOrThrow({
       where: { tenantId: tenant.id, status: { in: ["ACTIVE", "TRIALING"] } },
@@ -757,7 +757,7 @@ describe("Nexos API organization and RBAC", () => {
     await request(app.getHttpServer())
       .post("/api/users")
       .set("Authorization", `Bearer ${token}`)
-      .send({ email: `seed-user-${Date.now()}@nexo.app`, name: "Seed User", password: "demo1234" })
+      .send({ email: `seed-user-${Date.now()}@trixus.app`, name: "Seed User", password: "demo1234" })
       .expect(201);
 
     const suffix = Date.now();
@@ -765,11 +765,11 @@ describe("Nexos API organization and RBAC", () => {
       request(app.getHttpServer())
         .post("/api/users")
         .set("Authorization", `Bearer ${token}`)
-        .send({ email: `limit-a-${suffix}@nexo.app`, name: "Limit A", password: "demo1234" }),
+        .send({ email: `limit-a-${suffix}@trixus.app`, name: "Limit A", password: "demo1234" }),
       request(app.getHttpServer())
         .post("/api/users")
         .set("Authorization", `Bearer ${token}`)
-        .send({ email: `limit-b-${suffix}@nexo.app`, name: "Limit B", password: "demo1234" }),
+        .send({ email: `limit-b-${suffix}@trixus.app`, name: "Limit B", password: "demo1234" }),
     ]);
     expect(responses.filter((response) => response.status === 201)).toHaveLength(1);
     expect(
@@ -813,7 +813,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("lists CRM data for agents but denies CRM writes without manage permission", async () => {
-    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
 
     await request(app.getHttpServer())
       .get("/api/crm/contacts?pageSize=5")
@@ -831,7 +831,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("creates, searches, updates and archives CRM contacts", async () => {
-    const token = await login("admin@nexo.app", "demo1234", "acme");
+    const token = await login("admin@trixus.app", "demo1234", "acme");
     const suffix = `${Date.now()}`.slice(-6);
     const phone = uniqueBrazilianMobilePhone();
 
@@ -935,7 +935,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("blocks cross-tenant CRM access and links", async () => {
-    const acmeToken = await login("admin@nexo.app", "demo1234", "acme");
+    const acmeToken = await login("admin@trixus.app", "demo1234", "acme");
     const orbitContact = await prisma.contact.findFirstOrThrow({
       where: { tenant: { slug: "orbit" }, archivedAt: null },
     });
@@ -959,7 +959,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("validates CRM input and rejects duplicate phones per tenant", async () => {
-    const token = await login("admin@nexo.app", "demo1234", "acme");
+    const token = await login("admin@trixus.app", "demo1234", "acme");
     const customer = await prisma.customer.findFirstOrThrow({
       where: { tenant: { slug: "acme" }, archivedAt: null },
     });
@@ -1008,7 +1008,7 @@ describe("Nexos API organization and RBAC", () => {
         expect(body.message).toBe("Ja existe um contato ativo com este telefone.");
       });
 
-    const orbitToken = await login("admin-orbit@nexo.app", "demo1234", "orbit");
+    const orbitToken = await login("admin-orbit@trixus.app", "demo1234", "orbit");
     await request(app.getHttpServer())
       .post("/api/crm/contacts")
       .set("Authorization", `Bearer ${orbitToken}`)
@@ -1021,7 +1021,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("supports invitation first access and password reset without exposing token hashes", async () => {
-    const token = await login("admin@nexo.app", "demo1234", "acme");
+    const token = await login("admin@trixus.app", "demo1234", "acme");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const role = await prisma.role.findUniqueOrThrow({
       where: { tenantId_key: { tenantId: tenant.id, key: "agent" } },
@@ -1080,7 +1080,7 @@ describe("Nexos API organization and RBAC", () => {
     await request(app.getHttpServer()).get("/api/conversations").expect(401);
 
     const platformMembership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenant: { slug: "acme" }, user: { email: "platform@nexo.app" } },
+      where: { tenant: { slug: "acme" }, user: { email: "platform@trixus.app" } },
     });
     const noConversationRole = await prisma.role.upsert({
       where: { tenantId_key: { tenantId: platformMembership.tenantId, key: "no_conversations" } },
@@ -1100,7 +1100,7 @@ describe("Nexos API organization and RBAC", () => {
     });
 
     try {
-      const token = await login("platform@nexo.app", "demo1234", "acme");
+      const token = await login("platform@trixus.app", "demo1234", "acme");
       await request(app.getHttpServer())
         .get("/api/conversations")
         .set("Authorization", `Bearer ${token}`)
@@ -1112,7 +1112,7 @@ describe("Nexos API organization and RBAC", () => {
       });
     }
 
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     await request(app.getHttpServer())
       .get("/api/conversations?pageSize=2")
       .set("Authorization", `Bearer ${adminToken}`)
@@ -1130,9 +1130,9 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("lists conversations with server-side filters, search and sort", async () => {
-    const token = await login("admin@nexo.app", "demo1234", "acme");
+    const token = await login("admin@trixus.app", "demo1234", "acme");
     const customer = await prisma.customer.findFirstOrThrow({
-      where: { tenant: { slug: "acme" }, name: "Nexos Cafe" },
+      where: { tenant: { slug: "acme" }, name: "Trixus Cafe" },
     });
 
     await request(app.getHttpServer())
@@ -1169,7 +1169,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("returns details and blocks cross-tenant conversation and contact access", async () => {
-    const token = await login("admin@nexo.app", "demo1234", "acme");
+    const token = await login("admin@trixus.app", "demo1234", "acme");
     const orbitConversation = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
     const acmeConversation = "44444444-4444-4444-8444-444444444441";
     const orbitContact = await prisma.contact.findFirstOrThrow({
@@ -1198,13 +1198,13 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("enforces assignment, unassignment and assignee isolation", async () => {
-    const token = await login("admin@nexo.app", "demo1234", "acme");
+    const token = await login("admin@trixus.app", "demo1234", "acme");
     const queueConversation = "44444444-4444-4444-8444-444444444443";
     const agentMembership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenant: { slug: "acme" }, user: { email: "atendente@nexo.app" } },
+      where: { tenant: { slug: "acme" }, user: { email: "atendente@trixus.app" } },
     });
     const orbitMembership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenant: { slug: "orbit" }, user: { email: "agent-orbit@nexo.app" } },
+      where: { tenant: { slug: "orbit" }, user: { email: "agent-orbit@trixus.app" } },
     });
 
     await request(app.getHttpServer())
@@ -1249,8 +1249,8 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("enforces department transfer scope and cross-tenant department isolation", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
-    const supervisorToken = await login("supervisor@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
+    const supervisorToken = await login("supervisor@trixus.app", "demo1234", "acme");
     const activeConversation = "44444444-4444-4444-8444-444444444441";
     const sales = await prisma.department.findFirstOrThrow({
       where: { tenant: { slug: "acme" }, name: "Comercial" },
@@ -1291,8 +1291,8 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("enforces status transitions and agent department visibility", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
-    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
+    const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     const financeConversation = "44444444-4444-4444-8444-444444444446";
     const contact = await prisma.contact.findFirstOrThrow({
       where: { tenant: { slug: "acme" }, archivedAt: null },
@@ -1351,7 +1351,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("creates conversations only with connected Evolution connections and reuses open duplicates", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     const [tenant, orbit] = await Promise.all([
       prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } }),
       prisma.tenant.findUniqueOrThrow({ where: { slug: "orbit" } }),
@@ -1423,13 +1423,13 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("lists conversation messages with cursor pagination and tenant visibility", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
-    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
+    const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     const financeConversation = "44444444-4444-4444-8444-444444444446";
     const orbitConversation = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const membership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenantId: tenant.id, user: { email: "admin@nexo.app" } },
+      where: { tenantId: tenant.id, user: { email: "admin@trixus.app" } },
     });
     const department = await prisma.department.findFirstOrThrow({
       where: { tenantId: tenant.id, name: "Suporte" },
@@ -1516,10 +1516,10 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("sends text messages transactionally and validates message input", async () => {
-    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const agentMembership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenantId: tenant.id, user: { email: "atendente@nexo.app" } },
+      where: { tenantId: tenant.id, user: { email: "atendente@trixus.app" } },
     });
     const department = await prisma.department.findFirstOrThrow({
       where: { tenantId: tenant.id, name: "Suporte" },
@@ -1595,13 +1595,13 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("enforces message send permissions and conversation states", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
-    const supervisorToken = await login("supervisor@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
+    const supervisorToken = await login("supervisor@trixus.app", "demo1234", "acme");
     const activeConversation = "44444444-4444-4444-8444-444444444441";
     const closedConversation = "44444444-4444-4444-8444-444444444445";
     const standbyConversation = "44444444-4444-4444-8444-444444444442";
     const platformMembership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenant: { slug: "acme" }, user: { email: "platform@nexo.app" } },
+      where: { tenant: { slug: "acme" }, user: { email: "platform@trixus.app" } },
     });
     const noSendRole = await prisma.role.upsert({
       where: { tenantId_key: { tenantId: platformMembership.tenantId, key: "no_message_send" } },
@@ -1629,7 +1629,7 @@ describe("Nexos API organization and RBAC", () => {
     });
 
     try {
-      const noSendToken = await login("platform@nexo.app", "demo1234", "acme");
+      const noSendToken = await login("platform@trixus.app", "demo1234", "acme");
       await request(app.getHttpServer())
         .post(`/api/conversations/${activeConversation}/messages`)
         .set("Authorization", `Bearer ${noSendToken}`)
@@ -1656,10 +1656,10 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("marks inbound messages as read and resets conversation unread count", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const membership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenantId: tenant.id, user: { email: "admin@nexo.app" } },
+      where: { tenantId: tenant.id, user: { email: "admin@trixus.app" } },
     });
     const department = await prisma.department.findFirstOrThrow({
       where: { tenantId: tenant.id, name: "Suporte" },
@@ -2104,7 +2104,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("lists messaging connections by tenant and blocks cross-tenant detail access", async () => {
-    const acmeToken = await login("admin@nexo.app", "demo1234", "acme");
+    const acmeToken = await login("admin@trixus.app", "demo1234", "acme");
     const orbit = await prisma.tenant.findUniqueOrThrow({ where: { slug: "orbit" } });
     const orbitConnection = await prisma.messagingConnection.findFirstOrThrow({
       where: { tenantId: orbit.id },
@@ -2143,11 +2143,11 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("archives messaging connections with historical relations and keeps delete idempotent", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
-    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
+    const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const membership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenantId: tenant.id, user: { email: "admin@nexo.app" } },
+      where: { tenantId: tenant.id, user: { email: "admin@trixus.app" } },
     });
     const contact = await prisma.contact.create({
       data: {
@@ -2277,9 +2277,9 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("allows tenant admin to manage tags while agents only use existing catalog tags", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
-    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
-    const orbitToken = await login("admin-orbit@nexo.app", "demo1234", "orbit");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
+    const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
+    const orbitToken = await login("admin-orbit@trixus.app", "demo1234", "orbit");
     const suffix = Date.now();
     const acmeContact = await prisma.contact.findFirstOrThrow({
       where: { tenant: { slug: "acme" }, archivedAt: null },
@@ -2354,9 +2354,9 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("enforces quick reply API RBAC, tenant scope, duplicate shortcuts and archive", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
-    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
-    const orbitToken = await login("admin-orbit@nexo.app", "demo1234", "orbit");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
+    const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
+    const orbitToken = await login("admin-orbit@trixus.app", "demo1234", "orbit");
     const suffix = Date.now();
     const shortcut = `s10${suffix}`;
 
@@ -2484,7 +2484,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("lists tickets through a real Nest app without controller DI TypeError", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     await request(app.getHttpServer())
       .get("/api/tickets")
       .set("Authorization", `Bearer ${adminToken}`)
@@ -2508,7 +2508,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("creates tickets through a real Nest app without controller DI TypeError", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     const department = await prisma.department.findFirstOrThrow({
       where: { tenant: { slug: "acme" }, name: "Suporte" },
     });
@@ -2517,7 +2517,7 @@ describe("Nexos API organization and RBAC", () => {
       include: { contact: true },
     });
     const agent = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenant: { slug: "acme" }, user: { email: "atendente@nexo.app" } },
+      where: { tenant: { slug: "acme" }, user: { email: "atendente@trixus.app" } },
     });
 
     await request(app.getHttpServer())
@@ -2554,9 +2554,9 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("manages tickets with sanitized content, comments, attachments and tenant isolation", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
-    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
-    const orbitToken = await login("admin-orbit@nexo.app", "demo1234", "orbit");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
+    const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
+    const orbitToken = await login("admin-orbit@trixus.app", "demo1234", "orbit");
     const department = await prisma.department.findFirstOrThrow({
       where: { tenant: { slug: "acme" }, name: "Suporte" },
     });
@@ -2564,7 +2564,7 @@ describe("Nexos API organization and RBAC", () => {
       where: { tenant: { slug: "acme" }, archivedAt: null },
     });
     const agent = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenant: { slug: "acme" }, user: { email: "atendente@nexo.app" } },
+      where: { tenant: { slug: "acme" }, user: { email: "atendente@trixus.app" } },
     });
     const suffix = Date.now().toString(36);
 
@@ -2574,7 +2574,7 @@ describe("Nexos API organization and RBAC", () => {
       .send({
         title: `Ticket Sprint 11 ${suffix}`,
         descriptionHtml:
-          '<p>Falha critica</p><script>alert(1)</script><img src=x onerror=alert(1)><a href="javascript:alert(1)">bad</a><a href="https://nexo.local/ticket">ok</a>',
+          '<p>Falha critica</p><script>alert(1)</script><img src=x onerror=alert(1)><a href="javascript:alert(1)">bad</a><a href="https://trixus.local/ticket">ok</a>',
         priority: "ALTA",
         category: "SUPORTE",
         departmentId: department.id,
@@ -2726,7 +2726,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("creates campaigns, previews audience, snapshots recipients and blocks duplicate starts", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const staleCampaigns = await prisma.campaign.findMany({
       where: { tenantId: tenant.id, name: "Campaign E2E" },
@@ -2781,7 +2781,7 @@ describe("Nexos API organization and RBAC", () => {
     });
 
     const previewPayload = {
-      messageText: "NEXOS-S12-E2E - Ola, {{contact.name}}.",
+      messageText: "TRIXUS-S12-E2E - Ola, {{contact.name}}.",
       audience: { type: "CONTACTS", contactIds: [contact.id], tagIds: [], customerIds: [] },
     };
     await request(app.getHttpServer())
@@ -2867,7 +2867,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("excludes marketing opt-out contacts from campaign preview", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     await prisma.contact.deleteMany({
       where: { tenantId: tenant.id, normalizedPhone: "+5511977776666" },
@@ -2906,7 +2906,7 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("does not allow agents to create campaigns", async () => {
-    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
+    const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     await request(app.getHttpServer())
       .post("/api/campaigns")
       .set("Authorization", `Bearer ${agentToken}`)
@@ -2923,10 +2923,10 @@ describe("Nexos API organization and RBAC", () => {
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const orbitTenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "orbit" } });
     const adminMembership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenantId: tenant.id, user: { email: "admin@nexo.app" } },
+      where: { tenantId: tenant.id, user: { email: "admin@trixus.app" } },
     });
     const orbitAdminMembership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenantId: orbitTenant.id, user: { email: "admin-orbit@nexo.app" } },
+      where: { tenantId: orbitTenant.id, user: { email: "admin-orbit@trixus.app" } },
     });
     await prisma.rolePermission.createMany({
       data: [
@@ -2937,9 +2937,9 @@ describe("Nexos API organization and RBAC", () => {
       skipDuplicates: true,
     });
 
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
-    const agentToken = await login("atendente@nexo.app", "demo1234", "acme");
-    const orbitToken = await login("admin-orbit@nexo.app", "demo1234", "orbit");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
+    const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
+    const orbitToken = await login("admin-orbit@trixus.app", "demo1234", "orbit");
     const department = await prisma.department.findFirstOrThrow({
       where: { tenantId: tenant.id, active: true, name: "Suporte" },
     });
@@ -3063,10 +3063,10 @@ describe("Nexos API organization and RBAC", () => {
   });
 
   it("serves operational dashboard, history, timeline, queues and report exports from Prisma data", async () => {
-    const adminToken = await login("admin@nexo.app", "demo1234", "acme");
+    const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const membership = await prisma.tenantMembership.findFirstOrThrow({
-      where: { tenantId: tenant.id, user: { email: "atendente@nexo.app" } },
+      where: { tenantId: tenant.id, user: { email: "atendente@trixus.app" } },
     });
     const department = await prisma.department.findFirstOrThrow({
       where: {
@@ -3302,7 +3302,7 @@ describe("Nexos API organization and RBAC", () => {
           "Content-Type",
           /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/,
         )
-        .expect("Content-Disposition", /nexos-atendimento\.xlsx/)
+        .expect("Content-Disposition", /trixus-atendimento\.xlsx/)
         .expect((response) => {
           const payload =
             Buffer.isBuffer(response.body) && response.body.length
@@ -3318,7 +3318,7 @@ describe("Nexos API organization and RBAC", () => {
         .set("Authorization", `Bearer ${adminToken}`)
         .expect(200)
         .expect("Content-Type", /application\/pdf/)
-        .expect("Content-Disposition", /nexos-atendimento\.pdf/)
+        .expect("Content-Disposition", /trixus-atendimento\.pdf/)
         .expect((response) => {
           const payload =
             Buffer.isBuffer(response.body) && response.body.length
@@ -3381,7 +3381,7 @@ describe("Nexos API organization and RBAC", () => {
   it("rejects invalid credentials", async () => {
     await request(app.getHttpServer())
       .post("/api/auth/login")
-      .send({ email: "admin@nexo.app", password: "wrong-password", tenantSlug: "acme" })
+      .send({ email: "admin@trixus.app", password: "wrong-password", tenantSlug: "acme" })
       .expect(401);
   });
 
@@ -3420,10 +3420,10 @@ describe("Nexos API organization and RBAC", () => {
   }
 
   async function createStarterTenant(scope: string) {
-    const platformToken = await login("platform@nexo.app", "demo1234");
+    const platformToken = await login("platform@trixus.app", "demo1234");
     const plan = await prisma.plan.findFirstOrThrow({ where: { code: "starter" } });
     const slug = `limit-${scope}-${Date.now()}`;
-    const adminEmail = `${slug}@nexo.app`;
+    const adminEmail = `${slug}@trixus.app`;
     const created = await request(app.getHttpServer())
       .post("/api/platform/tenants")
       .set("Authorization", `Bearer ${platformToken}`)

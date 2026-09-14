@@ -2,7 +2,7 @@
 
 ## Estado atual
 
-A operacao principal usa a Nexos API NestJS em `http://localhost:3001/api`, com Prisma/PostgreSQL,
+A operacao principal usa a Trixus API NestJS em `http://localhost:3001/api`, com Prisma/PostgreSQL,
 JWT tenant-scoped e realtime Socket.IO. Dashboard, historico, relatorios e filas foram consolidados
 em `/operations/*` na RC Sprint 15.
 
@@ -73,7 +73,7 @@ Exemplo de login:
 
 ```json
 {
-  "email": "admin@nexo.app",
+  "email": "admin@trixus.app",
   "password": "demo1234",
   "tenantSlug": "acme"
 }
@@ -136,7 +136,7 @@ Base local validada: `http://localhost:3001/api`.
 
 Base local validada: `http://localhost:3001/api`.
 
-A Inbox operacional usa Nexos API como fonte unica. As rotas `/inbox`, `/inbox/`,
+A Inbox operacional usa Trixus API como fonte unica. As rotas `/inbox`, `/inbox/`,
 `/inbox/$conversationId`, `/etiquetas` e `/mensagens-rapidas` nao importam `@/lib/mvp`, Supabase ou
 aliases legados de runtime.
 
@@ -154,10 +154,10 @@ aliases legados de runtime.
 | `DELETE` | `/quick-replies/:id`        | `chat.quick_replies.manage` | Arquiva resposta rapida                      |
 | `GET`    | `/conversations/:id`        | `conversations.read`        | Inclui contact tags/customer e connection    |
 
-`/etiquetas` gerencia o catalogo tenant-scoped de Tags pela Nexos API. O modal de Contact na Inbox lista o
+`/etiquetas` gerencia o catalogo tenant-scoped de Tags pela Trixus API. O modal de Contact na Inbox lista o
 mesmo catalogo e grava apenas a associacao Contact x Tag em `/contacts/:id/tags/:tagId`.
 
-`/mensagens-rapidas` gerencia Quick Replies pela Nexos API. Quick Reply selecionada no frontend apenas
+`/mensagens-rapidas` gerencia Quick Replies pela Trixus API. Quick Reply selecionada no frontend apenas
 insere o texto no composer; envio continua separado em `POST /api/conversations/:conversationId/messages`.
 
 RBAC:
@@ -256,7 +256,7 @@ Decisao de visibilidade operacional:
 
 Fronteira Sprint 04:
 
-- `Conversation` e do backend Nexos.
+- `Conversation` e do backend Trixus.
 - `Message` permanece legado ate Sprint 05; envio/listagem de mensagens no inbox ainda usa a camada antiga.
 - Nao ha endpoint `DELETE`; encerramento usa status `fechada` e arquivamento futuro deve preservar auditoria.
 
@@ -342,7 +342,7 @@ O endpoint existente `POST /conversations/:conversationId/messages` agora envia 
 
 - `/messaging/connections` lista somente connections Evolution operacionais; o Development Provider permanece interno/test-only.
 - Criacao Evolution executa `POST /instance/create` e depois `POST /webhook/set/:instanceName`.
-- `GET /messaging/connections/:id/status` reconcilia Nexos DB contra `fetchInstances`/`connectionState`.
+- `GET /messaging/connections/:id/status` reconcilia Trixus DB contra `fetchInstances`/`connectionState`.
 - QR de instance ausente retorna erro de negocio `INSTANCE_NOT_FOUND`, nao 500 generico.
 - `DELETE /messaging/connections/:id` remove a instance na Evolution quando ela existe e limpa a connection local com desvinculo seguro de mensagens/conversas.
 
@@ -387,7 +387,7 @@ Login de homologacao:
 
 ```json
 {
-  "email": "admin@nexo.app",
+  "email": "admin@trixus.app",
   "password": "demo1234"
 }
 ```
@@ -400,13 +400,13 @@ Resposta:
   "refreshToken": "...",
   "user": {
     "id": "...",
-    "email": "admin@nexo.app",
+    "email": "admin@trixus.app",
     "name": "Admin Homologacao"
   },
   "tenant": {
     "id": "...",
     "slug": "homologacao",
-    "name": "Homologacao Nexos"
+    "name": "Homologacao Trixus"
   },
   "membership": {
     "id": "...",
@@ -458,7 +458,7 @@ O dominio de Chamados usa `/api/tickets` com JWT e RBAC `tickets.*`.
 
 Listagem suporta `search`, `status`, `priority`, `departmentId`, `assignedMembershipId`, `requesterContactId`, `customerId`, `page`, `pageSize` e `sort`.
 
-HTML recebido em `descriptionHtml` e comentarios e sempre sanitizado no backend. Anexos usam upload binario direto em `POST /api/tickets/:id/attachments`, preview autenticado em `GET /api/tickets/:id/attachments/:attachmentId/inline` e download autenticado em `GET /api/tickets/:id/attachments/:attachmentId/download`; object key e URL assinada nao sao expostos como contrato publico.
+HTML recebido em `descriptionHtml` e comentarios e sempre sanitizado no backend. Atrixus usam upload binario direto em `POST /api/tickets/:id/attachments`, preview autenticado em `GET /api/tickets/:id/attachments/:attachmentId/inline` e download autenticado em `GET /api/tickets/:id/attachments/:attachmentId/download`; object key e URL assinada nao sao expostos como contrato publico.
 
 ## Sprint 14 - Product completion foundation
 

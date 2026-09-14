@@ -125,7 +125,7 @@ enum MessageStatus {
 }
 
 enum MessageReactionActorType {
-  NEXOS_USER
+  TRIXUS_USER
   EXTERNAL_PARTICIPANT
   CONTACT
   SYSTEM
@@ -1066,6 +1066,10 @@ model MessagingConnection {
   groupsSyncStatus     String?                    @default("IDLE")
   groupsSyncError      String?
   groupsSyncedCount    Int                       @default(0)
+  importHistoryEnabled Boolean                   @default(false)
+  importHistoryStartDate DateTime?
+  importGroupsEnabled  Boolean                   @default(false)
+  importGroupsStartDate DateTime?
   archivedAt           DateTime?
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt

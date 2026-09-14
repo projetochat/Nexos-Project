@@ -20,7 +20,7 @@ Root cause:
   `documentWithCaptionMessage`), so reply `contextInfo` and media envelopes were missed by the
   translator.
 - Inbound media with only Evolution/Baileys `directPath` had no backend fallback to
-  `/chat/getBase64FromMediaMessage/{instance}` and stayed unavailable in Nexos.
+  `/chat/getBase64FromMediaMessage/{instance}` and stayed unavailable in Trixus.
 - Group inbound `pushName` belongs to the participant, not to the group conversation/contact.
 - The inbox reply preview rendered as static text and did not scroll/highlight the referenced
   message.
@@ -69,7 +69,7 @@ Focused result: 23 passed, 0 failed.
 - Evolution v2.3.7: healthy
 - Postgres: healthy
 - Redis: healthy
-- Prisma migrations on `nexos_0802`: up to date
+- Prisma migrations on `trixus_0802`: up to date
 - `messaging-outbound`: zero waiting/active/delayed/completed/failed/paused jobs after cleanup
 
 ## Physical Gate
@@ -97,7 +97,7 @@ Physical matrix received after environment rebuild:
 
 Required physical retest remains open for:
 
-- reply inbound appears in Nexos with quoted preview
+- reply inbound appears in Trixus with quoted preview
 - reply preview click scrolls/highlights the referenced message
 - inbound image renders
 - inbound document appears as downloadable attachment

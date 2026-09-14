@@ -1,12 +1,12 @@
 # Media Inbound Pipeline
 
-Status: partial, pending physical Nexos validation.
+Status: partial, pending physical Trixus validation.
 
-This rework corrected outbound media payloads and direct Evolution media smokes. The inbound media pipeline still requires physical validation in the full Nexos path:
+This rework corrected outbound media payloads and direct Evolution media smokes. The inbound media pipeline still requires physical validation in the full Trixus path:
 
 ```text
 Evolution webhook
--> Nexos normalizer
+-> Trixus normalizer
 -> media metadata
 -> provider download/decrypt
 -> private storage

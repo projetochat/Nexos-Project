@@ -8,5 +8,5 @@ Rules implemented:
 - Group messages do not create individual direct conversations.
 - Group messages do not create individual leads by default.
 
-The env flag `NEXOS_MESSAGE_ALLOW_GROUP_CONVERSATIONS` is documented, but runtime enforcement still needs a configuration service pass.
+The env flag `TRIXUS_MESSAGE_ALLOW_GROUP_CONVERSATIONS` is documented, but runtime enforcement still needs a configuration service pass.
 

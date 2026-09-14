@@ -1,6 +1,6 @@
 # Ticketing Domain
 
-Sprint 11 transforma Chamados em dominio oficial do Nexos API.
+Sprint 11 transforma Chamados em dominio oficial do Trixus API.
 
 ## Modelo
 
@@ -55,14 +55,14 @@ Tenant admin enxerga todo o tenant. Supervisor/agente enxergam tickets do depart
 - `GET /api/tickets/:id/attachments/:attachmentId/download`
 - `DELETE /api/tickets/:id/attachments/:attachmentId`
 
-Upload de anexo e feito por corpo binario autenticado, sem base64 e sem URL publica:
+Upload de atrixus e feito por corpo binario autenticado, sem base64 e sem URL publica:
 
 - `Content-Type`: MIME real permitido.
 - `X-File-Name`: nome original codificado com `encodeURIComponent`.
 - `X-File-Size`: tamanho declarado em bytes.
 
 O backend valida tenant, visibilidade do ticket, permissao `tickets.attachments.upload`, allowlist de MIME,
-tamanho maximo, assinatura basica do arquivo e existencia do objeto privado antes de marcar o anexo como
+tamanho maximo, assinatura basica do arquivo e existencia do objeto privado antes de marcar o atrixus como
 `READY`.
 
 ## Realtime

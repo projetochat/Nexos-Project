@@ -39,4 +39,4 @@ Targeted messaging tests also passed:
 
 ## Environment Test Fix
 
-`nexos_1200` was migrated with `20260807013000_message_media_state` so e2e tests use the same schema contract as generated Prisma Client.
+`trixus_1200` was migrated with `20260807013000_message_media_state` so e2e tests use the same schema contract as generated Prisma Client.

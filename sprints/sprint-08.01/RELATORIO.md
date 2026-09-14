@@ -23,22 +23,22 @@ Worktree inicial limpo, branch Sprint 08 confirmada e log recente conferido ante
 
 ## 5. Ambiente de homologacao
 
-Banco isolado criado: `nexos_0801`.
+Banco isolado criado: `trixus_0801`.
 
 Variaveis usadas:
 
 ```text
-DATABASE_URL=postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0801?schema=public
+DATABASE_URL=postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public
 REDIS_URL=redis://localhost:6379
-NEXOS_QUEUE_ENABLED=true
-NEXOS_QUEUE_WORKER_ENABLED=true
+TRIXUS_QUEUE_ENABLED=true
+TRIXUS_QUEUE_WORKER_ENABLED=true
 ```
 
 ## 6. Seed minimo
 
 `backend/prisma/seed.ts` agora cria por padrao apenas tenant `homologacao`, admin, membership, roles/permissoes e departamento minimo.
 
-Validacao em banco auxiliar `nexos_0801_seedcheck`: contacts, conversations, messages e connections ficaram em `0`.
+Validacao em banco auxiliar `trixus_0801_seedcheck`: contacts, conversations, messages e connections ficaram em `0`.
 
 ## 7. Demo seed
 
@@ -243,9 +243,9 @@ Atualizados:
 | M02 | worktree inicial clean         | Limpo                        | preflight git                             | PASS    |
 | M03 | branch 08.01                   | Criada                       | `sprint/08.01-inbound-reconnect-recovery` | PASS    |
 | M04 | verify inicial                 | PASS                         | `bun run verify`                          | PASS    |
-| M05 | banco nexos_0801               | Criado                       | migrations aplicadas                      | PASS    |
+| M05 | banco trixus_0801               | Criado                       | migrations aplicadas                      | PASS    |
 | M06 | migrations                     | Aplicadas                    | 07.03 e 08 presentes                      | PASS    |
-| M07 | seed minimo                    | Implementado                 | `nexos_0801_seedcheck` zerou mocks        | PASS    |
+| M07 | seed minimo                    | Implementado                 | `trixus_0801_seedcheck` zerou mocks        | PASS    |
 | M08 | demo seed opt-in               | Implementado                 | `SEED_DEMO_DATA=true`                     | PASS    |
 | M09 | cleanup script                 | Criado                       | script novo                               | PASS    |
 | M10 | cleanup dry-run                | PASS                         | zero deletes                              | PASS    |
@@ -271,7 +271,7 @@ Atualizados:
 | M30 | no new Conversation reconnect  | Coberto por owner/connection | service spec                              | PASS    |
 | M31 | outbound queue preserved       | Preservado                   | sem alteracao queue                       | PASS    |
 | M32 | ordering preserved             | Preservado                   | Sprint 08 tests                           | PASS    |
-| M33 | Redis architecture preserved   | Preservado                   | `nexos-redis` intacto                     | PASS    |
+| M33 | Redis architecture preserved   | Preservado                   | `trixus-redis` intacto                     | PASS    |
 | M34 | outbox preserved               | Preservado                   | sem alteracao outbox                      | PASS    |
 | M35 | worker preserved               | Preservado                   | worker intacto                            | PASS    |
 | M36 | retry preserved                | Preservado                   | queue options intactas                    | PASS    |
@@ -342,7 +342,7 @@ NOT READY FOR SPRINT 09
 ## Adendo Sprint 08.04 - homologacao fisica inbound
 
 Estado recebido do Product Owner em 2026-08-03: Sprint 08.01 permanecia NOT READY porque a resposta
-inbound real do WhatsApp B nao aparecia no Nexos.
+inbound real do WhatsApp B nao aparecia no Trixus.
 
 Correcao tecnica aplicada na Sprint 08.04:
 

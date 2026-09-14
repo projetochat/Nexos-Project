@@ -8,7 +8,7 @@ Status: `READY COM PENDENCIAS DE BASELINE FRONTEND`
 
 A reexecucao autorizada da Sprint 01 removeu os bloqueios anteriores de ambiente, inicializou Git, instalou Bun, criou a fundacao backend NestJS/PostgreSQL/Prisma e entregou o primeiro vertical slice multi-tenant.
 
-O frontend Lovable/TanStack foi preservado. Supabase continua ativo como legado do MVP, seguindo Strangler Fig. A integracao frontend foi minima: login tenta a Nexos API e faz fallback para Supabase legado; `ensureDemoUsers` deixou de ser chamado pela UI; o HTML rico de chamados agora e sanitizado antes de persistir e ao reabrir edicao.
+O frontend Lovable/TanStack foi preservado. Supabase continua ativo como legado do MVP, seguindo Strangler Fig. A integracao frontend foi minima: login tenta a Trixus API e faz fallback para Supabase legado; `ensureDemoUsers` deixou de ser chamado pela UI; o HTML rico de chamados agora e sanitizado antes de persistir e ao reabrir edicao.
 
 ## 2. Commits e Git
 
@@ -28,7 +28,7 @@ O frontend Lovable/TanStack foi preservado. Supabase continua ativo como legado 
 | Bun              | `1.3.14`                            |
 | Docker           | `29.1.3`                            |
 | Docker Compose   | `v2.40.3-desktop.1`                 |
-| PostgreSQL local | Container `nexos-postgres`, healthy |
+| PostgreSQL local | Container `trixus-postgres`, healthy |
 
 ## 4. Entregas funcionais
 
@@ -60,9 +60,9 @@ Seed:
 
 - tenant `acme`
 - tenant `orbit`
-- `admin@nexo.app` / `demo1234`
-- `atendente@nexo.app` / `demo1234`
-- `outsider@nexo.app` / `demo1234`
+- `admin@trixus.app` / `demo1234`
+- `atendente@trixus.app` / `demo1234`
+- `outsider@trixus.app` / `demo1234`
 
 ## 6. Validacoes executadas
 

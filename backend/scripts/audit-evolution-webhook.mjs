@@ -17,7 +17,7 @@ const instanceName =
   process.argv.find((arg) => arg.startsWith("--instance="))?.slice("--instance=".length);
 const ensure = args.has("--ensure");
 const checkContainerHealth = args.has("--container-health");
-const containerName = process.env.EVOLUTION_CONTAINER_NAME ?? "nexos-evolution-api";
+const containerName = process.env.EVOLUTION_CONTAINER_NAME ?? "trixus-evolution-api";
 
 const baseUrl = trimTrailingSlash(
   process.env.EVOLUTION_BASE_URL ?? process.env.EVOLUTION_API_URL ?? "",

@@ -48,7 +48,7 @@ Categorias:
 
 ## Sprint 01 - Novos Utilitarios Frontend
 
-- `src/lib/nexos-api.ts`: cliente minimo da Nexos API para login backend, armazenamento local de tokens e limpeza no logout.
+- `src/lib/trixus-api.ts`: cliente minimo da Trixus API para login backend, armazenamento local de tokens e limpeza no logout.
 - `src/lib/sanitize-html.ts`: sanitizacao allowlist para HTML rico de chamados.
 - `src/lib/sanitize-html.test.ts`: testes contra payloads XSS basicos e imagens data URL permitidas.
 
@@ -68,8 +68,8 @@ O backend fica em `backend/src`:
 
 Frontend:
 
-- `src/lib/nexos-api.ts`: cliente de auth, users, departments, roles e permissions.
-- `src/lib/session.ts`: sessao hidratada pela Nexos API.
+- `src/lib/trixus-api.ts`: cliente de auth, users, departments, roles e permissions.
+- `src/lib/session.ts`: sessao hidratada pela Trixus API.
 - `src/lib/perms.ts`: permissoes de chat derivadas das permission keys do backend.
 - `src/routes/departamentos.tsx`: CRUD real de departments.
 - `src/routes/atendentes.tsx`: users/memberships reais.
@@ -114,7 +114,7 @@ Polling existente continua responsavel pela atualizacao visual.
 `InboxLayout` tambem usa Connections reais para o filtro de instancia, evitando listas vindas de opções de
 contato ou fontes legadas.
 
-Na RC Sprint 15, `ReportFiltersBar` passou a consumir clientes e departamentos pela Nexos API. Dashboard,
+Na RC Sprint 15, `ReportFiltersBar` passou a consumir clientes e departamentos pela Trixus API. Dashboard,
 Historico, Relatorios e Filas usam `operationsApi`, sem Supabase direto e sem simulador.
 
 ## Sprint 09 - Inbox realtime
@@ -125,4 +125,4 @@ singleton, sem abrir sockets por componente.
 
 # Chamados
 
-A tela `/chamados` usa lista paginada, filtros, modal de criacao, detalhe, comentarios internos e anexos privados. O editor operacional e textarea seguro; nao usa `contentEditable` nem renderizacao HTML perigosa.
+A tela `/chamados` usa lista paginada, filtros, modal de criacao, detalhe, comentarios internos e atrixus privados. O editor operacional e textarea seguro; nao usa `contentEditable` nem renderizacao HTML perigosa.

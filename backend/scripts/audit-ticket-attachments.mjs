@@ -4,9 +4,9 @@ import { resolve, sep } from "node:path";
 import { PrismaClient, TicketAttachmentStatus } from "../src/generated/prisma/index.js";
 
 const prisma = new PrismaClient();
-const localRoot = resolve(process.env.NEXOS_STORAGE_LOCAL_PATH ?? ".nexos-storage");
+const localRoot = resolve(process.env.TRIXUS_STORAGE_LOCAL_PATH ?? ".trixus-storage");
 const shouldClean = process.argv.includes("--clean");
-const maxPendingAgeMinutes = Number(process.env.NEXOS_ATTACHMENT_PENDING_MAX_MINUTES ?? 60);
+const maxPendingAgeMinutes = Number(process.env.TRIXUS_ATTACHMENT_PENDING_MAX_MINUTES ?? 60);
 
 try {
   const cutoff = new Date(Date.now() - maxPendingAgeMinutes * 60 * 1000);

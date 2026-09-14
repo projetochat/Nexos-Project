@@ -1,14 +1,14 @@
 # PRC-01 - System Wide Audit
 
 Data: 2026-08-16
-Projeto: Nexos Project
+Projeto: Trixus Project
 Escopo: auditoria pos-Messaging Core para organizar o proximo ciclo de sprints rumo a producao.
 
 ## 1. Resultado Executivo
 
 A mensageria chegou ao melhor ponto do projeto ate agora: dentro dos testes fisicos informados pelo Product Owner, o core de chat atende os requisitos definidos para homologacao funcional.
 
-Porem, o sistema como um todo ainda nao pode ser declarado aprovado para producao. O produto esta em um estado hibrido: varios dominios ja foram migrados para Nexos API/NestJS/Prisma, enquanto algumas rotas e documentos ainda carregam legado MVP, mock store, Supabase residual, documentacao antiga e gates fisicos pendentes.
+Porem, o sistema como um todo ainda nao pode ser declarado aprovado para producao. O produto esta em um estado hibrido: varios dominios ja foram migrados para Trixus API/NestJS/Prisma, enquanto algumas rotas e documentos ainda carregam legado MVP, mock store, Supabase residual, documentacao antiga e gates fisicos pendentes.
 
 Status oficial desta auditoria:
 
@@ -79,7 +79,7 @@ Impacto: existem superficies que ainda nao devem ser consideradas parte do produ
 | CRM: Clientes / Contatos / Etiquetas | Funcional, precisa homologacao final | `clientes.tsx` e `contatos.tsx` usam `crmApi`; etiquetas ja foram migradas | Regras de duplicidade, vinculo cliente-contato e filtros precisam testes fisicos | Sprint CRM de regressao fisica e edge cases |
 | Empresas tenant/admin | Parcial e bifurcado | `/admin/empresas` e platform API foram aprovados na Sprint 13; `/empresas` ainda usa mock store | Duas superficies com nomes parecidos podem confundir o produto | Decidir: remover `/empresas`, redirecionar, ou migrar para API real |
 | Atendimento legado `/atendimento/*` | Incompleto / legado | `atendimento.clientes`, `historico`, `favoritos` usam mock; `perfil` tem dados estaticos | Pode induzir uso de telas que nao refletem banco real | Remover, redirecionar para Inbox/rotas novas, ou migrar como sprint propria |
-| Chamados / Tickets | Implementado tecnicamente, pendente de gate fisico completo | Backend `tickets`, storage local/R2 boundary, rota `/chamados` usa `ticketApi` | Storage local nao e deploy final; anexos precisam prova com R2 ou storage escolhido | Sprint Tickets: upload/download/permissoes/storage/producao |
+| Chamados / Tickets | Implementado tecnicamente, pendente de gate fisico completo | Backend `tickets`, storage local/R2 boundary, rota `/chamados` usa `ticketApi` | Storage local nao e deploy final; atrixus precisam prova com R2 ou storage escolhido | Sprint Tickets: upload/download/permissoes/storage/producao |
 | Campanhas | Parcialmente pronto | `campaignApi`, backend `campaigns`, BullMQ e guard anti-legado existentes | Precisa teste real de audiencia, envio, fila, cancelamento e limites de plano | Sprint Campanhas: matriz fisica com Redis/Evolution e falhas |
 | Automacoes / Chatbot / Filas | Parcial | Rotas usam APIs novas em parte; docs indicam migracao na Sprint 14 | Execucao real de regras/bot ainda precisa prova de ponta a ponta | Sprint Automacoes: definir motor, gatilhos, logs e rollback |
 | Operacoes: dashboard, historico, relatorios, filas | Parcialmente pronto | `operationsApi`, backend `operations`, RC Sprint 15 menciona implementacao | Gate fisico do RC Sprint 15 ficou reaberto; export Excel/PDF nativo pendente | Sprint Operacoes: homologar filtros, relatorios, export e fila real |
@@ -102,7 +102,7 @@ Impacto: existem superficies que ainda nao devem ser consideradas parte do produ
 
 1. Remover ou migrar rotas legadas `/atendimento/*` e `/empresas`.
 2. Homologar CRM completo: clientes, contatos, etiquetas, vinculos, permissao por perfil.
-3. Homologar tickets com anexos reais e storage final.
+3. Homologar tickets com atrixus reais e storage final.
 4. Homologar campanhas e automacoes com filas e falhas controladas.
 5. Revalidar admin/platform apos as alteracoes recentes.
 
@@ -149,7 +149,7 @@ Escopo:
 - `/empresas`
 - `src/lib/api/index.ts`
 
-Decisao esperada por tela: remover, redirecionar ou migrar para Nexos API.
+Decisao esperada por tela: remover, redirecionar ou migrar para Trixus API.
 
 ### PRC-03 - CRM Production Readiness
 
@@ -166,7 +166,7 @@ Escopo:
 
 ### PRC-04 - Tickets & Storage
 
-Objetivo: aprovar chamados com anexos em storage final.
+Objetivo: aprovar chamados com atrixus em storage final.
 
 Escopo:
 

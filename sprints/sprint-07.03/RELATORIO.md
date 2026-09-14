@@ -13,9 +13,9 @@ Implementado fluxo minimo real para iniciar conversa no Inbox usando contato, co
 
 - `bun --version`: `1.3.14`
 - Verify inicial antes das alteracoes: PASS
-- Banco isolado: `nexos_0703`
+- Banco isolado: `trixus_0703`
 - Migration criada: `20260803070300_connection_owner_identity`
-- Seed executado em `nexos_0703`
+- Seed executado em `trixus_0703`
 - Verify final #1: PASS
 - Verify final #2: PASS
 - Backend tests: 59 PASS
@@ -84,7 +84,7 @@ READY FOR SPRINT 08
 | M04 | worktree inicial clean | Confirmado antes das alteracoes | `git status` limpo no preflight | PASS |
 | M05 | Bun status | Versao ok | `bun --version` = `1.3.14` | PASS |
 | M06 | verify inicial | Passou | `bun run verify` antes das alteracoes | PASS |
-| M07 | DB limpo | Banco isolado preparado | `nexos_0703` criado, migrado e seedado | PASS |
+| M07 | DB limpo | Banco isolado preparado | `trixus_0703` criado, migrado e seedado | PASS |
 | M08 | migrations corretas | Migration adicionada | `20260803070300_connection_owner_identity` | PASS |
 | M09 | Evolution health | Nao exercitado fisicamente | Fora do escopo automatizado local desta sessao | BLOCKED |
 | M10 | frontend startup | Build validado | `frontend:build` nos verifies | PASS |
@@ -146,8 +146,8 @@ READY FOR SPRINT 08
 | M66 | frontend build | Passou | Vite/Nitro build PASS | PASS |
 | M67 | backend build | Passou | `tsc -p tsconfig.build.json` PASS | PASS |
 | M68 | backend tests | Passou | 9 files, 59 tests PASS | PASS |
-| M69 | verify final #1 | Passou | `bun run verify` com `DATABASE_URL=nexos_0703` | PASS |
-| M70 | verify final #2 | Passou | Segundo `bun run verify` com `DATABASE_URL=nexos_0703` | PASS |
+| M69 | verify final #1 | Passou | `bun run verify` com `DATABASE_URL=trixus_0703` | PASS |
+| M70 | verify final #2 | Passou | Segundo `bun run verify` com `DATABASE_URL=trixus_0703` | PASS |
 | M71 | Supabase no increase | Nao alterado | Nenhum arquivo/integração Supabase novo | PASS |
 | M72 | no Redis/BullMQ | Cumprido | Nenhuma implementacao Redis/BullMQ adicionada | PASS |
 | M73 | no Socket.io | Cumprido | Nenhum Socket.io adicionado | PASS |

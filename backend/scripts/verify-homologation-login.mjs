@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 
 const apiUrl = (
-  process.env.VITE_NEXOS_API_URL ??
-  process.env.NEXOS_API_URL ??
+  process.env.VITE_TRIXUS_API_URL ??
+  process.env.TRIXUS_API_URL ??
   "http://localhost:3001/api"
 ).replace(/\/$/, "");
 const accounts = [
   {
-    email: (process.env.SEED_ADMIN_EMAIL ?? "admin@nexo.app").trim(),
+    email: (process.env.SEED_ADMIN_EMAIL ?? "admin@trixus.app").trim(),
     password: process.env.SEED_ADMIN_PASSWORD ?? "demo1234",
     role: "tenant_admin",
   },
   {
-    email: (process.env.SEED_AGENT_EMAIL ?? "atendente@nexo.app").trim(),
+    email: (process.env.SEED_AGENT_EMAIL ?? "atendente@trixus.app").trim(),
     password: process.env.SEED_AGENT_PASSWORD ?? "demo1234",
     role: "agent",
   },

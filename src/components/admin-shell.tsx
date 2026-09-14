@@ -1,4 +1,4 @@
-﻿import * as React from "react";
+import * as React from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard,
@@ -83,7 +83,7 @@ function useBreadcrumbs() {
   return crumbs;
 }
 
-const SIDEBAR_KEY = "nexo.admin.sidebar.collapsed";
+const SIDEBAR_KEY = "trixus.admin.sidebar.collapsed";
 function useSidebar() {
   const [collapsed, setCollapsed] = React.useState(false);
   React.useEffect(() => {

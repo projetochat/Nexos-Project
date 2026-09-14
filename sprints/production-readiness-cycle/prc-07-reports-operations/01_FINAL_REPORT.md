@@ -24,10 +24,10 @@ O modulo Reports & Operations ja possuia endpoints, telas e cobertura e2e ampla.
 
 - Criado guard `test:prc07-reports-operations-contract`.
 - Guard incluido no `verify`.
-- Export `xlsx` ajustado para `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` e filename `nexos-atendimento.xlsx`.
+- Export `xlsx` ajustado para `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` e filename `trixus-atendimento.xlsx`.
 - Teste e2e operacional ampliado para validar CSV, XLSX e PDF.
 - Documentacao `docs/OPERATIONS.md` atualizada com o gate PRC-07.
-- Notion atualizado no `Nexos Project - Control Center`.
+- Notion atualizado no `Trixus Project - Control Center`.
 
 ## Contratos Validados
 
@@ -73,7 +73,7 @@ bun run --cwd backend test -- -t "serves operational dashboard, history, timelin
 BLOCKED
 ```
 
-Motivo: Docker Desktop nao estava ativo. A consulta `docker compose ps postgres nexos-redis` falhou porque o pipe `dockerDesktopLinuxEngine` nao estava disponivel.
+Motivo: Docker Desktop nao estava ativo. A consulta `docker compose ps postgres trixus-redis` falhou porque o pipe `dockerDesktopLinuxEngine` nao estava disponivel.
 
 Sem Postgres e Redis locais ativos, a suite e2e com Prisma nao pode ser executada de forma confiavel.
 
@@ -82,8 +82,8 @@ Sem Postgres e Redis locais ativos, a suite e2e com Prisma nao pode ser executad
 Com Docker Desktop aberto:
 
 ```powershell
-cd "C:\Users\Rabel\Downloads\Nexos Project"
-docker compose up -d postgres nexos-redis
+cd "C:\Users\Rabel\Downloads\Trixus Project"
+docker compose up -d postgres trixus-redis
 bun run test:prc07-reports-operations-contract
 bun run --cwd backend test -- -t "serves operational dashboard, history, timeline, queues and report exports from Prisma data"
 bun run verify

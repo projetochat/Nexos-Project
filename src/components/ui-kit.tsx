@@ -1,4 +1,5 @@
 import * as React from "react";
+import { setNativeInputValue, shouldFillTodayFromShortcut, todayValueForInput } from "@/lib/date-shortcuts";
 import { ChevronDown, Search, X } from "lucide-react";
 
 /* ============================================================
@@ -194,10 +195,21 @@ export function Badge({
 export const Input = React.forwardRef<
   HTMLInputElement,
   React.InputHTMLAttributes<HTMLInputElement>
->(({ className = "", ...rest }, ref) => (
+>(({ className = "", type, onKeyDown, ...rest }, ref) => (
   <input
     ref={ref}
+    type={type}
     className={`min-h-10 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
+    onKeyDown={(event) => {
+      if (
+        (type === "date" || type === "datetime-local") &&
+        shouldFillTodayFromShortcut(event.nativeEvent)
+      ) {
+        event.preventDefault();
+        setNativeInputValue(event.currentTarget, todayValueForInput(type, event.currentTarget.value));
+      }
+      onKeyDown?.(event);
+    }}
     {...rest}
   />
 ));

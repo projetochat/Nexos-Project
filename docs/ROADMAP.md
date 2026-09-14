@@ -22,7 +22,7 @@
 
 Entregue:
 
-- Dashboard, historico, relatorios e filas em Nexos API/Prisma.
+- Dashboard, historico, relatorios e filas em Trixus API/Prisma.
 - Remocao fisica da rota `/simulador` e do servico `SIMULATOR`.
 - Teste E2E para contrato operacional de dashboard, historico, timeline, filas e export.
 - Rework tecnico: historico `FECHADA + closedAt`, `OperationsMetricsService` unico, relatorios por realtime e cleanup operacional.
@@ -58,19 +58,19 @@ Universal Messaging Adapter implementado como fronteira provider-neutral. Sprint
 
 ## Sprint 07 concluida
 
-Evolution API Provider implementado como adapter real. Foram entregues lifecycle de connection, QR Code, outbound textual real, webhook inbound/status e tela `/instancias` pela Nexos API.
+Evolution API Provider implementado como adapter real. Foram entregues lifecycle de connection, QR Code, outbound textual real, webhook inbound/status e tela `/instancias` pela Trixus API.
 
 Continuam fora de escopo:
 
 - Meta Cloud API.
-- Redis/BullMQ do Nexos.
+- Redis/BullMQ do Trixus.
 - Socket.io/realtime proprio.
 - Cloudflare R2 e midia real.
 - Campanhas, bots, IA, billing e automacoes.
 
 Proxima sprint sugerida:
 
-- Consolidar realtime/filas para mensagens e conexoes, ou migrar o proximo fluxo operacional ainda dependente de Supabase.
+- Consolidar realtime/filas para mensagens e cotrixuses, ou migrar o proximo fluxo operacional ainda dependente de Supabase.
 
 ## Sprint 07.01 - Evolution E2E Hardening
 
@@ -121,7 +121,7 @@ Entregue:
 - users, memberships, departments, department memberships, roles e permissions;
 - RBAC server-side por permission;
 - Platform Admin separado de Tenant Admin;
-- telas administrativas migradas para Nexos API;
+- telas administrativas migradas para Trixus API;
 - Supabase removido das superficies migradas.
 
 Proxima sprint:
@@ -156,7 +156,7 @@ Status: corretiva de ambiente de homologacao e Contact lifecycle implementada lo
 
 Entregue:
 
-- reset oficial de homologacao para `nexos_0802`;
+- reset oficial de homologacao para `trixus_0802`;
 - seed minimo idempotente e operacionalmente vazio;
 - audit de contagens/orfaos;
 - Contact soft delete + restore no create;
@@ -174,7 +174,7 @@ Entregue:
 - `/api/auth/me`;
 - mensagens de erro especificas;
 - seed admin configuravel;
-- smoke API real no `nexos_0802`;
+- smoke API real no `trixus_0802`;
 - sessao com refresh e logout local sincronizado entre abas.
 
 Proxima etapa: executar validacao UI fisica em navegador disponivel. Sprint 09 continua bloqueada.
@@ -190,9 +190,9 @@ Entregue:
 - webhook Evolution autenticado por `jwt_key`;
 - motivos canonicos para eventos ignorados;
 - testes automatizados de dropdown, translator, inbound e webhook `jwt_key`;
-- regressao completa aprovada em `nexos_0801`.
+- regressao completa aprovada em `trixus_0801`.
 
-Sprint 09 continua bloqueada. Rework II atualizou Evolution para `v2.3.7`, preservou `nexos_0802` e
+Sprint 09 continua bloqueada. Rework II atualizou Evolution para `v2.3.7`, preservou `trixus_0802` e
 confirmou a instancia conectada `26293569-whatsapp-nata-cffd5f5c`, mas o inbound fisico ainda falha antes
 do webhook por decriptacao Signal/Baileys. A liberacao exige `MESSAGES_UPSERT` real chegando ao backend,
 mesma Conversation, reconnect, zero replay, Redis down/recovery e exactly-once.
@@ -203,13 +203,13 @@ Realtime oficial implementado em codigo com Socket.io autenticado, rooms tenant-
 Conversation, Connection, presença, typing, Redis adapter e fallback REST no frontend. Gate fisico ainda
 depende de validacao browser/WhatsApp/Redis down-recovery ponta a ponta antes de liberar Sprint 10.
 
-Rework Sprint 09 recuperou o bootstrap backend fisico em `nexos_0802`, adicionou teste real de DI do
+Rework Sprint 09 recuperou o bootstrap backend fisico em `trixus_0802`, adicionou teste real de DI do
 `AppModule`, validou health `realtime=up` com Redis adapter e confirmou sockets admin/agente em homologacao.
 Sprint 10 continua bloqueada ate homologacao fisica completa de inbound, outbound/status, presence visual,
 typing visual, reconnect/F5 com reconcile REST e queda/retorno de Redis.
 
 Rework II Sprint 09 recuperou a estabilidade runtime da Inbox: snapshot realtime cacheado, flag frontend
-`VITE_NEXOS_REALTIME_ENABLED`, subscriptions idempotentes e refresh single-flight. A liberacao da Sprint 10
+`VITE_TRIXUS_REALTIME_ENABLED`, subscriptions idempotentes e refresh single-flight. A liberacao da Sprint 10
 continua condicionada ao gate fisico completo em browser real com admin/agente, WhatsApp inbound/outbound,
 presence, typing, reconnect e Redis degraded/recovery.
 
@@ -224,8 +224,8 @@ Entregue:
 - admin com acesso tenant-wide para criar Conversation e gerenciar catalogos;
 - agente com uso de Tags existentes e leitura de Quick Replies;
 - Tag catalog compartilhado entre `/etiquetas` e Contact modal;
-- Quick Replies exclusivamente via Nexos API;
-- `verify` duplo aprovado em `nexos_0801`;
+- Quick Replies exclusivamente via Trixus API;
+- `verify` duplo aprovado em `trixus_0801`;
 - recovery de conectividade/auth do webhook implementado com auditoria sanitizada.
 
 Sprint 11 permanece bloqueada ate mensagem real do WhatsApp B provar webhook 2xx autenticado por
@@ -235,8 +235,8 @@ Sprint 11 permanece bloqueada ate mensagem real do WhatsApp B provar webhook 2xx
 
 Status: implementacao tecnica inicial concluida; gate fisico pendente.
 
-- Chamados migrados para Nexos API.
+- Chamados migrados para Trixus API.
 - Supabase/MVP removidos do runtime operacional de `/chamados`.
 - XSS mitigado por sanitizacao server-side e editor textarea seguro.
-- Anexos privados com storage local e boundary R2.
+- Atrixus privados com storage local e boundary R2.
 - Sprint 12 nao liberada automaticamente.

@@ -1,15 +1,15 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  hydrateWithNexosApi,
-  loginWithNexosApi,
-  logoutFromNexosApi,
+  hydrateWithTrixusApi,
+  loginWithTrixusApi,
+  logoutFromTrixusApi,
   readStoredPlatformImpersonation,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 
 /* ============================================================
-   Nexo Session
-   Store client-side de sessao, hidratado a partir da Nexos API.
+   Trixus Session
+   Store client-side de sessao, hidratado a partir da Trixus API.
    Mantem API compativel com os componentes existentes.
    ============================================================ */
 
@@ -72,7 +72,7 @@ export const useSession = create<SessionState>()(
       impersonate: (input) => set({ impersonating: input }),
       stopImpersonation: () => set({ impersonating: null }),
     }),
-    { name: "nexo.session" },
+    { name: "trixus.session" },
   ),
 );
 
@@ -84,7 +84,7 @@ export function currentRoleHome(role: Role | undefined): string {
 export async function hydrateSession(): Promise<void> {
   const impersonation = readStoredPlatformImpersonation();
   try {
-    const user = await hydrateWithNexosApi();
+    const user = await hydrateWithTrixusApi();
     useSession.setState({
       user,
       impersonating: impersonation
@@ -107,12 +107,12 @@ export async function hydrateSession(): Promise<void> {
 }
 
 export async function signIn(email: string, password: string): Promise<void> {
-  const user = await loginWithNexosApi(email, password);
+  const user = await loginWithTrixusApi(email, password);
   useSession.getState().loginAs(user);
 }
 
 export async function signOut(): Promise<void> {
-  await logoutFromNexosApi();
+  await logoutFromTrixusApi();
   useSession.setState({ user: null, impersonating: null, hydrated: true });
-  localStorage.setItem("nexo.session.logoutAt", String(Date.now()));
+  localStorage.setItem("trixus.session.logoutAt", String(Date.now()));
 }

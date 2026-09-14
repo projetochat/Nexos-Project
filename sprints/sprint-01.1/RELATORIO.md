@@ -183,7 +183,7 @@ TEMPORARIO:
 Fallback atual:
 
 ```text
-Nexos API -> Supabase
+Trixus API -> Supabase
 ```
 
 Motivo: telas legadas ainda dependem de Supabase Auth/RLS.
@@ -280,7 +280,7 @@ Commit final sera criado apos este relatorio. Nao houve push.
 PowerShell:
 
 ```powershell
-cd "C:\Users\Rabel\Downloads\Nexos Project"
+cd "C:\Users\Rabel\Downloads\Trixus Project"
 $env:BUN_INSTALL="$env:USERPROFILE\.bun"
 $env:PATH="$env:BUN_INSTALL\bin;$env:PATH"
 

@@ -45,7 +45,7 @@ describe("useRealtimeInbox render stability", () => {
   });
 
   it("stabilizes renders instead of looping on unchanged realtime snapshots", async () => {
-    vi.stubEnv("VITE_NEXOS_REALTIME_ENABLED", "false");
+    vi.stubEnv("VITE_TRIXUS_REALTIME_ENABLED", "false");
     const { useSession } = await import("@/lib/session");
     const { useRealtimeInbox } = await import("./hooks");
     useSession.setState({ user: user(), impersonating: null, hydrated: true, error: null });
@@ -84,7 +84,7 @@ function user(): SessionUser {
   return {
     id: "user-a",
     nome: "Admin",
-    email: "admin@nexo.app",
+    email: "admin@trixus.app",
     role: "admin",
     empresaId: "tenant-a",
     empresaNome: "Homologação",

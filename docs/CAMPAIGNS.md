@@ -2,7 +2,7 @@
 
 ## Escopo
 
-Campanhas operacionais usam somente a Nexos API, Prisma e BullMQ. A rota `/campanhas` nao usa Supabase, MVP store, mocks locais, progresso artificial ou destinatarios hardcoded.
+Campanhas operacionais usam somente a Trixus API, Prisma e BullMQ. A rota `/campanhas` nao usa Supabase, MVP store, mocks locais, progresso artificial ou destinatarios hardcoded.
 
 ## Modelo
 
@@ -84,7 +84,7 @@ O health inclui `campaignQueue`, `campaignWorker` e `campaignScheduler`.
 Verificar conectividade a partir do container Evolution:
 
 ```bash
-docker exec nexos-evolution-api sh -lc "wget -S -O - http://host.docker.internal:3001/api/health"
+docker exec trixus-evolution-api sh -lc "wget -S -O - http://host.docker.internal:3001/api/health"
 ```
 
 O backend deve escutar em `0.0.0.0` para que `host.docker.internal` funcione. O bootstrap usa `BACKEND_HOST`, depois `HOST`, e por padrao `0.0.0.0`.

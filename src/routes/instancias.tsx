@@ -4,10 +4,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  CalendarDays,
   Camera,
   Copy,
   Eye,
   Infinity as InfinityIcon,
+  Info,
   MessageCircle,
   Pencil,
   Plus,
@@ -33,6 +35,7 @@ import {
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
+import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
 import { num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import { sortByOptionLabel } from "@/lib/sort-options";
@@ -41,7 +44,7 @@ import {
   crmApi,
   type ApiContactCustomField,
   type ApiMessagingConnection,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/instancias")({ component: Page });
 
@@ -69,12 +72,12 @@ function Page() {
   const [disconnecting, setDisconnecting] = React.useState<ApiMessagingConnection | null>(null);
   const [editing, setEditing] = React.useState<ApiMessagingConnection | null>(null);
   const { data: items = [], isLoading } = useQuery({
-    queryKey: ["nexos", "messaging-connections"],
+    queryKey: ["trixus", "messaging-connections"],
     queryFn: connectionsApi.list,
     refetchInterval: 15_000,
   });
   const { data: contactCustomFields = [] } = useQuery({
-    queryKey: ["nexos", "contact-custom-fields"],
+    queryKey: ["trixus", "contact-custom-fields"],
     queryFn: crmApi.listContactCustomFields,
   });
   const visibleItems = sortByOptionLabel(
@@ -101,7 +104,7 @@ function Page() {
         updated.filter((item): item is ApiMessagingConnection => item !== null).map((item) => [item.id, item]),
       );
       if (byId.size === 0) return;
-      qc.setQueryData<ApiMessagingConnection[]>(["nexos", "messaging-connections"], (current) =>
+      qc.setQueryData<ApiMessagingConnection[]>(["trixus", "messaging-connections"], (current) =>
         current?.map((item) => byId.get(item.id) ?? item),
       );
     });
@@ -119,7 +122,7 @@ function Page() {
   const create = useMutation({
     mutationFn: connectionsApi.createEvolution,
     onSuccess: (connection) => {
-      qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
       if (connection.status === "connected") {
         setQr(null);
         toast.success(`${connection.name} conectada`);
@@ -140,7 +143,7 @@ function Page() {
   });
   const refresh = useMutation({
     mutationFn: connectionsApi.status,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] }),
     onError: (e) => toast.error((e as Error).message),
   });
 
@@ -152,7 +155,7 @@ function Page() {
       try {
         const updated = await connectionsApi.status(qr.connectionId);
         if (!active) return;
-        qc.setQueryData<ApiMessagingConnection[]>(["nexos", "messaging-connections"], (current) =>
+        qc.setQueryData<ApiMessagingConnection[]>(["trixus", "messaging-connections"], (current) =>
           current?.map((item) => (item.id === updated.id ? updated : item)),
         );
       } catch {
@@ -176,7 +179,7 @@ function Page() {
       data: ConnectionSettingsFormData;
     }) => connectionsApi.update(connection.id, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
       setEditing(null);
       toast.success("Instancia atualizada");
     },
@@ -199,14 +202,14 @@ function Page() {
           status: result.status,
         });
       }
-      qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
     },
     onError: (e) => toast.error((e as Error).message),
   });
   const logout = useMutation({
     mutationFn: connectionsApi.logout,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
       toast.success("Conexão desconectada");
     },
     onError: (e) => toast.error((e as Error).message),
@@ -220,10 +223,10 @@ function Page() {
       options: RemoveConnectionOptions;
     }) => connectionsApi.remove(connection.id, options),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
-      qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
       qc.invalidateQueries({ queryKey: ["operations", "history"] });
-      qc.invalidateQueries({ queryKey: ["nexos", "groups"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "groups"] });
       setRemoving(null);
       toast.success("Conexão removida");
     },
@@ -426,24 +429,40 @@ function ConnectionForm({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: { name: string }) => void;
+  onSubmit: (data: { name: string; importHistoryEnabled: boolean; importHistoryStartDate?: string; importGroupsEnabled: boolean; importGroupsStartDate?: string }) => void;
   busy: boolean;
 }) {
   const [name, setName] = React.useState("");
   const [connectionType, setConnectionType] = React.useState<"qr-code">("qr-code");
-  const canCreate = name.trim().length > 0;
+  const [importHistory, setImportHistory] = React.useState(false);
+  const [importGroups, setImportGroups] = React.useState(false);
+  const [historyStartDate, setHistoryStartDate] = React.useState("");
+  const [groupStartDate, setGroupStartDate] = React.useState("");
+  const missingImportDate =
+    (importHistory && !historyStartDate) || (importGroups && !groupStartDate);
+  const canCreate = name.trim().length > 0 && !missingImportDate;
 
   React.useEffect(() => {
     if (!open) {
       setName("");
       setConnectionType("qr-code");
+      setImportHistory(false);
+      setImportGroups(false);
+      setHistoryStartDate("");
+      setGroupStartDate("");
     }
   }, [open]);
 
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canCreate || busy) return;
-    onSubmit({ name: name.trim() });
+    onSubmit({
+      name: name.trim(),
+      importHistoryEnabled: importHistory,
+      importHistoryStartDate: importHistory ? historyStartDate || undefined : undefined,
+      importGroupsEnabled: importGroups,
+      importGroupsStartDate: importGroups ? groupStartDate || undefined : undefined,
+    });
   };
 
   return (
@@ -451,8 +470,8 @@ function ConnectionForm({
       open={open}
       onClose={onClose}
       title="Nova Instância WhatsApp"
-      size="xl"
-      className="lg:max-w-5xl"
+      size="md"
+      className="lg:max-w-[40.25rem]"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -472,7 +491,10 @@ function ConnectionForm({
     >
       <form id="new-whatsapp-instance-form" className="space-y-5" onSubmit={submit}>
         <fieldset>
-          <legend className="mb-2.5 text-sm font-semibold">Tipo de conexão</legend>
+          <legend className="mb-2.5 flex items-center gap-2 text-sm font-semibold">
+            Tipo de conexão
+            <Info className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          </legend>
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
@@ -499,11 +521,11 @@ function ConnectionForm({
               </span>
               <span className="text-base font-semibold">API Oficial</span>
               <span className="mt-0.5 text-sm text-muted-foreground">Meta Business</span>
-              <span className="text-xs italic text-muted-foreground">(em breve)</span>
             </button>
           </div>
         </fieldset>
-        <Field label="Nome *">
+
+        <Field label="Nome da instância *">
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -511,11 +533,204 @@ function ConnectionForm({
             required
           />
         </Field>
+
+        <section className="space-y-4 border-t border-border pt-5" aria-label="Importar mensagens">
+          <h3 className="text-base font-semibold">Importar Mensagens</h3>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ImportOption
+              label="Importar histórico de mensagens"
+              checked={importHistory}
+              onCheckedChange={setImportHistory}
+            />
+            <ImportOption
+              label="Importar mensagens de grupo"
+              checked={importGroups}
+              onCheckedChange={setImportGroups}
+            />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ImportDate
+              label="Dt. início p/ importação"
+              required={importHistory}
+              value={historyStartDate}
+              onChange={setHistoryStartDate}
+              disabled={!importHistory}
+            />
+            <ImportDate
+              label="Dt. início p/ importação"
+              required={importGroups}
+              value={groupStartDate}
+              onChange={setGroupStartDate}
+              disabled={!importGroups}
+            />
+          </div>
+          <div className="flex items-stretch gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+            <span className="flex w-6 shrink-0 items-center justify-center">
+              <Info className="h-5 w-5 text-blue-600" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="font-semibold">A importação de mensagens começará após ler o QR Code.</p>
+              <p className="mt-0.5 text-blue-700">Pode levar até 5 minutos para iniciar.</p>
+            </div>
+          </div>
+        </section>
       </form>
     </Modal>
   );
 }
 
+function ImportOption({
+  label,
+  checked,
+  onCheckedChange,
+  disabled = false,
+}: {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className={`flex items-center gap-3 text-sm text-muted-foreground ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={() => onCheckedChange(!checked)}
+        className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${checked ? "bg-blue-600" : "bg-slate-300"}`}
+      >
+        <span
+          className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`}
+        />
+      </button>
+      <span>{label}</span>
+    </label>
+  );
+}
+
+function ImportDate({
+  label,
+  required = false,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  required?: boolean;
+  value: string;
+  onChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  const nativeDateInputRef = React.useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = React.useState(() => formatImportDate(value));
+
+  const openNativePicker = () => {
+    const input = nativeDateInputRef.current;
+    if (!input || disabled) return;
+    input.focus({ preventScroll: true });
+    try {
+      if (typeof input.showPicker === "function") input.showPicker();
+      else input.click();
+    } catch {
+      input.click();
+    }
+  };
+
+  React.useEffect(() => {
+    setDraft(formatImportDate(value));
+  }, [value]);
+
+  return (
+    <label className="block text-sm font-medium text-muted-foreground">
+      {label}{required ? <span className="text-destructive"> *</span> : null}
+      <span className="relative mt-1.5 block">
+        <input
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          value={draft}
+          maxLength={10}
+          onChange={(event) => setDraft(limitImportDateInput(event.target.value))}
+          onKeyDown={(event) => {
+            if (disabled || !shouldFillTodayFromShortcut(event.nativeEvent)) return;
+            event.preventDefault();
+            const today = todayDateValue();
+            setDraft(formatImportDate(today));
+            onChange(today);
+          }}
+          onBlur={() => {
+            const parsed = parseImportDate(draft);
+            if (!parsed) return;
+            setDraft(parsed.display);
+            onChange(parsed.iso);
+          }}
+          disabled={disabled}
+          aria-label={label}
+          placeholder="00/00/0000"
+          className="h-11 w-full rounded-xl border border-border bg-surface-1 px-3 pr-10 text-center text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+        />
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={openNativePicker}
+          aria-label={`Selecionar ${label.toLowerCase()}`}
+          className="absolute right-1.5 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <CalendarDays className="h-4 w-4" aria-hidden="true" />
+        </button>
+        <input
+          ref={nativeDateInputRef}
+          type="date"
+          value={value}
+          disabled={disabled}
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            setDraft(formatImportDate(nextValue));
+            onChange(nextValue);
+          }}
+          className="absolute right-1.5 top-1/2 z-20 h-8 w-8 -translate-y-1/2 cursor-pointer opacity-0 disabled:cursor-not-allowed"
+        />
+      </span>
+    </label>
+  );
+}
+
+function formatImportDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
+}
+
+function limitImportDateInput(value: string) {
+  let digits = 0;
+  let slashes = 0;
+  let result = "";
+  for (const character of value) {
+    if (/\d/.test(character) && digits < 8) {
+      result += character;
+      digits += 1;
+    } else if (character === "/" && slashes < 2) {
+      result += character;
+      slashes += 1;
+    }
+  }
+  return result;
+}
+function parseImportDate(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length !== 8) return null;
+  const day = Number(digits.slice(0, 2));
+  const month = Number(digits.slice(2, 4));
+  const year = Number(digits.slice(4, 8));
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+  const display = `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
+  return { display, iso: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}` };
+}
 type RemoveConnectionOptions = {
   removeConversationHistory: boolean;
 };
@@ -667,7 +882,7 @@ function ConnectionSettingsModal({
 
   const applyConnectionUpdate = (updated: ApiMessagingConnection) => {
     setLogoPreview(updated.logoUrl ?? null);
-    qc.setQueryData<ApiMessagingConnection[]>(["nexos", "messaging-connections"], (items) =>
+    qc.setQueryData<ApiMessagingConnection[]>(["trixus", "messaging-connections"], (items) =>
       items?.map((item) => (item.id === updated.id ? updated : item)),
     );
   };
@@ -917,6 +1132,7 @@ function ConnectionSettingsModal({
                 </div>
               </div>
 
+
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Provedor">
                   <Select value="evolution" disabled>
@@ -947,6 +1163,37 @@ function ConnectionSettingsModal({
                   </Select>
                 </Field>
               </div>
+              <section className="space-y-4 rounded-xl border border-border bg-surface-1 p-4" aria-label="Importação de Mensagens">
+                <h3 className="text-base font-semibold text-foreground">Importação de Mensagens</h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <ImportOption
+                    label="Importar histórico de mensagens"
+                    checked={connection?.importHistoryEnabled === true}
+                    onCheckedChange={() => undefined}
+                    disabled
+                  />
+                  <ImportOption
+                    label="Importar mensagens de grupo"
+                    checked={connection?.importGroupsEnabled === true}
+                    onCheckedChange={() => undefined}
+                    disabled
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <ImportDate
+                    label="Dt. início p/ importação"
+                    value={connection?.importHistoryStartDate ?? ""}
+                    onChange={() => undefined}
+                    disabled
+                  />
+                  <ImportDate
+                    label="Dt. início p/ importação"
+                    value={connection?.importGroupsStartDate ?? ""}
+                    onChange={() => undefined}
+                    disabled
+                  />
+                </div>
+              </section>
             </div>
           )}
 
@@ -1275,6 +1522,7 @@ function CameraCaptureModal({
       onClose={onClose}
       title="Tirar Foto"
       size="md"
+      className="lg:max-w-[40.25rem]"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -1662,13 +1910,13 @@ function QrModal({
   onClose: () => void;
 }) {
   return (
-    <Modal open={!!qr} onClose={onClose} title={qr ? `QR - ${qr.name}` : "QR"}>
+    <Modal open={!!qr} onClose={onClose} title={qr ? `QR - ${qr.name}` : "QR"} size="lg">
       {qr?.value ? (
         <div className="flex justify-center p-4">
           <img
             src={qr.value}
             alt="QR Code WhatsApp"
-            className="h-72 w-72 rounded-md border border-border"
+            className="h-[25rem] w-[25rem] rounded-md border border-border sm:h-[33.75rem] sm:w-[33.75rem]"
           />
         </div>
       ) : (

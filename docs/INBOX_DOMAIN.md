@@ -5,7 +5,7 @@
 A fronteira operacional da Inbox e:
 
 ```text
-Inbox UI -> Nexos API -> PostgreSQL
+Inbox UI -> Trixus API -> PostgreSQL
 ```
 
 Rotas cobertas pela guarda de legado:

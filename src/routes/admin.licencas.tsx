@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { KeyRound } from "lucide-react";
 import { AdminContainer } from "@/components/admin-shell";
 import { Badge, Card, SectionHeader } from "@/components/ui-kit";
-import { platformApi, type PlatformTenant } from "@/lib/nexos-api";
+import { platformApi, type PlatformTenant } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/licencas")({

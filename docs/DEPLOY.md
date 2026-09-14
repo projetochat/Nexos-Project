@@ -46,7 +46,7 @@ Nao foram encontrados arquivos de pipeline como GitHub Actions, GitLab CI ou sim
 - Supabase/Lovable Cloud para Auth, Postgres e Realtime.
 - Google Fonts no HTML root.
 - Evolution API esta disponivel como provider real opcional via Docker Compose local.
-- Nao ha integracao real implementada com Meta Cloud API, N8N, Redis/BullMQ do Nexos, R2 ou provedor de IA.
+- Nao ha integracao real implementada com Meta Cloud API, N8N, Redis/BullMQ do Trixus, R2 ou provedor de IA.
 
 ## Deploy futuro aprovado
 
@@ -60,7 +60,7 @@ PLANEJADO para Sprints posteriores:
 - Adaptadores Evolution API e Meta Cloud API.
 - Docker Compose em VPS como deploy inicial.
 
-Sprint 01 implementou Docker Compose, NestJS e Prisma. Sprint 07 adicionou Evolution API como provider. Redis/BullMQ do Nexos, Socket.io, R2 e Meta Cloud API continuam nao implementados.
+Sprint 01 implementou Docker Compose, NestJS e Prisma. Sprint 07 adicionou Evolution API como provider. Redis/BullMQ do Trixus, Socket.io, R2 e Meta Cloud API continuam nao implementados.
 
 ## Sprint 06
 
@@ -88,19 +88,19 @@ Variaveis:
 
 Usar valores fortes para `EVOLUTION_API_KEY` e `EVOLUTION_WEBHOOK_SECRET` fora de desenvolvimento. A imagem Evolution esta fixada em `evoapicloud/evolution-api:v2.3.7`; nao usar `latest` em deploy reproduzivel. Procedimento de backup, rollback e evidencias ficam em `docs/EVOLUTION.md`.
 
-O Redis e PostgreSQL extras do Compose sao internos da Evolution API. Eles nao habilitam filas BullMQ, cache ou realtime do Nexos.
+O Redis e PostgreSQL extras do Compose sao internos da Evolution API. Eles nao habilitam filas BullMQ, cache ou realtime do Trixus.
 
 Realtime local:
 
 ```powershell
-$env:NEXOS_REALTIME_ENABLED="true"
-$env:NEXOS_REALTIME_REDIS_ADAPTER_ENABLED="true"
-$env:NEXOS_REALTIME_PATH="/socket.io"
-$env:NEXOS_REALTIME_CORS_ORIGIN="http://localhost:5173"
-$env:NEXOS_PRESENCE_TTL_SECONDS="90"
+$env:TRIXUS_REALTIME_ENABLED="true"
+$env:TRIXUS_REALTIME_REDIS_ADAPTER_ENABLED="true"
+$env:TRIXUS_REALTIME_PATH="/socket.io"
+$env:TRIXUS_REALTIME_CORS_ORIGIN="http://localhost:5173"
+$env:TRIXUS_PRESENCE_TTL_SECONDS="90"
 ```
 
-Usar `REDIS_URL` do Nexos. Nao usar `evolution-redis` para adapter Socket.io.
+Usar `REDIS_URL` do Trixus. Nao usar `evolution-redis` para adapter Socket.io.
 
 ## Sprint 07.01
 
@@ -113,7 +113,7 @@ GET http://localhost:3001/api/messaging/connections/health/evolution
 Cleanup explicito de fake/orphan connections de testes:
 
 ```powershell
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus?schema=public"
 node backend/scripts/cleanup-messaging-connections.mjs --yes
 ```
 
@@ -147,7 +147,7 @@ Variaveis novas:
 - `JWT_SECRET`
 - `JWT_REFRESH_SECRET`
 - `FRONTEND_ORIGIN`
-- `VITE_NEXOS_API_URL`
+- `VITE_TRIXUS_API_URL`
 - `ALLOW_DEMO_USER_PROVISIONING=false` por padrao
 
 ## Observacoes operacionais
@@ -172,8 +172,8 @@ Observacoes:
 Banco definitivo do recorte organizacional:
 
 ```powershell
-cd "C:\Users\Rabel\Downloads\Nexos Project"
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public"
+cd "C:\Users\Rabel\Downloads\Trixus Project"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus?schema=public"
 docker compose up -d postgres
 bun run backend:prisma:generate
 bun --cwd backend prisma migrate deploy --schema prisma/schema.prisma
@@ -191,14 +191,14 @@ Observacoes:
 - Migrations Prisma ficam em `backend/prisma/migrations`.
 - Migrations Supabase permanecem apenas para o legado MVP ainda nao migrado.
 - `DATABASE_URL`, `JWT_SECRET` e `JWT_REFRESH_SECRET` sao obrigatorias para backend fora do `verify`.
-- O frontend usa `VITE_NEXOS_API_URL` quando definido; padrao local: `http://localhost:3001/api`.
+- O frontend usa `VITE_TRIXUS_API_URL` quando definido; padrao local: `http://localhost:3001/api`.
 
-# Sprint 08 - Redis Nexos e worker outbound
+# Sprint 08 - Redis Trixus e worker outbound
 
 Servico local:
 
 ```text
-nexos-redis = Redis/BullMQ do Nexos
+trixus-redis = Redis/BullMQ do Trixus
 evolution-redis = infraestrutura interna da Evolution
 ```
 
@@ -206,10 +206,10 @@ Variaveis:
 
 ```text
 REDIS_URL=redis://localhost:6379
-NEXOS_QUEUE_ENABLED=true
-NEXOS_QUEUE_WORKER_ENABLED=true
-NEXOS_OUTBOUND_WORKER_CONCURRENCY=5
-NEXOS_OUTBOX_POLL_INTERVAL_MS=1000
+TRIXUS_QUEUE_ENABLED=true
+TRIXUS_QUEUE_WORKER_ENABLED=true
+TRIXUS_OUTBOUND_WORKER_CONCURRENCY=5
+TRIXUS_OUTBOX_POLL_INTERVAL_MS=1000
 ```
 
 Producao:
@@ -231,10 +231,10 @@ bun backend/scripts/verify-redis-queue.mjs
 Banco recomendado para a corretiva:
 
 ```powershell
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0801?schema=public"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public"
 $env:REDIS_URL="redis://localhost:6379"
-$env:NEXOS_QUEUE_ENABLED="true"
-$env:NEXOS_QUEUE_WORKER_ENABLED="true"
+$env:TRIXUS_QUEUE_ENABLED="true"
+$env:TRIXUS_QUEUE_WORKER_ENABLED="true"
 ```
 
 Seed padrao:
@@ -262,7 +262,7 @@ bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao --confir
 Reset e somente local/homologacao. Nunca execute contra producao.
 
 ```powershell
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0802?schema=public"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
 bun run --cwd backend reset:homologation -- --confirm
 ```
 
@@ -270,7 +270,7 @@ Guards:
 
 - bloqueia `NODE_ENV=production`;
 - bloqueia hosts com sinais de producao;
-- aceita apenas bancos allowlisted (`nexos_08*`, `nexos_homolog`, `nexos_test`);
+- aceita apenas bancos allowlisted (`trixus_08*`, `trixus_homolog`, `trixus_test`);
 - exige `--confirm`;
 - valida que o seed minimo termina com zero dados operacionais.
 
@@ -285,11 +285,11 @@ bun run --cwd backend audit:homologation
 Variaveis oficiais:
 
 ```powershell
-$env:VITE_NEXOS_API_URL="http://localhost:3001/api"
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0802?schema=public"
+$env:VITE_TRIXUS_API_URL="http://localhost:3001/api"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
 $env:REDIS_URL="redis://localhost:6379"
 $env:SEED_MODE="homologation"
-$env:SEED_ADMIN_EMAIL="admin@nexo.app"
+$env:SEED_ADMIN_EMAIL="admin@trixus.app"
 $env:SEED_ADMIN_PASSWORD="demo1234"
 $env:JWT_SECRET="use-um-secret-forte"
 $env:JWT_REFRESH_SECRET="use-outro-secret-forte"
@@ -335,7 +335,7 @@ $env:EVOLUTION_INSTANCE_NAME="nome-da-instancia"
 bun run --cwd backend audit:evolution-webhook -- --ensure
 ```
 
-Para provar conectividade do container Evolution ate o backend Nexos:
+Para provar conectividade do container Evolution ate o backend Trixus:
 
 ```powershell
 bun run --cwd backend audit:evolution-webhook -- --container-health --instance=nome-da-instancia
@@ -343,16 +343,16 @@ bun run --cwd backend audit:evolution-webhook -- --container-health --instance=n
 
 O resultado obrigatorio e HTTP 200 em `http://host.docker.internal:3001/api/health`.
 
-Para regressao automatizada ampla, use `nexos_0801`. Para homologacao fisica, use `nexos_0802` e nao rode
+Para regressao automatizada ampla, use `trixus_0801`. Para homologacao fisica, use `trixus_0802` e nao rode
 reset enquanto houver Contact, Connection, Conversation ou Messages reais aprovados.
 
 O seed idempotente de homologacao pode ser executado sem reset para garantir Admin + Atendente:
 
 ```powershell
 $env:SEED_MODE="homologation"
-$env:SEED_ADMIN_EMAIL="admin@nexo.app"
+$env:SEED_ADMIN_EMAIL="admin@trixus.app"
 $env:SEED_ADMIN_PASSWORD="demo1234"
-$env:SEED_AGENT_EMAIL="atendente@nexo.app"
+$env:SEED_AGENT_EMAIL="atendente@trixus.app"
 $env:SEED_AGENT_PASSWORD="demo1234"
 bun --cwd backend prisma db seed
 ```
@@ -362,14 +362,14 @@ bun --cwd backend prisma db seed
 Smoke oficial de startup backend em homologacao preservada:
 
 ```powershell
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0802?schema=public"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
 $env:REDIS_URL="redis://localhost:6379"
-$env:NEXOS_QUEUE_ENABLED="true"
-$env:NEXOS_QUEUE_WORKER_ENABLED="true"
-$env:NEXOS_REALTIME_ENABLED="true"
-$env:NEXOS_REALTIME_REDIS_ADAPTER_ENABLED="true"
-$env:NEXOS_REALTIME_PATH="/socket.io"
-$env:NEXOS_REALTIME_CORS_ORIGIN="http://localhost:5173"
+$env:TRIXUS_QUEUE_ENABLED="true"
+$env:TRIXUS_QUEUE_WORKER_ENABLED="true"
+$env:TRIXUS_REALTIME_ENABLED="true"
+$env:TRIXUS_REALTIME_REDIS_ADAPTER_ENABLED="true"
+$env:TRIXUS_REALTIME_PATH="/socket.io"
+$env:TRIXUS_REALTIME_CORS_ORIGIN="http://localhost:5173"
 $env:PORT="3019"
 node backend/scripts/verify-backend-startup.mjs
 ```
@@ -394,27 +394,27 @@ Resultado esperado:
 Ambiente local com realtime ativo:
 
 ```powershell
-$env:VITE_NEXOS_API_URL="http://localhost:3001/api"
-$env:VITE_NEXOS_REALTIME_ENABLED="true"
+$env:VITE_TRIXUS_API_URL="http://localhost:3001/api"
+$env:VITE_TRIXUS_REALTIME_ENABLED="true"
 ```
 
 Ambiente local com realtime desativado:
 
 ```powershell
-$env:VITE_NEXOS_API_URL="http://localhost:3001/api"
-$env:VITE_NEXOS_REALTIME_ENABLED="false"
+$env:VITE_TRIXUS_API_URL="http://localhost:3001/api"
+$env:VITE_TRIXUS_REALTIME_ENABLED="false"
 ```
 
 Com a flag frontend em `false`, o browser nao instancia Socket.io e a Inbox deve abrir por REST/polling.
-Nao dependa apenas de `NEXOS_REALTIME_ENABLED=false` no backend para desligar tentativas de conexao no
+Nao dependa apenas de `TRIXUS_REALTIME_ENABLED=false` no backend para desligar tentativas de conexao no
 cliente.
 
 ## Sprint 10 Rework - Smoke operacional
 
-Homologacao fisica preservada usa `nexos_0802`; regressao automatizada ampla usa `nexos_0801`.
+Homologacao fisica preservada usa `trixus_0802`; regressao automatizada ampla usa `trixus_0801`.
 
 ```powershell
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0801?schema=public"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public"
 $env:REDIS_URL="redis://localhost:6379"
 bun run verify
 ```
@@ -425,11 +425,11 @@ de Inbox, `/etiquetas` e `/mensagens-rapidas`.
 
 # Storage de Tickets
 
-Configure `NEXOS_STORAGE_PROVIDER=local` para homologacao local e deploy single-host controlado. Use
-`NEXOS_STORAGE_LOCAL_PATH` fora do repositorio e inclua esse diretorio no backup operacional.
+Configure `TRIXUS_STORAGE_PROVIDER=local` para homologacao local e deploy single-host controlado. Use
+`TRIXUS_STORAGE_LOCAL_PATH` fora do repositorio e inclua esse diretorio no backup operacional.
 
-`NEXOS_STORAGE_PROVIDER=r2` permanece como boundary reservado para o ciclo de deploy; nesta base ele nao deve ser
-considerado provider final de upload/download de anexos. Para producao multi-instancia ou ambiente efemero,
-implementar e validar R2/S3-compatible antes de habilitar anexos de tickets.
+`TRIXUS_STORAGE_PROVIDER=r2` permanece como boundary reservado para o ciclo de deploy; nesta base ele nao deve ser
+considerado provider final de upload/download de atrixus. Para producao multi-instancia ou ambiente efemero,
+implementar e validar R2/S3-compatible antes de habilitar atrixus de tickets.
 
 O health retorna `storage` e `storageProvider` de forma sanitizada, sem fazer upload em cada request.

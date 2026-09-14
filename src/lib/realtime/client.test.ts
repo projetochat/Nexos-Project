@@ -44,7 +44,7 @@ describe("realtime client runtime state", () => {
   });
 
   it("returns a cached external-store snapshot while realtime state is unchanged", async () => {
-    vi.stubEnv("VITE_NEXOS_REALTIME_ENABLED", "true");
+    vi.stubEnv("VITE_TRIXUS_REALTIME_ENABLED", "true");
     const client = await import("./client");
 
     const first = client.realtimeSnapshot();
@@ -55,8 +55,8 @@ describe("realtime client runtime state", () => {
   });
 
   it("does not create sockets or subscriptions when the frontend realtime flag is disabled", async () => {
-    vi.stubEnv("VITE_NEXOS_REALTIME_ENABLED", "false");
-    localStorage.setItem("nexo.api.accessToken", "access");
+    vi.stubEnv("VITE_TRIXUS_REALTIME_ENABLED", "false");
+    localStorage.setItem("trixus.api.accessToken", "access");
     const { io } = await import("socket.io-client");
     const client = await import("./client");
 
@@ -73,8 +73,8 @@ describe("realtime client runtime state", () => {
   });
 
   it("keeps one socket and one subscription per conversation", async () => {
-    vi.stubEnv("VITE_NEXOS_REALTIME_ENABLED", "true");
-    localStorage.setItem("nexo.api.accessToken", "access");
+    vi.stubEnv("VITE_TRIXUS_REALTIME_ENABLED", "true");
+    localStorage.setItem("trixus.api.accessToken", "access");
     const { io } = await import("socket.io-client");
     const client = await import("./client");
 

@@ -49,7 +49,7 @@ Required physical validation before approval:
 - Confirm jobs retry instead of duplicating messages.
 - Restart Evolution and confirm pending jobs recover.
 - Confirm inbound webhooks continue after outage recovery.
-- Confirm no duplicate WhatsApp messages and no duplicate Nexos messages.
+- Confirm no duplicate WhatsApp messages and no duplicate Trixus messages.
 
 Gate:
 
@@ -57,7 +57,7 @@ Gate:
 
 ## PRC-07 - Reports & Operations
 
-A PRC-07 aprova dashboards, historico, relatorios e export operacional sobre dados reais do banco Nexos.
+A PRC-07 aprova dashboards, historico, relatorios e export operacional sobre dados reais do banco Trixus.
 
 Contrato final:
 
@@ -78,7 +78,7 @@ Gate automatizado:
 
 For Evolution v2.3.7 validation failures:
 
-- `instance requires property "text"` means Nexos sent an invalid provider payload, not an invalid recipient.
+- `instance requires property "text"` means Trixus sent an invalid provider payload, not an invalid recipient.
 - `instance requires property "key"` or `instance requires property "reaction"` means the reaction contract is invalid.
 - These cases must be classified as `INVALID_PROVIDER_PAYLOAD`, `providerCode=VALIDATION_ERROR`, retryable=false.
 
@@ -88,4 +88,4 @@ Physical smoke evidence from 2026-08-06:
 - Direct Evolution reaction add/remove: PASS.
 - Direct Evolution image/document/audio: PASS.
 
-Operational gate remains pending until the same flows pass through Nexos, Outbox and authenticated media endpoints.
+Operational gate remains pending until the same flows pass through Trixus, Outbox and authenticated media endpoints.

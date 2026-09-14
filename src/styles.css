@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================
-   NEXO — DESIGN SYSTEM
+   TRIXUS — DESIGN SYSTEM
    Plataforma SaaS de atendimento empresarial via WhatsApp
    Dark-first. Minimalista. Premium.
    ============================================================ */
@@ -246,7 +246,7 @@ input.dashboard-date-input::-webkit-date-and-time-value {
 }
 
 /* ---------- Keyframes ---------- */
-@keyframes nexo-fade-in {
+@keyframes trixus-fade-in {
   from {
     opacity: 0;
     transform: translateY(6px);
@@ -256,7 +256,7 @@ input.dashboard-date-input::-webkit-date-and-time-value {
     transform: translateY(0);
   }
 }
-@keyframes nexo-fade-in-soft {
+@keyframes trixus-fade-in-soft {
   from {
     opacity: 0;
   }
@@ -264,7 +264,7 @@ input.dashboard-date-input::-webkit-date-and-time-value {
     opacity: 1;
   }
 }
-@keyframes nexo-scale-in {
+@keyframes trixus-scale-in {
   from {
     opacity: 0;
     transform: scale(0.97);
@@ -274,7 +274,7 @@ input.dashboard-date-input::-webkit-date-and-time-value {
     transform: scale(1);
   }
 }
-@keyframes nexo-slide-in-right {
+@keyframes trixus-slide-in-right {
   from {
     opacity: 0;
     transform: translateX(12px);
@@ -284,7 +284,7 @@ input.dashboard-date-input::-webkit-date-and-time-value {
     transform: translateX(0);
   }
 }
-@keyframes nexo-shimmer {
+@keyframes trixus-shimmer {
   0% {
     background-position: -400px 0;
   }
@@ -292,7 +292,7 @@ input.dashboard-date-input::-webkit-date-and-time-value {
     background-position: 400px 0;
   }
 }
-@keyframes nexo-pulse-ring {
+@keyframes trixus-pulse-ring {
   0% {
     box-shadow: 0 0 0 0 oklch(0.72 0.14 180 / 55%);
   }
@@ -303,7 +303,7 @@ input.dashboard-date-input::-webkit-date-and-time-value {
     box-shadow: 0 0 0 0 oklch(0.72 0.14 180 / 0%);
   }
 }
-@keyframes nexo-progress-indeterminate {
+@keyframes trixus-progress-indeterminate {
   0% {
     transform: translateX(-100%);
   }
@@ -311,34 +311,34 @@ input.dashboard-date-input::-webkit-date-and-time-value {
     transform: translateX(300%);
   }
 }
-@keyframes nexo-spin {
+@keyframes trixus-spin {
   to {
     transform: rotate(360deg);
   }
 }
 
 @utility animate-fade-in {
-  animation: nexo-fade-in 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: trixus-fade-in 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 @utility animate-fade-in-soft {
-  animation: nexo-fade-in-soft 0.25s ease-out both;
+  animation: trixus-fade-in-soft 0.25s ease-out both;
 }
 @utility animate-scale-in {
-  animation: nexo-scale-in 0.2s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: trixus-scale-in 0.2s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 @utility animate-slide-in-right {
-  animation: nexo-slide-in-right 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: trixus-slide-in-right 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 @utility animate-pulse-ring {
-  animation: nexo-pulse-ring 1.8s cubic-bezier(0.66, 0, 0.34, 1) infinite;
+  animation: trixus-pulse-ring 1.8s cubic-bezier(0.66, 0, 0.34, 1) infinite;
 }
 @utility animate-spin-slow {
-  animation: nexo-spin 1s linear infinite;
+  animation: trixus-spin 1s linear infinite;
 }
 
 @utility stagger-children {
   & > * {
-    animation: nexo-fade-in 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation: trixus-fade-in 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
   }
   & > *:nth-child(1) {
     animation-delay: 0.02s;
@@ -383,7 +383,7 @@ input.dashboard-date-input::-webkit-date-and-time-value {
       transparent 100%
     );
     background-size: 400px 100%;
-    animation: nexo-shimmer 1.4s linear infinite;
+    animation: trixus-shimmer 1.4s linear infinite;
   }
 }
 
@@ -652,3 +652,7 @@ button[aria-label*="Duplicar"]:hover svg,
 
 
 
+
+.login-bank-gothic {
+  font-family: "Bank Gothic", "Century Gothic", "Arial Narrow", sans-serif;
+}

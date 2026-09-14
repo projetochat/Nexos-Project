@@ -46,7 +46,7 @@ Label usa nome real da Connection, owner mascarado quando disponivel, provider e
 
 ## 12. Cache invalidation
 
-Query do modal usa `staleTime: 0` e `refetchOnMount: "always"`. A pagina de instancias ja invalida `["nexos", "messaging-connections"]` em create/status/qr/logout/remove.
+Query do modal usa `staleTime: 0` e `refetchOnMount: "always"`. A pagina de instancias ja invalida `["trixus", "messaging-connections"]` em create/status/qr/logout/remove.
 
 ## 13. Inbound reproduction
 
@@ -134,7 +134,7 @@ Nao executado fisicamente nesta sessao.
 
 ## 34. Redis recovery
 
-Smoke automatizado de Redis/BullMQ passou em `bun run verify` no `nexos_0801`.
+Smoke automatizado de Redis/BullMQ passou em `bun run verify` no `trixus_0801`.
 
 ## 35. Exactly once
 
@@ -158,7 +158,7 @@ Connections endpoint e tenant-scoped no backend; helper assume resposta ja isola
 
 ## 40. Tests
 
-Focados PASS: `connection-options.test.ts`; translator/inbound specs; backend E2E incluso em verify `nexos_0801`.
+Focados PASS: `connection-options.test.ts`; translator/inbound specs; backend E2E incluso em verify `trixus_0801`.
 
 ## 41. Physical tests
 
@@ -166,7 +166,7 @@ Nao executados nesta sessao: navegador/WhatsApp/Evolution fisicos nao foram cont
 
 ## 42. Regressions
 
-`bun run verify` PASS em `nexos_0801`. Em `nexos_0802`, frontend passou e backend E2E falhou por ausencia esperada dos tenants `acme/orbit`, confirmando separacao de ambientes.
+`bun run verify` PASS em `trixus_0801`. Em `trixus_0802`, frontend passou e backend E2E falhou por ausencia esperada dos tenants `acme/orbit`, confirmando separacao de ambientes.
 
 ## 43. Typecheck/lint
 
@@ -178,7 +178,7 @@ Frontend build e backend build passaram no verify.
 
 ## 45. Verify
 
-Verify inicial em `nexos_0802`: PARTIAL, backend E2E incompatvel com massa fisica. Verify regressivo em `nexos_0801`: PASS.
+Verify inicial em `trixus_0802`: PARTIAL, backend E2E incompatvel com massa fisica. Verify regressivo em `trixus_0801`: PASS.
 
 ## 46. Adendo 08.01
 
@@ -217,7 +217,7 @@ Atualizados: README, ARCHITECTURE, API, BUSINESS_RULES, USER_FLOW, COMPONENTS, D
 | M01  | baseline 08.03                      | `546e96b`                                       | `git rev-parse HEAD` inicial   | PASS    |
 | M02  | worktree inicial clean              | limpo                                           | `git status`                   | PASS    |
 | M03  | branch 08.04                        | criada                                          | `git branch --show-current`    | PASS    |
-| M04  | verify inicial                      | `nexos_0802` parcial                            | backend E2E exige `acme/orbit` | PARTIAL |
+| M04  | verify inicial                      | `trixus_0802` parcial                            | backend E2E exige `acme/orbit` | PARTIAL |
 | M05  | dropdown source audit               | executado                                       | `rg`                           | PASS    |
 | M06  | mock source identified              | `contactOptions.instances` e legados mapeados   | audit                          | PASS    |
 | M07  | mock source removed                 | Inbox operacional sem mock                      | diff                           | PASS    |
@@ -308,8 +308,8 @@ Atualizados: README, ARCHITECTURE, API, BUSINESS_RULES, USER_FLOW, COMPONENTS, D
 | M92  | frontend build                      | PASS                                            | verify                         | PASS    |
 | M93  | backend build                       | PASS                                            | verify                         | PASS    |
 | M94  | backend tests                       | 94 PASS                                         | verify                         | PASS    |
-| M95  | verify #1                           | `nexos_0802` parcial                            | backend data mismatch          | PARTIAL |
-| M96  | verify #2                           | `nexos_0801` PASS                               | verify                         | PASS    |
+| M95  | verify #1                           | `trixus_0802` parcial                            | backend data mismatch          | PARTIAL |
+| M96  | verify #2                           | `trixus_0801` PASS                               | verify                         | PASS    |
 | M97  | adendo 08.01                        | criado                                          | file                           | PASS    |
 | M98  | adendo 08.02                        | criado                                          | file                           | PASS    |
 | M99  | adendo 08.03                        | criado                                          | file                           | PASS    |
@@ -322,7 +322,7 @@ Atualizados: README, ARCHITECTURE, API, BUSINESS_RULES, USER_FLOW, COMPONENTS, D
 
 ## 54. Technical debt
 
-Suíte E2E ampla ainda depende de massa demo `acme/orbit`. O ambiente fisico `nexos_0802` deve seguir limpo e preservado para homologacao real.
+Suíte E2E ampla ainda depende de massa demo `acme/orbit`. O ambiente fisico `trixus_0802` deve seguir limpo e preservado para homologacao real.
 
 ## 55. Risks
 
@@ -349,7 +349,7 @@ Product Owner reportou em homologacao:
 
 - FAIL: `Contatos -> Novo contato -> Instancia` ainda exibia `ENORE`, `FLOWID`, `ZYVO`.
 - PASS: outbound real chegou ao WhatsApp.
-- FAIL CRITICO: resposta do WhatsApp nao apareceu no Nexos.
+- FAIL CRITICO: resposta do WhatsApp nao apareceu no Trixus.
 
 ### Auditoria global
 
@@ -388,7 +388,7 @@ Classificacao:
 
 Consulta real da instance `26293569-homologacao-nata-018f43a5`:
 
-- Connection Nexos: `Homologacao - Nata`
+- Connection Trixus: `Homologacao - Nata`
 - status Evolution: `open`
 - webhook enabled: `true`
 - URL: `http://host.docker.internal:3001/api/webhooks/evolution`
@@ -399,7 +399,7 @@ Consulta real da instance `26293569-homologacao-nata-018f43a5`:
 
 ### Reconcile real da Connection
 
-`GET /api/messaging/connections/79caa9a2-6fff-4c36-923c-0c6ddf7ecabf/status` executado com backend temporario em `nexos_0802`:
+`GET /api/messaging/connections/79caa9a2-6fff-4c36-923c-0c6ddf7ecabf/status` executado com backend temporario em `trixus_0802`:
 
 - name: `Homologacao - Nata`
 - providerType: `evolution`
@@ -409,7 +409,7 @@ Consulta real da instance `26293569-homologacao-nata-018f43a5`:
 
 ### Atendente homologacao
 
-Seed idempotente executado sem reset em `nexos_0802`.
+Seed idempotente executado sem reset em `trixus_0802`.
 
 Auditoria:
 
@@ -423,8 +423,8 @@ Auditoria:
 
 Smoke API:
 
-- `admin@nexo.app`: PASS, role `tenant_admin`
-- `atendente@nexo.app`: PASS, role `agent`
+- `admin@trixus.app`: PASS, role `tenant_admin`
+- `atendente@trixus.app`: PASS, role `agent`
 
 ### Testes automatizados do rework
 
@@ -439,7 +439,7 @@ Smoke API:
 
 Nao foi possivel concluir nesta sessao:
 
-- envio do WhatsApp B com `NEXOS-0804-REWORK-IN-DIAG-001`;
+- envio do WhatsApp B com `TRIXUS-0804-REWORK-IN-DIAG-001`;
 - captura do payload fisico real;
 - backend HTTP real durante inbound fisico;
 - exibicao no browser apos inbound;

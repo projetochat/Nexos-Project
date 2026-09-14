@@ -40,7 +40,7 @@ import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
 import { useTheme } from "./theme-provider";
 import { useSession, ROLE_META, signOut } from "@/lib/session";
-import { notificationApi, stopStoredPlatformImpersonation } from "@/lib/nexos-api";
+import { notificationApi, stopStoredPlatformImpersonation } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 
 /* ============================================================
@@ -216,7 +216,7 @@ function useBreadcrumbs() {
 }
 
 /* ---------- Sidebar state ---------- */
-const SIDEBAR_KEY = "nexo.sidebar.collapsed";
+const SIDEBAR_KEY = "trixus.sidebar.collapsed";
 const SidebarCollapseContext = React.createContext<() => void>(() => {});
 let sidebarCollapsedMemory: boolean | undefined;
 function useSidebarState() {
@@ -778,7 +778,7 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
   const ref = React.useRef<HTMLDivElement>(null);
   const enabled = !!user?.permissions?.includes("notifications.read");
   const notifications = useQuery({
-    queryKey: ["nexos", "notifications", "unread"],
+    queryKey: ["trixus", "notifications", "unread"],
     queryFn: () => notificationApi.list({ status: "UNREAD", pageSize: 10 }),
     enabled,
     refetchInterval: enabled ? 60_000 : false,
@@ -794,7 +794,7 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
         event.event.startsWith("ticket.") ||
         event.event === "notification.created"
       ) {
-        qc.invalidateQueries({ queryKey: ["nexos", "notifications"] });
+        qc.invalidateQueries({ queryKey: ["trixus", "notifications"] });
       }
     });
   }, [enabled, qc]);
@@ -811,7 +811,7 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
 
   const markAllRead = async () => {
     await notificationApi.markAllRead();
-    await qc.invalidateQueries({ queryKey: ["nexos", "notifications"] });
+    await qc.invalidateQueries({ queryKey: ["trixus", "notifications"] });
   };
 
   return (
@@ -857,7 +857,7 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
                   type="button"
                   onClick={async () => {
                     await notificationApi.markRead(item.id);
-                    await qc.invalidateQueries({ queryKey: ["nexos", "notifications"] });
+                    await qc.invalidateQueries({ queryKey: ["trixus", "notifications"] });
                   }}
                   className="w-full rounded-lg px-2 py-2 text-left transition hover:bg-surface-2"
                 >

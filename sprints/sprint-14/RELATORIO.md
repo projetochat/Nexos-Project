@@ -31,7 +31,7 @@ Comando executado:
 rg -n "mock|demo|placeholder|TODO|FIXME|alert\(|console\.log|Supabase|@/lib/mvp|@/lib/mock|hardcoded|Development Provider|fake|setTimeout|setInterval|Not implemented|Internal server error" src backend docs scripts
 ```
 
-- PRODUCTION RUNTIME / MIGRATE: `/filas`, `/automacoes` e `/chatbot` ainda dependiam de mock/arrays locais. Migrado para Nexos API.
+- PRODUCTION RUNTIME / MIGRATE: `/filas`, `/automacoes` e `/chatbot` ainda dependiam de mock/arrays locais. Migrado para Trixus API.
 - TEST FIXTURE / KEEP: ocorrencias em `*.spec.ts`, `*.test.ts`, mocks de Vitest e fixtures de provider.
 - SEED HOMOLOGATION / KEEP: `demo1234`, `SEED_DEMO_DATA`, usuarios locais e scripts de homologacao.
 - DOCUMENTATION / DOCUMENT: referencias historicas a Supabase/mock/demo em `docs/*`, mantidas como memoria de migracao.
@@ -50,14 +50,14 @@ rg -n "mock|demo|placeholder|TODO|FIXME|alert\(|console\.log|Supabase|@/lib/mvp|
 - Primeiro acesso: `POST /api/auth/invitations/accept`.
 - Reset de senha: `POST /api/auth/password/forgot` e `POST /api/auth/password/reset`.
 - Login sem fallback silencioso para `homologacao` quando usuario tem multiplas memberships.
-- Frontend: `/filas`, `/automacoes` e `/chatbot` migradas para Nexos API.
+- Frontend: `/filas`, `/automacoes` e `/chatbot` migradas para Trixus API.
 
 ## Banco Fisico
 
 Sem reset.
 
-- `nexos_0801`: migrations `20260804140000`, `20260804140100`, `20260804140200` aplicadas.
-- `nexos_0802`: migrations `20260804140000`, `20260804140100`, `20260804140200` aplicadas.
+- `trixus_0801`: migrations `20260804140000`, `20260804140100`, `20260804140200` aplicadas.
+- `trixus_0802`: migrations `20260804140000`, `20260804140100`, `20260804140200` aplicadas.
 
 ## Testes
 
@@ -74,7 +74,7 @@ Cobertura adicionada:
 
 ## Pendencias Para Gate Fisico
 
-- Retomar teste real WhatsApp B -> Evolution -> Nexos no `nexos_0802`.
+- Retomar teste real WhatsApp B -> Evolution -> Trixus no `trixus_0802`.
 - Confirmar zero `ECONNREFUSED` e zero `HTTP 401` correlacionados no webhook fisico.
 - Confirmar Inbox sem F5, sem duplicacao, e lead/notificacao visiveis via API/UI.
 - Exercitar criacao real de convite por tenant admin e aceite em navegador.

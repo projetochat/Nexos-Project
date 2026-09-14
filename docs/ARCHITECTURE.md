@@ -70,9 +70,9 @@ A Sprint 01 iniciou a migracao incremental sem remover Supabase do MVP. O fronte
 ```text
 React/TanStack frontend
   -> fluxo legado Supabase onde ainda nao migrado
-  -> Nexos API NestJS para auth/contexto/rotas novas
+  -> Trixus API NestJS para auth/contexto/rotas novas
 
-Nexos API NestJS
+Trixus API NestJS
   -> Prisma
   -> PostgreSQL local
 ```
@@ -171,7 +171,7 @@ Evolution webhook
 
 Eventos suportados: `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `SEND_MESSAGE_UPDATE`, `QRCODE_UPDATED` e `CONNECTION_UPDATE`. Inbound duplicado continua idempotente por tenant, connection e external message id.
 
-Redis/PostgreSQL adicionados no Compose pertencem a infraestrutura interna da Evolution API. Nexos ainda nao implementa Redis/BullMQ, filas, Socket.io, R2, campanhas, bots, IA ou billing.
+Redis/PostgreSQL adicionados no Compose pertencem a infraestrutura interna da Evolution API. Trixus ainda nao implementa Redis/BullMQ, filas, Socket.io, R2, campanhas, bots, IA ou billing.
 
 ## Sprint 07.01 - Evolution E2E hardening
 
@@ -203,7 +203,7 @@ A primeira camada real de dominio SaaS foi migrada para NestJS/PostgreSQL/Prisma
 
 ```text
 React/TanStack
-  -> Nexos API
+  -> Trixus API
   -> JwtAuthGuard
   -> PermissionsGuard
   -> TenantMembership
@@ -236,7 +236,7 @@ Reconnect preserva a `MessagingConnection` local. Quando uma connection fica `CO
 
 ## Sprint 08.02 - Homologation reset
 
-Homologacao passa a ter reset deterministico via script local com allowlist de database, bloqueio de producao, migrations, Prisma generate, seed minimo e validacao de contagens. Cleanup seletivo permanece auxiliar; a estrategia principal e recriar o banco `nexos_0802`.
+Homologacao passa a ter reset deterministico via script local com allowlist de database, bloqueio de producao, migrations, Prisma generate, seed minimo e validacao de contagens. Cleanup seletivo permanece auxiliar; a estrategia principal e recriar o banco `trixus_0802`.
 
 Contact lifecycle segue soft delete + restore: `archivedAt` preserva historico, e create com mesmo telefone normalizado restaura o Contact arquivado em vez de criar duplicata ou falhar por unique constraint.
 
@@ -246,7 +246,7 @@ O acesso passa a seguir um contrato unico:
 
 ```text
 /login
-  -> VITE_NEXOS_API_URL
+  -> VITE_TRIXUS_API_URL
   -> POST /api/auth/login
   -> User ACTIVE
   -> TenantMembership ACTIVE
@@ -256,7 +256,7 @@ O acesso passa a seguir um contrato unico:
   -> route guards
 ```
 
-O frontend nao seleciona `acme` por padrao. Em homologacao, o backend auto-seleciona a unica membership ativa do usuario `admin@nexo.app` no tenant `homologacao`.
+O frontend nao seleciona `acme` por padrao. Em homologacao, o backend auto-seleciona a unica membership ativa do usuario `admin@trixus.app` no tenant `homologacao`.
 
 `GET /api/health` separa API/database de Redis: o login depende de API + database, enquanto Redis down e diagnostico operacional, nao falha de credencial.
 
@@ -294,7 +294,7 @@ servidor. Rooms oficiais ficam centralizadas em `backend/src/realtime/realtime-r
 Eventos de Message, Conversation, Connection, presenca e digitacao saem por `RealtimePublisher` apos
 persistencia confirmada. REST permanece responsavel por recuperacao e reconciliacao.
 
-No rework da Sprint 09, o bootstrap fisico no `nexos_0802` foi protegido por teste real de `AppModule`.
+No rework da Sprint 09, o bootstrap fisico no `trixus_0802` foi protegido por teste real de `AppModule`.
 A dependencia de indice 1 de `ConversationsController` e `MessagesService` e agora usa token explicito
 `@Inject(MessagesService)`. O Redis adapter tambem foi corrigido para aplicar `namespace.server.adapter(...)`
 quando o Nest entrega um namespace Socket.io no `afterInit`.
@@ -320,7 +320,7 @@ para `connected`.
 A Inbox passa a seguir o limite oficial de dominio:
 
 ```text
-Inbox UI -> Nexos API -> PostgreSQL
+Inbox UI -> Trixus API -> PostgreSQL
 Realtime -> invalida cache/reconcilia via REST
 ```
 
@@ -350,4 +350,4 @@ deve nascer de WhatsApp/Evolution real ou das APIs oficiais de Conversation/Lead
 
 # Ticketing
 
-Fluxo: Frontend `/chamados` -> Nexos API -> NestJS -> Prisma/PostgreSQL -> Storage Provider -> Realtime Publisher -> Socket.io. Supabase/MVP nao fazem parte do runtime operacional de Chamados.
+Fluxo: Frontend `/chamados` -> Trixus API -> NestJS -> Prisma/PostgreSQL -> Storage Provider -> Realtime Publisher -> Socket.io. Supabase/MVP nao fazem parte do runtime operacional de Chamados.

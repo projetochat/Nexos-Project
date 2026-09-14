@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Card, Button, Avatar, Badge } from "@/components/ui-kit";
-import { organizationApi } from "@/lib/nexos-api";
+import { organizationApi } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/configuracoes/usuarios")({
@@ -11,7 +11,7 @@ export const Route = createFileRoute("/configuracoes/usuarios")({
 
 function UsuariosSettings() {
   const { data: users = [], isLoading } = useQuery({
-    queryKey: ["nexos", "users"],
+    queryKey: ["trixus", "users"],
     queryFn: organizationApi.listUsers,
   });
 

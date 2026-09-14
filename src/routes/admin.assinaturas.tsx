@@ -15,7 +15,7 @@ import {
 } from "@/components/ui-kit";
 import { Modal } from "@/components/modal";
 import { fmtDate } from "@/lib/format";
-import { platformApi, type PlatformPlan, type PlatformSubscription } from "@/lib/nexos-api";
+import { platformApi, type PlatformPlan, type PlatformSubscription } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/assinaturas")({
   head: () => ({ meta: [{ title: "Assinaturas · Trixus Admin" }] }),

@@ -5,9 +5,9 @@ Scope: Messaging Recovery Cycle stabilization and final correction.
 
 ## Implemented
 
-- Official local homologation database switched to `nexos_0802`.
+- Official local homologation database switched to `trixus_0802`.
 - Prisma migration drift resolved for official runtime database.
-- Test database `nexos_1200` also migrated to avoid automated-test drift.
+- Test database `trixus_1200` also migrated to avoid automated-test drift.
 - Evolution v2.3.7 outbound payload normalization preserved.
 - Inbound reaction handling added from Evolution webhook payloads.
 - `MessagingReactionService` added for inbound reaction persistence and realtime.

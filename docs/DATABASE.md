@@ -289,7 +289,7 @@ Nenhuma tabela provider-specific foi criada. Evolution usa `messaging_connection
 
 ## Sprint 09 - Realtime
 
-Nao houve migration. Presenca e typing sao efemeros e usam Redis Nexos com TTL, sem persistencia em
+Nao houve migration. Presenca e typing sao efemeros e usam Redis Trixus com TTL, sem persistencia em
 PostgreSQL. Eventos de UI nao reutilizam `outbox_events`; a Outbox continua dedicada ao envio para provider.
 
 - `providerType = EVOLUTION`
@@ -324,7 +324,7 @@ O seed Prisma agora e minimo por padrao: tenant `homologacao`, admin, membership
 Cleanup seguro:
 
 ```powershell
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0801?schema=public"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public"
 bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao
 bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao --confirm
 ```
@@ -336,11 +336,11 @@ O script e dry-run por padrao, tenant-scoped, nao remove usuarios/memberships/de
 O fluxo oficial para recuperar homologacao e reconstruir o banco, nao limpar manualmente pela UI:
 
 ```powershell
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0802?schema=public"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
 bun run --cwd backend reset:homologation -- --confirm
 ```
 
-`backend/scripts/reset-homologation.mjs` recusa producao, exige `--confirm`, valida allowlist de database (`nexos_08*`, `nexos_homolog`, `nexos_test`), dropa/recria apenas o banco alvo, aplica migrations, gera Prisma Client, executa seed minimo e valida contagens.
+`backend/scripts/reset-homologation.mjs` recusa producao, exige `--confirm`, valida allowlist de database (`trixus_08*`, `trixus_homolog`, `trixus_test`), dropa/recria apenas o banco alvo, aplica migrations, gera Prisma Client, executa seed minimo e valida contagens.
 
 Contagem obrigatoria apos seed minimo:
 
@@ -382,12 +382,12 @@ Migration: `20260803100000_inbox_domain_tags_quick_replies`.
 
 Validacao fisica:
 
-- `nexos_1000`: drop/create, `prisma migrate deploy`, seed e smoke SQL de duplicata global.
-- `nexos_0802`: `prisma migrate deploy` e seed idempotente sem reset.
-- `nexos_0801`: migration aplicada para suite regressiva automatizada.
+- `trixus_1000`: drop/create, `prisma migrate deploy`, seed e smoke SQL de duplicata global.
+- `trixus_0802`: `prisma migrate deploy` e seed idempotente sem reset.
+- `trixus_0801`: migration aplicada para suite regressiva automatizada.
 
 # Sprint 11 - Ticketing
 
-Migration `20260804030000_ticketing_secure_attachments` cria `tickets`, `ticket_comments`, `ticket_history`, `ticket_attachments` e `ticket_protocol_counters`, alem dos enums de status, prioridade, categoria e anexos.
+Migration `20260804030000_ticketing_secure_attachments` cria `tickets`, `ticket_comments`, `ticket_history`, `ticket_attachments` e `ticket_protocol_counters`, alem dos enums de status, prioridade, categoria e atrixus.
 
 Indices principais cobrem `tenantId + status`, `tenantId + departmentId`, `tenantId + assignedMembershipId`, `tenantId + protocol`, `tenantId + createdAt`, `tenantId + requesterContactId`, `tenantId + customerId` e linhas filhas por `ticketId + createdAt`.

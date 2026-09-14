@@ -8,7 +8,7 @@ Gate final: `NOT READY TO RESUME SPRINT 08.01 HOMOLOGATION`, porque os testes fi
 
 ## 2. Resumo executivo
 
-A Sprint 08.02 interrompeu a dependencia da base inconsistente e formalizou o fluxo oficial `nexos_0802`: reset seguro, migrations, Prisma generate, seed minimo e validacao de contagens. O problema de Contact apagado que nao podia ser recriado foi corrigido com restore do registro arquivado no mesmo tenant e erro canonico para duplicidade ativa.
+A Sprint 08.02 interrompeu a dependencia da base inconsistente e formalizou o fluxo oficial `trixus_0802`: reset seguro, migrations, Prisma generate, seed minimo e validacao de contagens. O problema de Contact apagado que nao podia ser recriado foi corrigido com restore do registro arquivado no mesmo tenant e erro canonico para duplicidade ativa.
 
 ## 3. Baseline
 
@@ -31,7 +31,7 @@ Verify inicial: PASS com `bun 1.3.14`.
 
 ## 5. Current database inventory
 
-Inventario da base poluida `nexos_0801`, antes do reset do novo banco:
+Inventario da base poluida `trixus_0801`, antes do reset do novo banco:
 
 | Tenant | Users | Memberships | Departments | Roles | Contacts | Archived Contacts | Conversations | Messages | Connections | OutboxEvents |
 | ------ | ----: | ----------: | ----------: | ----: | -------: | ----------------: | ------------: | -------: | ----------: | -----------: |
@@ -49,7 +49,7 @@ Permissions globais: 26.
 
 ## 7. Orphan audit
 
-Auditoria da base `nexos_0801`:
+Auditoria da base `trixus_0801`:
 
 | Checagem                       | Resultado |
 | ------------------------------ | --------: |
@@ -92,15 +92,15 @@ O frontend passa a ler `lifecycle` no retorno de Contact. Quando o backend resta
 
 ## 12. Homologation database
 
-Banco oficial criado e validado: `nexos_0802`.
+Banco oficial criado e validado: `trixus_0802`.
 
 Variaveis oficiais:
 
 ```text
-DATABASE_URL=postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0802?schema=public
+DATABASE_URL=postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public
 REDIS_URL=redis://localhost:6379
-NEXOS_QUEUE_ENABLED=true
-NEXOS_QUEUE_WORKER_ENABLED=true
+TRIXUS_QUEUE_ENABLED=true
+TRIXUS_QUEUE_WORKER_ENABLED=true
 ```
 
 ## 13. Reset script
@@ -134,7 +134,7 @@ Teste sem `--confirm`: falhou como esperado com `RESET_CONFIRM_REQUIRED`.
 
 ## 15. Migrations
 
-`prisma migrate deploy` executado durante o reset oficial em `nexos_0802`.
+`prisma migrate deploy` executado durante o reset oficial em `trixus_0802`.
 
 ## 16. Minimal seed
 
@@ -142,7 +142,7 @@ Teste sem `--confirm`: falhou como esperado com `RESET_CONFIRM_REQUIRED`.
 
 ## 17. Seed counts
 
-Contagens pos-reset e pos-seed idempotente em `nexos_0802`:
+Contagens pos-reset e pos-seed idempotente em `trixus_0802`:
 
 | Entidade             | Contagem |
 | -------------------- | -------: |
@@ -161,7 +161,7 @@ Contagens pos-reset e pos-seed idempotente em `nexos_0802`:
 
 ## 18. Seed idempotency
 
-O seed minimo foi executado duas vezes contra `nexos_0802`. A auditoria final manteve as mesmas contagens e zero dados operacionais.
+O seed minimo foi executado duas vezes contra `trixus_0802`. A auditoria final manteve as mesmas contagens e zero dados operacionais.
 
 ## 19. Demo seed
 
@@ -217,7 +217,7 @@ Correcoes de JID normalization, Contact canonical resolution, Conversation reuse
 
 ## 31. Physical clean environment test
 
-Nao executado fisicamente via browser nesta sessao. O banco limpo `nexos_0802` foi comprovado por reset/audit, mas login manual ainda falta.
+Nao executado fisicamente via browser nesta sessao. O banco limpo `trixus_0802` foi comprovado por reset/audit, mas login manual ainda falta.
 
 ## 32. Physical Contact lifecycle
 
@@ -233,7 +233,7 @@ Nao executado fisicamente. Requer Contact real + Connection real.
 
 ## 35. Outbound smoke
 
-Nao executado fisicamente. A mensagem `NEXOS-0802-OUT-SMOKE` nao foi enviada para WhatsApp real nesta sessao.
+Nao executado fisicamente. A mensagem `TRIXUS-0802-OUT-SMOKE` nao foi enviada para WhatsApp real nesta sessao.
 
 ## 36. Tests
 
@@ -268,7 +268,7 @@ Verify final #1: PASS.
 
 Verify final #2: PASS.
 
-Observacao: verifies finais apontaram para `nexos_0801`, porque a suite E2E legada ainda assume massa demo `acme/orbit`. O banco oficial de homologacao `nexos_0802` foi validado separadamente por reset/audit e permanece operacionalmente vazio.
+Observacao: verifies finais apontaram para `trixus_0801`, porque a suite E2E legada ainda assume massa demo `acme/orbit`. O banco oficial de homologacao `trixus_0802` foi validado separadamente por reset/audit e permanece operacionalmente vazio.
 
 ## 42. Files created
 
@@ -293,7 +293,7 @@ Observacao: verifies finais apontaram para `nexos_0801`, porque a suite E2E lega
 - `docs/README.md`
 - `docs/ROADMAP.md`
 - `docs/USER_FLOW.md`
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 - `src/routes/contatos.tsx`
 
 ## 44. Files removed
@@ -312,7 +312,7 @@ Atualizados docs principais com reset de homologacao, seed modes, Contact delete
 | M02 | worktree inicial clean          | Limpo                                          | preflight git                                           | PASS    |
 | M03 | branch 08.02                    | Criada                                         | `sprint/08.02-homologation-reset-contact-recovery`      | PASS    |
 | M04 | verify inicial                  | PASS                                           | `bun run verify`                                        | PASS    |
-| M05 | current DB inventory            | Registrado                                     | inventario `nexos_0801`                                 | PASS    |
+| M05 | current DB inventory            | Registrado                                     | inventario `trixus_0801`                                 | PASS    |
 | M06 | soft-deleted Contacts audit     | 6 em acme                                      | audit script                                            | PASS    |
 | M07 | duplicate normalizedPhone audit | Nenhum                                         | audit script                                            | PASS    |
 | M08 | orphan audit                    | 48 conversations sem connection na base antiga | audit script                                            | PASS    |
@@ -320,7 +320,7 @@ Atualizados docs principais com reset de homologacao, seed modes, Contact delete
 | M10 | Contact recreate rule           | Restore                                        | mesmo id + lifecycle restored                           | PASS    |
 | M11 | canonical API errors            | Implementado                                   | `CONTACT_ALREADY_EXISTS`                                | PASS    |
 | M12 | frontend error UX               | Implementado                                   | toast usa mensagem/lifecycle                            | PASS    |
-| M13 | database nexos_0802             | Criado/resetado                                | reset oficial                                           | PASS    |
+| M13 | database trixus_0802             | Criado/resetado                                | reset oficial                                           | PASS    |
 | M14 | reset script                    | Criado                                         | `reset-homologation.mjs`                                | PASS    |
 | M15 | reset allowlist                 | Implementado                                   | safety tests                                            | PASS    |
 | M16 | production guard                | Implementado                                   | safety tests                                            | PASS    |
@@ -349,8 +349,8 @@ Atualizados docs principais com reset de homologacao, seed modes, Contact delete
 | M39 | frontend recreate Contact       | Automatizado por build/typecheck               | UI fisica pendente                                      | PARTIAL |
 | M40 | useful error messages           | Implementado                                   | API message + toast                                     | PASS    |
 | M41 | reset guard tests               | PASS                                           | reset-safety.spec.ts                                    | PASS    |
-| M42 | reset success test              | PASS                                           | reset oficial `nexos_0802`                              | PASS    |
-| M43 | seed empty test                 | PASS                                           | audit `nexos_0802`                                      | PASS    |
+| M42 | reset success test              | PASS                                           | reset oficial `trixus_0802`                              | PASS    |
+| M43 | seed empty test                 | PASS                                           | audit `trixus_0802`                                      | PASS    |
 | M44 | seed idempotency test           | PASS                                           | seed duas vezes + audit                                 | PASS    |
 | M45 | demo opt-in test                | Coberto por modo/config                        | execucao demo fisica nao feita                          | PARTIAL |
 | M46 | Contact create tests            | PASS                                           | E2E                                                     | PASS    |
@@ -397,13 +397,13 @@ Atualizados docs principais com reset de homologacao, seed modes, Contact delete
 
 ## 47. Technical debt
 
-- A suite E2E legada ainda assume massa demo `acme/orbit`, entao os verifies automatizados finais usam `nexos_0801`; o ambiente oficial limpo `nexos_0802` foi validado por reset/audit.
+- A suite E2E legada ainda assume massa demo `acme/orbit`, entao os verifies automatizados finais usam `trixus_0801`; o ambiente oficial limpo `trixus_0802` foi validado por reset/audit.
 - `reset-homologation.mjs` duplica os guards do modulo TypeScript para execucao robusta via Node ESM sem depender de loader TS no script operacional.
 
 ## 48. Risks
 
 - Gate fisico ainda depende de browser/manual, Evolution real, QR CONNECTED, Conversation real e WhatsApp recebendo outbound smoke.
-- A base antiga `nexos_0801` segue util como banco de regressao automatizada, mas nao deve ser usada como homologacao limpa.
+- A base antiga `trixus_0801` segue util como banco de regressao automatizada, mas nao deve ser usada como homologacao limpa.
 
 ## 49. Commits
 
@@ -432,7 +432,7 @@ Correcao aplicada:
 - estado vazio e erro real nao usam fallback demo;
 - testes automatizados cobrem zero, uma, duas, disconnected excluida, tenant-scoped response e ausencia de exemplos.
 
-Dados reais do `nexos_0802` foram auditados e preservados; nenhum reset inicial foi executado.
+Dados reais do `trixus_0802` foram auditados e preservados; nenhum reset inicial foi executado.
 ```
 
 NOT READY TO RESUME SPRINT 08.01 HOMOLOGATION

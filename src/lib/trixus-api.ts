@@ -1,9 +1,9 @@
 import type { Role, SessionUser } from "@/lib/session";
 
-const ACCESS_KEY = "nexo.api.accessToken";
-const REFRESH_KEY = "nexo.api.refreshToken";
-const TENANT_KEY = "nexo.api.tenant";
-const IMPERSONATION_KEY = "nexo.api.impersonation";
+const ACCESS_KEY = "trixus.api.accessToken";
+const REFRESH_KEY = "trixus.api.refreshToken";
+const TENANT_KEY = "trixus.api.tenant";
+const IMPERSONATION_KEY = "trixus.api.impersonation";
 let refreshPromise: Promise<boolean> | null = null;
 let sessionAlreadyCleared = false;
 
@@ -41,7 +41,7 @@ type MeResponse = {
   permissions: string[];
 };
 
-export type NexosHealth = {
+export type TrixusHealth = {
   ok: boolean;
   service: string;
   database: "up" | "down";
@@ -49,7 +49,7 @@ export type NexosHealth = {
   timestamp: string;
 };
 
-export class NexosApiError extends Error {
+export class TrixusApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
@@ -57,7 +57,7 @@ export class NexosApiError extends Error {
     readonly details?: unknown,
   ) {
     super(message);
-    this.name = "NexosApiError";
+    this.name = "TrixusApiError";
   }
 }
 
@@ -467,6 +467,10 @@ export type ApiMessagingConnection = {
   absenceEnabled?: boolean;
   absenceMessage?: string | null;
   notes?: string | null;
+  importHistoryEnabled?: boolean;
+  importHistoryStartDate?: string | null;
+  importGroupsEnabled?: boolean;
+  importGroupsStartDate?: string | null;
   ownerPhoneMasked?: string | null;
   ownerPhone?: string | null;
   archivedAt?: string | null;
@@ -647,9 +651,11 @@ export type OperationalPeriod =
   | "today"
   | "yesterday"
   | "week"
+  | "previous_week"
   | "month"
   | "previous_month"
   | "year"
+  | "previous_year"
   | "7d"
   | "30d"
   | "custom";
@@ -805,43 +811,43 @@ const roleMap: Record<string, Role> = {
   agent: "operator",
 };
 
-export function nexosApiBaseUrl() {
-  return import.meta.env.VITE_NEXOS_API_URL || "http://localhost:3001/api";
+export function trixusApiBaseUrl() {
+  return import.meta.env.VITE_TRIXUS_API_URL || "http://localhost:3001/api";
 }
 
-export function nexosRealtimeBaseUrl() {
-  return nexosApiBaseUrl().replace(/\/api\/?$/, "");
+export function trixusRealtimeBaseUrl() {
+  return trixusApiBaseUrl().replace(/\/api\/?$/, "");
 }
 
-export function getNexosAccessToken() {
+export function getTrixusAccessToken() {
   return localStorage.getItem(ACCESS_KEY);
 }
 
-export async function ensureNexosAccessToken() {
-  const token = getNexosAccessToken();
+export async function ensureTrixusAccessToken() {
+  const token = getTrixusAccessToken();
   if (token) return token;
-  return (await refreshAccessToken()) ? getNexosAccessToken() : null;
+  return (await refreshAccessToken()) ? getTrixusAccessToken() : null;
 }
 
-export async function refreshNexosAccessToken() {
-  return (await refreshAccessToken()) ? getNexosAccessToken() : null;
+export async function refreshTrixusAccessToken() {
+  return (await refreshAccessToken()) ? getTrixusAccessToken() : null;
 }
 
-export async function loginWithNexosApi(email: string, password: string, tenantSlug?: string) {
+export async function loginWithTrixusApi(email: string, password: string, tenantSlug?: string) {
   const body: { email: string; password: string; tenantSlug?: string } = { email, password };
   if (tenantSlug) body.tenantSlug = tenantSlug;
-  const response = await fetchNexos("/auth/login", {
+  const response = await fetchTrixus("/auth/login", {
     method: "POST",
     body: JSON.stringify(body),
   });
   if (!response.ok) throw await authErrorFromResponse(response);
 
   const data = (await response.json()) as LoginResponse;
-  storeNexosSession(data);
+  storeTrixusSession(data);
   return loginResponseToSessionUser(data);
 }
 
-export async function hydrateWithNexosApi() {
+export async function hydrateWithTrixusApi() {
   const data = await apiRequest<MeResponse>("/auth/me");
   return {
     id: data.user.id,
@@ -874,9 +880,9 @@ async function hydrateWithPlatformToken(stored: StoredImpersonation) {
 }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  let response = await fetchNexos(path, init, true);
+  let response = await fetchTrixus(path, init, true);
   if (response.status === 401 && canRefresh(path) && (await refreshAccessToken())) {
-    response = await fetchNexos(path, init, true);
+    response = await fetchTrixus(path, init, true);
   }
   if (!response.ok) {
     throw await readError(response);
@@ -885,7 +891,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   return response.json() as Promise<T>;
 }
 
-async function fetchNexos(path: string, init: RequestInit = {}, attachAuthorization = false) {
+async function fetchTrixus(path: string, init: RequestInit = {}, attachAuthorization = false) {
   const headers = new Headers(init.headers);
   if (!headers.has("Content-Type") && (typeof init.body === "string" || init.body == null)) {
     headers.set("Content-Type", "application/json");
@@ -893,12 +899,12 @@ async function fetchNexos(path: string, init: RequestInit = {}, attachAuthorizat
   const token = attachAuthorization ? localStorage.getItem(ACCESS_KEY) : null;
   if (token) headers.set("Authorization", `Bearer ${token}`);
   try {
-    return await fetch(`${nexosApiBaseUrl()}${path}`, {
+    return await fetch(`${trixusApiBaseUrl()}${path}`, {
       ...init,
       headers,
     });
   } catch {
-    throw new NexosApiError(
+    throw new TrixusApiError(
       "Não foi possível conectar ao sistema. Verifique sua internet e tente novamente.",
       0,
       "NETWORK_ERROR",
@@ -908,9 +914,9 @@ async function fetchNexos(path: string, init: RequestInit = {}, attachAuthorizat
 
 export async function healthCheck() {
   try {
-    const response = await fetchNexos("/health");
+    const response = await fetchTrixus("/health");
     if (!response.ok) return null;
-    return (await response.json()) as NexosHealth;
+    return (await response.json()) as TrixusHealth;
   } catch {
     return null;
   }
@@ -975,6 +981,8 @@ export const organizationApi = {
     },
   ) =>
     apiRequest<ApiUserMembership>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  activateUser: (id: string) =>
+    apiRequest<ApiUserMembership>(`/users/${id}/activate`, { method: "PATCH" }),
   deactivateUser: (id: string) =>
     apiRequest<ApiUserMembership>(`/users/${id}/deactivate`, { method: "PATCH" }),
   updateMyProfile: (data: {
@@ -1025,7 +1033,7 @@ export const crmApi = {
     } catch (error) {
       // Allows the screen to keep working while an already-running backend is
       // restarted with the lightweight picker endpoint.
-      if (!(error instanceof NexosApiError) || error.status !== 404) throw error;
+      if (!(error instanceof TrixusApiError) || error.status !== 404) throw error;
       const legacyPage = await apiRequest<PaginatedResponse<ApiContact>>(
         `/crm/contacts${queryString(params)}`,
       );
@@ -1390,13 +1398,13 @@ export const messageApi = {
     if (options.caption) headers["X-Caption"] = encodeURIComponent(options.caption);
     if (options.durationMs) headers["X-Duration-Ms"] = String(options.durationMs);
     if (options.quotedMessageId) headers["X-Quoted-Message-Id"] = options.quotedMessageId;
-    let response = await fetchNexos(
+    let response = await fetchTrixus(
       `/conversations/${conversationId}/messages/media`,
       { method: "POST", headers, body: file },
       true,
     );
     if (response.status === 401 && (await refreshAccessToken())) {
-      response = await fetchNexos(
+      response = await fetchTrixus(
         `/conversations/${conversationId}/messages/media`,
         { method: "POST", headers, body: file },
         true,
@@ -1412,13 +1420,13 @@ export const messageApi = {
     }),
   downloadMedia: async (conversationId: string, messageId: string, inline = false) => {
     const suffix = inline ? "inline" : "download";
-    let response = await fetchNexos(
+    let response = await fetchTrixus(
       `/conversations/${conversationId}/messages/${messageId}/media/${suffix}`,
       {},
       true,
     );
     if (response.status === 401 && (await refreshAccessToken())) {
-      response = await fetchNexos(
+      response = await fetchTrixus(
         `/conversations/${conversationId}/messages/${messageId}/media/${suffix}`,
         {},
         true,
@@ -1445,13 +1453,13 @@ export const operationsApi = {
   exportAttendance: async (
     params: Partial<OperationalFilters> & { format?: "csv" | "xlsx" | "pdf" } = {},
   ) => {
-    let response = await fetchNexos(
+    let response = await fetchTrixus(
       `/operations/reports/attendance/export${queryString(params)}`,
       {},
       true,
     );
     if (response.status === 401 && (await refreshAccessToken())) {
-      response = await fetchNexos(
+      response = await fetchTrixus(
         `/operations/reports/attendance/export${queryString(params)}`,
         {},
         true,
@@ -1466,7 +1474,7 @@ export const operationsApi = {
 
 export const connectionsApi = {
   list: () => apiRequest<ApiMessagingConnection[]>("/messaging/connections"),
-  createEvolution: (data: { name: string; instanceName?: string }) =>
+  createEvolution: (data: { name: string; instanceName?: string; importHistoryEnabled?: boolean; importHistoryStartDate?: string; importGroupsEnabled?: boolean; importGroupsStartDate?: string }) =>
     apiRequest<ApiMessagingConnection>("/messaging/connections/evolution", {
       method: "POST",
       body: JSON.stringify(data),
@@ -1584,7 +1592,7 @@ export const ticketApi = {
     }),
   attachments: (id: string) => apiRequest<ApiTicketAttachment[]>(`/tickets/${id}/attachments`),
   uploadAttachment: async (id: string, file: File) => {
-    let response = await fetchNexos(
+    let response = await fetchTrixus(
       `/tickets/${id}/attachments`,
       {
         method: "POST",
@@ -1598,7 +1606,7 @@ export const ticketApi = {
       true,
     );
     if (response.status === 401 && (await refreshAccessToken())) {
-      response = await fetchNexos(
+      response = await fetchTrixus(
         `/tickets/${id}/attachments`,
         {
           method: "POST",
@@ -1620,21 +1628,21 @@ export const ticketApi = {
       method: "DELETE",
     }),
   download: async (id: string, attachmentId: string) => {
-    let response = await fetchNexos(
+    let response = await fetchTrixus(
       `/tickets/${id}/attachments/${attachmentId}/download`,
       {},
       true,
     );
     if (response.status === 401 && (await refreshAccessToken())) {
-      response = await fetchNexos(`/tickets/${id}/attachments/${attachmentId}/download`, {}, true);
+      response = await fetchTrixus(`/tickets/${id}/attachments/${attachmentId}/download`, {}, true);
     }
     if (!response.ok) throw await readError(response);
     return response.blob();
   },
   preview: async (id: string, attachmentId: string) => {
-    let response = await fetchNexos(`/tickets/${id}/attachments/${attachmentId}/inline`, {}, true);
+    let response = await fetchTrixus(`/tickets/${id}/attachments/${attachmentId}/inline`, {}, true);
     if (response.status === 401 && (await refreshAccessToken())) {
-      response = await fetchNexos(`/tickets/${id}/attachments/${attachmentId}/inline`, {}, true);
+      response = await fetchTrixus(`/tickets/${id}/attachments/${attachmentId}/inline`, {}, true);
     }
     if (!response.ok) throw await readError(response);
     return response.blob();
@@ -2017,7 +2025,7 @@ export function activatePlatformImpersonation(data: PlatformImpersonation, actor
   const actorAccessToken = localStorage.getItem(ACCESS_KEY);
   const actorRefreshToken = localStorage.getItem(REFRESH_KEY);
   if (!actorAccessToken || !actorRefreshToken) {
-    throw new NexosApiError("Sessao de plataforma ausente.", 401, "PLATFORM_SESSION_MISSING");
+    throw new TrixusApiError("Sessao de plataforma ausente.", 401, "PLATFORM_SESSION_MISSING");
   }
   const stored: StoredImpersonation = {
     id: data.id,
@@ -2029,7 +2037,7 @@ export function activatePlatformImpersonation(data: PlatformImpersonation, actor
     actorUser,
   };
   localStorage.setItem(IMPERSONATION_KEY, JSON.stringify(stored));
-  storeNexosSession(data.tokens);
+  storeTrixusSession(data.tokens);
   return loginResponseToSessionUser(data.tokens);
 }
 
@@ -2063,7 +2071,7 @@ export async function stopStoredPlatformImpersonation() {
   return stored.actorUser;
 }
 
-export function clearNexosApiSession() {
+export function clearTrixusApiSession() {
   sessionAlreadyCleared = true;
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
@@ -2071,7 +2079,7 @@ export function clearNexosApiSession() {
   localStorage.removeItem(IMPERSONATION_KEY);
 }
 
-export async function logoutFromNexosApi() {
+export async function logoutFromTrixusApi() {
   const storedImpersonation = readStoredPlatformImpersonation({ includeExpired: true });
   try {
     if (storedImpersonation) {
@@ -2082,9 +2090,9 @@ export async function logoutFromNexosApi() {
         // Local logout must still clear tokens even if the server-side stop was already applied.
       }
     }
-    await fetchNexos("/auth/logout", { method: "POST" }, true);
+    await fetchTrixus("/auth/logout", { method: "POST" }, true);
   } finally {
-    clearNexosApiSession();
+    clearTrixusApiSession();
   }
 }
 
@@ -2099,11 +2107,11 @@ async function readError(response: Response) {
     const candidate = Array.isArray(data.message) ? data.message.join(", ") : data.message;
     const message =
       (isHelpfulApiMessage(candidate) && candidate) ||
-      nexosMessageFromCode(data.code) ||
+      trixusMessageFromCode(data.code) ||
       apiMessageFromStatus(response.status, data.code);
-    return new NexosApiError(message, response.status, data.code, data.details);
+    return new TrixusApiError(message, response.status, data.code, data.details);
   } catch {
-    return new NexosApiError(apiMessageFromStatus(response.status), response.status);
+    return new TrixusApiError(apiMessageFromStatus(response.status), response.status);
   }
 }
 
@@ -2124,7 +2132,7 @@ async function authErrorFromResponse(response: Response) {
   }
 }
 
-function nexosMessageFromCode(code?: string) {
+function trixusMessageFromCode(code?: string) {
   if (code === "PLAN_LIMIT_CONNECTIONS_REACHED") {
     return "Limite de instâncias atingido para o plano atual.";
   }
@@ -2190,12 +2198,12 @@ async function refreshAccessTokenOnce() {
   const refreshToken = localStorage.getItem(REFRESH_KEY);
   if (!refreshToken) return false;
   try {
-    const response = await fetchNexos("/auth/refresh", {
+    const response = await fetchTrixus("/auth/refresh", {
       method: "POST",
       body: JSON.stringify({ refreshToken }),
     });
     if (!response.ok) {
-      clearNexosApiSession();
+      clearTrixusApiSession();
       return false;
     }
     const data = (await response.json()) as { accessToken: string };
@@ -2207,7 +2215,7 @@ async function refreshAccessTokenOnce() {
   }
 }
 
-function storeNexosSession(data: LoginResponse) {
+function storeTrixusSession(data: LoginResponse) {
   sessionAlreadyCleared = false;
   localStorage.setItem(ACCESS_KEY, data.accessToken);
   localStorage.setItem(REFRESH_KEY, data.refreshToken);

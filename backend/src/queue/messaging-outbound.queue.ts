@@ -24,7 +24,7 @@ export class RedisConnectionFactory {
   constructor(@Inject(ConfigService) private readonly config: ConfigService) {}
 
   enabled() {
-    return this.config.get<string>("NEXOS_QUEUE_ENABLED") !== "false";
+    return this.config.get<string>("TRIXUS_QUEUE_ENABLED") !== "false";
   }
 
   redisUrl() {
@@ -60,7 +60,7 @@ export class MessagingOutboundQueue implements OnModuleDestroy {
 
   async health() {
     if (!this.redis.enabled()) return { ok: false, configured: false };
-    const connection = this.redis.createConnection("nexos-redis-health");
+    const connection = this.redis.createConnection("trixus-redis-health");
     try {
       const pong = await connection.ping();
       return { ok: pong === "PONG", configured: true };
@@ -72,7 +72,7 @@ export class MessagingOutboundQueue implements OnModuleDestroy {
   getQueue() {
     if (!this.redis.enabled()) throw new Error("Trixus queue is disabled.");
     this.queue ??= new Queue<MessagingOutboundJob>(MESSAGING_OUTBOUND_QUEUE, {
-      connection: this.redis.createConnection("nexos-outbound-queue"),
+      connection: this.redis.createConnection("trixus-outbound-queue"),
     });
     return this.queue;
   }

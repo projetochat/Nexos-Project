@@ -6,10 +6,10 @@ const env = {
   ...process.env,
   DATABASE_URL:
     process.env.DATABASE_URL ??
-    "postgresql://nexos:nexos_dev_password@127.0.0.1:5432/nexos?schema=public",
-  NEXOS_TEST_DATABASE_URL:
-    process.env.NEXOS_TEST_DATABASE_URL ??
-    "postgresql://nexos:nexos_dev_password@127.0.0.1:5432/nexos_1200?schema=public",
+    "postgresql://trixus:trixus_dev_password@127.0.0.1:5432/trixus?schema=public",
+  TRIXUS_TEST_DATABASE_URL:
+    process.env.TRIXUS_TEST_DATABASE_URL ??
+    "postgresql://trixus:trixus_dev_password@127.0.0.1:5432/trixus_1200?schema=public",
   JWT_SECRET: process.env.JWT_SECRET ?? "local-access-secret-minimum-32-chars",
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? "local-refresh-secret-minimum-32-chars",
   SEED_MODE: "test",
@@ -49,7 +49,7 @@ const gates = bunAvailable
         "backend:test-db:migrate",
         bunx(),
         ["prisma", "migrate", "deploy", "--schema", "backend/prisma/schema.prisma"],
-        { env: { ...env, DATABASE_URL: env.NEXOS_TEST_DATABASE_URL } },
+        { env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL } },
       ],
       ["backend:test", bun(), ["run", "backend:test"]],
       ["redis:queue-smoke", bun(), ["backend/scripts/verify-redis-queue.mjs"]],
@@ -99,7 +99,7 @@ const gates = bunAvailable
         "backend:test-db:migrate",
         bin("prisma"),
         ["migrate", "deploy", "--schema", "backend/prisma/schema.prisma"],
-        { env: { ...env, DATABASE_URL: env.NEXOS_TEST_DATABASE_URL } },
+        { env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL } },
       ],
       ["backend:test", backendBin("vitest"), ["run"], { cwd: resolve(root, "backend") }],
       ["redis:queue-smoke", process.execPath, ["backend/scripts/verify-redis-queue.mjs"]],

@@ -1,4 +1,4 @@
-# NEXOS PROJECT - SPRINT 05
+# TRIXUS PROJECT - SPRINT 05
 
 ## Messages & Messaging Core
 
@@ -17,7 +17,7 @@ Status: READY
 - Modelado `Message` em Prisma/PostgreSQL com tenant, conversa, direcao, tipo, status, autor opcional, leitura e idempotencia.
 - Criada migration `20260730000400_messages_core`.
 - Criada API NestJS aninhada em `/api/conversations/:conversationId/messages`.
-- Migrado `/inbox/:conversationId` para listar historico, enviar texto e marcar leitura via Nexos API.
+- Migrado `/inbox/:conversationId` para listar historico, enviar texto e marcar leitura via Trixus API.
 - Criados eventos `SYSTEM` internos para acoes estruturais de conversa.
 - Atualizados `lastMessagePreview`, `lastMessageAt` e `unreadCount` a partir do backend.
 - Mantido `localhost:5173` -> `localhost:3001/api` sem regressao de CORS.
@@ -92,14 +92,14 @@ Cobertura e2e adicionada:
 ## Validacao Manual Obrigatoria
 
 - [x] `http://localhost:5173` abre corretamente
-- [x] Login Nexos funciona
+- [x] Login Trixus funciona
 - [x] Frontend comunica com `http://localhost:3001/api`
-- [x] `/clientes` funciona com Nexos API
-- [x] `/contatos` funciona com Nexos API
+- [x] `/clientes` funciona com Trixus API
+- [x] `/contatos` funciona com Trixus API
 - [x] `/clientes` nao tem `Failed to fetch`
 - [x] `/contatos` nao tem `Failed to fetch`
-- [x] `/inbox` lista conversas via Nexos API
-- [x] `/inbox/:conversationId` lista mensagens via Nexos API
+- [x] `/inbox` lista conversas via Trixus API
+- [x] `/inbox/:conversationId` lista mensagens via Trixus API
 - [x] Envio de texto em conversa atribuida funciona
 - [x] Mark read zera pendencias da conversa aberta
 - [x] Nenhum `Failed to fetch` nas funcionalidades migradas

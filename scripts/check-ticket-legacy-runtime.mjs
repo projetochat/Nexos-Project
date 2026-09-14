@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const chamados = readFileSync(resolve(root, "src/routes/chamados.tsx"), "utf8");
 const inbox = readFileSync(resolve(root, "src/routes/inbox.$conversationId.tsx"), "utf8");
-const api = readFileSync(resolve(root, "src/lib/nexos-api.ts"), "utf8");
+const api = readFileSync(resolve(root, "src/lib/trixus-api.ts"), "utf8");
 
 const forbidden = [
   { pattern: /@\/lib\/mvp/, label: "@/lib/mvp" },

@@ -3,7 +3,7 @@
 The schema now includes `MessageReaction` and `MessageReactionActorType`.
 
 Modeled actor types:
-- `NEXOS_USER`
+- `TRIXUS_USER`
 - `EXTERNAL_PARTICIPANT`
 - `CONTACT`
 - `SYSTEM`
@@ -39,4 +39,4 @@ Regras:
 - Em grupo, `key.remoteJid` deve ser o grupo `@g.us`; `participant` e enviado apenas quando disponivel/exigido pela mensagem citada.
 - Missing `key`/`reaction` da Evolution e classificado como `INVALID_PROVIDER_PAYLOAD`.
 
-Smokes diretos Evolution PASS para add e remove. Homologacao completa Nexos/grupo permanece pendente.
+Smokes diretos Evolution PASS para add e remove. Homologacao completa Trixus/grupo permanece pendente.

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Eye, EyeOff, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, Button, Card, Field, Input } from "@/components/ui-kit";
-import { organizationApi } from "@/lib/nexos-api";
+import { organizationApi } from "@/lib/trixus-api";
 import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/configuracoes/empresa")({
@@ -14,7 +14,7 @@ export const Route = createFileRoute("/configuracoes/empresa")({
 function EmpresaSettings() {
   const sessionUser = useSession((state) => state.user);
   const { data: company, isLoading: isLoadingCompany } = useQuery({
-    queryKey: ["nexos", "company"],
+    queryKey: ["trixus", "company"],
     queryFn: organizationApi.getCompany,
   });
   const [savingPassword, setSavingPassword] = React.useState(false);

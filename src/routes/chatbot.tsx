@@ -4,7 +4,7 @@ import { Bot, MessageSquareText, Sparkles } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Badge, Button, Card, SectionHeader } from "@/components/ui-kit";
 import { num } from "@/lib/format";
-import { automationApi } from "@/lib/nexos-api";
+import { automationApi } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/chatbot")({
   head: () => ({ meta: [{ title: "Chatbot - Trixus" }] }),
@@ -13,7 +13,7 @@ export const Route = createFileRoute("/chatbot")({
 
 function Page() {
   const { data, isLoading } = useQuery({
-    queryKey: ["nexos", "chatbot-rules"],
+    queryKey: ["trixus", "chatbot-rules"],
     queryFn: () => automationApi.list({ pageSize: 100 }),
   });
   const botRules = (data?.items ?? []).filter((rule) => rule.actionType === "bot_reply");

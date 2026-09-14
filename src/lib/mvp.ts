@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 /* ============================================================
-   Nexo · MVP data layer (Supabase)
+   Trixus · MVP data layer (Supabase)
    ============================================================ */
 
 export type ConvStatus = "aberta" | "em_andamento" | "aguardando" | "fechada";

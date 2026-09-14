@@ -32,7 +32,7 @@ import {
   type ApiCustomer,
   type ApiMessagingConnection,
   type ApiTag,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 import { fmtDate, num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
 

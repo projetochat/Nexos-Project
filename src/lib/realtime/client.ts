@@ -1,10 +1,10 @@
 import { io, type Socket } from "socket.io-client";
 import {
-  ensureNexosAccessToken,
-  getNexosAccessToken,
-  nexosRealtimeBaseUrl,
-  refreshNexosAccessToken,
-} from "@/lib/nexos-api";
+  ensureTrixusAccessToken,
+  getTrixusAccessToken,
+  trixusRealtimeBaseUrl,
+  refreshTrixusAccessToken,
+} from "@/lib/trixus-api";
 import type { RealtimeEnvelope, RealtimeServerEvent, RealtimeStatus } from "./events";
 
 type Listener = () => void;
@@ -42,7 +42,7 @@ export async function connectRealtime() {
     setStatus("disabled");
     return null;
   }
-  const accessToken = await ensureNexosAccessToken();
+  const accessToken = await ensureTrixusAccessToken();
   if (!accessToken) {
     setStatus("offline");
     return null;
@@ -55,7 +55,7 @@ export async function connectRealtime() {
   }
 
   setStatus("connecting");
-  socket = io(`${nexosRealtimeBaseUrl()}/realtime`, {
+  socket = io(`${trixusRealtimeBaseUrl()}/realtime`, {
     path: "/socket.io",
     auth: { accessToken },
     autoConnect: true,
@@ -64,19 +64,19 @@ export async function connectRealtime() {
 
   socket.on("connect", () => setStatus("connected"));
   socket.io.on("reconnect_attempt", () => {
-    const token = getNexosAccessToken();
+    const token = getTrixusAccessToken();
     if (token && socket) socket.auth = { accessToken: token };
     setStatus("reconnecting");
   });
   socket.io.on("reconnect", () => setStatus("connected"));
   socket.on("disconnect", () => setStatus("offline"));
   socket.on("connect_error", async () => {
-    const token = await refreshNexosAccessToken();
+    const token = await refreshTrixusAccessToken();
     if (token && socket) socket.auth = { accessToken: token };
     setStatus("degraded");
   });
   socket.on("realtime.auth_failed", async () => {
-    const token = await refreshNexosAccessToken();
+    const token = await refreshTrixusAccessToken();
     if (token && socket) {
       socket.auth = { accessToken: token };
       socket.connect();
@@ -181,5 +181,5 @@ function setLastEventId(next: string) {
 }
 
 function realtimeEnabled() {
-  return import.meta.env.VITE_NEXOS_REALTIME_ENABLED !== "false";
+  return import.meta.env.VITE_TRIXUS_REALTIME_ENABLED !== "false";
 }

@@ -81,7 +81,7 @@ A listagem lateral passa a exibir o preview da ultima mensagem abaixo do atenden
 
 O label da instancia na listagem usa o nome amigavel da connection cadastrada, mantendo o identificador tecnico apenas como valor de filtro/API.
 
-O contador de mensagens nao lidas nao e mais zerado ao abrir a conversa. Ele passa a ser zerado somente apos envio de texto, midia ou audio pelo Nexos.
+O contador de mensagens nao lidas nao e mais zerado ao abrir a conversa. Ele passa a ser zerado somente apos envio de texto, midia ou audio pelo Trixus.
 
 Foi criada a coluna `Conversation.inboxArchivedAt` e o endpoint `PATCH /conversations/:id/inbox-archive`. A listagem do Inbox ignora conversas com esse campo preenchido, preservando historico e evitando duplicidade de conversa. O chat ganhou o botao `Arquivar` para retirar grupos/conversas das abas operacionais sem encerrar nem apagar.
 
@@ -110,7 +110,7 @@ bun run --cwd backend test -- app.e2e-spec.ts
 Nao executou os cenarios porque o ambiente local abortou antes dos testes:
 
 ```text
-SEED_MODE=homologation requires an allowed homologation database, got nexos_1200.
+SEED_MODE=homologation requires an allowed homologation database, got trixus_1200.
 ```
 
 Isso indica bloqueio de configuracao de ambiente, nao falha funcional dos pontos alterados.
@@ -119,9 +119,9 @@ Isso indica bloqueio de configuracao de ambiente, nao falha funcional dos pontos
 
 Validar no WhatsApp real:
 
-1. Reacao recebida do WhatsApp aparece no Nexos sem nova mensagem e sem F5.
-2. Mencao em grupo enviada pelo Nexos notifica/marca o participante correto usando token legivel no texto.
-3. Mensagem enviada pelo Nexos chega ao WhatsApp com assinatura somente do atendente e quebra de linha preservada.
+1. Reacao recebida do WhatsApp aparece no Trixus sem nova mensagem e sem F5.
+2. Mencao em grupo enviada pelo Trixus notifica/marca o participante correto usando token legivel no texto.
+3. Mensagem enviada pelo Trixus chega ao WhatsApp com assinatura somente do atendente e quebra de linha preservada.
 4. Perfil com `Ver todas conversas ativas` salva sem erro interno.
 5. Perfil com `Ver todas conversas ativas` consegue abrir conversas ativas de outros atendentes.
 6. Mesmo com a permissao acima, o envio segue bloqueado para conversas assumidas por outro atendente.
@@ -129,8 +129,8 @@ Validar no WhatsApp real:
 8. Grupos ativos aparecem em Ativas e nao em Leads.
 9. Grupo reaberto por mensagem recebida fica aberto sem responsavel fixo.
 10. Reply de imagem/video mostra miniatura da mensagem citada.
-11. Avatar aparece ao lado das mensagens recebidas/enviadas no Nexos.
+11. Avatar aparece ao lado das mensagens recebidas/enviadas no Trixus.
 12. Lista lateral mostra preview da ultima mensagem abaixo do atendente.
 13. Lista lateral mostra nome amigavel da instancia, nao o codigo tecnico.
-14. Contador de nao lidas permanece ao abrir conversa e zera apenas apos envio pelo Nexos.
+14. Contador de nao lidas permanece ao abrir conversa e zera apenas apos envio pelo Trixus.
 15. Botao Arquivar retira conversa/grupo das abas Ativas/Leads sem apagar historico.

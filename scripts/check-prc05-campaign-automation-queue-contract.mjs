@@ -7,7 +7,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const files = {
   campaignPage: "src/routes/campanhas.tsx",
   automationPage: "src/routes/automacoes.tsx",
-  api: "src/lib/nexos-api.ts",
+  api: "src/lib/trixus-api.ts",
   campaignQueue: "backend/src/campaigns/campaign-dispatch.queue.ts",
   campaignWorker: "backend/src/campaigns/campaign-dispatch.worker.ts",
   health: "backend/src/health/health.controller.ts",

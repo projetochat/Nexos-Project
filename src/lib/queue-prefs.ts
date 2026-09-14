@@ -15,7 +15,7 @@ export const DEFAULT_QUEUE_PREFS: QueuePref[] = [
   { id: "leads", label: "Leads", enabled: true },
 ];
 
-const STORAGE_KEY = "nexo.settings.queuePrefs.v1";
+const STORAGE_KEY = "trixus.settings.queuePrefs.v1";
 
 function sanitize(input: unknown): QueuePref[] {
   if (!Array.isArray(input)) return DEFAULT_QUEUE_PREFS;
@@ -55,23 +55,23 @@ export function loadQueuePrefs(): QueuePref[] {
 export function saveQueuePrefs(prefs: QueuePref[]) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-  window.dispatchEvent(new CustomEvent("nexo:queue-prefs"));
+  window.dispatchEvent(new CustomEvent("trixus:queue-prefs"));
 }
 
 export function resetQueuePrefs() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(STORAGE_KEY);
-  window.dispatchEvent(new CustomEvent("nexo:queue-prefs"));
+  window.dispatchEvent(new CustomEvent("trixus:queue-prefs"));
 }
 
 export function useQueuePrefs(): QueuePref[] {
   const [prefs, setPrefs] = React.useState<QueuePref[]>(() => loadQueuePrefs());
   React.useEffect(() => {
     const sync = () => setPrefs(loadQueuePrefs());
-    window.addEventListener("nexo:queue-prefs", sync);
+    window.addEventListener("trixus:queue-prefs", sync);
     window.addEventListener("storage", sync);
     return () => {
-      window.removeEventListener("nexo:queue-prefs", sync);
+      window.removeEventListener("trixus:queue-prefs", sync);
       window.removeEventListener("storage", sync);
     };
   }, []);

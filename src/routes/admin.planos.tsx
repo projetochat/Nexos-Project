@@ -14,7 +14,7 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
-import { platformApi, type PlatformPlan } from "@/lib/nexos-api";
+import { platformApi, type PlatformPlan } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/planos")({

@@ -24,7 +24,7 @@ export type StoredMessagingMedia = {
 @Injectable()
 export class MessagingMediaStorageService {
   readonly provider = storageProvider();
-  private readonly root = resolve(process.env.NEXOS_MESSAGE_STORAGE_LOCAL_PATH ?? ".nexos-storage");
+  private readonly root = resolve(process.env.TRIXUS_MESSAGE_STORAGE_LOCAL_PATH ?? ".trixus-storage");
 
   async storeUpload(input: { tenantId: string; conversationId: string; req: Request }): Promise<
     StoredMessagingMedia & {
@@ -136,7 +136,7 @@ async function readLimitedRequest(req: Request, limitBytes: number) {
 }
 
 function storageProvider() {
-  const value = (process.env.NEXOS_MESSAGE_STORAGE_PROVIDER ?? "local").toLowerCase();
+  const value = (process.env.TRIXUS_MESSAGE_STORAGE_PROVIDER ?? "local").toLowerCase();
   return value === "s3" || value === "r2" ? value : "local";
 }
 
@@ -150,18 +150,18 @@ function validatePolicy(type: MessageType, mimeType: string, sizeBytes: number) 
 
 function allowedMimeTypes(type: MessageType) {
   if (type === MessageType.IMAGE)
-    return envSet("NEXOS_MESSAGE_ALLOWED_IMAGE_MIME_TYPES", "image/jpeg,image/png,image/webp");
+    return envSet("TRIXUS_MESSAGE_ALLOWED_IMAGE_MIME_TYPES", "image/jpeg,image/png,image/webp");
   if (type === MessageType.DOCUMENT) {
     return envSet(
-      "NEXOS_MESSAGE_ALLOWED_DOCUMENT_MIME_TYPES",
+      "TRIXUS_MESSAGE_ALLOWED_DOCUMENT_MIME_TYPES",
       "application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
   }
   if (type === MessageType.VIDEO) {
-    return envSet("NEXOS_MESSAGE_ALLOWED_VIDEO_MIME_TYPES", "video/mp4,video/3gpp,video/webm");
+    return envSet("TRIXUS_MESSAGE_ALLOWED_VIDEO_MIME_TYPES", "video/mp4,video/3gpp,video/webm");
   }
   return envSet(
-    "NEXOS_MESSAGE_ALLOWED_AUDIO_MIME_TYPES",
+    "TRIXUS_MESSAGE_ALLOWED_AUDIO_MIME_TYPES",
     "audio/ogg,audio/mpeg,audio/mp4,audio/webm",
   );
 }
@@ -169,12 +169,12 @@ function allowedMimeTypes(type: MessageType) {
 function maxSizeBytes(type: MessageType) {
   const key =
     type === MessageType.IMAGE
-      ? "NEXOS_MESSAGE_MAX_IMAGE_SIZE_MB"
+      ? "TRIXUS_MESSAGE_MAX_IMAGE_SIZE_MB"
       : type === MessageType.VIDEO
-        ? "NEXOS_MESSAGE_MAX_VIDEO_SIZE_MB"
+        ? "TRIXUS_MESSAGE_MAX_VIDEO_SIZE_MB"
         : type === MessageType.DOCUMENT
-          ? "NEXOS_MESSAGE_MAX_DOCUMENT_SIZE_MB"
-          : "NEXOS_MESSAGE_MAX_AUDIO_SIZE_MB";
+          ? "TRIXUS_MESSAGE_MAX_DOCUMENT_SIZE_MB"
+          : "TRIXUS_MESSAGE_MAX_AUDIO_SIZE_MB";
   return (
     Number(
       process.env[key] ??

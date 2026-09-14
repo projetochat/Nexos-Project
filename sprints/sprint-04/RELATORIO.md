@@ -12,7 +12,7 @@ READY FOR SPRINT 05
 
 ## 2. Resumo executivo
 
-A Sprint 04 criou o dominio real de `Conversation` na Nexos API com NestJS, Prisma e PostgreSQL. A estrutura de conversas do inbox passou a usar o backend Nexos para lista, detalhe, criacao, atribuicao, transferencia de departamento e status.
+A Sprint 04 criou o dominio real de `Conversation` na Trixus API com NestJS, Prisma e PostgreSQL. A estrutura de conversas do inbox passou a usar o backend Trixus para lista, detalhe, criacao, atribuicao, transferencia de departamento e status.
 
 Mensagens permanecem legado ate Sprint 05, por decisao explicita de fronteira.
 
@@ -25,7 +25,7 @@ Mensagens permanecem legado ate Sprint 05, por decisao explicita de fronteira.
 - Bun: `1.3.14`
 - Docker: `29.1.3`
 - Docker Compose: `v2.40.3-desktop.1`
-- PostgreSQL container: `nexos-postgres` healthy
+- PostgreSQL container: `trixus-postgres` healthy
 - Verify inicial: PASS
 
 Observacao: a Sprint 03 estava presente no worktree local sem commit antes da Sprint 04; as alteracoes foram preservadas.
@@ -46,7 +46,7 @@ Observacao: a Sprint 03 estava presente no worktree local sem commit antes da Sp
 Fronteira temporaria:
 
 ```text
-Conversation = Nexos API / PostgreSQL
+Conversation = Trixus API / PostgreSQL
 Message = legado Supabase ate Sprint 05
 ```
 
@@ -141,11 +141,11 @@ Transferencias validam tenant, departamento ativo, escopo do operador e compatib
 
 Arquivos:
 
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 - `src/routes/inbox.index.tsx`
 - `src/routes/inbox.$conversationId.tsx`
 
-Migrado para Nexos API:
+Migrado para Trixus API:
 
 - lista de conversas;
 - contadores por aba;
@@ -261,12 +261,12 @@ Checklist para regression gate local:
 
 ```text
 [X] http://localhost:5173 abre corretamente
-[X] Login Nexos funciona via API
+[X] Login Trixus funciona via API
 [X] Frontend comunica com http://localhost:3001/api
-[X] /clientes funciona com Nexos API via endpoint CRM
-[X] /contatos funciona com Nexos API via endpoint CRM
-[ ] /inbox lista conversas com Nexos API
-[ ] /inbox/:conversationId abre detalhe com Nexos API
+[X] /clientes funciona com Trixus API via endpoint CRM
+[X] /contatos funciona com Trixus API via endpoint CRM
+[ ] /inbox lista conversas com Trixus API
+[ ] /inbox/:conversationId abre detalhe com Trixus API
 [ ] Filtros do inbox persistem sem "Failed to fetch"
 [ ] Assumir/retomar conversa persiste apos refresh
 [ ] Transferir atendente persiste apos refresh
@@ -289,7 +289,7 @@ Checklist para regression gate local:
 - `backend/src/app.module.ts`
 - `backend/src/auth/permissions.constants.ts`
 - `backend/test/app.e2e-spec.ts`
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 - `src/routes/inbox.index.tsx`
 - `src/routes/inbox.$conversationId.tsx`
 - `docs/API.md`

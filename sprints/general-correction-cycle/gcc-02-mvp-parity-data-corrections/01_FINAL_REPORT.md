@@ -24,7 +24,7 @@ As correções funcionais foram implementadas e a verificação geral foi execut
 - Backend passou a persistir `closeOnSend` em `quick_replies`.
 - Campanhas passam a aparecer imediatamente na lista após criação, mesmo antes do refetch concluir.
 - Instâncias passam a exibir tipo visual de conexão e número real quando disponível.
-- Chat removeu a duplicidade visual do nome do atendente dentro da bolha enviada pelo Nexos.
+- Chat removeu a duplicidade visual do nome do atendente dentro da bolha enviada pelo Trixus.
 - Clientes voltaram a expor telefone e e-mail no cadastro.
 - Máscaras adicionadas para telefone e CNPJ nos pontos principais de entrada.
 - Validação padronizada de e-mail nos cadastros ajustados.

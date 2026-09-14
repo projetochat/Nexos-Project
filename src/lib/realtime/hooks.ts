@@ -50,7 +50,7 @@ export function useRealtimeInbox(conversationId?: string | null) {
         event.event === "conversation.assignment.updated" ||
         event.event === "conversation.unread.updated"
       ) {
-        void queryClient.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
       }
       if (
         event.event === "message.created" ||
@@ -61,24 +61,24 @@ export function useRealtimeInbox(conversationId?: string | null) {
         const data = event.data as { conversationId?: string };
         if (data.conversationId) {
           void queryClient.invalidateQueries({
-            queryKey: ["nexos", "messages", data.conversationId],
+            queryKey: ["trixus", "messages", data.conversationId],
           });
           void queryClient.invalidateQueries({
-            queryKey: ["nexos", "conversations", data.conversationId],
+            queryKey: ["trixus", "conversations", data.conversationId],
           });
         }
       }
       if (event.event === "connection.status.updated") {
-        void queryClient.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
       }
       if (event.event === "contact.updated" || event.event === "contact.tags.updated") {
         const data = event.data as { contactId?: string };
         if (data.contactId) {
-          void queryClient.invalidateQueries({ queryKey: ["nexos", "contacts", data.contactId] });
+          void queryClient.invalidateQueries({ queryKey: ["trixus", "contacts", data.contactId] });
           void queryClient.invalidateQueries({
-            queryKey: ["nexos", "contact_protocols", data.contactId],
+            queryKey: ["trixus", "contact_protocols", data.contactId],
           });
-          void queryClient.invalidateQueries({ queryKey: ["nexos", "conversations"] });
+          void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
         }
       }
     });
@@ -88,11 +88,11 @@ export function useRealtimeInbox(conversationId?: string | null) {
     const previousStatus = previousStatusRef.current;
     previousStatusRef.current = realtime.status;
     if (realtime.status !== "connected" || previousStatus === "connected") return;
-    void queryClient.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-    void queryClient.invalidateQueries({ queryKey: ["nexos", "messaging-connections"] });
+    void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+    void queryClient.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
     if (conversationId) {
-      void queryClient.invalidateQueries({ queryKey: ["nexos", "conversations", conversationId] });
-      void queryClient.invalidateQueries({ queryKey: ["nexos", "messages", conversationId] });
+      void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations", conversationId] });
+      void queryClient.invalidateQueries({ queryKey: ["trixus", "messages", conversationId] });
     }
   }, [conversationId, queryClient, realtime.status]);
 

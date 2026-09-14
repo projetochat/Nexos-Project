@@ -1,7 +1,7 @@
 # Automated Tests
 
 Baseline:
-- `bun run verify`: PASS on `nexos_0801`.
+- `bun run verify`: PASS on `trixus_0801`.
 
 Focused tests:
 - `evolution-outbound-payload.factory.spec.ts`

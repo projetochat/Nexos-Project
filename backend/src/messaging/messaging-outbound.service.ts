@@ -640,7 +640,7 @@ export class MessagingOutboundService {
         tenantId_messageId_actorType_actorMembershipId_externalParticipantId: {
           tenantId: current.tenantId,
           messageId,
-          actorType: MessageReactionActorType.NEXOS_USER,
+          actorType: MessageReactionActorType.TRIXUS_USER,
           actorMembershipId: current.membershipId,
           externalParticipantId: "",
         },
@@ -653,7 +653,7 @@ export class MessagingOutboundService {
         tenantId: current.tenantId,
         messageId,
         emoji: cleanEmoji ?? "",
-        actorType: MessageReactionActorType.NEXOS_USER,
+        actorType: MessageReactionActorType.TRIXUS_USER,
         actorMembershipId: current.membershipId,
         externalParticipantId: "",
         removedAt: cleanEmoji ? null : new Date(),

@@ -34,8 +34,8 @@ Observed spec files include:
 
 ## Missing Or Not Physically Proven
 
-- WhatsApp real outbound through Nexos
-- WhatsApp real inbound through Nexos
+- WhatsApp real outbound through Trixus
+- WhatsApp real inbound through Trixus
 - group reply/media/audio/reaction
 - storage authorization matrix
 - retry under outage

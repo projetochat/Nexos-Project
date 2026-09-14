@@ -4,7 +4,7 @@
 
 Implementacao local concluida para Redis + BullMQ + Transactional Outbox + outbound assincrono.
 
-Gate final: `NOT READY FOR SPRINT 09`, porque os testes fisicos WhatsApp reais via queue (`NEXOS-0800-OUT-FINAL`, inbound, reconnect e Redis down manual com envio real) nao foram executados nesta sessao.
+Gate final: `NOT READY FOR SPRINT 09`, porque os testes fisicos WhatsApp reais via queue (`TRIXUS-0800-OUT-FINAL`, inbound, reconnect e Redis down manual com envio real) nao foram executados nesta sessao.
 
 ## 2. Resumo executivo
 
@@ -45,11 +45,11 @@ Criada `sprint/08-redis-bullmq-resume` a partir do adendo da Sprint 07.03.
 
 - Worktree inicial: clean
 - Bun: `1.3.14`
-- Verify inicial em banco isolado `nexos_0800`: PASS
+- Verify inicial em banco isolado `trixus_0800`: PASS
 
 ## 10. Database
 
-Banco isolado criado: `nexos_0800`.
+Banco isolado criado: `trixus_0800`.
 
 Migrations aplicadas ate 07.03 e depois 08:
 
@@ -72,15 +72,15 @@ Inclui:
 
 ## 12. Redis architecture
 
-`nexos-redis` foi adicionado separado de `evolution-redis`.
+`trixus-redis` foi adicionado separado de `evolution-redis`.
 
 ## 13. Docker
 
-`docker-compose.yml` agora inclui `nexos-redis` com:
+`docker-compose.yml` agora inclui `trixus-redis` com:
 
 - `redis:7.4-alpine`
 - bind local `127.0.0.1:6379:6379`
-- volume `nexos-redis-data`
+- volume `trixus-redis-data`
 - restart policy
 - healthcheck `redis-cli ping`
 
@@ -89,10 +89,10 @@ Inclui:
 Configuracoes adicionadas:
 
 - `REDIS_URL`
-- `NEXOS_QUEUE_ENABLED`
-- `NEXOS_QUEUE_WORKER_ENABLED`
-- `NEXOS_OUTBOUND_WORKER_CONCURRENCY`
-- `NEXOS_OUTBOX_POLL_INTERVAL_MS`
+- `TRIXUS_QUEUE_ENABLED`
+- `TRIXUS_QUEUE_WORKER_ENABLED`
+- `TRIXUS_OUTBOUND_WORKER_CONCURRENCY`
+- `TRIXUS_OUTBOX_POLL_INTERVAL_MS`
 
 ## 15. Redis health
 
@@ -289,7 +289,7 @@ CRM, Conversation, Message, frontend build e security permanecem verdes nos veri
 
 ## 53. Verify
 
-- Verify #1: PASS com `DATABASE_URL=nexos_0800` e `REDIS_URL=redis://localhost:6379`
+- Verify #1: PASS com `DATABASE_URL=trixus_0800` e `REDIS_URL=redis://localhost:6379`
 - Verify #2: pendente no momento da criacao deste relatorio
 
 ## 54. Supabase
@@ -347,7 +347,7 @@ Principais:
 - `backend/src/health/*`
 - `backend/src/messaging/*`
 - `scripts/verify.mjs`
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 - `src/routes/inbox.$conversationId.tsx`
 - `docs/*`
 
@@ -391,13 +391,13 @@ Atualizados:
 | M06  | branch Sprint 08 resume             | Criada                    | `sprint/08-redis-bullmq-resume`                    | PASS    |
 | M07  | worktree inicial clean              | Confirmado                | `git status` inicial limpo                         | PASS    |
 | M08  | Bun status                          | OK                        | `1.3.14`                                           | PASS    |
-| M09  | verify inicial                      | PASS                      | Baseline em `nexos_0800`                           | PASS    |
-| M10  | banco limpo Sprint 08               | Criado                    | `nexos_0800`                                       | PASS    |
+| M09  | verify inicial                      | PASS                      | Baseline em `trixus_0800`                           | PASS    |
+| M10  | banco limpo Sprint 08               | Criado                    | `trixus_0800`                                       | PASS    |
 | M11  | migrations ate 07.03                | Aplicadas                 | Inclui owner identity                              | PASS    |
 | M12  | Prisma Client correto               | Gerado                    | `bun run backend:prisma:generate` apos liberar DLL | PASS    |
-| M13  | seed                                | Executado                 | Seed em `nexos_0800`                               | PASS    |
-| M14  | nexos-redis                         | Adicionado                | `docker-compose.yml`                               | PASS    |
-| M15  | Redis independente                  | Separado                  | `nexos-redis` != `evolution-redis`                 | PASS    |
+| M13  | seed                                | Executado                 | Seed em `trixus_0800`                               | PASS    |
+| M14  | trixus-redis                         | Adicionado                | `docker-compose.yml`                               | PASS    |
+| M15  | Redis independente                  | Separado                  | `trixus-redis` != `evolution-redis`                 | PASS    |
 | M16  | Redis health                        | Implementado              | `/health` + smoke                                  | PASS    |
 | M17  | BullMQ dependencies                 | Adicionadas               | `bullmq`, `ioredis`                                | PASS    |
 | M18  | Queue module                        | Criado                    | `backend/src/queue`                                | PASS    |
@@ -506,7 +506,7 @@ Atualizados:
 ## 67. Risks
 
 - Redis loss entre enqueue e processamento e mitigado por rebuild de `QUEUED`, mas observabilidade operacional deve monitorar backlog.
-- Health agora depende de Redis quando queue esta habilitada; ambiente local precisa subir `nexos-redis`.
+- Health agora depende de Redis quando queue esta habilitada; ambiente local precisa subir `trixus-redis`.
 
 ## 68. Commits
 

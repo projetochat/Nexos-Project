@@ -2,7 +2,7 @@
 
 - Adicionado backend `backend/src/operations`.
 - Importado `OperationsModule` no `AppModule`.
-- Adicionados tipos e cliente `operationsApi` em `src/lib/nexos-api.ts`.
+- Adicionados tipos e cliente `operationsApi` em `src/lib/trixus-api.ts`.
 - Migrado dashboard para KPIs/graficos reais da API operacional.
 - Migrado historico para busca paginada, filtros e timeline.
 - Migrado relatorios para API operacional e export CSV.

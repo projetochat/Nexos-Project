@@ -15,7 +15,7 @@ import {
   Avatar,
   Badge,
 } from "@/components/ui-kit";
-import { organizationApi } from "@/lib/nexos-api";
+import { organizationApi } from "@/lib/trixus-api";
 import { ROLE_META, useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/perfil")({

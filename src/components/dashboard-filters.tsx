@@ -2,20 +2,23 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays } from "lucide-react";
 import { Card, Input, InstanceFilterSelect, Select } from "@/components/ui-kit";
-import { connectionsApi, crmApi, organizationApi, type OperationalPeriod } from "@/lib/nexos-api";
+import { connectionsApi, crmApi, organizationApi, type OperationalPeriod } from "@/lib/trixus-api";
 import {
   datesForOperationalPeriod,
   type OperationalReportFilters,
 } from "@/lib/operational-filters";
+import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 const PERIOD_OPTIONS: Array<{ value: OperationalPeriod; label: string }> = [
   { value: "today", label: "Hoje" },
   { value: "yesterday", label: "Ontem" },
   { value: "week", label: "Essa semana" },
+  { value: "previous_week", label: "Semana passada" },
   { value: "month", label: "Esse mês" },
   { value: "previous_month", label: "Mês passado" },
   { value: "year", label: "Esse ano" },
+  { value: "previous_year", label: "Ano passado" },
   { value: "custom", label: "Personalizado" },
 ];
 
@@ -151,8 +154,14 @@ function DashboardDateInput({
   const openNativePicker = () => {
     const input = nativeDateInputRef.current;
     if (!input || readOnly) return;
-    if (typeof input.showPicker === "function") input.showPicker();
-    else input.click();
+    input.focus({ preventScroll: true });
+    try {
+      if (typeof input.showPicker === "function") input.showPicker();
+      else input.click();
+    } catch {
+      // Some mobile browsers only allow the native date control to open from a direct touch.
+      input.click();
+    }
   };
 
   if (!isMobile) {
@@ -173,7 +182,9 @@ function DashboardDateInput({
         <button
           type="button"
           disabled={readOnly}
-          title={readOnly ? "Selecione o período personalizado para alterar a data" : "Selecionar data"}
+          title={
+            readOnly ? "Selecione o período personalizado para alterar a data" : "Selecionar data"
+          }
           aria-label="Selecionar data"
           onClick={openNativePicker}
           className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
@@ -194,6 +205,13 @@ function DashboardDateInput({
         value={draft}
         readOnly={readOnly}
         aria-readonly={readOnly}
+        onKeyDown={(event) => {
+          if (readOnly || !shouldFillTodayFromShortcut(event.nativeEvent)) return;
+          event.preventDefault();
+          const today = todayDateValue();
+          setDraft(formatDateMask(today));
+          onChange(today);
+        }}
         onChange={(event) => {
           const next = maskDate(event.target.value);
           setDraft(next);
@@ -203,24 +221,26 @@ function DashboardDateInput({
         onBlur={() => setDraft(formatDateMask(value))}
         className={`${className} pr-9`}
       />
-      <button
-        type="button"
-        disabled={readOnly}
-        title={readOnly ? "Selecione o período personalizado para alterar a data" : "Selecionar data"}
-        aria-label="Selecionar data"
-        onClick={openNativePicker}
-        className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      <span
+        title={
+          readOnly ? "Selecione o período personalizado para alterar a data" : "Selecionar data"
+        }
+        aria-hidden="true"
+        className={`pointer-events-none absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground ${
+          readOnly ? "opacity-40" : ""
+        }`}
       >
         <CalendarDays className="h-4 w-4" strokeWidth={2} />
-      </button>
+      </span>
       <input
         ref={nativeDateInputRef}
         type="date"
         value={value}
+        disabled={readOnly}
         tabIndex={-1}
-        aria-hidden="true"
+        aria-label="Selecionar data"
         onChange={(event) => onChange(event.target.value)}
-        className="pointer-events-none absolute h-px w-px opacity-0"
+        className="absolute right-1 top-1/2 z-10 h-8 w-8 -translate-y-1/2 cursor-pointer opacity-0 disabled:cursor-not-allowed"
       />
     </div>
   );
@@ -278,9 +298,7 @@ function FilterField({
 }) {
   return (
     <div className={className}>
-      <label className="mb-1 block text-xs font-medium text-muted-foreground">
-        {label}
-      </label>
+      <label className="mb-1 block text-xs font-medium text-muted-foreground">{label}</label>
       {children}
     </div>
   );

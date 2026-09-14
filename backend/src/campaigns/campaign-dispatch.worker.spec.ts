@@ -29,10 +29,10 @@ describe("CampaignDispatchWorker", () => {
     const config = {
       get: (key: string) =>
         ({
-          NEXOS_CAMPAIGN_CONCURRENCY: "1",
-          NEXOS_CAMPAIGN_MESSAGES_PER_MINUTE: "5",
-          NEXOS_CAMPAIGN_BATCH_SIZE: "5",
-          NEXOS_CAMPAIGN_MAX_RECIPIENTS: "5",
+          TRIXUS_CAMPAIGN_CONCURRENCY: "1",
+          TRIXUS_CAMPAIGN_MESSAGES_PER_MINUTE: "5",
+          TRIXUS_CAMPAIGN_BATCH_SIZE: "5",
+          TRIXUS_CAMPAIGN_MAX_RECIPIENTS: "5",
         })[key],
     };
     const redis = {

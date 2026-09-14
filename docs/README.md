@@ -1,4 +1,4 @@
-# Nexo - Documentacao Tecnica
+# Trixus - Documentacao Tecnica
 
 Esta documentacao descreve a baseline da Sprint 00. O frontend atual e a fonte da verdade para telas, fluxos e comportamento. A arquitetura futura aprovada e a fonte da verdade para backend e infraestrutura.
 
@@ -35,7 +35,7 @@ Sprint 06 adicionou o Universal Messaging Adapter no backend. O envio textual da
 
 ## Sprint 07
 
-Sprint 07 adicionou Evolution API como provider real: lifecycle de connections, QR Code, outbound textual, webhook inbound/status e tela `/instancias` via Nexos API. Meta Cloud API, filas do Nexos, realtime proprio e storage continuam fora de escopo.
+Sprint 07 adicionou Evolution API como provider real: lifecycle de connections, QR Code, outbound textual, webhook inbound/status e tela `/instancias` via Trixus API. Meta Cloud API, filas do Trixus, realtime proprio e storage continuam fora de escopo.
 
 ## Sprint 07.02
 
@@ -45,11 +45,11 @@ Resultado formal desta execucao: `NOT READY FOR SPRINT 08`, pois os gates fisico
 
 ## Sprint 12
 
-Sprint 12 adicionou o dominio operacional de campanhas em NestJS/Prisma/BullMQ. A rota `/campanhas` passou a usar Nexos API, audiencia real, opt-out e dispatch por outbox. Detalhes em [CAMPAIGNS.md](./CAMPAIGNS.md).
+Sprint 12 adicionou o dominio operacional de campanhas em NestJS/Prisma/BullMQ. A rota `/campanhas` passou a usar Trixus API, audiencia real, opt-out e dispatch por outbox. Detalhes em [CAMPAIGNS.md](./CAMPAIGNS.md).
 
 ## RC Sprint 15
 
-RC Sprint 15 consolidou atendimento operacional em Nexos API/Prisma. O rework de 2026-08-05 corrigiu
+RC Sprint 15 consolidou atendimento operacional em Trixus API/Prisma. O rework de 2026-08-05 corrigiu
 historico encerrado, consistencia Dashboard/Relatorios, lead fantasma, realtime de relatorios e adicionou
 `backend/scripts/cleanup-operational-residue.mjs`. Gate atual: `REWORK REQUIRED` ate homologacao fisica.
 
@@ -102,13 +102,13 @@ supabase/migrations/  schema Supabase atual do MVP
 PowerShell:
 
 ```powershell
-cd "C:\Users\Rabel\Downloads\Nexos Project"
+cd "C:\Users\Rabel\Downloads\Trixus Project"
 ```
 
 Bash/zsh:
 
 ```bash
-cd "/c/Users/Rabel/Downloads/Nexos Project"
+cd "/c/Users/Rabel/Downloads/Trixus Project"
 ```
 
 ### Passo 3 - Instalar dependencias
@@ -205,13 +205,13 @@ Credenciais locais do seed minimo:
 
 Sprint 08.01: dados demo completos sao opt-in. Use `SEED_DEMO_DATA=true` antes de `bun run backend:prisma:seed` quando precisar de CRM/conversas demo locais.
 
-Sprint 08.02: homologacao deve ser reconstruida com `bun run --cwd backend reset:homologation -- --confirm` apontando `DATABASE_URL` para `nexos_0802`. O reset valida seed minimo com zero dados operacionais.
+Sprint 08.02: homologacao deve ser reconstruida com `bun run --cwd backend reset:homologation -- --confirm` apontando `DATABASE_URL` para `trixus_0802`. O reset valida seed minimo com zero dados operacionais.
 
-Sprint 08.03: login real de homologacao usa `VITE_NEXOS_API_URL=http://localhost:3001/api`, `DATABASE_URL` apontando `nexos_0802`, `SEED_MODE=homologation`, `SEED_ADMIN_EMAIL=admin@nexo.app` e `SEED_ADMIN_PASSWORD=demo1234`. A tela `/login` nao usa mais contas demo preenchidas nem tenant fixo `acme`.
+Sprint 08.03: login real de homologacao usa `VITE_TRIXUS_API_URL=http://localhost:3001/api`, `DATABASE_URL` apontando `trixus_0802`, `SEED_MODE=homologation`, `SEED_ADMIN_EMAIL=admin@trixus.app` e `SEED_ADMIN_PASSWORD=demo1234`. A tela `/login` nao usa mais contas demo preenchidas nem tenant fixo `acme`.
 
-- `admin@nexo.app` / `demo1234` no tenant `acme`
-- `atendente@nexo.app` / `demo1234` no tenant `acme`
-- `outsider@nexo.app` / `demo1234` no tenant `orbit`
+- `admin@trixus.app` / `demo1234` no tenant `acme`
+- `atendente@trixus.app` / `demo1234` no tenant `acme`
+- `outsider@trixus.app` / `demo1234` no tenant `orbit`
 
 ## Atualizacao Sprint 01.1
 
@@ -220,7 +220,7 @@ A Sprint 01.1 estabilizou o gate local do projeto sem alterar UX.
 Validacao completa:
 
 ```powershell
-cd "C:\Users\Rabel\Downloads\Nexos Project"
+cd "C:\Users\Rabel\Downloads\Trixus Project"
 $env:BUN_INSTALL="$env:USERPROFILE\.bun"
 $env:PATH="$env:BUN_INSTALL\bin;$env:PATH"
 
@@ -257,10 +257,10 @@ Camada organizacional real implementada no backend NestJS:
 Validacao local:
 
 ```powershell
-cd "C:\Users\Rabel\Downloads\Nexos Project"
+cd "C:\Users\Rabel\Downloads\Trixus Project"
 $env:BUN_INSTALL="$env:USERPROFILE\.bun"
 $env:PATH="$env:BUN_INSTALL\bin;$env:PATH"
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus?schema=public"
 
 docker compose up -d postgres
 bun run backend:prisma:generate
@@ -271,16 +271,16 @@ bun run verify
 
 Credenciais demo:
 
-- `admin@nexo.app` / `demo1234` tenant `acme` (`tenant_admin`)
-- `supervisor@nexo.app` / `demo1234` tenant `acme`
-- `atendente@nexo.app` / `demo1234` tenant `acme`
-- `admin-orbit@nexo.app` / `demo1234` tenant `orbit`
-- `agent-orbit@nexo.app` / `demo1234` tenant `orbit`
-- `platform@nexo.app` / `demo1234` tenant `acme` (`PlatformRole.ADMIN`, role de tenant `agent`)
+- `admin@trixus.app` / `demo1234` tenant `acme` (`tenant_admin`)
+- `supervisor@trixus.app` / `demo1234` tenant `acme`
+- `atendente@trixus.app` / `demo1234` tenant `acme`
+- `admin-orbit@trixus.app` / `demo1234` tenant `orbit`
+- `agent-orbit@trixus.app` / `demo1234` tenant `orbit`
+- `platform@trixus.app` / `demo1234` tenant `acme` (`PlatformRole.ADMIN`, role de tenant `agent`)
 
 ## Atualizacao Sprint 05
 
-O nucleo de mensagens do inbox migrado usa PostgreSQL/Prisma pela Nexos API:
+O nucleo de mensagens do inbox migrado usa PostgreSQL/Prisma pela Trixus API:
 
 - `Message` pertence a tenant e conversa.
 - Historico, envio de texto e leitura ficam em `/api/conversations/:id/messages`.
@@ -291,10 +291,10 @@ O nucleo de mensagens do inbox migrado usa PostgreSQL/Prisma pela Nexos API:
 Regression gate local:
 
 ```powershell
-cd "C:\Users\Rabel\Downloads\Nexos Project"
+cd "C:\Users\Rabel\Downloads\Trixus Project"
 $env:BUN_INSTALL="$env:USERPROFILE\.bun"
 $env:PATH="$env:BUN_INSTALL\bin;$env:PATH"
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus?schema=public"
 
 docker compose up -d postgres
 bun --cwd backend prisma migrate deploy --schema prisma/schema.prisma
@@ -305,13 +305,13 @@ bun run verify
 
 # Sprint 08
 
-Para validar a stack assincrona local, suba PostgreSQL e Redis Nexos:
+Para validar a stack assincrona local, suba PostgreSQL e Redis Trixus:
 
 ```bash
-docker compose up -d postgres nexos-redis
+docker compose up -d postgres trixus-redis
 ```
 
-Use `REDIS_URL=redis://localhost:6379`. O Redis da Evolution (`evolution-redis`) nao deve ser usado pelo BullMQ do Nexos.
+Use `REDIS_URL=redis://localhost:6379`. O Redis da Evolution (`evolution-redis`) nao deve ser usado pelo BullMQ do Trixus.
 
 ## Sprint 08.04
 
@@ -321,8 +321,8 @@ Connections `evolution` com status `connected`.
 
 Separacao de ambientes:
 
-- regressao automatizada ampla: `nexos_0801`, com tenants `acme/orbit`;
-- homologacao fisica preservada: `nexos_0802`, sem reset automatico quando dados reais existem.
+- regressao automatizada ampla: `trixus_0801`, com tenants `acme/orbit`;
+- homologacao fisica preservada: `trixus_0802`, sem reset automatico quando dados reais existem.
 
 O webhook Evolution aceita o header real configurado na instance (`jwt_key`) e tambem preserva suporte
 ao Bearer JWT usado em testes. Eventos ignorados passam a registrar motivo canonico.
@@ -335,17 +335,17 @@ de guarda.
 
 Credenciais locais/homologacao:
 
-- `admin@nexo.app` / `demo1234` role `tenant_admin`
-- `atendente@nexo.app` / `demo1234` role `agent`
+- `admin@trixus.app` / `demo1234` role `tenant_admin`
+- `atendente@trixus.app` / `demo1234` role `agent`
 
 ### Rework II Sprint 08.04
 
 Evolution local atualizada de `v2.3.1` para `v2.3.7` com backup fisico previo em
-`backups/evolution-before-0804.dump`. A instancia operacional unica do Nexos em `nexos_0802` aponta para
+`backups/evolution-before-0804.dump`. A instancia operacional unica do Trixus em `trixus_0802` aponta para
 `26293569-whatsapp-nata-cffd5f5c`, conectada, com owner normalizado apos reconcile por endpoint.
 
 Inbound fisico segue bloqueado por falha de decriptacao antes do webhook. Logs reais mostraram erros
-Signal/Baileys com `@lid` e `senderPn`, mas nenhum `MESSAGES_UPSERT` valido foi recebido pelo Nexos nesta
+Signal/Baileys com `@lid` e `senderPn`, mas nenhum `MESSAGES_UPSERT` valido foi recebido pelo Trixus nesta
 sessao. Sprint 09 permanece bloqueada.
 
 ## Sprint 09
@@ -360,7 +360,7 @@ visual ainda esta pendente.
 
 ### Rework Sprint 09
 
-O bootstrap fisico em `nexos_0802` foi recuperado. A dependencia de indice 1 de
+O bootstrap fisico em `trixus_0802` foi recuperado. A dependencia de indice 1 de
 `ConversationsController` e `MessagesService`; ela agora usa `@Inject(MessagesService)` e tem cobertura em
 `backend/src/app.module.spec.ts` com compilacao real de `AppModule` e verificacao de metadata.
 
@@ -370,4 +370,4 @@ quando o Nest entrega `Namespace` no `afterInit`. Health fisico confirmou `datab
 
 # Sprint 11
 
-Chamados agora sao dominio oficial de Tickets via Nexos API. Consulte [TICKETING.md](./TICKETING.md) e [STORAGE.md](./STORAGE.md).
+Chamados agora sao dominio oficial de Tickets via Trixus API. Consulte [TICKETING.md](./TICKETING.md) e [STORAGE.md](./STORAGE.md).

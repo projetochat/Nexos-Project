@@ -18,7 +18,7 @@
 - Corrigido audio/voice/PTT para `/message/sendWhatsAppAudio/:instanceName`.
 - Reply outbound passa a carregar provider key com `id`, `remoteJid`, `fromMe` e `participant`.
 - Erros `requires property` da Evolution agora sao `INVALID_PROVIDER_PAYLOAD` com `providerCode=VALIDATION_ERROR`.
-- Smokes diretos Evolution passaram; gate Nexos ponta a ponta permanece `EVOLUTION CONTRACT REWORK REQUIRED`.
+- Smokes diretos Evolution passaram; gate Trixus ponta a ponta permanece `EVOLUTION CONTRACT REWORK REQUIRED`.
 
 ## 2026-08-05 - RC Sprint 15 Rework Operational Runtime
 
@@ -32,7 +32,7 @@
 ## 2026-08-04 - RC Sprint 15 Atendimento Operacional
 
 - Criado `OperationsModule` com endpoints `/api/operations/dashboard`, historico, timeline, relatorios e filas.
-- Dashboard, Historico, Relatorios e Filas passaram a consumir Nexos API/Prisma, sem Supabase direto e sem `@/lib/mvp`.
+- Dashboard, Historico, Relatorios e Filas passaram a consumir Trixus API/Prisma, sem Supabase direto e sem `@/lib/mvp`.
 - Removida rota `/simulador`, menu lateral/mobile e servico `SIMULATOR` legado.
 - Adicionado teste E2E cobrindo dashboard, historico paginado, timeline, filas e export CSV.
 - Gate permanece `NOT READY FOR PRODUCTION PILOT` ate homologacao fisica operacional completa.
@@ -42,20 +42,20 @@
 - Adicionado plano de controle `/api/platform/*` com guard server-side para `PlatformRole`.
 - Criados modelos de Tenant lifecycle, Plan, TenantSubscription, SubscriptionHistory, Invoice, UsageSnapshot, ImpersonationSession e PlatformAuditLog.
 - Adicionado `PlanEntitlementService` e enforcement server-side para usuarios, departamentos, connections, contatos, tickets/storage e campanhas.
-- Super Admin `/admin/*` passou a consumir Nexos Platform API nas telas principais e ganhou guard anti-legado contra mocks em runtime.
+- Super Admin `/admin/*` passou a consumir Trixus Platform API nas telas principais e ganhou guard anti-legado contra mocks em runtime.
 - Seeds idempotentes criam platform admin configuravel e planos Starter/Professional de homologacao.
-- Migrations aplicadas em `nexos_0801`, `nexos_0802` e banco isolado `nexos_1300`.
+- Migrations aplicadas em `trixus_0801`, `trixus_0802` e banco isolado `trixus_1300`.
 - Gate fisico completo permanece `NOT READY FOR SPRINT 14`.
 
 ## 2026-08-04 - Sprint 10 Rework RBAC, Tags & Quick Replies
 
-- `/etiquetas` foi migrada para Nexos API e passou a gerenciar o mesmo catalogo usado no modal de Contact.
+- `/etiquetas` foi migrada para Trixus API e passou a gerenciar o mesmo catalogo usado no modal de Contact.
 - `/mensagens-rapidas` foi migrada para `quickReplyApi`, removendo caminho Supabase/RLS de create/update/archive.
 - Modal de Tags na Inbox agora separa `chat.tags.use` de `chat.tags.manage`: agente aplica Tags existentes, admin gerencia catalogo.
 - Preset de perfil de atendente inclui `chat.tags.use` e o mapa client-side de permissions reconhece essa chave.
 - Erros operacionais `403` preservam a mensagem do backend quando disponivel.
 - Testes e2e cobrem RBAC de Tags, associacao Contact x Tag, Quick Replies API-only, duplicata de atalho, archive e isolamento cross-tenant.
-- `bun run verify` passou duas vezes em `nexos_0801` com Redis local.
+- `bun run verify` passou duas vezes em `trixus_0801` com Redis local.
 
 ## 2026-08-04 - Sprint 10 Webhook Connectivity & Auth Recovery
 
@@ -69,18 +69,18 @@
 ## 2026-08-03 - Sprint 10 Inbox Domain Consolidation
 
 - Inbox operacional deixou de importar `@/lib/mvp` e Supabase nas rotas `/inbox`.
-- Conversa detalhada passou a consumir Tags, Contact detail, Customers, Departments e Quick Replies via Nexos API.
+- Conversa detalhada passou a consumir Tags, Contact detail, Customers, Departments e Quick Replies via Trixus API.
 - Adicionados endpoints oficiais `/api/tags`, `/api/contacts/:id/tags/:tagId` e `/api/quick-replies`.
 - Tags ganharam `normalizedName`, `archivedAt` e unicidade normalizada por tenant.
 - Quick Replies ganharam modelo tenant-scoped com escopo global/departamento, RBAC e bloqueio de atalho duplicado.
 - Adicionada guarda automatizada `test:inbox-legacy-runtime` ao `verify`.
-- Migration validada em `nexos_1000` e aplicada sem reset em `nexos_0802`.
+- Migration validada em `trixus_1000` e aplicada sem reset em `trixus_0802`.
 
 ## 2026-08-03 - Sprint 09 Rework II Inbox Runtime Recovery
 
 - Corrigido loop React da Inbox causado por snapshot instavel em `useSyncExternalStore`.
 - `realtimeSnapshot()` agora e cacheado e so muda quando `status` ou `lastEventId` mudam.
-- Adicionada flag frontend `VITE_NEXOS_REALTIME_ENABLED`; quando `false`, nenhum socket e instanciado.
+- Adicionada flag frontend `VITE_TRIXUS_REALTIME_ENABLED`; quando `false`, nenhum socket e instanciado.
 - Subscriptions de Conversation no client realtime agora sao idempotentes e limpas por `conversationId`.
 - Reconcile REST da Inbox ocorre somente na transicao real para `connected`.
 - Refresh HTTP passa a ser single-flight, com retry unico e endpoints publicos fora do ciclo de refresh.
@@ -93,7 +93,7 @@
 - Adicionado teste de bootstrap real do `AppModule` e validacao de `design:paramtypes`.
 - Adicionado smoke `backend/scripts/verify-backend-startup.mjs` para health fisico com PostgreSQL, Redis, fila e realtime.
 - Corrigido Redis adapter do Socket.io quando o Nest entrega `Namespace` no `afterInit`, aplicando o adapter no servidor raiz.
-- Confirmado startup em `nexos_0802` com `database=up`, `redis=up`, `queue=up`, `realtime=up` e `realtimeAdapter=redis`.
+- Confirmado startup em `trixus_0802` com `database=up`, `redis=up`, `queue=up`, `realtime=up` e `realtimeAdapter=redis`.
 - Confirmado smoke socket fisico para admin e agente no tenant `homologacao`.
 - Gate fisico completo permanece `NOT READY FOR SPRINT 10` ate inbound/outbound WhatsApp, presence, typing, reconnect e Redis recovery ponto a ponto.
 
@@ -112,7 +112,7 @@
 
 - Criado backup fisico da Evolution antes de qualquer atualizacao: `backups/evolution-before-0804.dump`.
 - Evolution API fixada em `evoapicloud/evolution-api:v2.3.7`; `latest` e `2.4.0-rc*` foram descartados.
-- Reconciliada a connection fisica do Nexos para a instancia conectada `26293569-whatsapp-nata-cffd5f5c`.
+- Reconciliada a connection fisica do Trixus para a instancia conectada `26293569-whatsapp-nata-cffd5f5c`.
 - Confirmados login admin/agente em `homologacao`, webhook da instancia e owner normalizado.
 - Adicionada regressao E2E para `PATCH /api/conversations/:id/status` criando mensagem de sistema.
 - Documentado diagnostico inbound: falha permanece antes do webhook por decriptacao Signal/Baileys.
@@ -127,7 +127,7 @@
 - Health pre-login diferencia API/database de Redis.
 - Seed minimo aceita `SEED_ADMIN_EMAIL` e `SEED_ADMIN_PASSWORD` sem imprimir senha.
 - Criado smoke script `backend/scripts/verify-homologation-login.mjs`.
-- Adicionados testes E2E de auth e testes frontend do client Nexos API.
+- Adicionados testes E2E de auth e testes frontend do client Trixus API.
 
 ## 2026-08-03 - Sprint 08.02 Homologation Reset & Contact Lifecycle Recovery
 
@@ -136,7 +136,7 @@
 - Contact create passa a restaurar Contact arquivado com mesmo telefone normalizado.
 - Contact ativo duplicado retorna erro canonico `CONTACT_ALREADY_EXISTS`.
 - Frontend de contatos mostra sucesso especifico para Contact restaurado.
-- Documentado ciclo de banco `nexos_0802`, seed modes e regra soft delete + restore.
+- Documentado ciclo de banco `trixus_0802`, seed modes e regra soft delete + restore.
 
 ## 2026-08-03 - Sprint 08.01 Inbound Conversation Resolution & Reconnect Recovery
 
@@ -162,7 +162,7 @@
 - Adicionada permission `messages.send` ao catalogo RBAC e aos roles operacionais seedados.
 - Implementada API NestJS aninhada em `/api/conversations/:conversationId/messages` para historico, envio de texto e leitura.
 - Integradas acoes estruturais de conversa com mensagens `SYSTEM` internas, sem endpoint publico generico.
-- Migrado o historico, envio de texto e mark read de `/inbox/:conversationId` para Nexos API/PostgreSQL.
+- Migrado o historico, envio de texto e mark read de `/inbox/:conversationId` para Trixus API/PostgreSQL.
 - Bloqueado envio de midia no composer migrado sem criar data URL fake ou provider improvisado.
 - Seed atualizado com mensagens reais por conversa e contador de protocolos idempotente em execucoes repetidas.
 - Adicionados testes e2e para paginacao, envio, idempotencia, validacao, RBAC, tenant isolation, escopo departamental, estados bloqueados e leitura.
@@ -172,7 +172,7 @@
 - Criada migration Prisma para `conversations` e `conversation_protocol_counters`.
 - Adicionadas permissions `conversations.read`, `conversations.assign` e `conversations.manage`.
 - Implementada API NestJS `/api/conversations/*` com tenant isolation, escopo operacional por departamento, filtros, busca, sort, paginação e contadores por aba.
-- Migradas as superficies estruturais de `/inbox` e `/inbox/:conversationId` para Nexos API, sem fallback Supabase para Conversation.
+- Migradas as superficies estruturais de `/inbox` e `/inbox/:conversationId` para Trixus API, sem fallback Supabase para Conversation.
 - Mantida fronteira temporaria: mensagens, quick replies e composer continuam legados ate a Sprint 05.
 - Seed atualizado com conversas por tenant em estados ativa, standby, fila, lead, fechada e escopo financeiro restrito.
 - Adicionados testes e2e de RBAC, filtros, detail, assignment/unassignment, cross-tenant, inactive membership, transfer, status e agent visibility.
@@ -183,7 +183,7 @@
 - Adicionadas permissions `crm.read` e `crm.manage`.
 - Implementada API NestJS `/api/crm/*` com tenant server-side, DTO validation, paginacao, filtros e busca.
 - Implementada normalizacao canonica de telefone e unicidade por tenant.
-- Migradas telas `/clientes` e `/contatos` para Nexos API, removendo Supabase dessas superficies.
+- Migradas telas `/clientes` e `/contatos` para Trixus API, removendo Supabase dessas superficies.
 - Preservado default local `http://localhost:5173` -> `http://localhost:3001/api`.
 - CORS ajustado para allowlist explicita por ambiente via `FRONTEND_ORIGIN`, sem wildcard de producao.
 - Seed atualizado com clientes, contatos e tags por tenant.
@@ -198,7 +198,7 @@
 - Criado `@RequirePermissions` + `PermissionsGuard` para RBAC server-side.
 - Implementadas APIs reais de users, departments, roles e permissions.
 - Atualizado seed com Tenant A/B, roles, permissions, departamentos e usuarios demo.
-- Migradas telas `/login`, `/departamentos`, `/atendentes`, `/perfis`, `/configuracoes/usuarios` e `/configuracoes/permissoes` para Nexos API.
+- Migradas telas `/login`, `/departamentos`, `/atendentes`, `/perfis`, `/configuracoes/usuarios` e `/configuracoes/permissoes` para Trixus API.
 - Removido Supabase Auth das superficies migradas.
 - Adicionados testes e2e de auth denial, permission denial, tenant isolation, department isolation, role isolation e Platform Admin separado.
 
@@ -222,7 +222,7 @@
 - Criado Prisma schema, migration inicial e seed multi-tenant.
 - Implementados endpoints `/api/health`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/me` e `/api/tenant-records/:id`.
 - Adicionados testes e2e do backend e teste de sanitizacao XSS.
-- Login frontend passa a tentar Nexos API antes do fallback Supabase.
+- Login frontend passa a tentar Trixus API antes do fallback Supabase.
 - Removida chamada automatica de `ensureDemoUsers` no login e adicionada flag de seguranca.
 - HTML de chamados passa por sanitizacao antes de persistir e ao reabrir edicao.
 
@@ -255,7 +255,7 @@
 - Adicionado `EvolutionClient`, `EvolutionMessagingProvider` e translator de webhooks.
 - Criadas APIs tenant-scoped de connections, QR Code, status e logout.
 - Criado webhook seguro `/api/webhooks/evolution` com JWT de provider.
-- Migrada tela `/instancias` para Nexos API.
+- Migrada tela `/instancias` para Trixus API.
 - Adicionado Docker Compose da Evolution API v2.3.1 com Postgres/Redis internos.
 - Adicionadas permissoes `connections.read` e `connections.manage`.
 - Fechadas lacunas de teste de inbound duplicado e external IDs iguais em tenants diferentes.
@@ -274,7 +274,7 @@
 
 # Sprint 08
 
-- Adicionado Redis Nexos separado de `evolution-redis`.
+- Adicionado Redis Trixus separado de `evolution-redis`.
 - Integrado BullMQ com queue `messaging-outbound`.
 - Implementado Transactional Outbox para outbound.
 - `POST /messages` passa a retornar Message `QUEUED`.
@@ -291,7 +291,7 @@
 - Webhook registra `authResult`, `requestId`, tipo de evento e `ignoredReason` canonico.
 - Translator passou a retornar motivos canonicos como `FROM_ME`, `GROUP_MESSAGE` e `UNSUPPORTED_EVENT`.
 - Adicionado teste E2E para inbound autenticado via `jwt_key`.
-- Documentada separacao `nexos_0801` para regressao e `nexos_0802` para homologacao fisica preservada.
+- Documentada separacao `trixus_0801` para regressao e `trixus_0802` para homologacao fisica preservada.
 
 ## Sprint 08.04 Rework
 
@@ -311,7 +311,7 @@
 # 2026-08-04 - Sprint 11 Ticketing Domain, Secure Content & Attachments
 
 - Criado dominio oficial `Ticket`/`TicketComment`/`TicketHistory`/`TicketAttachment` no Prisma e NestJS.
-- Migrada rota `/chamados` para Nexos API, removendo Supabase/MVP/contentEditable/insertHTML/data URL do runtime operacional.
+- Migrada rota `/chamados` para Trixus API, removendo Supabase/MVP/contentEditable/insertHTML/data URL do runtime operacional.
 - Adicionado storage privado local/R2 boundary, sanitizacao server-side de HTML, permississoes `tickets.*` e eventos realtime `ticket.*`.
-- Migration aplicada sem reset em `nexos_0801` e `nexos_0802`; migration limpa validada em `nexos_1100`.
-- Gate permanece `NOT READY FOR SPRINT 12` ate homologacao fisica completa admin/atendente/XSS/anexos/multiusuario.
+- Migration aplicada sem reset em `trixus_0801` e `trixus_0802`; migration limpa validada em `trixus_1100`.
+- Gate permanece `NOT READY FOR SPRINT 12` ate homologacao fisica completa admin/atendente/XSS/atrixus/multiusuario.

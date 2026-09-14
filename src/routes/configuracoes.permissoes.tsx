@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { Card, Badge, Button } from "@/components/ui-kit";
-import { organizationApi } from "@/lib/nexos-api";
+import { organizationApi } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/configuracoes/permissoes")({
   component: PermissoesSettings,
@@ -10,7 +10,7 @@ export const Route = createFileRoute("/configuracoes/permissoes")({
 
 function PermissoesSettings() {
   const { data: roles = [], isLoading } = useQuery({
-    queryKey: ["nexos", "roles"],
+    queryKey: ["trixus", "roles"],
     queryFn: organizationApi.listRoles,
   });
 

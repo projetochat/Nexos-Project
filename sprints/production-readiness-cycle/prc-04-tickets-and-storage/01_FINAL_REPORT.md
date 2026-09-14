@@ -6,12 +6,12 @@ Data: 2026-08-17
 
 ## Objetivo
 
-Aprovar Chamados/Tickets com anexos em storage privado para a base atual, removendo drift documental do contrato antigo e adicionando gate automatizado contra regressao.
+Aprovar Chamados/Tickets com atrixus em storage privado para a base atual, removendo drift documental do contrato antigo e adicionando gate automatizado contra regressao.
 
 ## Escopo Executado
 
-- Validado fluxo backend de tickets: abertura, comentario interno, status, tenant isolation, upload, preview inline, download e delete de anexos.
-- Corrigido contrato documental de anexos: removido fluxo legado `init/complete`.
+- Validado fluxo backend de tickets: abertura, comentario interno, status, tenant isolation, upload, preview inline, download e delete de atrixus.
+- Corrigido contrato documental de atrixus: removido fluxo legado `init/complete`.
 - Oficializado upload binario direto em `POST /api/tickets/:id/attachments`.
 - Oficializado preview autenticado em `GET /api/tickets/:id/attachments/:attachmentId/inline`.
 - Oficializado download autenticado em `GET /api/tickets/:id/attachments/:attachmentId/download`.
@@ -20,7 +20,7 @@ Aprovar Chamados/Tickets com anexos em storage privado para a base atual, remove
   - `r2` permanece boundary reservado para ciclo de deploy; ainda nao e provider funcional de upload/download nesta base.
 - Adicionado gate `test:prc04-ticket-storage-contract`.
 - Integrado gate PRC-04 ao `bun run verify`.
-- Ampliado e2e de Tickets para validar delete de anexo, remocao da listagem e bloqueio de download apos delete.
+- Ampliado e2e de Tickets para validar delete de atrixus, remocao da listagem e bloqueio de download apos delete.
 
 ## Arquivos Alterados
 

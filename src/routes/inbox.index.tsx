@@ -29,7 +29,7 @@ import {
   type ApiContact,
   messageApi,
   type ApiConversationStatus as ConvStatus,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 import { useSession } from "@/lib/session";
 import { relativeTime } from "@/lib/format";
@@ -111,7 +111,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
 
   const { data: conversationsPage, isLoading } = useQuery({
     queryKey: [
-      "nexos",
+      "trixus",
       "conversations",
       { tab, source, onlyUnread, query, selectedCliente, selectedInstancia },
     ],
@@ -134,7 +134,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   );
 
   const { data: customersPage } = useQuery({
-    queryKey: ["nexos", "customers", "all"],
+    queryKey: ["trixus", "customers", "all"],
     queryFn: () => crmApi.listCustomers({ pageSize: 100 }),
   });
   const customers = React.useMemo(() => customersPage?.items ?? [], [customersPage?.items]);
@@ -216,8 +216,8 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                 title="Atualizar"
                 onClick={async () => {
                   setRefreshing(true);
-                  await qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-                  await qc.invalidateQueries({ queryKey: ["nexos", "customers", "all"] });
+                  await qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+                  await qc.invalidateQueries({ queryKey: ["trixus", "customers", "all"] });
                   setRefreshing(false);
                 }}
               >
@@ -482,7 +482,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
   const [busy, setBusy] = React.useState(false);
 
   const { data: contactsPage } = useQuery({
-    queryKey: ["nexos", "contacts", "conversation-modal"],
+    queryKey: ["trixus", "contacts", "conversation-modal"],
     queryFn: () => crmApi.listContacts({ pageSize: 100 }),
     enabled: open,
   });
@@ -544,8 +544,8 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
       const sent = await messageApi.sendText(conversation.id, firstMsg.trim());
       if (sent.status === "failed") toast.warning("Conversa criada, mas o envio falhou.");
       else toast.success("Conversa iniciada");
-      qc.invalidateQueries({ queryKey: ["nexos", "conversations"] });
-      qc.invalidateQueries({ queryKey: ["nexos", "messages", conversation.id] });
+      qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "messages", conversation.id] });
       onClose();
       navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
     } catch (e) {

@@ -17,7 +17,7 @@ function includesAll(text, values) {
 const platformController = read("backend/src/platform/platform.controller.ts");
 const platformService = read("backend/src/platform/platform.service.ts");
 const platformGuard = read("backend/src/platform/platform-auth.guard.ts");
-const platformApi = read("src/lib/nexos-api.ts");
+const platformApi = read("src/lib/trixus-api.ts");
 const appShell = read("src/components/app-shell.tsx");
 const tenantDetailRoute = read("src/routes/admin.empresas.$tenantId.tsx");
 const platformAdminDoc = read("docs/PLATFORM_ADMIN.md");

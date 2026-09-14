@@ -764,7 +764,7 @@ export class PlatformService {
       include: { tenant: true },
     });
     if (!membership) throw new BadRequestException("Membership invalida para impersonação.");
-    const ttl = readPositiveInteger(this.config, "NEXOS_IMPERSONATION_TTL_MINUTES", 15);
+    const ttl = readPositiveInteger(this.config, "TRIXUS_IMPERSONATION_TTL_MINUTES", 15);
     const session = await this.prisma.$transaction(async (tx) => {
       await tx.impersonationSession.updateMany({
         where: { actorUserId: current.userId, status: "ACTIVE" },
@@ -847,7 +847,7 @@ export class PlatformService {
       campaignQueue: campaign,
       workers: {
         outbound:
-          this.config.get<string>("NEXOS_QUEUE_WORKER_ENABLED") === "true"
+          this.config.get<string>("TRIXUS_QUEUE_WORKER_ENABLED") === "true"
             ? "configured"
             : "disabled",
         campaign: this.campaignQueue.enabled() ? "configured" : "disabled",

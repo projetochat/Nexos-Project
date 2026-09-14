@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const files = {
-  api: "src/lib/nexos-api.ts",
+  api: "src/lib/trixus-api.ts",
   page: "src/routes/chamados.tsx",
   controller: "backend/src/tickets/tickets.controller.ts",
   service: "backend/src/tickets/tickets.service.ts",
@@ -67,8 +67,8 @@ expectPresent("docs/STORAGE.md", contents.storageDoc, [
 ]);
 
 expectPresent("docs/DEPLOY.md", contents.deployDoc, [
-  [/NEXOS_STORAGE_PROVIDER=local/, "local provider deploy command"],
-  [/R2\/S3-compatible antes de habilitar anexos de tickets/, "production storage blocker"],
+  [/TRIXUS_STORAGE_PROVIDER=local/, "local provider deploy command"],
+  [/R2\/S3-compatible antes de habilitar atrixus de tickets/, "production storage blocker"],
 ]);
 
 if (failures.length > 0) {

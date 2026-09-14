@@ -18,12 +18,12 @@ Observed through generated Prisma client against active environment:
 
 ## Column Drift
 
-Database `nexos`:
+Database `trixus`:
 
 - has 705 messages
 - missing new fields such as `providerChatId`, `providerParticipantId`, `quotedProviderMessageId`, `mediaStorageKey`, `mediaChecksum`
 
-Database `nexos_0802`:
+Database `trixus_0802`:
 
 - contains the sampled new message core columns
 

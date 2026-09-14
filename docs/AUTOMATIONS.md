@@ -2,7 +2,7 @@
 
 ## Escopo
 
-Automacoes operacionais usam somente Nexos API e Prisma. A rota `/automacoes` nao usa Supabase, MVP
+Automacoes operacionais usam somente Trixus API e Prisma. A rota `/automacoes` nao usa Supabase, MVP
 store, mocks locais ou execucao artificial no frontend.
 
 ## Tipos de regra

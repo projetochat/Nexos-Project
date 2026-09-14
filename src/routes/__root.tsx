@@ -119,7 +119,7 @@ function RootShell({ children }: { children: ReactNode }) {
         <HeadContent />
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('nexo.theme')||'light';var r=t==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;var e=document.documentElement;e.classList.remove('dark','light');e.classList.add(r);e.style.colorScheme=r;}catch(e){}})();`,
+            __html: `(function(){try{var t=localStorage.getItem('trixus.theme')||'light';var r=t==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;var e=document.documentElement;e.classList.remove('dark','light');e.classList.add(r);e.style.colorScheme=r;}catch(e){}})();`,
           }}
         />
       </head>
@@ -138,7 +138,7 @@ function SessionHydrator() {
       if (!cancelled) hydrateSession();
     });
     function syncLogout(event: StorageEvent) {
-      if (event.key !== "nexo.session.logoutAt") return;
+      if (event.key !== "trixus.session.logoutAt") return;
       import("@/lib/session").then(({ useSession }) => {
         useSession.setState({ user: null, impersonating: null, hydrated: true });
       });

@@ -23,7 +23,7 @@ import {
   type ApiMessagingConnection,
   type ApiRole,
   type ApiUserMembership,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/perfis")({ component: Page });
@@ -118,7 +118,7 @@ const PERMISSION_GROUPS: Array<{ title: string; tab: PermissionTab; items: Permi
       { id: "tickets.status.update", label: "Alterar status de chamados" },
       { id: "tickets.comment", label: "Comentar chamados" },
       { id: "tickets.attachments.upload", label: "Anexar em chamados" },
-      { id: "tickets.attachments.delete", label: "Excluir anexos de chamados" },
+      { id: "tickets.attachments.delete", label: "Excluir atrixus de chamados" },
       { id: "tickets.manage", label: "Gerenciar chamados" },
     ],
   },
@@ -173,6 +173,10 @@ function normalizeRoleName(value: string) {
     .trim()
     .replace(/\s+/g, " ")
     .toLocaleLowerCase("pt-BR");
+}
+
+function isAdministratorRole(role: ApiRole) {
+  return role.key === "tenant_admin" || normalizeRoleName(role.name) === "administrador";
 }
 
 function duplicateRoleDraft(role: ApiRole, roles: ApiRole[]): ApiRole {
@@ -256,19 +260,19 @@ function CheckField({
 function Page() {
   const qc = useQueryClient();
   const { data: items = [], isLoading } = useQuery({
-    queryKey: ["nexos", "roles"],
+    queryKey: ["trixus", "roles"],
     queryFn: organizationApi.listRoles,
   });
   const { data: departamentos = [] } = useQuery({
-    queryKey: ["nexos", "departments"],
+    queryKey: ["trixus", "departments"],
     queryFn: organizationApi.listDepartments,
   });
   const { data: connections = [] } = useQuery({
-    queryKey: ["nexos", "messaging-connections"],
+    queryKey: ["trixus", "messaging-connections"],
     queryFn: connectionsApi.list,
   });
   const { data: memberships = [] } = useQuery({
-    queryKey: ["nexos", "users"],
+    queryKey: ["trixus", "users"],
     queryFn: organizationApi.listUsers,
   });
 
@@ -316,7 +320,7 @@ function Page() {
     onSuccess: (result, vars) => {
       const previous = vars.id ? editing : null;
       const savedRole = roleWithLogFallback(result, previous);
-      qc.setQueryData<ApiRole[]>(["nexos", "roles"], (current = []) => {
+      qc.setQueryData<ApiRole[]>(["trixus", "roles"], (current = []) => {
         if (vars.id) {
           return current.map((role) =>
             role.id === savedRole.id ? roleWithLogFallback(savedRole, role) : role,
@@ -324,7 +328,7 @@ function Page() {
         }
         return [savedRole, ...current];
       });
-      qc.invalidateQueries({ queryKey: ["nexos", "roles"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "roles"] });
       toast.success(vars.id ? "Perfil atualizado" : "Perfil criado");
       novo.hide();
       setEditing(null);
@@ -336,7 +340,7 @@ function Page() {
   const remove = useMutation({
     mutationFn: (id: string) => organizationApi.deleteRole(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["nexos", "roles"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "roles"] });
       toast.success("Perfil removido");
       setDeleting(null);
     },
@@ -373,6 +377,7 @@ function Page() {
             {filtered.map((p) => {
               const memberCount = memberCountByRoleId[p.id] ?? 0;
               const color = roleColor(p);
+              const isAdministrator = isAdministratorRole(p);
 
               return (
                 <Card
@@ -395,37 +400,39 @@ function Page() {
                       </div>
                     </div>
 
-                    <div className="flex shrink-0 gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="duplicate-action-button"
-                        onClick={() => setDuplicating(duplicateRoleDraft(p, items))}
-                        title="Duplicar Perfil de Acesso"
-                        aria-label={`Duplicar Perfil de Acesso ${p.name}`}
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setEditing(p)}
-                        title="Editar perfil"
-                        aria-label={`Editar perfil ${p.name}`}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="trash-action"
-                        onClick={() => setDeleting(p)}
-                        title="Excluir perfil"
-                        aria-label={`Excluir perfil ${p.name}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                    {!isAdministrator && (
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="duplicate-action-button"
+                          onClick={() => setDuplicating(duplicateRoleDraft(p, items))}
+                          title="Duplicar Perfil de Acesso"
+                          aria-label={`Duplicar Perfil de Acesso ${p.name}`}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditing(p)}
+                          title="Editar perfil"
+                          aria-label={`Editar perfil ${p.name}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="trash-action"
+                          onClick={() => setDeleting(p)}
+                          title="Excluir perfil"
+                          aria-label={`Excluir perfil ${p.name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </Card>
               );

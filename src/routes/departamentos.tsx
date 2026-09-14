@@ -16,7 +16,7 @@ import {
 } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import { num } from "@/lib/format";
-import { organizationApi, type ApiDepartment } from "@/lib/nexos-api";
+import { organizationApi, type ApiDepartment } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/departamentos")({ component: Page });
@@ -71,7 +71,7 @@ function Page() {
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ["nexos", "departments"],
+    queryKey: ["trixus", "departments"],
     queryFn: organizationApi.listDepartments,
   });
 
@@ -87,7 +87,7 @@ function Page() {
     onSuccess: (data, vars) => {
       const previous = vars.id ? editing : null;
       const savedDepartment = departmentWithLogFallback(data, previous);
-      qc.setQueryData<ApiDepartment[]>(["nexos", "departments"], (current = []) => {
+      qc.setQueryData<ApiDepartment[]>(["trixus", "departments"], (current = []) => {
         if (vars.id) {
           return current.map((department) =>
             department.id === savedDepartment.id
@@ -97,7 +97,7 @@ function Page() {
         }
         return [savedDepartment, ...current];
       });
-      qc.invalidateQueries({ queryKey: ["nexos", "departments"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "departments"] });
       toast.success(vars.id ? "Departamento atualizado" : "Departamento criado");
       novo.hide();
       setEditing(null);
@@ -109,7 +109,7 @@ function Page() {
   const remove = useMutation({
     mutationFn: (id: string) => organizationApi.deleteDepartment(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["nexos", "departments"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "departments"] });
       toast.success("Departamento desativado");
       setDeleting(null);
     },

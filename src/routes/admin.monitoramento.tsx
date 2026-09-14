@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { AdminContainer } from "@/components/admin-shell";
 import { Alert, Badge, Button, Card, SectionHeader } from "@/components/ui-kit";
-import { platformApi, type PlatformHealth } from "@/lib/nexos-api";
+import { platformApi, type PlatformHealth } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/monitoramento")({
   head: () => ({ meta: [{ title: "Monitoramento - Trixus Admin" }] }),

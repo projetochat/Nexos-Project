@@ -6,8 +6,8 @@ import { PrismaClient } from "../src/generated/prisma/index.js";
 const backendDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const rootDir = resolve(backendDir, "..");
 
-const FORBIDDEN_DATABASES = new Set(["nexos", "postgres", "production", "prod"]);
-const EXPLICIT_DATABASES = new Set(["nexos_0802", "nexos_homolog", "nexos_test"]);
+const FORBIDDEN_DATABASES = new Set(["trixus", "postgres", "production", "prod"]);
+const EXPLICIT_DATABASES = new Set(["trixus_0802", "trixus_homolog", "trixus_test"]);
 
 export function databaseNameFromUrl(value) {
   const url = new URL(value);
@@ -18,8 +18,8 @@ export function isAllowedHomologationDatabase(databaseName) {
   if (!databaseName || FORBIDDEN_DATABASES.has(databaseName)) return false;
   return (
     EXPLICIT_DATABASES.has(databaseName) ||
-    databaseName.startsWith("nexos_08") ||
-    databaseName.startsWith("nexos_homolog")
+    databaseName.startsWith("trixus_08") ||
+    databaseName.startsWith("trixus_homolog")
   );
 }
 
@@ -73,10 +73,10 @@ async function main() {
 
   run("docker", [
     "exec",
-    "nexos-postgres",
+    "trixus-postgres",
     "psql",
     "-U",
-    "nexos",
+    "trixus",
     "-d",
     "postgres",
     "-c",
@@ -84,14 +84,14 @@ async function main() {
   ]);
   run("docker", [
     "exec",
-    "nexos-postgres",
+    "trixus-postgres",
     "dropdb",
     "-U",
-    "nexos",
+    "trixus",
     "--if-exists",
     target.databaseName,
   ]);
-  run("docker", ["exec", "nexos-postgres", "createdb", "-U", "nexos", target.databaseName]);
+  run("docker", ["exec", "trixus-postgres", "createdb", "-U", "trixus", target.databaseName]);
   run("bun", [
     "--cwd",
     "backend",

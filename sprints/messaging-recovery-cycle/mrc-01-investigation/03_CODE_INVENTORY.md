@@ -47,7 +47,7 @@
 - `src/routes/inbox.$conversationId.tsx`
 - `src/routes/inbox.index.tsx`
 - `src/routes/inbox.tsx`
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 - `src/lib/realtime/**`
 
 ## Schema

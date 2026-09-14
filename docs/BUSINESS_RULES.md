@@ -134,13 +134,13 @@ Somente regras comprovadas no codigo.
 
 ## Sprint 08.03 - Auth e acesso
 
-- Login real usa Nexos API; nao pode haver fallback para mock, demo ou Supabase Auth no fluxo operacional.
+- Login real usa Trixus API; nao pode haver fallback para mock, demo ou Supabase Auth no fluxo operacional.
 - Email de login e normalizado com trim + lowercase.
 - Senha e validada por bcrypt; hash nunca e comparado manualmente.
 - Apenas `User.status = ACTIVE` pode autenticar.
 - Usuario autenticado precisa de `TenantMembership.status = ACTIVE`.
 - Quando ha uma unica membership ativa, o backend seleciona automaticamente.
-- Em homologacao, o acesso minimo esperado e `admin@nexo.app` no tenant `homologacao` com role `tenant_admin`.
+- Em homologacao, o acesso minimo esperado e `admin@trixus.app` no tenant `homologacao` com role `tenant_admin`.
 - Credencial invalida retorna 401 sem revelar se o email existe.
 - Ausencia de membership ativa retorna erro canonico.
 - API offline e senha invalida devem aparecer como erros distintos na UI.
@@ -171,7 +171,7 @@ Somente regras comprovadas no codigo.
 
 ## Sprint 10 Rework - Tags e Quick Replies
 
-- O catalogo de Tags e tenant-scoped e gerenciado em `/etiquetas` via Nexos API.
+- O catalogo de Tags e tenant-scoped e gerenciado em `/etiquetas` via Trixus API.
 - A associacao de Tag em Contact e separada do catalogo: agentes com `chat.tags.use` podem aplicar ou
   remover Tags existentes, mas nao criar/editar/arquivar Tags.
 - `tenant_admin` e `supervisor` com `chat.tags.manage` podem manter o catalogo de Tags.

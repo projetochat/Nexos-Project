@@ -18,7 +18,7 @@ type ThemeContextValue = {
 
 const ThemeContext = React.createContext<ThemeContextValue | null>(null);
 
-const STORAGE_KEY = "nexo.theme";
+const STORAGE_KEY = "trixus.theme";
 
 function readStored(): Theme {
   if (typeof window === "undefined") return "light";

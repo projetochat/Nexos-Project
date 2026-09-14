@@ -5,7 +5,7 @@
 `localhost:3001`:
 
 - TCP succeeded.
-- `GET /api/health` returned healthy Nexos API.
+- `GET /api/health` returned healthy Trixus API.
 
 `localhost:8080`:
 
@@ -14,9 +14,9 @@
 
 ## Evolution Container To Backend
 
-From `nexos-evolution-api`:
+From `trixus-evolution-api`:
 
-- `http://host.docker.internal:3001/api/health` returned healthy Nexos API.
+- `http://host.docker.internal:3001/api/health` returned healthy Trixus API.
 - `http://localhost:8080` returned Evolution health.
 
 ## Conclusion

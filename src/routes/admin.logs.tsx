@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AdminContainer } from "@/components/admin-shell";
 import { Badge, Card, SearchInput, SectionHeader } from "@/components/ui-kit";
 import { fmtDateTime } from "@/lib/format";
-import { platformApi, type PlatformAuditLog } from "@/lib/nexos-api";
+import { platformApi, type PlatformAuditLog } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/logs")({
   head: () => ({ meta: [{ title: "Logs · Trixus Admin" }] }),

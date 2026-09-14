@@ -4,7 +4,7 @@
 
 Status: READY.
 
-A Sprint 13 entregou o plano de controle SaaS inicial na Nexos API, com autenticacao server-side de platform roles, governanca de tenants, planos, assinaturas, faturas manuais, usage, entitlements, auditoria e remocao dos principais mocks de runtime em `/admin/*`.
+A Sprint 13 entregou o plano de controle SaaS inicial na Trixus API, com autenticacao server-side de platform roles, governanca de tenants, planos, assinaturas, faturas manuais, usage, entitlements, auditoria e remocao dos principais mocks de runtime em `/admin/*`.
 
 O gate para Sprint 14 permanece bloqueado porque a homologacao fisica completa do Super Admin, tenant lifecycle, limites, impersonacao, realtime offline e Redis offline ainda nao foi executada nesta rodada.
 
@@ -13,7 +13,7 @@ O gate para Sprint 14 permanece bloqueado porque a homologacao fisica completa d
 - Platform Admin deixou de depender de autorizacao apenas visual e passou a usar `/api/platform/*` com JWT, role de plataforma e permissoes resolvidas no backend.
 - Tenants receberam status operacional, dados cadastrais, timestamps de lifecycle e `authRevokedAt` para invalidacao de sessoes antigas.
 - Foram criados modelos Prisma para planos, assinaturas, historico, faturas, snapshots de uso, sessoes de impersonacao e audit log de plataforma.
-- O frontend `/admin/*` passou a consumir dados reais da Nexos API nas telas principais e o `verify` passou a bloquear retornos a mocks/fake runtime nessas rotas.
+- O frontend `/admin/*` passou a consumir dados reais da Trixus API nas telas principais e o `verify` passou a bloquear retornos a mocks/fake runtime nessas rotas.
 - Limites e features de plano passaram a ser validados no backend em usuarios, departamentos, Connections, contatos, campanhas, tickets e attachments.
 
 ## 3. Baseline Sprint 12
@@ -30,9 +30,9 @@ O fechamento documental da Sprint 12 foi consolidado antes da abertura desta bra
 
 - Worktree inicial: sem alteracoes de escopo da Sprint 13.
 - Alteracoes preexistentes preservadas: `.local-storage/` permanece nao rastreado e fora do commit.
-- Banco de regressao: `nexos_0801`.
-- Banco fisico preservado sem reset: `nexos_0802`.
-- Banco isolado criado para Sprint 13: `nexos_1300`.
+- Banco de regressao: `trixus_0801`.
+- Banco fisico preservado sem reset: `trixus_0802`.
+- Banco isolado criado para Sprint 13: `trixus_1300`.
 
 ## 6. Legacy audit
 
@@ -127,7 +127,7 @@ Enforcement inicial aplicado em:
 
 ## 22. Impersonation
 
-Modelo e API de impersonacao implementados com motivo obrigatorio, TTL configuravel por `NEXOS_IMPERSONATION_TTL_MINUTES`, start, stop e current. A UI dedicada e o banner permanente ainda precisam de homologacao/fechamento.
+Modelo e API de impersonacao implementados com motivo obrigatorio, TTL configuravel por `TRIXUS_IMPERSONATION_TTL_MINUTES`, start, stop e current. A UI dedicada e o banner permanente ainda precisam de homologacao/fechamento.
 
 ## 23. Audit log
 
@@ -217,11 +217,11 @@ Migration criada:
 
 Aplicada em:
 
-- `nexos_1300`: drop/create, migrate deploy e seed homologation.
-- `nexos_0802`: migrate deploy sem reset.
-- `nexos_0801`: migrate deploy sem reset.
+- `trixus_1300`: drop/create, migrate deploy e seed homologation.
+- `trixus_0802`: migrate deploy sem reset.
+- `trixus_0801`: migrate deploy sem reset.
 
-`psql` nao estava no PATH; a gestao do banco isolado foi feita via container Docker `nexos-postgres`.
+`psql` nao estava no PATH; a gestao do banco isolado foi feita via container Docker `trixus-postgres`.
 
 ## 38. Backfill
 
@@ -285,7 +285,7 @@ Warnings conhecidos do frontend:
 
 Ambiente:
 
-- `DATABASE_URL=postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0801?schema=public`
+- `DATABASE_URL=postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public`
 - `REDIS_URL=redis://localhost:6379`
 
 Resultados:
@@ -322,7 +322,7 @@ Arquivos principais alterados:
 - Prisma schema e seed.
 - Auth, guards e realtime auth.
 - Users, Departments, Messaging, CRM, Campaigns e Tickets para entitlement enforcement.
-- Frontend `/admin/*` e `src/lib/nexos-api.ts`.
+- Frontend `/admin/*` e `src/lib/trixus-api.ts`.
 - `scripts/verify.mjs`, `package.json`, `docs/CHANGELOG.md` e `sprints/README.md`.
 
 ## 48. Files removed
@@ -438,9 +438,9 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 | M97     | REST fallback                | implementado                                                             | platformApi                                | PASS    |
 | M98     | platform health              | protegido e sanitizado                                                   | GET `/platform/health`                     | PASS    |
 | M99     | Redis degraded               | readiness degradada sem expor segredo                                    | health/admin monitor                       | PASS    |
-| M100    | migration nexos_1300         | aplicada                                                                 | migrate deploy                             | PASS    |
-| M101    | migration nexos_0802         | aplicada sem reset                                                       | migrate deploy                             | PASS    |
-| M102    | migration nexos_0801         | aplicada sem reset                                                       | migrate deploy                             | PASS    |
+| M100    | migration trixus_1300         | aplicada                                                                 | migrate deploy                             | PASS    |
+| M101    | migration trixus_0802         | aplicada sem reset                                                       | migrate deploy                             | PASS    |
+| M102    | migration trixus_0801         | aplicada sem reset                                                       | migrate deploy                             | PASS    |
 | M103    | backfill tenants             | aplicado                                                                 | migration/seed                             | PASS    |
 | M104    | data preservation            | sem reset em 0801/0802                                                   | migrate deploy                             | PASS    |
 | M105    | orphan audit                 | nao documentado em consulta propria                                      | pendente                                   | PARTIAL |
@@ -506,7 +506,7 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 O rework fechou as lacunas funcionais que impediam a homologacao fisica do plano de controle:
 
 - `/admin/empresas` agora possui wizard real de criacao de tenant, sem mock runtime e sem dialogs nativos.
-- `/admin/empresas/$tenantId` entrega detalhe completo do tenant, usuarios, departamentos, conexoes, faturas, usage, auditoria e governanca.
+- `/admin/empresas/$tenantId` entrega detalhe completo do tenant, usuarios, departamentos, cotrixuses, faturas, usage, auditoria e governanca.
 - Suspensao, reativacao e terminacao exigem motivo, confirmacao explicita e exibem impacto operacional antes da acao.
 - Impersonacao passou a usar tokens emitidos pelo backend, banner persistente em rotas operacionais, stop manual, expiracao e encerramento no logout.
 - Mutacoes high-risk durante impersonacao sao bloqueadas no backend com `IMPERSONATION_HIGH_RISK_ACTION_BLOCKED`.
@@ -543,7 +543,7 @@ O rework fechou as lacunas funcionais que impediam a homologacao fisica do plano
 | M182 | SUPPORT seed/RBAC                | leitura permitida, high-risk negado                | seed + e2e                                                      | PASS    |
 | M183 | READONLY seed/RBAC               | leitura permitida, impersonation negada            | seed + e2e                                                      | PASS    |
 | M184 | tenant admin denial              | sem platform role recebe 403                       | e2e existente                                                   | PASS    |
-| M185 | frontend client tests            | 10 testes passados                                 | `bunx vitest run src/lib/nexos-api.test.ts --environment jsdom` | PASS    |
+| M185 | frontend client tests            | 10 testes passados                                 | `bunx vitest run src/lib/trixus-api.test.ts --environment jsdom` | PASS    |
 | M186 | backend tests                    | 150 testes passados                                | `bun run --cwd backend test`                                    | PASS    |
 | M187 | verify #1                        | passou                                             | `bun run verify`                                                | PASS    |
 | M188 | verify #2                        | passou                                             | `bun run verify`                                                | PASS    |
@@ -559,10 +559,10 @@ Evidencias executadas apos o rework:
 
 - `bun run --cwd backend build` - PASS.
 - `bunx tsc --noEmit` - PASS.
-- `bun run --cwd backend test` com `DATABASE_URL/NEXOS_TEST_DATABASE_URL` apontando para `nexos_0801` - PASS, 23 arquivos e 150 testes.
+- `bun run --cwd backend test` com `DATABASE_URL/TRIXUS_TEST_DATABASE_URL` apontando para `trixus_0801` - PASS, 23 arquivos e 150 testes.
 - `bun run build` - PASS.
 - `bun run lint` - PASS dentro do baseline legado permitido.
-- `bunx vitest run src/lib/nexos-api.test.ts src/routes/-instancias.test.ts --environment jsdom` - PASS, 13 testes.
+- `bunx vitest run src/lib/trixus-api.test.ts src/routes/-instancias.test.ts --environment jsdom` - PASS, 13 testes.
 - `bun run test:platform-admin-legacy-runtime` - PASS.
 - `bun run verify` - PASS.
 - `bun run verify` - PASS.
@@ -574,7 +574,7 @@ Bloqueio fisico tratado:
 - Endpoint afetado: `DELETE /api/messaging/connections/:id`.
 - Connection fisica: `Homologacao Nata Clean 02`, external reference `26293569-homologacao-nata-clean-02-72d6fc55`.
 - Causa raiz: o fluxo antigo chamava Evolution e depois tentava hard delete local; a Connection tinha 19 Conversations, 154 Messages, 1 Campaign, 1 CampaignRecipient e 2 Tickets relacionados. `Campaign.connectionId` e demais FKs historicas impediam o delete com `onDelete: Restrict`, resultando em erro interno.
-- Regra final: Remover significa arquivar a Connection no Nexos, remover/logout da instancia Evolution quando aplicavel, preservar historico e bloquear novos usos.
+- Regra final: Remover significa arquivar a Connection no Trixus, remover/logout da instancia Evolution quando aplicavel, preservar historico e bloquear novos usos.
 - O provider `404 Instance not found` e Connection ja removida sao tratados como sucesso idempotente.
 - Falha temporaria da Evolution retorna 503 canonico `EVOLUTION_PROVIDER_UNAVAILABLE`, sem archive local parcial.
 - `MessagingConnection.status=REMOVED`, `archivedAt` definido, `externalReference=null`, owner/provider local limpo.
@@ -584,24 +584,24 @@ Bloqueio fisico tratado:
 
 Credenciais platform:
 
-- `platformAdminEmail=platform@nexo.app`
-- `platformSupportEmail=platform-support@nexo.app`
-- `platformReadonlyEmail=platform-readonly@nexo.app`
+- `platformAdminEmail=platform@trixus.app`
+- `platformSupportEmail=platform-support@trixus.app`
+- `platformReadonlyEmail=platform-readonly@trixus.app`
 - Senhas definidas via ambiente no seed fisico; nenhuma senha foi registrada no Git ou neste relatorio.
 - Comando oficial de redefinicao local:
 
 ```powershell
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0802?schema=public"
-$env:NEXOS_PLATFORM_ADMIN_EMAIL="<email-admin>"
-$env:NEXOS_PLATFORM_ADMIN_PASSWORD="<senha-temporaria>"
-$env:NEXOS_PLATFORM_SUPPORT_EMAIL="<email-support>"
-$env:NEXOS_PLATFORM_SUPPORT_PASSWORD="<senha-temporaria>"
-$env:NEXOS_PLATFORM_READONLY_EMAIL="<email-readonly>"
-$env:NEXOS_PLATFORM_READONLY_PASSWORD="<senha-temporaria>"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
+$env:TRIXUS_PLATFORM_ADMIN_EMAIL="<email-admin>"
+$env:TRIXUS_PLATFORM_ADMIN_PASSWORD="<senha-temporaria>"
+$env:TRIXUS_PLATFORM_SUPPORT_EMAIL="<email-support>"
+$env:TRIXUS_PLATFORM_SUPPORT_PASSWORD="<senha-temporaria>"
+$env:TRIXUS_PLATFORM_READONLY_EMAIL="<email-readonly>"
+$env:TRIXUS_PLATFORM_READONLY_PASSWORD="<senha-temporaria>"
 bun run backend:prisma:seed
 ```
 
-Evidencia fisica sanitizada em `nexos_0802`:
+Evidencia fisica sanitizada em `trixus_0802`:
 
 - `healthOk=true`
 - ADMIN: `context=platform`, `platformRole=ADMIN`
@@ -619,7 +619,7 @@ Evidencia fisica sanitizada em `nexos_0802`:
 
 | ID   | Meta                                 | Resultado                                                                  | Evidencia                      | Status  |
 | ---- | ------------------------------------ | -------------------------------------------------------------------------- | ------------------------------ | ------- |
-| M194 | connection delete failure reproduced | reproduzido por auditoria SQL segura                                       | FKs historicas em `nexos_0802` | PASS    |
+| M194 | connection delete failure reproduced | reproduzido por auditoria SQL segura                                       | FKs historicas em `trixus_0802` | PASS    |
 | M195 | delete root cause                    | hard delete contra FK restrict de Campaign/historico                       | schema + consulta fisica       | PASS    |
 | M196 | delete lifecycle rule                | remover = archive + provider delete/logout + historico preservado          | service/UI/report              | PASS    |
 | M197 | provider 404 idempotency             | 404 tratado como sucesso                                                   | unit test                      | PASS    |
@@ -697,7 +697,7 @@ Stack original sanitizado:
 ```text
 PrismaClientValidationError:
 Invalid `this.prisma.tenant.findMany()` invocation in
-C:\Users\Rabel\Downloads\Nexos Project\backend\src\platform\platform.service.ts:139:26
+C:\Users\Rabel\Downloads\Trixus Project\backend\src\platform\platform.service.ts:139:26
 
 take: "20"
 Argument `take`: Invalid value provided. Expected Int, provided String.
@@ -722,14 +722,14 @@ Auditoria fisica de processo:
 - Antes da correcao havia um unico listener em `0.0.0.0:3001`, PID `31996`, `node ... tsx ... src/main.ts`.
 - Apos a correcao, a porta foi revalidada com um unico listener em `0.0.0.0:3001`, PID `34228`, `node ... tsx ... src/main.ts`.
 
-Migration `nexos_0802`:
+Migration `trixus_0802`:
 
 - `bun run --cwd backend prisma migrate status` retornou `Database schema is up to date!`.
 - Migration `20260804130000_saas_control_plane` aplicada.
 - Tabelas auditadas presentes: `plans`, `tenant_subscriptions`, `subscription_history`, `invoices`, `invoice_counters`, `platform_audit_logs`, `impersonation_sessions`, `tenant_usage_snapshots`.
 - Colunas auditadas presentes: `tenants.status`, `tenants.authRevokedAt`, `users.platformRole`.
 
-HTTP fisico na porta 3001 com usuario real `platform@nexo.app` (`platformRole=ADMIN`) e token platform:
+HTTP fisico na porta 3001 com usuario real `platform@trixus.app` (`platformRole=ADMIN`) e token platform:
 
 | Endpoint                          | Resultado |
 | --------------------------------- | --------- |
@@ -743,17 +743,17 @@ HTTP fisico na porta 3001 com usuario real `platform@nexo.app` (`platformRole=AD
 
 Observacao fisica:
 
-- `platform@nexo.app` existe em `nexos_0802` como `platformRole=ADMIN` e `status=ACTIVE`.
+- `platform@trixus.app` existe em `trixus_0802` como `platformRole=ADMIN` e `status=ACTIVE`.
 - Login com senha padrao `demo1234` retornou 401, coerente com credenciais fisicas redefinidas por seed via ambiente no rework anterior.
 - O teste HTTP protegido usou token platform assinado para o usuario real, sem imprimir segredo, senha, hash ou JWT.
-- Dashboard retornou tenants reais; tenants retornou `Homologacao Nexos`; plans retornou `Professional`; subscriptions retornou assinatura real; invoices/audit retornaram empty state canonico.
+- Dashboard retornou tenants reais; tenants retornou `Homologacao Trixus`; plans retornou `Professional`; subscriptions retornou assinatura real; invoices/audit retornaram empty state canonico.
 - Validacao visual no navegador permanece pendente do Product Owner, mas a causa dos `Internal server error` das telas reais foi removida na API.
 
 Evidencias automatizadas:
 
 - `bun run --cwd backend build` - PASS.
 - `bun run --cwd backend test -- platform-query.spec.ts platform.service.spec.ts` - PASS, 7 testes.
-- `bunx vitest run src/lib/nexos-api.test.ts src/routes/-instancias.test.ts --environment jsdom` - PASS, 16 testes.
+- `bunx vitest run src/lib/trixus-api.test.ts src/routes/-instancias.test.ts --environment jsdom` - PASS, 16 testes.
 - `bun run --cwd backend test -- app.e2e-spec.ts` - PASS, 63 testes.
 - `bun run --cwd backend test` - PASS, 24 arquivos e 159 testes.
 - `bun run verify` - PASS.
@@ -767,7 +767,7 @@ Evidencias automatizadas:
 | M222 | platform plans failure reproduced   | 500 fisico antes da correcao             | smoke porta 3001                  | PASS    |
 | M223 | subscriptions failure reproduced    | 500 fisico antes da correcao             | smoke porta 3001                  | PASS    |
 | M224 | backend process audit               | unico listener auditado                  | PID 31996 antes, PID 34228 depois | PASS    |
-| M225 | migration nexos_0802 audit          | schema atualizado                        | migrate status + tabela/coluna    | PASS    |
+| M225 | migration trixus_0802 audit          | schema atualizado                        | migrate status + tabela/coluna    | PASS    |
 | M226 | platform controller DI audit        | `@Inject(PlatformService)` confirmado    | controller                        | PASS    |
 | M227 | platform module audit               | providers/imports resolvidos             | bootstrap e2e                     | PASS    |
 | M228 | platform auth context audit         | `context=platform` e permissoes anexadas | guard + e2e                       | PASS    |

@@ -19,11 +19,11 @@ Rework tecnico implementado e validado por testes automatizados. Homologacao fis
 - Relatorios invalidam por realtime, sem polling.
 - Exportacao usa o mesmo resultado do relatorio.
 - Encerramento preserva `lastMessageAt`.
-- `cleanup:operations` audita orfaos, departamento `Teste`, conexoes arquivadas e inconsistencias de fechamento.
+- `cleanup:operations` audita orfaos, departamento `Teste`, cotrixuses arquivadas e inconsistencias de fechamento.
 
 ## Testes
 
-- Verify inicial em `nexos_0801`: PASS duas vezes.
+- Verify inicial em `trixus_0801`: PASS duas vezes.
 - Backend build: PASS.
 - Backend test: PASS, 161 testes.
 - Frontend typecheck: PASS.

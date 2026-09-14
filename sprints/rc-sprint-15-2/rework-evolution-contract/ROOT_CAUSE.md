@@ -2,7 +2,7 @@
 
 ## Text
 
-Evolution API v2.3.7 validates `/message/sendText/:instanceName` with root fields `number` and `text`. Nexos was sending `textMessage: { text }`, which produced:
+Evolution API v2.3.7 validates `/message/sendText/:instanceName` with root fields `number` and `text`. Trixus was sending `textMessage: { text }`, which produced:
 
 ```text
 instance requires property "text"
@@ -10,7 +10,7 @@ instance requires property "text"
 
 ## Reaction
 
-Evolution API v2.3.7 validates `/message/sendReaction/:instanceName` with root fields `key` and `reaction`. Nexos was sending `reactionKey` and `reactionMessage`, which produced:
+Evolution API v2.3.7 validates `/message/sendReaction/:instanceName` with root fields `key` and `reaction`. Trixus was sending `reactionKey` and `reactionMessage`, which produced:
 
 ```text
 instance requires property "key"
@@ -19,7 +19,7 @@ instance requires property "reaction"
 
 ## Reply
 
-Reply payloads need a provider key, not only a Nexos internal message id. The key must include the quoted provider message id, remote chat JID and original direction. Group replies keep the group as destination and use participant only inside the quoted key when available.
+Reply payloads need a provider key, not only a Trixus internal message id. The key must include the quoted provider message id, remote chat JID and original direction. Group replies keep the group as destination and use participant only inside the quoted key when available.
 
 ## Recipient
 
@@ -31,4 +31,4 @@ Evolution API v2.3.7 accepts media upload on `/message/sendMedia/:instanceName` 
 
 ## Inbound Media
 
-The current rework corrected outbound media contract. Full inbound media download/storage/serving validation remains pending in the physical Nexos flow.
+The current rework corrected outbound media contract. Full inbound media download/storage/serving validation remains pending in the physical Trixus flow.

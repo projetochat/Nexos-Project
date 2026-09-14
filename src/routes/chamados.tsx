@@ -60,7 +60,7 @@ import {
   type ApiTicketPriority,
   type ApiTicketStatus,
   type ApiUserMembership,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
@@ -195,7 +195,7 @@ function ChamadosPage() {
           <EmptyState
             icon={<Ticket className="h-5 w-5" />}
             title="Nenhum chamado"
-            description="Crie um chamado com workflow, comentários e anexos privados."
+            description="Crie um chamado com workflow, comentários e atrixus privados."
             action={
               <Button variant="primary" size="sm" onClick={novo.show}>
                 <Plus className="h-3.5 w-3.5" /> Criar chamado
@@ -694,7 +694,7 @@ function TicketEditor({
         </Field>
         <div className="rounded-lg border border-dashed border-border bg-surface-1 p-4">
           <p className="mb-2 text-sm font-medium">
-            Anexo <span className="font-normal text-muted-foreground">(opcional)</span>
+            Atrixus <span className="font-normal text-muted-foreground">(opcional)</span>
           </p>
           <label className="flex min-h-20 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card text-sm text-muted-foreground hover:border-primary hover:text-primary">
             <Paperclip className="h-4 w-4" />
@@ -1127,7 +1127,7 @@ function Attachments({
     setBusy(true);
     try {
       await ticketApi.uploadAttachment(ticketId, file);
-      toast.success("Anexo enviado");
+      toast.success("Atrixus enviado");
       onChanged();
     } catch (error) {
       toast.error((error as Error).message);
@@ -1153,7 +1153,7 @@ function Attachments({
   return (
     <section>
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Anexos privados</h3>
+        <h3 className="text-sm font-semibold">Atrixus privados</h3>
         {!readOnly && (
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-surface-1">
             <Paperclip className="h-3.5 w-3.5" /> {busy ? "Enviando..." : "Anexar"}
@@ -1183,7 +1183,7 @@ function Attachments({
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label="Visualizar anexo"
+                aria-label="Visualizar atrixus"
                 onClick={() => preview(item)}
               >
                 <Eye className="h-4 w-4" />
@@ -1191,7 +1191,7 @@ function Attachments({
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label="Baixar anexo"
+                aria-label="Baixar atrixus"
                 onClick={() => download(item)}
               >
                 <Download className="h-4 w-4" />
@@ -1201,7 +1201,7 @@ function Attachments({
                   variant="ghost"
                   size="sm"
                   className="trash-action"
-                  aria-label="Remover anexo"
+                  aria-label="Remover atrixus"
                   onClick={async () => {
                     await ticketApi.deleteAttachment(ticketId, item.id);
                     onChanged();
@@ -1214,7 +1214,7 @@ function Attachments({
           </Card>
         ))}
         {items.length === 0 && (
-          <p className="text-sm text-muted-foreground">Nenhum anexo disponível.</p>
+          <p className="text-sm text-muted-foreground">Nenhum atrixus disponível.</p>
         )}
       </div>
     </section>

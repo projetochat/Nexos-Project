@@ -221,7 +221,7 @@ export class RealtimeService {
     try {
       await client.connect();
       await client.set(
-        `nexos:presence:${context.tenantId}:${context.membershipId}`,
+        `trixus:presence:${context.tenantId}:${context.membershipId}`,
         JSON.stringify({ status, userId: context.userId, updatedAt: new Date().toISOString() }),
         "EX",
         ttl,
@@ -239,7 +239,7 @@ export class RealtimeService {
     const client = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: null });
     try {
       await client.connect();
-      await client.del(`nexos:presence:${context.tenantId}:${context.membershipId}`);
+      await client.del(`trixus:presence:${context.tenantId}:${context.membershipId}`);
     } catch {
       this.adapter = this.adapter === "redis" ? "redis_degraded" : this.adapter;
     } finally {

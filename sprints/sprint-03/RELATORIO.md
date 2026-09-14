@@ -12,7 +12,7 @@ READY FOR SPRINT 04
 
 ## 2. Resumo executivo
 
-A Sprint 03 migrou o dominio de CRM (`/clientes` e `/contatos`) para a Nexos API em NestJS, Prisma e PostgreSQL. Clientes, contatos, etiquetas e vinculos agora sao tenant-scoped, autorizados por permissions server-side e persistidos no banco local.
+A Sprint 03 migrou o dominio de CRM (`/clientes` e `/contatos`) para a Trixus API em NestJS, Prisma e PostgreSQL. Clientes, contatos, etiquetas e vinculos agora sao tenant-scoped, autorizados por permissions server-side e persistidos no banco local.
 
 Supabase foi removido dessas duas superficies. Os demais fluxos legados continuam preservados.
 
@@ -26,7 +26,7 @@ Supabase foi removido dessas duas superficies. Os demais fluxos legados continua
 - Bun: `1.3.14`
 - Docker: `29.1.3`
 - Docker Compose: `v2.40.3-desktop.1`
-- PostgreSQL container: `nexos-postgres` healthy
+- PostgreSQL container: `trixus-postgres` healthy
 - Verify inicial: PASS
 
 ## 4. Decisao de dominio
@@ -109,7 +109,7 @@ Regra implementada:
 
 - `src/routes/clientes.tsx`
 - `src/routes/contatos.tsx`
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 
 As telas passam a usar `crmApi` e nao importam `CUSTOMERS`, `CONTACTS` ou `CATALOG` de `src/lib/mvp.ts`.
 
@@ -183,10 +183,10 @@ Durante smoke foi encontrado e corrigido bug de query string `pageSize` chegando
 
 ```text
 [X] http://localhost:5173 abre corretamente
-[X] Login Nexos funciona
+[X] Login Trixus funciona
 [X] Frontend comunica com http://localhost:3001/api
-[X] /clientes funciona com Nexos API
-[X] /contatos funciona com Nexos API
+[X] /clientes funciona com Trixus API
+[X] /contatos funciona com Trixus API
 [X] Nenhum "Failed to fetch" nas funcionalidades migradas
 ```
 
@@ -219,7 +219,7 @@ Ainda legado fora do escopo Sprint 03:
 - `backend/package.json`
 - `backend/scripts/copy-prisma-client.mjs`
 - `backend/test/app.e2e-spec.ts`
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 - `src/routes/clientes.tsx`
 - `src/routes/contatos.tsx`
 - `docs/API.md`

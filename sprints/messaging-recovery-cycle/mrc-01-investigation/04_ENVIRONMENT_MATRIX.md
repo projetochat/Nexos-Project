@@ -13,10 +13,10 @@ Observed keys:
 - `EVOLUTION_WEBHOOK_SECRET` present
 - `DATABASE_URL` present
 - `REDIS_URL=redis://localhost:6379`
-- `NEXOS_QUEUE_ENABLED=true`
-- `NEXOS_QUEUE_WORKER_ENABLED=true`
-- `NEXOS_OUTBOX_DISPATCHER_ENABLED=true`
-- `NEXOS_OUTBOUND_WORKER_CONCURRENCY=5`
+- `TRIXUS_QUEUE_ENABLED=true`
+- `TRIXUS_QUEUE_WORKER_ENABLED=true`
+- `TRIXUS_OUTBOX_DISPATCHER_ENABLED=true`
+- `TRIXUS_OUTBOUND_WORKER_CONCURRENCY=5`
 
 ## Examples
 
@@ -24,12 +24,12 @@ Observed keys:
 
 ## Drift Risk
 
-Prisma migrate status reported database `nexos`, while some historical sprint references and manual checks used `nexos_0802`.
+Prisma migrate status reported database `trixus`, while some historical sprint references and manual checks used `trixus_0802`.
 
 This matters because:
 
-- `nexos` has 705 messages but does not contain the newly expected messaging core columns.
-- `nexos_0802` contains `providerChatId`, `providerParticipantId`, `quotedProviderMessageId`, `mediaStorageKey` and `mediaChecksum`.
+- `trixus` has 705 messages but does not contain the newly expected messaging core columns.
+- `trixus_0802` contains `providerChatId`, `providerParticipantId`, `quotedProviderMessageId`, `mediaStorageKey` and `mediaChecksum`.
 - The same codebase can pass build/tests and still fail at runtime if the backend points to the database without the required migration.
 
 MRC-02 must freeze the official homologation database before any correction.

@@ -649,11 +649,11 @@ function hashToken(token: string) {
 }
 
 function exposeLocalTokens() {
-  return process.env.NODE_ENV !== "production" || process.env.NEXOS_EXPOSE_LOCAL_TOKENS === "true";
+  return process.env.NODE_ENV !== "production" || process.env.TRIXUS_EXPOSE_LOCAL_TOKENS === "true";
 }
 
 function publicAppUrl() {
-  return (process.env.NEXOS_PUBLIC_APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
+  return (process.env.TRIXUS_PUBLIC_APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
 }
 
 function normalizeAvatarUrl(value: string | null | undefined) {

@@ -8,7 +8,7 @@ MRC-01 was executed as investigation only. No functional fix was intentionally a
 
 - Git branch, HEAD and dirty worktree state.
 - Runtime versions for Bun, Node and Docker.
-- Docker container state for Nexos, Redis, Postgres and Evolution.
+- Docker container state for Trixus, Redis, Postgres and Evolution.
 - Health checks from host and Evolution container.
 - Evolution API version: `2.3.7`.
 - Queue counts and failed job samples.

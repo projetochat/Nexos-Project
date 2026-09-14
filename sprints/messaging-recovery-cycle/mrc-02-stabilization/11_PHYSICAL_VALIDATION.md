@@ -30,7 +30,7 @@ The gate cannot be approved without this matrix:
 
 - Evolution API v2.3.7 health returned successfully.
 - Controlled backend runtime window returned healthy API.
-- Evolution container reached Nexos health during the controlled runtime window.
+- Evolution container reached Trixus health during the controlled runtime window.
 - BullMQ queue cleanup verified zero residual jobs after test run.
 
 ## Gate Impact

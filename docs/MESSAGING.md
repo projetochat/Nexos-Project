@@ -29,7 +29,7 @@ Implemented:
 
 Gate:
 - Automated backend tests passed for the hotfix scope.
-- Full physical outage/recovery validation with WhatsApp real, Evolution and Nexos remains pending.
+- Full physical outage/recovery validation with WhatsApp real, Evolution and Trixus remains pending.
 - Current gate remains `OUTBOUND DISPATCHER HOTFIX REQUIRED` until physical evidence is attached.
 
 ## RC Sprint 15.2 rework - Evolution contract normalization
@@ -47,4 +47,4 @@ Implemented:
 - Audio/voice upload uses multipart field `file` on `/message/sendWhatsAppAudio/:instanceName`.
 - Evolution validation 400 responses with `requires property` are classified as `INVALID_PROVIDER_PAYLOAD`, not `INVALID_RECIPIENT`.
 
-Direct Evolution physical smokes passed for text, reaction add/remove, image, document and audio. Full Nexos end-to-end physical validation remains pending, so the gate remains `EVOLUTION CONTRACT REWORK REQUIRED`.
+Direct Evolution physical smokes passed for text, reaction add/remove, image, document and audio. Full Trixus end-to-end physical validation remains pending, so the gate remains `EVOLUTION CONTRACT REWORK REQUIRED`.

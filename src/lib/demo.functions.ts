@@ -8,8 +8,8 @@ export const ensureDemoUsers = createServerFn({ method: "POST" }).handler(async 
 
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const demos = [
-    { email: "admin@nexo.app", password: "demo1234", nome: "Ana Ribeiro", role: "admin" },
-    { email: "atendente@nexo.app", password: "demo1234", nome: "Camila Duarte", role: "agent" },
+    { email: "admin@trixus.app", password: "demo1234", nome: "Ana Ribeiro", role: "admin" },
+    { email: "atendente@trixus.app", password: "demo1234", nome: "Camila Duarte", role: "agent" },
   ];
   for (const d of demos) {
     // Tenta criar; se já existir, ignora

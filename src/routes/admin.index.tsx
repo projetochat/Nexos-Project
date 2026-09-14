@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { AdminContainer } from "@/components/admin-shell";
 import { Badge, Card, SectionHeader } from "@/components/ui-kit";
-import { platformApi, type PlatformDashboard } from "@/lib/nexos-api";
+import { platformApi, type PlatformDashboard } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/")({
   head: () => ({ meta: [{ title: "Dashboard · Trixus Admin" }] }),

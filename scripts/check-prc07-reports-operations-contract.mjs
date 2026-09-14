@@ -17,7 +17,7 @@ function includesAll(text, values) {
 const controller = read("backend/src/operations/operations.controller.ts");
 const service = read("backend/src/operations/operations.service.ts");
 const metrics = read("backend/src/operations/operations-metrics.service.ts");
-const api = read("src/lib/nexos-api.ts");
+const api = read("src/lib/trixus-api.ts");
 const dashboard = read("src/routes/index.tsx");
 const history = read("src/routes/historico.tsx");
 const reports = read("src/routes/relatorios.tsx");
@@ -74,7 +74,7 @@ check(
     'format === "xlsx"',
     "text/csv; charset=utf-8",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "nexos-atendimento.xlsx",
+    "trixus-atendimento.xlsx",
     "zipStore",
     "crc32",
     "%PDF-1.4",

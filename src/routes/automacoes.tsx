@@ -19,7 +19,7 @@ import {
   organizationApi,
   type ApiAutomationRule,
   type ApiDepartment,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 import { num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
@@ -28,8 +28,8 @@ export const Route = createFileRoute("/automacoes")({
   component: Page,
 });
 
-const automationQueryKey = ["nexos", "automations"] as const;
-const departmentsQueryKey = ["nexos", "departments"] as const;
+const automationQueryKey = ["trixus", "automations"] as const;
+const departmentsQueryKey = ["trixus", "departments"] as const;
 
 type AutomationActionInput = "BOT_REPLY" | "ASSIGN_DEPARTMENT" | "NOTIFY_TEAM";
 

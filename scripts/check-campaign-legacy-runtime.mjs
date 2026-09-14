@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const files = ["src/routes/campanhas.tsx", "src/lib/nexos-api.ts"].map((file) => ({
+const files = ["src/routes/campanhas.tsx", "src/lib/trixus-api.ts"].map((file) => ({
   file,
   content: readFileSync(resolve(root, file), "utf8"),
 }));

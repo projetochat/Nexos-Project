@@ -33,25 +33,25 @@ Rollback de banco Evolution, se a migracao de `v2.3.7` precisar ser revertida:
 
 ```powershell
 docker compose stop evolution-api
-docker exec nexos-evolution-postgres dropdb -U evolution evolution_db
-docker exec nexos-evolution-postgres createdb -U evolution evolution_db
-docker cp backups/evolution-before-0804.dump nexos-evolution-postgres:/tmp/evolution-before-0804.dump
-docker exec nexos-evolution-postgres pg_restore -U evolution -d evolution_db /tmp/evolution-before-0804.dump
+docker exec trixus-evolution-postgres dropdb -U evolution evolution_db
+docker exec trixus-evolution-postgres createdb -U evolution evolution_db
+docker cp backups/evolution-before-0804.dump trixus-evolution-postgres:/tmp/evolution-before-0804.dump
+docker exec trixus-evolution-postgres pg_restore -U evolution -d evolution_db /tmp/evolution-before-0804.dump
 docker compose up -d evolution-api
 ```
 
 ## Evidencia 2026-08-03
 
-- Container `nexos-evolution-api`: `evoapicloud/evolution-api:v2.3.7`.
+- Container `trixus-evolution-api`: `evoapicloud/evolution-api:v2.3.7`.
 - Health raiz Evolution: `version=2.3.7`.
 - Instancia aberta: `26293569-whatsapp-nata-cffd5f5c`.
 - Webhook da instancia aberta: `enabled=true`, URL `http://host.docker.internal:3001/api/webhooks/evolution`, eventos `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `SEND_MESSAGE_UPDATE`, `QRCODE_UPDATED`, `CONNECTION_UPDATE`.
-- Nexos `nexos_0802`: uma `messaging_connections` conectada apontando para `26293569-whatsapp-nata-cffd5f5c`, owner normalizado `+556292728679`.
+- Trixus `trixus_0802`: uma `messaging_connections` conectada apontando para `26293569-whatsapp-nata-cffd5f5c`, owner normalizado `+556292728679`.
 - Dados de homologacao preservados: 2 usuarios, 2 memberships, 1 contato ativo, 2 conversas, 5 mensagens, 5 outbox events.
 
 ## Webhook connectivity/auth recovery
 
-Contrato fisico Evolution -> Nexos:
+Contrato fisico Evolution -> Trixus:
 
 ```text
 URL: http://host.docker.internal:3001/api/webhooks/evolution
@@ -111,7 +111,7 @@ Antes e depois do upgrade, logs reais mostraram falhas de decriptacao Signal/Bai
 - `failed to decrypt message`
 - JIDs `@lid` acompanhados de `senderPn`/`participantPn`
 
-Nao registrar buffers, chaves ou material de sessao em docs, commits ou tickets. A camada Nexos so deve alterar traducao de payload quando houver `MESSAGES_UPSERT` valido chegando ao webhook. Se payload valido vier com `remoteJid @lid` e `senderPn @s.whatsapp.net`, usar a identidade PN; nunca tratar LID como telefone.
+Nao registrar buffers, chaves ou material de sessao em docs, commits ou tickets. A camada Trixus so deve alterar traducao de payload quando houver `MESSAGES_UPSERT` valido chegando ao webhook. Se payload valido vier com `remoteJid @lid` e `senderPn @s.whatsapp.net`, usar a identidade PN; nunca tratar LID como telefone.
 
 ## Outbound error contract
 
@@ -133,9 +133,9 @@ Logs nunca devem imprimir `apikey`, `api_key`, `secret`, `token`, `authorization
 Contrato confirmado na instalacao local `evoapicloud/evolution-api:v2.3.7`, arquivo `/evolution/dist/validate/message.schema.js`:
 
 - Texto: `POST /message/sendText/:instanceName`, JSON root `number` e `text`.
-- Reply: campo `quoted.key` com `id`; Nexos tambem envia `remoteJid`, `fromMe` e `participant` quando disponiveis.
+- Reply: campo `quoted.key` com `id`; Trixus tambem envia `remoteJid`, `fromMe` e `participant` quando disponiveis.
 - Reacao: `POST /message/sendReaction/:instanceName`, JSON root `key` e `reaction`.
 - Imagem/documento: `POST /message/sendMedia/:instanceName`, multipart com `number`, `mediatype` e arquivo no campo `file`.
 - Audio/voice/PTT: `POST /message/sendWhatsAppAudio/:instanceName`, multipart com `number` e arquivo no campo `file`.
 
-Smokes diretos contra a instancia aberta `7c776a09-homologacao-whats-nata-a2250ad4` passaram para texto, reacao add/remove, imagem, documento e audio. O teste completo via Nexos/Outbox permanece pendente.
+Smokes diretos contra a instancia aberta `7c776a09-homologacao-whats-nata-a2250ad4` passaram para texto, reacao add/remove, imagem, documento e audio. O teste completo via Trixus/Outbox permanece pendente.

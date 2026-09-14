@@ -7,13 +7,13 @@ import { AppShell, PageContainer } from "@/components/app-shell";
 import { Button, Card, Field, Input, SectionHeader, SearchInput } from "@/components/ui-kit";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
 import { num } from "@/lib/format";
-import { crmApi, type ApiTag } from "@/lib/nexos-api";
+import { crmApi, type ApiTag } from "@/lib/trixus-api";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/etiquetas")({ component: Page });
 
-const tagsQueryKey = ["nexos", "tags"] as const;
+const tagsQueryKey = ["trixus", "tags"] as const;
 
 function tagWithLogFallback(tag: ApiTag, previous?: ApiTag | null) {
   const now = new Date().toISOString();

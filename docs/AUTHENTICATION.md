@@ -6,7 +6,7 @@ IMPLEMENTADO:
 
 - Login por `supabase.auth.signInWithPassword`.
 - Logout por `supabase.auth.signOut`.
-- Sessao client-side em Supabase Auth e store Zustand persistido `nexo.session`.
+- Sessao client-side em Supabase Auth e store Zustand persistido `trixus.session`.
 - Hidratacao em `SessionHydrator`.
 - Contas demo criadas por `ensureDemoUsers`.
 - Atualizacao de status do agente para `online`/`offline`.
@@ -66,7 +66,7 @@ Hardening:
 
 - `ensureDemoUsers` deixou de ser chamado pela tela de login.
 - `ensureDemoUsers` agora exige `ALLOW_DEMO_USER_PROVISIONING=true`.
-- Login frontend tenta a Nexos API e cai para o login Supabase legado apenas se a API local estiver indisponivel ou recusar a tentativa.
+- Login frontend tenta a Trixus API e cai para o login Supabase legado apenas se a API local estiver indisponivel ou recusar a tentativa.
 
 ## Sprint 01.1 - Decisao Definitiva
 
@@ -78,7 +78,7 @@ DEFINITIVO:
 TEMPORARIO:
 
 - Supabase Auth permanece como fallback de migracao para fluxos MVP ainda nao migrados.
-- O fallback atual e `Nexos API -> Supabase`. Ele existe para preservar o produto enquanto telas dependem de Supabase Auth/RLS.
+- O fallback atual e `Trixus API -> Supabase`. Ele existe para preservar o produto enquanto telas dependem de Supabase Auth/RLS.
 
 Criterio de remocao do fallback:
 
@@ -94,8 +94,8 @@ Risco de permanencia:
 
 DEFINITIVO IMPLEMENTADO:
 
-- `/login`, `hydrateSession`, `signIn` e `signOut` usam a Nexos API.
-- O fallback `Nexos API -> Supabase Auth` foi removido das superficies de organizacao.
+- `/login`, `hydrateSession`, `signIn` e `signOut` usam a Trixus API.
+- O fallback `Trixus API -> Supabase Auth` foi removido das superficies de organizacao.
 - JWT access inclui `sub`, `tenantId`, `membershipId`, `roleId`, `roleKey`, `platformRole` e `typ`.
 - `JwtAuthGuard` converte token ausente, invalido ou malformado em `401`.
 - `PermissionsGuard` recalcula membership ativa e permissoes no banco antes de liberar a rota.
@@ -203,7 +203,7 @@ AINDA LEGADO:
 
 - `src/start.ts` ainda anexa sessao Supabase para server functions legadas.
 - `src/lib/mvp.ts` permanece legado residual, mas dashboard, historico, relatorios, filas, inbox,
-  tags e quick replies usam API Nexos nos fluxos operacionais atuais.
+  tags e quick replies usam API Trixus nos fluxos operacionais atuais.
 - `ensureDemoUsers` permanece protegido por `ALLOW_DEMO_USER_PROVISIONING=true` e nao e chamado pelo login.
 
 ## Sprint 10 Rework - RBAC operacional
@@ -227,7 +227,7 @@ Connections usam RBAC proprio:
 - `connections.read`: listar, consultar e ver saude/status.
 - `connections.manage`: criar instancia Evolution, solicitar QR e desconectar.
 
-O webhook `/api/webhooks/evolution` e publico para usuarios Nexos, mas autenticado por JWT assinado com `EVOLUTION_WEBHOOK_SECRET`. Tokens de usuario nao sao aceitos nessa rota; o token precisa carregar `app=evolution` e `action=webhook`.
+O webhook `/api/webhooks/evolution` e publico para usuarios Trixus, mas autenticado por JWT assinado com `EVOLUTION_WEBHOOK_SECRET`. Tokens de usuario nao sao aceitos nessa rota; o token precisa carregar `app=evolution` e `action=webhook`.
 
 # Sprint 08
 
@@ -237,9 +237,9 @@ Jobs BullMQ nao carregam JWT. O worker deve resolver Message, Conversation e Con
 
 DEFINITIVO:
 
-- `/login` usa somente a Nexos API.
+- `/login` usa somente a Trixus API.
 - Nao ha fallback para Supabase Auth, usuario estatico, timeout fake ou sessao mockada no fluxo real.
-- API base unica do frontend: `VITE_NEXOS_API_URL`, padrao local `http://localhost:3001/api`.
+- API base unica do frontend: `VITE_TRIXUS_API_URL`, padrao local `http://localhost:3001/api`.
 - O login nao envia `tenantSlug` fixo por padrao; o backend seleciona automaticamente a unica membership ativa. Isso permite o seed minimo `homologacao`.
 - `/api/auth/me` e o endpoint oficial de bootstrap de sessao. `/api/me` permanece por compatibilidade.
 - Tokens continuam em `localStorage` por compatibilidade com a arquitetura atual. Risco documentado: nao e HttpOnly cookie.
@@ -250,7 +250,7 @@ Contrato de homologacao:
 
 ```text
 Tenant: homologacao
-Usuario: admin@nexo.app
+Usuario: admin@trixus.app
 Senha local/homologacao: demo1234
 Role: tenant_admin
 ```
@@ -259,7 +259,7 @@ Seed configuravel:
 
 ```text
 SEED_MODE=homologation
-SEED_ADMIN_EMAIL=admin@nexo.app
+SEED_ADMIN_EMAIL=admin@trixus.app
 SEED_ADMIN_PASSWORD=demo1234
 ```
 
@@ -274,7 +274,7 @@ Erros canonicos de auth:
 | Sem membership ativa |  403 | `USER_WITHOUT_ACTIVE_MEMBERSHIP` | Seu usuario nao possui acesso a nenhuma organizacao ativa.                      |
 | Muitas tentativas    |  429 | `TOO_MANY_LOGIN_ATTEMPTS`        | Muitas tentativas de acesso. Aguarde e tente novamente.                         |
 | Erro interno         |  500 | n/a                              | Ocorreu um erro interno ao autenticar.                                          |
-| API offline          |  n/a | n/a                              | Nao foi possivel conectar a API Nexos. Verifique se o backend esta em execucao. |
+| API offline          |  n/a | n/a                              | Nao foi possivel conectar a API Trixus. Verifique se o backend esta em execucao. |
 
 Health pre-login:
 
@@ -319,13 +319,13 @@ O seed `homologation` cria dois acessos locais:
 
 | E-mail             | Role         | Departamento |
 | ------------------ | ------------ | ------------ |
-| admin@nexo.app     | tenant_admin | Atendimento  |
-| atendente@nexo.app | agent        | Atendimento  |
+| admin@trixus.app     | tenant_admin | Atendimento  |
+| atendente@trixus.app | agent        | Atendimento  |
 
 Variaveis locais:
 
 ```text
-SEED_AGENT_EMAIL=atendente@nexo.app
+SEED_AGENT_EMAIL=atendente@trixus.app
 SEED_AGENT_PASSWORD=demo1234
 ```
 
@@ -333,13 +333,13 @@ Defaults continuam bloqueados em producao.
 
 ## Sprint 09 Rework II - Refresh single-flight
 
-O client Nexos API usa refresh single-flight:
+O client Trixus API usa refresh single-flight:
 
 - requests concorrentes que recebem 401 aguardam a mesma promise de refresh;
 - cada request protegida tenta refresh e retry no maximo uma vez;
 - `/auth/login`, `/auth/refresh`, `/auth/logout` e `/health` nao entram em retry de refresh;
 - refresh 401 limpa access token, refresh token e tenant locais;
-- Socket.io consome o mesmo `refreshNexosAccessToken()`, portanto nao cria refresh paralelo ao HTTP.
+- Socket.io consome o mesmo `refreshTrixusAccessToken()`, portanto nao cria refresh paralelo ao HTTP.
 
 Esse fluxo impede o ciclo:
 

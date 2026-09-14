@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AdminContainer } from "@/components/admin-shell";
 import { Card, SectionHeader, Field, Input, Button } from "@/components/ui-kit";
 import { toast } from "sonner";
-import { platformApi, type PlatformSettings } from "@/lib/nexos-api";
+import { platformApi, type PlatformSettings } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/configuracoes")({
   head: () => ({ meta: [{ title: "Configurações · Trixus Admin" }] }),

@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsBoolean, IsDateString, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 export class CreateEvolutionConnectionDto {
   @IsString()
@@ -10,4 +10,20 @@ export class CreateEvolutionConnectionDto {
   @IsString()
   @MaxLength(100)
   instanceName?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  importHistoryEnabled?: boolean;
+
+  @IsOptional()
+  @IsDateString()
+  importHistoryStartDate?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  importGroupsEnabled?: boolean;
+
+  @IsOptional()
+  @IsDateString()
+  importGroupsStartDate?: string;
 }

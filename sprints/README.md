@@ -1,4 +1,4 @@
-# Sprints - Nexus Project
+# Sprints - Trixus Project
 
 Indice permanente dos relatorios de sprint.
 
@@ -18,4 +18,4 @@ Indice permanente dos relatorios de sprint.
 
 ## Observacao de rastreabilidade
 
-No preflight da Sprint 01, a pasta `C:\Users\Rabel\Downloads\Nexos Project` nao foi reconhecida como repositorio Git. Por isso nao ha branch, commit inicial, commit final ou diff rastreavel neste diretorio.
+No preflight da Sprint 01, a pasta `C:\Users\Rabel\Downloads\Trixus Project` nao foi reconhecida como repositorio Git. Por isso nao ha branch, commit inicial, commit final ou diff rastreavel neste diretorio.

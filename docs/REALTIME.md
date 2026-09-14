@@ -17,10 +17,10 @@ Frontend -> REST -> PostgreSQL + Outbox -> RealtimePublisher -> Socket.io -> bro
 - Namespace: `/realtime`
 - Path: `/socket.io`
 - Token: `socket.auth.accessToken`
-- Feature flag: `NEXOS_REALTIME_ENABLED`
-- Redis adapter: `NEXOS_REALTIME_REDIS_ADAPTER_ENABLED`
-- Redis usado: `REDIS_URL`, o Redis do Nexos, nunca `evolution-redis`
-- Presence TTL: `NEXOS_PRESENCE_TTL_SECONDS`
+- Feature flag: `TRIXUS_REALTIME_ENABLED`
+- Redis adapter: `TRIXUS_REALTIME_REDIS_ADAPTER_ENABLED`
+- Redis usado: `REDIS_URL`, o Redis do Trixus, nunca `evolution-redis`
+- Presence TTL: `TRIXUS_PRESENCE_TTL_SECONDS`
 
 ## Autenticação
 
@@ -84,10 +84,10 @@ publish não altera o dado persistido; a UI recupera por REST no fallback ou rec
 ## Presença
 
 Presença é efêmera. O servidor mantém contador de sockets por membership para multi-tab/multi-device e
-usa Redis Nexos com TTL:
+usa Redis Trixus com TTL:
 
 ```text
-nexos:presence:{tenantId}:{membershipId}
+trixus:presence:{tenantId}:{membershipId}
 ```
 
 Estados iniciais: `online`, `away`, `offline`.
@@ -115,7 +115,7 @@ PostgreSQL, webhook e Outbox continuam sendo caminhos de consistência.
 
 ## Rework Sprint 09 - Bootstrap e Redis adapter
 
-A falha fisica de startup no `nexos_0802` foi isolada em `ConversationsController`:
+A falha fisica de startup no `trixus_0802` foi isolada em `ConversationsController`:
 
 ```text
 index 0 = PrismaService
@@ -136,7 +136,7 @@ Socket.io no `afterInit`. Para namespace `/realtime`, o adapter deve ser aplicad
 Frontend realtime possui flag explicita:
 
 ```text
-VITE_NEXOS_REALTIME_ENABLED=true|false
+VITE_TRIXUS_REALTIME_ENABLED=true|false
 ```
 
 Quando `false`, `connectRealtime()` retorna `null`, o status externo e `disabled`, nenhum socket e criado,

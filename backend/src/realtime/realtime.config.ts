@@ -12,13 +12,13 @@ export type RealtimeConfig = {
 
 export function realtimeConfig(config: ConfigService): RealtimeConfig {
   return {
-    enabled: config.get<string>("NEXOS_REALTIME_ENABLED", "true") !== "false",
+    enabled: config.get<string>("TRIXUS_REALTIME_ENABLED", "true") !== "false",
     redisAdapterEnabled:
-      config.get<string>("NEXOS_REALTIME_REDIS_ADAPTER_ENABLED", "true") !== "false",
-    path: config.get<string>("NEXOS_REALTIME_PATH", "/socket.io"),
-    corsOrigin: config.get<string>("NEXOS_REALTIME_CORS_ORIGIN", "http://localhost:5173"),
-    presenceTtlSeconds: Number(config.get<string>("NEXOS_PRESENCE_TTL_SECONDS", "90")),
-    typingTtlMs: Number(config.get<string>("NEXOS_TYPING_TTL_MS", "5000")),
-    subscriptionLimit: Number(config.get<string>("NEXOS_REALTIME_SUBSCRIPTION_LIMIT", "25")),
+      config.get<string>("TRIXUS_REALTIME_REDIS_ADAPTER_ENABLED", "true") !== "false",
+    path: config.get<string>("TRIXUS_REALTIME_PATH", "/socket.io"),
+    corsOrigin: config.get<string>("TRIXUS_REALTIME_CORS_ORIGIN", "http://localhost:5173"),
+    presenceTtlSeconds: Number(config.get<string>("TRIXUS_PRESENCE_TTL_SECONDS", "90")),
+    typingTtlMs: Number(config.get<string>("TRIXUS_TYPING_TTL_MS", "5000")),
+    subscriptionLimit: Number(config.get<string>("TRIXUS_REALTIME_SUBSCRIPTION_LIMIT", "25")),
   };
 }

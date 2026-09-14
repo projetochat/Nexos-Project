@@ -1,6 +1,6 @@
 # Technical Debt
 
-- Environment files allow confusion between `nexos` and `nexos_0802`.
+- Environment files allow confusion between `trixus` and `trixus_0802`.
 - Migration history is not fully reproducible from local files.
 - Messaging worktree contains multiple sprint scopes mixed together.
 - Storage provider abstraction is not physically verified beyond local health.

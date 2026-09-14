@@ -1,5 +1,5 @@
 /* ============================================================
-   Nexo · SaaS Mock Data
+   Trixus · SaaS Mock Data
    Dados fictícios para o Painel Super Admin (proprietário do
    SaaS). Preparado para ser trocado por Supabase / PostgreSQL
    sem alteração das telas.

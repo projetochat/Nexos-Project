@@ -25,7 +25,7 @@ Criadas migrations:
 
 Foram adicionados enums, `Campaign`, `CampaignRecipient`, `ContactMessagingPreference`, relacoes com `Message`, `MessagingConnection`, `Contact`, `Customer`, `Tenant` e permissions de campanha.
 
-As migrations foram aplicadas em banco dedicado `nexos_1200` e em bases locais de homologacao previamente usadas.
+As migrations foram aplicadas em banco dedicado `trixus_1200` e em bases locais de homologacao previamente usadas.
 
 ## 5. Backend
 
@@ -75,7 +75,7 @@ at CampaignDispatchWorker.onModuleInit
 campaign-dispatch.worker.ts:35
 ```
 
-Causa raiz: `ConfigService.get<number>("NEXOS_CAMPAIGN_CONCURRENCY")` preservava o valor de ambiente como string em runtime, por exemplo `"1"`. A tipagem generica TypeScript nao converte o valor, e o BullMQ rejeitou `concurrency` string.
+Causa raiz: `ConfigService.get<number>("TRIXUS_CAMPAIGN_CONCURRENCY")` preservava o valor de ambiente como string em runtime, por exemplo `"1"`. A tipagem generica TypeScript nao converte o valor, e o BullMQ rejeitou `concurrency` string.
 
 Correcao aplicada:
 
@@ -84,10 +84,10 @@ Correcao aplicada:
 - adicionado `readCampaignRuntimeConfig`;
 - adicionado `positiveDelayMs`;
 - removido uso de `ConfigService.get<number>()` no dominio de Campaigns;
-- aplicado parser em `NEXOS_CAMPAIGN_CONCURRENCY`;
-- aplicado parser em `NEXOS_CAMPAIGN_MESSAGES_PER_MINUTE`;
-- aplicado parser em `NEXOS_CAMPAIGN_BATCH_SIZE`;
-- aplicado parser em `NEXOS_CAMPAIGN_MAX_RECIPIENTS`;
+- aplicado parser em `TRIXUS_CAMPAIGN_CONCURRENCY`;
+- aplicado parser em `TRIXUS_CAMPAIGN_MESSAGES_PER_MINUTE`;
+- aplicado parser em `TRIXUS_CAMPAIGN_BATCH_SIZE`;
+- aplicado parser em `TRIXUS_CAMPAIGN_MAX_RECIPIENTS`;
 - delays de schedule/reconcile/reschedule passam por clamp finito e positivo;
 - attempts, retry backoff e rate-limit duration permanecem literais numericos, sem dependencia de env string.
 
@@ -134,7 +134,7 @@ Eventos realtime sanitizados foram adicionados para criacao, atualizacao, progre
 Comando usado:
 
 ```bash
-docker exec nexos-evolution-api sh -lc "wget -S -O - http://host.docker.internal:3001/api/health"
+docker exec trixus-evolution-api sh -lc "wget -S -O - http://host.docker.internal:3001/api/health"
 ```
 
 Resultado observado antes do ajuste de bind:
@@ -169,7 +169,7 @@ Cobertura adicionada:
 - cancelamento;
 - opt-out;
 - RBAC negando agent em create;
-- banco E2E dedicado via `NEXOS_TEST_DATABASE_URL` ou fallback `nexos_1200`.
+- banco E2E dedicado via `TRIXUS_TEST_DATABASE_URL` ou fallback `trixus_1200`.
 - parser numerico: ausente, `"1"`, `"5"`, numero real, `"0"`, `"-1"`, `"abc"`, string vazia, whitespace, Infinity e NaN;
 - bootstrap do worker com env string;
 - BullMQ recebendo `concurrency` numerico;

@@ -4,7 +4,7 @@
 MESSAGING CORE REWORK REQUIRED
 
 ## Root Cause
-O rework anterior criou a estrutura de dados do core, mas deixou caminhos reais incompletos entre Inbox, Outbox, Evolution e WhatsApp para midia, reactions e homologacao fisica. O outbound aceitava apenas TEXT, o frontend bloqueava anexos/audio, o Evolution client usava payload textual legado, e nao havia endpoint privado de download de midia.
+O rework anterior criou a estrutura de dados do core, mas deixou caminhos reais incompletos entre Inbox, Outbox, Evolution e WhatsApp para midia, reactions e homologacao fisica. O outbound aceitava apenas TEXT, o frontend bloqueava atrixus/audio, o Evolution client usava payload textual legado, e nao havia endpoint privado de download de midia.
 
 ## Implementado Neste Rework
 - Reply texto segue validando `quotedMessageId`, tenant, conversa e provider id.
@@ -33,7 +33,7 @@ O rework anterior criou a estrutura de dados do core, mas deixou caminhos reais 
 - `backend/src/messaging/media/messaging-media-storage.service.ts`
 - `backend/src/conversations/messages.controller.ts`
 - `backend/src/conversations/messages.service.ts`
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 - `src/routes/inbox.$conversationId.tsx`
 
 ## Migrations
@@ -41,9 +41,9 @@ Criada anteriormente nesta sprint:
 - `backend/prisma/migrations/20260806120000_messaging_core_completion/migration.sql`
 
 Aplicada com sucesso em:
-- `nexos_0801`
-- `nexos_0802`
-- `nexos_1200`
+- `trixus_0801`
+- `trixus_0802`
+- `trixus_1200`
 
 ## Testes Automatizados
 - `bun run --cwd backend build`: PASS
@@ -67,15 +67,15 @@ Contratos usados:
 
 Estado local em 2026-08-06:
 - Evolution API local possui uma instancia `open`.
-- Banco `nexos_0801` usado no verify nao possui connection Evolution.
-- Banco `nexos` possui connections Nexos `CONNECTED`, mas os `externalReference` cadastrados nao correspondem a instancia Evolution `open` atual.
+- Banco `trixus_0801` usado no verify nao possui connection Evolution.
+- Banco `trixus` possui connections Trixus `CONNECTED`, mas os `externalReference` cadastrados nao correspondem a instancia Evolution `open` atual.
 
 ## Homologacao Fisica
 Nao executada com evidencia completa.
 
 Bloqueio concreto:
-- Sem connection Nexos alinhada a instancia Evolution `open` no banco de homologacao automatizado.
-- Sem numero/grupo de destino controlado informado para validar ida e volta WhatsApp real -> Evolution -> Nexos -> WhatsApp.
+- Sem connection Trixus alinhada a instancia Evolution `open` no banco de homologacao automatizado.
+- Sem numero/grupo de destino controlado informado para validar ida e volta WhatsApp real -> Evolution -> Trixus -> WhatsApp.
 - Nao foram anexadas evidencias fisicas de texto, grupo, reply, imagem, documento, audio, receipts, reaction, realtime, reconexao, download e idempotencia.
 
 ## Regression

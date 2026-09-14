@@ -13,7 +13,7 @@ Important uncommitted paths include:
 - `backend/prisma/migrations/20260806120000_messaging_core_completion/`
 - `backend/src/messaging/**`
 - `backend/src/conversations/**`
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 - `src/routes/inbox.$conversationId.tsx`
 - `docs/MESSAGING.md`
 - `sprints/rc-sprint-15-2/**`
@@ -34,15 +34,15 @@ Unrelated dirty change observed:
 
 Running relevant containers:
 
-- `nexos-evolution-api`: `evoapicloud/evolution-api:v2.3.7`, port `127.0.0.1:8080->8080`
-- `nexos-postgres`: `postgres:16-alpine`, port `5432`
-- `nexos-redis`: `redis:7.4-alpine`, port `6379`
-- `nexos-evolution-postgres`: `postgres:15-alpine`
-- `nexos-evolution-redis`: `redis:7.4-alpine`
+- `trixus-evolution-api`: `evoapicloud/evolution-api:v2.3.7`, port `127.0.0.1:8080->8080`
+- `trixus-postgres`: `postgres:16-alpine`, port `5432`
+- `trixus-redis`: `redis:7.4-alpine`, port `6379`
+- `trixus-evolution-postgres`: `postgres:15-alpine`
+- `trixus-evolution-redis`: `redis:7.4-alpine`
 
 ## Health
 
-Nexos health returned:
+Trixus health returned:
 
 - `database`: up
 - `redis`: up

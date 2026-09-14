@@ -12,9 +12,9 @@ READY FOR SPRINT 03
 
 ## 2. Resumo executivo
 
-A Sprint 02 consolidou a camada organizacional real do Nexos em NestJS, Prisma e PostgreSQL. Users, memberships, departments, roles e permissions agora existem no backend definitivo, com autorizacao server-side por permission e isolamento por tenant testado.
+A Sprint 02 consolidou a camada organizacional real do Trixus em NestJS, Prisma e PostgreSQL. Users, memberships, departments, roles e permissions agora existem no backend definitivo, com autorizacao server-side por permission e isolamento por tenant testado.
 
-As superficies `/login`, `/departamentos`, `/atendentes`, `/perfis`, `/configuracoes/usuarios` e `/configuracoes/permissoes` foram migradas para a Nexos API. Supabase foi removido dessas superficies.
+As superficies `/login`, `/departamentos`, `/atendentes`, `/perfis`, `/configuracoes/usuarios` e `/configuracoes/permissoes` foram migradas para a Trixus API. Supabase foi removido dessas superficies.
 
 ## 3. Baseline inicial
 
@@ -105,7 +105,7 @@ Chaves principais:
 
 ## 13. Platform Admin
 
-`PlatformRole.ADMIN` nao concede automaticamente permissoes operacionais de tenant. Teste e2e prova que `platform@nexo.app`, mesmo com platform admin, nao consegue criar usuarios quando sua role de tenant e `agent`.
+`PlatformRole.ADMIN` nao concede automaticamente permissoes operacionais de tenant. Teste e2e prova que `platform@trixus.app`, mesmo com platform admin, nao consegue criar usuarios quando sua role de tenant e `agent`.
 
 ## 14. Tenant Admin
 
@@ -170,17 +170,17 @@ Implementadas:
 - `/configuracoes/permissoes`
 - `src/lib/session.ts`
 - `src/lib/perms.ts`
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 
 ## 19. Supabase removal
 
 | Feature | Dependencia anterior | Dependencia atual | Codigo Supabase removido | Status |
 | --- | --- | --- | --- | --- |
-| Auth/session | Supabase Auth + fallback Nexos | Nexos API | `session.ts`, `login.tsx`, `__root.tsx` | MIGRADO |
+| Auth/session | Supabase Auth + fallback Trixus | Trixus API | `session.ts`, `login.tsx`, `__root.tsx` | MIGRADO |
 | Users/atendentes | Mock store + Supabase perfis | `/api/users`, `/api/roles`, `/api/departments` | `atendentes.tsx` | MIGRADO |
 | Departments | Mock store + Supabase escopos | `/api/departments` | `departamentos.tsx` | MIGRADO |
 | Roles/perfis | Supabase `access_profiles` | `/api/roles`, `/api/permissions` | `perfis.tsx` | MIGRADO |
-| Config users/perms | hardcoded | Nexos API | configs | MIGRADO |
+| Config users/perms | hardcoded | Trixus API | configs | MIGRADO |
 
 ## 20. Tests
 
@@ -287,7 +287,7 @@ Principais:
 - `backend/src/auth/**`
 - `backend/src/users/users.controller.ts`
 - `backend/test/app.e2e-spec.ts`
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 - `src/lib/session.ts`
 - `src/lib/perms.ts`
 - rotas migradas
@@ -329,10 +329,10 @@ Commit sera criado apos este relatorio. Nao houve push.
 PowerShell:
 
 ```powershell
-cd "C:\Users\Rabel\Downloads\Nexos Project"
+cd "C:\Users\Rabel\Downloads\Trixus Project"
 $env:BUN_INSTALL="$env:USERPROFILE\.bun"
 $env:PATH="$env:BUN_INSTALL\bin;$env:PATH"
-$env:DATABASE_URL="postgresql://nexos:nexos_dev_password@localhost:5432/nexos?schema=public"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus?schema=public"
 $env:JWT_SECRET="local-access-secret-minimum-32-chars"
 $env:JWT_REFRESH_SECRET="local-refresh-secret-minimum-32-chars"
 
@@ -417,7 +417,7 @@ MIGRADO/REMOVIDO:
 
 ## 40. Architectural risks
 
-- Coexistencia temporaria entre Nexos API e Supabase legado ainda exige disciplina de fronteira.
+- Coexistencia temporaria entre Trixus API e Supabase legado ainda exige disciplina de fronteira.
 - Frontend administrativo agora depende do backend local estar disponivel.
 - Proxima sprint deve evitar reutilizar tabelas Supabase legadas para CRM.
 

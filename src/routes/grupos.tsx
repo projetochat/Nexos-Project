@@ -42,7 +42,7 @@ import {
   type ApiGroupContactPickerItem,
   type ApiWhatsappGroup,
   type ApiWhatsappGroupParticipant,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 import { num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
 

@@ -2,7 +2,7 @@
 
 ## Frontend API Surface
 
-`src/lib/nexos-api.ts` contains message API methods for:
+`src/lib/trixus-api.ts` contains message API methods for:
 
 - send text
 - send media

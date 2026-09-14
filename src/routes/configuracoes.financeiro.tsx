@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, CreditCard } from "lucide-react";
 import { Badge, Card, Field, SearchInput, Select } from "@/components/ui-kit";
-import { organizationApi, type ApiFinancialPayment } from "@/lib/nexos-api";
+import { organizationApi, type ApiFinancialPayment } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/configuracoes/financeiro")({
   component: FinanceiroSettings,
@@ -17,7 +17,7 @@ function FinanceiroSettings() {
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ["nexos", "financial-payments"],
+    queryKey: ["trixus", "financial-payments"],
     queryFn: organizationApi.listFinancialPayments,
   });
   const periods = React.useMemo(

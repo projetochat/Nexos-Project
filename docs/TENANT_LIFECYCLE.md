@@ -24,7 +24,7 @@ Bloqueios server-side incluidos:
 - criacao de connections
 - criacao de contatos
 - criacao/inicio/agendamento de campanhas
-- criacao de tickets e upload de anexos conforme feature/limite
+- criacao de tickets e upload de atrixus conforme feature/limite
 
 ## Reativacao
 

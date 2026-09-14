@@ -11,7 +11,7 @@ nem READY de producao sem homologacao operacional real.
 - Adicionados endpoints de dashboard, historico, timeline, relatorios e filas.
 - Migradas as telas `/`, `/historico`, `/relatorios` e `/filas` para `operationsApi`.
 - Removidos rota, menu e servico de simulador de conversa.
-- `ReportFiltersBar` passou a usar Nexos API para clientes e departamentos.
+- `ReportFiltersBar` passou a usar Trixus API para clientes e departamentos.
 - Dashboard/historico/relatorios/filas nao importam `@/lib/mvp` nem Supabase direto.
 
 ## Causa de risco tratada
@@ -27,10 +27,10 @@ e o que o usuario via na UI.
 - `bun run typecheck`: PASS.
 - `bun run verify`: PASS em duas execucoes consecutivas.
 
-Foi necessario aplicar migrations existentes no banco de teste `nexos_1200` com `prisma migrate deploy`,
+Foi necessario aplicar migrations existentes no banco de teste `trixus_1200` com `prisma migrate deploy`,
 sem reset, porque a tabela `impersonation_sessions` ainda nao existia nessa base.
-O `scripts/verify.mjs` tambem foi alinhado para usar `nexos_1200` como banco padrao de verificacao quando
-`NEXOS_TEST_DATABASE_URL` nao estiver definido, mantendo a suite isolada do banco local de desenvolvimento.
+O `scripts/verify.mjs` tambem foi alinhado para usar `trixus_1200` como banco padrao de verificacao quando
+`TRIXUS_TEST_DATABASE_URL` nao estiver definido, mantendo a suite isolada do banco local de desenvolvimento.
 
 ## Gate fisico
 

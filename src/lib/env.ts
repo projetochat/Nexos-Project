@@ -1,5 +1,5 @@
 /* ============================================================
-   Nexo · Environment & Integration Flags
+   Trixus · Environment & Integration Flags
    Ponto único para futuras integrações. Hoje tudo está desligado
    (o app opera 100% em dados mockados), mas cada consumidor já
    consulta estas flags — basta ativar quando o backend chegar.
@@ -26,4 +26,4 @@ export const env = {
   },
 } as const;
 
-export type NexoEnv = typeof env;
+export type TrixusEnv = typeof env;

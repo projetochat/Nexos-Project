@@ -12,7 +12,7 @@ O gate final ainda nao pode ser aprovado porque os testes fisicos de outage/reco
 - Branch inicial: `rc/15-2-messaging-core-completion`
 - Branch hotfix: `hotfix/rc-15-2-outbound-worker-resilience`
 - SHA inicial: `1e6091f7bc2b151fc1f3eabbb2042c647dfb6c1e`
-- Baseline verify em `nexos_0801`: PASS
+- Baseline verify em `trixus_0801`: PASS
 - Evolution API: `evoapicloud/evolution-api:v2.3.7`
 - Bun: `1.3.14`
 - Node: `v24.14.0`
@@ -65,11 +65,11 @@ Segredos, authorization, tokens e base64 sao redigidos ou nao emitidos. Conteudo
 25 arquivos, 167 testes backend PASS.
 
 ## 19. Testes de Integracao
-`bun run verify` baseline PASS em `nexos_0801` antes do hotfix.
+`bun run verify` baseline PASS em `trixus_0801` antes do hotfix.
 
 Verify final apos hotfix:
 - Comando: `bun run verify`
-- Ambiente: `DATABASE_URL=postgresql://nexos:nexos_dev_password@localhost:5432/nexos_0801?schema=public`, `REDIS_URL=redis://localhost:6379`
+- Ambiente: `DATABASE_URL=postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public`, `REDIS_URL=redis://localhost:6379`
 - Resultado: PASS
 - Frontend typecheck: PASS
 - ESLint baseline: PASS, `917 errors and 12 warnings within legacy baseline`

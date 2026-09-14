@@ -6,7 +6,7 @@ import { FileStorageProvider, StoredObject, UploadRequest } from "./file-storage
 @Injectable()
 export class LocalPrivateStorageProvider extends FileStorageProvider {
   readonly provider = "local" as const;
-  private readonly root = resolve(process.env.NEXOS_STORAGE_LOCAL_PATH ?? ".nexos-storage");
+  private readonly root = resolve(process.env.TRIXUS_STORAGE_LOCAL_PATH ?? ".trixus-storage");
 
   async createUpload(request: UploadRequest) {
     this.pathFor(request.objectKey);

@@ -5,7 +5,7 @@ import { Clock, MessageSquareText, RefreshCw, Users } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Badge, Button, Card, SectionHeader } from "@/components/ui-kit";
 import { num } from "@/lib/format";
-import { operationsApi } from "@/lib/nexos-api";
+import { operationsApi } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 
 export const Route = createFileRoute("/filas")({

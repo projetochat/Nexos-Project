@@ -14,7 +14,7 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { crmApi, type ApiContactCustomField } from "@/lib/nexos-api";
+import { crmApi, type ApiContactCustomField } from "@/lib/trixus-api";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/configuracoes/campos-contato")({

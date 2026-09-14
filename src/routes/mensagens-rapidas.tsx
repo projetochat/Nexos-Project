@@ -14,7 +14,7 @@ import {
   SectionHeader,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
-import { quickReplyApi, type ApiQuickReply } from "@/lib/nexos-api";
+import { quickReplyApi, type ApiQuickReply } from "@/lib/trixus-api";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
@@ -31,7 +31,7 @@ export const Route = createFileRoute("/mensagens-rapidas")({
   }),
 });
 
-const quickRepliesQueryKey = ["nexos", "quick-replies"] as const;
+const quickRepliesQueryKey = ["trixus", "quick-replies"] as const;
 type QuickReplyAttachment = {
   fileName: string;
   mimeType: string;
@@ -152,10 +152,11 @@ function QuickRepliesPage() {
                     <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-foreground/90">
                       {previewQuickReplyText(reply.texto)}
                     </p>
-                    <p className="mt-auto truncate pt-2 text-[10px] uppercase tracking-widest text-muted-foreground">
-                      {reply.department?.nome ?? "compartilhada"}
-                      {reply.close_on_send ? " · encerra conversa" : ""}
-                    </p>
+                    {reply.close_on_send && (
+                      <p className="mt-auto truncate pt-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+                        Encerra conversa
+                      </p>
+                    )}
                   </div>
                   {canManageCatalog && (
                     <div className="absolute right-4 top-4 flex gap-1 sm:right-6 sm:top-6">
@@ -208,7 +209,7 @@ function QuickRepliesPage() {
           existingReplies={items}
           onSaved={() => {
             refresh();
-            qc.invalidateQueries({ queryKey: ["nexos", "quick-replies", "composer"] });
+            qc.invalidateQueries({ queryKey: ["trixus", "quick-replies", "composer"] });
             closeEditor();
           }}
         />
@@ -238,7 +239,7 @@ function QuickRepliesPage() {
               await quickReplyApi.archive(confirming.id);
               toast.success("Removido");
               refresh();
-              qc.invalidateQueries({ queryKey: ["nexos", "quick-replies", "composer"] });
+              qc.invalidateQueries({ queryKey: ["trixus", "quick-replies", "composer"] });
               setConfirming(null);
             } catch (error) {
               toast.error((error as Error).message);
@@ -292,7 +293,7 @@ function QuickReplyEditor({
     setAttachment(
       initial?.attachmentDataUrl
         ? {
-            fileName: initial.attachmentFileName ?? "anexo",
+            fileName: initial.attachmentFileName ?? "atrixus",
             mimeType: initial.attachmentMimeType ?? "application/octet-stream",
             size: initial.attachmentSize ?? 0,
             dataUrl: initial.attachmentDataUrl,

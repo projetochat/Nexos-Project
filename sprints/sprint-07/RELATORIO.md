@@ -6,7 +6,7 @@ Implementada e validada localmente. Bun continua indisponivel no PATH deste work
 
 ## 2. Resumo executivo
 
-Sprint 07 adicionou Evolution API como primeiro provider real do Universal Messaging Adapter. O core de Contact, Conversation e Message permaneceu provider-neutral. Foram entregues client HTTP isolado, provider Evolution, lifecycle de connections, QR Code, webhook seguro, translator de inbound/status, tela `/instancias` migrada para Nexos API, Compose da Evolution e testes dos gaps da Sprint 06.
+Sprint 07 adicionou Evolution API como primeiro provider real do Universal Messaging Adapter. O core de Contact, Conversation e Message permaneceu provider-neutral. Foram entregues client HTTP isolado, provider Evolution, lifecycle de connections, QR Code, webhook seguro, translator de inbound/status, tela `/instancias` migrada para Trixus API, Compose da Evolution e testes dos gaps da Sprint 06.
 
 ## 3. Baseline Git
 
@@ -69,7 +69,7 @@ Seguranca:
 - exige `Authorization: Bearer <token>`;
 - valida assinatura com `EVOLUTION_WEBHOOK_SECRET`;
 - exige claims `app=evolution` e `action=webhook`;
-- nao aceita JWT de usuario Nexos como auth da rota.
+- nao aceita JWT de usuario Trixus como auth da rota.
 
 Eventos traduzidos:
 
@@ -84,7 +84,7 @@ Eventos traduzidos:
 
 ## 10. Frontend
 
-`/instancias` foi migrada para Nexos API:
+`/instancias` foi migrada para Trixus API:
 
 - lista connections;
 - cria connection Evolution;
@@ -102,7 +102,7 @@ Nenhuma dependencia em Supabase foi adicionada nessa rota.
 - `evolution-redis`
 - `evolution-api`
 
-Observacao: Redis/PostgreSQL extras pertencem a Evolution API. Nexos Redis/BullMQ continua fora de escopo.
+Observacao: Redis/PostgreSQL extras pertencem a Evolution API. Trixus Redis/BullMQ continua fora de escopo.
 
 ## 12. Variaveis de ambiente
 
@@ -151,7 +151,7 @@ Executado durante a sprint:
 Nao implementado:
 
 - Meta Cloud API
-- Redis/BullMQ do Nexos
+- Redis/BullMQ do Trixus
 - Socket.io
 - Cloudflare R2 definitivo
 - campanhas
@@ -180,7 +180,7 @@ Atualizados:
 
 - Ambientes reais precisam configurar `EVOLUTION_API_KEY`, `EVOLUTION_WEBHOOK_SECRET` e URL publica alcancavel pela Evolution.
 - Sem Socket.io, QR/status ainda dependem de polling/refetch.
-- Sem filas Nexos, outbound segue sincrono.
+- Sem filas Trixus, outbound segue sincrono.
 - Midia real permanece para sprint futura com storage.
 
 ## 18. Correcao de homologacao manual

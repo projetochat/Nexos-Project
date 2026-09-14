@@ -3,9 +3,9 @@ import {
   connectedConnectionOptions,
   connectedEvolutionConnections,
 } from "@/lib/connection-options";
-import { connectionsApi } from "@/lib/nexos-api";
+import { connectionsApi } from "@/lib/trixus-api";
 
-export const MESSAGING_CONNECTIONS_QUERY_KEY = ["nexos", "messaging-connections"] as const;
+export const MESSAGING_CONNECTIONS_QUERY_KEY = ["trixus", "messaging-connections"] as const;
 
 export function useConnectedMessagingConnections(options: { enabled?: boolean } = {}) {
   const query = useQuery({

@@ -11,7 +11,7 @@ import { R2StorageProvider } from "./r2-storage.provider";
       provide: FileStorageProvider,
       inject: [LocalPrivateStorageProvider, R2StorageProvider],
       useFactory: (local: LocalPrivateStorageProvider, r2: R2StorageProvider) =>
-        process.env.NEXOS_STORAGE_PROVIDER === "r2" ? r2 : local,
+        process.env.TRIXUS_STORAGE_PROVIDER === "r2" ? r2 : local,
     },
   ],
   exports: [FileStorageProvider],

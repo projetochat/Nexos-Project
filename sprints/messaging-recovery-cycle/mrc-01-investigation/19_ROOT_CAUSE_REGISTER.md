@@ -4,9 +4,9 @@
 
 Evidence:
 
-- Prisma reports local migration `20260806120000_messaging_core_completion` not applied to database `nexos`.
+- Prisma reports local migration `20260806120000_messaging_core_completion` not applied to database `trixus`.
 - Database has migration `20260730132000_redis_bullmq_outbox` not present locally.
-- `nexos` lacks expected message core columns while `nexos_0802` has them.
+- `trixus` lacks expected message core columns while `trixus_0802` has them.
 
 Impact:
 

@@ -3,10 +3,10 @@
 The database now has message media metadata fields for storage key, MIME, filename, size, dimensions, duration, checksum, SHA-256, and temporary provider URL.
 
 Policy defaults are documented in `.env.example`:
-- `NEXOS_MESSAGE_MAX_IMAGE_SIZE_MB`
-- `NEXOS_MESSAGE_MAX_AUDIO_SIZE_MB`
-- `NEXOS_MESSAGE_MAX_DOCUMENT_SIZE_MB`
-- `NEXOS_MESSAGE_ALLOWED_*_MIME_TYPES`
+- `TRIXUS_MESSAGE_MAX_IMAGE_SIZE_MB`
+- `TRIXUS_MESSAGE_MAX_AUDIO_SIZE_MB`
+- `TRIXUS_MESSAGE_MAX_DOCUMENT_SIZE_MB`
+- `TRIXUS_MESSAGE_ALLOWED_*_MIME_TYPES`
 
 Current implementation:
 - outbound image, document, audio and voice messages are stored locally in private storage;
@@ -36,5 +36,5 @@ Smokes diretos Evolution PASS:
 - Audio WAV: HTTP 201, convertido pelo provider para `audio/ogg; codecs=opus`, `ptt=true`.
 
 Gate pendente:
-- Validar ponta a ponta Nexos Outbox -> Evolution -> WhatsApp.
+- Validar ponta a ponta Trixus Outbox -> Evolution -> WhatsApp.
 - Validar inbound media download/storage/inline/download/render.

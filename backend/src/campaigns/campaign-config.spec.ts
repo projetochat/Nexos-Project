@@ -29,10 +29,10 @@ describe("campaign numeric config", () => {
   it("reads all campaign runtime numeric settings as positive numbers", () => {
     const runtimeConfig = readCampaignRuntimeConfig(
       config({
-        NEXOS_CAMPAIGN_CONCURRENCY: "1",
-        NEXOS_CAMPAIGN_MESSAGES_PER_MINUTE: "5",
-        NEXOS_CAMPAIGN_BATCH_SIZE: "5",
-        NEXOS_CAMPAIGN_MAX_RECIPIENTS: "5",
+        TRIXUS_CAMPAIGN_CONCURRENCY: "1",
+        TRIXUS_CAMPAIGN_MESSAGES_PER_MINUTE: "5",
+        TRIXUS_CAMPAIGN_BATCH_SIZE: "5",
+        TRIXUS_CAMPAIGN_MAX_RECIPIENTS: "5",
       }),
     );
 
@@ -47,10 +47,10 @@ describe("campaign numeric config", () => {
   it("falls back and clamps unsafe campaign runtime settings", () => {
     const runtimeConfig = readCampaignRuntimeConfig(
       config({
-        NEXOS_CAMPAIGN_CONCURRENCY: "0",
-        NEXOS_CAMPAIGN_MESSAGES_PER_MINUTE: "abc",
-        NEXOS_CAMPAIGN_BATCH_SIZE: "200",
-        NEXOS_CAMPAIGN_MAX_RECIPIENTS: "",
+        TRIXUS_CAMPAIGN_CONCURRENCY: "0",
+        TRIXUS_CAMPAIGN_MESSAGES_PER_MINUTE: "abc",
+        TRIXUS_CAMPAIGN_BATCH_SIZE: "200",
+        TRIXUS_CAMPAIGN_MAX_RECIPIENTS: "",
       }),
     );
 

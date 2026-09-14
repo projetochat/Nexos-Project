@@ -6,7 +6,7 @@ import {
   organizationApi,
   type ApiConversationStatus,
   type OperationalPeriod,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 import type { OperationalReportFilters } from "@/lib/operational-filters";
 import { sortByOptionLabel } from "@/lib/sort-options";
 

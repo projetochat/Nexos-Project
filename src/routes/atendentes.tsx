@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Ban,
   Camera,
   ChevronLeft,
   ChevronRight,
@@ -12,6 +13,7 @@ import {
   Pencil,
   Plus,
   Trash2,
+  Unlock,
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,7 +33,7 @@ import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import { num } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
-import { organizationApi, type ApiUserMembership } from "@/lib/nexos-api";
+import { organizationApi, type ApiUserMembership } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/atendentes")({ component: AtendentesPage });
 
@@ -70,13 +72,18 @@ function AtendentesPage() {
   const qc = useQueryClient();
   const sessionUser = useSession((state) => state.user);
   const { data: memberships = [], isLoading } = useQuery({
-    queryKey: ["nexos", "users"],
+    queryKey: ["trixus", "users"],
     queryFn: organizationApi.listUsers,
   });
   const { data: perfis = [] } = useQuery({
-    queryKey: ["nexos", "roles"],
+    queryKey: ["trixus", "roles"],
     queryFn: organizationApi.listRoles,
   });
+
+  const perfisAtribuiveis = React.useMemo(
+    () => perfis.filter((perfil) => perfil.key !== "tenant_admin"),
+    [perfis],
+  );
 
   const atendentes = React.useMemo(
     () =>
@@ -107,7 +114,7 @@ function AtendentesPage() {
         avatarUrl: data.avatarUrl ?? null,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["nexos", "users"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "users"] });
       toast.success("Atendente cadastrado");
       novo.hide();
       setDuplicating(null);
@@ -126,7 +133,7 @@ function AtendentesPage() {
         membershipStatus: data.ativo === false ? "DISABLED" : "ACTIVE",
       }),
     onSuccess: (membership) => {
-      qc.invalidateQueries({ queryKey: ["nexos", "users"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "users"] });
       syncSessionUserFromMembership(membership, sessionUser?.id);
       toast.success("Atendente atualizado");
       setEditing(null);
@@ -135,10 +142,13 @@ function AtendentesPage() {
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => organizationApi.deactivateUser(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["nexos", "users"] });
-      toast.success("Atendente desativado");
+    mutationFn: (atendente: Atendente) =>
+      atendente.ativo
+        ? organizationApi.deactivateUser(atendente.id)
+        : organizationApi.activateUser(atendente.id),
+    onSuccess: (_membership, atendente) => {
+      qc.invalidateQueries({ queryKey: ["trixus", "users"] });
+      toast.success(atendente.ativo ? "Atendente bloqueado" : "Atendente desbloqueado");
       setDeleting(null);
     },
     onError: (error) => toast.error((error as Error).message),
@@ -185,7 +195,7 @@ function AtendentesPage() {
             </div>
             <FilterSelect label="Perfil" value={perfilFilter} onChange={setPerfilFilter}>
               <option value="">Todos</option>
-              {sortByOptionLabel(perfis, (p) => p.name).map((perfil) => (
+              {sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((perfil) => (
                 <option key={perfil.id} value={perfil.id}>
                   {perfil.name}
                 </option>
@@ -240,11 +250,11 @@ function AtendentesPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="trash-action"
+                          className={a.ativo ? "text-amber-600 hover:text-amber-700" : "text-emerald-600 hover:text-emerald-700"}
                           onClick={() => setDeleting(a)}
-                          title="Excluir"
+                          title={a.ativo ? "Bloquear" : "Desbloquear"}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          {a.ativo ? <Ban className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
                         </Button>
                       </div>
                     )}
@@ -324,12 +334,12 @@ function AtendentesPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="trash-action"
+                              className={a.ativo ? "text-amber-600 hover:text-amber-700" : "text-emerald-600 hover:text-emerald-700"}
                               onClick={() => setDeleting(a)}
-                              title="Excluir"
-                              aria-label="Excluir"
+                              title={a.ativo ? "Bloquear" : "Desbloquear"}
+                              aria-label={a.ativo ? "Bloquear" : "Desbloquear"}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              {a.ativo ? <Ban className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
                             </Button>
                           </div>
                         )}
@@ -396,14 +406,14 @@ function AtendentesPage() {
         <AtendenteForm
           open={novo.open}
           atendentes={atendentes}
-          perfis={sortByOptionLabel(perfis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
+          perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
           onClose={novo.hide}
           onSubmit={(data) => create.mutate(data)}
         />
         <AtendenteForm
           open={!!editing}
           atendentes={atendentes}
-          perfis={sortByOptionLabel(perfis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
+          perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
           initial={editing ?? undefined}
           onClose={() => setEditing(null)}
           onSubmit={(data) => editing && update.mutate({ id: editing.id, data })}
@@ -411,7 +421,7 @@ function AtendentesPage() {
         <AtendenteForm
           open={!!duplicating}
           atendentes={atendentes}
-          perfis={sortByOptionLabel(perfis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
+          perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
           initial={duplicating ?? undefined}
           clone
           onClose={() => setDuplicating(null)}
@@ -419,17 +429,17 @@ function AtendentesPage() {
         />
         <ConfirmDialog
           open={!!deleting}
-          title="Excluir Atendente?"
+          title={deleting?.ativo ? "Bloquear Atendente?" : "Desbloquear Atendente?"}
           destructive
           description={
             <p>
-              Deseja realmente excluir o atendente{" "}
+              Deseja realmente {deleting?.ativo ? "bloquear" : "desbloquear"} o atendente{" "}
               <strong className="font-semibold text-foreground">"{deleting?.nome ?? ""}"</strong>?
             </p>
           }
-          confirmLabel="Excluir"
+          confirmLabel={deleting?.ativo ? "Bloquear" : "Desbloquear"}
           onClose={() => setDeleting(null)}
-          onConfirm={() => deleting && remove.mutate(deleting.id)}
+          onConfirm={() => deleting && remove.mutate(deleting)}
         />
       </PageContainer>
     </AppShell>

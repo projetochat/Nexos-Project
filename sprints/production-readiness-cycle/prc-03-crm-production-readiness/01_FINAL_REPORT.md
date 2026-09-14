@@ -34,7 +34,7 @@ Elevar o modulo CRM para readiness tecnico de producao, cobrindo clientes, conta
 - `backend/src/crm/dto/list-contacts-query.dto.ts`
 - `backend/test/app.e2e-spec.ts`
 - `scripts/verify.mjs`
-- `src/lib/nexos-api.ts`
+- `src/lib/trixus-api.ts`
 - `src/routes/contatos.tsx`
 
 ## Decisoes

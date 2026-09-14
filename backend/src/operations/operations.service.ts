@@ -16,9 +16,11 @@ type OperationalQuery = {
     | "today"
     | "yesterday"
     | "week"
+    | "previous_week"
     | "month"
     | "previous_month"
     | "year"
+    | "previous_year"
     | "7d"
     | "30d"
     | "custom";
@@ -671,6 +673,14 @@ function periodRange(
     const start = startOfDayInTimezone(weekStart.year, weekStart.month, weekStart.day, timezone);
     return { start, end: now };
   }
+  if (period === "previous_week") {
+    const weekday = new Date(Date.UTC(today.year, today.month - 1, today.day)).getUTCDay();
+    const currentWeekStart = shiftCalendarDate(today, -((weekday + 6) % 7));
+    const previousWeekStart = shiftCalendarDate(currentWeekStart, -7);
+    const start = startOfDayInTimezone(previousWeekStart.year, previousWeekStart.month, previousWeekStart.day, timezone);
+    const end = startOfDayInTimezone(currentWeekStart.year, currentWeekStart.month, currentWeekStart.day, timezone);
+    return { start, end };
+  }
   if (period === "month") {
     const start = startOfDayInTimezone(today.year, today.month, 1, timezone);
     return { start, end: now };
@@ -684,6 +694,11 @@ function periodRange(
   if (period === "year") {
     const start = startOfDayInTimezone(today.year, 1, 1, timezone);
     return { start, end: now };
+  }
+  if (period === "previous_year") {
+    const start = startOfDayInTimezone(today.year - 1, 1, 1, timezone);
+    const end = startOfDayInTimezone(today.year, 1, 1, timezone);
+    return { start, end };
   }
   if (period === "7d" || period === "30d") {
     const date = shiftCalendarDate(today, -(period === "7d" ? 6 : 29));

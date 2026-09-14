@@ -13,8 +13,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       event: "database.connected",
       nodeEnv: process.env.NODE_ENV ?? "development",
       database: this.sanitizedDatabaseTarget(),
-      queueEnabled: process.env.NEXOS_QUEUE_ENABLED === "true",
-      workerEnabled: process.env.NEXOS_QUEUE_WORKER_ENABLED === "true",
+      queueEnabled: process.env.TRIXUS_QUEUE_ENABLED === "true",
+      workerEnabled: process.env.TRIXUS_QUEUE_WORKER_ENABLED === "true",
     });
   }
 

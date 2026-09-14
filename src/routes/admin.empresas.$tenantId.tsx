@@ -18,7 +18,7 @@ import {
   activatePlatformImpersonation,
   platformApi,
   type PlatformTenantDetail,
-} from "@/lib/nexos-api";
+} from "@/lib/trixus-api";
 import { useSession } from "@/lib/session";
 import { fmtDate } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";

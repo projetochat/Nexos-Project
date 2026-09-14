@@ -50,7 +50,7 @@ Webhook real registrado manualmente em `46a0c5ba-t2` com URL `http://host.docker
 
 ## 9. Webhook connectivity
 
-Validado do container `nexos-evolution-api` para `http://host.docker.internal:3001/api/health`: HTTP 200.
+Validado do container `trixus-evolution-api` para `http://host.docker.internal:3001/api/health`: HTTP 200.
 
 ## 10. Webhook security
 
@@ -94,9 +94,9 @@ E2E existente continua cobrindo duplicate inbound. Suite backend PASS.
 
 ## 18. Connection lifecycle
 
-Lifecycle real controlado via Nexos API:
+Lifecycle real controlado via Trixus API:
 
-- login Nexos
+- login Trixus
 - Evolution health PASS
 - create connection PASS
 - status PASS
@@ -177,7 +177,7 @@ Nao comprovado com WhatsApp real nesta sessao.
 
 ## 34. Inbound result
 
-Webhook realista contra backend real PASS. WhatsApp B real -> Nexos nao comprovado.
+Webhook realista contra backend real PASS. WhatsApp B real -> Trixus nao comprovado.
 
 ## 35. Disconnect/recreate result
 
@@ -185,7 +185,7 @@ Create/delete/recreate controlado por API foi validado com instance temporaria.
 
 ## 36. Regressions
 
-Sem Redis/BullMQ Nexos, Socket.io, R2, Meta, campanhas, bot, IA ou billing.
+Sem Redis/BullMQ Trixus, Socket.io, R2, Meta, campanhas, bot, IA ou billing.
 
 ## 37. Files created
 
@@ -195,7 +195,7 @@ Sem Redis/BullMQ Nexos, Socket.io, R2, Meta, campanhas, bot, IA ou billing.
 
 ## 38. Files changed
 
-Backend messaging Evolution/client/translator/controller/service, AppModule env loading, frontend `/instancias`, Nexos API types, E2E tests e documentacao.
+Backend messaging Evolution/client/translator/controller/service, AppModule env loading, frontend `/instancias`, Trixus API types, E2E tests e documentacao.
 
 ## 39. Files removed
 

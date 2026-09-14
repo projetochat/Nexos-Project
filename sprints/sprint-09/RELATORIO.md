@@ -1,4 +1,4 @@
-# NEXOS PROJECT - SPRINT 09
+# TRIXUS PROJECT - SPRINT 09
 
 ## Realtime Messaging, Presence & Live Inbox
 
@@ -12,7 +12,7 @@ Baseline efetivo desta execucao: `c5b27a3 docs: record sprint 08.04 physical app
 
 ## Resultado
 
-Implementacao tecnica concluida para o realtime oficial do Nexos:
+Implementacao tecnica concluida para o realtime oficial do Trixus:
 
 - Socket.io NestJS em namespace `/realtime` e path `/socket.io`.
 - Auth de handshake por `socket.auth.accessToken`, com tenant/membership/role derivados server-side.
@@ -50,13 +50,13 @@ Detalhes do `verify`:
 PASS:
 
 - Backend compilado subiu em porta isolada `3019`.
-- Login REST real em `/api/auth/login` com `admin@nexo.app`, tenant `acme`.
+- Login REST real em `/api/auth/login` com `admin@trixus.app`, tenant `acme`.
 - Socket.io client conectou em `http://localhost:3019/realtime`, path `/socket.io`, transporte websocket.
 - Evento `realtime.ready` recebido com `tenantId`, `membershipId` e `departmentIds`.
 
 ## Ajustes de ambiente local
 
-Durante o gate, o banco local `nexos` estava com schema atrasado para migrations anteriores:
+Durante o gate, o banco local `trixus` estava com schema atrasado para migrations anteriores:
 
 - faltava `messaging_connections.ownerExternalId`;
 - a migration antiga de outbox existia no historico do banco com nome diferente;
@@ -64,11 +64,11 @@ Durante o gate, o banco local `nexos` estava com schema atrasado para migrations
 
 Foi feita recuperacao local sem reset:
 
-- `prisma migrate deploy` no banco `nexos`;
+- `prisma migrate deploy` no banco `trixus`;
 - `migrate resolve --applied 20260803080000_redis_bullmq_outbox` para reconciliar migration duplicada;
 - `ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS processingAt TIMESTAMP(3)`.
 
-O banco de homologacao fisica `nexos_0802` nao foi resetado.
+O banco de homologacao fisica `trixus_0802` nao foi resetado.
 
 ## Escopo nao concluido fisicamente
 
@@ -171,7 +171,7 @@ publicos nao entram em refresh, e refresh 401 limpa tokens locais.
 
 Nenhum fluxo legado foi removido neste rework sem prova direta de execucao no crash. Auditoria encontrou
 Supabase legado ainda presente em `src/lib/mvp.ts` e em areas auxiliares de `src/routes/inbox.$conversationId.tsx`
-(quick replies, tags e painel lateral), mas a rota `/inbox` que crashava usa a API oficial Nexos para
+(quick replies, tags e painel lateral), mas a rota `/inbox` que crashava usa a API oficial Trixus para
 Conversations, Customers e Connections. A remocao completa do legado do detalhe da conversa permanece
 pendente para sprint propria, pois exigiria migrar etiquetas/quick replies/customer side panel.
 
@@ -179,7 +179,7 @@ pendente para sprint propria, pois exigiria migrar etiquetas/quick replies/custo
 
 - `realtimeSnapshot()` passou a retornar snapshot cacheado.
 - Snapshot so muda quando `status` ou `lastEventId` mudam.
-- `VITE_NEXOS_REALTIME_ENABLED=false` desliga socket no frontend e retorna status `disabled`.
+- `VITE_TRIXUS_REALTIME_ENABLED=false` desliga socket no frontend e retorna status `disabled`.
 - `subscribeConversation`/`unsubscribeConversation` sao idempotentes por Conversation.
 - `realtimeDiagnostics()` expoe contadores sanitizados de socket, listeners, handlers e subscriptions.
 - Reconcile REST roda somente na transicao real para `connected`.
@@ -198,15 +198,15 @@ PASS automatizado: socket singleton e subscription unica por Conversation cobert
 
 ### Realtime disabled
 
-PASS automatizado: com `VITE_NEXOS_REALTIME_ENABLED=false`, `connectRealtime()` retorna `null`, nenhum
+PASS automatizado: com `VITE_TRIXUS_REALTIME_ENABLED=false`, `connectRealtime()` retorna `null`, nenhum
 socket e instanciado e o hook estabiliza com status `disabled`.
 
 ### Automated tests
 
 PASS:
 
-- `bunx vitest run src/lib/realtime/client.test.ts src/lib/realtime/hooks.test.tsx src/lib/nexos-api.test.ts --environment jsdom`
-- `bunx vitest run src/lib/realtime/client.test.ts src/lib/nexos-api.test.ts src/lib/connection-options.test.ts src/lib/operational-connection-sources.test.ts src/lib/sanitize-html.test.ts --environment jsdom`
+- `bunx vitest run src/lib/realtime/client.test.ts src/lib/realtime/hooks.test.tsx src/lib/trixus-api.test.ts --environment jsdom`
+- `bunx vitest run src/lib/realtime/client.test.ts src/lib/trixus-api.test.ts src/lib/connection-options.test.ts src/lib/operational-connection-sources.test.ts src/lib/sanitize-html.test.ts --environment jsdom`
 - `bun run typecheck`
 - `bun run build`
 - `bun run --cwd backend build`
@@ -247,21 +247,21 @@ Backend preservado:
 | M167 | Reconcile auditado | Limitado a transicao para `connected` | `previousStatusRef` | PASS |
 | M168 | Subscriptions auditadas | Set por `conversationId` | `activeConversationIds` | PASS |
 | M169 | Cleanup corrigido | Unsubscribe idempotente | Teste de emit subscribe/unsubscribe unico | PASS |
-| M170 | 401 flow auditado | Fluxo HTTP revisado | `src/lib/nexos-api.ts` | PASS |
+| M170 | 401 flow auditado | Fluxo HTTP revisado | `src/lib/trixus-api.ts` | PASS |
 | M171 | Refresh single-flight | Promise compartilhada | Teste concorrente 401 | PASS |
 | M172 | Refresh retry limit | Retry unico por request | Teste concorrente 401 | PASS |
 | M173 | Refresh failure cleanup | Tokens limpos em refresh 401 | Teste refresh failure | PASS |
 | M174 | Socket reconnect limit | Socket singleton preservado | Teste `io` chamado uma vez | PASS |
 | M175 | Supabase legacy audit | Legado identificado | `src/lib/mvp.ts`, detalhe da Inbox | PASS |
 | M176 | Legacy requests removidas | Nao removidas por falta de prova direta no crash | Escopo preservado | N/A |
-| M177 | Inbox official API only | `/inbox` usa Nexos API; detalhe ainda tem legado auxiliar | Auditoria de imports | PARTIAL |
-| M178 | Frontend realtime flag | Criada | `VITE_NEXOS_REALTIME_ENABLED` | PASS |
+| M177 | Inbox official API only | `/inbox` usa Trixus API; detalhe ainda tem legado auxiliar | Auditoria de imports | PARTIAL |
+| M178 | Frontend realtime flag | Criada | `VITE_TRIXUS_REALTIME_ENABLED` | PASS |
 | M179 | Realtime disabled render | Hook estabiliza disabled | `hooks.test.tsx` | PASS |
 | M180 | Realtime enabled render | Singleton/subscription cobertos | `client.test.ts` | PASS |
 | M181 | Render stability test | Adicionado | `hooks.test.tsx` | PASS |
 | M182 | Subscription cleanup test | Adicionado | `client.test.ts` | PASS |
-| M183 | 401 recovery test | Adicionado | `nexos-api.test.ts` | PASS |
-| M184 | Refresh failure test | Adicionado | `nexos-api.test.ts` | PASS |
+| M183 | 401 recovery test | Adicionado | `trixus-api.test.ts` | PASS |
+| M184 | Refresh failure test | Adicionado | `trixus-api.test.ts` | PASS |
 | M185 | Navigation test | Nao executado em browser | Browser indisponivel | N/A |
 | M186 | F5 test | Nao executado em browser | Browser indisponivel | N/A |
 | M187 | Conversation switch test | Subscription idempotente testada; UI nao testada | `client.test.ts` | PARTIAL |
@@ -276,8 +276,8 @@ Backend preservado:
 | M196 | Physical reconnect | Nao executado | Browser indisponivel | N/A |
 | M197 | Physical Redis degraded | Nao executado | Redis gate pendente | N/A |
 | M198 | Physical Redis recovery | Nao executado | Redis gate pendente | N/A |
-| M199 | Verify #1 | PASS | `bun run verify` em `nexos_0801` | PASS |
-| M200 | Verify #2 | PASS | `bun run verify` em `nexos_0801` novamente | PASS |
+| M199 | Verify #1 | PASS | `bun run verify` em `trixus_0801` | PASS |
+| M200 | Verify #2 | PASS | `bun run verify` em `trixus_0801` novamente | PASS |
 | M201 | Frontend tests | PASS | 21 testes frontend focados/legados | PASS |
 | M202 | Builds | PASS | frontend/backend build | PASS |
 | M203 | Docs | Atualizados | docs exigidos | PASS |
@@ -329,7 +329,7 @@ Nest can't resolve dependencies of the ConversationsController (PrismaService, ?
 argument at index [1] is undefined
 ```
 
-Na execucao local com `bun run backend:dev` apontando para `nexos_0802`, o processo de dev/watch nao
+Na execucao local com `bun run backend:dev` apontando para `trixus_0802`, o processo de dev/watch nao
 entregou stack trace antes do timeout da sessao. A falha foi tratada como evidencia fisica reportada pelo
 operador e auditada no grafo real de DI.
 
@@ -383,7 +383,7 @@ PASS:
 
 ### Startup fisico
 
-PASS em `nexos_0802`:
+PASS em `trixus_0802`:
 
 ```json
 {"ok":true,"port":"3019","health":{"ok":true,"database":"up","redis":"up","queue":"up","realtime":"up","realtimeAdapter":"redis"}}
@@ -453,7 +453,7 @@ Verify final observado:
 | M136 | PASS | Build backend aprovado. |
 | M137 | PASS | Testes backend aprovados. |
 | M138 | PASS | Smoke startup criado. |
-| M139 | PASS | Startup fisico em `nexos_0802` aprovado via health. |
+| M139 | PASS | Startup fisico em `trixus_0802` aprovado via health. |
 | M140 | PASS | Redis adapter corrigido para namespace Socket.io. |
 | M141 | PASS | Health `realtime=up`. |
 | M142 | PASS | Health `realtimeAdapter=redis`. |

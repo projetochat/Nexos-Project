@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 const port = process.env.PORT ?? "3019";
-const timeoutMs = Number(process.env.NEXOS_STARTUP_SMOKE_TIMEOUT_MS ?? 30_000);
+const timeoutMs = Number(process.env.TRIXUS_STARTUP_SMOKE_TIMEOUT_MS ?? 30_000);
 const started = Date.now();
 
 const server = spawn("bun", ["run", "--cwd", "backend", "start"], {

@@ -351,7 +351,7 @@ function message(overrides: { id?: string; status?: MessageStatus; connection?: 
     readAt: null,
     createdAt: new Date("2026-07-30T13:00:00.000Z"),
     updatedAt: new Date("2026-07-30T13:00:00.000Z"),
-    authorMembership: { user: { id: "user-a", email: "agent@nexo.test", name: "Agent" } },
+    authorMembership: { user: { id: "user-a", email: "agent@trixus.test", name: "Agent" } },
     conversation: {
       ...conversation(),
       connection: overrides.connection ?? connection(),

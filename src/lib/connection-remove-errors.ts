@@ -1,7 +1,7 @@
-import { NexosApiError } from "@/lib/nexos-api";
+import { TrixusApiError } from "@/lib/trixus-api";
 
 export function connectionRemoveErrorMessage(error: unknown) {
-  if (error instanceof NexosApiError) {
+  if (error instanceof TrixusApiError) {
     if (error.status === 409) {
       return "A conexão ainda está em uso e não pode ser removida neste estado.";
     }

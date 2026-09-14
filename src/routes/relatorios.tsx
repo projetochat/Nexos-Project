@@ -17,7 +17,7 @@ import { AppShell, PageContainer } from "@/components/app-shell";
 import { ReportFiltersBar } from "@/components/report-filters";
 import { Avatar, Button, Card, KPI, SectionHeader } from "@/components/ui-kit";
 import { num } from "@/lib/format";
-import { operationsApi } from "@/lib/nexos-api";
+import { operationsApi } from "@/lib/trixus-api";
 import {
   DEFAULT_OPERATIONAL_FILTERS,
   type OperationalReportFilters,

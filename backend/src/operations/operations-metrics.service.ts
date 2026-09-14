@@ -8,6 +8,7 @@ import {
   TicketStatus,
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { conversationQueueScope } from "../conversations/conversation-queue-scope";
 
 export type OperationsRange = { start: Date; end: Date };
 export type OperationsMetricFilters = {
@@ -18,10 +19,6 @@ export type OperationsMetricFilters = {
   contactId?: string;
 };
 
-const ACTIVE_CONVERSATION_STATUSES = [
-  ConversationStatus.ABERTA,
-  ConversationStatus.EM_ANDAMENTO,
-] as const;
 const ACTIVE_LEAD_STATUSES = [LeadStatus.NEW, LeadStatus.QUEUED, LeadStatus.ASSIGNED] as const;
 
 @Injectable()
@@ -68,7 +65,7 @@ export class OperationsMetricsService {
       this.prisma.conversation.count({
         where: {
           ...queueConversationScope,
-          status: { in: [...ACTIVE_CONVERSATION_STATUSES] },
+          status: ConversationStatus.ABERTA,
           archivedAt: null,
         },
       }),
@@ -160,61 +157,49 @@ export class OperationsMetricsService {
       this.prisma.conversation.count({
         where: {
           ...queueConversationScope,
-          assignedMembershipId: { not: null },
-          status: { notIn: [ConversationStatus.FECHADA, ConversationStatus.AGUARDANDO] },
+          ...conversationQueueScope("ativas"),
           archivedAt: null,
         },
       }),
       this.prisma.conversation.count({
-        where: { ...conversationScope, status: ConversationStatus.AGUARDANDO, archivedAt: null },
+        where: { ...queueConversationScope, ...conversationQueueScope("standby"), archivedAt: null },
       }),
       this.prisma.conversation.count({
         where: {
           ...queueConversationScope,
-          assignedMembershipId: null,
-          protocol: { not: null },
-          status: ConversationStatus.ABERTA,
+          ...conversationQueueScope("fila"),
           archivedAt: null,
         },
       }),
       this.prisma.conversation.count({
         where: {
           ...conversationScope,
-          assignedMembershipId: null,
-          protocol: null,
-          status: { not: ConversationStatus.FECHADA },
+          ...conversationQueueScope("leads"),
           archivedAt: null,
         },
       }),
       this.prisma.conversation.count({
         where: {
           ...conversationScope,
-          assignedMembershipId: { not: null },
-          status: { notIn: [ConversationStatus.FECHADA, ConversationStatus.AGUARDANDO] },
+          ...conversationQueueScope("ativas"),
           archivedAt: null,
         },
       }),
       this.prisma.conversation.count({
-        where: { ...conversationScope, status: ConversationStatus.AGUARDANDO, archivedAt: null },
+        where: { ...conversationScope, ...conversationQueueScope("standby"), archivedAt: null },
       }),
       this.prisma.conversation.count({
         where: {
           ...conversationScope,
-          assignedMembershipId: null,
-          protocol: { not: null },
-          status: ConversationStatus.ABERTA,
+          ...conversationQueueScope("fila"),
           archivedAt: null,
         },
       }),
-      this.prisma.lead.count({
+      this.prisma.conversation.count({
         where: {
-          ...leadScope,
-          status: { in: [...ACTIVE_LEAD_STATUSES] },
-          conversation: {
-            tenantId,
-            archivedAt: null,
-            OR: [{ status: { not: ConversationStatus.FECHADA } }, { closedAt: null }],
-          },
+          ...conversationScope,
+          ...conversationQueueScope("leads"),
+          archivedAt: null,
         },
       }),
       this.prisma.conversation.count({

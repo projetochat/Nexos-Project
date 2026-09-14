@@ -26,7 +26,7 @@ export class OutboxPollerService implements OnApplicationBootstrap, OnModuleDest
 
   onApplicationBootstrap() {
     if (!this.redis.enabled()) return;
-    if (this.config.get<string>("NEXOS_OUTBOX_POLLER_ENABLED") === "false") return;
+    if (this.config.get<string>("TRIXUS_OUTBOX_POLLER_ENABLED") === "false") return;
     this.timer = setInterval(() => void this.tick(), this.intervalMs());
     this.timer.unref?.();
     void this.tick();
@@ -53,7 +53,7 @@ export class OutboxPollerService implements OnApplicationBootstrap, OnModuleDest
   }
 
   private intervalMs() {
-    const value = Number(this.config.get<string>("NEXOS_OUTBOX_POLL_INTERVAL_MS") ?? 1_000);
+    const value = Number(this.config.get<string>("TRIXUS_OUTBOX_POLL_INTERVAL_MS") ?? 1_000);
     return Number.isFinite(value) && value >= 250 ? value : 1_000;
   }
 }

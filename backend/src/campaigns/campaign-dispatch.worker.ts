@@ -40,7 +40,7 @@ export class CampaignDispatchWorker implements OnModuleInit, OnModuleDestroy {
       CAMPAIGN_DISPATCH_QUEUE,
       (job) => this.handle(job),
       {
-        connection: this.redis.createConnection("nexos-campaign-worker", { blocking: true }),
+        connection: this.redis.createConnection("trixus-campaign-worker", { blocking: true }),
         concurrency: runtimeConfig.concurrency,
         limiter: {
           max: runtimeConfig.messagesPerMinute,
