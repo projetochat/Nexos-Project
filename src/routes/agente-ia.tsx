@@ -1,15 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Card, SectionHeader, Badge, Button } from "@/components/ui-kit";
-import { Bot, Sparkles, MessageSquareText } from "lucide-react";
+import { Bot, Plus, Sparkles, MessageSquareText } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/agente-ia")({
   head: () => ({
     meta: [
-      { title: "Agente de IA · Nexo" },
+      { title: "Agente de IA · Trixus" },
       { name: "description", content: "Configure agentes de IA para atendimento automatizado." },
-      { property: "og:title", content: "Agente de IA · Nexo" },
+      { property: "og:title", content: "Agente de IA · Trixus" },
       { property: "og:description", content: "Configure agentes de IA para atendimento automatizado." },
     ],
   }),
@@ -19,9 +19,10 @@ export const Route = createFileRoute("/agente-ia")({
         <SectionHeader
           title="Agente de IA"
           subtitle="Assistentes inteligentes que respondem, qualificam leads e apoiam sua equipe."
+          subtitleClassName="hidden sm:block"
           actions={
             <Button variant="primary" onClick={() => toast.info("Criação de agente em breve")}>
-              Novo agente
+              <Plus className="h-3.5 w-3.5" /> Novo Agente
             </Button>
           }
         />

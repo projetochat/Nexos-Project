@@ -1,263 +1,1992 @@
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { Plus, Search, Pencil, Trash2, ChevronLeft, ChevronRight, Link2, X } from "lucide-react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createPortal } from "react-dom";
+import {
+  AsYouType,
+  getCountryCallingCode,
+  parsePhoneNumberFromString,
+  type CountryCode,
+} from "libphonenumber-js/min";
+import * as XLSX from "xlsx";
+import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
+  Building2,
+  Bold,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Expand,
+  FileSpreadsheet,
+  FileUp,
+  Italic,
+  Link2,
+  List,
+  ListIndentDecrease,
+  ListIndentIncrease,
+  ListOrdered,
+  MessageSquareMore,
+  Network,
+  Plug,
+  Info,
+  Pencil,
+  Phone,
+  Plus,
+  Search,
+  ShieldCheck,
+  Star,
+  Strikethrough,
+  Tag,
+  Trash2,
+  Type,
+  Underline,
+  Undo2,
+  Redo2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { SectionHeader, Card, Button, Input, Avatar, Badge, Field, Select } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
-import { CONTACTS, CUSTOMERS, CATALOG, type ContactWithCustomer, type Customer, type Tag } from "@/lib/mvp";
+import {
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  Field,
+  Input,
+  InstanceFilterSelect,
+  SearchInput,
+  SectionHeader,
+  Select,
+  Textarea,
+} from "@/components/ui-kit";
+import { isValidEmail, maskBrazilPhone, onlyDigits } from "@/lib/input-masks";
+import { sortByOptionLabel } from "@/lib/sort-options";
+import {
+  conversationApi,
+  crmApi,
+  type ApiAgendaImportContact,
+  type ApiAgendaImportIgnoredContact,
+  type ApiContact,
+  type ApiContactCatalog,
+  type ApiContactCustomField,
+  type ApiContactInstanceOption,
+  type ApiCustomer,
+  type ApiTag,
+} from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/contatos")({ component: ContatosPage });
 
-const PAGE_SIZE = 15;
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 500, 1000, 10000] as const;
+const CUSTOMER_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+const DEFAULT_CUSTOMER_PAGE_SIZE = 10;
+const FAVORITE_COUNTRY_CODES_KEY = "trixus.favorite-country-codes";
+const EMPTY_FILTER_VALUE = "__empty__";
+const COUNTRY_CODES = [
+  { id: "br", code: "55", country: "Brasil", flag: "🇧🇷" },
+  { id: "us", code: "1", country: "Estados Unidos", flag: "🇺🇸" },
+  { id: "pt", code: "351", country: "Portugal", flag: "🇵🇹" },
+  { id: "ar", code: "54", country: "Argentina", flag: "🇦🇷" },
+  { id: "cl", code: "56", country: "Chile", flag: "🇨🇱" },
+  { id: "co", code: "57", country: "Colômbia", flag: "🇨🇴" },
+  { id: "mx", code: "52", country: "México", flag: "🇲🇽" },
+  { id: "es", code: "34", country: "Espanha", flag: "🇪🇸" },
+  { id: "af", code: "93", country: "Afeganistão", flag: "🇦🇫" },
+  { id: "za", code: "27", country: "África do Sul", flag: "🇿🇦" },
+  { id: "al", code: "355", country: "Albânia", flag: "🇦🇱" },
+  { id: "de", code: "49", country: "Alemanha", flag: "🇩🇪" },
+  { id: "ad", code: "376", country: "Andorra", flag: "🇦🇩" },
+  { id: "ao", code: "244", country: "Angola", flag: "🇦🇴" },
+  { id: "ai", code: "1264", country: "Anguilla", flag: "🇦🇮" },
+  { id: "ag", code: "1268", country: "Antígua e Barbuda", flag: "🇦🇬" },
+  { id: "sa", code: "966", country: "Arábia Saudita", flag: "🇸🇦" },
+  { id: "dz", code: "213", country: "Argélia", flag: "🇩🇿" },
+  { id: "am", code: "374", country: "Armênia", flag: "🇦🇲" },
+  { id: "aw", code: "297", country: "Aruba", flag: "🇦🇼" },
+  { id: "au", code: "61", country: "Austrália", flag: "🇦🇺" },
+  { id: "at", code: "43", country: "Áustria", flag: "🇦🇹" },
+  { id: "az", code: "994", country: "Azerbaijão", flag: "🇦🇿" },
+  { id: "bs", code: "1242", country: "Bahamas", flag: "🇧🇸" },
+  { id: "bh", code: "973", country: "Bahrein", flag: "🇧🇭" },
+  { id: "bd", code: "880", country: "Bangladesh", flag: "🇧🇩" },
+  { id: "bb", code: "1246", country: "Barbados", flag: "🇧🇧" },
+  { id: "be", code: "32", country: "Bélgica", flag: "🇧🇪" },
+  { id: "bz", code: "501", country: "Belize", flag: "🇧🇿" },
+  { id: "bj", code: "229", country: "Benin", flag: "🇧🇯" },
+  { id: "bm", code: "1441", country: "Bermudas", flag: "🇧🇲" },
+  { id: "by", code: "375", country: "Bielorrússia", flag: "🇧🇾" },
+  { id: "bo", code: "591", country: "Bolívia", flag: "🇧🇴" },
+  { id: "ba", code: "387", country: "Bósnia e Herzegovina", flag: "🇧🇦" },
+  { id: "bw", code: "267", country: "Botswana", flag: "🇧🇼" },
+  { id: "bn", code: "673", country: "Brunei", flag: "🇧🇳" },
+  { id: "bg", code: "359", country: "Bulgária", flag: "🇧🇬" },
+  { id: "bf", code: "226", country: "Burkina Faso", flag: "🇧🇫" },
+  { id: "bi", code: "257", country: "Burundi", flag: "🇧🇮" },
+  { id: "bt", code: "975", country: "Butão", flag: "🇧🇹" },
+  { id: "cv", code: "238", country: "Cabo Verde", flag: "🇨🇻" },
+  { id: "cm", code: "237", country: "Camarões", flag: "🇨🇲" },
+  { id: "kh", code: "855", country: "Camboja", flag: "🇰🇭" },
+  { id: "ca", code: "1", country: "Canadá", flag: "🇨🇦" },
+  { id: "qa", code: "974", country: "Catar", flag: "🇶🇦" },
+  { id: "kz", code: "7", country: "Cazaquistão", flag: "🇰🇿" },
+  { id: "td", code: "235", country: "Chade", flag: "🇹🇩" },
+  { id: "cn", code: "86", country: "China", flag: "🇨🇳" },
+  { id: "cy", code: "357", country: "Chipre", flag: "🇨🇾" },
+  { id: "sg", code: "65", country: "Cingapura", flag: "🇸🇬" },
+  { id: "cg", code: "242", country: "Congo", flag: "🇨🇬" },
+  { id: "cd", code: "243", country: "Congo, Rep. Democrática", flag: "🇨🇩" },
+  { id: "kr", code: "82", country: "Coreia do Sul", flag: "🇰🇷" },
+  { id: "ci", code: "225", country: "Costa do Marfim", flag: "🇨🇮" },
+  { id: "cr", code: "506", country: "Costa Rica", flag: "🇨🇷" },
+  { id: "hr", code: "385", country: "Croácia", flag: "🇭🇷" },
+  { id: "cu", code: "53", country: "Cuba", flag: "🇨🇺" },
+  { id: "dk", code: "45", country: "Dinamarca", flag: "🇩🇰" },
+  { id: "dj", code: "253", country: "Djibuti", flag: "🇩🇯" },
+  { id: "dm", code: "1767", country: "Dominica", flag: "🇩🇲" },
+  { id: "eg", code: "20", country: "Egito", flag: "🇪🇬" },
+  { id: "sv", code: "503", country: "El Salvador", flag: "🇸🇻" },
+  { id: "ae", code: "971", country: "Emirados Árabes Unidos", flag: "🇦🇪" },
+  { id: "ec", code: "593", country: "Equador", flag: "🇪🇨" },
+  { id: "sk", code: "421", country: "Eslováquia", flag: "🇸🇰" },
+  { id: "si", code: "386", country: "Eslovênia", flag: "🇸🇮" },
+  { id: "ee", code: "372", country: "Estônia", flag: "🇪🇪" },
+  { id: "et", code: "251", country: "Etiópia", flag: "🇪🇹" },
+  { id: "fj", code: "679", country: "Fiji", flag: "🇫🇯" },
+  { id: "ph", code: "63", country: "Filipinas", flag: "🇵🇭" },
+  { id: "fi", code: "358", country: "Finlândia", flag: "🇫🇮" },
+  { id: "fr", code: "33", country: "França", flag: "🇫🇷" },
+  { id: "ga", code: "241", country: "Gabão", flag: "🇬🇦" },
+  { id: "gm", code: "220", country: "Gâmbia", flag: "🇬🇲" },
+  { id: "gh", code: "233", country: "Gana", flag: "🇬🇭" },
+  { id: "ge", code: "995", country: "Geórgia", flag: "🇬🇪" },
+  { id: "gi", code: "350", country: "Gibraltar", flag: "🇬🇮" },
+  { id: "gr", code: "30", country: "Grécia", flag: "🇬🇷" },
+  { id: "gd", code: "1473", country: "Granada", flag: "🇬🇩" },
+  { id: "gt", code: "502", country: "Guatemala", flag: "🇬🇹" },
+  { id: "gy", code: "592", country: "Guiana", flag: "🇬🇾" },
+  { id: "gn", code: "224", country: "Guiné", flag: "🇬🇳" },
+  { id: "gq", code: "240", country: "Guiné Equatorial", flag: "🇬🇶" },
+  { id: "gw", code: "245", country: "Guiné-Bissau", flag: "🇬🇼" },
+  { id: "ht", code: "509", country: "Haiti", flag: "🇭🇹" },
+  { id: "hn", code: "504", country: "Honduras", flag: "🇭🇳" },
+  { id: "hk", code: "852", country: "Hong Kong", flag: "🇭🇰" },
+  { id: "hu", code: "36", country: "Hungria", flag: "🇭🇺" },
+  { id: "ye", code: "967", country: "Iêmen", flag: "🇾🇪" },
+  { id: "in", code: "91", country: "Índia", flag: "🇮🇳" },
+  { id: "id", code: "62", country: "Indonésia", flag: "🇮🇩" },
+  { id: "iq", code: "964", country: "Iraque", flag: "🇮🇶" },
+  { id: "ie", code: "353", country: "Irlanda", flag: "🇮🇪" },
+  { id: "ir", code: "98", country: "Irã", flag: "🇮🇷" },
+  { id: "is", code: "354", country: "Islândia", flag: "🇮🇸" },
+  { id: "il", code: "972", country: "Israel", flag: "🇮🇱" },
+  { id: "it", code: "39", country: "Itália", flag: "🇮🇹" },
+  { id: "jm", code: "1876", country: "Jamaica", flag: "🇯🇲" },
+  { id: "jp", code: "81", country: "Japão", flag: "🇯🇵" },
+  { id: "jo", code: "962", country: "Jordânia", flag: "🇯🇴" },
+  { id: "kw", code: "965", country: "Kuwait", flag: "🇰🇼" },
+  { id: "la", code: "856", country: "Laos", flag: "🇱🇦" },
+  { id: "ls", code: "266", country: "Lesoto", flag: "🇱🇸" },
+  { id: "lv", code: "371", country: "Letônia", flag: "🇱🇻" },
+  { id: "lb", code: "961", country: "Líbano", flag: "🇱🇧" },
+  { id: "lr", code: "231", country: "Libéria", flag: "🇱🇷" },
+  { id: "ly", code: "218", country: "Líbia", flag: "🇱🇾" },
+  { id: "li", code: "423", country: "Liechtenstein", flag: "🇱🇮" },
+  { id: "lt", code: "370", country: "Lituânia", flag: "🇱🇹" },
+  { id: "lu", code: "352", country: "Luxemburgo", flag: "🇱🇺" },
+  { id: "mo", code: "853", country: "Macau", flag: "🇲🇴" },
+  { id: "mk", code: "389", country: "Macedônia do Norte", flag: "🇲🇰" },
+  { id: "mg", code: "261", country: "Madagascar", flag: "🇲🇬" },
+  { id: "my", code: "60", country: "Malásia", flag: "🇲🇾" },
+  { id: "mw", code: "265", country: "Malawi", flag: "🇲🇼" },
+  { id: "mv", code: "960", country: "Maldivas", flag: "🇲🇻" },
+  { id: "ml", code: "223", country: "Mali", flag: "🇲🇱" },
+  { id: "mt", code: "356", country: "Malta", flag: "🇲🇹" },
+  { id: "ma", code: "212", country: "Marrocos", flag: "🇲🇦" },
+  { id: "mu", code: "230", country: "Maurício", flag: "🇲🇺" },
+  { id: "mr", code: "222", country: "Mauritânia", flag: "🇲🇷" },
+  { id: "md", code: "373", country: "Moldávia", flag: "🇲🇩" },
+  { id: "mc", code: "377", country: "Mônaco", flag: "🇲🇨" },
+  { id: "mn", code: "976", country: "Mongólia", flag: "🇲🇳" },
+  { id: "me", code: "382", country: "Montenegro", flag: "🇲🇪" },
+  { id: "mz", code: "258", country: "Moçambique", flag: "🇲🇿" },
+  { id: "mm", code: "95", country: "Myanmar", flag: "🇲🇲" },
+  { id: "na", code: "264", country: "Namíbia", flag: "🇳🇦" },
+  { id: "np", code: "977", country: "Nepal", flag: "🇳🇵" },
+  { id: "ni", code: "505", country: "Nicarágua", flag: "🇳🇮" },
+  { id: "ne", code: "227", country: "Níger", flag: "🇳🇪" },
+  { id: "ng", code: "234", country: "Nigéria", flag: "🇳🇬" },
+  { id: "no", code: "47", country: "Noruega", flag: "🇳🇴" },
+  { id: "nz", code: "64", country: "Nova Zelândia", flag: "🇳🇿" },
+  { id: "om", code: "968", country: "Omã", flag: "🇴🇲" },
+  { id: "nl", code: "31", country: "Países Baixos", flag: "🇳🇱" },
+  { id: "pw", code: "680", country: "Palau", flag: "🇵🇼" },
+  { id: "pa", code: "507", country: "Panamá", flag: "🇵🇦" },
+  { id: "pg", code: "675", country: "Papua-Nova Guiné", flag: "🇵🇬" },
+  { id: "pk", code: "92", country: "Paquistão", flag: "🇵🇰" },
+  { id: "py", code: "595", country: "Paraguai", flag: "🇵🇾" },
+  { id: "pe", code: "51", country: "Peru", flag: "🇵🇪" },
+  { id: "pl", code: "48", country: "Polônia", flag: "🇵🇱" },
+  { id: "pr", code: "1787", country: "Porto Rico", flag: "🇵🇷" },
+  { id: "ke", code: "254", country: "Quênia", flag: "🇰🇪" },
+  { id: "kg", code: "996", country: "Quirguistão", flag: "🇰🇬" },
+  { id: "gb", code: "44", country: "Reino Unido", flag: "🇬🇧" },
+  { id: "cf", code: "236", country: "República Centro-Africana", flag: "🇨🇫" },
+  { id: "cz", code: "420", country: "República Tcheca", flag: "🇨🇿" },
+  { id: "do", code: "1809", country: "República Dominicana", flag: "🇩🇴" },
+  { id: "ro", code: "40", country: "Romênia", flag: "🇷🇴" },
+  { id: "rw", code: "250", country: "Ruanda", flag: "🇷🇼" },
+  { id: "ru", code: "7", country: "Rússia", flag: "🇷🇺" },
+  { id: "ws", code: "685", country: "Samoa", flag: "🇼🇸" },
+  { id: "sm", code: "378", country: "San Marino", flag: "🇸🇲" },
+  { id: "lc", code: "1758", country: "Santa Lúcia", flag: "🇱🇨" },
+  { id: "sn", code: "221", country: "Senegal", flag: "🇸🇳" },
+  { id: "rs", code: "381", country: "Sérvia", flag: "🇷🇸" },
+  { id: "sc", code: "248", country: "Seychelles", flag: "🇸🇨" },
+  { id: "sl", code: "232", country: "Serra Leoa", flag: "🇸🇱" },
+  { id: "sy", code: "963", country: "Síria", flag: "🇸🇾" },
+  { id: "so", code: "252", country: "Somália", flag: "🇸🇴" },
+  { id: "lk", code: "94", country: "Sri Lanka", flag: "🇱🇰" },
+  { id: "sd", code: "249", country: "Sudão", flag: "🇸🇩" },
+  { id: "se", code: "46", country: "Suécia", flag: "🇸🇪" },
+  { id: "ch", code: "41", country: "Suíça", flag: "🇨🇭" },
+  { id: "sr", code: "597", country: "Suriname", flag: "🇸🇷" },
+  { id: "tj", code: "992", country: "Tadjiquistão", flag: "🇹🇯" },
+  { id: "th", code: "66", country: "Tailândia", flag: "🇹🇭" },
+  { id: "tw", code: "886", country: "Taiwan", flag: "🇹🇼" },
+  { id: "tz", code: "255", country: "Tanzânia", flag: "🇹🇿" },
+  { id: "tl", code: "670", country: "Timor-Leste", flag: "🇹🇱" },
+  { id: "tg", code: "228", country: "Togo", flag: "🇹🇬" },
+  { id: "to", code: "676", country: "Tonga", flag: "🇹🇴" },
+  { id: "tt", code: "1868", country: "Trinidad e Tobago", flag: "🇹🇹" },
+  { id: "tn", code: "216", country: "Tunísia", flag: "🇹🇳" },
+  { id: "tm", code: "993", country: "Turcomenistão", flag: "🇹🇲" },
+  { id: "tr", code: "90", country: "Turquia", flag: "🇹🇷" },
+  { id: "ua", code: "380", country: "Ucrânia", flag: "🇺🇦" },
+  { id: "ug", code: "256", country: "Uganda", flag: "🇺🇬" },
+  { id: "uy", code: "598", country: "Uruguai", flag: "🇺🇾" },
+  { id: "uz", code: "998", country: "Uzbequistão", flag: "🇺🇿" },
+  { id: "vu", code: "678", country: "Vanuatu", flag: "🇻🇺" },
+  { id: "ve", code: "58", country: "Venezuela", flag: "🇻🇪" },
+  { id: "vn", code: "84", country: "Vietnã", flag: "🇻🇳" },
+  { id: "zm", code: "260", country: "Zâmbia", flag: "🇿🇲" },
+  { id: "zw", code: "263", country: "Zimbábue", flag: "🇿🇼" },
+];
+const SORTED_COUNTRY_CODES = [...COUNTRY_CODES].sort(compareCountriesByName);
+const CONTACT_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-const INSTANCIAS = ["FLOWID", "ZYVO", "ENORE"] as const;
+type Customer = ApiCustomer;
+type Contact = ApiContact;
+type Tag = ApiTag;
+type ContactCatalog = ApiContactCatalog;
+type ContactInstanceOption = ApiContactInstanceOption;
+type ContactCustomField = ApiContactCustomField;
+type DepartamentoFormData = {
+  name?: string;
+  description?: string | null;
+  color?: string;
+};
 
-function maskPhone(v: string) {
-  const d = v.replace(/\D/g, "").slice(0, 11);
-  if (d.length <= 10) return d.replace(/(\d{2})(\d{4})(\d{0,4}).*/, "($1) $2-$3").replace(/-$/, "");
-  return d.replace(/(\d{2})(\d{5})(\d{0,4}).*/, "($1) $2-$3").replace(/-$/, "");
-}
-
-async function syncContactTags(contactId: string, tagIds: string[]) {
-  const current = await CONTACTS.tags(contactId);
-  const currentIds = new Set(current.map((t) => t.id));
-  const nextIds = new Set(tagIds);
-  const toAdd = [...nextIds].filter((id) => !currentIds.has(id));
-  const toRemove = [...currentIds].filter((id) => !nextIds.has(id));
-  await Promise.all([
-    ...toAdd.map((id) => CONTACTS.addTag(contactId, id)),
-    ...toRemove.map((id) => CONTACTS.removeTag(contactId, id)),
-  ]);
-}
-
+type ContactTextVariant = "short" | "long" | "html";
+type ContactNumberSymbol = "" | "R$" | "%" | "$" | "€" | "£" | "¥";
+type ContactDateVariant = "date" | "datetime";
+type ContactListVariant = "single" | "multi";
+type ContactFieldConfig = {
+  text?: { variant?: ContactTextVariant };
+  number?: { decimals?: number; thousands?: boolean; symbol?: ContactNumberSymbol };
+  date?: { variant?: ContactDateVariant };
+  list?: { variant?: ContactListVariant };
+  checkbox?: { description?: string };
+};
+type ImportSource = "agenda" | "excel";
+type ImportProgressStatus = "idle" | "running" | "completed" | "cancelled";
+type ImportProgressState = {
+  open: boolean;
+  source: ImportSource | null;
+  current: number;
+  total: number;
+  imported: number;
+  status: ImportProgressStatus;
+};
+type AgendaImportPreviewState = {
+  open: boolean;
+  loading: boolean;
+  busy: boolean;
+  previewLoaded: boolean;
+  connectionId: string;
+  total: number;
+  skipped: number;
+  items: ApiAgendaImportContact[];
+  ignoredItems: ApiAgendaImportIgnoredContact[];
+  selectedPhones: string[];
+};
 
 function ContatosPage() {
-  const [contacts, setContacts] = React.useState<ContactWithCustomer[]>([]);
+  const navigate = useNavigate();
+  const [contacts, setContacts] = React.useState<Contact[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
+  const [tags, setTags] = React.useState<Tag[]>([]);
+  const [departments, setDepartments] = React.useState<ContactCatalog[]>([]);
+  const [profiles, setProfiles] = React.useState<ContactCatalog[]>([]);
+  const [instances, setInstances] = React.useState<ContactInstanceOption[]>([]);
+  const [customFieldDefinitions, setCustomFieldDefinitions] = React.useState<ContactCustomField[]>(
+    [],
+  );
   const [loading, setLoading] = React.useState(true);
   const [query, setQuery] = React.useState("");
-  const [filter, setFilter] = React.useState<"all" | "linked" | "unlinked">("all");
-  const [instanciaFilter, setInstanciaFilter] = React.useState<string>("");
-  const [departamentoFilter, setDepartamentoFilter] = React.useState<string>("");
-  const [clienteFilter, setClienteFilter] = React.useState<string>("");
+  const [instanciaFilter, setInstanciaFilter] = React.useState("");
+  const [departamentoFilter, setDepartamentoFilter] = React.useState("");
+  const [clienteFilter, setClienteFilter] = React.useState("");
+  const [tagFilter, setTagFilter] = React.useState("");
   const [page, setPage] = React.useState(1);
-
-  const [editing, setEditing] = React.useState<ContactWithCustomer | null>(null);
-  const [deleting, setDeleting] = React.useState<ContactWithCustomer | null>(null);
+  const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const [allFilteredSelected, setAllFilteredSelected] = React.useState(false);
+  const [bulkAction, setBulkAction] = React.useState("");
+  const [bulkMode, setBulkMode] = React.useState("");
+  const [bulkValue, setBulkValue] = React.useState("");
+  const [bulkTags, setBulkTags] = React.useState<string[]>([]);
+  const [bulkCustomValue, setBulkCustomValue] = React.useState<string | boolean>("");
+  const importModal = useDisclosure();
+  const exportModal = useDisclosure();
+  const exportMenu = useDisclosure();
+  const exportMenuRef = React.useRef<HTMLDivElement>(null);
+  const [exportAllRecords, setExportAllRecords] = React.useState(false);
+  const cancelImportRef = React.useRef(false);
+  const [importProgress, setImportProgress] = React.useState<ImportProgressState>({
+    open: false,
+    source: null,
+    current: 0,
+    total: 0,
+    imported: 0,
+    status: "idle",
+  });
+  const [agendaImportPreview, setAgendaImportPreview] = React.useState<AgendaImportPreviewState>({
+    open: false,
+    loading: false,
+    busy: false,
+    previewLoaded: false,
+    connectionId: "",
+    total: 0,
+    skipped: 0,
+    items: [],
+    ignoredItems: [],
+    selectedPhones: [],
+  });
+  const [total, setTotal] = React.useState(0);
+  const [totalPages, setTotalPages] = React.useState(1);
+  const [editing, setEditing] = React.useState<Contact | null>(null);
+  const [deleting, setDeleting] = React.useState<Contact | null>(null);
+  const [conversationChoice, setConversationChoice] = React.useState<{
+    contact: Contact;
+    instances: ContactInstanceOption[];
+  } | null>(null);
+  const [openingConversation, setOpeningConversation] = React.useState(false);
   const create = useDisclosure();
+  const visibleInstances = React.useMemo(
+    () =>
+      sortByOptionLabel(
+        instances.filter((instance) => isSelectableInstanceStatus(instance.status)),
+        (instance) => instance.name,
+      ),
+    [instances],
+  );
+  const connectedAgendaInstances = React.useMemo(
+    () =>
+      sortByOptionLabel(
+        instances.filter((instance) => isConnectedInstanceStatus(instance.status)),
+        (instance) => instance.name,
+      ),
+    [instances],
+  );
+
+  const connectionLabelByValue = React.useMemo(
+    () =>
+      new Map(
+        instances.flatMap((option) =>
+          [option.value, option.id, option.externalReference]
+            .filter(Boolean)
+            .map((key) => [key as string, option.name]),
+        ),
+      ),
+    [instances],
+  );
+  const connectionColorByValue = React.useMemo(
+    () =>
+      new Map(
+        instances.flatMap((option) =>
+          [option.value, option.id, option.externalReference]
+            .filter(Boolean)
+            .map((key) => [key as string, option.color ?? "#64748b"]),
+        ),
+      ),
+    [instances],
+  );
+  const currentContactFilters = React.useMemo(
+    () => ({
+      q: query,
+      instance: instanciaFilter,
+      department: departamentoFilter,
+      customerId: clienteFilter,
+      tagId: tagFilter,
+    }),
+    [clienteFilter, departamentoFilter, instanciaFilter, query, tagFilter],
+  );
 
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [cs, cust] = await Promise.all([CONTACTS.list(), CUSTOMERS.list()]);
-      setContacts(cs);
-      setCustomers(cust);
+      const [contactResponse, customerResponse, options, customFields] = await Promise.all([
+        crmApi.listContacts({
+          ...currentContactFilters,
+          page,
+          pageSize,
+        }),
+        crmApi.listCustomers({ pageSize: 100 }),
+        crmApi.contactOptions(),
+        crmApi.listContactCustomFields(),
+      ]);
+      setContacts(contactResponse.items);
+      setTotal(contactResponse.total);
+      setTotalPages(contactResponse.totalPages);
+      setCustomers(sortByOptionLabel(customerResponse.items, (customer) => customer.nome));
+      setTags(sortByOptionLabel(options.tags, (tag) => tag.nome));
+      setDepartments(sortByOptionLabel(options.departments, (department) => department.nome));
+      setProfiles(sortByOptionLabel(options.profiles, (profile) => profile.nome));
+      setInstances(
+        sortByOptionLabel(
+          options.instances.filter((instance) => isSelectableInstanceStatus(instance.status)),
+          (instance) => instance.name,
+        ),
+      );
+      setCustomFieldDefinitions(customFields);
     } catch (e) {
       toast.error("Falha ao carregar", { description: (e as Error).message });
-    } finally { setLoading(false); }
-  }, []);
-  React.useEffect(() => { void load(); }, [load]);
-
-  const departamentos = React.useMemo(() => {
-    const set = new Set<string>();
-    contacts.forEach((c) => { if (c.departamento) set.add(c.departamento); });
-    return [...set].sort();
-  }, [contacts]);
-
-  const filtered = React.useMemo(() => {
-    let out = contacts;
-    if (filter === "linked") out = out.filter((c) => c.customer_id);
-    else if (filter === "unlinked") out = out.filter((c) => !c.customer_id);
-    if (instanciaFilter) out = out.filter((c) => c.instancia === instanciaFilter);
-    if (departamentoFilter) out = out.filter((c) => c.departamento === departamentoFilter);
-    if (clienteFilter) out = out.filter((c) => c.customer_id === clienteFilter);
-    if (query) {
-      const q = query.toLowerCase();
-      out = out.filter((c) => (c.nome + " " + c.telefone + " " + (c.customer?.nome ?? "")).toLowerCase().includes(q));
+    } finally {
+      setLoading(false);
     }
-    return out;
-  }, [contacts, query, filter, instanciaFilter, departamentoFilter, clienteFilter]);
+  }, [currentContactFilters, page, pageSize]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+  React.useEffect(() => {
+    setPage(1);
+    setSelectedIds([]);
+    setAllFilteredSelected(false);
+  }, [query, instanciaFilter, departamentoFilter, clienteFilter, tagFilter, pageSize]);
+  React.useEffect(() => {
+    if (allFilteredSelected) return;
+    setSelectedIds((current) =>
+      current.filter((id) => contacts.some((contact) => contact.id === id)),
+    );
+  }, [allFilteredSelected, contacts]);
+  React.useEffect(() => {
+    if (!exportMenu.open) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!exportMenuRef.current?.contains(event.target as Node)) exportMenu.hide();
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    return () => document.removeEventListener("pointerdown", closeOnOutside);
+  }, [exportMenu]);
   const pageSafe = Math.min(page, totalPages);
-  const shown = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
-  React.useEffect(() => setPage(1), [query, filter, instanciaFilter, departamentoFilter, clienteFilter]);
+  const allVisibleSelected =
+    contacts.length > 0 &&
+    (allFilteredSelected || contacts.every((contact) => selectedIds.includes(contact.id)));
+  const selectedBulkCount = allFilteredSelected ? total : selectedIds.length;
+  const contactAnchorLetters = React.useMemo(() => {
+    const seen = new Set<string>();
+    const anchors = new Map<string, string>();
+    for (const contact of contacts) {
+      const letter = contactAlphabetKey(contact.nome);
+      if (!letter || seen.has(letter)) continue;
+      seen.add(letter);
+      anchors.set(contact.id, letter);
+    }
+    return anchors;
+  }, [contacts]);
+  const availableContactLetters = React.useMemo(
+    () => new Set(contactAnchorLetters.values()),
+    [contactAnchorLetters],
+  );
+  const exportableSelectedCount = React.useMemo(
+    () =>
+      contacts.filter((contact) => selectedIds.includes(contact.id) && isExportableContact(contact))
+        .length,
+    [contacts, selectedIds],
+  );
+  const exportableContactCount = exportAllRecords ? total : exportableSelectedCount;
+  const resetBulkSelection = () => {
+    setSelectedIds([]);
+    setAllFilteredSelected(false);
+  };
+  const toggleVisibleSelection = () => {
+    if (allFilteredSelected) {
+      resetBulkSelection();
+      return;
+    }
+    setSelectedIds(allVisibleSelected ? [] : contacts.map((contact) => contact.id));
+  };
+  const toggleContactSelection = (contactId: string) => {
+    if (allFilteredSelected) {
+      setAllFilteredSelected(false);
+      setSelectedIds(
+        contacts.filter((contact) => contact.id !== contactId).map((contact) => contact.id),
+      );
+      return;
+    }
+    setSelectedIds((current) =>
+      current.includes(contactId)
+        ? current.filter((id) => id !== contactId)
+        : [...current, contactId],
+    );
+  };
+  const scrollToContactLetter = (letter: string) => {
+    const anchors = Array.from(
+      document.querySelectorAll<HTMLElement>(`[data-contact-letter-anchor="${letter}"]`),
+    );
+    const visibleAnchor = anchors.find((anchor) => anchor.offsetParent !== null) ?? anchors[0];
+    visibleAnchor?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const scrollToContactsFooter = () => {
+    const footer = document.querySelector<HTMLElement>("[data-contacts-list-footer]");
+    footer?.scrollIntoView({ behavior: "smooth", block: "end" });
+  };
+
+  const selectedBulkCustomField = bulkMode.startsWith("custom:")
+    ? customFieldDefinitions.find((field) => field.id === bulkMode.slice("custom:".length))
+    : undefined;
+
+  const startConversation = async (contact: Contact, connectionId: string) => {
+    setOpeningConversation(true);
+    try {
+      const conversation = await conversationApi.create({
+        contactId: contact.id,
+        connectionId,
+        assignToSelf: true,
+      });
+      setConversationChoice(null);
+      navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
+    } catch (e) {
+      toast.error("Falha ao abrir conversa", { description: (e as Error).message });
+    } finally {
+      setOpeningConversation(false);
+    }
+  };
+
+  const openConversation = (contact: Contact) => {
+    const connectedInstances = resolveContactInstances(contact.instanceIds, instances).filter(
+      (instance) => isConnectedInstanceStatus(instance.status),
+    );
+    if (connectedInstances.length === 0) {
+      toast.error("Nenhuma instância conectada", {
+        description: "Vincule uma instância conectada ao contato para iniciar a conversa.",
+      });
+      return;
+    }
+    if (connectedInstances.length === 1) {
+      void startConversation(contact, connectedInstances[0].id);
+      return;
+    }
+    setConversationChoice({ contact, instances: connectedInstances });
+  };
+
+  const exportContacts = async (format: "csv" | "xlsx" = "csv") => {
+    if (!exportAllRecords && selectedIds.length === 0) {
+      toast.error("Selecione algum registro p/ prosseguir com a exportação");
+      return;
+    }
+    const sourceRows = exportAllRecords
+      ? await loadContactsForExport()
+      : contacts.filter((contact) => selectedIds.includes(contact.id));
+    const rows = sourceRows.filter(isExportableContact);
+    if (rows.length === 0) {
+      toast.error("Nenhum contato válido para exportar", {
+        description: "Grupos não entram na exportação de contatos.",
+      });
+      return;
+    }
+    const rowsForExport = [
+      [
+        "Contato",
+        "WhatsApp",
+        "E-mail",
+        "Empresa",
+        "Departamento",
+        "Perfil",
+        "Instâncias",
+        "Etiquetas",
+      ],
+      ...rows.map((contact) => [
+        contact.nome,
+        formatPhoneWithDdi(contact.telefone),
+        contact.email ?? "",
+        contact.customer?.nome ?? "",
+        contact.contactDepartment?.nome ?? contact.departamento ?? "",
+        contact.contactProfile?.nome ?? "",
+        (contact.instanceIds ?? []).map((id) => connectionLabelByValue.get(id) ?? id).join(", "),
+        contact.tags.map((tag) => tag.nome).join(", "),
+      ]),
+    ];
+    const filename = `contatos-${new Date().toISOString().slice(0, 10)}.${format}`;
+    if (format === "xlsx") {
+      const worksheet = XLSX.utils.aoa_to_sheet(rowsForExport);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Contatos");
+      XLSX.writeFile(workbook, filename);
+    } else {
+      downloadTextFile(filename, toCsv(rowsForExport), "text/csv;charset=utf-8");
+    }
+    toast.success("Exportação gerada", {
+      description: `${rows.length} contato(s) exportado(s).`,
+    });
+    exportMenu.hide();
+    exportModal.hide();
+  };
+
+  const loadContactsForExport = async () => {
+    const all: Contact[] = [];
+    let nextPage = 1;
+    let pages = 1;
+    do {
+      const response = await crmApi.listContacts({
+        q: query,
+        page: nextPage,
+        pageSize: 1000,
+        instance: instanciaFilter,
+        department: departamentoFilter,
+        customerId: clienteFilter,
+        tagId: tagFilter,
+      });
+      all.push(...response.items);
+      pages = response.totalPages;
+      nextPage += 1;
+    } while (nextPage <= pages);
+    return all;
+  };
+
+  const reopenImportProgress = () => {
+    if (importProgress.status === "idle") return false;
+    setImportProgress((current) => ({ ...current, open: true }));
+    exportMenu.hide();
+    return true;
+  };
+
+  const openExcelImport = () => {
+    if (reopenImportProgress()) return;
+    exportMenu.hide();
+    importModal.show();
+  };
+
+  const ensureImportCatalogs = async (records: string[][], index: Map<string, number>) => {
+    const [customerResponse, options] = await Promise.all([
+      crmApi.listCustomers({ pageSize: 10000 }),
+      crmApi.contactOptions(),
+    ]);
+    const importedCustomers = [...customerResponse.items];
+    const importedDepartments = [...options.departments];
+    const importedProfiles = [...options.profiles];
+    const importedTags = [...options.tags];
+
+    const ensureCustomer = async (name: string) => {
+      const cleanName = cleanImportName(name);
+      if (!cleanName || findByImportedName(importedCustomers, cleanName)) return;
+      try {
+        importedCustomers.push(await crmApi.createCustomer({ name: cleanName }));
+      } catch {
+        const refreshed = await crmApi.listCustomers({ pageSize: 10000 });
+        const existing = findByImportedName(refreshed.items, cleanName);
+        if (existing) importedCustomers.push(existing);
+      }
+    };
+
+    const ensureDepartment = async (name: string) => {
+      const cleanName = cleanImportName(name);
+      if (!cleanName || findByImportedName(importedDepartments, cleanName)) return;
+      try {
+        importedDepartments.push(await crmApi.createContactDepartment({ name: cleanName }));
+      } catch {
+        const refreshed = await crmApi.listContactDepartments();
+        const existing = findByImportedName(refreshed, cleanName);
+        if (existing) importedDepartments.push(existing);
+      }
+    };
+
+    const ensureProfile = async (name: string) => {
+      const cleanName = cleanImportName(name);
+      if (!cleanName || findByImportedName(importedProfiles, cleanName)) return;
+      try {
+        importedProfiles.push(await crmApi.createContactProfile({ name: cleanName }));
+      } catch {
+        const refreshed = await crmApi.listContactProfiles();
+        const existing = findByImportedName(refreshed, cleanName);
+        if (existing) importedProfiles.push(existing);
+      }
+    };
+
+    const ensureTag = async (name: string) => {
+      const cleanName = cleanImportName(name);
+      if (!cleanName || findByImportedName(importedTags, cleanName)) return;
+      try {
+        importedTags.push(await crmApi.createTag({ name: cleanName }));
+      } catch {
+        const refreshed = await crmApi.listTags();
+        const existing = findByImportedName(refreshed, cleanName);
+        if (existing) importedTags.push(existing);
+      }
+    };
+
+    const customerNames = uniqueLabels(records.map((row) => valueAt(row, index, ["empresa"])));
+    const departmentNames = uniqueLabels(
+      records.map((row) => valueAt(row, index, ["departamento"])),
+    );
+    const profileNames = uniqueLabels(records.map((row) => valueAt(row, index, ["perfil"])));
+    const tagNames = uniqueLabels(
+      records.flatMap((row) => splitImportList(valueAt(row, index, ["etiquetas"]))),
+    );
+
+    for (const name of customerNames) await ensureCustomer(name);
+    for (const name of departmentNames) await ensureDepartment(name);
+    for (const name of profileNames) await ensureProfile(name);
+    for (const name of tagNames) await ensureTag(name);
+
+    setCustomers(importedCustomers);
+    setDepartments(importedDepartments);
+    setProfiles(importedProfiles);
+    setTags(importedTags);
+
+    return {
+      customers: importedCustomers,
+      departments: importedDepartments,
+      profiles: importedProfiles,
+      tags: importedTags,
+    };
+  };
+
+  const importContactsRows = async (rows: string[][], source: ImportSource = "excel") => {
+    const [header, ...records] = rows;
+    if (!header?.length) return;
+    const index = new Map(header.map((item, i) => [normalizeHeader(item), i]));
+    const validRecords = records.filter((row) => {
+      const name = valueAt(row, index, ["contato", "nome", "name"]);
+      const phone = valueAt(row, index, [
+        "whatsapp",
+        "telefone",
+        "phone",
+        "celular",
+        "numero",
+        "número",
+      ]);
+      return Boolean(name && phone);
+    });
+    if (!validRecords.length) {
+      toast.error("Nenhum contato válido encontrado.");
+      return;
+    }
+    let importCatalogs: Awaited<ReturnType<typeof ensureImportCatalogs>>;
+    try {
+      importCatalogs = await ensureImportCatalogs(validRecords, index);
+    } catch (error) {
+      toast.error("Falha ao preparar cadastros da importação", {
+        description: (error as Error).message,
+      });
+      return;
+    }
+    cancelImportRef.current = false;
+    setImportProgress({
+      open: true,
+      source,
+      current: 0,
+      total: validRecords.length,
+      imported: 0,
+      status: "running",
+    });
+    let created = 0;
+    let processed = 0;
+    for (const row of validRecords) {
+      if (cancelImportRef.current) {
+        setImportProgress((current) => ({ ...current, status: "cancelled" }));
+        break;
+      }
+      const name = valueAt(row, index, ["contato", "nome", "name"]);
+      const phone = valueAt(row, index, [
+        "whatsapp",
+        "telefone",
+        "phone",
+        "celular",
+        "numero",
+        "número",
+      ]);
+      if (!name || !phone) continue;
+      const customerName = valueAt(row, index, ["empresa"]);
+      const departmentName = valueAt(row, index, ["departamento"]);
+      const profileName = valueAt(row, index, ["perfil"]);
+      const tagNames = splitImportList(valueAt(row, index, ["etiquetas"]));
+      const instanceNames = splitImportList(valueAt(row, index, ["instancias", "instâncias"]));
+      const customer = findByImportedName(importCatalogs.customers, customerName);
+      const department = findByImportedName(importCatalogs.departments, departmentName);
+      const profile = findByImportedName(importCatalogs.profiles, profileName);
+      const importedTags = tagNames
+        .map((item) => findByImportedName(importCatalogs.tags, item))
+        .filter(Boolean) as Tag[];
+      const importedInstances = instanceNames
+        .map((item) => findImportedInstance(instances, item))
+        .filter(Boolean) as ContactInstanceOption[];
+      try {
+        await crmApi.createContact(
+          contactPayload({
+            nome: name,
+            telefone: phone,
+            customer_id: customer?.id ?? null,
+            email: valueAt(row, index, ["email", "e-mail"]) || null,
+            contactDepartmentId: department?.id ?? null,
+            contactProfileId: profile?.id ?? null,
+            instanceIds: importedInstances.map((instance) => instance.value),
+            tag_ids: importedTags.map((tag) => tag.id),
+          }),
+        );
+        created += 1;
+      } catch {
+        // Mantem a importacao rodando quando encontra duplicados ou linhas invalidas.
+      }
+      processed += 1;
+      setImportProgress((current) => ({
+        ...current,
+        current: processed,
+        imported: created,
+      }));
+    }
+    if (!cancelImportRef.current) {
+      setImportProgress((current) => ({
+        ...current,
+        current: current.total,
+        imported: created,
+        status: "completed",
+      }));
+    } else {
+      setImportProgress((current) => ({
+        ...current,
+        imported: created,
+      }));
+    }
+    await load();
+  };
+
+  const importFromAgenda = async () => {
+    if (reopenImportProgress()) return;
+    exportMenu.hide();
+    if (!connectedAgendaInstances.length) {
+      toast.error("Nenhuma instância WhatsApp conectada para importar agenda.");
+      return;
+    }
+    const singleConnectionId =
+      connectedAgendaInstances.length === 1 ? connectedAgendaInstances[0]?.id : "";
+    setAgendaImportPreview({
+      open: true,
+      loading: Boolean(singleConnectionId),
+      busy: false,
+      previewLoaded: false,
+      connectionId: singleConnectionId,
+      total: 0,
+      skipped: 0,
+      items: [],
+      ignoredItems: [],
+      selectedPhones: [],
+    });
+    if (!singleConnectionId) return;
+    await loadAgendaImportPreview(singleConnectionId);
+  };
+
+  const loadAgendaImportPreview = async (connectionId: string) => {
+    if (!connectionId) {
+      toast.error("Selecione uma instância WhatsApp para importar agenda.");
+      return;
+    }
+    setAgendaImportPreview((current) => ({
+      ...current,
+      loading: true,
+      busy: false,
+      previewLoaded: false,
+      connectionId,
+      total: 0,
+      skipped: 0,
+      items: [],
+      ignoredItems: [],
+      selectedPhones: [],
+    }));
+    try {
+      const result = await crmApi.previewContactsFromAgenda({
+        connectionId,
+      });
+      setAgendaImportPreview({
+        open: true,
+        loading: false,
+        busy: false,
+        previewLoaded: true,
+        connectionId,
+        total: result.total,
+        skipped: result.skipped,
+        items: result.items,
+        ignoredItems: result.ignoredItems ?? [],
+        selectedPhones: result.items.map((item) => item.normalizedPhone),
+      });
+    } catch (error) {
+      setAgendaImportPreview({
+        open: false,
+        loading: false,
+        busy: false,
+        previewLoaded: false,
+        connectionId: "",
+        total: 0,
+        skipped: 0,
+        items: [],
+        ignoredItems: [],
+        selectedPhones: [],
+      });
+      toast.error("Falha ao importar agenda", { description: (error as Error).message });
+    }
+  };
+
+  const closeAgendaImportPreview = () => {
+    if (agendaImportPreview.busy) return;
+    setAgendaImportPreview({
+      open: false,
+      loading: false,
+      busy: false,
+      previewLoaded: false,
+      connectionId: "",
+      total: 0,
+      skipped: 0,
+      items: [],
+      ignoredItems: [],
+      selectedPhones: [],
+    });
+  };
+
+  const confirmAgendaImport = async () => {
+    const importablePhones = new Set(
+      agendaImportPreview.items.map((item) => item.normalizedPhone).filter(Boolean),
+    );
+    const selectedPhones = agendaImportPreview.selectedPhones.filter((phone) =>
+      importablePhones.has(phone),
+    );
+    const progressTotal = selectedPhones.length;
+    if (!progressTotal) {
+      toast.error("Selecione ao menos um contato para importar.");
+      return;
+    }
+    setAgendaImportPreview((current) => ({ ...current, busy: true }));
+    cancelImportRef.current = false;
+    setImportProgress({
+      open: true,
+      source: "agenda",
+      current: 0,
+      total: progressTotal,
+      imported: 0,
+      status: "running",
+    });
+    const progressTimer = window.setInterval(() => {
+      setImportProgress((current) => {
+        if (current.source !== "agenda" || current.status !== "running") return current;
+        const nextCurrent = Math.min(current.current + 1, Math.max(current.total - 1, 0));
+        return { ...current, current: nextCurrent, imported: nextCurrent };
+      });
+    }, 250);
+    try {
+      const result = await crmApi.importContactsFromAgenda({
+        connectionId: agendaImportPreview.connectionId || undefined,
+        selectedPhones,
+      });
+      window.clearInterval(progressTimer);
+      setAgendaImportPreview({
+        open: false,
+        loading: false,
+        busy: false,
+        previewLoaded: false,
+        connectionId: "",
+        total: 0,
+        skipped: 0,
+        items: [],
+        ignoredItems: [],
+        selectedPhones: [],
+      });
+      setImportProgress({
+        open: true,
+        source: "agenda",
+        current: result.total,
+        total: result.total,
+        imported: result.imported,
+        status: "completed",
+      });
+      toast.success("Importação concluída", {
+        description: `${formatIntegerPtBr(result.imported)} de ${formatIntegerPtBr(result.total)} contato(s) importado(s).`,
+      });
+      await load();
+    } catch (error) {
+      window.clearInterval(progressTimer);
+      setAgendaImportPreview((current) => ({ ...current, busy: false }));
+      setImportProgress({
+        open: false,
+        source: null,
+        current: 0,
+        total: 0,
+        imported: 0,
+        status: "idle",
+      });
+      toast.error("Falha ao importar agenda", { description: (error as Error).message });
+    }
+  };
+
+  const closeImportProgress = () =>
+    setImportProgress((current) =>
+      current.status === "running"
+        ? { ...current, open: false }
+        : {
+            open: false,
+            source: null,
+            current: 0,
+            total: 0,
+            imported: 0,
+            status: "idle",
+          },
+    );
+
+  const applyBulkAction = async () => {
+    if (!selectedBulkCount || !bulkMode) return;
+    const target = allFilteredSelected
+      ? { allFiltered: true, filters: currentContactFilters }
+      : { contactIds: selectedIds };
+    if (bulkMode === "delete") {
+      if (
+        !window.confirm(
+          `Deseja realmente excluir ${formatIntegerPtBr(selectedBulkCount)} contato(s)?`,
+        )
+      )
+        return;
+      await crmApi.bulkUpdateContacts({ ...target, delete: true });
+    } else if (bulkMode === "tags") {
+      await crmApi.bulkUpdateContacts({ ...target, tagIds: bulkTags });
+    } else if (bulkMode === "instances") {
+      await crmApi.bulkUpdateContacts({
+        ...target,
+        instanceIds: bulkValue ? bulkValue.split(",").filter(Boolean) : [],
+      });
+    } else if (bulkMode === "email") {
+      await crmApi.bulkUpdateContacts({ ...target, email: bulkValue || null });
+    } else if (selectedBulkCustomField) {
+      await crmApi.bulkUpdateContacts({
+        ...target,
+        customFields: { [selectedBulkCustomField.id]: bulkCustomValue },
+      });
+    } else {
+      await crmApi.bulkUpdateContacts({
+        ...target,
+        customerId: bulkMode === "customer" ? bulkValue || null : undefined,
+        contactDepartmentId: bulkMode === "department" ? bulkValue || null : undefined,
+        contactProfileId: bulkMode === "profile" ? bulkValue || null : undefined,
+      });
+    }
+    toast.success("Contatos atualizados");
+    resetBulkSelection();
+    setBulkAction("");
+    setBulkMode("");
+    setBulkValue("");
+    setBulkTags([]);
+    setBulkCustomValue("");
+    await load();
+  };
 
   return (
     <AppShell>
-      <PageContainer>
+      <PageContainer className="max-w-[96rem] lg:px-8 xl:px-10 2xl:px-12">
         <SectionHeader
           title="Contatos"
-          subtitle={`${filtered.length} de ${contacts.length} contatos do WhatsApp.`}
+          subtitle={`${formatIntegerPtBr(total)} contatos cadastrados.`}
+          subtitleClassName="hidden sm:block"
           actions={
-            <Button variant="primary" size="sm" onClick={create.show}>
-              <Plus className="h-3.5 w-3.5" /> Novo contato
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <div ref={exportMenuRef} className="relative">
+                <Button variant="secondary" size="sm" onClick={exportMenu.toggle}>
+                  Importar / Exportar
+                </Button>
+                {exportMenu.open && (
+                  <div className="absolute left-0 z-[80] mt-2 w-64 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
+                      onClick={() => void importFromAgenda()}
+                    >
+                      <Phone className="h-4 w-4" /> Importar Agenda Telefônica
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
+                      onClick={openExcelImport}
+                    >
+                      <FileSpreadsheet className="h-4 w-4" /> Importar via Excel/CSV
+                    </button>
+                    <div className="mt-1 border-t border-border"></div>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
+                      onClick={() => {
+                        exportMenu.hide();
+                        exportModal.show();
+                      }}
+                    >
+                      <Download className="h-4 w-4" /> Exportar
+                    </button>
+                  </div>
+                )}
+              </div>
+              <Button variant="primary" size="sm" onClick={create.show}>
+                <Plus className="h-3.5 w-3.5" /> Novo Contato
+              </Button>
+            </div>
           }
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_repeat(4,180px)]">
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))]">
+            <div className="col-span-2 xl:col-span-1">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Busca</label>
+              <SearchInput
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="w-full bg-transparent py-2 text-sm outline-none"
-                placeholder="Buscar por nome, telefone ou cliente…"
+                onChange={setQuery}
+                placeholder="Buscar por nome, WhatsApp ou empresa..."
               />
             </div>
-            <Select value={instanciaFilter} onChange={(e) => setInstanciaFilter(e.target.value)}>
-              <option value="">Instância: Todas</option>
-              {INSTANCIAS.map((i) => <option key={i} value={i}>{i}</option>)}
-            </Select>
-            <Select value={departamentoFilter} onChange={(e) => setDepartamentoFilter(e.target.value)}>
-              <option value="">Departamento: Todos</option>
-              {departamentos.map((d) => <option key={d} value={d}>{d}</option>)}
-            </Select>
-            <Select value={clienteFilter} onChange={(e) => setClienteFilter(e.target.value)}>
-              <option value="">Cliente: Todos</option>
-              {customers.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            </Select>
-            <Select value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}>
-              <option value="all">Vínculo: Todos</option>
-              <option value="linked">Vinculados</option>
-              <option value="unlinked">Sem cliente</option>
-            </Select>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Instância</span>
+              <InstanceFilterSelect
+                value={instanciaFilter}
+                onChange={setInstanciaFilter}
+                extraOptions={[{ value: EMPTY_FILTER_VALUE, label: "- Sem instância -" }]}
+                options={visibleInstances.map((option) => ({
+                  value: option.value,
+                  label: option.name,
+                  color: option.color,
+                }))}
+              />
+            </label>
+            <FilterSelect label="Empresa" value={clienteFilter} onChange={setClienteFilter}>
+              {[
+                <option key="all" value="">
+                  Todas
+                </option>,
+                <option key="empty" value={EMPTY_FILTER_VALUE}>
+                  - Sem empresa -
+                </option>,
+                ...customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.nome}
+                  </option>
+                )),
+              ]}
+            </FilterSelect>
+            <FilterSelect
+              label="Departamento"
+              value={departamentoFilter}
+              onChange={setDepartamentoFilter}
+            >
+              {[
+                <option key="all" value="">
+                  Todos
+                </option>,
+                <option key="empty" value={EMPTY_FILTER_VALUE}>
+                  - Sem departamento -
+                </option>,
+                ...departments.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.nome}
+                  </option>
+                )),
+              ]}
+            </FilterSelect>
+            <FilterSelect label="Etiqueta" value={tagFilter} onChange={setTagFilter}>
+              {[
+                <option key="all" value="">
+                  Todas
+                </option>,
+                <option key="empty" value={EMPTY_FILTER_VALUE}>
+                  - Sem etiqueta -
+                </option>,
+                ...tags.map((tag) => (
+                  <option key={tag.id} value={tag.id}>
+                    {tag.nome}
+                  </option>
+                )),
+              ]}
+            </FilterSelect>
           </div>
         </Card>
 
-
-        <Card className="overflow-hidden p-0">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3 font-medium">Contato</th>
-                <th className="px-4 py-3 font-medium">Telefone</th>
-                <th className="px-4 py-3 font-medium">Instância</th>
-                <th className="px-4 py-3 font-medium">Departamento</th>
-                <th className="px-4 py-3 font-medium">Cliente</th>
-                <th className="px-4 py-3 font-medium text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading && (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">Carregando…</td></tr>
+        {selectedBulkCount > 0 && (
+          <Card className="mb-4 hidden p-3 md:block">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="mr-2 text-sm font-medium">
+                {formatIntegerPtBr(selectedBulkCount)} selecionado(s)
+              </span>
+              <label className="flex min-h-9 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 shrink-0"
+                  checked={allFilteredSelected}
+                  onChange={(event) => {
+                    setAllFilteredSelected(event.target.checked);
+                    setSelectedIds(
+                      event.target.checked ? contacts.map((contact) => contact.id) : [],
+                    );
+                  }}
+                />
+                <span className="font-medium">Marcar todos os registros</span>
+              </label>
+              <Select
+                value={bulkAction}
+                onChange={(event) => {
+                  const nextAction = event.target.value;
+                  setBulkAction(nextAction);
+                  setBulkMode(nextAction === "delete" ? "delete" : "");
+                  setBulkValue("");
+                  setBulkTags([]);
+                  setBulkCustomValue("");
+                }}
+                className="w-60"
+              >
+                <option value="">Ações</option>
+                <option value="update">Atualizar em massa</option>
+                <option value="delete">Excluir em massa</option>
+              </Select>
+              {bulkAction === "update" && (
+                <Select
+                  value={bulkMode}
+                  onChange={(event) => {
+                    setBulkMode(event.target.value as typeof bulkMode);
+                    setBulkValue("");
+                    setBulkTags([]);
+                    setBulkCustomValue("");
+                  }}
+                  className="w-60"
+                >
+                  <option value="">- Selecione o campo -</option>
+                  <option value="customer">Empresa do contato</option>
+                  <option value="department">Departamento</option>
+                  <option value="profile">Perfil do contato</option>
+                  <option value="email">E-mail</option>
+                  <option value="instances">Instâncias</option>
+                  <option value="tags">Etiquetas</option>
+                  {customFieldDefinitions.length > 0 && (
+                    <optgroup label="Campos adicionais">
+                      {customFieldDefinitions.map((field) => (
+                        <option key={field.id} value={`custom:${field.id}`}>
+                          {field.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </Select>
               )}
-              {!loading && shown.map((c) => (
-                <tr key={c.id} className="transition hover:bg-surface-1">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar name={c.nome} size={30} />
-                      <p className="truncate font-medium">{c.nome}</p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">{c.telefone}</td>
-                  <td className="px-4 py-3">
-                    {c.instancia ? (
-                      <Badge tone="default" dot={false}>{c.instancia}</Badge>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-xs">
-                    {c.departamento || <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className="px-4 py-3">
-                    {c.customer ? (
-                      c.customer.cor ? (
-                        <span
-                          className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                          style={{
-                            backgroundColor: `${c.customer.cor}1f`,
-                            borderColor: `${c.customer.cor}66`,
-                            color: c.customer.cor,
-                          }}
-                        >
-                          <Link2 className="h-3 w-3" />{c.customer.nome}
-                        </span>
-                      ) : (
-                        <Badge tone="info"><Link2 className="mr-1 h-3 w-3" />{c.customer.nome}</Badge>
-                      )
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Não vinculado</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" title="Editar" onClick={() => setEditing(c)}><Pencil className="h-3.5 w-3.5" /></Button>
-                      <Button variant="ghost" size="sm" title="Excluir" onClick={() => setDeleting(c)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {!loading && shown.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">Nenhum contato encontrado.</td></tr>
+              {bulkMode === "customer" && (
+                <Select
+                  value={bulkValue}
+                  onChange={(event) => setBulkValue(event.target.value)}
+                  className="w-60"
+                >
+                  <option value="">- Sem empresa -</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.nome}
+                    </option>
+                  ))}
+                </Select>
               )}
-            </tbody>
-          </table>
-
-          <div className="flex items-center justify-between border-t border-border bg-surface-1 px-4 py-3 text-xs text-muted-foreground">
-            <span>Mostrando {shown.length} de {filtered.length}</span>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" disabled={pageSafe === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><ChevronLeft className="h-3.5 w-3.5" /></Button>
-              <span className="font-mono">{pageSafe} / {totalPages}</span>
-              <Button variant="ghost" size="sm" disabled={pageSafe === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}><ChevronRight className="h-3.5 w-3.5" /></Button>
+              {bulkMode === "department" && (
+                <Select
+                  value={bulkValue}
+                  onChange={(event) => setBulkValue(event.target.value)}
+                  className="w-60"
+                >
+                  <option value="">- Sem departamento -</option>
+                  {departments.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.nome}
+                    </option>
+                  ))}
+                </Select>
+              )}
+              {bulkMode === "profile" && (
+                <Select
+                  value={bulkValue}
+                  onChange={(event) => setBulkValue(event.target.value)}
+                  className="w-60"
+                >
+                  <option value="">- Sem perfil -</option>
+                  {profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.nome}
+                    </option>
+                  ))}
+                </Select>
+              )}
+              {bulkMode === "tags" && (
+                <div className="min-w-72">
+                  <TagMultiSelect
+                    tags={tags}
+                    selectedIds={bulkTags}
+                    onChange={setBulkTags}
+                    placement="down"
+                    flow
+                  />
+                </div>
+              )}
+              {bulkMode === "email" && (
+                <Input
+                  type="email"
+                  value={bulkValue}
+                  onChange={(event) => setBulkValue(event.target.value)}
+                  placeholder="email@exemplo.com"
+                  className="w-72"
+                />
+              )}
+              {bulkMode === "instances" && (
+                <div className="min-w-72">
+                  <InstanceMultiSelect
+                    instances={visibleInstances}
+                    selectedIds={bulkValue ? bulkValue.split(",").filter(Boolean) : []}
+                    onChange={(ids) => setBulkValue(ids.join(","))}
+                  />
+                </div>
+              )}
+              {selectedBulkCustomField && (
+                <div className="min-w-72">
+                  <CustomContactFieldInput
+                    field={selectedBulkCustomField}
+                    value={bulkCustomValue}
+                    onChange={setBulkCustomValue}
+                  />
+                </div>
+              )}
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!bulkAction || (bulkAction === "update" && !bulkMode)}
+                onClick={() => void applyBulkAction()}
+              >
+                <Check className="h-3.5 w-3.5" /> Aplicar
+              </Button>
             </div>
-          </div>
+          </Card>
+        )}
+
+        <Card className="mb-3 p-4 md:hidden">
+          <label className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <input
+              type="checkbox"
+              className="h-5 w-5 shrink-0"
+              checked={allVisibleSelected}
+              onChange={toggleVisibleSelection}
+              aria-label="Selecionar todos os registros"
+            />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">
+              Selecionar todos os registros
+            </span>
+          </label>
+          {selectedBulkCount > 0 && (
+            <div className="mt-3 rounded-lg border border-border bg-card p-3">
+              <span className="mb-2 block text-xs font-semibold">
+                {formatIntegerPtBr(selectedBulkCount)} selecionado(s)
+              </span>
+              <div className="grid gap-2">
+                <label className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 shrink-0"
+                    checked={allFilteredSelected}
+                    onChange={(event) => {
+                      setAllFilteredSelected(event.target.checked);
+                      setSelectedIds(
+                        event.target.checked ? contacts.map((contact) => contact.id) : [],
+                      );
+                    }}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                    Marcar todos os registros
+                  </span>
+                </label>
+                <Select
+                  value={bulkAction}
+                  onChange={(event) => {
+                    const nextAction = event.target.value;
+                    setBulkAction(nextAction);
+                    setBulkMode(nextAction === "delete" ? "delete" : "");
+                    setBulkValue("");
+                    setBulkTags([]);
+                    setBulkCustomValue("");
+                  }}
+                  className="w-full"
+                >
+                  <option value="">Ações</option>
+                  <option value="update">Atualizar em massa</option>
+                  <option value="delete">Excluir em massa</option>
+                </Select>
+                {bulkAction === "update" && (
+                  <Select
+                    value={bulkMode}
+                    onChange={(event) => {
+                      setBulkMode(event.target.value as typeof bulkMode);
+                      setBulkValue("");
+                      setBulkTags([]);
+                      setBulkCustomValue("");
+                    }}
+                    className="w-full"
+                  >
+                    <option value="">- Selecione o campo -</option>
+                    <option value="customer">Empresa do contato</option>
+                    <option value="department">Departamento</option>
+                    <option value="profile">Perfil do contato</option>
+                    <option value="email">E-mail</option>
+                    <option value="instances">Instâncias</option>
+                    <option value="tags">Etiquetas</option>
+                    {customFieldDefinitions.length > 0 && (
+                      <optgroup label="Campos adicionais">
+                        {customFieldDefinitions.map((field) => (
+                          <option key={field.id} value={`custom:${field.id}`}>
+                            {field.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </Select>
+                )}
+                {bulkMode === "customer" && (
+                  <Select value={bulkValue} onChange={(event) => setBulkValue(event.target.value)}>
+                    <option value="">- Sem empresa -</option>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.nome}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+                {bulkMode === "department" && (
+                  <Select value={bulkValue} onChange={(event) => setBulkValue(event.target.value)}>
+                    <option value="">- Sem departamento -</option>
+                    {departments.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.nome}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+                {bulkMode === "profile" && (
+                  <Select value={bulkValue} onChange={(event) => setBulkValue(event.target.value)}>
+                    <option value="">- Sem perfil -</option>
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.nome}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+                {bulkMode === "tags" && (
+                  <TagMultiSelect
+                    tags={tags}
+                    selectedIds={bulkTags}
+                    onChange={setBulkTags}
+                    placement="down"
+                    flow
+                  />
+                )}
+                {bulkMode === "email" && (
+                  <Input
+                    type="email"
+                    value={bulkValue}
+                    onChange={(event) => setBulkValue(event.target.value)}
+                    placeholder="email@exemplo.com"
+                  />
+                )}
+                {bulkMode === "instances" && (
+                  <InstanceMultiSelect
+                    instances={visibleInstances}
+                    selectedIds={bulkValue ? bulkValue.split(",").filter(Boolean) : []}
+                    onChange={(ids) => setBulkValue(ids.join(","))}
+                  />
+                )}
+                {selectedBulkCustomField && (
+                  <CustomContactFieldInput
+                    field={selectedBulkCustomField}
+                    value={bulkCustomValue}
+                    onChange={setBulkCustomValue}
+                  />
+                )}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={!bulkAction || (bulkAction === "update" && !bulkMode)}
+                  onClick={() => void applyBulkAction()}
+                >
+                  <Check className="h-3.5 w-3.5" /> Aplicar
+                </Button>
+              </div>
+            </div>
+          )}
         </Card>
+
+        <div className="relative">
+          <AlphabetFloatingNav
+            availableLetters={availableContactLetters}
+            onLetterClick={scrollToContactLetter}
+            onFooterClick={scrollToContactsFooter}
+          />
+          <Card className="overflow-visible p-4 md:overflow-hidden md:rounded-lg md:p-0">
+            <div className="space-y-3 md:hidden">
+              {loading && (
+                <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+                  Carregando...
+                </div>
+              )}
+              {!loading &&
+                contacts.map((contact) => (
+                  <div
+                    key={contact.id}
+                    data-contact-letter-anchor={contactAnchorLetters.get(contact.id) ?? undefined}
+                    className="rounded-lg border border-border bg-surface-1 p-3 scroll-mt-4"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <input
+                          type="checkbox"
+                          className="h-5 w-5 shrink-0"
+                          checked={allFilteredSelected || selectedIds.includes(contact.id)}
+                          onChange={() => toggleContactSelection(contact.id)}
+                          aria-label={`Selecionar ${contact.nome}`}
+                        />
+                        <Avatar
+                          name={contact.nome}
+                          src={contact.avatar_url ?? undefined}
+                          size={32}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">{contact.nome}</p>
+                          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                            {formatPhoneWithDdi(contact.telefone)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Abrir conversa"
+                          onClick={() => void openConversation(contact)}
+                        >
+                          <MessageSquareMore className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Editar"
+                          onClick={() => setEditing(contact)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="trash-action"
+                          title="Excluir"
+                          onClick={() => setDeleting(contact)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              {!loading && contacts.length === 0 && (
+                <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+                  Nenhum contato encontrado.
+                </div>
+              )}
+            </div>
+            <table className="hidden w-full table-fixed overflow-hidden rounded-lg text-sm md:table">
+              <thead className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
+                <tr>
+                  <th
+                    className="w-10 rounded-tl-lg px-3 py-3 font-medium sm:px-4"
+                    style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+                      checked={allVisibleSelected}
+                      onChange={toggleVisibleSelection}
+                      aria-label="Selecionar contatos visíveis"
+                    />
+                  </th>
+                  <th className="w-[35%] px-3 py-3 font-medium sm:px-4">Contato</th>
+                  <th className="w-[16%] px-3 py-3 font-medium sm:px-4">WhatsApp</th>
+                  <th className="w-[21%] px-4 py-3 font-medium">Empresa</th>
+                  <th className="w-[15%] px-4 py-3 font-medium">Departamento</th>
+                  <th className="w-40 rounded-tr-lg px-3 py-3 text-center font-medium sm:px-4">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {loading && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-12 text-center text-sm text-muted-foreground"
+                    >
+                      Carregando...
+                    </td>
+                  </tr>
+                )}
+                {!loading &&
+                  contacts.map((contact) => (
+                    <tr
+                      key={contact.id}
+                      data-contact-letter-anchor={contactAnchorLetters.get(contact.id) ?? undefined}
+                      className="transition hover:bg-surface-1 scroll-mt-4"
+                    >
+                      <td
+                        className="relative px-3 py-3 sm:px-4"
+                        style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+                          checked={allFilteredSelected || selectedIds.includes(contact.id)}
+                          onChange={() => toggleContactSelection(contact.id)}
+                          aria-label={`Selecionar ${contact.nome}`}
+                        />
+                      </td>
+                      <td className="px-3 py-3 sm:px-4">
+                        <div className="flex items-center gap-3">
+                          <span className="hidden sm:inline-flex">
+                            <Avatar
+                              name={contact.nome}
+                              src={contact.avatar_url ?? undefined}
+                              size={30}
+                            />
+                          </span>
+                          <p className="truncate font-medium">{contact.nome}</p>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs sm:px-4">
+                        {formatPhoneWithDdi(contact.telefone)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {contact.customer ? (
+                          <span
+                            className="inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                            style={{
+                              backgroundColor: `${contact.customer.cor ?? "#3B82F6"}1f`,
+                              borderColor: `${contact.customer.cor ?? "#3B82F6"}66`,
+                              color: contact.customer.cor ?? "#3B82F6",
+                            }}
+                          >
+                            <Link2 className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{contact.customer.nome}</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Não vinculado</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs">
+                        {contact.contactDepartment?.nome ?? contact.departamento ?? (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 sm:px-4">
+                        <div className="flex justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Abrir conversa"
+                            onClick={() => void openConversation(contact)}
+                          >
+                            <MessageSquareMore className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Editar"
+                            onClick={() => setEditing(contact)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="trash-action"
+                            title="Excluir"
+                            onClick={() => setDeleting(contact)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                {!loading && contacts.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-12 text-center text-sm text-muted-foreground"
+                    >
+                      Nenhum contato encontrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <div
+              data-contacts-list-footer
+              className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 leading-tight sm:leading-normal">
+                  <span className="block sm:inline">Mostrando</span>
+                  <span className="block sm:inline">
+                    {" "}
+                    {formatIntegerPtBr(contacts.length)} de {formatIntegerPtBr(total)}
+                  </span>
+                </span>
+                <Select
+                  value={String(pageSize)}
+                  onChange={(event) => setPageSize(Number(event.target.value))}
+                  className="h-8 w-20 text-xs sm:w-24"
+                >
+                  {PAGE_SIZE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  disabled={pageSafe === 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <span className="font-mono">
+                  {pageSafe} / {totalPages}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  disabled={pageSafe === totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
 
         <ContactFormModal
           open={create.open}
           onClose={create.hide}
           customers={customers}
+          tags={tags}
+          departments={departments}
+          profiles={profiles}
+          instances={visibleInstances}
+          onCustomerCreated={(customer) =>
+            setCustomers((current) => upsertCustomer(current, customer))
+          }
+          onDepartmentSaved={(department) =>
+            setDepartments((current) => upsertCatalog(current, department))
+          }
+          onProfileSaved={(profile) => setProfiles((current) => upsertCatalog(current, profile))}
           onSubmit={async (data) => {
             try {
-              const created = await CONTACTS.create(data);
-              if (created?.id) await syncContactTags(created.id, data.tag_ids);
-              toast.success("Contato criado");
+              const contact = await crmApi.createContact(contactPayload(data));
+              toast.success(
+                contact.lifecycle === "restored" ? "Contato restaurado" : "Contato criado",
+              );
               create.hide();
               await load();
+            } catch (e) {
+              toast.error("Falha ao criar", { description: (e as Error).message });
             }
-            catch (e) { toast.error("Falha ao criar", { description: (e as Error).message }); }
           }}
         />
         <ContactFormModal
           open={!!editing}
           initial={editing ?? undefined}
           customers={customers}
+          tags={tags}
+          departments={departments}
+          profiles={profiles}
+          instances={visibleInstances}
+          onCustomerCreated={(customer) =>
+            setCustomers((current) => upsertCustomer(current, customer))
+          }
+          onDepartmentSaved={(department) =>
+            setDepartments((current) => upsertCatalog(current, department))
+          }
+          onProfileSaved={(profile) => setProfiles((current) => upsertCatalog(current, profile))}
           onClose={() => setEditing(null)}
           onSubmit={async (data) => {
             if (!editing) return;
             try {
-              await CONTACTS.update(editing.id, {
-                nome: data.nome,
-                telefone: data.telefone,
-                email: data.email,
-                departamento: data.departamento,
-                nivel_gerencia: data.nivel_gerencia,
-                instancia: data.instancia,
-              });
-              await CONTACTS.setCustomer(editing.id, data.customer_id ?? null);
-              await syncContactTags(editing.id, data.tag_ids);
+              await crmApi.updateContact(editing.id, contactPayload(data));
               toast.success("Contato atualizado");
               setEditing(null);
               await load();
-            } catch (e) { toast.error("Falha ao salvar", { description: (e as Error).message }); }
+            } catch (e) {
+              toast.error("Falha ao salvar", { description: (e as Error).message });
+            }
           }}
+        />
+        <Modal
+          open={!!conversationChoice}
+          onClose={() => !openingConversation && setConversationChoice(null)}
+          title="Escolher Instância"
+          description={
+            conversationChoice
+              ? `Selecione a instância para iniciar a conversa com ${conversationChoice.contact.nome}.`
+              : undefined
+          }
+          size="sm"
+          footer={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setConversationChoice(null)}
+              disabled={openingConversation}
+            >
+              Cancelar
+            </Button>
+          }
+        >
+          <div className="space-y-2">
+            {conversationChoice?.instances.map((instance) => (
+              <Button
+                key={instance.id}
+                variant="secondary"
+                className="w-full justify-start"
+                onClick={() => void startConversation(conversationChoice.contact, instance.id)}
+                disabled={openingConversation}
+              >
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: instance.color ?? "#22c55e" }}
+                />
+                {instance.name}
+              </Button>
+            ))}
+          </div>
+        </Modal>
+        <ImportContactsModal
+          open={importModal.open}
+          onClose={importModal.hide}
+          onImport={importContactsRows}
+        />
+        <AgendaImportPreviewModal
+          open={agendaImportPreview.open}
+          loading={agendaImportPreview.loading}
+          busy={agendaImportPreview.busy}
+          previewLoaded={agendaImportPreview.previewLoaded}
+          instances={connectedAgendaInstances}
+          connectionId={agendaImportPreview.connectionId}
+          total={agendaImportPreview.total}
+          skipped={agendaImportPreview.skipped}
+          items={agendaImportPreview.items}
+          ignoredItems={agendaImportPreview.ignoredItems}
+          selectedPhones={agendaImportPreview.selectedPhones}
+          onConnectionIdChange={(connectionId) =>
+            setAgendaImportPreview((current) => ({
+              ...current,
+              connectionId,
+              previewLoaded: false,
+              total: 0,
+              skipped: 0,
+              items: [],
+              ignoredItems: [],
+              selectedPhones: [],
+            }))
+          }
+          onLoadPreview={loadAgendaImportPreview}
+          onSelectedPhonesChange={(selectedPhones) =>
+            setAgendaImportPreview((current) => ({ ...current, selectedPhones }))
+          }
+          onClose={closeAgendaImportPreview}
+          onConfirm={confirmAgendaImport}
+        />
+        <ExportContactsModal
+          open={exportModal.open}
+          contactCount={exportableContactCount}
+          exportAllRecords={exportAllRecords}
+          onExportAllRecordsChange={setExportAllRecords}
+          onClose={exportModal.hide}
+          onExport={exportContacts}
+        />
+        <ImportProgressModal
+          open={importProgress.open}
+          source={importProgress.source}
+          current={importProgress.current}
+          total={importProgress.total}
+          imported={importProgress.imported}
+          status={importProgress.status}
+          onClose={closeImportProgress}
         />
         <ConfirmDialog
           open={!!deleting}
-          title="Excluir contato?"
-          description={`Esta ação removerá ${deleting?.nome ?? ""} permanentemente. Conversas associadas podem ficar órfãs.`}
+          title="Excluir Contato?"
+          description={
+            deleting ? (
+              <div className="space-y-3">
+                <p>
+                  Contato abaixo será apagado.
+                  <br />
+                  Deseja continuar?
+                </p>
+                <div className="space-y-1 text-foreground">
+                  <p>
+                    <strong>Nome: </strong>{" "}
+                    <strong className="font-semibold text-foreground">"{deleting.nome}"</strong>
+                  </p>
+                  <p>
+                    <strong>Whatsapp: </strong> {formatPhoneWithDdi(deleting.telefone)}
+                  </p>
+                </div>
+                <p className="italic">
+                  Histórico de Conversas associadas a esse contato serão preservadas para auditoria.
+                </p>
+              </div>
+            ) : undefined
+          }
           destructive
           confirmLabel="Excluir"
           onClose={() => setDeleting(null)}
           onConfirm={async () => {
             if (!deleting) return;
-            try { await CONTACTS.remove(deleting.id); toast.success("Contato excluído"); setDeleting(null); await load(); }
-            catch (e) { toast.error("Falha ao excluir", { description: (e as Error).message }); }
+            try {
+              await crmApi.deleteContact(deleting.id);
+              toast.success("Contato excluído");
+              setDeleting(null);
+              await load();
+            } catch (e) {
+              toast.error("Falha ao excluir", { description: (e as Error).message });
+            }
           }}
         />
       </PageContainer>
@@ -265,143 +1994,3723 @@ function ContatosPage() {
   );
 }
 
-function ContactFormModal({
-  open, onClose, onSubmit, initial, customers,
+function AlphabetFloatingNav({
+  availableLetters,
+  onLetterClick,
+  onFooterClick,
+}: {
+  availableLetters: Set<string>;
+  onLetterClick: (letter: string) => void;
+  onFooterClick: () => void;
+}) {
+  return (
+    <div className="pointer-events-none absolute bottom-14 right-[-2.75rem] top-2 z-10 hidden items-start xl:flex">
+      <div className="pointer-events-auto sticky top-24 flex max-h-[calc(100dvh-8rem)] flex-col items-center gap-0.5 rounded-full border border-border bg-card/95 p-1 shadow-card backdrop-blur">
+        {CONTACT_ALPHABET.map((letter) => {
+          const available = availableLetters.has(letter);
+          return (
+            <button
+              key={letter}
+              type="button"
+              disabled={!available}
+              onClick={() => onLetterClick(letter)}
+              className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold transition ${
+                available
+                  ? "text-muted-foreground hover:bg-primary hover:text-primary-foreground"
+                  : "cursor-not-allowed text-muted-foreground/30"
+              }`}
+              title={available ? `Ir para contatos com ${letter}` : undefined}
+            >
+              {letter}
+            </button>
+          );
+        })}
+        <div className="my-0.5 h-px w-4 bg-border" />
+        <button
+          type="button"
+          onClick={onFooterClick}
+          className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-primary hover:text-primary-foreground"
+          title="Ir para o rodapé"
+        >
+          <ChevronDown className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+function AgendaImportPreviewModal({
+  open,
+  loading,
+  busy,
+  previewLoaded,
+  instances,
+  connectionId,
+  total,
+  skipped,
+  items,
+  ignoredItems,
+  selectedPhones,
+  onConnectionIdChange,
+  onLoadPreview,
+  onSelectedPhonesChange,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  loading: boolean;
+  busy: boolean;
+  previewLoaded: boolean;
+  instances: ContactInstanceOption[];
+  connectionId: string;
+  total: number;
+  skipped: number;
+  items: ApiAgendaImportContact[];
+  ignoredItems: ApiAgendaImportIgnoredContact[];
+  selectedPhones: string[];
+  onConnectionIdChange: (connectionId: string) => void;
+  onLoadPreview: (connectionId: string) => void | Promise<void>;
+  onSelectedPhonesChange: (phones: string[]) => void;
+  onClose: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const [query, setQuery] = React.useState("");
+  const [activeTab, setActiveTab] = React.useState<"available" | "ignored">("available");
+  const [availableStatusFilter, setAvailableStatusFilter] = React.useState<
+    "all" | "new" | "registered"
+  >("all");
+  const [ignoredReasonFilter, setIgnoredReasonFilter] = React.useState("all");
+  const [listScrolling, setListScrolling] = React.useState(false);
+  const listScrollTimerRef = React.useRef<number | null>(null);
+  const requiresConnectionSelection = instances.length > 1;
+  const hasPreviewLoaded = loading || previewLoaded;
+  const selectedSet = React.useMemo(() => new Set(selectedPhones), [selectedPhones]);
+  const ignoredFilterOptions = React.useMemo(
+    () => [
+      {
+        key: "missing_name",
+        label: "Nome indisponível",
+        reasons: ["Nome indisponivel"],
+      },
+      {
+        key: "invalid_phone",
+        label: "Telefone inválido",
+        reasons: ["Telefone inválido"],
+      },
+    ],
+    [],
+  );
+  const ignoredFilterCounts = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const option of ignoredFilterOptions) {
+      counts.set(
+        option.key,
+        ignoredItems.filter((item) => option.reasons.includes(item.reason)).length,
+      );
+    }
+    return counts;
+  }, [ignoredFilterOptions, ignoredItems]);
+
+  const allIgnoredFilterOption = React.useMemo(
+    () => ({
+      key: "all",
+      label: "Todos",
+      reasons: ignoredFilterOptions.flatMap((option) => option.reasons),
+    }),
+    [ignoredFilterOptions],
+  );
+  const visibleIgnoredFilterOptions = React.useMemo(
+    () => [allIgnoredFilterOption, ...ignoredFilterOptions],
+    [allIgnoredFilterOption, ignoredFilterOptions],
+  );
+  const selectedIgnoredFilter =
+    visibleIgnoredFilterOptions.find((option) => option.key === ignoredReasonFilter) ??
+    allIgnoredFilterOption;
+  const alreadyRegisteredItems = React.useMemo(
+    () =>
+      ignoredItems
+        .filter((item) =>
+          ["Contato já cadastrado ativo", "Contato já cadastrado ativo"].includes(item.reason),
+        )
+        .filter((item) => item.normalizedPhone)
+        .map((item) => ({
+          name: item.name || "Sem nome",
+          phone: item.phone || item.normalizedPhone || "",
+          normalizedPhone: item.normalizedPhone || item.phone,
+          avatarUrl: null as string | null,
+          registered: true as const,
+        })),
+    [ignoredItems],
+  );
+  const alreadyRegisteredCount = alreadyRegisteredItems.length;
+  const ignoredCount = React.useMemo(
+    () =>
+      ignoredFilterOptions.reduce(
+        (sum, option) => sum + (ignoredFilterCounts.get(option.key) ?? 0),
+        0,
+      ),
+    [ignoredFilterCounts, ignoredFilterOptions],
+  );
+
+  const ignoredExportItems = React.useMemo(
+    () =>
+      ignoredItems.filter((item) =>
+        ignoredFilterOptions.some((option) => option.reasons.includes(item.reason)),
+      ),
+    [ignoredFilterOptions, ignoredItems],
+  );
+  const phoneContactsCount = items.length + ignoredCount + alreadyRegisteredCount;
+  const importablePhoneSet = React.useMemo(
+    () => new Set(items.map((item) => item.normalizedPhone).filter(Boolean)),
+    [items],
+  );
+  const agendaImportCount = selectedPhones.filter((phone) => importablePhoneSet.has(phone)).length;
+  const ignoredReasonLabel = (reason: string) =>
+    ignoredFilterOptions.find((option) => option.reasons.includes(reason))?.label ?? reason;
+  const availableItems = React.useMemo(
+    () => [
+      ...items.map((item) => ({ ...item, registered: false as const })),
+      ...alreadyRegisteredItems,
+    ],
+    [alreadyRegisteredItems, items],
+  );
+  const filteredAvailableItems = React.useMemo(() => {
+    const search = normalizeHeader(query);
+    return availableItems.filter((item) => {
+      const matchesStatus =
+        availableStatusFilter === "all" ||
+        (availableStatusFilter === "registered" ? item.registered : !item.registered);
+      const matchesSearch =
+        !search ||
+        normalizeHeader(`${item.name} ${item.phone} ${item.normalizedPhone}`).includes(search);
+      return matchesStatus && matchesSearch;
+    });
+  }, [availableItems, availableStatusFilter, query]);
+  const filteredIgnoredItems = React.useMemo(() => {
+    const search = normalizeHeader(query);
+    return ignoredItems.filter((item) => {
+      const matchesReason = selectedIgnoredFilter.reasons.includes(item.reason);
+      const matchesSearch =
+        !search || normalizeHeader(`${item.name} ${item.phone} ${item.reason}`).includes(search);
+      return matchesReason && matchesSearch;
+    });
+  }, [ignoredItems, query, selectedIgnoredFilter]);
+  const allSelected = items.length > 0 && selectedPhones.length === items.length;
+
+  React.useEffect(() => {
+    if (!open) {
+      setQuery("");
+      setActiveTab("available");
+      setAvailableStatusFilter("all");
+      setIgnoredReasonFilter("all");
+      setListScrolling(false);
+    }
+  }, [open]);
+
+  React.useEffect(
+    () => () => {
+      if (listScrollTimerRef.current) window.clearTimeout(listScrollTimerRef.current);
+    },
+    [],
+  );
+
+  const toggleAll = () => {
+    onSelectedPhonesChange(allSelected ? [] : items.map((item) => item.normalizedPhone));
+  };
+  const toggleItem = (phone: string) => {
+    onSelectedPhonesChange(
+      selectedSet.has(phone)
+        ? selectedPhones.filter((item) => item !== phone)
+        : [...selectedPhones, phone],
+    );
+  };
+  const handleListScroll = () => {
+    setListScrolling(true);
+    if (listScrollTimerRef.current) window.clearTimeout(listScrollTimerRef.current);
+    listScrollTimerRef.current = window.setTimeout(() => setListScrolling(false), 800);
+  };
+
+  const primaryAction = requiresConnectionSelection && !hasPreviewLoaded;
+  const canShowPreviewControls = previewLoaded && !loading;
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Importar Agenda Telefônica"
+      size="xl"
+      footer={
+        <>
+          {!previewLoaded && (
+            <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+              Cancelar
+            </Button>
+          )}
+          {(primaryAction || activeTab === "available") && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void (primaryAction ? onLoadPreview(connectionId) : onConfirm())}
+              disabled={
+                busy || loading || (primaryAction ? !connectionId : agendaImportCount === 0)
+              }
+            >
+              {busy
+                ? "Importando..."
+                : primaryAction
+                  ? "Buscar contatos"
+                  : `Importar ${formatIntegerPtBr(agendaImportCount)} contato(s)`}
+            </Button>
+          )}
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {requiresConnectionSelection && (
+          <Field label="Instância WhatsApp *">
+            <Select
+              value={connectionId}
+              onChange={(event) => onConnectionIdChange(event.target.value)}
+              disabled={busy || loading}
+            >
+              <option value="">- Selecione -</option>
+              {instances.map((instance) => (
+                <option key={instance.id} value={instance.id}>
+                  {instance.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">
+              Contatos do Telefone
+            </p>
+            <p className="text-base font-semibold text-foreground">
+              {formatIntegerPtBr(phoneContactsCount)}
+            </p>
+          </div>
+          <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">
+              Já cadastrados
+            </p>
+            <p className="text-base font-semibold text-foreground">
+              {formatIntegerPtBr(alreadyRegisteredCount)}
+            </p>
+          </div>
+          <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">Ignorados</p>
+            <p className="text-base font-semibold text-foreground">
+              {formatIntegerPtBr(ignoredCount)}
+            </p>
+          </div>
+          <div className="min-w-0 rounded-lg border border-border bg-surface-1 px-3 py-2">
+            <p className="truncate whitespace-nowrap text-xs text-muted-foreground">Disponíveis</p>
+            <p className="text-base font-semibold text-foreground">
+              {formatIntegerPtBr(items.length)}
+            </p>
+          </div>
+        </div>
+
+        {hasPreviewLoaded && (
+          <div className="flex gap-2 border-b border-border">
+            <button
+              type="button"
+              onClick={() => setActiveTab("available")}
+              className={`border-b-2 px-3 py-2 text-sm font-medium transition ${
+                activeTab === "available"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Disponíveis
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("ignored")}
+              className={`border-b-2 px-3 py-2 text-sm font-medium transition ${
+                activeTab === "ignored"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Ignorados
+            </button>
+          </div>
+        )}
+
+        {canShowPreviewControls && (
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar por nome ou WhatsApp..."
+          />
+        )}
+
+        {canShowPreviewControls &&
+          (activeTab === "available" ? (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-border bg-surface-1 p-3 text-sm">
+                <Field label="Tipo">
+                  <Select
+                    value={availableStatusFilter}
+                    onChange={(event) =>
+                      setAvailableStatusFilter(event.target.value as "all" | "new" | "registered")
+                    }
+                    disabled={loading || busy}
+                  >
+                    <option value="all">Todos ({formatIntegerPtBr(availableItems.length)})</option>
+                    <option value="new">
+                      Contatos não cadastrados ({formatIntegerPtBr(items.length)})
+                    </option>
+                    <option value="registered">
+                      Cadastrados ({formatIntegerPtBr(alreadyRegisteredCount)})
+                    </option>
+                  </Select>
+                </Field>
+              </div>
+              {availableStatusFilter !== "registered" && (
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    disabled={loading || busy || !items.length}
+                    onChange={toggleAll}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  Selecionar todos os contatos disponíveis
+                </label>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto]">
+              <Field label="Tipo">
+                <Select
+                  value={ignoredReasonFilter}
+                  onChange={(event) => setIgnoredReasonFilter(event.target.value)}
+                  disabled={loading || busy}
+                >
+                  {visibleIgnoredFilterOptions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label} (
+                      {formatIntegerPtBr(
+                        option.key === "all"
+                          ? ignoredCount
+                          : (ignoredFilterCounts.get(option.key) ?? 0),
+                      )}
+                      )
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <div className="flex flex-wrap items-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => downloadAgendaIgnoredTemplate(ignoredExportItems)}
+                  disabled={loading || busy || ignoredExportItems.length === 0}
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" /> Gerar Excel
+                </Button>
+              </div>
+            </div>
+          ))}
+
+        <div
+          onScroll={handleListScroll}
+          className={`agenda-import-scroll max-h-[46vh] space-y-2 pr-1 ${listScrolling ? "is-scrolling" : ""}`}
+        >
+          {loading ? (
+            <div className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+              Buscando contatos na instância WhatsApp...
+            </div>
+          ) : activeTab === "ignored" ? (
+            filteredIgnoredItems.length ? (
+              filteredIgnoredItems.map((item, index) => (
+                <label
+                  key={`${item.phone}-${index}`}
+                  className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
+                >
+                  <Avatar name={item.name || item.phone || "Contato"} size={36} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-foreground">
+                      {item.name || "Sem nome"}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {item.phone || "Sem telefone"}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-full border border-border bg-surface-1 px-2 py-0.5 text-xs text-muted-foreground">
+                    {ignoredReasonLabel(item.reason)}
+                  </span>
+                </label>
+              ))
+            ) : (
+              <div className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+                Nenhum contato ignorado encontrado.
+              </div>
+            )
+          ) : filteredAvailableItems.length ? (
+            filteredAvailableItems.map((item) => (
+              <label
+                key={`${item.registered ? "registered" : "new"}-${item.normalizedPhone}`}
+                className={`flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 ${
+                  item.registered
+                    ? "cursor-not-allowed"
+                    : "cursor-pointer transition hover:border-primary/60"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={!item.registered && selectedSet.has(item.normalizedPhone)}
+                  disabled={busy || item.registered}
+                  onChange={() => {
+                    if (!item.registered) toggleItem(item.normalizedPhone);
+                  }}
+                  className="h-4 w-4 accent-primary disabled:cursor-not-allowed disabled:opacity-60"
+                />
+                <Avatar name={item.name} src={item.avatarUrl} size={36} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-foreground">
+                    {item.name}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {formatPhoneWithDdi(item.phone)}
+                  </span>
+                </span>
+                {item.registered && (
+                  <span className="shrink-0 rounded-full border border-border bg-surface-1 px-2 py-0.5 text-xs text-muted-foreground">
+                    Contato já cadastrado
+                  </span>
+                )}
+              </label>
+            ))
+          ) : (
+            <div className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+              {availableStatusFilter === "registered"
+                ? "Nenhum contato cadastrado encontrado."
+                : availableStatusFilter === "new"
+                  ? "Nenhum contato não cadastrado encontrado."
+                  : "Nenhum contato disponível para importação."}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ImportContactsModal({
+  open,
+  onClose,
+  onImport,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImport: (rows: string[][]) => Promise<void>;
+}) {
+  const [file, setFile] = React.useState<File | null>(null);
+  const [validRows, setValidRows] = React.useState(0);
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setFile(null);
+    setValidRows(0);
+    setBusy(false);
+  }, [open]);
+
+  const selectFile = (selected: File | null) => {
+    setFile(selected);
+    setValidRows(0);
+  };
+
+  const confirm = async () => {
+    if (!file) {
+      toast.error("Selecione um arquivo para importar.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const rows = await parseSpreadsheetFile(file);
+      const valid = countValidImportRows(rows);
+      setValidRows(valid);
+      if (!valid) {
+        toast.error("Nenhum contato válido encontrado.");
+        return;
+      }
+      await onImport(rows);
+      onClose();
+    } catch (error) {
+      toast.error("Falha ao importar arquivo", { description: (error as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Importar Contatos"
+      size="md"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" size="sm" onClick={confirm} disabled={busy || !file}>
+            {busy ? "Importando..." : "Confirmar importação"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-destructive">Templates Modelo</p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-sm font-normal text-muted-foreground underline transition hover:text-primary"
+              onClick={() => downloadImportTemplate("csv")}
+            >
+              <Download className="h-3.5 w-3.5" /> Modelo CSV
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-sm font-normal text-muted-foreground underline transition hover:text-primary"
+              onClick={() => downloadImportTemplate("xls")}
+            >
+              <Download className="h-3.5 w-3.5" /> Modelo XLS
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-sm font-normal text-muted-foreground underline transition hover:text-primary"
+              onClick={() => downloadImportTemplate("xlsx")}
+            >
+              <Download className="h-3.5 w-3.5" /> Modelo XLSX
+            </button>
+          </div>
+        </div>
+        <div className="border-t border-border" />
+        <Field label="Arquivo *">
+          <label className="flex min-h-20 cursor-pointer items-center gap-4 rounded-lg border border-border bg-surface-1 px-5 py-4 text-sm transition hover:border-primary">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-card text-muted-foreground">
+              <FileUp className="h-5 w-5" />
+            </span>
+            <span className="min-w-0 truncate text-base">
+              {file ? file.name : "Clique aqui para selecionar o arquivo"}
+            </span>
+            <input
+              type="file"
+              accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="sr-only"
+              onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
+            />
+          </label>
+          <p className="mt-2 text-xs italic text-muted-foreground">
+            Arquivos aceitos: XLSX, XLS e CSV. O modelo deve conter ao menos as colunas Contato e
+            WhatsApp.
+          </p>
+        </Field>
+        {file && validRows > 0 && (
+          <div className="rounded-lg border border-border p-3 text-sm">
+            <p className="font-medium">{file.name}</p>
+            <p className="text-xs text-muted-foreground">
+              {validRows} contato(s) válido(s) pronto(s) para importação.
+            </p>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function ExportContactsModal({
+  open,
+  contactCount,
+  exportAllRecords,
+  onExportAllRecordsChange,
+  onClose,
+  onExport,
+}: {
+  open: boolean;
+  contactCount: number;
+  exportAllRecords: boolean;
+  onExportAllRecordsChange: (value: boolean) => void;
+  onClose: () => void;
+  onExport: (format: "csv" | "xlsx") => void | Promise<void>;
+}) {
+  return (
+    <Modal open={open} onClose={onClose} title="Exportar Contatos" size="sm">
+      <div className="space-y-4">
+        <div className="rounded-lg border border-border bg-surface-1 px-4 py-3">
+          <p className="text-sm font-semibold text-foreground">
+            {contactCount} contato(s) para exportar
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Grupos não entram na exportação de contatos.
+          </p>
+        </div>
+
+        <div className="grid gap-2">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-sm transition hover:bg-surface-1"
+            onClick={() => void onExport("csv")}
+          >
+            <Download className="h-4 w-4" /> Exportar CSV
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-sm transition hover:bg-surface-1"
+            onClick={() => void onExport("xlsx")}
+          >
+            <FileSpreadsheet className="h-4 w-4" /> Exportar Excel
+          </button>
+        </div>
+
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={exportAllRecords}
+            onChange={(event) => onExportAllRecordsChange(event.target.checked)}
+            className="h-4 w-4 accent-primary"
+          />
+          Exportar todos os Registros
+        </label>
+      </div>
+    </Modal>
+  );
+}
+
+function ImportProgressModal({
+  open,
+  source,
+  current,
+  total,
+  imported,
+  status,
+  onClose,
+}: {
+  open: boolean;
+  source: ImportSource | null;
+  current: number;
+  total: number;
+  imported: number;
+  status: ImportProgressStatus;
+  onClose: () => void;
+}) {
+  const percent = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+  const sourceLabel = source === "agenda" ? "agenda" : "Excel/CSV";
+  const done = status !== "running";
+  const statusText =
+    status === "completed"
+      ? "Importação concluída"
+      : status === "cancelled"
+        ? "Importação cancelada"
+        : "Importando contatos";
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Importação de Contatos"
+      size="sm"
+      footer={
+        done ? (
+          <Button variant="primary" size="sm" onClick={onClose}>
+            Concluir
+          </Button>
+        ) : null
+      }
+    >
+      <div className="space-y-4">
+        <div>
+          <p className="text-sm font-medium text-foreground">{statusText}</p>
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-semibold text-foreground">
+              {formatIntegerPtBr(imported)} de {formatIntegerPtBr(total)} contatos importados
+            </span>
+            <span className="text-muted-foreground">{percent}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-surface-2">
+            <div
+              className="h-full rounded-full bg-primary transition-all"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+export function ContactFormModal({
+  open,
+  onClose,
+  onSubmit,
+  initial,
+  customers,
+  tags,
+  departments,
+  profiles,
+  instances,
+  onCustomerCreated,
+  onDepartmentSaved,
+  onProfileSaved,
 }: {
   open: boolean;
   onClose: () => void;
   customers: Customer[];
-  onSubmit: (data: { nome: string; telefone: string; customer_id: string | null; email: string | null; departamento: string | null; nivel_gerencia: "Colaborador" | "Supervisor" | "Gerente" | "Diretoria" | null; instancia: string | null; tag_ids: string[] }) => void | Promise<void>;
-  initial?: ContactWithCustomer;
+  tags: Tag[];
+  departments: ContactCatalog[];
+  profiles: ContactCatalog[];
+  instances: ContactInstanceOption[];
+  onCustomerCreated: (customer: Customer) => void;
+  onDepartmentSaved: (department: ContactCatalog) => void;
+  onProfileSaved: (profile: ContactCatalog) => void;
+  onSubmit: (data: {
+    nome: string;
+    telefone: string;
+    countryCode?: string;
+    customer_id: string | null;
+    email: string | null;
+    contactDepartmentId: string | null;
+    contactProfileId: string | null;
+    instanceIds: string[];
+    tag_ids: string[];
+    customFields: Record<string, string | boolean>;
+    avatarUrl: string | null;
+  }) => void | Promise<void>;
+  initial?: Contact;
 }) {
   const [nome, setNome] = React.useState("");
   const [telefone, setTelefone] = React.useState("");
-  const [customerId, setCustomerId] = React.useState<string>("");
+  const [countryCode, setCountryCode] = React.useState("55");
+  const [customerId, setCustomerId] = React.useState("");
   const [email, setEmail] = React.useState("");
-  const [departamento, setDepartamento] = React.useState("");
-  const [nivelGerencia, setNivelGerencia] = React.useState<"" | "Colaborador" | "Supervisor" | "Gerente" | "Diretoria">("");
-  const [instancia, setInstancia] = React.useState<string>("");
-  const [allTags, setAllTags] = React.useState<Tag[]>([]);
+  const [avatarUrl, setAvatarUrl] = React.useState<string | null>(null);
+  const [contactDepartmentId, setContactDepartmentId] = React.useState("");
+  const [contactProfileId, setContactProfileId] = React.useState("");
+  const [instanceIds, setInstanceIds] = React.useState<string[]>([]);
   const [tagIds, setTagIds] = React.useState<string[]>([]);
+  const [customFields, setCustomFields] = React.useState<Record<string, string | boolean>>({});
+  const [customFieldDefinitions, setCustomFieldDefinitions] = React.useState<ContactCustomField[]>(
+    [],
+  );
+  const [activeContactTab, setActiveContactTab] = React.useState("Geral");
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [photoPreviewOpen, setPhotoPreviewOpen] = React.useState(false);
+  const customersManager = useDisclosure();
+  const departmentsManager = useDisclosure();
+  const profilesManager = useDisclosure();
 
   React.useEffect(() => {
     if (!open) return;
     setNome(initial?.nome ?? "");
-    setTelefone(initial?.telefone ?? "");
+    const initialPhone = splitPhoneByCountry(initial?.telefone ?? "");
+    setCountryCode(initialPhone.countryCode);
+    setTelefone(
+      initialPhone.localPhone
+        ? formatPhoneDraftOnBlur(initialPhone.localPhone, initialPhone.countryCode)
+        : "",
+    );
     setCustomerId(initial?.customer_id ?? "");
     setEmail(initial?.email ?? "");
-    setDepartamento(initial?.departamento ?? "");
-    setNivelGerencia((initial?.nivel_gerencia as "" | "Colaborador" | "Supervisor" | "Gerente" | "Diretoria") ?? "");
-    setInstancia(initial?.instancia ?? "");
+    setAvatarUrl(initial?.avatar_url ?? null);
+    setContactDepartmentId(initial?.contactDepartmentId ?? "");
+    setContactProfileId(initial?.contactProfileId ?? "");
+    setInstanceIds(
+      canonicalContactInstanceIds(
+        initial?.instanceIds ?? (initial?.instancia ? [initial.instancia] : []),
+        instances,
+      ),
+    );
+    setTagIds(initial?.tags.map((tag) => tag.id) ?? []);
+    setCustomFields(initial?.customFields ?? {});
+    setActiveContactTab("Geral");
     setErrors({});
-    void (async () => {
-      try {
-        const tags = await CATALOG.tags();
-        setAllTags(tags);
-      } catch { /* noop */ }
-      if (initial?.id) {
-        try {
-          const current = await CONTACTS.tags(initial.id);
-          setTagIds(current.map((t) => t.id));
-        } catch { setTagIds([]); }
-      } else {
-        setTagIds([]);
-      }
-    })();
-  }, [initial, open]);
+    setPhotoPreviewOpen(false);
+    void crmApi
+      .listContactCustomFields()
+      .then(setCustomFieldDefinitions)
+      .catch(() => setCustomFieldDefinitions([]));
+  }, [initial, instances, open]);
 
-  const toggleTag = (id: string) => {
-    setTagIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const contactTabs = React.useMemo(
+    () => uniqueLabels(["Geral", ...customFieldDefinitions.map(normalizeContactCustomFieldTab)]),
+    [customFieldDefinitions],
+  );
+  const showContactTabs = customFieldDefinitions.length > 0 || contactTabs.length > 1;
+  const groupedCustomFields = React.useMemo(() => {
+    const groups = new Map<string, ContactCustomField[]>();
+    for (const field of customFieldDefinitions) {
+      if (normalizeContactCustomFieldTab(field) !== activeContactTab) continue;
+      const group = normalizeContactCustomFieldGroup(field);
+      groups.set(group, [...(groups.get(group) ?? []), field]);
+    }
+    return Array.from(groups.entries());
+  }, [activeContactTab, customFieldDefinitions]);
+
+  const handleCountryCodeChange = (nextCode: string) => {
+    setCountryCode(nextCode);
+    setTelefone((current) => formatPhoneDraftOnBlur(current, nextCode));
+  };
+
+  const handlePhoneChange = (value: string) => {
+    const parsed = parsePhoneDraftInput(value, countryCode);
+    if (parsed.countryCode !== countryCode) setCountryCode(parsed.countryCode);
+    setTelefone(phoneDraftByCountry(parsed.localPhone, parsed.countryCode));
+  };
+
+  const handlePhoneBlur = () => {
+    setTelefone((current) => formatPhoneDraftOnBlur(current, countryCode));
   };
 
   const handle = () => {
     const errs: Record<string, string> = {};
     if (!nome.trim() || nome.trim().length < 2) errs.nome = "Informe o nome.";
-    const digits = telefone.replace(/\D/g, "");
-    if (digits.length < 10) errs.telefone = "Telefone inválido.";
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errs.email = "E-mail inválido.";
-    if (!departamento.trim()) errs.departamento = "Informe o departamento.";
-    if (!customerId) errs.customerId = "Selecione o cliente.";
-    if (Object.keys(errs).length) { setErrors(errs); toast.error("Verifique os campos destacados."); return; }
+    if (!isValidPhoneForCountry(telefone, countryCode)) errs.telefone = "WhatsApp inválido.";
+    if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = "E-mail inválido.";
+    const normalizedCustomFields = normalizeCustomFieldValues(customFields, customFieldDefinitions);
+    for (const field of customFieldDefinitions) {
+      if (field.required && !String(normalizedCustomFields[field.id] ?? "").trim())
+        errs[`custom_${field.id}`] = "Campo obrigatório.";
+    }
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      toast.error("Preencha os campos obrigatórios.");
+      return;
+    }
+    const validInstanceIds = canonicalContactInstanceIds(instanceIds, instances);
+    if (validInstanceIds.length !== instanceIds.length) {
+      setInstanceIds(validInstanceIds);
+      toast.info("Referências antigas de instância foram removidas deste contato.");
+    }
     void onSubmit({
       nome: nome.trim(),
       telefone,
+      countryCode,
       customer_id: customerId || null,
       email: email.trim() || null,
-      departamento: departamento.trim() || null,
-      nivel_gerencia: nivelGerencia || null,
-      instancia: instancia || null,
+      contactDepartmentId: contactDepartmentId || null,
+      contactProfileId: contactProfileId || null,
+      instanceIds: validInstanceIds,
       tag_ids: tagIds,
+      customFields: normalizedCustomFields,
+      avatarUrl,
     });
   };
 
   return (
-    <Modal
-      open={open} onClose={onClose}
-      title={initial ? "Editar contato" : "Novo contato"}
-      description="Contato é a pessoa que conversa pelo WhatsApp. Você pode vincular a um cliente já cadastrado."
-      size="lg"
-      footer={<><Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button><Button variant="primary" size="sm" onClick={handle}>Salvar</Button></>}
-    >
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Nome *"><Input value={nome} onChange={(e) => setNome(e.target.value)} />{errors.nome && <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>}</Field>
-        <Field label="Telefone *"><Input value={telefone} onChange={(e) => setTelefone(maskPhone(e.target.value))} placeholder="(11) 90000-0000" />{errors.telefone && <span className="mt-1 block text-[11px] text-destructive">{errors.telefone}</span>}</Field>
-        <Field label="Departamento *"><Input value={departamento} onChange={(e) => setDepartamento(e.target.value)} placeholder="Ex.: Financeiro" />{errors.departamento && <span className="mt-1 block text-[11px] text-destructive">{errors.departamento}</span>}</Field>
-        <Field label="E-mail"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nome@empresa.com" />{errors.email && <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>}</Field>
-        <Field label="Instância">
-          <Select value={instancia} onChange={(e) => setInstancia(e.target.value)}>
-            <option value="">— Selecione —</option>
-            {INSTANCIAS.map((i) => <option key={i} value={i}>{i}</option>)}
-          </Select>
-        </Field>
-        <Field label="Perfil na Empresa">
-          <Select value={nivelGerencia} onChange={(e) => setNivelGerencia(e.target.value as "" | "Colaborador" | "Supervisor" | "Gerente" | "Diretoria")}>
-            <option value="">— Selecione —</option>
-            <option value="Colaborador">Colaborador</option>
-            <option value="Supervisor">Supervisor</option>
-            <option value="Gerente">Gerente</option>
-            <option value="Diretoria">Diretoria</option>
-          </Select>
-        </Field>
-        <Field label="Cliente *">
-          <div className="flex gap-2">
-            <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-              <option value="">— Selecione —</option>
-              {customers.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            </Select>
-            {customerId && (
-              <Button variant="ghost" size="sm" onClick={() => setCustomerId("")} title="Remover vínculo"><X className="h-3.5 w-3.5" /></Button>
-            )}
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        title={initial ? "Editar Contato" : "Novo Contato"}
+        description=""
+        size="xl"
+        footer={
+          <div className="flex w-full items-center justify-between gap-2">
+            <ContactFormLog contact={initial} />
+            <div className="flex shrink-0 justify-end gap-1.5 sm:gap-2">
+              <Button variant="ghost" size="sm" className="px-2 sm:px-2.5" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button variant="primary" size="sm" className="px-2.5 sm:px-2.5" onClick={handle}>
+                Salvar
+              </Button>
+            </div>
           </div>
-          {errors.customerId && <span className="mt-1 block text-[11px] text-destructive">{errors.customerId}</span>}
-        </Field>
-        <div className="md:col-span-2">
-          <Field label="Etiquetas">
-            {allTags.length === 0 ? (
-              <span className="text-[11px] text-muted-foreground">Nenhuma etiqueta cadastrada.</span>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {allTags.map((t) => {
-                  const active = tagIds.includes(t.id);
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => toggleTag(t.id)}
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition ${active ? "border-transparent text-white" : "border-border bg-surface-1 text-foreground hover:bg-surface-2"}`}
-                      style={active ? { backgroundColor: t.cor } : undefined}
+        }
+      >
+        <div className="space-y-4">
+          {showContactTabs && (
+            <div className="flex flex-wrap gap-2 border-b border-border">
+              {contactTabs.map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveContactTab(tab)}
+                  className={`border-b-2 px-3 py-2 text-sm font-medium transition ${
+                    activeContactTab === tab
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+          )}
+          {activeContactTab === "Geral" && (
+            <div className="grid gap-x-4 md:grid-cols-2 md:gap-y-4">
+              <div className="space-y-4">
+                <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-3 md:grid-cols-[7.5rem_minmax(0,1fr)] md:items-start md:gap-x-4 md:gap-y-4">
+                  <div className="row-span-2 self-stretch">
+                    <div className="flex h-full min-h-[8.5rem] items-center justify-center">
+                      {avatarUrl ? (
+                        <button
+                          type="button"
+                          aria-label="Mostrar foto"
+                          onClick={() => setPhotoPreviewOpen(true)}
+                          className="group relative inline-flex cursor-pointer rounded-full outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                        >
+                          <Avatar name={nome || "Contato"} src={avatarUrl} size={88} />
+                          <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-foreground/80 px-1.5 py-0.5 text-[10px] font-medium text-background opacity-0 transition group-hover:opacity-100">
+                            Mostrar foto
+                          </span>
+                        </button>
+                      ) : (
+                        <Avatar name={nome || "Contato"} src={avatarUrl ?? undefined} size={88} />
+                      )}
+                    </div>
+                  </div>
+                  <Field label="Nome *">
+                    <Input value={nome} onChange={(e) => setNome(e.target.value)} />
+                    {errors.nome && (
+                      <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
+                    )}
+                  </Field>
+                  <Field label="WhatsApp *">
+                    <div className="flex h-9 overflow-hidden rounded-md border border-input bg-transparent transition-colors focus-within:border-primary">
+                      <CountryCodeSelect
+                        value={countryCode}
+                        onChange={handleCountryCodeChange}
+                        compact
+                        embedded
+                      />
+                      <Input
+                        value={telefone}
+                        onChange={(e) => handlePhoneChange(e.target.value)}
+                        onBlur={handlePhoneBlur}
+                        placeholder={countryCode === "55" ? "(00) 00000-0000" : undefined}
+                        className="!h-9 !min-h-0 rounded-none border-0 !py-0 !pl-0 leading-normal shadow-none focus-visible:ring-0"
+                      />
+                    </div>
+                    {errors.telefone && (
+                      <span className="mt-1 block text-[11px] text-destructive">
+                        {errors.telefone}
+                      </span>
+                    )}
+                  </Field>
+                </div>
+                <Field label="E-mail">
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="email@exemplo.com"
+                  />
+                  {errors.email && (
+                    <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
+                  )}
+                </Field>
+                <div className="hidden md:block">
+                  <Field label="Instâncias">
+                    <InstanceMultiSelect
+                      instances={instances}
+                      selectedIds={instanceIds}
+                      onChange={setInstanceIds}
+                    />
+                  </Field>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <Field label="Empresa do Contato">
+                  <div className="flex gap-2">
+                    <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                      <option value="">- Sem empresa -</option>
+                      {customers.map((customer) => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.nome}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={customersManager.show}
+                      title="Gerenciar empresas"
                     >
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: active ? "rgba(255,255,255,0.9)" : t.cor }} />
-                      {t.nome}
-                    </button>
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </Field>
+                <Field label="Departamento do Contato">
+                  <div className="flex gap-2">
+                    <Select
+                      value={contactDepartmentId}
+                      onChange={(e) => setContactDepartmentId(e.target.value)}
+                    >
+                      <option value="">- Sem departamento -</option>
+                      {departments.map((department) => (
+                        <option key={department.id} value={department.id}>
+                          {department.nome}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={departmentsManager.show}
+                      title="Gerenciar departamentos"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </Field>
+                <Field label="Perfil do Contato">
+                  <div className="flex gap-2">
+                    <Select
+                      value={contactProfileId}
+                      onChange={(e) => setContactProfileId(e.target.value)}
+                    >
+                      <option value="">- Sem perfil -</option>
+                      {profiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.nome}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={profilesManager.show}
+                      title="Gerenciar perfis"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </Field>
+                <div className="md:hidden">
+                  <Field label="Instâncias">
+                    <InstanceMultiSelect
+                      instances={instances}
+                      selectedIds={instanceIds}
+                      onChange={setInstanceIds}
+                    />
+                  </Field>
+                </div>
+                <Field label="Etiquetas">
+                  <TagMultiSelect tags={tags} selectedIds={tagIds} onChange={setTagIds} />
+                </Field>
+              </div>
+            </div>
+          )}
+          {groupedCustomFields.map(([group, fields]) => (
+            <div key={group} className="space-y-3">
+              {group && (
+                <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                  {group}
+                </h3>
+              )}
+              <div className="grid gap-4 md:grid-cols-2">
+                {fields.map((field) => {
+                  const isHtmlField = field.type === "text" && contactTextVariant(field) === "html";
+                  return (
+                    <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
+                      <div>
+                        <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium leading-none text-muted-foreground">
+                          <span>
+                            {field.label}
+                            {field.required && <span className="text-destructive"> *</span>}
+                          </span>
+                          {field.note && (
+                            <span
+                              title={field.note}
+                              className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-full align-middle text-primary transition hover:text-primary/80"
+                            >
+                              <Info className="h-3 w-3" />
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          className={`flex gap-2 ${isHtmlField ? "items-start" : "items-center"}`}
+                        >
+                          <CustomContactFieldInput
+                            field={field}
+                            value={customFields[field.id]}
+                            onChange={(value) =>
+                              setCustomFields((current) => ({ ...current, [field.id]: value }))
+                            }
+                          />
+                        </div>
+                        {errors[`custom_${field.id}`] && (
+                          <span className="mt-1 block text-[11px] text-destructive">
+                            {errors[`custom_${field.id}`]}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
-            )}
+            </div>
+          ))}
+        </div>
+        <CustomersManagerModal
+          open={customersManager.open}
+          onClose={customersManager.hide}
+          onCustomerSelected={(customer) => {
+            onCustomerCreated(customer);
+            setCustomerId(customer.id);
+            customersManager.hide();
+          }}
+        />
+        <DepartmentsManagerModal
+          open={departmentsManager.open}
+          onClose={departmentsManager.hide}
+          onDepartmentSelected={(department) => {
+            onDepartmentSaved(department);
+            setContactDepartmentId(department.id);
+            departmentsManager.hide();
+          }}
+        />
+        <ContactProfilesManagerModal
+          open={profilesManager.open}
+          onClose={profilesManager.hide}
+          onProfileSelected={(profile) => {
+            onProfileSaved(profile);
+            setContactProfileId(profile.id);
+            profilesManager.hide();
+          }}
+        />
+      </Modal>
+      {avatarUrl && (
+        <Modal
+          open={photoPreviewOpen}
+          onClose={() => setPhotoPreviewOpen(false)}
+          title="Foto do Contato"
+          size="xl"
+          footer={null}
+        >
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <img
+              src={avatarUrl}
+              alt={nome ? `Foto de ${nome}` : "Foto do contato"}
+              className="max-h-[70vh] max-w-full rounded-lg object-contain"
+            />
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function CustomersManagerModal({
+  open,
+  onClose,
+  onCustomerSelected,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCustomerSelected: (customer: Customer) => void;
+}) {
+  const [customers, setCustomers] = React.useState<Customer[]>([]);
+  const [query, setQuery] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(DEFAULT_CUSTOMER_PAGE_SIZE);
+  const [total, setTotal] = React.useState(0);
+  const [totalPages, setTotalPages] = React.useState(1);
+  const [loading, setLoading] = React.useState(false);
+  const [editing, setEditing] = React.useState<Customer | null>(null);
+  const [deleting, setDeleting] = React.useState<Customer | null>(null);
+  const create = useDisclosure();
+  const load = React.useCallback(async () => {
+    if (!open) return;
+    setLoading(true);
+    try {
+      const response = await crmApi.listCustomers({ q: query, page, pageSize });
+      setCustomers(response.items);
+      setTotal(response.total);
+      setTotalPages(response.totalPages);
+    } catch (error) {
+      toast.error("Falha ao carregar empresas", { description: (error as Error).message });
+    } finally {
+      setLoading(false);
+    }
+  }, [open, page, pageSize, query]);
+  React.useEffect(() => {
+    if (open) void load();
+  }, [load, open]);
+  React.useEffect(() => {
+    setPage(1);
+  }, [pageSize, query]);
+  const pageSafe = Math.min(page, totalPages);
+  const selectCustomer = (customer: Customer) => {
+    onCustomerSelected(customer);
+    onClose();
+  };
+  const saveCustomer = async (data: CustomerFormData) => {
+    try {
+      const customer = editing
+        ? await crmApi.updateCustomer(editing.id, customerPayload(data))
+        : await crmApi.createCustomer(customerPayload(data));
+      toast.success(editing ? "Empresa atualizada" : "Empresa criada");
+      create.hide();
+      setEditing(null);
+      await load();
+      if (!editing) onCustomerSelected(customer);
+    } catch (error) {
+      toast.error("Falha ao salvar empresa", { description: (error as Error).message });
+    }
+  };
+  const deleteCustomer = async () => {
+    if (!deleting) return;
+    try {
+      await crmApi.deleteCustomer(deleting.id);
+      toast.success("Empresa excluida");
+      setDeleting(null);
+      await load();
+    } catch (error) {
+      toast.error("Falha ao excluir empresa", { description: (error as Error).message });
+    }
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="Empresa do Contato" size="xl">
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+          <div></div>
+          <Button variant="primary" size="sm" onClick={create.show}>
+            <Plus className="h-3.5 w-3.5" /> Nova Empresa do Contato
+          </Button>
+        </div>
+        <SearchInput value={query} onChange={setQuery} placeholder="Buscar por Empresa..." />
+        <div className="space-y-3">
+          {loading && (
+            <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Carregando...
+            </div>
+          )}
+          {!loading && (
+            <div className="grid gap-3 md:grid-cols-2">
+              {customers.map((customer) => (
+                <div
+                  key={customer.id}
+                  className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-1 p-3 sm:gap-3"
+                >
+                  <div className="flex min-w-[9rem] flex-1 items-center gap-3">
+                    <span
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white"
+                      style={{ backgroundColor: customer.cor }}
+                    >
+                      <Building2 className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">{customer.nome}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="select-action-button"
+                    onClick={() => selectCustomer(customer)}
+                  >
+                    Selecionar
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Editar"
+                    onClick={() => setEditing(customer)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="trash-action"
+                    title="Excluir"
+                    onClick={() => setDeleting(customer)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+          {!loading && customers.length === 0 && (
+            <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Nenhuma empresa encontrada.
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-1 px-3 py-2 text-xs text-muted-foreground sm:px-4 sm:py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 leading-tight sm:leading-normal">
+                <span className="block sm:inline">Mostrando</span>
+                <span className="block sm:inline">
+                  {" "}
+                  {formatIntegerPtBr(customers.length)} de {formatIntegerPtBr(total)}
+                </span>
+              </span>
+              <Select
+                value={String(pageSize)}
+                onChange={(event) => setPageSize(Number(event.target.value))}
+                className="h-8 w-20 text-xs sm:w-24"
+              >
+                {CUSTOMER_PAGE_SIZE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={pageSafe === 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <span className="font-mono">
+                {pageSafe} / {totalPages}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={pageSafe === totalPages}
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <CustomerFormModal
+        open={create.open || !!editing}
+        initial={editing ?? undefined}
+        onClose={() => {
+          create.hide();
+          setEditing(null);
+        }}
+        onSubmit={saveCustomer}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        title="Excluir Empresa do Contato?"
+        description={
+          <DeleteLinkedContactCatalogMessage name={deleting?.nome} entityLabel="empresa" />
+        }
+        destructive
+        confirmLabel="Excluir"
+        onClose={() => setDeleting(null)}
+        onConfirm={deleteCustomer}
+      />
+    </Modal>
+  );
+}
+function DepartmentsManagerModal({
+  open,
+  onClose,
+  onDepartmentSelected,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onDepartmentSelected: (department: ContactCatalog) => void;
+}) {
+  const [departments, setDepartments] = React.useState<ContactCatalog[]>([]);
+  const [query, setQuery] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [editing, setEditing] = React.useState<ContactCatalog | null>(null);
+  const [deleting, setDeleting] = React.useState<ContactCatalog | null>(null);
+  const create = useDisclosure();
+
+  const load = React.useCallback(async () => {
+    if (!open) return;
+    setLoading(true);
+    try {
+      setDepartments(await crmApi.listContactDepartments());
+    } catch (error) {
+      toast.error("Falha ao carregar departamentos", { description: (error as Error).message });
+    } finally {
+      setLoading(false);
+    }
+  }, [open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    void load();
+  }, [load, open]);
+
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return departments.filter((department) => {
+      if (!q) return true;
+      return `${department.nome} ${department.descricao ?? ""}`.toLowerCase().includes(q);
+    });
+  }, [departments, query]);
+
+  const selectDepartment = (department: ContactCatalog) => {
+    onDepartmentSelected(department);
+    onClose();
+  };
+
+  const saveDepartment = async (data: DepartamentoFormData) => {
+    try {
+      const department = editing
+        ? await crmApi.updateContactDepartment(editing.id, departmentPayload(data))
+        : await crmApi.createContactDepartment(departmentPayload(data));
+      toast.success(editing ? "Departamento atualizado" : "Departamento criado");
+      create.hide();
+      setEditing(null);
+      await load();
+      if (!editing) onDepartmentSelected(department);
+    } catch (error) {
+      toast.error("Falha ao salvar departamento", { description: (error as Error).message });
+    }
+  };
+
+  const deleteDepartment = async () => {
+    if (!deleting) return;
+    try {
+      await crmApi.deleteContactDepartment(deleting.id);
+      toast.success("Departamento excluído");
+      setDeleting(null);
+      await load();
+    } catch (error) {
+      toast.error("Falha ao excluir departamento", { description: (error as Error).message });
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Departamento do Contato"
+      size="xl"
+      footer={
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Fechar
+        </Button>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+          <Button variant="primary" size="sm" onClick={create.show}>
+            <Plus className="h-3.5 w-3.5" /> Novo Departamento do Contato
+          </Button>
+        </div>
+        <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
+        <div className="grid gap-3 md:grid-cols-2">
+          {loading && (
+            <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Carregando...
+            </div>
+          )}
+          {!loading &&
+            filtered.map((department) => (
+              <div
+                key={department.id}
+                className="flex items-center gap-3 rounded-lg border border-border bg-surface-1 p-3"
+              >
+                <span
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
+                  style={{ backgroundColor: department.cor }}
+                >
+                  <Network className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{department.nome}</p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="select-action-button"
+                  onClick={() => selectDepartment(department)}
+                >
+                  Selecionar
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Editar"
+                  onClick={() => setEditing(department)}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="trash-action"
+                  title="Excluir"
+                  onClick={() => setDeleting(department)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          {!loading && filtered.length === 0 && (
+            <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Nenhum departamento encontrado.
+            </div>
+          )}
+        </div>
+      </div>
+      <DepartmentFormModal
+        open={create.open || !!editing}
+        initial={editing ?? undefined}
+        onClose={() => {
+          create.hide();
+          setEditing(null);
+        }}
+        onSubmit={saveDepartment}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        title="Excluir Departamento do Contato?"
+        description={
+          <DeleteLinkedContactCatalogMessage name={deleting?.nome} entityLabel="departamento" />
+        }
+        destructive
+        confirmLabel="Excluir"
+        onClose={() => setDeleting(null)}
+        onConfirm={deleteDepartment}
+      />
+    </Modal>
+  );
+}
+
+function DepartmentFormModal({
+  open,
+  onClose,
+  onSubmit,
+  initial,
+  title,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (data: DepartamentoFormData) => void | Promise<void>;
+  initial?: ContactCatalog;
+  title?: string;
+}) {
+  const [form, setForm] = React.useState<DepartamentoFormData>({});
+  const [error, setError] = React.useState("");
+
+  React.useEffect(() => {
+    if (!open) return;
+    setForm(
+      initial
+        ? { name: initial.nome, description: initial.descricao, color: initial.cor }
+        : { color: "#3B82F6" },
+    );
+    setError("");
+  }, [initial, open]);
+
+  const save = async () => {
+    if (!form.name || form.name.trim().length < 2) {
+      setError("Informe o nome.");
+      toast.error("Nome obrigatório.");
+      return;
+    }
+    await onSubmit({ ...form, name: form.name.trim() });
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title ?? (initial ? "Editar Departamento do Contato" : "Novo Departamento do Contato")}
+      size="md"
+      footer={
+        <div className="flex w-full items-center justify-between gap-2">
+          <EntityFormLog createdAt={initial?.createdAt} updatedAt={initial?.updatedAt} />
+          <div className="flex shrink-0 justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="sm" onClick={save}>
+              Salvar
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-[minmax(0,1fr)_10rem] gap-3">
+          <Field label="Nome *">
+            <Input
+              value={form.name ?? ""}
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+            />
+            {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
+          </Field>
+          <Field label="Cor">
+            <ColorField
+              value={form.color ?? "#3B82F6"}
+              fallback="#3B82F6"
+              onChange={(color) => setForm({ ...form, color })}
+            />
           </Field>
         </div>
+        <Field label="Nota">
+          <Textarea
+            rows={3}
+            value={form.description ?? ""}
+            onChange={(event) => setForm({ ...form, description: event.target.value })}
+          />
+        </Field>
       </div>
     </Modal>
   );
+}
+
+function ContactProfilesManagerModal({
+  open,
+  onClose,
+  onProfileSelected,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onProfileSelected: (profile: ContactCatalog) => void;
+}) {
+  const [profiles, setProfiles] = React.useState<ContactCatalog[]>([]);
+  const [query, setQuery] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [editing, setEditing] = React.useState<ContactCatalog | null>(null);
+  const [deleting, setDeleting] = React.useState<ContactCatalog | null>(null);
+  const create = useDisclosure();
+
+  const load = React.useCallback(async () => {
+    if (!open) return;
+    setLoading(true);
+    try {
+      setProfiles(await crmApi.listContactProfiles());
+    } catch (error) {
+      toast.error("Falha ao carregar perfis", { description: (error as Error).message });
+    } finally {
+      setLoading(false);
+    }
+  }, [open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    void load();
+  }, [load, open]);
+
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return profiles.filter((profile) => {
+      if (!q) return true;
+      return `${profile.nome} ${profile.descricao ?? ""}`.toLowerCase().includes(q);
+    });
+  }, [profiles, query]);
+
+  const selectProfile = (profile: ContactCatalog) => {
+    onProfileSelected(profile);
+    onClose();
+  };
+
+  const saveProfile = async (data: DepartamentoFormData) => {
+    try {
+      const profile = editing
+        ? await crmApi.updateContactProfile(editing.id, departmentPayload(data))
+        : await crmApi.createContactProfile(departmentPayload(data));
+      toast.success(editing ? "Perfil atualizado" : "Perfil criado");
+      create.hide();
+      setEditing(null);
+      await load();
+      if (!editing) onProfileSelected(profile);
+    } catch (error) {
+      toast.error("Falha ao salvar perfil", { description: (error as Error).message });
+    }
+  };
+
+  const deleteProfile = async () => {
+    if (!deleting) return;
+    try {
+      await crmApi.deleteContactProfile(deleting.id);
+      toast.success("Perfil excluído");
+      setDeleting(null);
+      await load();
+    } catch (error) {
+      toast.error("Falha ao excluir perfil", { description: (error as Error).message });
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Perfil do Contato"
+      size="xl"
+      footer={
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Fechar
+        </Button>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+          <Button variant="primary" size="sm" onClick={create.show}>
+            <Plus className="h-3.5 w-3.5" /> Novo Perfil do Contato
+          </Button>
+        </div>
+        <SearchInput value={query} onChange={setQuery} placeholder="Buscar perfil..." />
+        <div className="grid gap-3 md:grid-cols-2">
+          {loading && (
+            <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Carregando...
+            </div>
+          )}
+          {!loading &&
+            filtered.map((profile) => (
+              <div
+                key={profile.id}
+                className="flex items-center gap-3 rounded-lg border border-border bg-surface-1 p-3"
+              >
+                <span
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
+                  style={{ backgroundColor: profile.cor }}
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{profile.nome}</p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="select-action-button"
+                  onClick={() => selectProfile(profile)}
+                >
+                  Selecionar
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Editar"
+                  onClick={() => setEditing(profile)}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="trash-action"
+                  title="Excluir"
+                  onClick={() => setDeleting(profile)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          {!loading && filtered.length === 0 && (
+            <div className="col-span-full rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+              Nenhum perfil encontrado.
+            </div>
+          )}
+        </div>
+      </div>
+      <DepartmentFormModal
+        open={create.open || !!editing}
+        initial={editing ?? undefined}
+        title={editing ? "Editar Perfil do Contato" : "Novo Perfil do Contato"}
+        onClose={() => {
+          create.hide();
+          setEditing(null);
+        }}
+        onSubmit={saveProfile}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        title="Excluir Perfil do Contato?"
+        description={
+          <DeleteLinkedContactCatalogMessage name={deleting?.nome} entityLabel="perfil" />
+        }
+        destructive
+        confirmLabel="Excluir"
+        onClose={() => setDeleting(null)}
+        onConfirm={deleteProfile}
+      />
+    </Modal>
+  );
+}
+
+function DeleteLinkedContactCatalogMessage({
+  name,
+  entityLabel,
+}: {
+  name?: string | null;
+  entityLabel: string;
+}) {
+  const selectedName = name ?? `Sem ${entityLabel}`;
+
+  return (
+    <div className="space-y-2">
+      <p>
+        Deseja realmente excluir o cadastro de {entityLabel}{" "}
+        <strong className="font-semibold text-foreground">"{selectedName}"</strong>?
+      </p>
+      <p className="text-xs italic text-muted-foreground">
+        Os Contatos vinculados serão desvinculados.
+      </p>
+    </div>
+  );
+}
+
+function InstanceMultiSelect({
+  instances,
+  selectedIds,
+  onChange,
+}: {
+  instances: ContactInstanceOption[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const selectedInstances = instances.filter((instance) =>
+    [instance.value, instance.id, instance.externalReference].some(
+      (key) => key && selectedIds.includes(key),
+    ),
+  );
+  const count = selectedInstances.length;
+  const summary =
+    count === 0
+      ? "- Selecione -"
+      : count === 1
+        ? selectedInstances[0]?.name ?? "1 selecionada"
+        : `${count} selecionadas`;
+
+  React.useEffect(() => {
+    if (!open) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    return () => document.removeEventListener("pointerdown", closeOnOutside);
+  }, [open]);
+
+  const toggle = (id: string) => {
+    onChange(
+      selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id],
+    );
+  };
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm outline-none transition hover:border-primary/50 focus:border-primary ${
+          count > 0 ? "text-foreground" : "text-muted-foreground"
+        }`}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          {count === 1 && selectedInstances[0] && (
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: selectedInstances[0].color ?? "#22c55e" }}
+            />
+          )}
+          <span className="truncate">{summary}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1">
+          {count > 0 && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(event) => {
+                event.stopPropagation();
+                onChange([]);
+              }}
+              className="rounded p-0.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+              aria-label="Limpar seleção"
+            >
+              <X className="h-3.5 w-3.5" />
+            </span>
+          )}
+          <ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
+        </span>
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="absolute bottom-full z-[90] mb-2 max-h-[min(22rem,calc(100vh-10rem))] w-full overflow-auto rounded-lg border border-border bg-card p-1 shadow-card"
+        >
+            {instances.map((instance) => {
+              const active = [instance.value, instance.id, instance.externalReference].some(
+                (key) => key && selectedIds.includes(key),
+              );
+              return (
+                <button
+                  key={instance.value}
+                  type="button"
+                  onClick={() => toggle(instance.value)}
+                  role="option"
+                  aria-selected={active}
+                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition hover:bg-surface-1 ${
+                    active ? "text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  <span
+                    className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-surface-1"
+                    }`}
+                  >
+                    {active && <Check className="h-2.5 w-2.5" />}
+                  </span>
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: instance.color ?? "#22c55e" }}
+                  />
+                  <span className="truncate">{instance.name}</span>
+                </button>
+              );
+            })}
+            {instances.length === 0 && (
+              <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+                Nenhuma instância cadastrada.
+              </div>
+            )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TagMultiSelect({
+  tags,
+  selectedIds,
+  onChange,
+  placement = "up",
+  flow = false,
+}: {
+  tags: Tag[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  placement?: "up" | "down";
+  flow?: boolean;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [availableTagIds, setAvailableTagIds] = React.useState<string[]>([]);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const selectedTags = tags.filter((tag) => selectedIds.includes(tag.id));
+
+  React.useEffect(() => {
+    if (!open) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    return () => document.removeEventListener("pointerdown", closeOnOutside);
+  }, [open]);
+
+  const toggle = (id: string) => {
+    onChange(
+      selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id],
+    );
+  };
+  const toggleAll = () => {
+    const availableIds = availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id);
+    const allSelected = availableIds.length > 0 && availableIds.every((id) => selectedIds.includes(id));
+    if (allSelected) {
+      onChange([]);
+      return;
+    }
+    onChange(Array.from(new Set([...selectedIds, ...availableIds])));
+  };
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() =>
+          setOpen((current) => {
+            if (!current) {
+              setAvailableTagIds(tags.map((tag) => tag.id));
+            }
+            return !current;
+          })
+        }
+        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm text-foreground outline-none transition focus:border-primary"
+      >
+        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+          {selectedTags.length === 0 ? (
+            <span className="text-muted-foreground">- Selecione -</span>
+          ) : (
+            selectedTags.map((tag) => (
+              <span
+                key={tag.id}
+                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                style={{
+                  backgroundColor: `${tag.cor ?? "#3B82F6"}1f`,
+                  borderColor: `${tag.cor ?? "#3B82F6"}66`,
+                  color: tag.cor ?? "#3B82F6",
+                }}
+              >
+                <Tag className="h-3 w-3 shrink-0" />
+                {tag.nome}
+              </span>
+            ))
+          )}
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+      </button>
+      {open && (
+        <div
+          className={`${flow ? "relative z-[9999] mt-2" : `absolute right-0 z-[9999] ${placement === "down" ? "top-full mt-2" : "bottom-full mb-2"}`} flex max-h-[min(27rem,calc(100vh-8rem))] w-[min(42rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl sm:max-h-[min(15rem,calc(100vh-8rem))]`}
+        >
+          <div className="grid max-h-[22rem] min-h-0 grid-cols-1 gap-1 overflow-y-auto overflow-x-hidden p-1 sm:max-h-[11.5rem] sm:grid-cols-2">
+            {tags.map((tag) => {
+              const active = selectedIds.includes(tag.id);
+              return (
+                <button
+                  key={tag.id}
+                  type="button"
+                  onClick={() => toggle(tag.id)}
+                  className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-foreground hover:bg-surface-1"
+                >
+                  <span
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${active ? "border-primary bg-primary text-white" : "border-border"}`}
+                  >
+                    {active && <Check className="h-3 w-3" />}
+                  </span>
+                  <span
+                    className="inline-flex min-w-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                    style={{
+                      backgroundColor: `${tag.cor ?? "#3B82F6"}1f`,
+                      borderColor: `${tag.cor ?? "#3B82F6"}66`,
+                      color: tag.cor ?? "#3B82F6",
+                    }}
+                  >
+                    <Tag className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{tag.nome}</span>
+                  </span>
+                </button>
+              );
+            })}
+            {tags.length === 0 && (
+              <div className="col-span-full px-2 py-3 text-center text-xs text-muted-foreground">
+                Nenhuma etiqueta cadastrada.
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2 border-t border-border bg-popover p-2">
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                toggleAll();
+              }}
+              disabled={tags.length === 0}
+              className="flex items-center justify-center gap-1 rounded-md border border-success/50 bg-white px-2 py-2 text-xs font-medium text-success transition hover:bg-success/5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {(availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id)).every((id) =>
+                selectedIds.includes(id),
+              ) ? (
+                <>
+                  <X className="h-3 w-3" /> Remover todas
+                </>
+              ) : (
+                <>
+                  <Check className="h-3 w-3" /> Selecionar todos
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function ContactFormLog({ contact }: { contact?: Contact }) {
+  if (!contact) return <span aria-hidden="true" />;
+  return (
+    <div className="min-w-0 text-left text-[11px] leading-4 text-muted-foreground sm:text-xs sm:leading-5">
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Criado:</span>{" "}
+        {formatDateTime(contact.createdAt)}
+      </div>
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Editado:</span>{" "}
+        {formatDateTime(contact.updatedAt)}
+      </div>
+    </div>
+  );
+}
+
+function EntityFormLog({
+  createdAt,
+  updatedAt,
+}: {
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}) {
+  if (!createdAt && !updatedAt) return <span aria-hidden="true" />;
+  return (
+    <div className="min-w-0 text-left text-[11px] leading-4 text-muted-foreground sm:text-xs sm:leading-5">
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Criado:</span> {formatDateTime(createdAt)}
+      </div>
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Editado:</span> {formatDateTime(updatedAt)}
+      </div>
+    </div>
+  );
+}
+
+function CustomContactFieldInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: ContactCustomField;
+  value: string | boolean | undefined;
+  onChange: (value: string | boolean) => void;
+}) {
+  if (field.type === "checkbox") {
+    const description = contactCheckboxDescription(field);
+    return (
+      <div className="inline-flex w-full items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
+        <input
+          type="checkbox"
+          checked={value === true || value === "true"}
+          onChange={(event) => onChange(event.target.checked)}
+          className="h-4 w-4"
+        />
+        <span>{description || "Marcado"}</span>
+      </div>
+    );
+  }
+  if (field.type === "list") {
+    if (contactListVariant(field) === "multi") {
+      return (
+        <CustomListMultiSelect
+          options={field.options}
+          selectedValues={parseMultiListValue(String(value ?? ""))}
+          onChange={(values) => onChange(JSON.stringify(values))}
+        />
+      );
+    }
+    return (
+      <Select value={String(value ?? "")} onChange={(event) => onChange(event.target.value)}>
+        <option value="">- Selecione -</option>
+        {field.options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </Select>
+    );
+  }
+
+  if (field.type === "text") {
+    const variant = contactTextVariant(field);
+    const inputValue = String(value ?? "");
+    if (variant === "long") {
+      return (
+        <Textarea rows={3} value={inputValue} onChange={(event) => onChange(event.target.value)} />
+      );
+    }
+    if (variant === "html") {
+      return <HtmlTextEditor value={inputValue} onChange={(next) => onChange(next)} />;
+    }
+    return (
+      <Input type="text" value={inputValue} onChange={(event) => onChange(event.target.value)} />
+    );
+  }
+
+  if (field.type === "date") {
+    const variant = contactDateVariant(field);
+    return (
+      <CustomDateInput
+        value={String(value ?? "")}
+        variant={variant}
+        onChange={(next) => onChange(next)}
+      />
+    );
+  }
+
+  const numberConfig = contactNumberConfig(field);
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      className="text-right"
+      value={String(value ?? "")}
+      placeholder={numberPlaceholder(numberConfig)}
+      onChange={(event) => onChange(maskAdditionalNumber(event.target.value, numberConfig))}
+    />
+  );
+}
+
+function CustomListMultiSelect({
+  options,
+  selectedValues,
+  onChange,
+}: {
+  options: string[];
+  selectedValues: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const selectedSet = new Set(selectedValues);
+
+  const toggle = (option: string) => {
+    onChange(
+      selectedSet.has(option)
+        ? selectedValues.filter((item) => item !== option)
+        : [...selectedValues, option],
+    );
+  };
+
+  if (!options.length) {
+    return (
+      <div className="flex min-h-10 w-full items-center rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-muted-foreground">
+        Nenhuma opção cadastrada.
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-h-56 w-full overflow-y-auto rounded-lg border border-border bg-surface-1 p-2">
+      <div className="grid grid-cols-2 gap-1">
+        {options.map((option) => {
+          const checked = selectedSet.has(option);
+          return (
+            <label
+              key={option}
+              className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground transition hover:bg-surface-2"
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggle(option)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-0 focus:outline-none"
+              />
+              <span className="min-w-0 flex-1 break-words">{option}</span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function HtmlTextEditor({
+  value,
+  onChange,
+  expanded = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  expanded?: boolean;
+}) {
+  const editorRef = React.useRef<HTMLDivElement>(null);
+  const selectionRef = React.useRef<Range | null>(null);
+  const lastCommandRef = React.useRef<{ name: string; at: number } | null>(null);
+  const [fullscreen, setFullscreen] = React.useState(false);
+  const [alignmentCommand, setAlignmentCommand] = React.useState("justifyLeft");
+  const [fontName, setFontName] = React.useState("Arial");
+  const [fontSize, setFontSize] = React.useState("3");
+  const [fontColor, setFontColor] = React.useState("#111827");
+  const alignmentIcon =
+    alignmentCommand === "justifyCenter" ? (
+      <AlignCenter className="h-4 w-4 text-muted-foreground" />
+    ) : alignmentCommand === "justifyRight" ? (
+      <AlignRight className="h-4 w-4 text-muted-foreground" />
+    ) : alignmentCommand === "justifyFull" ? (
+      <AlignJustify className="h-4 w-4 text-muted-foreground" />
+    ) : (
+      <AlignLeft className="h-4 w-4 text-muted-foreground" />
+    );
+
+  React.useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || document.activeElement === editor) return;
+    if (editor.innerHTML !== value) editor.innerHTML = value;
+  }, [value]);
+
+  const sync = () => onChange(editorRef.current?.innerHTML ?? "");
+  const saveSelection = () => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection?.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (editor.contains(range.commonAncestorContainer)) {
+      selectionRef.current = range.cloneRange();
+    }
+  };
+  const restoreSelection = () => {
+    const selection = window.getSelection();
+    const range = selectionRef.current;
+    if (!selection || !range) return;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  };
+  const placeCursorAtEnd = (element: HTMLElement) => {
+    const selection = window.getSelection();
+    if (!selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    selectionRef.current = range.cloneRange();
+  };
+  const command = (name: string, commandValue?: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const now = Date.now();
+    const commandKey = `${name}:${commandValue ?? ""}`;
+    if (lastCommandRef.current?.name === commandKey && now - lastCommandRef.current.at < 700) {
+      return;
+    }
+    lastCommandRef.current = { name: commandKey, at: now };
+    editor.focus();
+    restoreSelection();
+    if (name === "insertUnorderedList" && !editor.textContent?.trim()) {
+      editor.innerHTML = "<ul><li><br></li></ul>";
+      const item = editor.querySelector("li");
+      if (item instanceof HTMLElement) placeCursorAtEnd(item);
+      sync();
+      return;
+    }
+    document.execCommand(name, false, commandValue);
+    saveSelection();
+    sync();
+  };
+
+  const editor = (
+    <div className="w-full overflow-hidden rounded-lg border border-border bg-surface-1">
+      <div className="flex items-start justify-between gap-2 border-b border-border bg-card px-2 py-1.5">
+        <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-xl bg-surface-2 px-2 py-1 shadow-sm">
+          <ToolbarButton title="Desfazer" onClick={() => command("undo")}>
+            <Undo2 className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Refazer" onClick={() => command("redo")}>
+            <Redo2 className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarDivider />
+          <ToolbarSelect
+            title="Tipo da fonte"
+            value={fontName}
+            className="w-32"
+            onMouseDown={saveSelection}
+            onChange={(next) => {
+              setFontName(next);
+              command("fontName", next);
+            }}
+          >
+            <option value="Arial">Sans Serif</option>
+            <option value="Times New Roman">Serif</option>
+            <option value="Courier New">Largura fixa</option>
+            <option value="Arial Black">Largo</option>
+            <option value="Arial Narrow">Estreito</option>
+            <option value="Comic Sans MS">Comic Sans MS</option>
+            <option value="Garamond">Garamond</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Tahoma">Tahoma</option>
+            <option value="Trebuchet MS">Trebuchet MS</option>
+            <option value="Verdana">Verdana</option>
+          </ToolbarSelect>
+          <ToolbarDivider />
+          <label
+            className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-foreground transition hover:bg-card"
+            title="Tamanho da fonte"
+          >
+            <Type className="h-4 w-4" />
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <select
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none"
+              value={fontSize}
+              onMouseDown={saveSelection}
+              onChange={(event) => {
+                setFontSize(event.target.value);
+                command("fontSize", event.target.value);
+              }}
+              aria-label="Tamanho da fonte"
+            >
+              <option value="2">Pequeno</option>
+              <option value="3">Normal</option>
+              <option value="5">Grande</option>
+              <option value="7">Enorme</option>
+            </select>
+          </label>
+          <ToolbarDivider />
+          <ToolbarButton title="Negrito" onClick={() => command("bold")}>
+            <Bold className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Itálico" onClick={() => command("italic")}>
+            <Italic className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Sublinhado" onClick={() => command("underline")}>
+            <Underline className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Riscado" onClick={() => command("strikeThrough")}>
+            <Strikethrough className="h-4 w-4" />
+          </ToolbarButton>
+          <label
+            className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs transition hover:bg-card"
+            title="Cor do texto"
+          >
+            <span className="font-semibold">A</span>
+            <span className="h-1 w-4 rounded-sm" style={{ backgroundColor: fontColor }} />
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              type="color"
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              value={fontColor}
+              onMouseDown={saveSelection}
+              onChange={(event) => {
+                setFontColor(event.target.value);
+                command("foreColor", event.target.value);
+              }}
+            />
+          </label>
+          <ToolbarDivider />
+          <label
+            className="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs transition hover:bg-card"
+            title="Alinhamento"
+          >
+            {alignmentIcon}
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <select
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0 outline-none"
+              value={alignmentCommand}
+              onMouseDown={saveSelection}
+              onChange={(event) => {
+                setAlignmentCommand(event.target.value);
+                command(event.target.value);
+              }}
+              aria-label="Alinhamento"
+            >
+              <option value="justifyLeft">Esquerda</option>
+              <option value="justifyCenter">Centro</option>
+              <option value="justifyRight">Direita</option>
+              <option value="justifyFull">Justificado</option>
+            </select>
+          </label>
+          <ToolbarButton title="Lista numerada" onClick={() => command("insertOrderedList")}>
+            <ListOrdered className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Marcadores" onClick={() => command("insertUnorderedList")}>
+            <List className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Diminuir recuo" onClick={() => command("outdent")}>
+            <ListIndentDecrease className="h-4 w-4" />
+          </ToolbarButton>
+          <ToolbarButton title="Aumentar recuo" onClick={() => command("indent")}>
+            <ListIndentIncrease className="h-4 w-4" />
+          </ToolbarButton>
+          {!expanded && (
+            <>
+              <ToolbarDivider />
+              <ToolbarButton title="Maximizar" onClick={() => setFullscreen(true)}>
+                <Expand className="h-4 w-4" />
+              </ToolbarButton>
+            </>
+          )}
+        </div>
+      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        className={`w-full overflow-y-auto px-3 py-2 text-sm outline-none [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 ${
+          expanded ? "h-[62vh]" : "h-44"
+        }`}
+        onBlur={saveSelection}
+        onInput={() => {
+          saveSelection();
+          sync();
+        }}
+        onKeyUp={saveSelection}
+        onMouseUp={saveSelection}
+      />
+    </div>
+  );
+
+  return (
+    <>
+      {editor}
+      <Modal
+        open={fullscreen}
+        onClose={() => setFullscreen(false)}
+        title="Editar Texto HTML"
+        size="xl"
+        footer={
+          <Button variant="primary" size="sm" onClick={() => setFullscreen(false)}>
+            Concluir
+          </Button>
+        }
+      >
+        <HtmlTextEditor value={value} onChange={onChange} expanded />
+      </Modal>
+    </>
+  );
+}
+
+function ToolbarButton({
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onClick}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToolbarDivider() {
+  return <span className="mx-1 h-5 w-px bg-border" />;
+}
+
+function ToolbarSelect({
+  title,
+  value,
+  className = "",
+  onMouseDown,
+  onChange,
+  children,
+}: {
+  title: string;
+  value: string;
+  className?: string;
+  onMouseDown: () => void;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label
+      className={`relative inline-flex h-8 items-center rounded-md px-2 text-xs transition hover:bg-card ${className}`}
+      title={title}
+    >
+      <select
+        className="w-full appearance-none bg-transparent pr-5 text-xs outline-none"
+        value={value}
+        onMouseDown={onMouseDown}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={title}
+      >
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+    </label>
+  );
+}
+
+function CustomDateInput({
+  value,
+  variant,
+  onChange,
+}: {
+  value: string;
+  variant: ContactDateVariant;
+  onChange: (value: string) => void;
+}) {
+  const [draft, setDraft] = React.useState(() => formatDateForDisplay(value, variant));
+
+  React.useEffect(() => {
+    if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.dateInput) {
+      return;
+    }
+    setDraft(formatDateForDisplay(value, variant));
+  }, [value, variant]);
+
+  return (
+    <Input
+      type="text"
+      inputMode="numeric"
+      value={draft}
+      placeholder={variant === "datetime" ? "00/00/0000 00:00" : "00/00/0000"}
+      data-date-input="true"
+      onKeyDown={(event) => {
+        if (event.key.toLowerCase() !== "h") return;
+        event.preventDefault();
+        const parsed = dateDraftFromDate(new Date(), variant);
+        setDraft(parsed.display);
+        onChange(parsed.iso);
+      }}
+      onChange={(event) => {
+        setDraft(event.target.value);
+      }}
+      onBlur={() => {
+        const parsed = parseDateDraft(draft, variant);
+        if (!parsed) {
+          onChange(draft);
+          return;
+        }
+        setDraft(parsed.display);
+        onChange(parsed.iso);
+      }}
+    />
+  );
+}
+
+function dateDraftFromDate(date: Date, variant: ContactDateVariant) {
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const displayDate = `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
+  return {
+    display:
+      variant === "datetime"
+        ? `${displayDate} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+        : displayDate,
+    iso: date.toISOString(),
+  };
+}
+
+function normalizeCustomFieldValues(
+  values: Record<string, string | boolean>,
+  fields: ContactCustomField[],
+) {
+  const normalized = { ...values };
+  for (const field of fields) {
+    if (field.type !== "date") continue;
+    const value = values[field.id];
+    if (typeof value !== "string" || !value.trim()) continue;
+    const parsed = parseDateDraft(value, contactDateVariant(field));
+    if (parsed) normalized[field.id] = parsed.iso;
+  }
+  return normalized;
+}
+
+function parseContactFieldConfig(mask?: string | null): ContactFieldConfig {
+  if (!mask?.trim().startsWith("{")) return {};
+  try {
+    return JSON.parse(mask) as ContactFieldConfig;
+  } catch {
+    return {};
+  }
+}
+
+function contactTextVariant(field: ContactCustomField): ContactTextVariant {
+  return parseContactFieldConfig(field.mask).text?.variant ?? "short";
+}
+
+function contactNumberConfig(field: ContactCustomField) {
+  const config = parseContactFieldConfig(field.mask).number;
+  return {
+    decimals: clampInteger(config?.decimals ?? 2, 0, 6),
+    thousands: config?.thousands ?? true,
+    symbol: (config?.symbol ?? "") as ContactNumberSymbol,
+  };
+}
+
+function contactDateVariant(field: ContactCustomField): ContactDateVariant {
+  return parseContactFieldConfig(field.mask).date?.variant ?? "date";
+}
+
+function contactListVariant(field: ContactCustomField): ContactListVariant {
+  return parseContactFieldConfig(field.mask).list?.variant ?? "single";
+}
+
+function contactCheckboxDescription(field: ContactCustomField) {
+  return parseContactFieldConfig(field.mask).checkbox?.description?.trim() ?? "";
+}
+
+function parseMultiListValue(value: string) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === "string");
+    }
+  } catch {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function formatDateForDisplay(value: string, variant: ContactDateVariant) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    const parsed = parseDateDraft(value, variant);
+    return parsed?.display ?? value;
+  }
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const base = `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
+  if (variant === "date") return base;
+  return `${base} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function parseDateDraft(value: string, variant: ContactDateVariant) {
+  const digits = onlyDigits(value);
+  const expectedLength = variant === "datetime" ? 12 : 8;
+  if (digits.length < expectedLength) return null;
+  const day = Number(digits.slice(0, 2));
+  const month = Number(digits.slice(2, 4));
+  const year = Number(digits.slice(4, 8));
+  const hour = variant === "datetime" ? Number(digits.slice(8, 10)) : 0;
+  const minute = variant === "datetime" ? Number(digits.slice(10, 12)) : 0;
+  const date = new Date(year, month - 1, day, hour, minute, 0, 0);
+  const valid =
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day &&
+    date.getHours() === hour &&
+    date.getMinutes() === minute;
+  if (!valid) return null;
+  const pad = (part: number) => String(part).padStart(2, "0");
+  const displayDate = `${pad(day)}/${pad(month)}/${year}`;
+  return {
+    display: variant === "datetime" ? `${displayDate} ${pad(hour)}:${pad(minute)}` : displayDate,
+    iso: date.toISOString(),
+  };
+}
+
+function numberPlaceholder(config: ReturnType<typeof contactNumberConfig>) {
+  const decimals = config.decimals > 0 ? `,${"0".repeat(config.decimals)}` : "";
+  const base = `0${decimals}`;
+  if (!config.symbol) return base;
+  return config.symbol === "%" ? `${base}%` : `${config.symbol} ${base}`;
+}
+
+function maskAdditionalNumber(value: string, config: ReturnType<typeof contactNumberConfig>) {
+  const digits = onlyDigits(value);
+  if (!digits) return "";
+  const decimals = clampInteger(config.decimals, 0, 6);
+  const padded = decimals > 0 ? digits.padStart(decimals + 1, "0") : digits;
+  const integerRaw = decimals > 0 ? padded.slice(0, -decimals) : padded;
+  const decimalRaw = decimals > 0 ? padded.slice(-decimals) : "";
+  const integer = (integerRaw.replace(/^0+(?=\d)/, "") || "0").replace(
+    config.thousands ? /\B(?=(\d{3})+(?!\d))/g : /$^/g,
+    ".",
+  );
+  const formatted = decimals > 0 ? `${integer},${decimalRaw}` : integer;
+  if (!config.symbol) return formatted;
+  return config.symbol === "%" ? `${formatted}%` : `${config.symbol} ${formatted}`;
+}
+
+function clampInteger(value: string | number, min: number, max: number) {
+  const parsed = typeof value === "number" ? value : Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return min;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }).replace(",", "");
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
+      <Select value={value} onChange={(event) => onChange(event.target.value)}>
+        {children}
+      </Select>
+    </label>
+  );
+}
+
+function toCsv(rows: Array<Array<string | number | null | undefined>>) {
+  return rows
+    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+}
+
+function toExcelHtml(rows: Array<Array<string | number | null | undefined>>) {
+  const body = rows
+    .map(
+      (row) =>
+        `<tr>${row
+          .map(
+            (cell) =>
+              `<td>${String(cell ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")}</td>`,
+          )
+          .join("")}</tr>`,
+    )
+    .join("");
+  return `<html><head><meta charset="utf-8" /></head><body><table>${body}</table></body></html>`;
+}
+function downloadTextFile(filename: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+const IMPORT_TEMPLATE_ROWS = [
+  ["Contato", "WhatsApp", "E-mail", "Empresa", "Departamento", "Perfil", "Instâncias", "Etiquetas"],
+  [
+    "Maria Exemplo",
+    "+55 (11) 90000-0000",
+    "maria@empresa.com",
+    "FLOWID",
+    "Financeiro",
+    "Gerente",
+    "SMCLICK",
+    "VIP",
+  ],
+];
+
+async function parseSpreadsheetFile(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  if (extension === "csv") return parseCsv(await file.text());
+  if (extension === "xls" || extension === "xlsx") {
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!firstSheet) return [];
+    return XLSX.utils.sheet_to_json<string[]>(firstSheet, {
+      header: 1,
+      blankrows: false,
+      defval: "",
+    });
+  }
+  throw new Error("Formato inválido. Use XLSX, XLS ou CSV.");
+}
+
+function countValidImportRows(rows: string[][]) {
+  const [header, ...records] = rows;
+  if (!header?.length) return 0;
+  const index = new Map(header.map((item, i) => [normalizeHeader(item), i]));
+  return records.filter((row) => {
+    const name = valueAt(row, index, ["contato", "nome", "name"]);
+    const phone = valueAt(row, index, [
+      "whatsapp",
+      "telefone",
+      "phone",
+      "celular",
+      "numero",
+      "número",
+    ]);
+    return Boolean(name && phone);
+  }).length;
+}
+
+function downloadImportTemplate(format: "csv" | "xls" | "xlsx") {
+  const filename = `modelo-importacao-contatos-${format}.${format}`;
+  if (format === "xlsx") {
+    const worksheet = XLSX.utils.aoa_to_sheet(IMPORT_TEMPLATE_ROWS);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Contatos");
+    XLSX.writeFile(workbook, filename);
+    return;
+  }
+  if (format === "xls") {
+    downloadTextFile(filename, toExcelHtml(IMPORT_TEMPLATE_ROWS), "application/vnd.ms-excel");
+    return;
+  }
+  downloadTextFile(filename, toCsv(IMPORT_TEMPLATE_ROWS), "text/csv;charset=utf-8");
+}
+
+function downloadAgendaIgnoredTemplate(items: ApiAgendaImportIgnoredContact[]) {
+  const rows = [
+    [...IMPORT_TEMPLATE_ROWS[0], "Motivo"],
+    ...items.map((item) => [item.name, item.phone, "", "", "", "", "", "", item.reason]),
+  ];
+  const worksheet = XLSX.utils.aoa_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Contatos ignorados");
+  XLSX.writeFile(
+    workbook,
+    `contatos-ignorados-agenda-${new Date().toISOString().slice(0, 10)}.xlsx`,
+  );
+}
+
+function formatIntegerPtBr(value: number) {
+  return new Intl.NumberFormat("pt-BR").format(value);
+}
+
+function contactAlphabetKey(name: string) {
+  const normalized = normalizeHeader(name);
+  const firstLetter = normalized.match(/[a-z]/)?.[0];
+  return firstLetter ? firstLetter.toUpperCase() : null;
+}
+
+function parseCsv(input: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+    const next = input[i + 1];
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      i += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if ((char === "," || char === ";") && !quoted) {
+      row.push(cell.trim());
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") i += 1;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
+function normalizeHeader(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function valueAt(row: string[], index: Map<string, number>, names: string[]) {
+  for (const name of names) {
+    const position = index.get(normalizeHeader(name));
+    if (position !== undefined) return row[position]?.trim() ?? "";
+  }
+  return "";
+}
+
+function splitImportList(value: string) {
+  return value
+    .split(/[,;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function cleanImportName(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function normalizeImportName(value: string) {
+  return normalizeHeader(cleanImportName(value)).replace(/\s+/g, " ");
+}
+
+function findByImportedName<T extends { nome: string }>(items: T[], value: string) {
+  const normalized = normalizeImportName(value);
+  if (!normalized) return undefined;
+  return items.find((item) => normalizeImportName(item.nome) === normalized);
+}
+
+function findImportedInstance(instances: ContactInstanceOption[], value: string) {
+  const normalized = normalizeImportName(value);
+  if (!normalized) return undefined;
+  return instances.find((instance) =>
+    [instance.name, instance.id, instance.value, instance.externalReference ?? ""].some(
+      (candidate) => normalizeImportName(candidate) === normalized,
+    ),
+  );
+}
+function splitPhoneByCountry(value: string) {
+  const digits = onlyDigits(value);
+  const phone = parsePhoneNumberFromString(value.trim().startsWith("+") ? value : `+${digits}`);
+  const match = phone
+    ? COUNTRY_CODES.find(
+        (country) =>
+          country.code === phone.countryCallingCode || country.id.toUpperCase() === phone.country,
+      )
+    : COUNTRY_CODES.slice()
+        .sort((a, b) => b.code.length - a.code.length)
+        .find((country) => digits.startsWith(country.code) && digits.length > country.code.length);
+  return {
+    countryCode: match?.code ?? "55",
+    localPhone: phone?.nationalNumber
+      ? String(phone.nationalNumber)
+      : match
+        ? digits.slice(match.code.length)
+        : digits,
+  };
+}
+
+function formatPhoneForSubmit(value: string, countryCode = "55") {
+  const digits = normalizeBrazilMobileDigits(onlyDigits(value), countryCode);
+  if (!digits) return value;
+  const code = onlyDigits(countryCode) || "55";
+  const fullNumber = digits.startsWith(code) ? `+${digits}` : `+${code}${digits}`;
+  const phone = parsePhoneNumberFromString(fullNumber);
+  return phone?.number ?? fullNumber;
+}
+
+function phoneDraftByCountry(value: string, countryCode = "55") {
+  const code = onlyDigits(countryCode) || "55";
+  const maxLength = code === "55" ? 11 : 15;
+  const parsed = parsePhoneDraftInput(value, code);
+  return onlyDigits(parsed.localPhone).slice(0, maxLength);
+}
+
+function parsePhoneDraftInput(value: string, currentCountryCode = "55") {
+  const currentCode = onlyDigits(currentCountryCode) || "55";
+  const digits = onlyDigits(value);
+  if (!digits) return { countryCode: currentCode, localPhone: "" };
+
+  const explicit = value.trim().startsWith("+")
+    ? splitPhoneByCountry(value)
+    : currentCode === "55"
+      ? inferPhoneCountryWithoutPlus(value, currentCode)
+      : null;
+  return explicit ?? { countryCode: currentCode, localPhone: digits };
+}
+
+function inferPhoneCountryWithoutPlus(value: string, currentCountryCode: string) {
+  const digits = onlyDigits(value);
+  if (digits.startsWith("55")) {
+    const local = normalizeBrazilMobileDigits(digits.slice(2), "55");
+    if (local.length === 11 && local[2] === "9") return { countryCode: "55", localPhone: local };
+  }
+
+  if (/^\s*1[\s().-]+/.test(value) && digits.length === 11) {
+    return { countryCode: "1", localPhone: digits.slice(1) };
+  }
+
+  if (currentCountryCode !== "55") {
+    const phone = parsePhoneNumberFromString(`+${digits}`);
+    const match = phone
+      ? COUNTRY_CODES.find(
+          (country) =>
+            country.code === phone.countryCallingCode || country.id.toUpperCase() === phone.country,
+        )
+      : null;
+    if (match) return { countryCode: match.code, localPhone: digits.slice(match.code.length) };
+  }
+
+  return null;
+}
+
+function formatPhoneDraftOnBlur(value: string, countryCode = "55") {
+  const code = onlyDigits(countryCode) || "55";
+  const digits = onlyDigits(value);
+  if (code !== "55") return formatInternationalPhoneDraft(digits, code);
+  return maskBrazilPhone(normalizeBrazilMobileDigits(digits, code));
+}
+
+function maskPhoneByCountry(value: string, countryCode = "55") {
+  const digits = onlyDigits(value);
+  const code = onlyDigits(countryCode) || "55";
+  if (code === "55") return formatPhoneDraftOnBlur(digits, code);
+  return digits;
+}
+
+function isValidPhoneForCountry(value: string, countryCode = "55") {
+  const code = onlyDigits(countryCode) || "55";
+  const digits = onlyDigits(value);
+  const fullDigits = digits.startsWith(code) ? digits : `${code}${digits}`;
+  if (isWhatsAppGroupPhone(fullDigits)) return true;
+  const local = normalizeBrazilMobileDigits(digits, code);
+  if (code === "55") {
+    if (local.length !== 11 || local[2] !== "9") return false;
+    const subscriber = local.slice(3);
+    return !/^(\d)\1+$/.test(subscriber);
+  }
+  const phone = parsePhoneNumberFromString(`+${code}${digits}`);
+  if (!phone) return false;
+  const subscriber = String(phone.nationalNumber);
+  return phone.isPossible() && !/^(\d)\1+$/.test(subscriber);
+}
+
+function isWhatsAppGroupPhone(digits: string) {
+  return digits.startsWith("120363") && digits.length >= 16 && digits.length <= 30;
+}
+
+function isExportableContact(contact: Pick<Contact, "normalizedPhone" | "telefone">) {
+  const normalized = contact.normalizedPhone ?? "";
+  if (normalized.startsWith("group:")) return false;
+  if (String(contact.telefone ?? "").includes("@g.us")) return false;
+  return !isWhatsAppGroupPhone(onlyDigits(contact.telefone));
+}
+
+function normalizeBrazilMobileDigits(digits: string, countryCode = "55") {
+  if (onlyDigits(countryCode) !== "55") return digits;
+  const local = digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;
+  if (local.length === 10) {
+    return `${local.slice(0, 2)}9${local.slice(2)}`;
+  }
+  return local;
+}
+
+function formatInternationalPhoneDraft(digits: string, countryCode = "55") {
+  const code = onlyDigits(countryCode) || "55";
+  if (!digits) return "";
+  const iso = countryCodeToIso(code);
+  const localDigits = digits.startsWith(code) ? digits.slice(code.length) : digits;
+  if (!iso) return localDigits.slice(0, 15);
+  try {
+    const formatted = new AsYouType(iso).input(localDigits);
+    return formatted || localDigits;
+  } catch {
+    return localDigits.slice(0, 15);
+  }
+}
+
+function countryCodeToIso(countryCode: string): CountryCode | undefined {
+  const code = onlyDigits(countryCode);
+  const country = COUNTRY_CODES.find((item) => item.code === code);
+  if (!country) return undefined;
+  const iso = country.id.toUpperCase() as CountryCode;
+  try {
+    return getCountryCallingCode(iso) === code ? iso : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function formatPhoneWithDdi(value: string) {
+  const parsed = splitPhoneByCountry(value);
+  const local = maskPhoneByCountry(parsed.localPhone, parsed.countryCode);
+  return `+${parsed.countryCode} ${local}`.trim();
+}
+
+function compareCountriesByName(
+  a: (typeof COUNTRY_CODES)[number],
+  b: (typeof COUNTRY_CODES)[number],
+) {
+  return normalizeCountrySort(a.country).localeCompare(normalizeCountrySort(b.country), "pt-BR");
+}
+
+function normalizeCountrySort(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function CountryCodeSelect({
+  value,
+  onChange,
+  compact = false,
+  embedded = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  compact?: boolean;
+  embedded?: boolean;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const [favoriteCodes, setFavoriteCodes] = React.useState<string[]>([]);
+  const [menuRect, setMenuRect] = React.useState<DOMRect | null>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const searchRef = React.useRef<HTMLInputElement>(null);
+  const selected = COUNTRY_CODES.find((country) => country.code === value) ?? COUNTRY_CODES[0];
+  const filtered = SORTED_COUNTRY_CODES.filter((country) =>
+    `${country.country} ${country.code} ${country.flag}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
+  const favoriteCountries = favoriteCodes
+    .map((code) => COUNTRY_CODES.find((country) => country.code === code))
+    .filter((country): country is (typeof COUNTRY_CODES)[number] => Boolean(country))
+    .sort(compareCountriesByName) as typeof COUNTRY_CODES;
+
+  const loadFavoriteCodes = React.useCallback(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(FAVORITE_COUNTRY_CODES_KEY) ?? "[]");
+      if (Array.isArray(stored)) {
+        setFavoriteCodes(stored.filter((code) => typeof code === "string").slice(0, 5));
+      }
+    } catch {
+      setFavoriteCodes([]);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    loadFavoriteCodes();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === FAVORITE_COUNTRY_CODES_KEY) loadFavoriteCodes();
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", loadFavoriteCodes);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", loadFavoriteCodes);
+    };
+  }, [loadFavoriteCodes]);
+
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    const updateRect = () => setMenuRect(rootRef.current?.getBoundingClientRect() ?? null);
+    updateRect();
+    window.addEventListener("resize", updateRect);
+    window.addEventListener("scroll", updateRect, true);
+    return () => {
+      window.removeEventListener("resize", updateRect);
+      window.removeEventListener("scroll", updateRect, true);
+    };
+  }, [open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    window.setTimeout(() => searchRef.current?.focus(), 0);
+    return () => document.removeEventListener("pointerdown", closeOnOutside);
+  }, [open]);
+
+  const persistFavoriteCodes = (codes: string[]) => {
+    setFavoriteCodes(codes);
+    localStorage.setItem(FAVORITE_COUNTRY_CODES_KEY, JSON.stringify(codes));
+  };
+
+  const toggleFavorite = (code: string) => {
+    const exists = favoriteCodes.includes(code);
+    const next = exists ? favoriteCodes.filter((item) => item !== code) : [...favoriteCodes, code];
+    persistFavoriteCodes(next.slice(-5));
+  };
+
+  const selectCountryCode = (code: string) => {
+    onChange(code);
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <div
+      ref={rootRef}
+      className={`relative shrink-0 ${embedded ? "w-[76px]" : compact ? "w-20 sm:w-32" : "w-32"}`}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className={`flex w-full items-center justify-between gap-2 px-3 text-sm outline-none transition ${
+          embedded
+            ? "h-full rounded-none border-0 bg-surface-1"
+            : "h-10 rounded-lg border border-border bg-surface-1 focus:border-primary"
+        }`}
+      >
+        <span>+{selected.code}</span>
+        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+      </button>
+      {open &&
+        menuRect &&
+        createPortal(
+          <div
+            className="fixed z-[300] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl"
+            style={countryCodeMenuStyle(menuRect)}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="border-b border-border p-2">
+              <div className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 transition focus-within:border-primary">
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Buscar país ou DDI..."
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 text-sm outline-none ring-0 placeholder:text-muted-foreground focus:border-0 focus:outline-none focus:ring-0"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                    aria-label="Limpar busca"
+                    title="Limpar busca"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+            {favoriteCountries.length > 0 && (
+              <div className="border-b border-border p-1">
+                <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Favoritos
+                </p>
+                {favoriteCountries.map((country) => (
+                  <CountryCodeOption
+                    key={`favorite-${country.code}`}
+                    country={country}
+                    favorite={favoriteCodes.includes(country.code)}
+                    onSelect={() => selectCountryCode(country.code)}
+                    onToggleFavorite={() => toggleFavorite(country.code)}
+                  />
+                ))}
+              </div>
+            )}
+            <div className="max-h-56 overflow-auto p-1">
+              {filtered.map((country) => (
+                <CountryCodeOption
+                  key={country.id}
+                  country={country}
+                  favorite={favoriteCodes.includes(country.code)}
+                  onSelect={() => selectCountryCode(country.code)}
+                  onToggleFavorite={() => toggleFavorite(country.code)}
+                />
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+function countryCodeMenuStyle(rect: DOMRect): React.CSSProperties {
+  const viewportWidth = window.innerWidth;
+  const width = Math.min(320, viewportWidth - 24);
+  const left = Math.min(Math.max(12, rect.left), viewportWidth - width - 12);
+  return { top: rect.bottom + 8, left, width };
+}
+
+function CountryCodeOption({
+  country,
+  favorite,
+  onSelect,
+  onToggleFavorite,
+}: {
+  country: (typeof COUNTRY_CODES)[number];
+  favorite: boolean;
+  onSelect: () => void;
+  onToggleFavorite: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="group flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-surface-1"
+    >
+      <span className="min-w-0 flex-1 truncate">
+        {country.flag} {country.country}
+      </span>
+      <span className="font-mono text-xs text-muted-foreground">+{country.code}</span>
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+        title={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onToggleFavorite();
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.stopPropagation();
+          onToggleFavorite();
+        }}
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition ${
+          favorite ? "text-amber-500" : "text-muted-foreground opacity-70 group-hover:opacity-100"
+        }`}
+      >
+        <Star className={`h-3.5 w-3.5 ${favorite ? "fill-current" : ""}`} />
+      </span>
+    </button>
+  );
+}
+function isSelectableInstanceStatus(status?: string | null) {
+  return (
+    !status ||
+    status === "CONNECTED" ||
+    status === "DISCONNECTED" ||
+    status === "connected" ||
+    status === "disconnected"
+  );
+}
+
+function isConnectedInstanceStatus(status?: string | null) {
+  return status?.toUpperCase() === "CONNECTED";
+}
+
+function uniqueLabels(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean) as string[]));
+}
+
+function normalizeContactCustomFieldTab(field: ContactCustomField) {
+  const tab = field.tabName?.trim();
+  return !tab || tab.toLowerCase() === "geral" || tab.toLowerCase() === "campos adicionais"
+    ? "Dados Adicionais"
+    : tab;
+}
+
+function normalizeContactCustomFieldGroup(field: ContactCustomField) {
+  const group = field.groupName?.trim();
+  return !group || group.toLowerCase() === "dados do contato" ? "" : group;
+}
+
+type CustomerFormData = Partial<Customer> & { nome: string };
+
+function CustomerFormModal({
+  open,
+  onClose,
+  onSubmit,
+  initial,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (data: CustomerFormData) => void | Promise<void>;
+  initial?: Customer;
+}) {
+  const [form, setForm] = React.useState<Partial<Customer>>({});
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
+
+  React.useEffect(() => {
+    if (!open) return;
+    setForm(
+      initial
+        ? {
+            ...initial,
+            telefone: initial.telefone ? maskBrazilPhone(initial.telefone) : initial.telefone,
+          }
+        : {},
+    );
+    setErrors({});
+  }, [initial, open]);
+
+  const save = async () => {
+    const errs: Record<string, string> = {};
+    if (!form.nome || form.nome.trim().length < 2) errs.nome = "Informe o nome.";
+    if (form.email?.trim() && !isValidEmail(form.email)) errs.email = "E-mail inválido.";
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      toast.error("Preencha os campos obrigatórios.");
+      return;
+    }
+    void onSubmit({ ...form, nome: form.nome!.trim() });
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={initial ? "Editar Empresa do Contato" : "Nova Empresa do Contato"}
+      footer={
+        <div className="flex w-full items-center justify-between gap-2">
+          <EntityFormLog createdAt={initial?.createdAt} updatedAt={initial?.updatedAt} />
+          <div className="flex shrink-0 justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="sm" onClick={save}>
+              Salvar
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      <div className="grid gap-4">
+        <div className="grid grid-cols-[minmax(0,1fr)_10rem] gap-3">
+          <Field label="Nome *">
+            <Input
+              value={form.nome ?? ""}
+              onChange={(event) => setForm({ ...form, nome: event.target.value })}
+            />
+            {errors.nome && (
+              <span className="mt-1 block text-[11px] text-destructive">{errors.nome}</span>
+            )}
+          </Field>
+          <Field label="Cor">
+            <ColorField
+              value={form.cor ?? "#3B82F6"}
+              fallback="#3B82F6"
+              onChange={(cor) => setForm({ ...form, cor })}
+            />
+          </Field>
+        </div>
+        <Field label="Contato Responsável">
+          <Input
+            value={form.contato_responsavel ?? ""}
+            onChange={(event) => setForm({ ...form, contato_responsavel: event.target.value })}
+          />
+        </Field>
+        <Field label="WhatsApp">
+          <Input
+            value={form.telefone ?? ""}
+            onChange={(event) =>
+              setForm({ ...form, telefone: maskBrazilPhone(event.target.value) })
+            }
+            placeholder="(00) 00000-0000"
+          />
+        </Field>
+        <Field label="E-mail">
+          <Input
+            type="email"
+            value={form.email ?? ""}
+            onChange={(event) => setForm({ ...form, email: event.target.value })}
+            placeholder="email@exemplo.com"
+          />
+          {errors.email && (
+            <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
+          )}
+        </Field>
+        <Field label="Notas">
+          <Textarea
+            rows={4}
+            value={form.notas ?? ""}
+            onChange={(event) => setForm({ ...form, notas: event.target.value })}
+          />
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
+function normalizeHexColor(value?: string | null, _fallback = "#3B82F6") {
+  const digits = String(value ?? "")
+    .replace(/[^0-9a-fA-F]/g, "")
+    .slice(0, 6);
+  return `#${digits.toUpperCase()}`;
+}
+
+function completeHexColor(value?: string | null, fallback = "#3B82F6") {
+  const normalized = normalizeHexColor(value);
+  return normalized.length === 7 ? normalized : normalizeHexColor(fallback);
+}
+
+function ColorField({
+  value,
+  fallback,
+  onChange,
+}: {
+  value: string;
+  fallback: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
+      <input
+        type="color"
+        value={completeHexColor(value, fallback)}
+        onChange={(event) => onChange(normalizeHexColor(event.target.value, fallback))}
+        className="h-7 w-9 cursor-pointer rounded border border-border bg-transparent p-0"
+        aria-label="Selecionar cor"
+      />
+      <input
+        type="text"
+        value={value}
+        onChange={(event) => onChange(normalizeHexColor(event.target.value, fallback))}
+        placeholder={completeHexColor(fallback, fallback)}
+        maxLength={7}
+        className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+      />
+    </div>
+  );
+}
+
+function customerPayload(data: CustomerFormData) {
+  return {
+    name: data.nome,
+    responsibleContactName: data.contato_responsavel?.trim() || null,
+    phone: data.telefone?.trim() || null,
+    email: data.email?.trim() || null,
+    color: completeHexColor(data.cor, "#3B82F6"),
+    notes: data.notas?.trim() || null,
+  };
+}
+
+function upsertCustomer(customers: Customer[], customer: Customer) {
+  const exists = customers.some((item) => item.id === customer.id);
+  return exists
+    ? sortByOptionLabel(
+        customers.map((item) => (item.id === customer.id ? customer : item)),
+        (item) => item.nome,
+      )
+    : sortByOptionLabel([customer, ...customers], (item) => item.nome);
+}
+
+function upsertCatalog(items: ContactCatalog[], value: ContactCatalog) {
+  const exists = items.some((item) => item.id === value.id);
+  return exists
+    ? sortByOptionLabel(
+        items.map((item) => (item.id === value.id ? value : item)),
+        (item) => item.nome,
+      )
+    : sortByOptionLabel([value, ...items], (item) => item.nome);
+}
+
+function departmentPayload(data: DepartamentoFormData) {
+  return {
+    name: data.name ?? "",
+    description: data.description?.trim() || null,
+    color: completeHexColor(data.color, "#3B82F6"),
+  };
+}
+
+function resolveContactInstances(values: string[] | undefined, instances: ContactInstanceOption[]) {
+  const byKey = new Map<string, ContactInstanceOption>();
+  for (const instance of instances) {
+    for (const key of [instance.id, instance.value, instance.externalReference, instance.name]) {
+      if (key) byKey.set(key, instance);
+    }
+  }
+  return Array.from(
+    new Map(
+      (values ?? [])
+        .map((value) => byKey.get(value))
+        .filter((instance): instance is ContactInstanceOption => Boolean(instance))
+        .map((instance) => [instance.id, instance]),
+    ).values(),
+  );
+}
+
+function canonicalContactInstanceIds(values: string[] | undefined, instances: ContactInstanceOption[]) {
+  return resolveContactInstances(values, instances).map((instance) => instance.id);
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function contactPayload(data: {
+  nome: string;
+  telefone: string;
+  countryCode?: string;
+  customer_id: string | null;
+  email: string | null;
+  contactDepartmentId: string | null;
+  contactProfileId: string | null;
+  instanceIds: string[];
+  tag_ids: string[];
+  customFields?: Record<string, string | boolean>;
+  avatarUrl?: string | null;
+}) {
+  return {
+    name: data.nome,
+    phone: formatPhoneForSubmit(data.telefone, data.countryCode),
+    customerId: data.customer_id,
+    email: data.email,
+    contactDepartmentId: data.contactDepartmentId,
+    contactProfileId: data.contactProfileId,
+    instanceIds: data.instanceIds,
+    instance: data.instanceIds[0] ?? null,
+    tagIds: data.tag_ids,
+    customFields: data.customFields ?? {},
+    avatarUrl: data.avatarUrl ?? null,
+  };
 }

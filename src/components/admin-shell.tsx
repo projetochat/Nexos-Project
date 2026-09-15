@@ -5,7 +5,6 @@ import {
   Building2,
   CreditCard,
   Receipt,
-  LifeBuoy,
   KeyRound,
   ScrollText,
   ShieldAlert,
@@ -19,16 +18,17 @@ import {
   ShieldCheck,
   Sparkles,
   Command,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { LogoMark, Avatar } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
 import { useTheme } from "./theme-provider";
 import { useSession, ROLE_META } from "@/lib/session";
-import { ThemeToggle } from "./app-shell";
 
 /* ============================================================
-   Nexo · Admin Shell (Painel Super Admin — Plataforma SaaS)
+   Trixus · Admin Shell (Painel Super Admin — Plataforma SaaS)
    Ambiente exclusivo do proprietário. Não possui atendimento.
    ============================================================ */
 
@@ -47,7 +47,6 @@ const negocioNav: NavItem[] = [
 ];
 
 const operacoesNav: NavItem[] = [
-  { to: "/admin/suporte", label: "Suporte", icon: LifeBuoy },
   { to: "/admin/licencas", label: "Licenças", icon: KeyRound },
   { to: "/admin/monitoramento", label: "Monitoramento", icon: Activity },
 ];
@@ -59,7 +58,7 @@ const seguranca: NavItem[] = [
 ];
 
 const LABELS: Record<string, string> = {
-  admin: "Nexo Admin",
+  admin: "Trixus Admin",
   empresas: "Empresas",
   planos: "Planos",
   assinaturas: "Assinaturas",
@@ -84,20 +83,24 @@ function useBreadcrumbs() {
   return crumbs;
 }
 
-const SIDEBAR_KEY = "nexo.admin.sidebar.collapsed";
+const SIDEBAR_KEY = "trixus.admin.sidebar.collapsed";
 function useSidebar() {
   const [collapsed, setCollapsed] = React.useState(false);
   React.useEffect(() => {
     try {
       if (localStorage.getItem(SIDEBAR_KEY) === "1") setCollapsed(true);
-    } catch {}
+    } catch {
+      // localStorage may be unavailable in restricted browser contexts.
+    }
   }, []);
   const toggle = React.useCallback(() => {
     setCollapsed((v) => {
       const next = !v;
       try {
         localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0");
-      } catch {}
+      } catch {
+        // Keep the in-memory state even when persistence is unavailable.
+      }
       return next;
     });
   }, []);
@@ -157,7 +160,9 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
         collapsed ? "w-14" : "w-64"
       }`}
     >
-      <div className={`flex h-14 shrink-0 items-center border-b border-border ${collapsed ? "justify-center" : "px-4"}`}>
+      <div
+        className={`flex h-14 shrink-0 items-center border-b border-border ${collapsed ? "justify-center" : "px-4"}`}
+      >
         <Link to="/admin" className="flex items-center gap-2">
           <div className="relative">
             <LogoMark size={24} />
@@ -167,13 +172,15 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <div className="text-sm font-semibold leading-tight tracking-tight">Nexo</div>
+              <div className="text-sm font-semibold leading-tight tracking-tight">Trixus</div>
               <div className="text-[10px] uppercase tracking-widest text-accent">Admin</div>
             </div>
           )}
         </Link>
       </div>
-      <nav className={`flex flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden py-3 ${collapsed ? "px-2" : "px-3"}`}>
+      <nav
+        className={`flex flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden py-3 ${collapsed ? "px-2" : "px-3"}`}
+      >
         <NavSection title="Negócio" items={negocioNav} collapsed={collapsed} />
         <NavSection title="Operações" items={operacoesNav} collapsed={collapsed} />
         <div className="mt-auto">
@@ -218,6 +225,8 @@ function UserMenu() {
               <ShieldCheck className="h-3 w-3" /> {user ? ROLE_META[user.role].label : ""}
             </div>
           </div>
+          <ThemeModeMenuItem />
+          <div className="my-1 h-px bg-border" />
           <button
             onClick={() => {
               logout();
@@ -230,6 +239,30 @@ function UserMenu() {
         </div>
       )}
     </div>
+  );
+}
+
+function ThemeModeMenuItem() {
+  const { resolved, toggle } = useTheme();
+  const isDark = resolved === "dark";
+  return (
+    <button
+      onClick={toggle}
+      role="switch"
+      aria-checked={isDark}
+      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
+    >
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      <span className="flex-1 text-left">{isDark ? "Modo Claro" : "Modo Escuro"}</span>
+      <span
+        aria-hidden="true"
+        className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${isDark ? "bg-primary" : "bg-muted"}`}
+      >
+        <span
+          className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isDark ? "translate-x-4" : "translate-x-0"}`}
+        />
+      </span>
+    </button>
   );
 }
 
@@ -267,7 +300,7 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       </nav>
       <div className="flex min-w-0 flex-1 items-center gap-2 md:hidden">
         <LogoMark size={22} />
-        <span className="truncate text-sm font-semibold">Nexo Admin</span>
+        <span className="truncate text-sm font-semibold">Trixus Admin</span>
       </div>
 
       <ConnectionPill status={conn} />
@@ -283,7 +316,6 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         </kbd>
       </div>
 
-      <ThemeToggle />
       <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground">
         <Bell className="h-4 w-4" />
         <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-accent animate-pulse-ring" />
@@ -323,6 +355,18 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function AdminContainer({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`mx-auto w-full max-w-7xl px-4 py-6 md:px-6 md:py-8 lg:px-8 ${className}`}>{children}</div>;
+export function AdminContainer({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`mx-auto w-full max-w-[96rem] px-3 py-6 sm:px-4 md:px-6 md:py-8 lg:px-8 xl:px-10 2xl:px-12 ${className}`}
+    >
+      {children}
+    </div>
+  );
 }

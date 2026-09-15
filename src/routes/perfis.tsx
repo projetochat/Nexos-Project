@@ -1,103 +1,257 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, ShieldCheck, Copy, Search } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, Pencil, Trash2, ShieldCheck, Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { SectionHeader, Card, Button, Field, Input, Textarea, Select } from "@/components/ui-kit";
+import {
+  SectionHeader,
+  Card,
+  Button,
+  Field,
+  Input,
+  Select,
+  Textarea,
+  SearchInput,
+} from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
-import { supabase } from "@/integrations/supabase/client";
+import { num } from "@/lib/format";
+import { sortByOptionLabel } from "@/lib/sort-options";
+import {
+  connectionsApi,
+  organizationApi,
+  type ApiMessagingConnection,
+  type ApiRole,
+  type ApiUserMembership,
+} from "@/lib/trixus-api";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/perfis")({ component: Page });
 
-type Turno = { ativo: boolean; inicio: string; fim: string };
-type DiaJornada = { manha: Turno; tarde: Turno; noite: Turno };
-type Jornada = Record<"seg" | "ter" | "qua" | "qui" | "sex" | "sab" | "dom", DiaJornada>;
+type PerfilTab = "geral" | "chat" | "chamados" | "jornada";
+type PermissionTab = "chat" | "chamados";
+type PermissionField = { id: string; label: string };
 
-const DAYS: { key: keyof Jornada; label: string }[] = [
-  { key: "seg", label: "Segunda" }, { key: "ter", label: "Terça" }, { key: "qua", label: "Quarta" },
-  { key: "qui", label: "Quinta" }, { key: "sex", label: "Sexta" }, { key: "sab", label: "Sábado" }, { key: "dom", label: "Domingo" },
+const PERMISSION_GROUPS: Array<{ title: string; tab: PermissionTab; items: PermissionField[] }> = [
+  {
+    title: "Administração",
+    tab: "chat",
+    items: [
+      { id: "users.read", label: "Ver usuários" },
+      { id: "users.manage", label: "Gerenciar usuários" },
+      { id: "departments.read", label: "Ver departamentos" },
+      { id: "departments.manage", label: "Gerenciar departamentos" },
+      { id: "roles.read", label: "Ver perfis" },
+      { id: "roles.manage", label: "Gerenciar perfis" },
+    ],
+  },
+  {
+    title: "CRM e leads",
+    tab: "chat",
+    items: [
+      { id: "crm.read", label: "Ver CRM" },
+      { id: "crm.manage", label: "Gerenciar CRM" },
+      { id: "chat.contacts.read", label: "Visualizar contatos" },
+      { id: "chat.contacts.edit", label: "Editar contato" },
+      { id: "chat.contacts.block", label: "Bloquear contatos" },
+      { id: "chat.customer_link.edit", label: "Editar vinculo de cliente" },
+      { id: "chat.phone.read", label: "Visualizar número" },
+      { id: "chat.leads.read", label: "Visualizar leads" },
+      { id: "leads.manage", label: "Gerenciar leads" },
+    ],
+  },
+  {
+    title: "Atendimento e mensagens",
+    tab: "chat",
+    items: [
+      { id: "conversations.read", label: "Ver conversas" },
+      { id: "conversations.assign", label: "Atribuir conversas" },
+      { id: "conversations.manage", label: "Gerenciar conversas" },
+      { id: "messages.send", label: "Enviar mensagens" },
+      { id: "chat.messages.edit", label: "Editar mensagem" },
+      { id: "chat.messages.delete", label: "Excluir mensagem" },
+      { id: "chat.audio.send", label: "Enviar audio" },
+      { id: "chat.agent_name.show", label: "Apresentar nome do atendente" },
+      { id: "chat.conversations.view_all_active", label: "Ver todas conversas ativas" },
+    ],
+  },
+  {
+    title: "Catalogos e canais",
+    tab: "chat",
+    items: [
+      { id: "connections.read", label: "Ver instancias" },
+      { id: "connections.manage", label: "Gerenciar instancias" },
+      { id: "chat.tags.use", label: "Usar etiquetas" },
+      { id: "chat.tags.manage", label: "Gerenciar etiquetas" },
+      { id: "chat.quick_replies.read", label: "Acessar mensagens rapidas" },
+      { id: "chat.quick_replies.manage", label: "Gerenciar mensagens rapidas" },
+      { id: "notifications.read", label: "Ver notificacoes" },
+      { id: "notifications.manage", label: "Gerenciar notificacoes" },
+    ],
+  },
+  {
+    title: "Automacoes e campanhas",
+    tab: "chat",
+    items: [
+      { id: "automations.read", label: "Ver automacoes" },
+      { id: "automations.manage", label: "Gerenciar automacoes" },
+      { id: "campaigns.read", label: "Ver campanhas" },
+      { id: "campaigns.create", label: "Criar campanhas" },
+      { id: "campaigns.update", label: "Editar campanhas" },
+      { id: "campaigns.schedule", label: "Agendar campanhas" },
+      { id: "campaigns.start", label: "Iniciar campanhas" },
+      { id: "campaigns.pause", label: "Pausar campanhas" },
+      { id: "campaigns.cancel", label: "Cancelar campanhas" },
+      { id: "campaigns.duplicate", label: "Duplicar campanhas" },
+      { id: "campaigns.recipients.read", label: "Ver recipients de campanhas" },
+      { id: "campaigns.manage", label: "Gerenciar campanhas" },
+    ],
+  },
+  {
+    title: "Chamados",
+    tab: "chamados",
+    items: [
+      { id: "tickets.read", label: "Ver chamados" },
+      { id: "tickets.create", label: "Criar chamados" },
+      { id: "tickets.update", label: "Atualizar chamados" },
+      { id: "tickets.assign", label: "Atribuir chamados" },
+      { id: "tickets.status.update", label: "Alterar status de chamados" },
+      { id: "tickets.comment", label: "Comentar chamados" },
+      { id: "tickets.attachments.upload", label: "Anexar em chamados" },
+      { id: "tickets.attachments.delete", label: "Excluir atrixus de chamados" },
+      { id: "tickets.manage", label: "Gerenciar chamados" },
+    ],
+  },
 ];
 
-const TURNOS: { key: keyof DiaJornada; label: string }[] = [
-  { key: "manha", label: "Manhã" }, { key: "tarde", label: "Tarde" }, { key: "noite", label: "Noite" },
+const WEEK_DAYS = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"] as const;
+const SHIFT_LABELS = {
+  morning: "Turno manha",
+  afternoon: "Turno tarde",
+  night: "Turno noite",
+} as const;
+const TIMEZONE_OPTIONS = [
+  { value: "America/Sao_Paulo", label: "Fuso horário de São Paulo (GMT-3)" },
+  { value: "America/Manaus", label: "Fuso horário de Manaus (GMT-4)" },
+  { value: "America/Rio_Branco", label: "Fuso horário do Acre (GMT-5)" },
+  { value: "America/Fortaleza", label: "Fuso horário de Fortaleza (GMT-3)" },
+  { value: "America/Noronha", label: "Fuso horário de Fernando de Noronha (GMT-2)" },
+  { value: "UTC", label: "UTC (GMT+0)" },
 ];
+const LANGUAGE_OPTIONS = [
+  { value: "system", label: "Padrão do Sistema" },
+  { value: "pt-BR", label: "Portugues (Brasil)" },
+  { value: "en-US", label: "Ingles" },
+  { value: "es", label: "Espanhol" },
+];
+const DEFAULT_ROLE_COLOR = "#3B82F6";
+type WeekDay = (typeof WEEK_DAYS)[number];
+type ShiftKey = keyof typeof SHIFT_LABELS;
+type WorkShift = { active: boolean; start: string; end: string };
+type WorkSchedule = { noSchedule: boolean; days: Record<WeekDay, Record<ShiftKey, WorkShift>> };
 
-const diaPadrao = (ativoSemana: boolean): DiaJornada => ({
-  manha: { ativo: ativoSemana, inicio: "08:00", fim: "12:00" },
-  tarde: { ativo: ativoSemana, inicio: "13:00", fim: "18:00" },
-  noite: { ativo: false, inicio: "19:00", fim: "22:00" },
-});
-
-const DEFAULT_JORNADA: Jornada = {
-  seg: diaPadrao(true), ter: diaPadrao(true), qua: diaPadrao(true), qui: diaPadrao(true),
-  sex: diaPadrao(true), sab: diaPadrao(false), dom: diaPadrao(false),
-};
-
-function normalizeJornada(raw: any): Jornada {
-  const out: any = {};
-  for (const d of DAYS) {
-    const v = raw?.[d.key];
-    if (v && (v.manha || v.tarde || v.noite)) {
-      out[d.key] = {
-        manha: { ...diaPadrao(false).manha, ...(v.manha ?? {}) },
-        tarde: { ...diaPadrao(false).tarde, ...(v.tarde ?? {}) },
-        noite: { ...diaPadrao(false).noite, ...(v.noite ?? {}) },
-      };
-    } else if (v && typeof v.inicio === "string") {
-      // legacy shape { ativo, inicio, fim }
-      out[d.key] = {
-        manha: { ativo: !!v.ativo, inicio: v.inicio ?? "08:00", fim: "12:00" },
-        tarde: { ativo: !!v.ativo, inicio: "13:00", fim: v.fim ?? "18:00" },
-        noite: { ativo: false, inicio: "19:00", fim: "22:00" },
-      };
-    } else {
-      out[d.key] = DEFAULT_JORNADA[d.key];
-    }
-  }
-  return out as Jornada;
+function countRoleMembers(memberships: ApiUserMembership[]) {
+  return memberships.reduce<Record<string, number>>((acc, membership) => {
+    acc[membership.role.id] = (acc[membership.role.id] ?? 0) + 1;
+    return acc;
+  }, {});
 }
 
-type Perfil = {
-  id: string;
-  nome: string;
-  descricao: string | null;
-  pode_editar_contato: boolean;
-  pode_editar_vinculo_cliente: boolean;
-  pode_editar_etiquetas: boolean;
-  visualiza_leads: boolean;
-  visualiza_contatos: boolean;
-  visualiza_numero: boolean;
-  excluir_mensagem: boolean;
-  editar_mensagem: boolean;
-  acessa_mensagens_rapidas: boolean;
-  bloquear_contatos: boolean;
-  enviar_audio: boolean;
-  mostrar_nome_atendente: boolean;
-  jornada: Jornada;
-  instancias?: string[];
-  departamentos?: string[];
+function formatMemberCount(count: number) {
+  return count === 1 ? "1 atendente" : `${num(count)} atendentes`;
+}
+
+function roleColor(role: ApiRole) {
+  const metadata = (role.metadata ?? {}) as RoleMetadata;
+  return metadata.color ?? DEFAULT_ROLE_COLOR;
+}
+
+function normalizeRoleName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("pt-BR");
+}
+
+function isAdministratorRole(role: ApiRole) {
+  return role.key === "tenant_admin" || normalizeRoleName(role.name) === "administrador";
+}
+
+function duplicateRoleDraft(role: ApiRole, roles: ApiRole[]): ApiRole {
+  const existingNames = new Set(roles.map((item) => normalizeRoleName(item.name)));
+  let name = `${role.name} - Cópia`;
+  let count = 2;
+  while (existingNames.has(normalizeRoleName(name))) name = `${role.name} - Cópia (${count++})`;
+  return {
+    ...role,
+    id: "",
+    key: "",
+    name,
+  };
+}
+
+function roleWithLogFallback(role: ApiRole, previous?: ApiRole | null) {
+  const now = new Date().toISOString();
+  return {
+    ...role,
+    createdAt: role.createdAt ?? previous?.createdAt ?? now,
+    updatedAt: role.updatedAt ?? now,
+  };
+}
+
+function defaultWorkSchedule(): WorkSchedule {
+  const days = {} as WorkSchedule["days"];
+  for (const day of WEEK_DAYS) {
+    const weekday = !["Sabado", "Domingo"].includes(day);
+    days[day] = {
+      morning: { active: weekday, start: "08:00", end: "12:00" },
+      afternoon: { active: weekday, start: "13:00", end: "18:00" },
+      night: { active: false, start: "19:00", end: "22:00" },
+    };
+  }
+  return { noSchedule: true, days };
+}
+
+type PerfilFormData = {
+  name: string;
+  description: string;
+  color: string;
+  language: string;
+  timezone: string;
+  permissionIds: string[];
+  departmentIds: string[];
+  connectionIds: string[];
+  workSchedule: WorkSchedule;
 };
 
-const PERM_FIELDS: { key: keyof Perfil; label: string }[] = [
-  { key: "pode_editar_contato", label: "Pode editar contato" },
-  { key: "pode_editar_vinculo_cliente", label: "Pode editar vínculo de cliente" },
-  { key: "pode_editar_etiquetas", label: "Pode gerenciar etiquetas" },
-  { key: "visualiza_leads", label: "Visualiza leads" },
-  { key: "visualiza_contatos", label: "Visualiza contatos" },
-  { key: "visualiza_numero", label: "Visualiza número" },
-  { key: "excluir_mensagem", label: "Excluir mensagem" },
-  { key: "editar_mensagem", label: "Editar mensagem" },
-  { key: "acessa_mensagens_rapidas", label: "Acessa mensagens rápidas" },
-  { key: "bloquear_contatos", label: "Bloquear contatos" },
-  { key: "enviar_audio", label: "Enviar áudio" },
-  { key: "mostrar_nome_atendente", label: "Apresentar nome do atendente na conversa" },
-];
+type RoleMetadata = {
+  departmentIds?: string[];
+  connectionIds?: string[];
+  workSchedule?: WorkSchedule;
+  color?: string;
+  language?: string;
+  timezone?: string;
+};
 
-function CheckField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function CheckField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm hover:bg-surface-2">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4 accent-primary" />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 accent-primary"
+      />
       <span>{label}</span>
     </label>
   );
@@ -105,153 +259,180 @@ function CheckField({ label, checked, onChange }: { label: string; checked: bool
 
 function Page() {
   const qc = useQueryClient();
-
   const { data: items = [], isLoading } = useQuery({
-    queryKey: ["access_profiles"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("access_profiles").select("*").order("nome");
-      if (error) throw error;
-      const profiles = (data ?? []) as any[];
-      const [{ data: pi }, { data: pd }] = await Promise.all([
-        supabase.from("access_profile_instancias").select("profile_id,instancia_id"),
-        supabase.from("access_profile_departments").select("profile_id,department_id"),
-      ]);
-      return profiles.map((p) => ({
-        ...p,
-        jornada: normalizeJornada(p.jornada),
-        instancias: (pi ?? []).filter((x) => x.profile_id === p.id).map((x) => x.instancia_id),
-        departamentos: (pd ?? []).filter((x) => x.profile_id === p.id).map((x) => x.department_id),
-      })) as Perfil[];
-    },
+    queryKey: ["trixus", "roles"],
+    queryFn: organizationApi.listRoles,
+  });
+  const { data: departamentos = [] } = useQuery({
+    queryKey: ["trixus", "departments"],
+    queryFn: organizationApi.listDepartments,
+  });
+  const { data: connections = [] } = useQuery({
+    queryKey: ["trixus", "messaging-connections"],
+    queryFn: connectionsApi.list,
+  });
+  const { data: memberships = [] } = useQuery({
+    queryKey: ["trixus", "users"],
+    queryFn: organizationApi.listUsers,
   });
 
-  const [editing, setEditing] = React.useState<Perfil | null>(null);
-  const [deleting, setDeleting] = React.useState<Perfil | null>(null);
+  const [editing, setEditing] = React.useState<ApiRole | null>(null);
+  const [duplicating, setDuplicating] = React.useState<ApiRole | null>(null);
+  const [deleting, setDeleting] = React.useState<ApiRole | null>(null);
   const [query, setQuery] = React.useState("");
-  const [instFilter, setInstFilter] = React.useState("all");
   const novo = useDisclosure();
+  const memberCountByRoleId = React.useMemo(() => countRoleMembers(memberships), [memberships]);
 
-  const { data: instanciasLite = [] } = useQuery({
-    queryKey: ["instancias-lite"],
-    queryFn: async () => {
-      const { data } = await supabase.from("instancias").select("id,nome").order("nome");
-      return data ?? [];
-    },
-  });
-
-  const filtered = items.filter((p) => {
-    if (query && !(p.nome + " " + (p.descricao ?? "")).toLowerCase().includes(query.toLowerCase())) return false;
-    if (instFilter !== "all" && !(p.instancias ?? []).includes(instFilter)) return false;
+  const filtered = sortByOptionLabel(items, (perfil) => perfil.name).filter((p) => {
+    if (
+      query &&
+      !(p.name + " " + (p.description ?? "")).toLowerCase().includes(query.toLowerCase())
+    )
+      return false;
     return true;
   });
 
   const save = useMutation({
-    mutationFn: async ({ id, data }: { id?: string; data: Perfil }) => {
-      const { instancias, departamentos, id: _ignore, ...payload } = data as any;
-      let pid = id;
-      if (pid) {
-        const { error } = await supabase.from("access_profiles").update(payload).eq("id", pid);
-        if (error) throw error;
-      } else {
-        const { data: ins, error } = await supabase.from("access_profiles").insert(payload).select("id").single();
-        if (error) throw error;
-        pid = ins!.id;
+    mutationFn: async ({ id, data }: { id?: string; data: PerfilFormData }) => {
+      const metadata = {
+        departmentIds: data.departmentIds,
+        connectionIds: data.connectionIds,
+        workSchedule: data.workSchedule,
+        color: data.color,
+        language: data.language,
+        timezone: data.timezone,
+      };
+      if (id) {
+        return organizationApi.updateRole(id, {
+          name: data.name,
+          description: data.description,
+          permissionIds: data.permissionIds,
+          metadata,
+        });
       }
-      await supabase.from("access_profile_instancias").delete().eq("profile_id", pid);
-      await supabase.from("access_profile_departments").delete().eq("profile_id", pid);
-      if (instancias?.length) {
-        await supabase.from("access_profile_instancias").insert(instancias.map((iid: string) => ({ profile_id: pid, instancia_id: iid })));
-      }
-      if (departamentos?.length) {
-        await supabase.from("access_profile_departments").insert(departamentos.map((did: string) => ({ profile_id: pid, department_id: did })));
-      }
+      return organizationApi.createRole({
+        name: data.name,
+        description: data.description,
+        permissionIds: data.permissionIds,
+        metadata,
+      });
     },
-    onSuccess: (_r, vars) => {
-      qc.invalidateQueries({ queryKey: ["access_profiles"] });
+    onSuccess: (result, vars) => {
+      const previous = vars.id ? editing : null;
+      const savedRole = roleWithLogFallback(result, previous);
+      qc.setQueryData<ApiRole[]>(["trixus", "roles"], (current = []) => {
+        if (vars.id) {
+          return current.map((role) =>
+            role.id === savedRole.id ? roleWithLogFallback(savedRole, role) : role,
+          );
+        }
+        return [savedRole, ...current];
+      });
+      qc.invalidateQueries({ queryKey: ["trixus", "roles"] });
       toast.success(vars.id ? "Perfil atualizado" : "Perfil criado");
-      novo.hide(); setEditing(null);
+      novo.hide();
+      setEditing(null);
+      setDuplicating(null);
     },
-    onError: (e: any) => toast.error(e.message ?? "Erro ao salvar"),
+    onError: (error) => toast.error((error as Error).message),
   });
 
   const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("access_profiles").delete().eq("id", id);
-      if (error) throw error;
+    mutationFn: (id: string) => organizationApi.deleteRole(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["trixus", "roles"] });
+      toast.success("Perfil removido");
+      setDeleting(null);
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["access_profiles"] }); toast.success("Perfil removido"); setDeleting(null); },
-    onError: (e: any) => toast.error(e.message ?? "Erro ao remover"),
-  });
-
-  const duplicate = useMutation({
-    mutationFn: async (p: Perfil) => {
-      const existentes = new Set(items.map((x) => x.nome));
-      let nome = `Cópia de ${p.nome}`;
-      let n = 2;
-      while (existentes.has(nome)) nome = `Cópia (${n++}) de ${p.nome}`;
-      const { id: _id, instancias, departamentos, ...rest } = p as any;
-      const { data: ins, error } = await supabase
-        .from("access_profiles")
-        .insert({ ...rest, nome })
-        .select("id")
-        .single();
-      if (error) throw error;
-      const pid = ins!.id;
-      if (instancias?.length) {
-        await supabase.from("access_profile_instancias").insert(instancias.map((iid: string) => ({ profile_id: pid, instancia_id: iid })));
-      }
-      if (departamentos?.length) {
-        await supabase.from("access_profile_departments").insert(departamentos.map((did: string) => ({ profile_id: pid, department_id: did })));
-      }
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["access_profiles"] }); toast.success("Perfil duplicado"); },
-    onError: (e: any) => toast.error(e.message ?? "Erro ao duplicar"),
+    onError: (error) => toast.error((error as Error).message),
   });
 
   return (
     <AppShell>
       <PageContainer>
-        <SectionHeader title="Perfis de acesso" subtitle={`${items.length} perfis cadastrados.`}
-          actions={<Button variant="primary" size="sm" onClick={novo.show}><Plus className="h-3.5 w-3.5" /> Novo perfil</Button>} />
+        <SectionHeader
+          title="Perfil de Acesso"
+          subtitle={`${num(items.length)} perfis cadastrados.`}
+          actions={
+            <Button variant="primary" size="sm" onClick={novo.show}>
+              <Plus className="h-3.5 w-3.5" /> Novo Perfil de Acesso
+            </Button>
+          }
+        />
 
         <Card className="mb-4 p-4">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-3">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} className="w-full bg-transparent py-2 text-sm outline-none" placeholder="Buscar perfil…" />
-            </div>
-            <Select value={instFilter} onChange={(e) => setInstFilter(e.target.value)}>
-              <option value="all">Todas as instâncias</option>
-              {(instanciasLite as any[]).map((i) => <option key={i.id} value={i.id}>{i.nome}</option>)}
-            </Select>
-          </div>
+          <Field label="Busca">
+            <SearchInput value={query} onChange={setQuery} placeholder="Buscar perfil..." />
+          </Field>
         </Card>
 
         {isLoading ? (
-          <Card className="p-8 text-center text-sm text-muted-foreground">Carregando…</Card>
+          <Card className="p-8 text-center text-sm text-muted-foreground">Carregando...</Card>
         ) : filtered.length === 0 ? (
-          <Card className="p-12 text-center text-sm text-muted-foreground">{items.length === 0 ? "Nenhum perfil cadastrado." : "Nenhum resultado."}</Card>
+          <Card className="p-12 text-center text-sm text-muted-foreground">
+            {items.length === 0 ? "Nenhum perfil cadastrado." : "Nenhum resultado."}
+          </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filtered.map((p) => {
-              const enabled = PERM_FIELDS.filter((f) => (p as any)[f.key]).length;
+              const memberCount = memberCountByRoleId[p.id] ?? 0;
+              const color = roleColor(p);
+              const isAdministrator = isAdministratorRole(p);
+
               return (
-                <Card key={p.id}>
-                  <div className="flex items-start justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary">
-                      <ShieldCheck className="h-5 w-5" />
+                <Card
+                  key={p.id}
+                  className="min-h-[86px] p-4 transition hover:border-primary/35 hover:bg-surface-1"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+                        style={{ backgroundColor: `${color}24`, color }}
+                      >
+                        <ShieldCheck className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold">{p.name}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {formatMemberCount(memberCount)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => duplicate.mutate(p)} title="Duplicar"><Copy className="h-3.5 w-3.5" /></Button>
-                      <Button variant="ghost" size="sm" onClick={() => setEditing(p)} title="Editar"><Pencil className="h-3.5 w-3.5" /></Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDeleting(p)} title="Excluir"><Trash2 className="h-3.5 w-3.5" /></Button>
-                    </div>
-                  </div>
-                  <p className="mt-4 font-semibold">{p.nome}</p>
-                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{p.descricao || "Sem descrição"}</p>
-                  <div className="mt-4 flex items-center justify-between border-t border-border pt-3 font-mono text-xs text-muted-foreground">
-                    <span>{enabled}/{PERM_FIELDS.length} permissões</span>
-                    <span>{p.instancias?.length ?? 0} inst. · {p.departamentos?.length ?? 0} dept.</span>
+
+                    {!isAdministrator && (
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="duplicate-action-button"
+                          onClick={() => setDuplicating(duplicateRoleDraft(p, items))}
+                          title="Duplicar Perfil de Acesso"
+                          aria-label={`Duplicar Perfil de Acesso ${p.name}`}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditing(p)}
+                          title="Editar perfil"
+                          aria-label={`Editar perfil ${p.name}`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="trash-action"
+                          onClick={() => setDeleting(p)}
+                          title="Excluir perfil"
+                          aria-label={`Excluir perfil ${p.name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </Card>
               );
@@ -259,231 +440,735 @@ function Page() {
           </div>
         )}
 
-        <PerfilForm open={novo.open} onClose={novo.hide} onSubmit={(d) => save.mutate({ data: d })} />
-        <PerfilForm open={!!editing} initial={editing ?? undefined} onClose={() => setEditing(null)}
-          onSubmit={(d) => editing && save.mutate({ id: editing.id, data: d })} />
-        <ConfirmDialog open={!!deleting} title="Excluir perfil?" destructive
-          description={`Esta ação removerá ${deleting?.nome ?? ""}.`}
-          confirmLabel="Excluir" onClose={() => setDeleting(null)}
-          onConfirm={() => deleting && remove.mutate(deleting.id)} />
+        <PerfilForm
+          open={novo.open}
+          roles={items}
+          departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
+          connections={connections}
+          onClose={novo.hide}
+          onSubmit={(data) => save.mutate({ data })}
+        />
+        <PerfilForm
+          open={!!editing}
+          roles={items}
+          departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
+          connections={connections}
+          initial={editing ?? undefined}
+          onClose={() => setEditing(null)}
+          onSubmit={(data) => editing && save.mutate({ id: editing.id, data })}
+        />
+        <PerfilForm
+          open={!!duplicating}
+          roles={items}
+          departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
+          connections={connections}
+          initial={duplicating ?? undefined}
+          clone
+          onClose={() => setDuplicating(null)}
+          onSubmit={(data) => save.mutate({ data })}
+        />
+        <ConfirmDialog
+          open={!!deleting}
+          title="Excluir Perfil?"
+          destructive
+          description={
+            <p>
+              Deseja realmente excluir o perfil{" "}
+              <strong className="font-semibold text-foreground">"{deleting?.name ?? ""}"</strong>?
+            </p>
+          }
+          confirmLabel="Excluir"
+          onClose={() => setDeleting(null)}
+          onConfirm={() => deleting && remove.mutate(deleting.id)}
+        />
       </PageContainer>
     </AppShell>
   );
 }
 
-function PerfilForm({ open, onClose, onSubmit, initial }: { open: boolean; onClose: () => void; onSubmit: (d: Perfil) => void; initial?: Perfil }) {
-  const [form, setForm] = React.useState<Perfil>({} as Perfil);
+function PerfilForm({
+  open,
+  onClose,
+  onSubmit,
+  initial,
+  clone = false,
+  roles,
+  departamentos,
+  connections,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (data: PerfilFormData) => void;
+  initial?: ApiRole;
+  clone?: boolean;
+  roles: ApiRole[];
+  departamentos: { id: string; name: string }[];
+  connections: ApiMessagingConnection[];
+}) {
+  const [form, setForm] = React.useState<PerfilFormData>({
+    name: "",
+    description: "",
+    color: DEFAULT_ROLE_COLOR,
+    language: "system",
+    timezone: "America/Sao_Paulo",
+    permissionIds: [],
+    departmentIds: [],
+    connectionIds: [],
+    workSchedule: defaultWorkSchedule(),
+  });
   const [error, setError] = React.useState("");
-  const [semJornada, setSemJornada] = React.useState(false);
-  const [tab, setTab] = React.useState<"chat" | "glpi">("chat");
-  const [glpi, setGlpi] = React.useState({ incluir: false, editar: false, excluir: false });
-
-  const { data: instancias = [] } = useQuery({
-    queryKey: ["instancias-lite"],
-    queryFn: async () => {
-      const { data } = await supabase.from("instancias").select("id,nome").order("nome");
-      return data ?? [];
-    },
-    enabled: open,
-  });
-  const { data: departamentos = [] } = useQuery({
-    queryKey: ["departamentos-lite"],
-    queryFn: async () => {
-      const { data } = await supabase.from("departments").select("id,nome").order("nome");
-      return data ?? [];
-    },
-    enabled: open,
-  });
+  const [activeTab, setActiveTab] = React.useState<PerfilTab>("geral");
+  const duplicateNameError = (name: string) => {
+    const normalizedName = normalizeRoleName(name);
+    if (!normalizedName) return "";
+    return roles.some(
+      (role) => role.id !== initial?.id && normalizeRoleName(role.name) === normalizedName,
+    )
+      ? "Já existe um perfil de acesso com este nome."
+      : "";
+  };
 
   React.useEffect(() => {
     if (!open) return;
+    const metadata = (initial?.metadata ?? {}) as RoleMetadata;
+    setForm(
+      initial
+        ? {
+            name: initial.name,
+            description: initial.description ?? "",
+            color: metadata.color ?? DEFAULT_ROLE_COLOR,
+            language: metadata.language ?? "system",
+            timezone: metadata.timezone ?? "America/Sao_Paulo",
+            permissionIds: initial.permissionIds,
+            departmentIds: metadata.departmentIds ?? [],
+            connectionIds: metadata.connectionIds ?? [],
+            workSchedule: metadata.workSchedule ?? defaultWorkSchedule(),
+          }
+        : {
+            name: "",
+            description: "",
+            color: DEFAULT_ROLE_COLOR,
+            language: "system",
+            timezone: "America/Sao_Paulo",
+            permissionIds: [
+              "departments.read",
+              "chat.contacts.read",
+              "chat.tags.use",
+              "chat.quick_replies.read",
+            ],
+            departmentIds: [],
+            connectionIds: [],
+            workSchedule: defaultWorkSchedule(),
+          },
+    );
     setError("");
-    setForm(initial ? { ...initial, jornada: normalizeJornada(initial.jornada) } : {
-      id: "", nome: "", descricao: "",
-      pode_editar_contato: false, pode_editar_vinculo_cliente: false, pode_editar_etiquetas: false,
-      visualiza_leads: true, visualiza_contatos: true, visualiza_numero: false,
-      excluir_mensagem: false, editar_mensagem: false, acessa_mensagens_rapidas: true,
-      bloquear_contatos: false, enviar_audio: true, mostrar_nome_atendente: true,
-      jornada: DEFAULT_JORNADA, instancias: [], departamentos: [],
-    });
+    setActiveTab("geral");
   }, [initial, open]);
 
   const submit = () => {
-    if (!form.nome || form.nome.trim().length < 2) { setError("Informe o nome."); return; }
+    if (!form.name || form.name.trim().length < 2) {
+      setError("Informe o nome.");
+      return;
+    }
+    const duplicateError = duplicateNameError(form.name);
+    if (duplicateError) {
+      setError(duplicateError);
+      setActiveTab("geral");
+      return;
+    }
     onSubmit(form);
   };
 
-  const toggleList = (list: "instancias" | "departamentos", id: string) => {
-    setForm((f) => {
-      const cur = new Set(f[list] ?? []);
-      cur.has(id) ? cur.delete(id) : cur.add(id);
-      return { ...f, [list]: Array.from(cur) };
-    });
+  const togglePermission = (id: string, checked: boolean) => {
+    setForm((current) => ({
+      ...current,
+      permissionIds: checked
+        ? Array.from(new Set([...current.permissionIds, id]))
+        : current.permissionIds.filter((permissionId) => permissionId !== id),
+    }));
+  };
+
+  const toggleDepartment = (id: string, checked: boolean) => {
+    setForm((current) => ({
+      ...current,
+      departmentIds: checked
+        ? Array.from(new Set([...current.departmentIds, id]))
+        : current.departmentIds.filter((departmentId) => departmentId !== id),
+    }));
+  };
+
+  const toggleConnection = (id: string, checked: boolean) => {
+    setForm((current) => ({
+      ...current,
+      connectionIds: checked
+        ? Array.from(new Set([...current.connectionIds, id]))
+        : current.connectionIds.filter((connectionId) => connectionId !== id),
+    }));
+  };
+
+  const toggleMany = (
+    field: "permissionIds" | "departmentIds" | "connectionIds",
+    ids: string[],
+    checked: boolean,
+  ) => {
+    setForm((current) => ({
+      ...current,
+      [field]: checked
+        ? Array.from(new Set([...current[field], ...ids]))
+        : current[field].filter((itemId) => !ids.includes(itemId)),
+    }));
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={initial?.id ? "Editar perfil" : "Novo perfil"} size="xl"
-      footer={<><Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button><Button variant="primary" size="sm" onClick={submit}>Salvar</Button></>}>
-      <div className="space-y-6">
-        <Field label="Nome *">
-          <Input value={form.nome ?? ""} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex: Atendente Sênior" />
-          {error && <span className="mt-1 block text-[11px] text-destructive">{error}</span>}
-        </Field>
-
-        <div className="flex items-center gap-1 border-b border-border">
-          {([
-            { key: "chat", label: "Chat" },
-            { key: "glpi", label: "GLPI" },
-          ] as const).map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition ${
-                tab === t.key
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={
+        initial?.id && !clone
+          ? "Editar Perfil de Acesso"
+          : clone
+            ? "Duplicar Perfil de Acesso"
+            : "Novo Perfil de Acesso"
+      }
+      size="xl"
+      footer={
+        <div className="flex w-full items-center justify-between gap-4">
+          <EntityFormLog
+            show={!!initial && !clone}
+            createdAt={clone ? undefined : initial?.createdAt}
+            updatedAt={clone ? undefined : initial?.updatedAt}
+          />
+          <div className="flex shrink-0 items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="sm" onClick={submit}>
+              Salvar
+            </Button>
+          </div>
         </div>
+      }
+    >
+      <div className="space-y-5">
+        <PerfilTabs active={activeTab} onChange={setActiveTab} />
 
-        {tab === "glpi" && (
-          <section>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Permissões GLPI</h3>
-            <div className="grid gap-2 sm:grid-cols-3">
-              <CheckField label="Incluir" checked={glpi.incluir} onChange={(v) => setGlpi({ ...glpi, incluir: v })} />
-              <CheckField label="Editar" checked={glpi.editar} onChange={(v) => setGlpi({ ...glpi, editar: v })} />
-              <CheckField label="Excluir" checked={glpi.excluir} onChange={(v) => setGlpi({ ...glpi, excluir: v })} />
-            </div>
-          </section>
+        {activeTab === "geral" && (
+          <GeneralTab
+            form={form}
+            error={error}
+            onChange={(patch) => {
+              setForm((current) => ({ ...current, ...patch }));
+              if (patch.name !== undefined) setError(duplicateNameError(patch.name));
+            }}
+          />
         )}
 
-        {tab === "chat" && (<>
+        {activeTab === "chat" && (
+          <PermissionSettings
+            tab="chat"
+            form={form}
+            departamentos={departamentos}
+            connections={connections}
+            togglePermission={togglePermission}
+            toggleDepartment={toggleDepartment}
+            toggleConnection={toggleConnection}
+            toggleMany={toggleMany}
+          />
+        )}
 
+        {activeTab === "chamados" && (
+          <PermissionSettings
+            tab="chamados"
+            form={form}
+            departamentos={departamentos}
+            connections={connections}
+            togglePermission={togglePermission}
+            toggleDepartment={toggleDepartment}
+            toggleConnection={toggleConnection}
+            toggleMany={toggleMany}
+          />
+        )}
 
-        <section>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Instâncias</h3>
-          <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-            {instancias.map((i: any) => (
-              <CheckField key={i.id} label={i.nome}
-                checked={form.instancias?.includes(i.id) ?? false}
-                onChange={() => toggleList("instancias", i.id)} />
-            ))}
-            {instancias.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma instância cadastrada.</p>}
-          </div>
-        </section>
-
-        <section>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Departamentos</h3>
-          <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-            {departamentos.map((d: any) => (
-              <CheckField key={d.id} label={d.nome}
-                checked={form.departamentos?.includes(d.id) ?? false}
-                onChange={() => toggleList("departamentos", d.id)} />
-            ))}
-            {departamentos.length === 0 && <p className="text-xs text-muted-foreground">Nenhum departamento cadastrado.</p>}
-          </div>
-        </section>
-
-        <section>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Permissões</h3>
-          <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-            {PERM_FIELDS.map((f) => (
-              <CheckField key={f.key as string} label={f.label}
-                checked={Boolean((form as any)[f.key])}
-                onChange={(v) => setForm({ ...form, [f.key]: v } as any)} />
-            ))}
-          </div>
-        </section>
-
-        <section>
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Jornada de trabalho</h3>
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-primary"
-                checked={semJornada}
-                onChange={(e) => setSemJornada(e.target.checked)}
-              />
-              Sem jornada
-            </label>
-          </div>
-          {!semJornada && (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full table-fixed text-sm">
-              <colgroup>
-                <col style={{ width: "10%" }} />
-                <col style={{ width: "6%" }} /><col style={{ width: "12%" }} /><col style={{ width: "12%" }} />
-                <col style={{ width: "6%" }} /><col style={{ width: "12%" }} /><col style={{ width: "12%" }} />
-                <col style={{ width: "6%" }} /><col style={{ width: "12%" }} /><col style={{ width: "12%" }} />
-              </colgroup>
-              <thead className="bg-surface-2 text-left text-xs uppercase tracking-widest text-muted-foreground">
-                <tr>
-                  <th className="px-2 py-2 font-medium">Dia</th>
-                  {TURNOS.map((t) => (
-                    <th key={t.key} colSpan={3} className="px-2 py-2 font-medium border-l border-border text-center">
-                      Turno {t.label}
-                    </th>
-                  ))}
-                </tr>
-                <tr className="text-[10px]">
-                  <th className="px-2 py-1" />
-                  {TURNOS.map((t) => (
-                    <React.Fragment key={t.key}>
-                      <th className="px-1 py-1 font-medium border-l border-border text-center">Ativo</th>
-                      <th className="px-1 py-1 font-medium text-center">Início</th>
-                      <th className="px-1 py-1 font-medium text-center">Fim</th>
-                    </React.Fragment>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {DAYS.map((d) => {
-                  const dia = form.jornada?.[d.key] ?? DEFAULT_JORNADA[d.key];
-                  const setTurno = (tk: keyof DiaJornada, patch: Partial<Turno>) =>
-                    setForm({
-                      ...form,
-                      jornada: {
-                        ...form.jornada,
-                        [d.key]: { ...dia, [tk]: { ...dia[tk], ...patch } },
-                      },
-                    });
-                  return (
-                    <tr key={d.key}>
-                      <td className="px-2 py-2 font-medium whitespace-nowrap">{d.label}</td>
-                      {TURNOS.map((t) => {
-                        const tv = dia[t.key];
-                        return (
-                          <React.Fragment key={t.key}>
-                            <td className="px-1 py-2 border-l border-border text-center">
-                              <input type="checkbox" className="h-4 w-4 accent-primary" checked={tv.ativo}
-                                onChange={(e) => setTurno(t.key, { ativo: e.target.checked })} />
-                            </td>
-                            <td className="px-1 py-2">
-                              <Input type="time" className="w-full min-w-0 px-1 text-xs" value={tv.inicio} disabled={!tv.ativo}
-                                onChange={(e) => setTurno(t.key, { inicio: e.target.value })} />
-                            </td>
-                            <td className="px-1 py-2">
-                              <Input type="time" className="w-full min-w-0 px-1 text-xs" value={tv.fim} disabled={!tv.ativo}
-                                onChange={(e) => setTurno(t.key, { fim: e.target.value })} />
-                            </td>
-                          </React.Fragment>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          )}
-        </section>
-        </>)}
+        {activeTab === "jornada" && (
+          <WorkScheduleEditor
+            value={form.workSchedule}
+            onChange={(workSchedule) => setForm((current) => ({ ...current, workSchedule }))}
+          />
+        )}
       </div>
     </Modal>
   );
+}
+
+function PerfilTabs({
+  active,
+  onChange,
+}: {
+  active: PerfilTab;
+  onChange: (tab: PerfilTab) => void;
+}) {
+  const tabs: Array<{ id: PerfilTab; label: string }> = [
+    { id: "geral", label: "Geral" },
+    { id: "chat", label: "Chat" },
+    { id: "chamados", label: "Chamados" },
+    { id: "jornada", label: "Jornada de Trabalho" },
+  ];
+
+  return (
+    <div className="flex flex-wrap border-b border-border">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          onClick={() => onChange(tab.id)}
+          className={cn(
+            "border-b-2 px-4 py-2 text-sm transition",
+            active === tab.id
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function GeneralTab({
+  form,
+  error,
+  onChange,
+}: {
+  form: PerfilFormData;
+  error: string;
+  onChange: (patch: Partial<PerfilFormData>) => void;
+}) {
+  return (
+    <section className="space-y-4">
+      <div className="grid grid-cols-[minmax(7rem,1fr)_10.5rem] gap-3 md:gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+        <Field label="Nome *" error={error || undefined}>
+          <Input
+            value={form.name}
+            onChange={(event) => onChange({ name: event.target.value })}
+            placeholder="Ex: Atendente Senior"
+          />
+        </Field>
+        <Field label="Cor">
+          <div className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-2">
+            <input
+              type="color"
+              value={form.color}
+              onChange={(event) => onChange({ color: event.target.value })}
+              className="h-6 w-9 shrink-0 cursor-pointer rounded border border-border bg-transparent"
+              aria-label="Cor do perfil"
+            />
+            <Input
+              value={form.color}
+              onChange={(event) => onChange({ color: event.target.value })}
+              className="min-h-0 min-w-0 flex-1 border-0 bg-transparent px-1 py-0 uppercase focus:border-0"
+            />
+          </div>
+        </Field>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Field label="Idioma">
+          <Select
+            value={form.language}
+            onChange={(event) => onChange({ language: event.target.value })}
+          >
+            {LANGUAGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Timezone">
+          <Select
+            value={form.timezone}
+            onChange={(event) => onChange({ timezone: event.target.value })}
+          >
+            {TIMEZONE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+
+      <Field label="Nota">
+        <Textarea
+          rows={4}
+          value={form.description}
+          onChange={(event) => onChange({ description: event.target.value })}
+        />
+      </Field>
+    </section>
+  );
+}
+
+function PermissionSettings({
+  tab,
+  form,
+  departamentos,
+  connections,
+  togglePermission,
+  toggleDepartment,
+  toggleConnection,
+  toggleMany,
+}: {
+  tab: PermissionTab;
+  form: PerfilFormData;
+  departamentos: { id: string; name: string }[];
+  connections: ApiMessagingConnection[];
+  togglePermission: (id: string, checked: boolean) => void;
+  toggleDepartment: (id: string, checked: boolean) => void;
+  toggleConnection: (id: string, checked: boolean) => void;
+  toggleMany: (
+    field: "permissionIds" | "departmentIds" | "connectionIds",
+    ids: string[],
+    checked: boolean,
+  ) => void;
+}) {
+  const sortedConnections = sortByOptionLabel(connections, (connection) => connection.name);
+  const connectionIds = sortedConnections.map((connection) => connection.id);
+  const departmentIds = departamentos.map((department) => department.id);
+
+  return (
+    <div className="space-y-6">
+      <SelectionSection
+        title="Instancias"
+        ids={connectionIds}
+        selectedIds={form.connectionIds}
+        emptyLabel="Nenhuma instancia cadastrada."
+        onToggleAll={(checked) => toggleMany("connectionIds", connectionIds, checked)}
+      >
+        {sortedConnections.map((connection) => (
+          <CheckField
+            key={connection.id}
+            label={connection.name}
+            checked={form.connectionIds.includes(connection.id)}
+            onChange={(checked) => toggleConnection(connection.id, checked)}
+          />
+        ))}
+      </SelectionSection>
+
+      <SelectionSection
+        title="Departamentos"
+        ids={departmentIds}
+        selectedIds={form.departmentIds}
+        emptyLabel="Nenhum departamento cadastrado."
+        onToggleAll={(checked) => toggleMany("departmentIds", departmentIds, checked)}
+      >
+        {departamentos.map((department) => (
+          <CheckField
+            key={department.id}
+            label={department.name}
+            checked={form.departmentIds.includes(department.id)}
+            onChange={(checked) => toggleDepartment(department.id, checked)}
+          />
+        ))}
+      </SelectionSection>
+
+      <section>
+        <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Permissões
+        </h3>
+        <div className="space-y-4">
+          {PERMISSION_GROUPS.filter((group) => group.tab === tab).map((group) => (
+            <PermissionGroupBlock
+              key={group.title}
+              group={group}
+              selectedIds={form.permissionIds}
+              togglePermission={togglePermission}
+              toggleMany={toggleMany}
+            />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SelectionSection({
+  title,
+  ids,
+  selectedIds,
+  emptyLabel,
+  onToggleAll,
+  children,
+}: {
+  title: string;
+  ids: string[];
+  selectedIds: string[];
+  emptyLabel: string;
+  onToggleAll: (checked: boolean) => void;
+  children: React.ReactNode;
+}) {
+  const allSelected = ids.length > 0 && ids.every((id) => selectedIds.includes(id));
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          {title}
+        </h3>
+        <CheckField label="Todos" checked={allSelected} onChange={onToggleAll} />
+      </div>
+      {ids.length === 0 ? (
+        <p className="text-xs text-muted-foreground">{emptyLabel}</p>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">{children}</div>
+      )}
+    </section>
+  );
+}
+
+function PermissionGroupBlock({
+  group,
+  selectedIds,
+  togglePermission,
+  toggleMany,
+}: {
+  group: { title: string; tab: PermissionTab; items: PermissionField[] };
+  selectedIds: string[];
+  togglePermission: (id: string, checked: boolean) => void;
+  toggleMany: (
+    field: "permissionIds" | "departmentIds" | "connectionIds",
+    ids: string[],
+    checked: boolean,
+  ) => void;
+}) {
+  const ids = group.items.map((permission) => permission.id);
+  const allSelected = ids.length > 0 && ids.every((id) => selectedIds.includes(id));
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+          {group.title}
+        </p>
+        <CheckField
+          label="Todos"
+          checked={allSelected}
+          onChange={(checked) => toggleMany("permissionIds", ids, checked)}
+        />
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+        {group.items.map((permission) => (
+          <CheckField
+            key={permission.id}
+            label={permission.label}
+            checked={selectedIds.includes(permission.id)}
+            onChange={(checked) => togglePermission(permission.id, checked)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WorkScheduleEditor({
+  value,
+  onChange,
+}: {
+  value: WorkSchedule;
+  onChange: (value: WorkSchedule) => void;
+}) {
+  const updateShift = (day: WeekDay, shift: ShiftKey, patch: Partial<WorkShift>) => {
+    onChange({
+      ...value,
+      days: {
+        ...value.days,
+        [day]: {
+          ...value.days[day],
+          [shift]: { ...value.days[day][shift], ...patch },
+        },
+      },
+    });
+  };
+
+  const copyShiftToAll = (sourceDay: WeekDay, shift: ShiftKey) => {
+    const source = value.days[sourceDay];
+    const days = { ...value.days };
+
+    WEEK_DAYS.forEach((day) => {
+      if (day === sourceDay) return;
+      const targetShift = value.days[day][shift];
+      days[day] = {
+        ...value.days[day],
+        [shift]: {
+          ...targetShift,
+          start: source[shift].start,
+          end: source[shift].end,
+        },
+      };
+    });
+
+    onChange({ ...value, days });
+  };
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={value.noSchedule}
+            onChange={(event) => {
+              const noSchedule = event.target.checked;
+              onChange({ ...value, noSchedule });
+            }}
+            className="h-4 w-4 accent-primary"
+          />
+          Sem jornada
+        </label>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full min-w-[900px] table-fixed text-xs">
+          <thead className="bg-surface-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+            <tr>
+              <th className="w-24 px-2 py-2 text-left">Dia</th>
+              {Object.values(SHIFT_LABELS).map((label) => (
+                <th key={label} className="px-2 py-2 text-center" colSpan={3}>
+                  {label}
+                </th>
+              ))}
+            </tr>
+            <tr>
+              <th />
+              {Object.keys(SHIFT_LABELS).flatMap((shift) => [
+                <th key={`${shift}-active`} className="w-12 px-2 py-2 text-center">
+                  Ativo
+                </th>,
+                <th key={`${shift}-start`} className="px-2 py-2 text-center">
+                  Início
+                </th>,
+                <th key={`${shift}-end`} className="px-2 py-2 text-center">
+                  Fim
+                </th>,
+              ])}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {WEEK_DAYS.map((day) => (
+              <tr key={day}>
+                <td className="px-2 py-2 font-medium">{day}</td>
+                {(Object.keys(SHIFT_LABELS) as ShiftKey[]).map((shift) => {
+                  const item = value.days[day][shift];
+                  return (
+                    <React.Fragment key={`${day}-${shift}`}>
+                      <td className="px-2 py-2 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={item.active}
+                          disabled={value.noSchedule}
+                          onChange={(event) => {
+                            updateShift(day, shift, { active: event.target.checked });
+                          }}
+                          className="h-4 w-4 accent-primary"
+                        />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={value.noSchedule}
+                            onClick={() => copyShiftToAll(day, shift)}
+                            title={`Copiar turno ${SHIFT_LABELS[shift]} para todos os dias`}
+                            aria-label={`Copiar turno ${SHIFT_LABELS[shift]} para todos os dias`}
+                            className="h-7 w-7 p-0"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          value={item.start}
+                          placeholder="00:00"
+                          disabled={value.noSchedule || !item.active}
+                          className="w-full px-2 text-center"
+                          onChange={(event) =>
+                            updateShift(day, shift, { start: sanitizeWorkHourDraft(event.target.value) })
+                          }
+                          onBlur={(event) =>
+                            updateShift(day, shift, { start: formatWorkHourDraft(event.target.value) })
+                          }
+                        />
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          value={item.end}
+                          placeholder="00:00"
+                          disabled={value.noSchedule || !item.active}
+                          className="w-full px-2 text-center"
+                          onChange={(event) =>
+                            updateShift(day, shift, { end: sanitizeWorkHourDraft(event.target.value) })
+                          }
+                          onBlur={(event) =>
+                            updateShift(day, shift, { end: formatWorkHourDraft(event.target.value) })
+                          }
+                        />
+                      </td>
+                    </React.Fragment>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function sanitizeWorkHourDraft(value: string) {
+  return value.replace(/[^\d:]/g, "").slice(0, 5);
+}
+
+function formatWorkHourDraft(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const padded =
+    digits.length <= 2 ? digits.padStart(2, "0").padEnd(4, "0") : digits.padStart(4, "0");
+  const hour = Math.min(23, Number(padded.slice(0, 2)));
+  const minute = Math.min(59, Number(padded.slice(2, 4)));
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function EntityFormLog({
+  show,
+  createdAt,
+  updatedAt,
+}: {
+  show: boolean;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}) {
+  if (!show) return <span aria-hidden="true" />;
+  return (
+    <div className="min-w-0 text-left text-[11px] leading-4 text-muted-foreground sm:text-xs sm:leading-5">
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Criado:</span> {formatDateTime(createdAt)}
+      </div>
+      <div className="truncate">
+        <span className="font-semibold text-foreground">Editado:</span> {formatDateTime(updatedAt)}
+      </div>
+    </div>
+  );
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }).replace(",", "");
 }

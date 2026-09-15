@@ -1,4 +1,4 @@
-# Nexo - Documentacao Tecnica
+# Trixus - Documentacao Tecnica
 
 Esta documentacao descreve a baseline da Sprint 00. O frontend atual e a fonte da verdade para telas, fluxos e comportamento. A arquitetura futura aprovada e a fonte da verdade para backend e infraestrutura.
 
@@ -9,7 +9,7 @@ IMPLEMENTADO:
 - Frontend React/TanStack Start/Vite com rotas file-based.
 - UI administrativa, operacional, atendimento, configuracoes e Super Admin.
 - Supabase Auth/PostgREST/Realtime em partes do MVP.
-- Mocks e hardcodes ainda usados por telas administrativas, campanhas, filas e rotas legadas.
+- Mocks e hardcodes ainda usados por campanhas, filas e rotas legadas.
 - Persistencia local para tema, sessao, sidebar, preferencias de filas e onboardings.
 
 SIMULADO NO MVP:
@@ -17,17 +17,41 @@ SIMULADO NO MVP:
 - Super Admin SaaS/multi-tenant.
 - Monitoramento de Evolution API, Meta Cloud API, Socket.io e Cloudflare R2.
 - Campanhas, filas administrativas e parte de empresas/atendentes/departamentos/etiquetas.
-- QR de instancia e integracoes de canais.
+- Meta Cloud API, campanhas e integracoes de canais alem de Evolution.
 
 PLANEJADO:
 
 - Backend Node.js + NestJS + TypeScript.
 - PostgreSQL + Prisma.
 - Redis + BullMQ.
-- Evolution API + Meta Cloud API por camada adaptadora.
+- Meta Cloud API por camada adaptadora.
 - Socket.io.
 - Cloudflare R2.
 - Docker Compose em VPS.
+
+## Sprint 06
+
+Sprint 06 adicionou o Universal Messaging Adapter no backend. O envio textual da Inbox segue visualmente igual, mas agora passa por provider port, registry e Development Provider.
+
+## Sprint 07
+
+Sprint 07 adicionou Evolution API como provider real: lifecycle de connections, QR Code, outbound textual, webhook inbound/status e tela `/instancias` via Trixus API. Meta Cloud API, filas do Trixus, realtime proprio e storage continuam fora de escopo.
+
+## Sprint 07.02
+
+Sprint corretiva de aceite WhatsApp real. O WIP parcial da Sprint 08 foi preservado em branch local de backup antes de qualquer retorno a baseline. Na branch 07.02 foram corrigidos o payload real de QR da Evolution e o tratamento de connections orfas sem 500 generico.
+
+Resultado formal desta execucao: `NOT READY FOR SPRINT 08`, pois os gates fisicos de CONNECTED, outbound real, inbound real e lifecycle conectado exigem WhatsApp de teste e nao foram reproduzidos nesta maquina.
+
+## Sprint 12
+
+Sprint 12 adicionou o dominio operacional de campanhas em NestJS/Prisma/BullMQ. A rota `/campanhas` passou a usar Trixus API, audiencia real, opt-out e dispatch por outbox. Detalhes em [CAMPAIGNS.md](./CAMPAIGNS.md).
+
+## RC Sprint 15
+
+RC Sprint 15 consolidou atendimento operacional em Trixus API/Prisma. O rework de 2026-08-05 corrigiu
+historico encerrado, consistencia Dashboard/Relatorios, lead fantasma, realtime de relatorios e adicionou
+`backend/scripts/cleanup-operational-residue.mjs`. Gate atual: `REWORK REQUIRED` ate homologacao fisica.
 
 ## Tecnologias atuais
 
@@ -78,13 +102,13 @@ supabase/migrations/  schema Supabase atual do MVP
 PowerShell:
 
 ```powershell
-cd "C:\Users\Rabel\Downloads\Nexos Project"
+cd "C:\Users\Rabel\Downloads\Trixus Project"
 ```
 
 Bash/zsh:
 
 ```bash
-cd "/c/Users/Rabel/Downloads/Nexos Project"
+cd "/c/Users/Rabel/Downloads/Trixus Project"
 ```
 
 ### Passo 3 - Instalar dependencias
@@ -146,7 +170,7 @@ bun run build
 1. Abrir `/login`.
 2. Validar alternancia de tema e credenciais demo preenchidas.
 3. Fazer login demo se o Supabase e a service role estiverem configurados.
-4. Abrir `/`, `/inbox`, `/clientes`, `/contatos`, `/historico`, `/simulador`, `/mensagens-rapidas`, `/relatorios`.
+4. Abrir `/`, `/inbox`, `/clientes`, `/contatos`, `/historico`, `/mensagens-rapidas`, `/relatorios` e `/filas`.
 5. Validar busca, filtros, modais e estados vazios onde existirem.
 6. Abrir `/chamados` e validar modal de chamado sem salvar dados reais indevidos.
 7. Abrir `/instancias` e `/perfis` como administrador.
@@ -174,11 +198,176 @@ Scripts adicionais:
 | `bun run backend:test`                          | Executa testes e2e da API             |
 | `bun run backend:prisma:generate`               | Gera Prisma Client                    |
 | `bun run backend:prisma:migrate -- --name init` | Aplica migrations locais              |
-| `bun run backend:prisma:seed`                   | Popula tenants e usuarios demo        |
+| `bun run backend:prisma:seed`                   | Popula seed minimo de homologacao     |
 | `bun run test:security`                         | Valida sanitizacao XSS do editor rico |
 
-Credenciais demo locais do seed:
+Credenciais locais do seed minimo:
 
-- `admin@nexo.app` / `demo1234` no tenant `acme`
-- `atendente@nexo.app` / `demo1234` no tenant `acme`
-- `outsider@nexo.app` / `demo1234` no tenant `orbit`
+Sprint 08.01: dados demo completos sao opt-in. Use `SEED_DEMO_DATA=true` antes de `bun run backend:prisma:seed` quando precisar de CRM/conversas demo locais.
+
+Sprint 08.02: homologacao deve ser reconstruida com `bun run --cwd backend reset:homologation -- --confirm` apontando `DATABASE_URL` para `trixus_0802`. O reset valida seed minimo com zero dados operacionais.
+
+Sprint 08.03: login real de homologacao usa `VITE_TRIXUS_API_URL=http://localhost:3001/api`, `DATABASE_URL` apontando `trixus_0802`, `SEED_MODE=homologation`, `SEED_ADMIN_EMAIL=admin@trixus.app` e `SEED_ADMIN_PASSWORD=demo1234`. A tela `/login` nao usa mais contas demo preenchidas nem tenant fixo `acme`.
+
+- `admin@trixus.app` / `demo1234` no tenant `acme`
+- `atendente@trixus.app` / `demo1234` no tenant `acme`
+- `outsider@trixus.app` / `demo1234` no tenant `orbit`
+
+## Atualizacao Sprint 01.1
+
+A Sprint 01.1 estabilizou o gate local do projeto sem alterar UX.
+
+Validacao completa:
+
+```powershell
+cd "C:\Users\Rabel\Downloads\Trixus Project"
+$env:BUN_INSTALL="$env:USERPROFILE\.bun"
+$env:PATH="$env:BUN_INSTALL\bin;$env:PATH"
+
+bun install --frozen-lockfile
+docker compose up -d postgres
+bun run backend:prisma:generate
+bun run backend:prisma:migrate -- --name init
+bun run backend:prisma:seed
+bun run verify
+```
+
+`bun run verify` executa:
+
+- frontend typecheck;
+- lint baseline;
+- frontend build;
+- backend build;
+- backend tests, incluindo isolamento de tenant;
+- security/XSS tests.
+
+O lint usa baseline legado: erros antigos ficam registrados em `scripts/eslint-baseline.json`, mas novas mensagens por arquivo/regra fazem o gate falhar.
+
+## Atualizacao Sprint 02
+
+Camada organizacional real implementada no backend NestJS:
+
+- Users e TenantMemberships.
+- Departments e DepartmentMemberships.
+- Roles tenant-scoped.
+- Permission catalog + RolePermission.
+- Platform Admin separado de Tenant Admin.
+- RBAC server-side com `@RequirePermissions`.
+
+Validacao local:
+
+```powershell
+cd "C:\Users\Rabel\Downloads\Trixus Project"
+$env:BUN_INSTALL="$env:USERPROFILE\.bun"
+$env:PATH="$env:BUN_INSTALL\bin;$env:PATH"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus?schema=public"
+
+docker compose up -d postgres
+bun run backend:prisma:generate
+bun --cwd backend prisma migrate deploy --schema prisma/schema.prisma
+bun run backend:prisma:seed
+bun run verify
+```
+
+Credenciais demo:
+
+- `admin@trixus.app` / `demo1234` tenant `acme` (`tenant_admin`)
+- `supervisor@trixus.app` / `demo1234` tenant `acme`
+- `atendente@trixus.app` / `demo1234` tenant `acme`
+- `admin-orbit@trixus.app` / `demo1234` tenant `orbit`
+- `agent-orbit@trixus.app` / `demo1234` tenant `orbit`
+- `platform@trixus.app` / `demo1234` tenant `acme` (`PlatformRole.ADMIN`, role de tenant `agent`)
+
+## Atualizacao Sprint 05
+
+O nucleo de mensagens do inbox migrado usa PostgreSQL/Prisma pela Trixus API:
+
+- `Message` pertence a tenant e conversa.
+- Historico, envio de texto e leitura ficam em `/api/conversations/:id/messages`.
+- Eventos de sistema sao internos a acoes de conversa.
+- `Conversation.lastMessagePreview`, `lastMessageAt` e `unreadCount` sao atualizados pelo backend.
+- Midia permanece bloqueada no composer migrado ate existir storage/provider formal.
+
+Regression gate local:
+
+```powershell
+cd "C:\Users\Rabel\Downloads\Trixus Project"
+$env:BUN_INSTALL="$env:USERPROFILE\.bun"
+$env:PATH="$env:BUN_INSTALL\bin;$env:PATH"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus?schema=public"
+
+docker compose up -d postgres
+bun --cwd backend prisma migrate deploy --schema prisma/schema.prisma
+bun run backend:prisma:generate
+bun run backend:prisma:seed
+bun run verify
+```
+
+# Sprint 08
+
+Para validar a stack assincrona local, suba PostgreSQL e Redis Trixus:
+
+```bash
+docker compose up -d postgres trixus-redis
+```
+
+Use `REDIS_URL=redis://localhost:6379`. O Redis da Evolution (`evolution-redis`) nao deve ser usado pelo BullMQ do Trixus.
+
+## Sprint 08.04
+
+O fluxo operacional de Connections passa a ter uma fonte unica: `GET /api/messaging/connections`.
+Dropdowns operacionais nao usam mocks, exemplos, Supabase legado ou fallback demo; a UI filtra somente
+Connections `evolution` com status `connected`.
+
+Separacao de ambientes:
+
+- regressao automatizada ampla: `trixus_0801`, com tenants `acme/orbit`;
+- homologacao fisica preservada: `trixus_0802`, sem reset automatico quando dados reais existem.
+
+O webhook Evolution aceita o header real configurado na instance (`jwt_key`) e tambem preserva suporte
+ao Bearer JWT usado em testes. Eventos ignorados passam a registrar motivo canonico.
+
+### Rework Sprint 08.04
+
+O modal `Contatos -> Novo contato` tambem usa a fonte unica de Connections reais. Os nomes legados
+`ENORE`, `FLOWID` e `ZYVO` nao aparecem mais em arquivos runtime operacionais; permanecem apenas em testes
+de guarda.
+
+Credenciais locais/homologacao:
+
+- `admin@trixus.app` / `demo1234` role `tenant_admin`
+- `atendente@trixus.app` / `demo1234` role `agent`
+
+### Rework II Sprint 08.04
+
+Evolution local atualizada de `v2.3.1` para `v2.3.7` com backup fisico previo em
+`backups/evolution-before-0804.dump`. A instancia operacional unica do Trixus em `trixus_0802` aponta para
+`26293569-whatsapp-nata-cffd5f5c`, conectada, com owner normalizado apos reconcile por endpoint.
+
+Inbound fisico segue bloqueado por falha de decriptacao antes do webhook. Logs reais mostraram erros
+Signal/Baileys com `@lid` e `senderPn`, mas nenhum `MESSAGES_UPSERT` valido foi recebido pelo Trixus nesta
+sessao. Sprint 09 permanece bloqueada.
+
+## Sprint 09
+
+Realtime oficial integrado com Socket.io no backend NestJS, Redis adapter, auth por access token no
+handshake, rooms por tenant/membership/departamento/conversa, publishers post-commit e Live Inbox com
+fallback REST. O contrato completo esta em `docs/REALTIME.md`.
+
+Gates automatizados passaram duas vezes com `bun run verify`, e um smoke fisico isolado recebeu
+`realtime.ready`. A homologacao fisica completa com dois usuarios, WhatsApp real, presence visual e typing
+visual ainda esta pendente.
+
+### Rework Sprint 09
+
+O bootstrap fisico em `trixus_0802` foi recuperado. A dependencia de indice 1 de
+`ConversationsController` e `MessagesService`; ela agora usa `@Inject(MessagesService)` e tem cobertura em
+`backend/src/app.module.spec.ts` com compilacao real de `AppModule` e verificacao de metadata.
+
+O adapter Redis do Socket.io tambem foi corrigido para namespace `/realtime`, usando o servidor raiz
+quando o Nest entrega `Namespace` no `afterInit`. Health fisico confirmou `database=up`, `redis=up`,
+`queue=up`, `realtime=up` e `realtimeAdapter=redis`. Sprint 10 segue bloqueada ate gate fisico completo.
+
+# Sprint 11
+
+Chamados agora sao dominio oficial de Tickets via Trixus API. Consulte [TICKETING.md](./TICKETING.md) e [STORAGE.md](./STORAGE.md).

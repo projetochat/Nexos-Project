@@ -1,25 +1,14 @@
 import * as React from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import {
-  Inbox,
-  Users,
-  Star,
-  Clock,
-  Search,
-  Bell,
-  User,
-  LogOut,
-  Headphones,
-  MessageCircleMore,
-} from "lucide-react";
+import { Inbox, Users, Clock, Search, Bell, User, LogOut, MessageCircleMore, Moon, Sun } from "lucide-react";
 import { LogoMark, Avatar } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
+import { useTheme } from "./theme-provider";
 import { useSession, ROLE_META } from "@/lib/session";
-import { ThemeToggle } from "./app-shell";
 
 /* ============================================================
-   Nexo · Operator Shell (Central de Atendimento)
+   Trixus · Operator Shell (Central de Atendimento)
    Interface minimalista dedicada ao operador. Sem administração.
    ============================================================ */
 
@@ -32,10 +21,10 @@ type NavItem = {
 
 const nav: NavItem[] = [
   { to: "/inbox", label: "Inbox", icon: Inbox },
-  { to: "/atendimento/favoritos", label: "Favoritos", icon: Star },
-  { to: "/atendimento/historico", label: "Histórico", icon: Clock },
-  { to: "/atendimento/clientes", label: "Clientes", icon: Users },
-  { to: "/atendimento/perfil", label: "Perfil", icon: User },
+  { to: "/mensagens-rapidas", label: "Rápidas", icon: MessageCircleMore },
+  { to: "/historico", label: "Histórico", icon: Clock },
+  { to: "/clientes", label: "Clientes", icon: Users },
+  { to: "/perfil", label: "Perfil", icon: User },
 ];
 
 function UserMenu() {
@@ -74,6 +63,8 @@ function UserMenu() {
               Online · {user ? ROLE_META[user.role].label : ""}
             </div>
           </div>
+          <ThemeModeMenuItem />
+          <div className="my-1 h-px bg-border" />
           <button
             onClick={() => {
               logout();
@@ -89,6 +80,30 @@ function UserMenu() {
   );
 }
 
+function ThemeModeMenuItem() {
+  const { resolved, toggle } = useTheme();
+  const isDark = resolved === "dark";
+  return (
+    <button
+      onClick={toggle}
+      role="switch"
+      aria-checked={isDark}
+      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
+    >
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      <span className="flex-1 text-left">{isDark ? "Modo Claro" : "Modo Escuro"}</span>
+      <span
+        aria-hidden="true"
+        className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${isDark ? "bg-primary" : "bg-muted"}`}
+      >
+        <span
+          className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isDark ? "translate-x-4" : "translate-x-0"}`}
+        />
+      </span>
+    </button>
+  );
+}
+
 function Topbar() {
   const conn = useConnectionStatus();
   return (
@@ -96,7 +111,7 @@ function Topbar() {
       <div className="flex min-w-0 items-center gap-2">
         <LogoMark size={22} />
         <div className="hidden min-w-0 md:block">
-          <div className="text-sm font-semibold tracking-tight">Nexo</div>
+          <div className="text-sm font-semibold tracking-tight">Trixus</div>
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
             Central de Atendimento
           </div>
@@ -112,7 +127,6 @@ function Topbar() {
             placeholder="Buscar conversa ou cliente…"
           />
         </div>
-        <ThemeToggle />
         <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground">
           <Bell className="h-4 w-4" />
           <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-primary animate-pulse-ring" />
@@ -178,18 +192,29 @@ function useOperatorGate() {
   return user;
 }
 
-export function OperatorShell({ children, full = false }: { children: React.ReactNode; full?: boolean }) {
+export function OperatorShell({
+  children,
+  full = false,
+}: {
+  children: React.ReactNode;
+  full?: boolean;
+}) {
   useOperatorGate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   return (
-    <div className={`flex ${full ? "h-dvh overflow-hidden" : "min-h-dvh"} bg-background text-foreground`}>
+    <div
+      className={`flex ${full ? "h-dvh overflow-hidden" : "min-h-dvh"} bg-background text-foreground`}
+    >
       <TopProgress active={isNavigating} />
       <RailNav />
       <div className="flex min-w-0 flex-1 flex-col">
         <OfflineBanner />
         <Topbar />
-        <main key={pathname} className={`min-w-0 flex-1 animate-fade-in-soft ${full ? "overflow-hidden" : ""}`}>
+        <main
+          key={pathname}
+          className={`min-w-0 flex-1 animate-fade-in-soft ${full ? "overflow-hidden" : ""}`}
+        >
           {children}
         </main>
         <BottomNav />
@@ -205,5 +230,9 @@ export function OperatorContainer({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <div className={`mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8 ${className}`}>{children}</div>;
+  return (
+    <div className={`mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8 ${className}`}>
+      {children}
+    </div>
+  );
 }

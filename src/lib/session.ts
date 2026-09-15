@@ -1,12 +1,16 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { supabase } from "@/integrations/supabase/client";
-import { clearNexosApiSession } from "@/lib/nexos-api";
+import {
+  hydrateWithTrixusApi,
+  loginWithTrixusApi,
+  logoutFromTrixusApi,
+  readStoredPlatformImpersonation,
+} from "@/lib/trixus-api";
 
 /* ============================================================
-   Nexo · Session
-   Store client-side de sessão, hidratado a partir do Supabase Auth.
-   Mantém API compatível com os componentes existentes.
+   Trixus Session
+   Store client-side de sessao, hidratado a partir da Trixus API.
+   Mantem API compativel com os componentes existentes.
    ============================================================ */
 
 export type Role = "super_admin" | "admin" | "supervisor" | "operator";
@@ -19,42 +23,40 @@ export type SessionUser = {
   empresaId?: string;
   empresaNome?: string;
   avatarUrl?: string;
+  permissions?: string[];
 };
 
 export const ROLE_META: Record<Role, { label: string; scope: string; home: string }> = {
-  super_admin: { label: "Super Admin", scope: "Plataforma Nexo", home: "/admin" },
+  super_admin: { label: "Super Admin", scope: "Plataforma Trixus", home: "/admin" },
   admin: { label: "Administrador", scope: "Empresa", home: "/" },
   supervisor: { label: "Supervisor", scope: "Empresa", home: "/" },
   operator: { label: "Atendente", scope: "Central de Atendimento", home: "/inbox" },
 };
 
-// Contas demo para o login rápido (criadas sob demanda no Supabase)
-export const DEMO_ACCOUNTS = [
-  {
-    id: "demo-admin",
-    nome: "Ana Ribeiro",
-    email: "admin@nexo.app",
-    password: "demo1234",
-    role: "admin" as Role,
-    empresaNome: "Acme Corp",
-  },
-  {
-    id: "demo-agent",
-    nome: "Camila Duarte",
-    email: "atendente@nexo.app",
-    password: "demo1234",
-    role: "operator" as Role,
-    empresaNome: "Acme Corp",
-  },
-];
-
 type SessionState = {
   user: SessionUser | null;
-  impersonating: { empresaId: string; empresaNome: string } | null;
+  impersonating: {
+    sessionId: string;
+    empresaId: string;
+    empresaNome: string;
+    membershipId: string;
+    expiresAt: string;
+    actorName: string;
+    actorEmail: string;
+  } | null;
   hydrated: boolean;
+  error: string | null;
   loginAs: (user: SessionUser) => void;
   logout: () => void;
-  impersonate: (empresaId: string, empresaNome: string) => void;
+  impersonate: (input: {
+    sessionId: string;
+    empresaId: string;
+    empresaNome: string;
+    membershipId: string;
+    expiresAt: string;
+    actorName: string;
+    actorEmail: string;
+  }) => void;
   stopImpersonation: () => void;
 };
 
@@ -64,12 +66,13 @@ export const useSession = create<SessionState>()(
       user: null,
       impersonating: null,
       hydrated: false,
-      loginAs: (user) => set({ user, impersonating: null }),
-      logout: () => set({ user: null, impersonating: null }),
-      impersonate: (empresaId, empresaNome) => set({ impersonating: { empresaId, empresaNome } }),
+      error: null,
+      loginAs: (user) => set({ user, impersonating: null, hydrated: true, error: null }),
+      logout: () => set({ user: null, impersonating: null, error: null }),
+      impersonate: (input) => set({ impersonating: input }),
       stopImpersonation: () => set({ impersonating: null }),
     }),
-    { name: "nexo.session" },
+    { name: "trixus.session" },
   ),
 );
 
@@ -78,52 +81,38 @@ export function currentRoleHome(role: Role | undefined): string {
   return ROLE_META[role].home;
 }
 
-/** Hidrata a sessão a partir do Supabase (auth + user_roles + agents). */
 export async function hydrateSession(): Promise<void> {
-  const { data } = await supabase.auth.getUser();
-  const authUser = data.user;
-  if (!authUser) {
-    useSession.setState({ user: null, hydrated: true });
-    return;
+  const impersonation = readStoredPlatformImpersonation();
+  try {
+    const user = await hydrateWithTrixusApi();
+    useSession.setState({
+      user,
+      impersonating: impersonation
+        ? {
+            sessionId: impersonation.id,
+            empresaId: impersonation.tenant.id,
+            empresaNome: impersonation.tenant.name,
+            membershipId: impersonation.membershipId,
+            expiresAt: impersonation.expiresAt,
+            actorName: impersonation.actorUser.nome,
+            actorEmail: impersonation.actorUser.email,
+          }
+        : null,
+      hydrated: true,
+      error: null,
+    });
+  } catch (error) {
+    useSession.setState({ user: null, hydrated: true, error: (error as Error).message });
   }
-  const [{ data: roles }, { data: agent }] = await Promise.all([
-    supabase.from("user_roles").select("role").eq("user_id", authUser.id),
-    supabase.from("agents").select("nome, avatar_url").eq("id", authUser.id).maybeSingle(),
-  ]);
-  const isAdmin = roles?.some((r) => r.role === "admin") ?? false;
-  useSession.setState({
-    user: {
-      id: authUser.id,
-      nome: agent?.nome ?? authUser.email?.split("@")[0] ?? "Usuário",
-      email: authUser.email ?? "",
-      role: isAdmin ? "admin" : "operator",
-      avatarUrl: agent?.avatar_url ?? undefined,
-    },
-    hydrated: true,
-  });
 }
 
 export async function signIn(email: string, password: string): Promise<void> {
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw error;
-  await hydrateSession();
-  // marca agente como online
-  const uid = useSession.getState().user?.id;
-  if (uid)
-    await supabase
-      .from("agents")
-      .update({ status: "online", last_seen: new Date().toISOString() })
-      .eq("id", uid);
+  const user = await loginWithTrixusApi(email, password);
+  useSession.getState().loginAs(user);
 }
 
 export async function signOut(): Promise<void> {
-  const uid = useSession.getState().user?.id;
-  if (uid)
-    await supabase
-      .from("agents")
-      .update({ status: "offline", last_seen: new Date().toISOString() })
-      .eq("id", uid);
-  await supabase.auth.signOut();
-  clearNexosApiSession();
-  useSession.setState({ user: null, impersonating: null });
+  await logoutFromTrixusApi();
+  useSession.setState({ user: null, impersonating: null, hydrated: true });
+  localStorage.setItem("trixus.session.logoutAt", String(Date.now()));
 }

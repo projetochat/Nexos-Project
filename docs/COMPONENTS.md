@@ -6,10 +6,10 @@ As paginas ficam em `src/routes` e usam TanStack Router. `routeTree.gen.ts` e ge
 
 Categorias:
 
-- Atendimento real/parcial: inbox, historico, simulador, mensagens rapidas.
+- Atendimento real: inbox, historico, dashboard, relatorios, filas e mensagens rapidas.
 - CRM: clientes, contatos.
 - Operacao/admin empresa: atendentes, perfis, departamentos, etiquetas, instancias, chamados, configuracoes.
-- Produto simulado: campanhas, filas, chatbot, automacoes, agente IA.
+- Produto em consolidacao: campanhas, chatbot, automacoes, agente IA.
 - Super Admin simulado: `/admin/*`.
 - Legado operador: `/atendimento/*`.
 
@@ -41,14 +41,14 @@ Categorias:
 
 ## Servicos
 
-- `mvp.ts`: Supabase real do MVP operacional.
+- `mvp.ts`: legado residual; nao deve ser importado por rotas operacionais migradas.
 - `api/index.ts`: camada mock legado.
 - `demo.functions.ts`: server function para usuarios demo.
 - `integrations/supabase/*`: clientes e middlewares Supabase.
 
 ## Sprint 01 - Novos Utilitarios Frontend
 
-- `src/lib/nexos-api.ts`: cliente minimo da Nexos API para login backend, armazenamento local de tokens e limpeza no logout.
+- `src/lib/trixus-api.ts`: cliente minimo da Trixus API para login backend, armazenamento local de tokens e limpeza no logout.
 - `src/lib/sanitize-html.ts`: sanitizacao allowlist para HTML rico de chamados.
 - `src/lib/sanitize-html.test.ts`: testes contra payloads XSS basicos e imagens data URL permitidas.
 
@@ -63,3 +63,66 @@ O backend fica em `backend/src`:
 - `users`: endpoint `/api/me`.
 - `tenant-records`: rota protegida de prova de isolamento.
 - `prisma`: modulo global e service Prisma.
+
+## Sprint 02 - Componentes e Servicos Migrados
+
+Frontend:
+
+- `src/lib/trixus-api.ts`: cliente de auth, users, departments, roles e permissions.
+- `src/lib/session.ts`: sessao hidratada pela Trixus API.
+- `src/lib/perms.ts`: permissoes de chat derivadas das permission keys do backend.
+- `src/routes/departamentos.tsx`: CRUD real de departments.
+- `src/routes/atendentes.tsx`: users/memberships reais.
+- `src/routes/perfis.tsx`: roles/perfis reais.
+- `src/routes/configuracoes.usuarios.tsx`: lista users reais.
+- `src/routes/configuracoes.permissoes.tsx`: lista roles/permissoes reais.
+
+Backend:
+
+- `auth/permissions.*`: catalogo, decorator e guard.
+- `departments`: controller, DTOs e modulo.
+- `roles`: controller, DTOs e modulo.
+- `users/dto`: DTOs de create/update user.
+- `tenant-records` removido por ser artefato de teste da Sprint 01.
+
+## Sprint 06 - Frontend components
+
+Nao houve redesign da Inbox. Componentes existentes continuam consumindo `messageApi.sendText`; o tipo de status do cliente foi ampliado para aceitar `sending`, `sent`, `failed`, `delivered` e `read`, preservando compatibilidade visual.
+
+# Sprint 08 - Status de mensagem
+
+As bolhas outbound exibem um texto curto para o status operacional:
+
+- `fila`
+- `enviando`
+- `enviada`
+- `falhou`
+- `entregue`
+- `lida`
+
+Polling existente continua responsavel pela atualizacao visual.
+
+## Sprint 08.04 - Connection dropdown
+
+`src/lib/connection-options.ts` centraliza a selecao exibivel no Inbox:
+
+- entrada: resposta real de `connectionsApi.list()`;
+- filtro: `providerType === "evolution"` e `status === "connected"`;
+- label: nome real, telefone owner mascarado quando existe, provider e status;
+- vazio: mensagem operacional sem fallback.
+
+`InboxLayout` tambem usa Connections reais para o filtro de instancia, evitando listas vindas de opções de
+contato ou fontes legadas.
+
+Na RC Sprint 15, `ReportFiltersBar` passou a consumir clientes e departamentos pela Trixus API. Dashboard,
+Historico, Relatorios e Filas usam `operationsApi`, sem Supabase direto e sem simulador.
+
+## Sprint 09 - Inbox realtime
+
+Inbox exibe indicador discreto de realtime. Quando conectado, polling agressivo e reduzido; quando
+offline/degradado, a UI mantém fallback periódico por REST. A camada visual usa `src/lib/realtime` como
+singleton, sem abrir sockets por componente.
+
+# Chamados
+
+A tela `/chamados` usa lista paginada, filtros, modal de criacao, detalhe, comentarios internos e atrixus privados. O editor operacional e textarea seguro; nao usa `contentEditable` nem renderizacao HTML perigosa.

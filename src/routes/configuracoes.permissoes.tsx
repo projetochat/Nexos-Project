@@ -1,36 +1,46 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { Card, Badge, Button } from "@/components/ui-kit";
+import { organizationApi } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/configuracoes/permissoes")({
   component: PermissoesSettings,
 });
 
-const ROLES = [
-  { name: "Admin", tone: "brand", perms: ["Todos os módulos", "Gerenciar usuários", "Configurações", "Faturamento"] },
-  { name: "Supervisor", tone: "info", perms: ["Ver todas conversas", "Transferir atendimentos", "Relatórios completos"] },
-  { name: "Atendente", tone: "default", perms: ["Conversas atribuídas", "Notas internas", "Etiquetas"] },
-];
-
 function PermissoesSettings() {
+  const { data: roles = [], isLoading } = useQuery({
+    queryKey: ["trixus", "roles"],
+    queryFn: organizationApi.listRoles,
+  });
+
+  if (isLoading)
+    return <Card className="p-8 text-center text-sm text-muted-foreground">Carregando...</Card>;
+
   return (
     <div className="space-y-4">
-      {ROLES.map((r) => (
-        <Card key={r.name}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Badge tone={r.tone as never} dot={false}>{r.name}</Badge>
+      {roles.map((role) => (
+        <Card key={role.id}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+              <Badge tone={role.system ? "brand" : "info"} dot={false}>
+                {role.name}
+              </Badge>
               <span className="text-xs text-muted-foreground">
-                {r.perms.length} permissões ativas
+                {role.permissionIds.length} permissões ativas
               </span>
             </div>
-            <Button variant="ghost" size="sm">Editar</Button>
+            {role.key !== "tenant_admin" && (
+              <Button variant="ghost" size="sm" className="self-start sm:self-auto">
+                Editar
+              </Button>
+            )}
           </div>
           <ul className="mt-4 grid gap-2 border-t border-border pt-4 md:grid-cols-2">
-            {r.perms.map((p) => (
-              <li key={p} className="flex items-center gap-2 text-sm">
-                <Check className="h-3.5 w-3.5 text-success" />
-                {p}
+            {role.permissionIds.map((permission) => (
+              <li key={permission} className="flex min-w-0 items-start gap-2 text-sm">
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
+                <span className="min-w-0 break-words">{permission}</span>
               </li>
             ))}
           </ul>

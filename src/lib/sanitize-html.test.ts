@@ -22,9 +22,9 @@ describe("sanitizeRichTextHtml", () => {
   });
 
   it("allows pasted data images for support screenshots", () => {
-    const sanitized = sanitizeRichTextHtml('<img src="data:image/png;base64,AAAA" alt="anexo">');
+    const sanitized = sanitizeRichTextHtml('<img src="data:image/png;base64,AAAA" alt="atrixus">');
 
     expect(sanitized).toContain('src="data:image/png;base64,AAAA"');
-    expect(sanitized).toContain('alt="anexo"');
+    expect(sanitized).toContain('alt="atrixus"');
   });
 });

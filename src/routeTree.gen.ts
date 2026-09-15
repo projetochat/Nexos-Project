@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SimuladorRouteImport } from './routes/simulador'
 import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as PerfisRouteImport } from './routes/perfis'
 import { Route as PerfilRouteImport } from './routes/perfil'
@@ -18,6 +17,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as InstanciasRouteImport } from './routes/instancias'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as HistoricoRouteImport } from './routes/historico'
+import { Route as GruposRouteImport } from './routes/grupos'
 import { Route as FilasRouteImport } from './routes/filas'
 import { Route as EtiquetasRouteImport } from './routes/etiquetas'
 import { Route as EmpresasRouteImport } from './routes/empresas'
@@ -28,11 +28,13 @@ import { Route as ClientesRouteImport } from './routes/clientes'
 import { Route as ChatbotRouteImport } from './routes/chatbot'
 import { Route as ChamadosRouteImport } from './routes/chamados'
 import { Route as CampanhasRouteImport } from './routes/campanhas'
+import { Route as BiRouteImport } from './routes/bi'
 import { Route as AutomacoesRouteImport } from './routes/automacoes'
 import { Route as AtendimentoRouteImport } from './routes/atendimento'
 import { Route as AtendentesRouteImport } from './routes/atendentes'
 import { Route as AjudaRouteImport } from './routes/ajuda'
 import { Route as AgenteIaRouteImport } from './routes/agente-ia'
+import { Route as AgendamentosRouteImport } from './routes/agendamentos'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as InboxIndexRouteImport } from './routes/inbox.index'
@@ -40,6 +42,7 @@ import { Route as ConfiguracoesIndexRouteImport } from './routes/configuracoes.i
 import { Route as AtendimentoIndexRouteImport } from './routes/atendimento.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as InboxConversationIdRouteImport } from './routes/inbox.$conversationId'
+import { Route as ConfiguracoesVariaveisRouteImport } from './routes/configuracoes.variaveis'
 import { Route as ConfiguracoesUsuariosRouteImport } from './routes/configuracoes.usuarios'
 import { Route as ConfiguracoesSegurancaRouteImport } from './routes/configuracoes.seguranca'
 import { Route as ConfiguracoesPermissoesRouteImport } from './routes/configuracoes.permissoes'
@@ -47,7 +50,9 @@ import { Route as ConfiguracoesMensagensRouteImport } from './routes/configuraco
 import { Route as ConfiguracoesIntegracoesRouteImport } from './routes/configuracoes.integracoes'
 import { Route as ConfiguracoesHorariosRouteImport } from './routes/configuracoes.horarios'
 import { Route as ConfiguracoesGeralRouteImport } from './routes/configuracoes.geral'
+import { Route as ConfiguracoesFinanceiroRouteImport } from './routes/configuracoes.financeiro'
 import { Route as ConfiguracoesEmpresaRouteImport } from './routes/configuracoes.empresa'
+import { Route as ConfiguracoesCamposContatoRouteImport } from './routes/configuracoes.campos-contato'
 import { Route as AtendimentoPerfilRouteImport } from './routes/atendimento.perfil'
 import { Route as AtendimentoInboxRouteImport } from './routes/atendimento.inbox'
 import { Route as AtendimentoHistoricoRouteImport } from './routes/atendimento.historico'
@@ -63,12 +68,8 @@ import { Route as AdminEmpresasRouteImport } from './routes/admin.empresas'
 import { Route as AdminConfiguracoesRouteImport } from './routes/admin.configuracoes'
 import { Route as AdminAuditoriaRouteImport } from './routes/admin.auditoria'
 import { Route as AdminAssinaturasRouteImport } from './routes/admin.assinaturas'
+import { Route as AdminEmpresasTenantIdRouteImport } from './routes/admin.empresas.$tenantId'
 
-const SimuladorRoute = SimuladorRouteImport.update({
-  id: '/simulador',
-  path: '/simulador',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const RelatoriosRoute = RelatoriosRouteImport.update({
   id: '/relatorios',
   path: '/relatorios',
@@ -107,6 +108,11 @@ const InboxRoute = InboxRouteImport.update({
 const HistoricoRoute = HistoricoRouteImport.update({
   id: '/historico',
   path: '/historico',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GruposRoute = GruposRouteImport.update({
+  id: '/grupos',
+  path: '/grupos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FilasRoute = FilasRouteImport.update({
@@ -159,6 +165,11 @@ const CampanhasRoute = CampanhasRouteImport.update({
   path: '/campanhas',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BiRoute = BiRouteImport.update({
+  id: '/bi',
+  path: '/bi',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AutomacoesRoute = AutomacoesRouteImport.update({
   id: '/automacoes',
   path: '/automacoes',
@@ -182,6 +193,11 @@ const AjudaRoute = AjudaRouteImport.update({
 const AgenteIaRoute = AgenteIaRouteImport.update({
   id: '/agente-ia',
   path: '/agente-ia',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgendamentosRoute = AgendamentosRouteImport.update({
+  id: '/agendamentos',
+  path: '/agendamentos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -219,6 +235,11 @@ const InboxConversationIdRoute = InboxConversationIdRouteImport.update({
   path: '/$conversationId',
   getParentRoute: () => InboxRoute,
 } as any)
+const ConfiguracoesVariaveisRoute = ConfiguracoesVariaveisRouteImport.update({
+  id: '/variaveis',
+  path: '/variaveis',
+  getParentRoute: () => ConfiguracoesRoute,
+} as any)
 const ConfiguracoesUsuariosRoute = ConfiguracoesUsuariosRouteImport.update({
   id: '/usuarios',
   path: '/usuarios',
@@ -255,11 +276,22 @@ const ConfiguracoesGeralRoute = ConfiguracoesGeralRouteImport.update({
   path: '/geral',
   getParentRoute: () => ConfiguracoesRoute,
 } as any)
+const ConfiguracoesFinanceiroRoute = ConfiguracoesFinanceiroRouteImport.update({
+  id: '/financeiro',
+  path: '/financeiro',
+  getParentRoute: () => ConfiguracoesRoute,
+} as any)
 const ConfiguracoesEmpresaRoute = ConfiguracoesEmpresaRouteImport.update({
   id: '/empresa',
   path: '/empresa',
   getParentRoute: () => ConfiguracoesRoute,
 } as any)
+const ConfiguracoesCamposContatoRoute =
+  ConfiguracoesCamposContatoRouteImport.update({
+    id: '/campos-contato',
+    path: '/campos-contato',
+    getParentRoute: () => ConfiguracoesRoute,
+  } as any)
 const AtendimentoPerfilRoute = AtendimentoPerfilRouteImport.update({
   id: '/perfil',
   path: '/perfil',
@@ -335,15 +367,22 @@ const AdminAssinaturasRoute = AdminAssinaturasRouteImport.update({
   path: '/assinaturas',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminEmpresasTenantIdRoute = AdminEmpresasTenantIdRouteImport.update({
+  id: '/$tenantId',
+  path: '/$tenantId',
+  getParentRoute: () => AdminEmpresasRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/agendamentos': typeof AgendamentosRoute
   '/agente-ia': typeof AgenteIaRoute
   '/ajuda': typeof AjudaRoute
   '/atendentes': typeof AtendentesRoute
   '/atendimento': typeof AtendimentoRouteWithChildren
   '/automacoes': typeof AutomacoesRoute
+  '/bi': typeof BiRoute
   '/campanhas': typeof CampanhasRoute
   '/chamados': typeof ChamadosRoute
   '/chatbot': typeof ChatbotRoute
@@ -354,6 +393,7 @@ export interface FileRoutesByFullPath {
   '/empresas': typeof EmpresasRoute
   '/etiquetas': typeof EtiquetasRoute
   '/filas': typeof FilasRoute
+  '/grupos': typeof GruposRoute
   '/historico': typeof HistoricoRoute
   '/inbox': typeof InboxRouteWithChildren
   '/instancias': typeof InstanciasRoute
@@ -362,11 +402,10 @@ export interface FileRoutesByFullPath {
   '/perfil': typeof PerfilRoute
   '/perfis': typeof PerfisRoute
   '/relatorios': typeof RelatoriosRoute
-  '/simulador': typeof SimuladorRoute
   '/admin/assinaturas': typeof AdminAssinaturasRoute
   '/admin/auditoria': typeof AdminAuditoriaRoute
   '/admin/configuracoes': typeof AdminConfiguracoesRoute
-  '/admin/empresas': typeof AdminEmpresasRoute
+  '/admin/empresas': typeof AdminEmpresasRouteWithChildren
   '/admin/financeiro': typeof AdminFinanceiroRoute
   '/admin/licencas': typeof AdminLicencasRoute
   '/admin/logs': typeof AdminLogsRoute
@@ -378,7 +417,9 @@ export interface FileRoutesByFullPath {
   '/atendimento/historico': typeof AtendimentoHistoricoRoute
   '/atendimento/inbox': typeof AtendimentoInboxRoute
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
+  '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
+  '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/horarios': typeof ConfiguracoesHorariosRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
@@ -386,18 +427,22 @@ export interface FileRoutesByFullPath {
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/usuarios': typeof ConfiguracoesUsuariosRoute
+  '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin/': typeof AdminIndexRoute
   '/atendimento/': typeof AtendimentoIndexRoute
   '/configuracoes/': typeof ConfiguracoesIndexRoute
   '/inbox/': typeof InboxIndexRoute
+  '/admin/empresas/$tenantId': typeof AdminEmpresasTenantIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/agendamentos': typeof AgendamentosRoute
   '/agente-ia': typeof AgenteIaRoute
   '/ajuda': typeof AjudaRoute
   '/atendentes': typeof AtendentesRoute
   '/automacoes': typeof AutomacoesRoute
+  '/bi': typeof BiRoute
   '/campanhas': typeof CampanhasRoute
   '/chamados': typeof ChamadosRoute
   '/chatbot': typeof ChatbotRoute
@@ -407,6 +452,7 @@ export interface FileRoutesByTo {
   '/empresas': typeof EmpresasRoute
   '/etiquetas': typeof EtiquetasRoute
   '/filas': typeof FilasRoute
+  '/grupos': typeof GruposRoute
   '/historico': typeof HistoricoRoute
   '/instancias': typeof InstanciasRoute
   '/login': typeof LoginRoute
@@ -414,11 +460,10 @@ export interface FileRoutesByTo {
   '/perfil': typeof PerfilRoute
   '/perfis': typeof PerfisRoute
   '/relatorios': typeof RelatoriosRoute
-  '/simulador': typeof SimuladorRoute
   '/admin/assinaturas': typeof AdminAssinaturasRoute
   '/admin/auditoria': typeof AdminAuditoriaRoute
   '/admin/configuracoes': typeof AdminConfiguracoesRoute
-  '/admin/empresas': typeof AdminEmpresasRoute
+  '/admin/empresas': typeof AdminEmpresasRouteWithChildren
   '/admin/financeiro': typeof AdminFinanceiroRoute
   '/admin/licencas': typeof AdminLicencasRoute
   '/admin/logs': typeof AdminLogsRoute
@@ -430,7 +475,9 @@ export interface FileRoutesByTo {
   '/atendimento/historico': typeof AtendimentoHistoricoRoute
   '/atendimento/inbox': typeof AtendimentoInboxRoute
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
+  '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
+  '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/horarios': typeof ConfiguracoesHorariosRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
@@ -438,21 +485,25 @@ export interface FileRoutesByTo {
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/usuarios': typeof ConfiguracoesUsuariosRoute
+  '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin': typeof AdminIndexRoute
   '/atendimento': typeof AtendimentoIndexRoute
   '/configuracoes': typeof ConfiguracoesIndexRoute
   '/inbox': typeof InboxIndexRoute
+  '/admin/empresas/$tenantId': typeof AdminEmpresasTenantIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/agendamentos': typeof AgendamentosRoute
   '/agente-ia': typeof AgenteIaRoute
   '/ajuda': typeof AjudaRoute
   '/atendentes': typeof AtendentesRoute
   '/atendimento': typeof AtendimentoRouteWithChildren
   '/automacoes': typeof AutomacoesRoute
+  '/bi': typeof BiRoute
   '/campanhas': typeof CampanhasRoute
   '/chamados': typeof ChamadosRoute
   '/chatbot': typeof ChatbotRoute
@@ -463,6 +514,7 @@ export interface FileRoutesById {
   '/empresas': typeof EmpresasRoute
   '/etiquetas': typeof EtiquetasRoute
   '/filas': typeof FilasRoute
+  '/grupos': typeof GruposRoute
   '/historico': typeof HistoricoRoute
   '/inbox': typeof InboxRouteWithChildren
   '/instancias': typeof InstanciasRoute
@@ -471,11 +523,10 @@ export interface FileRoutesById {
   '/perfil': typeof PerfilRoute
   '/perfis': typeof PerfisRoute
   '/relatorios': typeof RelatoriosRoute
-  '/simulador': typeof SimuladorRoute
   '/admin/assinaturas': typeof AdminAssinaturasRoute
   '/admin/auditoria': typeof AdminAuditoriaRoute
   '/admin/configuracoes': typeof AdminConfiguracoesRoute
-  '/admin/empresas': typeof AdminEmpresasRoute
+  '/admin/empresas': typeof AdminEmpresasRouteWithChildren
   '/admin/financeiro': typeof AdminFinanceiroRoute
   '/admin/licencas': typeof AdminLicencasRoute
   '/admin/logs': typeof AdminLogsRoute
@@ -487,7 +538,9 @@ export interface FileRoutesById {
   '/atendimento/historico': typeof AtendimentoHistoricoRoute
   '/atendimento/inbox': typeof AtendimentoInboxRoute
   '/atendimento/perfil': typeof AtendimentoPerfilRoute
+  '/configuracoes/campos-contato': typeof ConfiguracoesCamposContatoRoute
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
+  '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
   '/configuracoes/horarios': typeof ConfiguracoesHorariosRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
@@ -495,22 +548,26 @@ export interface FileRoutesById {
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/usuarios': typeof ConfiguracoesUsuariosRoute
+  '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin/': typeof AdminIndexRoute
   '/atendimento/': typeof AtendimentoIndexRoute
   '/configuracoes/': typeof ConfiguracoesIndexRoute
   '/inbox/': typeof InboxIndexRoute
+  '/admin/empresas/$tenantId': typeof AdminEmpresasTenantIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/admin'
+    | '/agendamentos'
     | '/agente-ia'
     | '/ajuda'
     | '/atendentes'
     | '/atendimento'
     | '/automacoes'
+    | '/bi'
     | '/campanhas'
     | '/chamados'
     | '/chatbot'
@@ -521,6 +578,7 @@ export interface FileRouteTypes {
     | '/empresas'
     | '/etiquetas'
     | '/filas'
+    | '/grupos'
     | '/historico'
     | '/inbox'
     | '/instancias'
@@ -529,7 +587,6 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/perfis'
     | '/relatorios'
-    | '/simulador'
     | '/admin/assinaturas'
     | '/admin/auditoria'
     | '/admin/configuracoes'
@@ -545,7 +602,9 @@ export interface FileRouteTypes {
     | '/atendimento/historico'
     | '/atendimento/inbox'
     | '/atendimento/perfil'
+    | '/configuracoes/campos-contato'
     | '/configuracoes/empresa'
+    | '/configuracoes/financeiro'
     | '/configuracoes/geral'
     | '/configuracoes/horarios'
     | '/configuracoes/integracoes'
@@ -553,18 +612,22 @@ export interface FileRouteTypes {
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/usuarios'
+    | '/configuracoes/variaveis'
     | '/inbox/$conversationId'
     | '/admin/'
     | '/atendimento/'
     | '/configuracoes/'
     | '/inbox/'
+    | '/admin/empresas/$tenantId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/agendamentos'
     | '/agente-ia'
     | '/ajuda'
     | '/atendentes'
     | '/automacoes'
+    | '/bi'
     | '/campanhas'
     | '/chamados'
     | '/chatbot'
@@ -574,6 +637,7 @@ export interface FileRouteTypes {
     | '/empresas'
     | '/etiquetas'
     | '/filas'
+    | '/grupos'
     | '/historico'
     | '/instancias'
     | '/login'
@@ -581,7 +645,6 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/perfis'
     | '/relatorios'
-    | '/simulador'
     | '/admin/assinaturas'
     | '/admin/auditoria'
     | '/admin/configuracoes'
@@ -597,7 +660,9 @@ export interface FileRouteTypes {
     | '/atendimento/historico'
     | '/atendimento/inbox'
     | '/atendimento/perfil'
+    | '/configuracoes/campos-contato'
     | '/configuracoes/empresa'
+    | '/configuracoes/financeiro'
     | '/configuracoes/geral'
     | '/configuracoes/horarios'
     | '/configuracoes/integracoes'
@@ -605,20 +670,24 @@ export interface FileRouteTypes {
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/usuarios'
+    | '/configuracoes/variaveis'
     | '/inbox/$conversationId'
     | '/admin'
     | '/atendimento'
     | '/configuracoes'
     | '/inbox'
+    | '/admin/empresas/$tenantId'
   id:
     | '__root__'
     | '/'
     | '/admin'
+    | '/agendamentos'
     | '/agente-ia'
     | '/ajuda'
     | '/atendentes'
     | '/atendimento'
     | '/automacoes'
+    | '/bi'
     | '/campanhas'
     | '/chamados'
     | '/chatbot'
@@ -629,6 +698,7 @@ export interface FileRouteTypes {
     | '/empresas'
     | '/etiquetas'
     | '/filas'
+    | '/grupos'
     | '/historico'
     | '/inbox'
     | '/instancias'
@@ -637,7 +707,6 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/perfis'
     | '/relatorios'
-    | '/simulador'
     | '/admin/assinaturas'
     | '/admin/auditoria'
     | '/admin/configuracoes'
@@ -653,7 +722,9 @@ export interface FileRouteTypes {
     | '/atendimento/historico'
     | '/atendimento/inbox'
     | '/atendimento/perfil'
+    | '/configuracoes/campos-contato'
     | '/configuracoes/empresa'
+    | '/configuracoes/financeiro'
     | '/configuracoes/geral'
     | '/configuracoes/horarios'
     | '/configuracoes/integracoes'
@@ -661,21 +732,25 @@ export interface FileRouteTypes {
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/usuarios'
+    | '/configuracoes/variaveis'
     | '/inbox/$conversationId'
     | '/admin/'
     | '/atendimento/'
     | '/configuracoes/'
     | '/inbox/'
+    | '/admin/empresas/$tenantId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  AgendamentosRoute: typeof AgendamentosRoute
   AgenteIaRoute: typeof AgenteIaRoute
   AjudaRoute: typeof AjudaRoute
   AtendentesRoute: typeof AtendentesRoute
   AtendimentoRoute: typeof AtendimentoRouteWithChildren
   AutomacoesRoute: typeof AutomacoesRoute
+  BiRoute: typeof BiRoute
   CampanhasRoute: typeof CampanhasRoute
   ChamadosRoute: typeof ChamadosRoute
   ChatbotRoute: typeof ChatbotRoute
@@ -686,6 +761,7 @@ export interface RootRouteChildren {
   EmpresasRoute: typeof EmpresasRoute
   EtiquetasRoute: typeof EtiquetasRoute
   FilasRoute: typeof FilasRoute
+  GruposRoute: typeof GruposRoute
   HistoricoRoute: typeof HistoricoRoute
   InboxRoute: typeof InboxRouteWithChildren
   InstanciasRoute: typeof InstanciasRoute
@@ -694,18 +770,10 @@ export interface RootRouteChildren {
   PerfilRoute: typeof PerfilRoute
   PerfisRoute: typeof PerfisRoute
   RelatoriosRoute: typeof RelatoriosRoute
-  SimuladorRoute: typeof SimuladorRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/simulador': {
-      id: '/simulador'
-      path: '/simulador'
-      fullPath: '/simulador'
-      preLoaderRoute: typeof SimuladorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/relatorios': {
       id: '/relatorios'
       path: '/relatorios'
@@ -760,6 +828,13 @@ declare module '@tanstack/react-router' {
       path: '/historico'
       fullPath: '/historico'
       preLoaderRoute: typeof HistoricoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/grupos': {
+      id: '/grupos'
+      path: '/grupos'
+      fullPath: '/grupos'
+      preLoaderRoute: typeof GruposRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/filas': {
@@ -832,6 +907,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CampanhasRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/bi': {
+      id: '/bi'
+      path: '/bi'
+      fullPath: '/bi'
+      preLoaderRoute: typeof BiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/automacoes': {
       id: '/automacoes'
       path: '/automacoes'
@@ -865,6 +947,13 @@ declare module '@tanstack/react-router' {
       path: '/agente-ia'
       fullPath: '/agente-ia'
       preLoaderRoute: typeof AgenteIaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agendamentos': {
+      id: '/agendamentos'
+      path: '/agendamentos'
+      fullPath: '/agendamentos'
+      preLoaderRoute: typeof AgendamentosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -916,6 +1005,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InboxConversationIdRouteImport
       parentRoute: typeof InboxRoute
     }
+    '/configuracoes/variaveis': {
+      id: '/configuracoes/variaveis'
+      path: '/variaveis'
+      fullPath: '/configuracoes/variaveis'
+      preLoaderRoute: typeof ConfiguracoesVariaveisRouteImport
+      parentRoute: typeof ConfiguracoesRoute
+    }
     '/configuracoes/usuarios': {
       id: '/configuracoes/usuarios'
       path: '/usuarios'
@@ -965,11 +1061,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfiguracoesGeralRouteImport
       parentRoute: typeof ConfiguracoesRoute
     }
+    '/configuracoes/financeiro': {
+      id: '/configuracoes/financeiro'
+      path: '/financeiro'
+      fullPath: '/configuracoes/financeiro'
+      preLoaderRoute: typeof ConfiguracoesFinanceiroRouteImport
+      parentRoute: typeof ConfiguracoesRoute
+    }
     '/configuracoes/empresa': {
       id: '/configuracoes/empresa'
       path: '/empresa'
       fullPath: '/configuracoes/empresa'
       preLoaderRoute: typeof ConfiguracoesEmpresaRouteImport
+      parentRoute: typeof ConfiguracoesRoute
+    }
+    '/configuracoes/campos-contato': {
+      id: '/configuracoes/campos-contato'
+      path: '/campos-contato'
+      fullPath: '/configuracoes/campos-contato'
+      preLoaderRoute: typeof ConfiguracoesCamposContatoRouteImport
       parentRoute: typeof ConfiguracoesRoute
     }
     '/atendimento/perfil': {
@@ -1077,14 +1187,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAssinaturasRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/empresas/$tenantId': {
+      id: '/admin/empresas/$tenantId'
+      path: '/$tenantId'
+      fullPath: '/admin/empresas/$tenantId'
+      preLoaderRoute: typeof AdminEmpresasTenantIdRouteImport
+      parentRoute: typeof AdminEmpresasRoute
+    }
   }
 }
+
+interface AdminEmpresasRouteChildren {
+  AdminEmpresasTenantIdRoute: typeof AdminEmpresasTenantIdRoute
+}
+
+const AdminEmpresasRouteChildren: AdminEmpresasRouteChildren = {
+  AdminEmpresasTenantIdRoute: AdminEmpresasTenantIdRoute,
+}
+
+const AdminEmpresasRouteWithChildren = AdminEmpresasRoute._addFileChildren(
+  AdminEmpresasRouteChildren,
+)
 
 interface AdminRouteChildren {
   AdminAssinaturasRoute: typeof AdminAssinaturasRoute
   AdminAuditoriaRoute: typeof AdminAuditoriaRoute
   AdminConfiguracoesRoute: typeof AdminConfiguracoesRoute
-  AdminEmpresasRoute: typeof AdminEmpresasRoute
+  AdminEmpresasRoute: typeof AdminEmpresasRouteWithChildren
   AdminFinanceiroRoute: typeof AdminFinanceiroRoute
   AdminLicencasRoute: typeof AdminLicencasRoute
   AdminLogsRoute: typeof AdminLogsRoute
@@ -1098,7 +1227,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminAssinaturasRoute: AdminAssinaturasRoute,
   AdminAuditoriaRoute: AdminAuditoriaRoute,
   AdminConfiguracoesRoute: AdminConfiguracoesRoute,
-  AdminEmpresasRoute: AdminEmpresasRoute,
+  AdminEmpresasRoute: AdminEmpresasRouteWithChildren,
   AdminFinanceiroRoute: AdminFinanceiroRoute,
   AdminLicencasRoute: AdminLicencasRoute,
   AdminLogsRoute: AdminLogsRoute,
@@ -1133,7 +1262,9 @@ const AtendimentoRouteWithChildren = AtendimentoRoute._addFileChildren(
 )
 
 interface ConfiguracoesRouteChildren {
+  ConfiguracoesCamposContatoRoute: typeof ConfiguracoesCamposContatoRoute
   ConfiguracoesEmpresaRoute: typeof ConfiguracoesEmpresaRoute
+  ConfiguracoesFinanceiroRoute: typeof ConfiguracoesFinanceiroRoute
   ConfiguracoesGeralRoute: typeof ConfiguracoesGeralRoute
   ConfiguracoesHorariosRoute: typeof ConfiguracoesHorariosRoute
   ConfiguracoesIntegracoesRoute: typeof ConfiguracoesIntegracoesRoute
@@ -1141,11 +1272,14 @@ interface ConfiguracoesRouteChildren {
   ConfiguracoesPermissoesRoute: typeof ConfiguracoesPermissoesRoute
   ConfiguracoesSegurancaRoute: typeof ConfiguracoesSegurancaRoute
   ConfiguracoesUsuariosRoute: typeof ConfiguracoesUsuariosRoute
+  ConfiguracoesVariaveisRoute: typeof ConfiguracoesVariaveisRoute
   ConfiguracoesIndexRoute: typeof ConfiguracoesIndexRoute
 }
 
 const ConfiguracoesRouteChildren: ConfiguracoesRouteChildren = {
+  ConfiguracoesCamposContatoRoute: ConfiguracoesCamposContatoRoute,
   ConfiguracoesEmpresaRoute: ConfiguracoesEmpresaRoute,
+  ConfiguracoesFinanceiroRoute: ConfiguracoesFinanceiroRoute,
   ConfiguracoesGeralRoute: ConfiguracoesGeralRoute,
   ConfiguracoesHorariosRoute: ConfiguracoesHorariosRoute,
   ConfiguracoesIntegracoesRoute: ConfiguracoesIntegracoesRoute,
@@ -1153,6 +1287,7 @@ const ConfiguracoesRouteChildren: ConfiguracoesRouteChildren = {
   ConfiguracoesPermissoesRoute: ConfiguracoesPermissoesRoute,
   ConfiguracoesSegurancaRoute: ConfiguracoesSegurancaRoute,
   ConfiguracoesUsuariosRoute: ConfiguracoesUsuariosRoute,
+  ConfiguracoesVariaveisRoute: ConfiguracoesVariaveisRoute,
   ConfiguracoesIndexRoute: ConfiguracoesIndexRoute,
 }
 
@@ -1175,11 +1310,13 @@ const InboxRouteWithChildren = InboxRoute._addFileChildren(InboxRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  AgendamentosRoute: AgendamentosRoute,
   AgenteIaRoute: AgenteIaRoute,
   AjudaRoute: AjudaRoute,
   AtendentesRoute: AtendentesRoute,
   AtendimentoRoute: AtendimentoRouteWithChildren,
   AutomacoesRoute: AutomacoesRoute,
+  BiRoute: BiRoute,
   CampanhasRoute: CampanhasRoute,
   ChamadosRoute: ChamadosRoute,
   ChatbotRoute: ChatbotRoute,
@@ -1190,6 +1327,7 @@ const rootRouteChildren: RootRouteChildren = {
   EmpresasRoute: EmpresasRoute,
   EtiquetasRoute: EtiquetasRoute,
   FilasRoute: FilasRoute,
+  GruposRoute: GruposRoute,
   HistoricoRoute: HistoricoRoute,
   InboxRoute: InboxRouteWithChildren,
   InstanciasRoute: InstanciasRoute,
@@ -1198,7 +1336,6 @@ const rootRouteChildren: RootRouteChildren = {
   PerfilRoute: PerfilRoute,
   PerfisRoute: PerfisRoute,
   RelatoriosRoute: RelatoriosRoute,
-  SimuladorRoute: SimuladorRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

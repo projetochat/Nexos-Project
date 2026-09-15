@@ -1,16 +1,29 @@
-import { Role } from "../generated/prisma";
+import { PermissionKey } from "./permissions.constants";
 
 export type JwtPayload = {
   sub: string;
   tenantId: string;
   membershipId: string;
-  role: Role;
+  roleId: string;
+  roleKey: string;
+  platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   typ: "access" | "refresh";
+  iatMs?: number;
+  impersonationSessionId?: string;
+  actorPlatformUserId?: string;
 };
 
 export type AuthenticatedUser = {
   userId: string;
   tenantId: string;
   membershipId: string;
-  role: Role;
+  roleId: string;
+  roleKey: string;
+  platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
+  context?: "tenant" | "platform";
+  platformPermissions?: string[];
+  permissions?: PermissionKey[];
+  iatMs?: number;
+  impersonationSessionId?: string;
+  actorPlatformUserId?: string;
 };

@@ -17,7 +17,7 @@ Estas diretrizes refletem o estado atual do projeto.
 - Primitivas de UI em `src/components/ui`.
 - Dominio e utilitarios em `src/lib`.
 - Integracao Supabase em `src/integrations/supabase`.
-- Migrations sempre em `supabase/migrations`.
+- Migrations novas do backend em `backend/prisma/migrations`; migrations Supabase permanecem legado.
 
 ## Componentes
 
@@ -28,8 +28,8 @@ Estas diretrizes refletem o estado atual do projeto.
 
 ## Dados e APIs
 
-- Preferir `src/lib/mvp.ts` para dominio operacional ja migrado.
-- Evitar espalhar novas queries Supabase por rotas quando houver chance de reuso.
+- Preferir `src/lib/trixus-api.ts` para dominio operacional migrado.
+- Nao adicionar novas queries Supabase em rotas operacionais.
 - Nao usar `supabaseAdmin` em codigo client-side.
 - Server functions privilegiadas devem importar `client.server.ts` dentro do handler.
 
@@ -70,3 +70,48 @@ Sprint 01 adicionou testes automatizados para o backend e sanitizacao XSS. Para 
 - Nunca confiar em `tenantId` vindo livremente do cliente; derivar de JWT/membership.
 - Novos endpoints protegidos devem usar guard JWT e filtros por tenant no servidor.
 - Secrets ficam em `.env`; exemplos sem segredo ficam em `.env.example`.
+
+## Lint Baseline Sprint 01.1
+
+- `bun run lint` executa `scripts/check-eslint-baseline.mjs`.
+- A divida legada esta registrada em `scripts/eslint-baseline.json`.
+- Codigo novo/modificado nao pode introduzir nova divida: qualquer aumento por arquivo/regra falha o gate.
+- `bun run lint:raw` mostra o ESLint completo e continua retornando erro enquanto houver divida legada.
+- Prisma Client gerado (`backend/src/generated/prisma/**`) fica fora do ESLint por ser artefato gerado.
+- A reducao gradual da divida deve acontecer em sprints dedicadas ou junto de mudancas pequenas e rastreaveis.
+
+## Backend Sprint 02
+
+- Funcionalidade nova nao deve importar Supabase.
+- Endpoints novos devem usar `JwtAuthGuard` e, para acoes sensiveis, `PermissionsGuard`.
+- Use `@RequirePermissions(...)` em vez de checagens espalhadas de role.
+- Nunca aceite `tenantId` livre do cliente como escopo operacional.
+- Roles de tenant devem ser consultadas por `[tenantId, roleId]`.
+- Associations de departamento devem preservar consistencia por tenant.
+- Permission keys novas devem entrar no catalogo controlado em `backend/src/auth/permissions.constants.ts`.
+
+## Sprint 06 - Messaging adapter guidelines
+
+- Novos providers devem implementar `MessagingProvider`.
+- Nao criar `sendEvolutionMessage`, `sendMetaPayload` ou payload provider-specific no core.
+- Traduzir erros externos para `MessagingErrorCode`.
+- Nao persistir payload bruto, tokens, headers ou secrets de provider.
+- Capabilities devem ser validadas antes de chamar provider.
+- Status externos devem passar pelo processor canonico e respeitar progressao monotona.
+
+## Sprint 07 - Evolution provider guidelines
+
+- Evolution-specific code deve ficar em `backend/src/messaging/evolution`.
+- O core deve receber apenas contratos canonicos (`SendMessageCommand`, `InboundMessageEvent`, `MessageStatusEvent`).
+- Nao adicionar SDK externo sem necessidade; o client HTTP isolado e suficiente para o contrato atual.
+- Todo webhook novo deve validar autenticidade antes de tocar dados de tenant.
+- Novos eventos Evolution devem ser traduzidos ou ignorados no translator, nunca tratados inline em controllers.
+- Nao registrar secrets, QR payloads completos ou headers sensiveis em logs persistentes.
+
+# Sprint 08 - Queue/outbox
+
+- Payload de job deve conter apenas `{ tenantId, messageId }`.
+- Secrets, QR, telefone completo e corpo de mensagem nao devem ser logados.
+- Worker deve resolver provider pelo registry, sem `if provider === EVOLUTION`.
+- Redis failures devem preservar intencao no PostgreSQL.
+- Novas regras de retry devem diferenciar erro retryable de terminal.

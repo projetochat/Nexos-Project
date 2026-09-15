@@ -1,5 +1,5 @@
 /* ============================================================
-   Nexo · Realtime Adapter
+   Trixus · Realtime Adapter
    Interface unificada de tempo real. Hoje: emitter local.
    Amanhã: substituir a implementação por Socket.IO sem tocar
    nas telas — os hooks/eventos permanecem idênticos.

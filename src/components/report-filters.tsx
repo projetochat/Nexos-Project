@@ -1,85 +1,130 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, Select } from "@/components/ui-kit";
-import { supabase } from "@/integrations/supabase/client";
-import type { ReportFilters, PeriodKey } from "@/lib/mvp";
+import { Card, Input, Select } from "@/components/ui-kit";
+import {
+  crmApi,
+  organizationApi,
+  type ApiConversationStatus,
+  type OperationalPeriod,
+} from "@/lib/trixus-api";
+import type { OperationalReportFilters } from "@/lib/operational-filters";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
-const PERIOD_OPTIONS: { value: PeriodKey; label: string }[] = [
-  { value: "hoje", label: "Hoje" },
-  { value: "ontem", label: "Ontem" },
-  { value: "semana", label: "Essa semana" },
-  { value: "mes", label: "Esse mês" },
-  { value: "mes_passado", label: "Mês passado" },
-  { value: "ano", label: "Esse ano" },
-  { value: "geral", label: "Geral" },
+const PERIOD_OPTIONS: { value: OperationalPeriod; label: string }[] = [
+  { value: "today", label: "Hoje" },
+  { value: "yesterday", label: "Ontem" },
+  { value: "7d", label: "Ultimos 7 dias" },
+  { value: "30d", label: "Ultimos 30 dias" },
+];
+
+const STATUS_OPTIONS: { value: ApiConversationStatus; label: string }[] = [
+  { value: "aberta", label: "Aberta" },
+  { value: "em_andamento", label: "Em atendimento" },
+  { value: "aguardando", label: "Aguardando" },
+  { value: "fechada", label: "Fechada" },
 ];
 
 export function ReportFiltersBar({
   value,
   onChange,
 }: {
-  value: ReportFilters;
-  onChange: (patch: Partial<ReportFilters>) => void;
+  value: OperationalReportFilters;
+  onChange: (patch: Partial<OperationalReportFilters>) => void;
 }) {
-  const { data: instancias = [] } = useQuery({
-    queryKey: ["report-filters", "instancias"],
-    queryFn: async () => {
-      const { data } = await supabase.from("instancias").select("id,nome").order("nome");
-      return data ?? [];
-    },
+  const { data: customers } = useQuery({
+    queryKey: ["operations", "filters", "customers"],
+    queryFn: () => crmApi.listCustomers({ pageSize: 100 }),
   });
-  const { data: clientes = [] } = useQuery({
-    queryKey: ["report-filters", "customers"],
-    queryFn: async () => {
-      const { data } = await supabase.from("customers").select("id,nome").order("nome");
-      return data ?? [];
-    },
+  const { data: departments = [] } = useQuery({
+    queryKey: ["operations", "filters", "departments"],
+    queryFn: organizationApi.listDepartments,
   });
-  const { data: departamentos = [] } = useQuery({
-    queryKey: ["report-filters", "departments"],
-    queryFn: async () => {
-      const { data } = await supabase.from("departments").select("id,nome").order("nome");
-      return data ?? [];
-    },
-  });
+  const sortedCustomers = React.useMemo(
+    () => sortByOptionLabel(customers?.items ?? [], (customer) => customer.nome),
+    [customers?.items],
+  );
+  const sortedDepartments = React.useMemo(
+    () => sortByOptionLabel(departments, (department) => department.name),
+    [departments],
+  );
 
   return (
     <Card className="mb-6 p-4">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">Período</label>
-          <Select value={value.period} onChange={(e) => onChange({ period: e.target.value as PeriodKey })}>
-            {PERIOD_OPTIONS.map((p) => (
-              <option key={p.value} value={p.value}>{p.label}</option>
+          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
+            Periodo
+          </label>
+          <Select
+            value={value.period}
+            onChange={(e) => onChange({ period: e.target.value as OperationalPeriod })}
+          >
+            {PERIOD_OPTIONS.map((period) => (
+              <option key={period.value} value={period.value}>
+                {period.label}
+              </option>
             ))}
           </Select>
         </div>
         <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">Instância</label>
-          <Select value={value.instancia} onChange={(e) => onChange({ instancia: e.target.value })}>
-            <option value="all">Todas</option>
-            {(instancias as { id: string; nome: string }[]).map((i) => (
-              <option key={i.id} value={i.nome}>{i.nome}</option>
+          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
+            Status
+          </label>
+          <Select
+            value={value.status ?? ""}
+            onChange={(e) =>
+              onChange({ status: (e.target.value || undefined) as ApiConversationStatus })
+            }
+          >
+            <option value="">Todos</option>
+            {STATUS_OPTIONS.map((status) => (
+              <option key={status.value} value={status.value}>
+                {status.label}
+              </option>
             ))}
           </Select>
         </div>
         <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">Cliente</label>
-          <Select value={value.clienteId} onChange={(e) => onChange({ clienteId: e.target.value })}>
-            <option value="all">Todos</option>
-            {(clientes as { id: string; nome: string }[]).map((c) => (
-              <option key={c.id} value={c.id}>{c.nome}</option>
+          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
+            Cliente
+          </label>
+          <Select
+            value={value.customerId ?? ""}
+            onChange={(e) => onChange({ customerId: e.target.value || undefined })}
+          >
+            <option value="">Todos</option>
+            {sortedCustomers.map((customer) => (
+              <option key={customer.id} value={customer.id}>
+                {customer.nome}
+              </option>
             ))}
           </Select>
         </div>
         <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">Departamento</label>
-          <Select value={value.departamentoId} onChange={(e) => onChange({ departamentoId: e.target.value })}>
-            <option value="all">Todos</option>
-            {(departamentos as { id: string; nome: string }[]).map((d) => (
-              <option key={d.id} value={d.id}>{d.nome}</option>
+          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
+            Departamento
+          </label>
+          <Select
+            value={value.departmentId ?? ""}
+            onChange={(e) => onChange({ departmentId: e.target.value || undefined })}
+          >
+            <option value="">Todos</option>
+            {sortedDepartments.map((department) => (
+              <option key={department.id} value={department.id}>
+                {department.name}
+              </option>
             ))}
           </Select>
+        </div>
+        <div className="col-span-2 xl:col-span-1">
+          <label className="mb-1 block text-[11px] uppercase tracking-widest text-muted-foreground">
+            Busca
+          </label>
+          <Input
+            value={value.q ?? ""}
+            onChange={(e) => onChange({ q: e.target.value || undefined })}
+            placeholder="Protocolo, contato..."
+          />
         </div>
       </div>
     </Card>

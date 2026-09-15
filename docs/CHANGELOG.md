@@ -1,5 +1,218 @@
 # Changelog
 
+## 2026-08-06 - RC Sprint 15.2 Outbound Dispatcher Hotfix
+
+- Corrigido o lock por conversa do worker outbound para retornar a promise rastreada pelo proprio lock, eliminando rejeicao orfa apos falha retryable do provider.
+- Adicionado classificador canonico para erros Evolution HTTP/rede com status, codigo, endpoint, metodo e `unknownOutcome`.
+- Falhas permanentes agora viram `UnrecoverableError` e marcam o outbox como `FAILED`; falhas retryable preservam retries BullMQ.
+- Adicionados logs estruturados de request/response provider, retry, final failure e lifecycle do worker.
+- Adicionados testes de regressao para classificacao Evolution e ausencia de `unhandledRejection` no dispatcher.
+- Gate permanece `OUTBOUND DISPATCHER HOTFIX REQUIRED` ate homologacao fisica de outage/recovery, inbound paralelo e zero duplicidade.
+
+## 2026-08-06 - RC Sprint 15.2 Evolution Contract Normalization
+
+- Criados `EvolutionRecipientNormalizer` e `EvolutionOutboundPayloadFactory`.
+- Corrigido texto Evolution v2.3.7 para `number` e `text` no root.
+- Corrigida reacao Evolution v2.3.7 para `key` e `reaction` no root.
+- Corrigido upload de imagem/documento para multipart `file` em `/message/sendMedia/:instanceName`.
+- Corrigido audio/voice/PTT para `/message/sendWhatsAppAudio/:instanceName`.
+- Reply outbound passa a carregar provider key com `id`, `remoteJid`, `fromMe` e `participant`.
+- Erros `requires property` da Evolution agora sao `INVALID_PROVIDER_PAYLOAD` com `providerCode=VALIDATION_ERROR`.
+- Smokes diretos Evolution passaram; gate Trixus ponta a ponta permanece `EVOLUTION CONTRACT REWORK REQUIRED`.
+
+## 2026-08-05 - RC Sprint 15 Rework Operational Runtime
+
+- Historico operacional passou a listar somente conversas `FECHADA` com `closedAt` preenchido.
+- `OperationsMetricsService` centraliza KPIs e graficos usados por Dashboard e Relatorios.
+- Relatorios removeram polling e passaram a invalidar dados por realtime.
+- Encerramento de conversa preserva `lastMessageAt` ao registrar evento de sistema.
+- Adicionada rotina `backend/scripts/cleanup-operational-residue.mjs` para auditar residuos e departamento `Teste`.
+- Gate permanece `REWORK REQUIRED` ate homologacao fisica completa.
+
+## 2026-08-04 - RC Sprint 15 Atendimento Operacional
+
+- Criado `OperationsModule` com endpoints `/api/operations/dashboard`, historico, timeline, relatorios e filas.
+- Dashboard, Historico, Relatorios e Filas passaram a consumir Trixus API/Prisma, sem Supabase direto e sem `@/lib/mvp`.
+- Removida rota `/simulador`, menu lateral/mobile e servico `SIMULATOR` legado.
+- Adicionado teste E2E cobrindo dashboard, historico paginado, timeline, filas e export CSV.
+- Gate permanece `NOT READY FOR PRODUCTION PILOT` ate homologacao fisica operacional completa.
+
+## 2026-08-04 - Sprint 13 SaaS Control Plane
+
+- Adicionado plano de controle `/api/platform/*` com guard server-side para `PlatformRole`.
+- Criados modelos de Tenant lifecycle, Plan, TenantSubscription, SubscriptionHistory, Invoice, UsageSnapshot, ImpersonationSession e PlatformAuditLog.
+- Adicionado `PlanEntitlementService` e enforcement server-side para usuarios, departamentos, connections, contatos, tickets/storage e campanhas.
+- Super Admin `/admin/*` passou a consumir Trixus Platform API nas telas principais e ganhou guard anti-legado contra mocks em runtime.
+- Seeds idempotentes criam platform admin configuravel e planos Starter/Professional de homologacao.
+- Migrations aplicadas em `trixus_0801`, `trixus_0802` e banco isolado `trixus_1300`.
+- Gate fisico completo permanece `NOT READY FOR SPRINT 14`.
+
+## 2026-08-04 - Sprint 10 Rework RBAC, Tags & Quick Replies
+
+- `/etiquetas` foi migrada para Trixus API e passou a gerenciar o mesmo catalogo usado no modal de Contact.
+- `/mensagens-rapidas` foi migrada para `quickReplyApi`, removendo caminho Supabase/RLS de create/update/archive.
+- Modal de Tags na Inbox agora separa `chat.tags.use` de `chat.tags.manage`: agente aplica Tags existentes, admin gerencia catalogo.
+- Preset de perfil de atendente inclui `chat.tags.use` e o mapa client-side de permissions reconhece essa chave.
+- Erros operacionais `403` preservam a mensagem do backend quando disponivel.
+- Testes e2e cobrem RBAC de Tags, associacao Contact x Tag, Quick Replies API-only, duplicata de atalho, archive e isolamento cross-tenant.
+- `bun run verify` passou duas vezes em `trixus_0801` com Redis local.
+
+## 2026-08-04 - Sprint 10 Webhook Connectivity & Auth Recovery
+
+- Webhook Evolution passou a logar auth de forma sanitizada com `requestId`, `authStrategy`, `authResult` e `httpResult`.
+- `EVOLUTION_WEBHOOK_SECRET` agora e normalizado para evitar divergencia por espacos/aspas externas.
+- Startup registra `EVOLUTION_WEBHOOK_SECRET configured=true/false` e marca Evolution como `degraded` quando webhook esta incompleto.
+- Adicionado script `backend/scripts/audit-evolution-webhook.mjs` para health do container, auditoria `secretMatch` e reapply de `jwt_key`.
+- Testes cobrem `jwt_key` correto/incorreto/ausente, Bearer compativel, segredo fora dos logs e reapply do secret atual.
+- Gate da Sprint 10 volta a `NOT READY FOR SPRINT 11` ate inbound WhatsApp fisico passar sem `ECONNREFUSED` e sem `401`.
+
+## 2026-08-03 - Sprint 10 Inbox Domain Consolidation
+
+- Inbox operacional deixou de importar `@/lib/mvp` e Supabase nas rotas `/inbox`.
+- Conversa detalhada passou a consumir Tags, Contact detail, Customers, Departments e Quick Replies via Trixus API.
+- Adicionados endpoints oficiais `/api/tags`, `/api/contacts/:id/tags/:tagId` e `/api/quick-replies`.
+- Tags ganharam `normalizedName`, `archivedAt` e unicidade normalizada por tenant.
+- Quick Replies ganharam modelo tenant-scoped com escopo global/departamento, RBAC e bloqueio de atalho duplicado.
+- Adicionada guarda automatizada `test:inbox-legacy-runtime` ao `verify`.
+- Migration validada em `trixus_1000` e aplicada sem reset em `trixus_0802`.
+
+## 2026-08-03 - Sprint 09 Rework II Inbox Runtime Recovery
+
+- Corrigido loop React da Inbox causado por snapshot instavel em `useSyncExternalStore`.
+- `realtimeSnapshot()` agora e cacheado e so muda quando `status` ou `lastEventId` mudam.
+- Adicionada flag frontend `VITE_TRIXUS_REALTIME_ENABLED`; quando `false`, nenhum socket e instanciado.
+- Subscriptions de Conversation no client realtime agora sao idempotentes e limpas por `conversationId`.
+- Reconcile REST da Inbox ocorre somente na transicao real para `connected`.
+- Refresh HTTP passa a ser single-flight, com retry unico e endpoints publicos fora do ciclo de refresh.
+- Adicionados testes frontend para snapshot/render stability, realtime disabled, socket singleton/subscription cleanup, 401 recovery e refresh failure.
+- Gate fisico completo permanece `NOT READY FOR SPRINT 10` porque browser controlavel e WhatsApp/Redis recovery ponta a ponta nao foram executados nesta sessao.
+
+## 2026-08-03 - Sprint 09 Rework Bootstrap Recovery
+
+- Corrigida a injecao de `MessagesService` em `ConversationsController` com `@Inject(MessagesService)`.
+- Adicionado teste de bootstrap real do `AppModule` e validacao de `design:paramtypes`.
+- Adicionado smoke `backend/scripts/verify-backend-startup.mjs` para health fisico com PostgreSQL, Redis, fila e realtime.
+- Corrigido Redis adapter do Socket.io quando o Nest entrega `Namespace` no `afterInit`, aplicando o adapter no servidor raiz.
+- Confirmado startup em `trixus_0802` com `database=up`, `redis=up`, `queue=up`, `realtime=up` e `realtimeAdapter=redis`.
+- Confirmado smoke socket fisico para admin e agente no tenant `homologacao`.
+- Gate fisico completo permanece `NOT READY FOR SPRINT 10` ate inbound/outbound WhatsApp, presence, typing, reconnect e Redis recovery ponto a ponto.
+
+## 2026-08-03 - Sprint 09 Realtime Messaging
+
+- Adicionado gateway Socket.io autenticado no namespace `/realtime`.
+- Adicionadas rooms tenant/membership/department/conversation centralizadas.
+- Adicionado `RealtimePublisher` para eventos pós-commit de Message, Conversation, Connection, presence e typing.
+- Adicionado adapter Redis do Socket.io com modo degradado.
+- Frontend passa a ter singleton `src/lib/realtime`, indicador na Inbox, subscription de Conversation e fallback polling.
+- Health passa a expor `queue`, `realtime` e `realtimeAdapter`.
+- Documentado contrato em `docs/REALTIME.md`.
+- Gate fisico final permanece `NOT READY FOR SPRINT 10` ate validação browser/WhatsApp/Redis recovery.
+
+## 2026-08-03 - Sprint 08.04 Rework II
+
+- Criado backup fisico da Evolution antes de qualquer atualizacao: `backups/evolution-before-0804.dump`.
+- Evolution API fixada em `evoapicloud/evolution-api:v2.3.7`; `latest` e `2.4.0-rc*` foram descartados.
+- Reconciliada a connection fisica do Trixus para a instancia conectada `26293569-whatsapp-nata-cffd5f5c`.
+- Confirmados login admin/agente em `homologacao`, webhook da instancia e owner normalizado.
+- Adicionada regressao E2E para `PATCH /api/conversations/:id/status` criando mensagem de sistema.
+- Documentado diagnostico inbound: falha permanece antes do webhook por decriptacao Signal/Baileys.
+- Gate final permanece `NOT READY FOR SPRINT 09`.
+
+## 2026-08-03 - Sprint 08.03 Authentication, Login & Access Consolidation
+
+- Removido login generico/demo da tela `/login`.
+- Frontend passa a autenticar sem `tenantSlug=acme` fixo, permitindo o tenant `homologacao`.
+- Adicionado endpoint oficial `GET /api/auth/me`.
+- Login agora normaliza email antes da validacao e retorna erros canonicos para credencial invalida, usuario inativo, ausencia de membership e rate limit.
+- Health pre-login diferencia API/database de Redis.
+- Seed minimo aceita `SEED_ADMIN_EMAIL` e `SEED_ADMIN_PASSWORD` sem imprimir senha.
+- Criado smoke script `backend/scripts/verify-homologation-login.mjs`.
+- Adicionados testes E2E de auth e testes frontend do client Trixus API.
+
+## 2026-08-03 - Sprint 08.02 Homologation Reset & Contact Lifecycle Recovery
+
+- Criado reset oficial de homologacao com allowlist, production guard, confirm guard, migrations, generate, seed minimo e validacao de contagens.
+- Criado audit de homologacao para contagens, duplicidades mascaradas e orfaos.
+- Contact create passa a restaurar Contact arquivado com mesmo telefone normalizado.
+- Contact ativo duplicado retorna erro canonico `CONTACT_ALREADY_EXISTS`.
+- Frontend de contatos mostra sucesso especifico para Contact restaurado.
+- Documentado ciclo de banco `trixus_0802`, seed modes e regra soft delete + restore.
+
+## 2026-08-03 - Sprint 08.01 Inbound Conversation Resolution & Reconnect Recovery
+
+- Corrigida resolucao inbound para reutilizar Contact canonico e Conversation aberta compativel.
+- Adicionada normalizacao de `remoteJid` para `@s.whatsapp.net`, `@c.us`, device suffix e variantes brasileiras com/sem nono digito.
+- Reconnect passa a garantir webhook Evolution novamente por operacao idempotente.
+- Replay pelo mesmo `externalMessageId` nao cria Message, Conversation, unread ou lastMessage falso.
+- Seed Prisma padrao passa a ser minimo; dados demo exigem `SEED_DEMO_DATA=true`.
+- Criado `backend/scripts/cleanup-homologation-data.mjs` tenant-scoped e dry-run por padrao.
+
+## 2026-08-03 - Sprint 07.02 Real WhatsApp Acceptance Closure
+
+- Preservado o WIP parcial da Sprint 08 em branch local de backup antes de iniciar a 07.02.
+- Criada branch `sprint/07.02-real-whatsapp-acceptance` a partir da baseline 07.01 confirmada.
+- Corrigido mapeamento de QR da Evolution para aceitar `base64` no topo do payload de `/instance/connect/:instanceName`.
+- Corrigido lookup de instance Evolution ausente para orfa canonica em vez de 500.
+- Validado create, QR, delete, recreate, orphan handling, Docker/Evolution health, builds, testes e dois verifies.
+- Gate final permanece `NOT READY FOR SPRINT 08` porque CONNECTED/outbound/inbound/lifecycle fisicos nao foram comprovados nesta execucao.
+
+## 2026-07-30 - Sprint 05 messages
+
+- Criada migration Prisma para `messages` com `MessageDirection`, `MessageType` e `MessageStatus`.
+- Adicionada permission `messages.send` ao catalogo RBAC e aos roles operacionais seedados.
+- Implementada API NestJS aninhada em `/api/conversations/:conversationId/messages` para historico, envio de texto e leitura.
+- Integradas acoes estruturais de conversa com mensagens `SYSTEM` internas, sem endpoint publico generico.
+- Migrado o historico, envio de texto e mark read de `/inbox/:conversationId` para Trixus API/PostgreSQL.
+- Bloqueado envio de midia no composer migrado sem criar data URL fake ou provider improvisado.
+- Seed atualizado com mensagens reais por conversa e contador de protocolos idempotente em execucoes repetidas.
+- Adicionados testes e2e para paginacao, envio, idempotencia, validacao, RBAC, tenant isolation, escopo departamental, estados bloqueados e leitura.
+
+## 2026-07-29 - Sprint 04 conversations
+
+- Criada migration Prisma para `conversations` e `conversation_protocol_counters`.
+- Adicionadas permissions `conversations.read`, `conversations.assign` e `conversations.manage`.
+- Implementada API NestJS `/api/conversations/*` com tenant isolation, escopo operacional por departamento, filtros, busca, sort, paginação e contadores por aba.
+- Migradas as superficies estruturais de `/inbox` e `/inbox/:conversationId` para Trixus API, sem fallback Supabase para Conversation.
+- Mantida fronteira temporaria: mensagens, quick replies e composer continuam legados ate a Sprint 05.
+- Seed atualizado com conversas por tenant em estados ativa, standby, fila, lead, fechada e escopo financeiro restrito.
+- Adicionados testes e2e de RBAC, filtros, detail, assignment/unassignment, cross-tenant, inactive membership, transfer, status e agent visibility.
+
+## 2026-07-29 - Sprint 03 contacts / CRM
+
+- Criada migration Prisma para `customers`, `contacts`, `tags` e `contact_tags`.
+- Adicionadas permissions `crm.read` e `crm.manage`.
+- Implementada API NestJS `/api/crm/*` com tenant server-side, DTO validation, paginacao, filtros e busca.
+- Implementada normalizacao canonica de telefone e unicidade por tenant.
+- Migradas telas `/clientes` e `/contatos` para Trixus API, removendo Supabase dessas superficies.
+- Preservado default local `http://localhost:5173` -> `http://localhost:3001/api`.
+- CORS ajustado para allowlist explicita por ambiente via `FRONTEND_ORIGIN`, sem wildcard de producao.
+- Seed atualizado com clientes, contatos e tags por tenant.
+- Adicionados testes e2e de CRUD CRM, tenant isolation, permissions, input invalido e telefone duplicado.
+
+## 2026-07-29 - Sprint 02 organization, users, departments & RBAC
+
+- Criada migration Prisma da camada organizacional.
+- Removido `ProtectedRecord` do dominio de producao.
+- Implementados Departments, DepartmentMemberships, Roles, Permissions e RolePermissions.
+- Evoluido User/TenantMembership com `platformRole`, `membershipStatus` e role tenant-scoped.
+- Criado `@RequirePermissions` + `PermissionsGuard` para RBAC server-side.
+- Implementadas APIs reais de users, departments, roles e permissions.
+- Atualizado seed com Tenant A/B, roles, permissions, departamentos e usuarios demo.
+- Migradas telas `/login`, `/departamentos`, `/atendentes`, `/perfis`, `/configuracoes/usuarios` e `/configuracoes/permissoes` para Trixus API.
+- Removido Supabase Auth das superficies migradas.
+- Adicionados testes e2e de auth denial, permission denial, tenant isolation, department isolation, role isolation e Platform Admin separado.
+
+## 2026-07-29 - Sprint 01.1 frontend baseline
+
+- Estabilizado build frontend TanStack/Lovable no Windows.
+- Documentada causa raiz do manifest TanStack e do EPERM observado na Sprint 01.
+- Criado `bun run verify` como gate unificado.
+- Criada politica de lint baseline com `scripts/eslint-baseline.json`.
+- Excluido Prisma Client gerado do escopo do ESLint.
+- Corrigidos erros funcionais pequenos de lint sem alterar UX.
+- Documentada decisao: NestJS Auth definitivo, Supabase Auth legado temporario.
+- Executado smoke HTTP das rotas principais.
+
 ## 2026-07-29 - Sprint 01 foundation
 
 - Inicializado Git e criado branch `sprint/01-foundation`.
@@ -9,7 +222,7 @@
 - Criado Prisma schema, migration inicial e seed multi-tenant.
 - Implementados endpoints `/api/health`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/me` e `/api/tenant-records/:id`.
 - Adicionados testes e2e do backend e teste de sanitizacao XSS.
-- Login frontend passa a tentar Nexos API antes do fallback Supabase.
+- Login frontend passa a tentar Trixus API antes do fallback Supabase.
 - Removida chamada automatica de `ensureDemoUsers` no login e adicionada flag de seguranca.
 - HTML de chamados passa por sanitizacao antes de persistir e ao reabrir edicao.
 
@@ -25,3 +238,80 @@
 
 - Criada documentacao tecnica inicial no padrao oficial de `docs/`.
 - Documentos numerados antigos foram substituidos por apontadores para evitar duplicidade.
+
+## Sprint 06 - Universal Messaging Adapter
+
+- Criado modelo `MessagingConnection` tenant-scoped.
+- Adicionados contratos canonicos de outbound, inbound, result, errors e status.
+- Adicionados `MessagingProviderRegistry` e `DevelopmentMessagingProvider`.
+- Refatorado envio textual para persistir SENDING, chamar provider e atualizar SENT/FAILED.
+- Preparados processors canonicos de inbound e status sem webhooks reais.
+- Adicionados campos provider-neutral em Message e idempotencia inbound por connection/externalMessageId.
+- Adicionados testes de contrato, registry e status progression.
+- Atualizado verify para fallback local quando Bun nao esta no PATH.
+
+## Sprint 07 - Evolution API Provider
+
+- Adicionado `EvolutionClient`, `EvolutionMessagingProvider` e translator de webhooks.
+- Criadas APIs tenant-scoped de connections, QR Code, status e logout.
+- Criado webhook seguro `/api/webhooks/evolution` com JWT de provider.
+- Migrada tela `/instancias` para Trixus API.
+- Adicionado Docker Compose da Evolution API v2.3.1 com Postgres/Redis internos.
+- Adicionadas permissoes `connections.read` e `connections.manage`.
+- Fechadas lacunas de teste de inbound duplicado e external IDs iguais em tenants diferentes.
+- Corrigido wiring de DI sob `tsx watch src/main.ts` com `@Inject(...)` explicito na camada Messaging.
+- Adicionado teste de bootstrap do `MessagingModule` pelo container Nest para validar registro Development/Evolution.
+
+## Sprint 07.01 - Evolution E2E Hardening
+
+- Corrigido carregamento de `.env` da raiz no backend rodando com cwd `backend`.
+- Criacao Evolution agora registra webhook explicitamente via `/webhook/set/:instanceName`.
+- Adicionada reconciliação de connections contra `fetchInstances` e erro `INSTANCE_NOT_FOUND` para QR orfao.
+- Adicionado `DELETE /messaging/connections/:id` para cleanup local/provider.
+- `/instancias` deixa de exibir Development Provider como instancia operacional.
+- Adicionado script `backend/scripts/cleanup-messaging-connections.mjs`.
+- Ampliados testes de webhook registration, payload realista, grupos, lifecycle, orfa e tenant isolation.
+
+# Sprint 08
+
+- Adicionado Redis Trixus separado de `evolution-redis`.
+- Integrado BullMQ com queue `messaging-outbound`.
+- Implementado Transactional Outbox para outbound.
+- `POST /messages` passa a retornar Message `QUEUED`.
+- Worker outbound processa `QUEUED -> SENDING -> SENT/FAILED`.
+- Adicionados retries com backoff exponencial e final failure.
+- Preservados adapter provider-neutral, owner identity Sprint 07.03 e inbound direto.
+- Adicionado smoke real de Redis/BullMQ ao `bun run verify`.
+
+# Sprint 08.04
+
+- Removida dependencia operacional de lista legada para dropdowns de Connections no Inbox.
+- Adicionado helper testado para exibir apenas Connections Evolution conectadas.
+- Webhook Evolution agora aceita o header real `jwt_key` configurado pela propria integracao.
+- Webhook registra `authResult`, `requestId`, tipo de evento e `ignoredReason` canonico.
+- Translator passou a retornar motivos canonicos como `FROM_ME`, `GROUP_MESSAGE` e `UNSUPPORTED_EVENT`.
+- Adicionado teste E2E para inbound autenticado via `jwt_key`.
+- Documentada separacao `trixus_0801` para regressao e `trixus_0802` para homologacao fisica preservada.
+
+## Sprint 08.04 Rework
+
+- Removidos `ENORE`, `FLOWID` e `ZYVO` dos seletores runtime de Contatos, Inbox e filtros de relatorio.
+- Adicionado hook canonico `useConnectedMessagingConnections` com query key unica.
+- Modal de Novo/Editar contato passa a exibir somente Connections Evolution conectadas.
+- Seed de homologacao cria Admin e Atendente idempotentes.
+- Reconcile de status da Connection Evolution persiste owner identity quando a Evolution informa `ownerJid`.
+
+# 2026-08-06 - RC Sprint 15.2 Messaging Core Completion partial
+
+- Added schema-backed DIRECT/GROUP conversation identity, group participants, reply metadata, media metadata placeholders, message status timestamps, and message reactions model.
+- Evolution webhook translator now normalizes group inbound messages instead of ignoring them.
+- Inbox UI can send and render text replies using persisted quote metadata.
+- Automated verify passed; physical WhatsApp homologation remains pending, so the sprint gate is `MESSAGING CORE REWORK REQUIRED`.
+
+# 2026-08-04 - Sprint 11 Ticketing Domain, Secure Content & Attachments
+
+- Criado dominio oficial `Ticket`/`TicketComment`/`TicketHistory`/`TicketAttachment` no Prisma e NestJS.
+- Migrada rota `/chamados` para Trixus API, removendo Supabase/MVP/contentEditable/insertHTML/data URL do runtime operacional.
+- Adicionado storage privado local/R2 boundary, sanitizacao server-side de HTML, permississoes `tickets.*` e eventos realtime `ticket.*`.
+- Migration aplicada sem reset em `trixus_0801` e `trixus_0802`; migration limpa validada em `trixus_1100`.
+- Gate permanece `NOT READY FOR SPRINT 12` ate homologacao fisica completa admin/atendente/XSS/atrixus/multiusuario.

@@ -79,14 +79,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Nexo — Atendimento com clareza" },
+      { title: "Trixus — Atendimento com clareza" },
       {
         name: "description",
         content:
-          "Nexo é a plataforma SaaS de atendimento empresarial via WhatsApp: organize equipes, centralize conversas e transforme suporte em produtividade.",
+          "Trixus é a plataforma SaaS de atendimento empresarial via WhatsApp: organize equipes, centralize conversas e transforme suporte em produtividade.",
       },
-      { name: "author", content: "Nexo" },
-      { property: "og:title", content: "Nexo — Atendimento com clareza" },
+      { name: "author", content: "Trixus" },
+      { property: "og:title", content: "Trixus — Atendimento com clareza" },
       {
         property: "og:description",
         content:
@@ -97,7 +97,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/trixus-logo.png", type: "image/png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
@@ -119,7 +119,7 @@ function RootShell({ children }: { children: ReactNode }) {
         <HeadContent />
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('nexo.theme')||'light';var r=t==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;var e=document.documentElement;e.classList.remove('dark','light');e.classList.add(r);e.style.colorScheme=r;}catch(e){}})();`,
+            __html: `(function(){try{var t=localStorage.getItem('trixus.theme')||'light';var r=t==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;var e=document.documentElement;e.classList.remove('dark','light');e.classList.add(r);e.style.colorScheme=r;}catch(e){}})();`,
           }}
         />
       </head>
@@ -137,16 +137,16 @@ function SessionHydrator() {
     import("@/lib/session").then(({ hydrateSession }) => {
       if (!cancelled) hydrateSession();
     });
-    import("@/integrations/supabase/client").then(({ supabase }) => {
-      const { data } = supabase.auth.onAuthStateChange((event) => {
-        if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
-          import("@/lib/session").then(({ hydrateSession }) => hydrateSession());
-        }
+    function syncLogout(event: StorageEvent) {
+      if (event.key !== "trixus.session.logoutAt") return;
+      import("@/lib/session").then(({ useSession }) => {
+        useSession.setState({ user: null, impersonating: null, hydrated: true });
       });
-      if (cancelled) data.subscription.unsubscribe();
-    });
+    }
+    window.addEventListener("storage", syncLogout);
     return () => {
       cancelled = true;
+      window.removeEventListener("storage", syncLogout);
     };
   }, []);
   return null;
@@ -166,8 +166,7 @@ function RootComponent() {
           closeButton
           toastOptions={{
             classNames: {
-              toast:
-                "!bg-card !text-foreground !border !border-border !shadow-elevated",
+              toast: "!bg-card !text-foreground !border !border-border !shadow-elevated",
             },
           }}
         />

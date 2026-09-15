@@ -2,25 +2,63 @@ import * as React from "react";
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Send, ArrowRightLeft, CheckCircle2, Mic, Square, Trash2, Play, Pause,
-  Zap, Paperclip, X, Link as LinkIcon, Tag as TagIcon, Plus, Pencil, Ticket,
+  Send,
+  ArrowRightLeft,
+  CheckCircle2,
+  Mic,
+  Square,
+  Trash2,
+  Play,
+  Pause,
+  Zap,
+  Paperclip,
+  X,
+  Link as LinkIcon,
+  Tag as TagIcon,
+  Plus,
+  Pencil,
+  Ticket,
+  Reply,
+  Download,
+  SmilePlus,
+  Archive,
 } from "lucide-react";
+import { toast as systemToast } from "sonner";
 // Notificações desativadas nesta tela — nenhum toast deve aparecer no chat.
-const toast = { success: (_?: unknown) => {}, error: (_?: unknown) => {}, message: (_?: unknown) => {}, info: (_?: unknown) => {} };
+const toast = {
+  success: (_?: unknown) => {},
+  error: (_?: unknown) => {},
+  message: (_?: unknown) => {},
+  info: (_?: unknown) => {},
+};
 import { InboxLayout } from "./inbox.index";
 import { Avatar, Badge, Button, Field, Input, Select } from "@/components/ui-kit";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
+import { maskBrazilPhone } from "@/lib/input-masks";
 import {
-  CATALOG, CONV, CONTACTS, CUSTOMERS, QUICK_REPLIES, TAGS,
-  type ConvStatus, type Message, type QuickReply, type Tag, type Customer,
-} from "@/lib/mvp";
-import { supabase } from "@/integrations/supabase/client";
+  conversationApi,
+  crmApi,
+  messageApi,
+  organizationApi,
+  quickReplyApi,
+  ticketApi,
+  type ApiConversationStatus as ConvStatus,
+  type ApiMessage,
+  type ApiQuickReply as QuickReply,
+  type ApiTag as Tag,
+} from "@/lib/trixus-api";
 import { useSession } from "@/lib/session";
 import { fmtHM, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
+import { sortByOptionLabel } from "@/lib/sort-options";
+import { startTyping, stopTyping } from "@/lib/realtime/client";
+import { ContactFormModal, contactPayload } from "./contatos";
 
 export const Route = createFileRoute("/inbox/$conversationId")({ component: ConversationPage });
+
+type Message = ApiMessage;
+type MentionOption = { id: string; label: string; phone: string };
 
 const STATUS_TONE: Record<ConvStatus, "warning" | "info" | "success" | "default"> = {
   aberta: "warning",
@@ -35,50 +73,99 @@ function ConversationPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
 
-  const { data: conversas = [] } = useQuery({ queryKey: ["mvp", "conversations"], queryFn: CONV.list });
-  const conv = conversas.find((c) => c.id === conversationId);
+  const { data: conv } = useQuery({
+    queryKey: ["trixus", "conversations", conversationId],
+    queryFn: () => conversationApi.get(conversationId),
+  });
 
   const { data: mensagens = [] } = useQuery({
-    queryKey: ["mvp", "messages", conversationId],
-    queryFn: () => CONV.messages(conversationId),
+    queryKey: ["trixus", "messages", conversationId],
+    queryFn: () => messageApi.list(conversationId, { limit: 50 }).then((page) => page.items),
     refetchInterval: 30_000,
   });
 
-  const { data: agents = [] } = useQuery({ queryKey: ["mvp", "agents"], queryFn: CATALOG.agents });
-  const { data: departments = [] } = useQuery({ queryKey: ["mvp", "departments"], queryFn: CATALOG.departments });
+  const { data: memberships = [] } = useQuery({
+    queryKey: ["trixus", "users", "conversation-transfer"],
+    queryFn: organizationApi.listUsers,
+  });
+  const agents = React.useMemo(
+    () =>
+      memberships
+        .filter(
+          (membership) => membership.status === "ACTIVE" && membership.user.status === "ACTIVE",
+        )
+        .map((membership) => ({
+          id: membership.id,
+          userId: membership.user.id,
+          nome: membership.user.name,
+          email: membership.user.email,
+        })),
+    [memberships],
+  );
+  const messageAgents = React.useMemo(
+    () => agents.map((agent) => ({ id: agent.userId, nome: agent.nome })),
+    [agents],
+  );
+  const { data: apiDepartments = [] } = useQuery({
+    queryKey: ["trixus", "departments", "conversation-transfer"],
+    queryFn: organizationApi.listDepartments,
+  });
+  const departments = React.useMemo(
+    () =>
+      apiDepartments.map((department) => ({
+        id: department.id,
+        nome: department.name,
+        cor: department.color,
+        descricao: department.description,
+      })),
+    [apiDepartments],
+  );
 
   const perms = useChatPerms();
   const showAgentName = perms.mostrar_nome_atendente;
-
-  React.useEffect(() => {
-    const ch = supabase
-      .channel(`mvp-conv-${conversationId}`)
-      .on("postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` },
-        () => {
-          qc.invalidateQueries({ queryKey: ["mvp", "messages", conversationId] });
-          qc.invalidateQueries({ queryKey: ["mvp", "unread"] });
-        })
-      .on("postgres_changes",
-        { event: "UPDATE", schema: "public", table: "conversations", filter: `id=eq.${conversationId}` },
-        () => qc.invalidateQueries({ queryKey: ["mvp", "conversations"] }))
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [conversationId, qc]);
-
+  const mentionOptions = React.useMemo(() => {
+    const byPhone = new Map<string, MentionOption>();
+    for (const message of mensagens) {
+      const phone = message.participant?.phone?.replace(/\D/g, "");
+      if (!phone) continue;
+      byPhone.set(phone, {
+        id: message.participant?.external_id ?? `${phone}@s.whatsapp.net`,
+        label: message.participant?.name || phone,
+        phone,
+      });
+    }
+    return Array.from(byPhone.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [mensagens]);
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const messageRefs = React.useRef(new Map<string, HTMLDivElement>());
+  const [highlightedMessageId, setHighlightedMessageId] = React.useState<string | null>(null);
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [mensagens.length]);
 
+  const scrollToMessage = React.useCallback((messageId: string | null | undefined) => {
+    if (!messageId) return;
+    const node = messageRefs.current.get(messageId);
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedMessageId(messageId);
+    window.setTimeout(
+      () => setHighlightedMessageId((current) => (current === messageId ? null : current)),
+      1800,
+    );
+  }, []);
+
   const transferModal = useDisclosure();
   const [panelOpen, setPanelOpen] = React.useState(false);
+  const [replyTo, setReplyTo] = React.useState<Message | null>(null);
   const queuePrefs = useQueuePrefs();
   const filaLabel = queuePrefs.find((p) => p.id === "fila")?.label ?? "Fila";
   const standbyLabel = queuePrefs.find((p) => p.id === "standby")?.label ?? "Stand By";
 
   const [closing, setClosing] = React.useState(false);
+  const [gerando, setGerando] = React.useState(false);
+  const [archivingInbox, setArchivingInbox] = React.useState(false);
 
   if (!conv) {
     return (
@@ -90,154 +177,102 @@ function ConversationPage() {
     );
   }
 
-  const isStarted = !!conv.protocolo && !!conv.agent_id;
+  const isStarted = conv.is_group ? !!conv.protocolo : !!conv.protocolo && !!conv.agent_id;
   const isStandby = conv.status === "aguardando";
   const isMine = !!user && conv.agent_id === user.id;
-  const canSend = isStarted && isMine && conv.status !== "fechada" && !isStandby;
-  const showStart = conv.status !== "fechada" && (!conv.agent_id || isStandby);
+  const canSend =
+    (conv.is_group && !!conv.protocolo && conv.status !== "fechada" && !isStandby) ||
+    (isStarted && isMine && conv.status !== "fechada" && !isStandby);
+  const showStart =
+    conv.status !== "fechada" &&
+    (conv.is_group ? !conv.protocolo || isStandby : !conv.agent_id || isStandby);
   const wasStarted = !!conv.protocolo;
   const startLabel = isStandby || (!conv.agent_id && wasStarted) ? "Retomar" : "Iniciar";
 
   const handleAssume = async () => {
     if (!user) return;
     try {
-      if (isStandby) {
-        if (!conv.agent_id) {
-          await supabase.from("conversations").update({ agent_id: user.id } as never).eq("id", conv.id);
-        }
-        await CONV.setStatus(conv.id, "em_andamento");
-        await CONV.sendSystem(conv.id, user.id, "Conversa retomada");
-        qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-        qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
-        toast.success("Conversa retomada");
-      } else {
-        const hadProtocolo = !!conv.protocolo;
-        await CONV.assume(conv.id, user.id);
-        if (hadProtocolo) {
-          await CONV.sendSystem(conv.id, user.id, "Conversa retomada");
-        }
-        qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-        qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
-        toast.success(hadProtocolo ? "Conversa retomada" : "Conversa iniciada — protocolo gerado");
-      }
-    } catch (e) { toast.error((e as Error).message); }
+      const hadProtocolo = !!conv.protocolo;
+      await conversationApi.assign(conv.id, { self: true });
+      if (isStandby) await conversationApi.updateStatus(conv.id, "em_andamento");
+      qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+      qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+      toast.success(
+        hadProtocolo || isStandby ? "Conversa retomada" : "Conversa iniciada — protocolo gerado",
+      );
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
 
   const handleNewConversation = async () => {
     if (!user || !conv.contact_id) return;
     try {
-      const { data, error } = await supabase.from("conversations").insert({
-        contact_id: conv.contact_id,
-        department_id: conv.department_id,
-        agent_id: user.id,
-        status: "em_andamento" as ConvStatus,
-      } as never).select("id").single();
-      if (error) throw error;
-      const newId = (data as { id: string }).id;
-      await supabase.rpc("assign_conversation_protocolo" as never, { _conversation_id: newId } as never);
-      qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
+      const conversation = await conversationApi.create({
+        contactId: conv.contact_id,
+        departmentId: conv.department_id,
+        assignToSelf: true,
+        firstMessagePreview: "Nova conversa iniciada pelo atendimento.",
+      });
+      qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
       toast.success("Nova conversa iniciada — protocolo gerado");
-      navigate({ to: "/inbox/$conversationId", params: { conversationId: newId } });
-    } catch (e) { toast.error((e as Error).message); }
+      navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
 
-  const [gerando, setGerando] = React.useState(false);
   const handleGerarChamado = async () => {
-    if (!user || !conv.contact) return;
-    if (!conv.protocolo) {
-      window.alert("Esta conversa ainda não possui protocolo. Inicie a conversa antes de gerar o chamado.");
+    if (!user || !conv.protocolo) return;
+    const departmentId = conv.department_id;
+    if (!departmentId) {
+      systemToast.error("Defina um departamento para a conversa antes de gerar o chamado.");
       return;
     }
+
     setGerando(true);
     try {
-      const esc = (s: string) =>
-        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-      const fmt = (iso: string) => {
-        const d = new Date(iso);
-        const p = (n: number) => String(n).padStart(2, "0");
-        return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
-      };
-      const contactName = conv.contact.nome ?? "Contato";
-      const parts = mensagens.map((m) => {
-        const ts = fmt(m.created_at);
-        if (m.type === "system") {
-          return `<p style="color:#64748b;font-size:12px"><em>[${ts}] ${esc(m.content)}</em></p>`;
-        }
-        const who =
-          m.sender === "contact"
-            ? contactName
-            : agents.find((a) => a.id === m.author_id)?.nome ?? "Atendente";
-        if (m.type === "image" && m.media_data) {
-          const caption = m.content ? `<br/>${esc(m.content)}` : "";
-          return `<p><strong>${esc(who)}</strong> <span style="color:#64748b">[${ts}]</span>:<br/><img src="${m.media_data}" alt="anexo" style="max-width:100%;border-radius:8px;margin:4px 0"/>${caption}</p>`;
-        }
-        if (m.type === "audio") {
-          return `<p><strong>${esc(who)}</strong> <span style="color:#64748b">[${ts}]</span>: <em>[áudio]</em></p>`;
-        }
-        return `<p><strong>${esc(who)}</strong> <span style="color:#64748b">[${ts}]</span>: ${esc(m.content).replace(/\n/g, "<br/>")}</p>`;
+      const ticket = await ticketApi.create({
+        title: `Chamado aberto pelo Chat - ${conv.protocolo}`,
+        descriptionHtml: `<p>Chamado gerado a partir da conversa ${conv.protocolo}.</p>`,
+        category: "SUPORTE",
+        priority: "NORMAL",
+        departmentId,
+        requesterContactId: conv.contact_id,
+        customerId: conv.contact?.customer_id ?? conv.contact?.customer?.id ?? null,
+        conversationId: conv.id,
+        // O chamado nasce na fila do departamento. A atribuição da conversa pode estar
+        // desatualizada ou não pertencer ao departamento, o que bloqueava a criação.
+        assignedMembershipId: null,
       });
-      const descricao_html = parts.length > 0 ? parts.join("") : "<p><em>Sem mensagens registradas.</em></p>";
-
-      // cliente (customer) — se vinculado ao contato
-      let clienteId: string | null = null;
-      let clienteNome = contactName;
-      const customerId = (conv.contact as unknown as { customer_id?: string | null }).customer_id ?? null;
-      if (customerId) {
-        const { data: cust } = await supabase
-          .from("customers")
-          .select("id, nome")
-          .eq("id", customerId)
-          .maybeSingle();
-        if (cust) {
-          clienteId = cust.id;
-          clienteNome = cust.nome;
-        }
-      }
-
-      const departamentoId = conv.department_id ?? null;
-      const departamentoNome = conv.department?.nome ?? "—";
-      const titulo = `Chamado aberto pelo Chat - ${conv.protocolo}`;
-
-      const { data, error } = await supabase
-        .from("chamados")
-        .insert({
-          tipo: "Suporte",
-          status: "Novo",
-          titulo,
-          cliente_id: clienteId,
-          cliente_nome: clienteNome,
-          solicitante_id: conv.contact.id,
-          solicitante_nome: contactName,
-          departamento_id: departamentoId,
-          departamento_nome: departamentoNome,
-          descricao_html,
-          aberto_em: new Date().toISOString(),
-          usuario_abertura_id: user.id,
-          usuario_abertura_nome: user.nome ?? user.email ?? "—",
-        } as never)
-        .select("numero")
-        .single();
-      if (error || !data) throw error ?? new Error("Falha ao gerar chamado.");
-      const numero = (data as { numero: number }).numero;
-      if (user) {
-        await CONV.sendSystem(
-          conv.id,
-          user.id,
-          `Chamado #${String(numero).padStart(6, "0")} gerado a partir desta conversa`,
-        );
-        qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
-      }
-      navigate({ to: "/chamados" });
+      await qc.invalidateQueries({ queryKey: ["tickets"] });
+      navigate({ to: "/chamados", search: { conversationId: undefined, ticketId: ticket.id } });
+      systemToast.success(`Chamado ${ticket.protocol} gerado`);
     } catch (e) {
-      window.alert((e as Error).message || "Não foi possível gerar o chamado.");
+      systemToast.error((e as Error).message || "Não foi possível gerar o chamado.");
     } finally {
       setGerando(false);
     }
   };
 
+  const handleArchiveInbox = async () => {
+    if (!conv) return;
+    setArchivingInbox(true);
+    try {
+      await conversationApi.updateInboxArchive(conv.id, true);
+      await qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+      await qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+      navigate({ to: "/inbox" });
+    } catch (e) {
+      toast.error((e as Error).message || "Não foi possível arquivar a conversa.");
+    } finally {
+      setArchivingInbox(false);
+    }
+  };
+
   return (
     <InboxLayout>
-      <div className="flex h-full min-h-0">
+      <div className="relative flex h-full min-h-0">
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-surface-1 px-5 py-3">
             <button
@@ -247,17 +282,21 @@ function ConversationPage() {
               aria-label="Abrir informações do contato"
               className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1 py-0.5 text-left transition hover:bg-surface-2/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
             >
-              <Avatar name={conv.contact?.nome ?? "?"} size={38} />
+              <Avatar name={conv.contact?.nome ?? "?"} size={38} src={conv.contact?.avatar_url} />
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-semibold">
                     {conv.contact?.nome ?? "Contato"}
-                    {conv.is_group && <span className="ml-1 text-[10px] text-muted-foreground">· grupo</span>}
+                    {conv.is_group && (
+                      <span className="ml-1 text-[10px] text-muted-foreground">· grupo</span>
+                    )}
                   </p>
                   <Badge tone={STATUS_TONE[conv.status]}>{conv.status.replace("_", " ")}</Badge>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
-                  {perms.visualiza_numero && <span>{conv.contact?.telefone}</span>}
+                  {perms.visualiza_numero && conv.contact?.telefone && (
+                    <span>{maskBrazilPhone(conv.contact.telefone)}</span>
+                  )}
                 </div>
               </div>
             </button>
@@ -274,16 +313,26 @@ function ConversationPage() {
                     </Button>
                   )}
                   <Button variant="ghost" size="sm" onClick={transferModal.show}>
-                    <ArrowRightLeft className="h-3.5 w-3.5" /> <span className="hidden lg:inline">Transferir</span>
+                    <ArrowRightLeft className="h-3.5 w-3.5" />{" "}
+                    <span className="hidden lg:inline">Transferir</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleArchiveInbox}
+                    disabled={archivingInbox}
+                  >
+                    <Archive className="h-3.5 w-3.5" />{" "}
+                    <span className="hidden lg:inline">Arquivar</span>
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => setClosing(true)}>
-                    <CheckCircle2 className="h-3.5 w-3.5" /> <span className="hidden lg:inline">Encerrar</span>
+                    <CheckCircle2 className="h-3.5 w-3.5" />{" "}
+                    <span className="hidden lg:inline">Encerrar</span>
                   </Button>
                 </>
               )}
             </div>
           </header>
-
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-6">
             <div className="mx-auto max-w-4xl space-y-4">
@@ -299,14 +348,36 @@ function ConversationPage() {
                 return (
                   <div className="flex items-center gap-3">
                     <span className={`h-0.5 flex-1 ${line}`} />
-                    <span className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${pill}`}>
+                    <span
+                      className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${pill}`}
+                    >
                       {label}
                     </span>
                     <span className={`h-0.5 flex-1 ${line}`} />
                   </div>
                 );
               })()}
-              {mensagens.filter((m) => !(conv.protocolo && m.type === "system" && /novo lead/i.test(m.content))).map((m) => <MessageBubble key={m.id} m={m} agents={agents} showAgentName={showAgentName} />)}
+              {mensagens
+                .filter(
+                  (m) => !(conv.protocolo && m.type === "system" && /novo lead/i.test(m.content)),
+                )
+                .map((m) => (
+                  <MessageBubble
+                    key={m.id}
+                    m={m}
+                    agents={messageAgents}
+                    showAgentName={showAgentName}
+                    onReply={() => setReplyTo(m)}
+                    onQuotedClick={scrollToMessage}
+                    highlighted={highlightedMessageId === m.id}
+                    contactName={conv.contact?.nome ?? "Contato"}
+                    contactAvatarUrl={conv.contact?.avatar_url ?? null}
+                    setMessageRef={(node) => {
+                      if (node) messageRefs.current.set(m.id, node);
+                      else messageRefs.current.delete(m.id);
+                    }}
+                  />
+                ))}
               {mensagens.length === 0 && (
                 <p className="text-center text-xs text-muted-foreground">Nenhuma mensagem ainda.</p>
               )}
@@ -322,19 +393,24 @@ function ConversationPage() {
                 conv.status === "fechada"
                   ? "closed"
                   : isStandby
-                  ? "standby"
-                  : !conv.agent_id
-                  ? "lead"
-                  : !isMine
-                  ? "not-mine"
-                  : null
+                    ? "standby"
+                    : !conv.agent_id
+                      ? "lead"
+                      : !isMine
+                        ? "not-mine"
+                        : null
               }
               onStart={showStart ? handleAssume : undefined}
               allowQuickReplies={perms.acessa_mensagens_rapidas}
               allowAudio={perms.enviar_audio}
+              mentionOptions={conv.is_group ? mentionOptions : []}
+              replyTo={replyTo}
+              onCancelReply={() => setReplyTo(null)}
               onSent={() => {
-                qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
-                qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
+                setReplyTo(null);
+                qc.invalidateQueries({ queryKey: ["trixus", "messages", conv.id] });
+                qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+                qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
               }}
             />
             <div className="pointer-events-none absolute inset-y-0 right-4 hidden items-center xl:flex">
@@ -343,7 +419,11 @@ function ConversationPage() {
                 size="sm"
                 onClick={handleGerarChamado}
                 disabled={gerando || !conv.protocolo}
-                title={conv.protocolo ? "Gerar chamado a partir desta conversa" : "Inicie a conversa para gerar o chamado"}
+                title={
+                  conv.protocolo
+                    ? "Gerar chamado a partir desta conversa"
+                    : "Inicie a conversa para gerar o chamado"
+                }
                 className="pointer-events-auto"
               >
                 <Ticket className="h-3.5 w-3.5" /> {gerando ? "Gerando…" : "Gerar Chamado"}
@@ -360,60 +440,67 @@ function ConversationPage() {
             >
               <Ticket className="h-3.5 w-3.5" /> {gerando ? "Gerando…" : "Gerar Chamado"}
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                navigate({
+                  to: "/chamados",
+                  search: { conversationId: conv.id, ticketId: undefined },
+                })
+              }
+              className="w-full"
+            >
+              Ver chamados relacionados
+            </Button>
           </div>
         </div>
 
         {conv.contact && panelOpen && (
-          <ContactPanel contactId={conv.contact.id} onClose={() => setPanelOpen(false)} />
+          <div className="absolute inset-y-0 right-0 z-20 flex max-w-full">
+            <ContactPanel contactId={conv.contact.id} onClose={() => setPanelOpen(false)} />
+          </div>
         )}
       </div>
 
       <TransferModal
         open={transferModal.open}
         onClose={transferModal.hide}
-        agents={agents.filter((a) => a.id !== conv.agent_id)}
+        agents={agents.filter((a) => a.userId !== conv.agent_id)}
         departments={departments.filter((d) => d.id !== conv.department_id)}
         onSubmitAgent={async (id) => {
-          const target = agents.find((a) => a.id === id);
-          await CONV.transferAgent(conv.id, id, user ? { authorId: user.id, text: `Conversa transferida para ${target?.nome ?? "outro atendente"}` } : undefined);
-          qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
+          await conversationApi.assign(conv.id, { membershipId: id });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
           toast.success("Conversa transferida");
           transferModal.hide();
         }}
         onSubmitDepartment={async (id) => {
-          const target = departments.find((d) => d.id === id);
-          await CONV.moveDepartment(conv.id, id);
-          if (user) await CONV.sendSystem(conv.id, user.id, `Conversa movida para ${target?.nome ?? "outro departamento"}`);
-          qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
+          await conversationApi.transferDepartment(conv.id, id);
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
           toast.success("Conversa movida");
           transferModal.hide();
         }}
         onSubmitStatus={async (status) => {
           const label = status === "fila" ? filaLabel : standbyLabel;
-          if (status === "fila") {
-            await supabase.from("conversations").update({ status: "aberta", agent_id: null } as never).eq("id", conv.id);
-          } else {
-            await CONV.setStatus(conv.id, "aguardando");
-          }
-          if (user) await CONV.sendSystem(conv.id, user.id, `Conversa movida para ${label}`);
-          qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
+          await conversationApi.updateStatus(conv.id, status === "fila" ? "aberta" : "aguardando");
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
           toast.success(`Conversa movida para ${label}`);
           transferModal.hide();
         }}
       />
       <ConfirmDialog
         open={closing}
-        title="Encerrar conversa?"
+        title="Encerrar Conversa?"
         description="A conversa será marcada como encerrada. Se o cliente enviar uma nova mensagem, ela reabre automaticamente."
         confirmLabel="Encerrar"
         onClose={() => setClosing(false)}
         onConfirm={async () => {
-          await CONV.close(conv.id, user ? { authorId: user.id, text: "Encerrada" } : undefined);
-          qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["mvp", "messages", conv.id] });
+          await conversationApi.updateStatus(conv.id, "fechada");
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
           toast.success("Conversa encerrada");
         }}
       />
@@ -422,75 +509,448 @@ function ConversationPage() {
 }
 
 /* -------- Message bubble -------- */
-function MessageBubble({ m, agents, showAgentName = true }: { m: Message; agents: { id: string; nome: string }[]; showAgentName?: boolean }) {
+function MessageBubble({
+  m,
+  agents,
+  showAgentName = true,
+  onReply,
+  onQuotedClick,
+  highlighted,
+  contactName,
+  contactAvatarUrl,
+  setMessageRef,
+}: {
+  m: Message;
+  agents: { id: string; nome: string }[];
+  showAgentName?: boolean;
+  onReply?: () => void;
+  onQuotedClick?: (messageId: string | null | undefined) => void;
+  highlighted?: boolean;
+  contactName: string;
+  contactAvatarUrl?: string | null;
+  setMessageRef?: (node: HTMLDivElement | null) => void;
+}) {
+  const qc = useQueryClient();
+  const user = useSession((state) => state.user);
+  const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
+  const [mediaError, setMediaError] = React.useState(false);
+  const mediaState = m.media_data?.state ?? null;
+  const mediaReady = !!m.media_data && (!mediaState || mediaState === "ready");
+  React.useEffect(() => {
+    if (!m.media_data || !mediaReady || m.type === "document") return;
+    let alive = true;
+    setMediaError(false);
+    void messageApi
+      .downloadMedia(m.conversation_id, m.id, true)
+      .then((blob) => {
+        if (!alive) return;
+        setMediaUrl(URL.createObjectURL(blob));
+      })
+      .catch(() => setMediaError(true));
+    return () => {
+      alive = false;
+      setMediaUrl((url) => {
+        if (url) URL.revokeObjectURL(url);
+        return null;
+      });
+    };
+  }, [m.conversation_id, m.id, m.media_data, m.type, mediaReady]);
+
+  const react = async (emoji: string | null) => {
+    await messageApi.react(m.conversation_id, m.id, emoji);
+    qc.invalidateQueries({ queryKey: ["trixus", "messages", m.conversation_id] });
+  };
+
+  const download = async () => {
+    const blob = await messageApi.downloadMedia(m.conversation_id, m.id);
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = m.media_data?.file_name ?? "media";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (m.type === "system") {
     const ts = new Date(m.created_at).getTime();
     const isClosing = /encerra/i.test(m.content);
     const isLead = /novo lead/i.test(m.content);
     const tone = isClosing
-      ? { line: "bg-destructive/40", pill: "border-destructive/40 bg-destructive/10 text-destructive" }
+      ? {
+          line: "bg-destructive/40",
+          pill: "border-destructive/40 bg-destructive/10 text-destructive",
+        }
       : isLead
-      ? { line: "bg-primary/40", pill: "border-primary/40 bg-primary/10 text-primary" }
-      : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
+        ? { line: "bg-primary/40", pill: "border-primary/40 bg-primary/10 text-primary" }
+        : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
     const withLines = isClosing || isLead;
     const label = isLead ? "NOVO LEAD" : m.content.toUpperCase();
     return (
       <div className="flex items-center gap-3">
         <span className={`h-0.5 flex-1 ${withLines ? tone.line : "opacity-0"}`} />
-        <span className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${tone.pill}`}>
+        <span
+          className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${tone.pill}`}
+        >
           {label}
-          <span className="ml-2 opacity-80">
-            — {fmtLogStamp(ts)}
-          </span>
+          <span className="ml-2 opacity-80">— {fmtLogStamp(ts)}</span>
         </span>
         <span className={`h-0.5 flex-1 ${withLines ? tone.line : "opacity-0"}`} />
       </div>
     );
   }
   const mine = m.sender === "agent";
-  const authorName = showAgentName && mine && m.author_id ? agents.find((a) => a.id === m.author_id)?.nome ?? null : null;
+  const authorName =
+    showAgentName && mine && m.author_id
+      ? (agents.find((a) => a.id === m.author_id)?.nome ?? null)
+      : null;
+  const avatarName = mine ? (authorName ?? "Atendente") : (m.participant?.name ?? contactName);
   return (
-    <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+    <div
+      ref={setMessageRef}
+      data-message-id={m.id}
+      className={`group flex items-end gap-1.5 scroll-mt-24 transition ${
+        mine ? "justify-end" : "justify-start"
+      } ${highlighted ? "rounded-xl ring-2 ring-primary/60 ring-offset-2 ring-offset-background" : ""}`}
+    >
+      {!mine && onReply && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Responder"
+          className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+          onClick={onReply}
+        >
+          <Reply className="h-3.5 w-3.5" />
+        </Button>
+      )}
+      {!mine && (
+        <Avatar
+          name={avatarName}
+          size={30}
+          src={contactAvatarUrl}
+          className="mb-5 ring-1 ring-border/70"
+        />
+      )}
       <div
         className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-card ${
-          mine ? "rounded-br-sm bg-gradient-brand text-white" : "rounded-bl-sm border border-border bg-surface-1"
+          mine
+            ? "rounded-br-sm bg-gradient-brand text-white"
+            : "rounded-bl-sm border border-border bg-surface-1"
         }`}
       >
-        {authorName && (
-          <p className={`mb-1 text-[11px] font-semibold ${mine ? "text-white/90" : "text-foreground"}`}>
-            {authorName}
-          </p>
+        {m.participant?.name && !mine && (
+          <p className="mb-1 text-[11px] font-semibold text-primary">{m.participant.name}</p>
+        )}
+        {m.quoted && (
+          <QuotedPreview
+            conversationId={m.conversation_id}
+            quoted={m.quoted}
+            mine={mine}
+            onClick={() => onQuotedClick?.(m.quoted?.message_id)}
+          />
         )}
         {m.type === "image" && m.media_data && (
-          <img src={m.media_data} alt="imagem" className="mb-1 max-h-72 rounded-lg object-cover" />
+          <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
+            {mediaUrl ? (
+              <img
+                src={mediaUrl}
+                alt={m.media_data.file_name ?? "imagem"}
+                className="max-h-72 max-w-full object-contain"
+              />
+            ) : mediaError || mediaState === "failed" ? (
+              <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>
+            ) : mediaReady ? (
+              <div className="px-3 py-2 text-xs opacity-80">Carregando imagem...</div>
+            ) : (
+              <div className="px-3 py-2 text-xs opacity-80">Imagem em processamento...</div>
+            )}
+          </div>
         )}
-        {m.type === "audio" && m.media_data && (
-          <AudioPlayer src={m.media_data} durationMs={m.duration_ms} mine={mine} />
+        {m.type === "video" && m.media_data && (
+          <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
+            {mediaUrl ? (
+              <video src={mediaUrl} controls className="max-h-72 max-w-full" />
+            ) : mediaError || mediaState === "failed" ? (
+              <div className="px-3 py-2 text-xs opacity-80">Video indisponivel.</div>
+            ) : mediaReady ? (
+              <div className="px-3 py-2 text-xs opacity-80">Carregando video...</div>
+            ) : (
+              <div className="px-3 py-2 text-xs opacity-80">Video em processamento...</div>
+            )}
+          </div>
+        )}
+        {(m.type === "audio" || m.type === "voice") &&
+          m.media_data &&
+          (mediaUrl ? (
+            <AudioPlayer src={mediaUrl} durationMs={m.duration_ms} mine={mine} />
+          ) : (
+            <div
+              className={`mb-2 rounded-lg px-3 py-2 text-xs ${
+                mine ? "bg-white/15" : "bg-surface-2"
+              }`}
+            >
+              {mediaError || mediaState === "failed"
+                ? "Audio indisponivel."
+                : mediaReady
+                  ? "Carregando audio..."
+                  : "Audio em processamento..."}
+            </div>
+          ))}
+        {m.type === "document" && m.media_data && (
+          <button
+            type="button"
+            onClick={mediaReady ? download : undefined}
+            disabled={!mediaReady}
+            className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
+              mine ? "border-white/30 bg-white/10" : "border-border/60 bg-surface-2"
+            } ${mediaReady ? "" : "opacity-70"}`}
+          >
+            <Download className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">
+              {mediaState === "failed"
+                ? "Documento indisponivel"
+                : mediaReady
+                  ? (m.media_data.file_name ?? "Documento")
+                  : "Documento em processamento..."}
+            </span>
+          </button>
         )}
         {m.content && m.content !== "[áudio]" && m.content !== "[imagem]" && (
-          <span className="break-words">{m.content.replace(/\s+/g, " ").trim()}</span>
+          <MessageText content={m.content} />
         )}
-        <p className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}>
+        <p
+          className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
+        >
           {fmtHM(new Date(m.created_at).getTime())}
+          {mine && <span className="ml-2">{messageStatusLabel(m.status)}</span>}
         </p>
+        {m.reactions && m.reactions.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {m.reactions.map((reaction) => (
+              <span
+                key={reaction.id}
+                className="rounded-full bg-black/10 px-1.5 py-0.5 text-[11px]"
+              >
+                {reaction.emoji}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className={`mt-1 flex gap-1 ${mine ? "justify-end" : "justify-start"}`}>
+          {["👍", "❤️", "😂"].map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => react(emoji)}
+              className="rounded-full px-1 text-[12px] opacity-70 hover:bg-black/10 hover:opacity-100"
+            >
+              {emoji}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => react(null)}
+            className="rounded-full px-1 text-[12px] opacity-70 hover:bg-black/10 hover:opacity-100"
+            aria-label="Remover reacao"
+          >
+            <SmilePlus className="h-3 w-3" />
+          </button>
+        </div>
       </div>
+      {mine && (
+        <Avatar
+          name={avatarName}
+          src={user?.avatarUrl}
+          size={30}
+          className="mb-5 ring-1 ring-border/70"
+        />
+      )}
+      {mine && onReply && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Responder"
+          className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+          onClick={onReply}
+        >
+          <Reply className="h-3.5 w-3.5" />
+        </Button>
+      )}
     </div>
   );
 }
 
-function AudioPlayer({ src, durationMs, mine }: { src: string; durationMs: number | null; mine: boolean }) {
+function MessageText({ content }: { content: string }) {
+  const text = content.trim();
+  const match =
+    text.match(/^\*\*(.+?):\*\*(?:\r?\n){1,2}([\s\S]*)$/) ??
+    text.match(/^\*(.+?):\*(?:\r?\n){1,2}([\s\S]*)$/);
+  if (!match)
+    return <span className="whitespace-pre-wrap break-words">{renderWhatsAppText(text)}</span>;
+  return (
+    <span className="whitespace-pre-wrap break-words">
+      <strong>{match[1]}:</strong>
+      {"\n\n"}
+      {renderWhatsAppText(match[2])}
+    </span>
+  );
+}
+
+function renderWhatsAppText(text: string) {
+  const parts = text.split(
+    /(\*\*[^*\n][\s\S]*?[^*\n]\*\*|\*[^*\n][^*\n]*?[^*\n]\*|_[^_\n][^_\n]*?[^_\n]_|~[^~\n][^~\n]*?[^~\n]~|```[\s\S]*?```|`[^`\n]+`)/g,
+  );
+  return parts.map((part, index) => {
+    if (!part) return null;
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return <strong key={index}>{part.slice(1, -1)}</strong>;
+    }
+    if (part.startsWith("_") && part.endsWith("_")) {
+      return <em key={index}>{part.slice(1, -1)}</em>;
+    }
+    if (part.startsWith("~") && part.endsWith("~")) {
+      return <del key={index}>{part.slice(1, -1)}</del>;
+    }
+    if (part.startsWith("```") && part.endsWith("```")) {
+      return <code key={index}>{part.slice(3, -3)}</code>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={index}>{part.slice(1, -1)}</code>;
+    }
+    return <React.Fragment key={index}>{part}</React.Fragment>;
+  });
+}
+
+function QuotedPreview({
+  conversationId,
+  quoted,
+  mine,
+  onClick,
+}: {
+  conversationId: string;
+  quoted: NonNullable<Message["quoted"]>;
+  mine: boolean;
+  onClick?: () => void;
+}) {
+  const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
+  const canPreview =
+    !!quoted.message_id &&
+    quoted.media_data?.state !== "failed" &&
+    (quoted.type === "image" || quoted.type === "video");
+
+  React.useEffect(() => {
+    if (!canPreview || !quoted.message_id) return;
+    let active = true;
+    let objectUrl: string | null = null;
+    void messageApi
+      .downloadMedia(conversationId, quoted.message_id, true)
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setMediaUrl(objectUrl);
+      })
+      .catch(() => {
+        if (active) setMediaUrl(null);
+      });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [canPreview, conversationId, quoted.message_id]);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`mb-2 flex w-full items-center gap-2 border-l-2 px-2 py-1 text-left text-xs ${
+        mine ? "border-white/60 bg-white/10 text-white/85" : "border-primary/60 bg-card"
+      } ${quoted.message_id ? "cursor-pointer transition hover:opacity-85" : "cursor-default"}`}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">{messageTypeLabel(quoted.type)}</p>
+        <p className="line-clamp-2 break-words opacity-80">
+          {quoted.content_preview ?? "Mensagem citada"}
+        </p>
+      </div>
+      {canPreview && (
+        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md bg-black/10">
+          {mediaUrl ? (
+            quoted.type === "video" ? (
+              <video src={mediaUrl} className="h-full w-full object-cover" muted />
+            ) : (
+              <img src={mediaUrl} alt="" className="h-full w-full object-cover" />
+            )
+          ) : (
+            <div className="h-full w-full animate-pulse bg-black/10" />
+          )}
+        </div>
+      )}
+    </button>
+  );
+}
+
+function messageStatusLabel(status: Message["status"]) {
+  const labels: Record<Message["status"], string> = {
+    pending: "pendente",
+    created: "criada",
+    queued: "fila",
+    sending: "enviando",
+    sent: "enviada",
+    failed: "falhou",
+    delivered: "entregue",
+    read: "lida",
+  };
+  return labels[status];
+}
+
+function messageTypeLabel(type: Message["type"] | null) {
+  const labels: Record<Message["type"], string> = {
+    text: "Texto",
+    image: "Imagem",
+    audio: "Audio",
+    voice: "Voz",
+    video: "Video",
+    document: "Documento",
+    system: "Sistema",
+  };
+  return type ? labels[type] : "Mensagem";
+}
+
+function AudioPlayer({
+  src,
+  durationMs,
+  mine,
+}: {
+  src: string;
+  durationMs: number | null;
+  mine: boolean;
+}) {
   const audioRef = React.useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = React.useState(false);
   const toggle = () => {
     const a = audioRef.current;
     if (!a) return;
-    if (a.paused) { a.play(); setPlaying(true); }
-    else { a.pause(); setPlaying(false); }
+    if (a.paused) {
+      a.play();
+      setPlaying(true);
+    } else {
+      a.pause();
+      setPlaying(false);
+    }
   };
   const secs = durationMs ? Math.round(durationMs / 1000) : null;
   return (
-    <div className={`flex min-w-[180px] items-center gap-2 rounded-lg px-2 py-1 ${mine ? "bg-white/15" : "bg-surface-2"}`}>
-      <button type="button" onClick={toggle} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/20">
+    <div
+      className={`flex min-w-[180px] items-center gap-2 rounded-lg px-2 py-1 ${mine ? "bg-white/15" : "bg-surface-2"}`}
+    >
+      <button
+        type="button"
+        onClick={toggle}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/20"
+      >
         {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
       </button>
       <div className="flex-1 text-[11px] opacity-80">Áudio {secs !== null ? `· ${secs}s` : ""}</div>
@@ -502,8 +962,17 @@ function AudioPlayer({ src, durationMs, mine }: { src: string; durationMs: numbe
 /* -------- Composer with quick replies, audio, paste-image -------- */
 type DisabledReason = "closed" | "standby" | "lead" | "not-mine" | null;
 function Composer({
-  conversationId, authorId, disabled, disabledReason, onStart, onSent,
-  allowQuickReplies = true, allowAudio = true,
+  conversationId,
+  authorId,
+  disabled,
+  disabledReason,
+  onStart,
+  onSent,
+  replyTo,
+  onCancelReply,
+  allowQuickReplies = true,
+  allowAudio = true,
+  mentionOptions = [],
 }: {
   conversationId: string;
   authorId: string | null;
@@ -511,20 +980,33 @@ function Composer({
   disabledReason?: DisabledReason;
   onStart?: () => void;
   onSent: () => void;
+  replyTo?: Message | null;
+  onCancelReply?: () => void;
   allowQuickReplies?: boolean;
   allowAudio?: boolean;
+  mentionOptions?: MentionOption[];
 }) {
   const qc = useQueryClient();
   const [text, setText] = React.useState("");
 
-  const [pendingImage, setPendingImage] = React.useState<string | null>(null);
+  const [pendingFile, setPendingFile] = React.useState<{
+    file: File;
+    previewUrl: string | null;
+    mediaType: "image" | "video" | "document";
+  } | null>(null);
   const [showQR, setShowQR] = React.useState(false);
   const [qrFilter, setQrFilter] = React.useState("");
+  const [mentionFilter, setMentionFilter] = React.useState<string | null>(null);
   const [pendingCloseAfter, setPendingCloseAfter] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const typingActiveRef = React.useRef(false);
+  const typingStopTimerRef = React.useRef<number | null>(null);
 
-  const { data: quickReplies = [] } = useQuery({ queryKey: ["quick_replies", "mine"], queryFn: QUICK_REPLIES.mine });
+  const { data: quickReplies = [] } = useQuery({
+    queryKey: ["trixus", "quick-replies", "composer"],
+    queryFn: () => quickReplyApi.list(),
+  });
 
   // Show quick reply list when text starts with '/'
   React.useEffect(() => {
@@ -538,6 +1020,18 @@ function Composer({
     }
   }, [text, allowQuickReplies]);
 
+  React.useEffect(() => {
+    if (!mentionOptions.length) {
+      setMentionFilter(null);
+      return;
+    }
+    const value = text;
+    const cursor = textareaRef.current?.selectionStart ?? value.length;
+    const beforeCursor = value.slice(0, cursor);
+    const match = beforeCursor.match(/(?:^|\s)@([\p{L}\p{N}_+-]*)$/u);
+    setMentionFilter(match ? match[1].toLowerCase() : null);
+  }, [mentionOptions.length, text]);
+
   // Auto-resize textarea up to 5 lines
   React.useEffect(() => {
     const el = textareaRef.current;
@@ -549,8 +1043,8 @@ function Composer({
 
   const filteredQR = React.useMemo(() => {
     if (!qrFilter) return quickReplies;
-    return quickReplies.filter((q) =>
-      q.atalho.toLowerCase().includes(qrFilter) || q.texto.toLowerCase().includes(qrFilter),
+    return quickReplies.filter(
+      (q) => q.atalho.toLowerCase().includes(qrFilter) || q.texto.toLowerCase().includes(qrFilter),
     );
   }, [quickReplies, qrFilter]);
 
@@ -561,10 +1055,43 @@ function Composer({
     setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
+  const filteredMentions = React.useMemo(() => {
+    if (mentionFilter === null) return [];
+    return mentionOptions
+      .filter((item) => {
+        const haystack = `${item.label} ${item.phone}`.toLowerCase();
+        return haystack.includes(mentionFilter);
+      })
+      .slice(0, 6);
+  }, [mentionFilter, mentionOptions]);
+
+  const applyMention = (mention: MentionOption) => {
+    const el = textareaRef.current;
+    const cursor = el?.selectionStart ?? text.length;
+    const beforeCursor = text.slice(0, cursor);
+    const afterCursor = text.slice(cursor);
+    const replaced = beforeCursor.replace(/(?:^|\s)@([\p{L}\p{N}_+-]*)$/u, (token) => {
+      const prefix = token.startsWith("@") ? "" : " ";
+      return `${prefix}@${mentionToken(mention.label, mention.phone)} `;
+    });
+    setText(`${replaced}${afterCursor}`);
+    setMentionFilter(null);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  };
+
+  const mentionToken = (label: string, fallbackPhone: string) => {
+    const normalized = label
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    return normalized || fallbackPhone;
+  };
 
   const handleSend = async () => {
     if (disabled || !authorId) return;
-    let t = text.replace(/\s+/g, " ").trim();
+    emitTypingStop();
+    let t = text.trim();
     let closeAfter = pendingCloseAfter;
     // Expand quick reply shortcut like "/bd" → full text
     if (allowQuickReplies && t.startsWith("/")) {
@@ -577,33 +1104,72 @@ function Composer({
         closeAfter = closeAfter || !!match.close_on_send;
       }
     }
-    if (!t && !pendingImage) {
-      toast.error("Escreva uma mensagem ou anexe uma imagem.");
+    if (pendingFile) {
+      try {
+        await messageApi.sendMedia(conversationId, pendingFile.file, {
+          fileName: pendingFile.file.name,
+          mimeType: pendingFile.file.type || "application/octet-stream",
+          mediaType: pendingFile.mediaType,
+          caption: t || null,
+          quotedMessageId: replyTo?.id ?? null,
+        });
+        if (pendingFile.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
+        setPendingFile(null);
+        setText("");
+        void messageApi
+          .markRead(conversationId)
+          .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
+        onSent();
+        return;
+      } catch (e) {
+        toast.error((e as Error).message);
+        return;
+      }
+    }
+    if (!t) {
+      toast.error("Escreva uma mensagem.");
       return;
     }
     try {
-      if (pendingImage) {
-        await CONV.sendAgentMedia(conversationId, authorId, "image", pendingImage, { caption: t || undefined });
-        setPendingImage(null);
-        setText("");
-      } else {
-        await CONV.sendAgentMessage(conversationId, t, authorId);
-        setText("");
-      }
+      await messageApi.sendText(conversationId, t, crypto.randomUUID(), replyTo?.id ?? null);
+      setText("");
       setShowQR(false);
       setQrFilter("");
       setPendingCloseAfter(false);
-      void CONV.markRead(conversationId).then(() => qc.invalidateQueries({ queryKey: ["mvp", "unread"] }));
+      void messageApi
+        .markRead(conversationId)
+        .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
       if (closeAfter) {
         try {
-          await CONV.close(conversationId, { authorId, text: "CONVERSA ENCERRADA" });
+          await conversationApi.updateStatus(conversationId, "fechada");
           toast.success("Conversa encerrada");
-        } catch (e) { toast.error((e as Error).message); }
+        } catch (e) {
+          toast.error((e as Error).message);
+        }
       }
       onSent();
-    } catch (e) { toast.error((e as Error).message); }
-
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
+
+  const emitTypingStart = () => {
+    if (disabled || typingActiveRef.current) return;
+    typingActiveRef.current = true;
+    startTyping(conversationId);
+  };
+
+  const emitTypingStop = React.useCallback(() => {
+    if (typingStopTimerRef.current) {
+      window.clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+    if (!typingActiveRef.current) return;
+    typingActiveRef.current = false;
+    stopTyping(conversationId);
+  }, [conversationId]);
+
+  React.useEffect(() => emitTypingStop, [emitTypingStop]);
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = Array.from(e.clipboardData?.items ?? []);
@@ -611,48 +1177,65 @@ function Composer({
     if (imageItem) {
       e.preventDefault();
       const file = imageItem.getAsFile();
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => setPendingImage(String(reader.result));
-      reader.readAsDataURL(file);
+      if (file) {
+        setPendingFile({ file, previewUrl: URL.createObjectURL(file), mediaType: "image" });
+      }
     }
   };
 
   const onFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) { toast.error("Envie uma imagem."); return; }
-    const reader = new FileReader();
-    reader.onload = () => setPendingImage(String(reader.result));
-    reader.readAsDataURL(file);
+    const mediaType = file.type.startsWith("image/")
+      ? "image"
+      : file.type.startsWith("video/")
+        ? "video"
+        : "document";
+    setPendingFile({
+      file,
+      previewUrl: mediaType === "image" || mediaType === "video" ? URL.createObjectURL(file) : null,
+      mediaType,
+    });
     e.target.value = "";
   };
 
   /* --- audio recording --- */
   const [recording, setRecording] = React.useState(false);
-  const [pendingAudio, setPendingAudio] = React.useState<{ url: string; duration: number } | null>(null);
-  const recRef = React.useRef<{ rec: MediaRecorder; chunks: Blob[]; startedAt: number } | null>(null);
+  const [pendingAudio, setPendingAudio] = React.useState<{
+    blob: Blob;
+    url: string;
+    duration: number;
+    mimeType: string;
+  } | null>(null);
+  const recRef = React.useRef<{ rec: MediaRecorder; chunks: Blob[]; startedAt: number } | null>(
+    null,
+  );
 
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const rec = new MediaRecorder(stream);
       const chunks: Blob[] = [];
-      rec.ondataavailable = (ev) => { if (ev.data.size > 0) chunks.push(ev.data); };
+      rec.ondataavailable = (ev) => {
+        if (ev.data.size > 0) chunks.push(ev.data);
+      };
       rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dur = Date.now() - (recRef.current?.startedAt ?? Date.now());
-          setPendingAudio({ url: String(reader.result), duration: dur });
-        };
-        reader.readAsDataURL(blob);
+        const dur = Date.now() - (recRef.current?.startedAt ?? Date.now());
+        setPendingAudio({
+          blob,
+          url: URL.createObjectURL(blob),
+          duration: dur,
+          mimeType: blob.type || "audio/webm",
+        });
       };
       rec.start();
       recRef.current = { rec, chunks, startedAt: Date.now() };
       setRecording(true);
-    } catch { toast.error("Não foi possível acessar o microfone."); }
+    } catch {
+      toast.error("Não foi possível acessar o microfone.");
+    }
   };
 
   const stopRecording = () => {
@@ -663,26 +1246,56 @@ function Composer({
   const sendAudio = async () => {
     if (!pendingAudio || !authorId) return;
     try {
-      await CONV.sendAgentMedia(conversationId, authorId, "audio", pendingAudio.url, { durationMs: pendingAudio.duration });
+      await messageApi.sendMedia(conversationId, pendingAudio.blob, {
+        fileName: `audio-${Date.now()}.webm`,
+        mimeType: pendingAudio.mimeType,
+        mediaType: "voice",
+        durationMs: pendingAudio.duration,
+        quotedMessageId: replyTo?.id ?? null,
+      });
+      URL.revokeObjectURL(pendingAudio.url);
       setPendingAudio(null);
-      void CONV.markRead(conversationId).then(() => qc.invalidateQueries({ queryKey: ["mvp", "unread"] }));
+      void messageApi
+        .markRead(conversationId)
+        .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
       onSent();
-    } catch (e) { toast.error((e as Error).message); }
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
-
-
-
 
   return (
     <div className="border-t border-border bg-surface-1 p-3">
       <div className="mx-auto max-w-3xl">
-
-
-        {pendingImage && (
+        {pendingFile && (
           <div className="mb-2 flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
-            <img src={pendingImage} alt="preview" className="h-16 w-16 rounded object-cover" />
-            <p className="flex-1 text-xs text-muted-foreground">Imagem anexada. Envie para incluir na conversa.</p>
-            <Button variant="ghost" size="icon" aria-label="Remover" onClick={() => setPendingImage(null)}><X className="h-4 w-4" /></Button>
+            {pendingFile.previewUrl ? (
+              pendingFile.mediaType === "video" ? (
+                <video src={pendingFile.previewUrl} className="h-16 w-16 rounded object-cover" />
+              ) : (
+                <img
+                  src={pendingFile.previewUrl}
+                  alt="preview"
+                  className="h-16 w-16 rounded object-cover"
+                />
+              )
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded bg-surface-2">
+                <Paperclip className="h-5 w-5" />
+              </div>
+            )}
+            <p className="flex-1 text-xs text-muted-foreground">{pendingFile.file.name}</p>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Remover"
+              onClick={() => {
+                if (pendingFile.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
+                setPendingFile(null);
+              }}
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
         )}
 
@@ -690,8 +1303,21 @@ function Composer({
           <div className="mb-2 flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
             <audio src={pendingAudio.url} controls className="h-8" />
             <p className="flex-1 text-xs text-muted-foreground">Áudio pronto. Envie ou descarte.</p>
-            <Button variant="ghost" size="icon" aria-label="Descartar" onClick={() => setPendingAudio(null)}><Trash2 className="h-4 w-4" /></Button>
-            <Button variant="primary" size="sm" onClick={sendAudio}><Send className="h-3.5 w-3.5" /> Enviar áudio</Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="trash-action"
+              aria-label="Descartar"
+              onClick={() => {
+                URL.revokeObjectURL(pendingAudio.url);
+                setPendingAudio(null);
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="primary" size="sm" onClick={sendAudio}>
+              <Send className="h-3.5 w-3.5" /> Enviar áudio
+            </Button>
           </div>
         )}
 
@@ -704,10 +1330,53 @@ function Composer({
                 onClick={() => applyQR(qr)}
                 className="flex w-full items-start gap-3 border-b border-border/60 px-3 py-2 text-left hover:bg-surface-1"
               >
-                <span className="font-mono text-xs text-primary">/{qr.atalho.replace(/^\//, "")}</span>
+                <span className="font-mono text-xs text-primary">
+                  /{qr.atalho.replace(/^\//, "")}
+                </span>
                 <span className="flex-1 text-xs text-foreground/80 line-clamp-1">{qr.texto}</span>
               </button>
             ))}
+          </div>
+        )}
+
+        {filteredMentions.length > 0 && (
+          <div className="mb-2 max-h-48 overflow-y-auto rounded-lg border border-border bg-card shadow-card">
+            {filteredMentions.map((mention) => (
+              <button
+                key={mention.id}
+                type="button"
+                onClick={() => applyMention(mention)}
+                className="flex w-full items-center gap-3 border-b border-border/60 px-3 py-2 text-left hover:bg-surface-1"
+              >
+                <Avatar name={mention.label} size={28} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-semibold">{mention.label}</span>
+                  <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                    @{mention.phone}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {replyTo && (
+          <div className="mb-2 flex items-start gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
+            <Reply className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold">Respondendo {messageTypeLabel(replyTo.type)}</p>
+              <p className="line-clamp-2 text-xs text-muted-foreground">
+                {replyTo.content || replyTo.quoted?.content_preview || "Mensagem citada"}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Cancelar resposta"
+              onClick={onCancelReply}
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
         )}
 
@@ -715,26 +1384,48 @@ function Composer({
           <div className="flex items-center gap-0.5">
             {allowQuickReplies && (
               <Button
-                variant="ghost" size="icon" aria-label="Mensagens rápidas"
+                variant="ghost"
+                size="icon"
+                aria-label="Mensagens rápidas"
                 onClick={() => setShowQR((v) => !v)}
                 disabled={disabled}
-              ><Zap className="h-4 w-4" /></Button>
+              >
+                <Zap className="h-4 w-4" />
+              </Button>
             )}
             <Button
-              variant="ghost" size="icon" aria-label="Anexar imagem"
+              variant="ghost"
+              size="icon"
+              aria-label="Anexar imagem"
               onClick={() => fileRef.current?.click()}
               disabled={disabled}
-            ><Paperclip className="h-4 w-4" /></Button>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFilePick} />
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+              className="hidden"
+              onChange={onFilePick}
+            />
           </div>
           <textarea
             ref={textareaRef}
             rows={1}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              emitTypingStart();
+              if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
+              typingStopTimerRef.current = window.setTimeout(emitTypingStop, 2500);
+            }}
             onPaste={handlePaste}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
               if (e.key === "Escape") setShowQR(false);
             }}
             disabled={disabled}
@@ -742,34 +1433,46 @@ function Composer({
               disabledReason === "closed"
                 ? "Conversa encerrada."
                 : disabledReason === "lead"
-                ? "Clique em Iniciar acima para responder este lead."
-                : disabledReason === "standby"
-                ? "Clique em Retomar acima para voltar a atender."
-                : disabledReason === "not-mine"
-                ? "Conversa atribuída a outro atendente."
-                : "Escreva uma resposta…  (digite / para atalhos)"
+                  ? "Clique em Iniciar acima para responder este lead."
+                  : disabledReason === "standby"
+                    ? "Clique em Retomar acima para voltar a atender."
+                    : disabledReason === "not-mine"
+                      ? "Conversa atribuída a outro atendente."
+                      : "Escreva uma resposta…  (digite / para atalhos)"
             }
             className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-5 outline-none placeholder:text-muted-foreground disabled:opacity-50"
             style={{ minHeight: 32, maxHeight: 5 * 20 + 12 }}
           />
 
-          {allowAudio && (
-            !recording ? (
-              <Button variant="ghost" size="icon" aria-label="Gravar áudio" onClick={startRecording} disabled={disabled || !!pendingAudio}>
+          {allowAudio &&
+            (!recording ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Gravar áudio"
+                onClick={startRecording}
+                disabled={disabled || !!pendingAudio}
+              >
                 <Mic className="h-4 w-4" />
               </Button>
             ) : (
-              <Button variant="destructive" size="icon" aria-label="Parar gravação" onClick={stopRecording}>
+              <Button
+                variant="destructive"
+                size="icon"
+                aria-label="Parar gravação"
+                onClick={stopRecording}
+              >
                 <Square className="h-4 w-4" />
               </Button>
-            )
-          )}
+            ))}
           <Button variant="primary" size="sm" onClick={handleSend} disabled={disabled}>
             <Send className="h-3.5 w-3.5" /> Enviar
           </Button>
         </div>
         {recording && (
-          <p className="mt-2 text-center text-[11px] text-destructive">● Gravando… clique no quadrado para parar.</p>
+          <p className="mt-2 text-center text-[11px] text-destructive">
+            ● Gravando… clique no quadrado para parar.
+          </p>
         )}
       </div>
     </div>
@@ -782,60 +1485,52 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
   const qc = useQueryClient();
   const tagsModal = useDisclosure();
 
-  const renameModal = useDisclosure();
+  const editModal = useDisclosure();
 
   const { data: contact } = useQuery({
-    queryKey: ["mvp", "contact", contactId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("contacts")
-        .select("id, nome, telefone, avatar_url, customer_id, email, departamento, nivel_gerencia, instancia")
-        .eq("id", contactId)
-        .single();
-      if (error) throw error;
-      return data as {
-        id: string; nome: string; telefone: string; avatar_url: string | null; customer_id: string | null;
-        email: string | null; departamento: string | null; nivel_gerencia: string | null; instancia: string | null;
-      };
-    },
+    queryKey: ["trixus", "contacts", contactId],
+    queryFn: () => crmApi.getContact(contactId),
+  });
+  const { data: customersPage } = useQuery({
+    queryKey: ["trixus", "customers", "contact-panel"],
+    queryFn: () => crmApi.listCustomers({ pageSize: 100 }).then((page) => page.items),
+    enabled: editModal.open,
+  });
+  const { data: contactOptions } = useQuery({
+    queryKey: ["trixus", "contacts", "options", "contact-panel"],
+    queryFn: crmApi.contactOptions,
+    enabled: editModal.open,
   });
   const customerId = contact?.customer_id ?? null;
-
-  const { data: customer } = useQuery({
-    queryKey: ["mvp", "customer", customerId],
-    queryFn: async () => {
-      if (!customerId) return null;
-      const { data, error } = await supabase.from("customers").select("*").eq("id", customerId).maybeSingle();
-      if (error) throw error;
-      return data as Customer | null;
-    },
-    enabled: !!customerId,
-  });
-
-
-  const { data: contactTags = [] } = useQuery({
-    queryKey: ["mvp", "contact_tags", contactId],
-    queryFn: () => CONTACTS.tags(contactId),
-  });
+  const customer = contact?.customer ?? null;
+  const contactTags = contact?.tags ?? [];
 
   const { data: protocolos = [] } = useQuery({
-    queryKey: ["mvp", "contact_protocols", contactId],
+    queryKey: ["trixus", "contact_protocols", contactId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select("id, protocolo, status, created_at")
-        .eq("contact_id", contactId)
-        .not("protocolo", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      return (data ?? []) as { id: string; protocolo: string; status: ConvStatus; created_at: string }[];
+      const page = await conversationApi.list({
+        contactId,
+        pageSize: 50,
+        sort: "createdAt",
+        direction: "desc",
+      });
+      return page.items
+        .filter((conversation) => conversation.protocolo)
+        .map((conversation) => ({
+          id: conversation.id,
+          protocolo: conversation.protocolo!,
+          status: conversation.status,
+          created_at: conversation.created_at,
+        }));
     },
   });
 
   const [protoFilter, setProtoFilter] = React.useState("");
   const filteredProtocolos = React.useMemo(
-    () => protocolos.filter((p) => p.protocolo.toLowerCase().includes(protoFilter.trim().toLowerCase())),
+    () =>
+      protocolos.filter((p) =>
+        p.protocolo.toLowerCase().includes(protoFilter.trim().toLowerCase()),
+      ),
     [protocolos, protoFilter],
   );
 
@@ -843,10 +1538,17 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
     <aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-surface-1 lg:w-[400px]">
       <div className="border-b border-border p-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Contato</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Contato
+          </p>
           <div className="flex items-center gap-1">
             {perms.pode_editar_contato && (
-              <Button variant="ghost" size="sm" onClick={renameModal.show} aria-label="Editar contato">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={editModal.show}
+                aria-label="Editar contato"
+              >
                 <Pencil className="h-3 w-3" /> Editar
               </Button>
             )}
@@ -858,7 +1560,11 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
 
         <p className="mt-2 truncate text-sm font-semibold">{contact?.nome ?? "—"}</p>
         <p className="truncate text-xs text-muted-foreground">
-          {perms.visualiza_numero ? (contact?.telefone ?? "—") : "•••"}
+          {perms.visualiza_numero
+            ? contact?.telefone
+              ? maskBrazilPhone(contact.telefone)
+              : "—"
+            : "•••"}
           {contact?.email ? ` - ${contact.email}` : ""}
         </p>
 
@@ -871,36 +1577,47 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
             <dt className="uppercase tracking-wide text-muted-foreground">Cliente</dt>
             <dd className="flex min-w-0 items-center justify-end gap-1.5 truncate text-right text-foreground/90">
               {customer?.cor && (
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: customer.cor }} />
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: customer.cor }}
+                />
               )}
               <span className="truncate">{customer?.nome ?? "—"}</span>
             </dd>
           </div>
           <div className="flex items-start justify-between gap-2">
-            <dt className="uppercase tracking-wide text-muted-foreground">Departamento</dt>
-            <dd className="truncate text-right text-foreground/90">{contact?.departamento ?? "—"}</dd>
+            <dt className="uppercase tracking-wide text-muted-foreground">
+              Departamento do Contato
+            </dt>
+            <dd className="truncate text-right text-foreground/90">
+              {contact?.departamento ?? "—"}
+            </dd>
           </div>
           <div className="flex items-start justify-between gap-2">
-            <dt className="uppercase tracking-wide text-muted-foreground">Perfil na Empresa</dt>
-            <dd className="truncate text-right text-foreground/90">{contact?.nivel_gerencia ?? "—"}</dd>
+            <dt className="uppercase tracking-wide text-muted-foreground">Perfil do Contato</dt>
+            <dd className="truncate text-right text-foreground/90">
+              {contact?.nivel_gerencia ?? "—"}
+            </dd>
           </div>
         </dl>
       </div>
 
-
       <div className="space-y-4 overflow-y-auto p-4">
         <section>
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Etiquetas</p>
-            {perms.pode_editar_etiquetas && (
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Etiquetas
+            </p>
+            {perms.pode_usar_etiquetas && (
               <Button variant="ghost" size="sm" onClick={tagsModal.show}>
-                <TagIcon className="h-3 w-3" /> Gerenciar
+                <TagIcon className="h-3 w-3" /> Etiquetas
               </Button>
             )}
           </div>
           <div className="flex flex-wrap gap-1.5">
             {contactTags.map((t) => (
-              <span key={t.id}
+              <span
+                key={t.id}
                 className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px]"
                 style={{ borderColor: t.cor + "80", color: t.cor, backgroundColor: t.cor + "20" }}
               >
@@ -908,15 +1625,21 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
                 {t.nome}
               </span>
             ))}
-            {contactTags.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma etiqueta.</p>}
+            {contactTags.length === 0 && (
+              <p className="text-xs text-muted-foreground">Nenhuma etiqueta.</p>
+            )}
           </div>
         </section>
 
         <section>
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Protocolos</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Protocolos
+            </p>
             <span className="font-mono text-[10px] text-muted-foreground">
-              {protoFilter ? `${filteredProtocolos.length}/${protocolos.length}` : protocolos.length}
+              {protoFilter
+                ? `${filteredProtocolos.length}/${protocolos.length}`
+                : protocolos.length}
             </span>
           </div>
           {protocolos.length > 0 && (
@@ -943,7 +1666,11 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
                   >
                     <span className="font-mono text-foreground/90">#{p.protocolo}</span>
                     <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {new Date(p.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · {fmtDate(new Date(p.created_at).getTime())}
+                      {new Date(p.created_at).toLocaleTimeString("pt-BR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}{" "}
+                      · {fmtDate(new Date(p.created_at).getTime())}
                     </span>
                   </Link>
                 </li>
@@ -953,318 +1680,135 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
         </section>
       </div>
 
-
-
       <TagsModal
         open={tagsModal.open}
         onClose={tagsModal.hide}
         contactId={contactId}
         current={contactTags}
-        onChanged={() => qc.invalidateQueries({ queryKey: ["mvp", "contact_tags", contactId] })}
+        canManageCatalog={perms.pode_editar_etiquetas}
+        onChanged={() => qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] })}
       />
-      <RenameContactModal
-        open={renameModal.open}
-        onClose={renameModal.hide}
-        contactId={contactId}
-        initialName={contact?.nome ?? ""}
-        initialCustomerId={customerId}
-        initialEmail={contact?.email ?? ""}
-        initialDepartamento={contact?.departamento ?? ""}
-        initialNivel={(contact?.nivel_gerencia as "Colaborador" | "Supervisor" | "Gerente" | "Diretoria" | null) ?? null}
-        onSaved={() => {
-          qc.invalidateQueries({ queryKey: ["mvp", "contact", contactId] });
-          qc.invalidateQueries({ queryKey: ["mvp", "customer", customerId] });
-          qc.invalidateQueries({ queryKey: ["mvp", "conversations"] });
-          renameModal.hide();
-        }}
-      />
-
-
+      {contact && (
+        <ContactFormModal
+          open={editModal.open}
+          onClose={editModal.hide}
+          initial={contact}
+          customers={sortByOptionLabel(customersPage ?? [], (item) => item.nome)}
+          tags={sortByOptionLabel(contactOptions?.tags ?? [], (item) => item.nome)}
+          departments={sortByOptionLabel(contactOptions?.departments ?? [], (item) => item.nome)}
+          profiles={sortByOptionLabel(contactOptions?.profiles ?? [], (item) => item.nome)}
+          instances={sortByOptionLabel(
+            (contactOptions?.instances ?? []).filter((instance) =>
+              isSelectableContactInstanceStatus(instance.status),
+            ),
+            (item) => item.name,
+          )}
+          onCustomerCreated={(customer) => {
+            qc.setQueryData(
+              ["trixus", "customers", "contact-panel"],
+              (current: (typeof customer)[] | undefined) =>
+                sortByOptionLabel([customer, ...(current ?? [])], (item) => item.nome),
+            );
+          }}
+          onDepartmentSaved={() =>
+            qc.invalidateQueries({ queryKey: ["trixus", "contacts", "options", "contact-panel"] })
+          }
+          onProfileSaved={() =>
+            qc.invalidateQueries({ queryKey: ["trixus", "contacts", "options", "contact-panel"] })
+          }
+          onSubmit={async (data) => {
+            await crmApi.updateContact(contactId, contactPayload(data));
+            qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] });
+            qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+            qc.invalidateQueries({ queryKey: ["trixus", "contact_protocols", contactId] });
+            editModal.hide();
+          }}
+        />
+      )}
     </aside>
   );
 }
 
-function RenameContactModal({
-  open, onClose, contactId, initialName, initialCustomerId, initialEmail, initialDepartamento, initialNivel, onSaved,
-}: {
-  open: boolean; onClose: () => void; contactId: string;
-  initialName: string; initialCustomerId: string | null;
-  initialEmail: string; initialDepartamento: string;
-  initialNivel: "Colaborador" | "Supervisor" | "Gerente" | "Diretoria" | null;
-  onSaved: () => void;
-}) {
-  const perms = useChatPerms();
-  const [nome, setNome] = React.useState(initialName);
-  const [customerId, setCustomerId] = React.useState<string | null>(initialCustomerId);
-  const [email, setEmail] = React.useState(initialEmail);
-  const [departamento, setDepartamento] = React.useState(initialDepartamento);
-  const [nivel, setNivel] = React.useState<"" | "Colaborador" | "Supervisor" | "Gerente" | "Diretoria">(initialNivel ?? "");
-  const [busy, setBusy] = React.useState(false);
+function isSelectableContactInstanceStatus(status?: string | null) {
+  return (
+    !status ||
+    status === "CONNECTED" ||
+    status === "DISCONNECTED" ||
+    status === "connected" ||
+    status === "disconnected"
+  );
+}
 
-  const { data: customers = [] } = useQuery({
-    queryKey: ["customers", "list-all"],
-    queryFn: () => CUSTOMERS.list(),
+function TagsModal({
+  open,
+  onClose,
+  contactId,
+  current,
+  canManageCatalog,
+  onChanged,
+}: {
+  open: boolean;
+  onClose: () => void;
+  contactId: string;
+  current: Tag[];
+  canManageCatalog: boolean;
+  onChanged: () => void;
+}) {
+  const qc = useQueryClient();
+  const { data: allTags = [] } = useQuery({
+    queryKey: ["trixus", "tags"],
+    queryFn: crmApi.listTags,
     enabled: open,
   });
+  const [creating, setCreating] = React.useState(false);
+  const [newName, setNewName] = React.useState("");
+  const [newColor, setNewColor] = React.useState("#3B82F6");
 
-  React.useEffect(() => {
-    if (open) {
-      setNome(initialName);
-      setCustomerId(initialCustomerId);
-      setEmail(initialEmail);
-      setDepartamento(initialDepartamento);
-      setNivel(initialNivel ?? "");
-    }
-  }, [open, initialName, initialCustomerId, initialEmail, initialDepartamento, initialNivel]);
+  const currentIds = new Set(current.map((t) => t.id));
 
-  const save = async () => {
-    const n = nome.trim();
-    if (!n) { toast.error("Informe o nome."); return; }
-    const em = email.trim();
-    if (em && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { toast.error("E-mail inválido."); return; }
-    setBusy(true);
+  const toggle = async (t: Tag) => {
     try {
-      const patch: Record<string, unknown> = {};
-      if (n !== initialName) patch.nome = n;
-      if ((em || null) !== (initialEmail || null)) patch.email = em || null;
-      if ((departamento.trim() || null) !== (initialDepartamento || null)) patch.departamento = departamento.trim() || null;
-      if ((nivel || null) !== (initialNivel ?? null)) patch.nivel_gerencia = nivel || null;
-      if (Object.keys(patch).length) {
-        const { error } = await supabase.from("contacts").update(patch as never).eq("id", contactId);
-        if (error) throw error;
-      }
-      if (perms.pode_editar_vinculo_cliente && (customerId ?? null) !== (initialCustomerId ?? null)) {
-        await CONTACTS.setCustomer(contactId, customerId);
-      }
-      toast.success("Contato atualizado");
-      onSaved();
-    } catch (e) { toast.error((e as Error).message); }
-    finally { setBusy(false); }
+      if (currentIds.has(t.id)) await crmApi.removeContactTag(contactId, t.id);
+      else await crmApi.assignContactTag(contactId, t.id);
+      onChanged();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
+  const createTag = async () => {
+    if (!newName.trim()) return toast.error("Informe o nome.");
+    try {
+      const t = await crmApi.createTag({ name: newName.trim(), color: newColor });
+      await crmApi.assignContactTag(contactId, t.id);
+      setNewName("");
+      setCreating(false);
+      qc.invalidateQueries({ queryKey: ["trixus", "tags"] });
+      onChanged();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Editar contato"
+      title="Etiquetas do Contato"
+      description="Selecione as etiquetas cadastradas para este contato."
       footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" size="sm" onClick={save} disabled={busy}>{busy ? "Salvando…" : "Salvar"}</Button>
-        </>
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Fechar
+        </Button>
       }
-    >
-      <div className="space-y-3">
-        <Field label="Nome">
-          <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome do contato" />
-        </Field>
-        {perms.pode_editar_vinculo_cliente && (
-          <Field label="Cliente">
-            <Select value={customerId ?? ""} onChange={(e) => setCustomerId(e.target.value || null)}>
-              <option value="">Sem vínculo</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.nome}</option>
-              ))}
-            </Select>
-          </Field>
-        )}
-        <Field label="Departamento">
-          <Input value={departamento} onChange={(e) => setDepartamento(e.target.value)} placeholder="Ex.: Financeiro" />
-        </Field>
-        <Field label="Perfil na Empresa">
-          <Select value={nivel} onChange={(e) => setNivel(e.target.value as "" | "Colaborador" | "Supervisor" | "Gerente" | "Diretoria")}>
-            <option value="">— Selecione —</option>
-            <option value="Colaborador">Colaborador</option>
-            <option value="Supervisor">Supervisor</option>
-            <option value="Gerente">Gerente</option>
-            <option value="Diretoria">Diretoria</option>
-          </Select>
-        </Field>
-        <Field label="E-mail">
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nome@empresa.com" />
-        </Field>
-      </div>
-    </Modal>
-  );
-}
-
-
-
-
-function maskTelefone(v: string) {
-  const d = v.replace(/\D/g, "").slice(0, 11);
-  if (d.length <= 2) return d.length ? `(${d}` : "";
-  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-}
-
-function LinkCustomerModal({
-  open, onClose, contactId, onLinked,
-}: { open: boolean; onClose: () => void; contactId: string; onLinked: () => void }) {
-  const [q, setQ] = React.useState("");
-  const [tab, setTab] = React.useState<"existing" | "new">("existing");
-  const [nome, setNome] = React.useState("");
-  const [email, setEmail] = React.useState("");
-  const [cliente, setCliente] = React.useState("");
-  const [telefone, setTelefone] = React.useState("");
-  const [departamentoId, setDepartamentoId] = React.useState("");
-  const [supervisor, setSupervisor] = React.useState(false);
-
-  const { data: customers = [] } = useQuery({
-    queryKey: ["customers", "list", q],
-    queryFn: () => CUSTOMERS.list(q || undefined),
-    enabled: open,
-  });
-  const { data: departamentos = [] } = useQuery({
-    queryKey: ["mvp", "departments"],
-    queryFn: CATALOG.departments,
-    enabled: open,
-  });
-
-  React.useEffect(() => {
-    if (!open) {
-      setQ(""); setNome(""); setEmail(""); setCliente(""); setTelefone("");
-      setDepartamentoId(""); setSupervisor(false); setTab("existing");
-    }
-  }, [open]);
-
-  const link = async (customerId: string) => {
-    try {
-      await CONTACTS.setCustomer(contactId, customerId);
-      toast.success("Vinculado");
-      onLinked();
-    } catch (e) { toast.error((e as Error).message); }
-  };
-
-  const createAndLink = async () => {
-    if (!nome.trim()) return toast.error("Informe o nome do cliente.");
-    try {
-      const dep = departamentos.find((d) => d.id === departamentoId);
-      const notas = [
-        dep ? `Departamento: ${dep.nome}` : null,
-        supervisor ? "Supervisor" : null,
-      ].filter(Boolean).join(" · ") || null;
-      const c = await CUSTOMERS.create({
-        nome: (cliente.trim() || nome.trim()),
-        email: email.trim() || null,
-        telefone: telefone.trim() || null,
-        notas,
-      });
-      await link(c.id);
-    } catch (e) { toast.error((e as Error).message); }
-  };
-
-  return (
-    <Modal
-      open={open} onClose={onClose}
-      title="Vincular contato a cliente"
-      description="Associe este contato ao cadastro comercial correspondente."
-      footer={<Button variant="ghost" size="sm" onClick={onClose}>Fechar</Button>}
-    >
-      <div className="mb-3 inline-flex rounded-lg border border-border bg-surface-1 p-1 text-xs">
-        <button onClick={() => setTab("existing")} className={`rounded-md px-3 py-1.5 ${tab === "existing" ? "bg-card shadow-card" : "text-muted-foreground"}`}>Existente</button>
-        <button onClick={() => setTab("new")} className={`rounded-md px-3 py-1.5 ${tab === "new" ? "bg-card shadow-card" : "text-muted-foreground"}`}>Cadastrar novo</button>
-      </div>
-
-      {tab === "existing" ? (
-        <>
-          <Field label="Buscar"><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome do cliente…" /></Field>
-          <ul className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-border">
-            {customers.map((c) => (
-              <li key={c.id}>
-                <button onClick={() => link(c.id)} className="flex w-full items-start justify-between gap-3 border-b border-border/60 px-3 py-2 text-left text-sm hover:bg-surface-1">
-                  <div className="min-w-0">
-                    <p className="truncate">{c.nome}</p>
-                    
-                  </div>
-                  <span className="text-[11px] text-primary">Vincular</span>
-                </button>
-              </li>
-            ))}
-            {customers.length === 0 && <li className="p-4 text-center text-xs text-muted-foreground">Nenhum cliente.</li>}
-          </ul>
-        </>
-      ) : (
-        <div className="space-y-3">
-          <Field label="Nome"><Input value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
-          <Field label="Cliente"><Input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Classificação comercial" /></Field>
-          <Field label="E-mail"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-          <Field label="Telefone">
-            <Input
-              value={telefone}
-              onChange={(e) => setTelefone(maskTelefone(e.target.value))}
-              placeholder="(00) 00000-0000"
-              inputMode="tel"
-            />
-          </Field>
-          <Field label="Departamento">
-            <Select value={departamentoId} onChange={(e) => setDepartamentoId(e.target.value)}>
-              <option value="">Selecione…</option>
-              {departamentos.map((d) => (
-                <option key={d.id} value={d.id}>{d.nome}</option>
-              ))}
-            </Select>
-          </Field>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={supervisor}
-              onChange={(e) => setSupervisor(e.target.checked)}
-              className="h-4 w-4 rounded border-border accent-primary"
-            />
-            <span>Supervisor</span>
-          </label>
-          <Button variant="primary" size="sm" onClick={createAndLink}>Cadastrar e vincular</Button>
-        </div>
-      )}
-    </Modal>
-  );
-}
-
-function TagsModal({
-  open, onClose, contactId, current, onChanged,
-}: { open: boolean; onClose: () => void; contactId: string; current: Tag[]; onChanged: () => void }) {
-  const qc = useQueryClient();
-  const { data: allTags = [] } = useQuery({ queryKey: ["mvp", "tags"], queryFn: CATALOG.tags, enabled: open });
-  const [creating, setCreating] = React.useState(false);
-  const [newName, setNewName] = React.useState("");
-  const [newColor, setNewColor] = React.useState("#6366f1");
-
-  const currentIds = new Set(current.map((t) => t.id));
-
-  const toggle = async (t: Tag) => {
-    try {
-      if (currentIds.has(t.id)) await CONTACTS.removeTag(contactId, t.id);
-      else await CONTACTS.addTag(contactId, t.id);
-      onChanged();
-    } catch (e) { toast.error((e as Error).message); }
-  };
-
-  const createTag = async () => {
-    if (!newName.trim()) return toast.error("Informe o nome.");
-    try {
-      const t = await TAGS.create({ nome: newName.trim(), cor: newColor });
-      await CONTACTS.addTag(contactId, t.id);
-      setNewName("");
-      setCreating(false);
-      qc.invalidateQueries({ queryKey: ["mvp", "tags"] });
-      onChanged();
-    } catch (e) { toast.error((e as Error).message); }
-  };
-
-  return (
-    <Modal
-      open={open} onClose={onClose}
-      title="Etiquetas do contato"
-      description="Selecione as etiquetas ou crie novas."
-      footer={<Button variant="ghost" size="sm" onClick={onClose}>Fechar</Button>}
     >
       <div className="flex flex-wrap gap-1.5">
         {allTags.map((t) => {
           const active = currentIds.has(t.id);
           return (
-            <button key={t.id} onClick={() => toggle(t)}
+            <button
+              key={t.id}
+              onClick={() => toggle(t)}
               className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
               style={{
                 borderColor: t.cor + (active ? "" : "60"),
@@ -1272,37 +1816,59 @@ function TagsModal({
                 backgroundColor: active ? t.cor : t.cor + "15",
               }}
             >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: active ? "#fff" : t.cor }} />
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: active ? "#fff" : t.cor }}
+              />
               {t.nome}
             </button>
           );
         })}
-        {allTags.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma etiqueta cadastrada.</p>}
+        {allTags.length === 0 && (
+          <p className="text-xs text-muted-foreground">Nenhuma etiqueta cadastrada.</p>
+        )}
       </div>
 
-      {!creating ? (
+      {canManageCatalog && !creating ? (
         <Button variant="ghost" size="sm" className="mt-3" onClick={() => setCreating(true)}>
           <Plus className="h-3 w-3" /> Nova etiqueta
         </Button>
-      ) : (
+      ) : canManageCatalog && creating ? (
         <div className="mt-3 space-y-2 rounded-lg border border-border p-3">
-          <Field label="Nome"><Input value={newName} onChange={(e) => setNewName(e.target.value)} /></Field>
+          <Field label="Nome">
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} />
+          </Field>
           <Field label="Cor">
-            <input type="color" value={newColor} onChange={(e) => setNewColor(e.target.value)} className="h-9 w-16 rounded-md border border-border bg-surface-1" />
+            <input
+              type="color"
+              value={newColor}
+              onChange={(e) => setNewColor(e.target.value)}
+              className="h-9 w-16 rounded-md border border-border bg-surface-1"
+            />
           </Field>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>Cancelar</Button>
-            <Button variant="primary" size="sm" onClick={createTag}>Criar</Button>
+            <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="sm" onClick={createTag}>
+              Criar
+            </Button>
           </div>
         </div>
-      )}
+      ) : null}
     </Modal>
   );
 }
 
 /* -------- Unified Transfer modal (departamento, atendente ou status) -------- */
 function TransferModal({
-  open, onClose, onSubmitAgent, onSubmitDepartment, onSubmitStatus, agents, departments,
+  open,
+  onClose,
+  onSubmitAgent,
+  onSubmitDepartment,
+  onSubmitStatus,
+  agents,
+  departments,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1357,13 +1923,18 @@ function TransferModal({
 
   return (
     <Modal
-      open={open} onClose={onClose}
-      title="Transferir atendimento"
+      open={open}
+      onClose={onClose}
+      title="Transferir Atendimento"
       description="Escolha entre mover para outro departamento, transferir para outro atendente ou alterar o status."
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" size="sm" onClick={handleSubmit}>Transferir</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" size="sm" onClick={handleSubmit}>
+            Transferir
+          </Button>
         </>
       }
     >
@@ -1376,7 +1947,11 @@ function TransferModal({
       {mode === "department" && (
         <Field label="Departamento">
           <Select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
-            {departments.map((d) => (<option key={d.id} value={d.id}>{d.nome}</option>))}
+            {sortByOptionLabel(departments, (d) => d.nome).map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.nome}
+              </option>
+            ))}
             {departments.length === 0 && <option value="">Nenhum outro departamento</option>}
           </Select>
         </Field>
@@ -1384,30 +1959,48 @@ function TransferModal({
       {mode === "agent" && (
         <Field label="Novo atendente">
           <Select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)}>
-            {agents.map((a) => (<option key={a.id} value={a.id}>{a.nome}</option>))}
+            {sortByOptionLabel(agents, (a) => a.nome).map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.nome}
+              </option>
+            ))}
             {agents.length === 0 && <option value="">Nenhum outro atendente</option>}
           </Select>
         </Field>
       )}
-      {mode === "status" && (() => {
-        const statusOptions = (["fila", "standby"] as const)
-          .map((id) => {
-            const p = queuePrefs.find((q) => q.id === id);
-            return { id, label: id === "fila" ? filaLabel : standbyLabel, enabled: p?.enabled ?? true };
-          })
-          .filter((o) => o.enabled);
-        return (
-          <Field label="Novo status">
-            {statusOptions.length === 0 ? (
-              <div className="text-sm text-muted-foreground">Nenhuma fila ativa. Ative uma em Configurações › Geral.</div>
-            ) : (
-              <Select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value as "fila" | "standby")}>
-                {statusOptions.map((o) => (<option key={o.id} value={o.id}>{o.label}</option>))}
-              </Select>
-            )}
-          </Field>
-        );
-      })()}
+      {mode === "status" &&
+        (() => {
+          const statusOptions = (["fila", "standby"] as const)
+            .map((id) => {
+              const p = queuePrefs.find((q) => q.id === id);
+              return {
+                id,
+                label: id === "fila" ? filaLabel : standbyLabel,
+                enabled: p?.enabled ?? true,
+              };
+            })
+            .filter((o) => o.enabled);
+          return (
+            <Field label="Novo status">
+              {statusOptions.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  Nenhuma fila ativa. Ative uma em Configurações › Geral.
+                </div>
+              ) : (
+                <Select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value as "fila" | "standby")}
+                >
+                  {statusOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          );
+        })()}
     </Modal>
   );
 }

@@ -1,7 +1,8 @@
+import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Search, Book, MessageCircle, Video, Mail, ChevronRight } from "lucide-react";
+import { Book, MessageCircle, Video, Mail, ChevronRight } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { SectionHeader, Card, Button, Badge } from "@/components/ui-kit";
+import { SectionHeader, Card, Button, Badge, SearchInput } from "@/components/ui-kit";
 
 export const Route = createFileRoute("/ajuda")({
   component: AjudaPage,
@@ -23,6 +24,8 @@ const POPULAR = [
 ];
 
 function AjudaPage() {
+  const [query, setQuery] = React.useState("");
+
   return (
     <AppShell>
       <PageContainer>
@@ -38,13 +41,12 @@ function AjudaPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               Busque em toda a base de conhecimento.
             </p>
-            <div className="mx-auto mt-6 flex max-w-md items-center gap-2 rounded-xl border border-border bg-surface-1 px-3 py-2 shadow-card">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input
-                className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                placeholder="Ex: como criar uma etiqueta"
-              />
-            </div>
+            <SearchInput
+              value={query}
+              onChange={setQuery}
+              placeholder="Ex: como criar uma etiqueta"
+              className="mx-auto mt-6 max-w-md rounded-xl shadow-card"
+            />
           </div>
         </Card>
 

@@ -45,7 +45,8 @@ Nao foram encontrados arquivos de pipeline como GitHub Actions, GitLab CI ou sim
 
 - Supabase/Lovable Cloud para Auth, Postgres e Realtime.
 - Google Fonts no HTML root.
-- Nao ha integracao real implementada com Evolution API, Meta Cloud API, N8N, Redis, BullMQ, R2 ou provedor de IA.
+- Evolution API esta disponivel como provider real opcional via Docker Compose local.
+- Nao ha integracao real implementada com Meta Cloud API, N8N, Redis/BullMQ do Trixus, R2 ou provedor de IA.
 
 ## Deploy futuro aprovado
 
@@ -59,7 +60,64 @@ PLANEJADO para Sprints posteriores:
 - Adaptadores Evolution API e Meta Cloud API.
 - Docker Compose em VPS como deploy inicial.
 
-Sprint 01 implementou Docker Compose, NestJS e Prisma. Redis, BullMQ, Socket.io, R2, Evolution API e Meta Cloud API continuam nao implementados.
+Sprint 01 implementou Docker Compose, NestJS e Prisma. Sprint 07 adicionou Evolution API como provider. Redis/BullMQ do Trixus, Socket.io, R2 e Meta Cloud API continuam nao implementados.
+
+## Sprint 06
+
+Executar migrations Prisma antes de subir a nova versao para criar `messaging_connections` e campos provider-neutral de `messages`. Development Provider e bloqueado em `NODE_ENV=production`; ambientes produtivos devem configurar providers reais em sprint futura antes de permitir outbound externo.
+
+## Sprint 07
+
+Evolution API local:
+
+```powershell
+docker compose up -d postgres evolution-postgres evolution-redis evolution-api
+```
+
+Variaveis:
+
+- `EVOLUTION_BASE_URL=http://localhost:8080`
+- `EVOLUTION_API_KEY`
+- `EVOLUTION_TIMEOUT_MS=10000`
+- `EVOLUTION_WEBHOOK_PUBLIC_URL=http://host.docker.internal:3001/api/webhooks/evolution`
+- `EVOLUTION_WEBHOOK_SECRET`
+- `EVOLUTION_SERVER_URL=http://localhost:8080`
+- `EVOLUTION_POSTGRES_USERNAME`
+- `EVOLUTION_POSTGRES_PASSWORD`
+- `EVOLUTION_POSTGRES_DATABASE`
+
+Usar valores fortes para `EVOLUTION_API_KEY` e `EVOLUTION_WEBHOOK_SECRET` fora de desenvolvimento. A imagem Evolution esta fixada em `evoapicloud/evolution-api:v2.3.7`; nao usar `latest` em deploy reproduzivel. Procedimento de backup, rollback e evidencias ficam em `docs/EVOLUTION.md`.
+
+O Redis e PostgreSQL extras do Compose sao internos da Evolution API. Eles nao habilitam filas BullMQ, cache ou realtime do Trixus.
+
+Realtime local:
+
+```powershell
+$env:TRIXUS_REALTIME_ENABLED="true"
+$env:TRIXUS_REALTIME_REDIS_ADAPTER_ENABLED="true"
+$env:TRIXUS_REALTIME_PATH="/socket.io"
+$env:TRIXUS_REALTIME_CORS_ORIGIN="http://localhost:5173"
+$env:TRIXUS_PRESENCE_TTL_SECONDS="90"
+```
+
+Usar `REDIS_URL` do Trixus. Nao usar `evolution-redis` para adapter Socket.io.
+
+## Sprint 07.01
+
+O backend Nest roda com cwd `backend` no script `backend:dev`, portanto o carregamento de ambiente considera `.env` e `../.env`. Em desenvolvimento local, manter as variaveis Evolution no `.env` da raiz e validar com:
+
+```powershell
+GET http://localhost:3001/api/messaging/connections/health/evolution
+```
+
+Cleanup explicito de fake/orphan connections de testes:
+
+```powershell
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus?schema=public"
+node backend/scripts/cleanup-messaging-connections.mjs --yes
+```
+
+Para remover todas as Evolution locais em ambiente de desenvolvimento, usar `--all-evolution` apenas de forma consciente. O script desvincula `connectionId` de mensagens/conversas e nao apaga CRM.
 
 ## Operacao Local Sprint 01
 
@@ -89,7 +147,7 @@ Variaveis novas:
 - `JWT_SECRET`
 - `JWT_REFRESH_SECRET`
 - `FRONTEND_ORIGIN`
-- `VITE_NEXOS_API_URL`
+- `VITE_TRIXUS_API_URL`
 - `ALLOW_DEMO_USER_PROVISIONING=false` por padrao
 
 ## Observacoes operacionais
@@ -97,3 +155,281 @@ Variaveis novas:
 - `src/server.ts` substitui alguns erros 500 JSON por pagina HTML de erro.
 - `routeTree.gen.ts` e gerado automaticamente.
 - `client.server.ts` avisa que `supabaseAdmin` deve ser usado apenas server-side e preferencialmente importado dentro de handlers.
+
+## Build Windows - Sprint 01.1
+
+Validado em Windows `10.0.26200.0`, PowerShell `5.1.26100.8972`, Node `v24.14.0` e Bun `1.3.14`.
+
+Observacoes:
+
+- `routeTree.gen.ts` e fonte gerada versionada e necessaria para o build TanStack Start.
+- O footer de `@tanstack/react-start` no route tree e necessario para o manifest.
+- `bun run build` foi executado duas vezes em sequencia com sucesso.
+- A limpeza de artefatos gerados pode ser feita localmente quando necessario, mas nao e requisito do build validado.
+
+## Operacao Local Sprint 02
+
+Banco definitivo do recorte organizacional:
+
+```powershell
+cd "C:\Users\Rabel\Downloads\Trixus Project"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus?schema=public"
+docker compose up -d postgres
+bun run backend:prisma:generate
+bun --cwd backend prisma migrate deploy --schema prisma/schema.prisma
+bun run backend:prisma:seed
+```
+
+Verificacao:
+
+```powershell
+bun run verify
+```
+
+Observacoes:
+
+- Migrations Prisma ficam em `backend/prisma/migrations`.
+- Migrations Supabase permanecem apenas para o legado MVP ainda nao migrado.
+- `DATABASE_URL`, `JWT_SECRET` e `JWT_REFRESH_SECRET` sao obrigatorias para backend fora do `verify`.
+- O frontend usa `VITE_TRIXUS_API_URL` quando definido; padrao local: `http://localhost:3001/api`.
+
+# Sprint 08 - Redis Trixus e worker outbound
+
+Servico local:
+
+```text
+trixus-redis = Redis/BullMQ do Trixus
+evolution-redis = infraestrutura interna da Evolution
+```
+
+Variaveis:
+
+```text
+REDIS_URL=redis://localhost:6379
+TRIXUS_QUEUE_ENABLED=true
+TRIXUS_QUEUE_WORKER_ENABLED=true
+TRIXUS_OUTBOUND_WORKER_CONCURRENCY=5
+TRIXUS_OUTBOX_POLL_INTERVAL_MS=1000
+```
+
+Producao:
+
+- usar Redis gerenciado ou privado;
+- exigir auth/TLS quando exposto fora da rede privada;
+- nao reutilizar Redis da Evolution;
+- monitorar `/api/health` para `database` e `redis`;
+- garantir shutdown limpo de worker, queue, poller e clientes Redis.
+
+Smoke local:
+
+```bash
+bun backend/scripts/verify-redis-queue.mjs
+```
+
+## Sprint 08.01 - Homologacao limpa
+
+Banco recomendado para a corretiva:
+
+```powershell
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public"
+$env:REDIS_URL="redis://localhost:6379"
+$env:TRIXUS_QUEUE_ENABLED="true"
+$env:TRIXUS_QUEUE_WORKER_ENABLED="true"
+```
+
+Seed padrao:
+
+```powershell
+bun --cwd backend prisma db seed
+```
+
+Sem `SEED_DEMO_DATA=true`, o seed cria apenas tenant de homologacao, admin, roles/permissoes, membership e departamento minimo. Para dados demo locais:
+
+```powershell
+$env:SEED_DEMO_DATA="true"
+bun --cwd backend prisma db seed
+```
+
+Cleanup seguro:
+
+```powershell
+bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao
+bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao --confirm
+```
+
+## Sprint 08.02 - Reset oficial de homologacao
+
+Reset e somente local/homologacao. Nunca execute contra producao.
+
+```powershell
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
+bun run --cwd backend reset:homologation -- --confirm
+```
+
+Guards:
+
+- bloqueia `NODE_ENV=production`;
+- bloqueia hosts com sinais de producao;
+- aceita apenas bancos allowlisted (`trixus_08*`, `trixus_homolog`, `trixus_test`);
+- exige `--confirm`;
+- valida que o seed minimo termina com zero dados operacionais.
+
+Audit sem remocao:
+
+```powershell
+bun run --cwd backend audit:homologation
+```
+
+## Sprint 08.03 - Auth local/homologacao
+
+Variaveis oficiais:
+
+```powershell
+$env:VITE_TRIXUS_API_URL="http://localhost:3001/api"
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
+$env:REDIS_URL="redis://localhost:6379"
+$env:SEED_MODE="homologation"
+$env:SEED_ADMIN_EMAIL="admin@trixus.app"
+$env:SEED_ADMIN_PASSWORD="demo1234"
+$env:JWT_SECRET="use-um-secret-forte"
+$env:JWT_REFRESH_SECRET="use-outro-secret-forte"
+$env:FRONTEND_ORIGIN="http://localhost:5173"
+```
+
+`SEED_ADMIN_PASSWORD=demo1234` e apenas para local/homologacao. Nao use defaults em producao.
+
+Smoke oficial de login:
+
+```powershell
+bun run --cwd backend verify:homologation-login
+```
+
+O backend registra de forma sanitizada o banco efetivo no startup, sem senha. Se `SEED_MODE=homologation` estiver ativo, o startup bloqueia database fora da allowlist de homologacao.
+
+## Sprint 08.04 - Evolution webhook
+
+Variaveis obrigatorias para inbound real:
+
+```powershell
+$env:EVOLUTION_WEBHOOK_PUBLIC_URL="http://host.docker.internal:3001/api/webhooks/evolution"
+$env:EVOLUTION_WEBHOOK_SECRET="use-um-secret-forte"
+```
+
+`ensureWebhookConfigured(instanceName)` registra `enabled=true`, URL, eventos Evolution e header
+`jwt_key`. O backend valida esse header contra `EVOLUTION_WEBHOOK_SECRET`; nao publique webhook anonimo.
+
+No startup, quando Evolution esta configurada, o backend registra de forma sanitizada:
+
+```text
+EVOLUTION_WEBHOOK_SECRET configured=true
+```
+
+Se `EVOLUTION_BASE_URL`/`EVOLUTION_API_KEY` existem mas `EVOLUTION_WEBHOOK_PUBLIC_URL` ou
+`EVOLUTION_WEBHOOK_SECRET` faltam, a integracao fica `degraded` e o log informa
+`WEBHOOK_CONFIGURATION_MISSING`, sem imprimir segredo.
+
+Para recuperar uma instancia real apos troca de secret ou restart:
+
+```powershell
+$env:EVOLUTION_INSTANCE_NAME="nome-da-instancia"
+bun run --cwd backend audit:evolution-webhook -- --ensure
+```
+
+Para provar conectividade do container Evolution ate o backend Trixus:
+
+```powershell
+bun run --cwd backend audit:evolution-webhook -- --container-health --instance=nome-da-instancia
+```
+
+O resultado obrigatorio e HTTP 200 em `http://host.docker.internal:3001/api/health`.
+
+Para regressao automatizada ampla, use `trixus_0801`. Para homologacao fisica, use `trixus_0802` e nao rode
+reset enquanto houver Contact, Connection, Conversation ou Messages reais aprovados.
+
+O seed idempotente de homologacao pode ser executado sem reset para garantir Admin + Atendente:
+
+```powershell
+$env:SEED_MODE="homologation"
+$env:SEED_ADMIN_EMAIL="admin@trixus.app"
+$env:SEED_ADMIN_PASSWORD="demo1234"
+$env:SEED_AGENT_EMAIL="atendente@trixus.app"
+$env:SEED_AGENT_PASSWORD="demo1234"
+bun --cwd backend prisma db seed
+```
+
+## Sprint 09 - Bootstrap realtime
+
+Smoke oficial de startup backend em homologacao preservada:
+
+```powershell
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
+$env:REDIS_URL="redis://localhost:6379"
+$env:TRIXUS_QUEUE_ENABLED="true"
+$env:TRIXUS_QUEUE_WORKER_ENABLED="true"
+$env:TRIXUS_REALTIME_ENABLED="true"
+$env:TRIXUS_REALTIME_REDIS_ADAPTER_ENABLED="true"
+$env:TRIXUS_REALTIME_PATH="/socket.io"
+$env:TRIXUS_REALTIME_CORS_ORIGIN="http://localhost:5173"
+$env:PORT="3019"
+node backend/scripts/verify-backend-startup.mjs
+```
+
+Resultado esperado:
+
+```json
+{
+  "ok": true,
+  "health": {
+    "database": "up",
+    "redis": "up",
+    "queue": "up",
+    "realtime": "up",
+    "realtimeAdapter": "redis"
+  }
+}
+```
+
+## Sprint 09 Rework II - Flag frontend realtime
+
+Ambiente local com realtime ativo:
+
+```powershell
+$env:VITE_TRIXUS_API_URL="http://localhost:3001/api"
+$env:VITE_TRIXUS_REALTIME_ENABLED="true"
+```
+
+Ambiente local com realtime desativado:
+
+```powershell
+$env:VITE_TRIXUS_API_URL="http://localhost:3001/api"
+$env:VITE_TRIXUS_REALTIME_ENABLED="false"
+```
+
+Com a flag frontend em `false`, o browser nao instancia Socket.io e a Inbox deve abrir por REST/polling.
+Nao dependa apenas de `TRIXUS_REALTIME_ENABLED=false` no backend para desligar tentativas de conexao no
+cliente.
+
+## Sprint 10 Rework - Smoke operacional
+
+Homologacao fisica preservada usa `trixus_0802`; regressao automatizada ampla usa `trixus_0801`.
+
+```powershell
+$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public"
+$env:REDIS_URL="redis://localhost:6379"
+bun run verify
+```
+
+O `verify` executa a guarda `scripts/check-inbox-legacy-runtime.mjs`, que bloqueia retorno de
+`@/lib/mvp`, Supabase, `.from("tags")`, `.from("quick_replies")` e aliases legados nas rotas operacionais
+de Inbox, `/etiquetas` e `/mensagens-rapidas`.
+
+# Storage de Tickets
+
+Configure `TRIXUS_STORAGE_PROVIDER=local` para homologacao local e deploy single-host controlado. Use
+`TRIXUS_STORAGE_LOCAL_PATH` fora do repositorio e inclua esse diretorio no backup operacional.
+
+`TRIXUS_STORAGE_PROVIDER=r2` permanece como boundary reservado para o ciclo de deploy; nesta base ele nao deve ser
+considerado provider final de upload/download de atrixus. Para producao multi-instancia ou ambiente efemero,
+implementar e validar R2/S3-compatible antes de habilitar atrixus de tickets.
+
+O health retorna `storage` e `storageProvider` de forma sanitizada, sem fazer upload em cada request.

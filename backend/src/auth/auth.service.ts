@@ -1,40 +1,138 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService, type JwtSignOptions } from "@nestjs/jwt";
-import { compare } from "bcryptjs";
+import { createHash, randomBytes } from "crypto";
+import { compare, hash } from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
 import { JwtPayload } from "./auth.types";
 import { LoginDto } from "./dto/login.dto";
 
 @Injectable()
 export class AuthService {
+  private readonly failedLoginAttempts = new Map<string, { count: number; resetAt: number }>();
+
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(JwtService)
     private readonly jwt: JwtService,
+    @Inject(ConfigService)
     private readonly config: ConfigService,
   ) {}
 
   async login(dto: LoginDto) {
+    const email = dto.email.toLowerCase().trim();
+    this.assertLoginRateLimit(email);
+
     const user = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase().trim() },
-      include: { memberships: { include: { tenant: true } } },
+      where: { email },
+      include: {
+        memberships: {
+          include: {
+            tenant: true,
+            role: { include: { permissions: { select: { permissionId: true } } } },
+          },
+        },
+      },
     });
-    if (!user || user.status !== "ACTIVE")
-      throw new UnauthorizedException("Credenciais invalidas.");
+    if (!user) throw this.invalidCredentials(email);
+    if (user.status !== "ACTIVE") {
+      throw new ForbiddenException({
+        code: "USER_INACTIVE",
+        message: "Usuário inativo.",
+      });
+    }
 
     const validPassword = await compare(dto.password, user.passwordHash);
-    if (!validPassword) throw new UnauthorizedException("Credenciais invalidas.");
+    if (!validPassword) throw this.invalidCredentials(email);
 
-    const membership = dto.tenantSlug
-      ? user.memberships.find((item) => item.tenant.slug === dto.tenantSlug)
-      : user.memberships[0];
-    if (!membership) throw new UnauthorizedException("Tenant nao autorizado para este usuario.");
+    const requestedTenantSlug = dto.tenantSlug?.trim().toLowerCase();
+    if (!requestedTenantSlug && user.platformRole !== "USER") {
+      const basePayload = {
+        sub: user.id,
+        tenantId: "",
+        membershipId: "",
+        roleId: "",
+        roleKey: "platform_admin",
+        platformRole: user.platformRole,
+        iatMs: Date.now(),
+      };
+      return {
+        accessToken: await this.signToken({ ...basePayload, typ: "access" }, "JWT_SECRET", "15m"),
+        refreshToken: await this.signToken(
+          { ...basePayload, typ: "refresh" },
+          "JWT_REFRESH_SECRET",
+          "7d",
+        ),
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+          roleId: "",
+          roleKey: "platform_admin",
+          platformRole: user.platformRole,
+        },
+        tenant: {
+          id: "platform",
+          slug: "platform",
+          name: "Trixus Platform",
+        },
+        membership: {
+          id: "",
+          role: "platform_admin",
+          roleId: "",
+        },
+        permissions: [],
+      };
+    }
+
+    const activeMemberships = user.memberships.filter((item) => item.status === "ACTIVE");
+    if (!requestedTenantSlug && activeMemberships.length > 1) {
+      throw new ForbiddenException({
+        code: "TENANT_SELECTION_REQUIRED",
+        message: "Selecione a organização para continuar.",
+        tenants: activeMemberships.map((item) => ({
+          id: item.tenant.id,
+          slug: item.tenant.slug,
+          name: item.tenant.name,
+        })),
+      });
+    }
+    const membership = requestedTenantSlug
+      ? activeMemberships.find((item) => item.tenant.slug === requestedTenantSlug)
+      : activeMemberships.length === 1
+        ? activeMemberships[0]
+        : null;
+    if (!membership) {
+      throw new ForbiddenException({
+        code: "USER_WITHOUT_ACTIVE_MEMBERSHIP",
+        message: "Seu usuário não possui acesso a nenhuma organização ativa.",
+      });
+    }
+    if (!["ACTIVE", "TRIAL"].includes(membership.tenant.status)) {
+      throw new ForbiddenException({
+        code: "TENANT_INACTIVE",
+        message: "Organização suspensa ou encerrada.",
+      });
+    }
+    const permissions = membership.role.permissions.map((item) => item.permissionId);
 
     const basePayload = {
       sub: user.id,
       tenantId: membership.tenantId,
       membershipId: membership.id,
-      role: membership.role,
+      roleId: membership.roleId,
+      roleKey: membership.role.key,
+      platformRole: user.platformRole,
+      iatMs: Date.now(),
     };
 
     return {
@@ -48,26 +146,81 @@ export class AuthService {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: membership.role,
+        avatarUrl: user.avatarUrl,
+        roleId: membership.roleId,
+        roleKey: membership.role.key,
+        platformRole: user.platformRole,
       },
       tenant: {
         id: membership.tenant.id,
         slug: membership.tenant.slug,
         name: membership.tenant.name,
       },
+      membership: {
+        id: membership.id,
+        role: membership.role.key,
+        roleId: membership.roleId,
+      },
+      permissions,
     };
   }
 
   async refresh(refreshToken: string) {
     const payload = await this.verifyToken(refreshToken, "JWT_REFRESH_SECRET");
-    if (payload.typ !== "refresh") throw new UnauthorizedException("Refresh token invalido.");
+    if (payload.typ !== "refresh") throw new UnauthorizedException("Refresh token inválido.");
+
+    if (!payload.membershipId && payload.platformRole !== "USER") {
+      const user = await this.prisma.user.findFirst({
+        where: { id: payload.sub, status: "ACTIVE", platformRole: { not: "USER" } },
+      });
+      if (!user) throw new UnauthorizedException("Sessão expirada.");
+      return {
+        accessToken: await this.signToken(
+          {
+            sub: user.id,
+            tenantId: "",
+            membershipId: "",
+            roleId: "",
+            roleKey: "platform_admin",
+            platformRole: user.platformRole,
+            iatMs: Date.now(),
+            typ: "access",
+          },
+          "JWT_SECRET",
+          "15m",
+        ),
+      };
+    }
 
     const membership = await this.prisma.tenantMembership.findUnique({
       where: { id: payload.membershipId },
-      include: { user: true, tenant: true },
+      include: { user: true, tenant: true, role: true },
     });
-    if (!membership || membership.user.status !== "ACTIVE") {
-      throw new UnauthorizedException("Sessao expirada.");
+    if (!membership || membership.status !== "ACTIVE" || membership.user.status !== "ACTIVE") {
+      throw new UnauthorizedException("Sessão expirada.");
+    }
+    if (!["ACTIVE", "TRIAL"].includes(membership.tenant.status)) {
+      throw new UnauthorizedException("Tenant inativo.");
+    }
+    if (
+      membership.tenant.authRevokedAt &&
+      payload.iatMs &&
+      payload.iatMs < membership.tenant.authRevokedAt.getTime()
+    ) {
+      throw new UnauthorizedException("Sessão revogada.");
+    }
+    if (payload.impersonationSessionId) {
+      const session = await this.prisma.impersonationSession.findFirst({
+        where: {
+          id: payload.impersonationSessionId,
+          actorUserId: payload.actorPlatformUserId,
+          tenantId: membership.tenantId,
+          impersonatedMembershipId: membership.id,
+          status: "ACTIVE",
+          expiresAt: { gt: new Date() },
+        },
+      });
+      if (!session) throw new UnauthorizedException("Sessão de impersonação expirada.");
     }
 
     return {
@@ -76,12 +229,236 @@ export class AuthService {
           sub: membership.userId,
           tenantId: membership.tenantId,
           membershipId: membership.id,
-          role: membership.role,
+          roleId: membership.roleId,
+          roleKey: membership.role.key,
+          platformRole: membership.user.platformRole,
+          iatMs: Date.now(),
           typ: "access",
+          impersonationSessionId: payload.impersonationSessionId,
+          actorPlatformUserId: payload.actorPlatformUserId,
         },
         "JWT_SECRET",
         "15m",
       ),
+    };
+  }
+
+  async requestPasswordReset(emailInput: string) {
+    const email = emailInput.toLowerCase().trim();
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || user.status !== "ACTIVE") return { ok: true };
+
+    const token = secureToken();
+    await this.prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashToken(token),
+        expiresAt: new Date(Date.now() + 60 * 60_000),
+      },
+    });
+    return {
+      ok: true,
+      ...(this.exposeLocalTokens()
+        ? { resetUrl: `${this.publicAppUrl()}/login?reset=${token}` }
+        : {}),
+    };
+  }
+
+  async resetPassword(token: string, password: string) {
+    const tokenHash = hashToken(token);
+    const record = await this.prisma.passwordResetToken.findFirst({
+      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
+      include: { user: true },
+    });
+    if (!record || record.user.status !== "ACTIVE") {
+      throw new UnauthorizedException("Token de redefinição inválido ou expirado.");
+    }
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: record.userId },
+        data: { passwordHash: await hash(password, 12) },
+      }),
+      this.prisma.passwordResetToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+    return { ok: true };
+  }
+
+  async acceptInvitation(dto: { token: string; password: string; name?: string }) {
+    const tokenHash = hashToken(dto.token);
+    const invitation = await this.prisma.userInvitation.findFirst({
+      where: { tokenHash, status: "PENDING", expiresAt: { gt: new Date() } },
+      include: { tenant: true, role: true },
+    });
+    if (!invitation) throw new UnauthorizedException("Convite inválido ou expirado.");
+
+    await this.prisma.$transaction(async (tx) => {
+      let user = await tx.user.findUnique({ where: { email: invitation.email } });
+      const passwordHash = await hash(dto.password, 12);
+      if (user) {
+        user = await tx.user.update({
+          where: { id: user.id },
+          data: {
+            name: dto.name?.trim() || user.name,
+            passwordHash,
+            status: "ACTIVE",
+          },
+        });
+      } else {
+        user = await tx.user.create({
+          data: {
+            email: invitation.email,
+            name: dto.name?.trim() || invitation.email,
+            passwordHash,
+          },
+        });
+      }
+      const membership = await tx.tenantMembership.upsert({
+        where: {
+          tenantId_userId: { tenantId: invitation.tenantId, userId: user.id },
+        },
+        update: { roleId: invitation.roleId, status: "ACTIVE" },
+        create: {
+          tenantId: invitation.tenantId,
+          userId: user.id,
+          roleId: invitation.roleId,
+          status: "ACTIVE",
+        },
+      });
+      if (invitation.departmentIds.length) {
+        await tx.departmentMembership.deleteMany({
+          where: { tenantId: invitation.tenantId, membershipId: membership.id },
+        });
+        await tx.departmentMembership.createMany({
+          data: invitation.departmentIds.map((departmentId) => ({
+            tenantId: invitation.tenantId,
+            departmentId,
+            membershipId: membership.id,
+          })),
+          skipDuplicates: true,
+        });
+      }
+      await tx.userInvitation.update({
+        where: { id: invitation.id },
+        data: { status: "ACCEPTED", acceptedAt: new Date() },
+      });
+    });
+
+    return this.login({
+      email: invitation.email,
+      password: dto.password,
+      tenantSlug: invitation.tenant.slug,
+    });
+  }
+
+  async issueImpersonationTokens(input: {
+    actorPlatformUserId: string;
+    impersonationSessionId: string;
+    membershipId: string;
+  }) {
+    const membership = await this.prisma.tenantMembership.findUniqueOrThrow({
+      where: { id: input.membershipId },
+      include: {
+        user: true,
+        tenant: true,
+        role: { include: { permissions: { select: { permissionId: true } } } },
+      },
+    });
+    const permissions = membership.role.permissions.map((item) => item.permissionId);
+    const basePayload = {
+      sub: membership.userId,
+      tenantId: membership.tenantId,
+      membershipId: membership.id,
+      roleId: membership.roleId,
+      roleKey: membership.role.key,
+      platformRole: membership.user.platformRole,
+      iatMs: Date.now(),
+      impersonationSessionId: input.impersonationSessionId,
+      actorPlatformUserId: input.actorPlatformUserId,
+    };
+    return {
+      accessToken: await this.signToken({ ...basePayload, typ: "access" }, "JWT_SECRET", "15m"),
+      refreshToken: await this.signToken(
+        { ...basePayload, typ: "refresh" },
+        "JWT_REFRESH_SECRET",
+        "7d",
+      ),
+      user: {
+        id: membership.user.id,
+        email: membership.user.email,
+        name: membership.user.name,
+        avatarUrl: membership.user.avatarUrl,
+        roleId: membership.roleId,
+        roleKey: membership.role.key,
+        platformRole: membership.user.platformRole,
+      },
+      tenant: {
+        id: membership.tenant.id,
+        slug: membership.tenant.slug,
+        name: membership.tenant.name,
+      },
+      membership: {
+        id: membership.id,
+        role: membership.role.key,
+        roleId: membership.roleId,
+      },
+      permissions,
+    };
+  }
+
+  async me(membershipId: string) {
+    if (!membershipId) {
+      throw new ForbiddenException({
+        code: "PLATFORM_CONTEXT_REQUIRES_PLATFORM_API",
+        message: "Use /api/platform para plano de controle.",
+      });
+    }
+    const membership = await this.prisma.tenantMembership.findUniqueOrThrow({
+      where: { id: membershipId },
+      include: {
+        user: true,
+        tenant: true,
+        role: { include: { permissions: { select: { permissionId: true } } } },
+        departments: { include: { department: true } },
+      },
+    });
+    const permissions = membership.role.permissions.map((item) => item.permissionId);
+
+    return {
+      user: {
+        id: membership.user.id,
+        email: membership.user.email,
+        name: membership.user.name,
+        avatarUrl: membership.user.avatarUrl,
+        roleId: membership.roleId,
+        roleKey: membership.role.key,
+        roleName: membership.role.name,
+        platformRole: membership.user.platformRole,
+      },
+      tenant: {
+        id: membership.tenant.id,
+        slug: membership.tenant.slug,
+        name: membership.tenant.name,
+      },
+      membership: {
+        id: membership.id,
+        role: membership.role.key,
+        roleId: membership.roleId,
+      },
+      departments: membership.departments.map((item) => ({
+        id: item.department.id,
+        name: item.department.name,
+        description: item.department.description,
+        color: item.department.color,
+        active: item.department.active,
+      })),
+      permissions,
+      capabilities: {
+        canManageTenant: permissions.includes("users.manage"),
+        canOperateInbox: permissions.some((permission) => permission.startsWith("chat.")),
+      },
     };
   }
 
@@ -109,4 +486,59 @@ export class AuthService {
     }
     return value;
   }
+
+  private invalidCredentials(email: string) {
+    this.recordFailedLogin(email);
+    return new UnauthorizedException({
+      code: "INVALID_CREDENTIALS",
+      message: "É-mail ou senha invalidos.",
+    });
+  }
+
+  private assertLoginRateLimit(email: string) {
+    const now = Date.now();
+    const entry = this.failedLoginAttempts.get(email);
+    if (!entry || entry.resetAt <= now) return;
+    if (entry.count >= 5) {
+      throw new HttpException(
+        {
+          code: "TOO_MANY_LOGIN_ATTEMPTS",
+          message: "Muitas tentativas de acesso. Aguarde é tente novamente.",
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  private recordFailedLogin(email: string) {
+    const now = Date.now();
+    const entry = this.failedLoginAttempts.get(email);
+    if (!entry || entry.resetAt <= now) {
+      this.failedLoginAttempts.set(email, { count: 1, resetAt: now + 60_000 });
+      return;
+    }
+    entry.count += 1;
+  }
+
+  private exposeLocalTokens() {
+    return (
+      process.env.NODE_ENV !== "production" ||
+      this.config.get<string>("TRIXUS_EXPOSE_LOCAL_TOKENS") === "true"
+    );
+  }
+
+  private publicAppUrl() {
+    return (this.config.get<string>("TRIXUS_PUBLIC_APP_URL") ?? "http://localhost:5173").replace(
+      /\/$/,
+      "",
+    );
+  }
+}
+
+function secureToken() {
+  return randomBytes(32).toString("base64url");
+}
+
+function hashToken(token: string) {
+  return createHash("sha256").update(token.trim(), "utf8").digest("hex");
 }

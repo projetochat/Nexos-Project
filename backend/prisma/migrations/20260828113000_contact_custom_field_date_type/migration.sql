@@ -1,0 +1,1 @@
+ALTER TYPE "ContactCustomFieldType" ADD VALUE IF NOT EXISTS 'DATE';

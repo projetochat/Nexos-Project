@@ -1,47 +1,52 @@
 import * as React from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
-  Inbox,
   Users,
-  Building2,
-  UserCog,
   Tag,
   Megaphone,
-  BarChart3,
   Settings,
-  LifeBuoy,
+  CircleQuestionMark,
   Search,
   Bell,
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
   Command,
-  Sun,
   Moon,
+  Sun,
   LogOut,
+  Menu,
+  X,
   Zap,
-  MessageSquareText,
   Bot,
   Workflow,
   Sparkles,
-  Phone,
-  ListChecks,
   CheckCircle2,
   History,
   Ticket,
   Headset,
+  MessagesSquare,
+  Network,
+  ShieldCheck,
+  Wifi,
+  UsersRound,
+  User,
+  CalendarClock,
 } from "lucide-react";
 import { LogoMark, Avatar, Badge } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
 import { useTheme } from "./theme-provider";
 import { useSession, ROLE_META, signOut } from "@/lib/session";
+import { notificationApi, stopStoredPlatformImpersonation } from "@/lib/trixus-api";
+import { onRealtimeEvent } from "@/lib/realtime/client";
 
 /* ============================================================
-   Nexo · App Shell (Painel Administrativo da Empresa)
+   Trixus · App Shell (Painel Administrativo da Empresa)
    Sidebar refinada: rail colapsado 56px, tooltips, trigger no
-   topbar, persistência em localStorage. Theme toggle, user menu.
+   topbar, persistência em localStorage e menu de perfil.
    ============================================================ */
 
 type NavItem = {
@@ -56,7 +61,6 @@ const OPERATOR_ALLOWED = new Set<string>([
   "/",
   "/inbox",
   "/contatos",
-  "/simulador",
   "/mensagens-rapidas",
   "/historico",
   "/perfil",
@@ -69,72 +73,98 @@ function filterForOperator(items: NavItem[]): NavItem[] {
 }
 
 const principalNav: NavItem[] = [
-  { to: "/inbox", label: "Chat", icon: Inbox },
+  { to: "/inbox", label: "Chat", icon: MessagesSquare },
   { to: "/contatos", label: "Contatos", icon: Users },
-  { to: "/historico", label: "Histórico de conversa", icon: History },
-  { to: "/simulador", label: "Simulador de conversa", icon: MessageSquareText },
-  { to: "/mensagens-rapidas", label: "Mensagens rápidas", icon: Zap },
+  { to: "/historico", label: "Histórico de Conversas", icon: History },
+  { to: "/mensagens-rapidas", label: "Mensagens Rápidas", icon: Zap },
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
 ];
-
 
 // Itens exibidos no topo da sidebar (sem agrupador) para administradores.
-const topNav: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
-];
+const topNav: NavItem[] = [{ to: "/", label: "Dashboard", icon: LayoutDashboard }];
 
 // Agrupamento exibido apenas para administradores.
 const adminGroups: { title: string; items: NavItem[] }[] = [
   {
     title: "Operação",
     items: [
-      { to: "/inbox", label: "Chat", icon: Inbox },
-      { to: "/clientes", label: "Clientes", icon: Building2 },
+      { to: "/inbox", label: "Chat", icon: MessagesSquare },
       { to: "/contatos", label: "Contatos", icon: Users },
-      { to: "/historico", label: "Histórico de conversa", icon: History },
-      { to: "/simulador", label: "Simulador de conversa", icon: MessageSquareText },
+      { to: "/grupos", label: "Gerenciar Grupos", icon: UsersRound },
+      { to: "/historico", label: "Histórico de Conversas", icon: History },
     ],
   },
   {
     title: "Administração",
     items: [
       { to: "/atendentes", label: "Atendentes", icon: Headset },
-      { to: "/perfis", label: "Perfis de acesso", icon: ListChecks },
-      { to: "/departamentos", label: "Departamentos", icon: Building2 },
+      { to: "/perfis", label: "Perfil de Acesso", icon: ShieldCheck },
+      { to: "/departamentos", label: "Departamentos", icon: Network },
       { to: "/etiquetas", label: "Etiquetas", icon: Tag },
-      { to: "/mensagens-rapidas", label: "Mensagens rápidas", icon: Zap },
+      { to: "/mensagens-rapidas", label: "Mensagens Rápidas", icon: Zap },
+      { to: "/agendamentos", label: "Agendamentos", icon: CalendarClock },
       { to: "/campanhas", label: "Campanhas", icon: Megaphone },
-      { to: "/filas", label: "Filas", icon: ListChecks },
     ],
   },
   {
     title: "Canais",
     items: [
-      { to: "/instancias", label: "Instâncias", icon: Phone },
+      { to: "/instancias", label: "Instâncias", icon: Wifi },
       { to: "/chatbot", label: "Fluxo de Bot", icon: Bot },
       { to: "/automacoes", label: "Automações", icon: Workflow },
       { to: "/agente-ia", label: "Agente de IA", icon: Sparkles },
     ],
   },
   {
-    title: "GLPI",
-    items: [
-      { to: "/chamados", label: "Chamados", icon: Ticket },
-    ],
+    title: "Chamados",
+    items: [{ to: "/chamados", label: "Chamados", icon: Ticket }],
   },
 ];
 
-const simuladoresNav: NavItem[] = [
-  { to: "/simulador", label: "Simulador de conversa", icon: MessageSquareText },
-];
+const NAV_PERMISSIONS: Record<string, string[]> = {
+  "/inbox": ["conversations.read", "messages.send"],
+  "/clientes": ["crm.read", "crm.manage"],
+  "/contatos": ["chat.contacts.read", "crm.read"],
+  "/historico": ["conversations.read"],
+  "/atendentes": ["users.read", "users.manage"],
+  "/perfis": ["roles.read", "roles.manage"],
+  "/departamentos": ["departments.read", "departments.manage"],
+  "/etiquetas": ["chat.tags.use", "chat.tags.manage"],
+  "/mensagens-rapidas": ["chat.quick_replies.read", "chat.quick_replies.manage"],
+  "/agendamentos": ["automations.read", "automations.manage"],
+  "/campanhas": ["campaigns.read", "campaigns.manage"],
+  "/filas": ["conversations.manage"],
+  "/bi": ["crm.read", "conversations.read", "campaigns.read", "tickets.read"],
+  "/instancias": ["connections.read", "connections.manage"],
+  "/grupos": ["conversations.read", "conversations.manage"],
+  "/chatbot": ["automations.read", "automations.manage"],
+  "/automacoes": ["automations.read", "automations.manage"],
+  "/agente-ia": ["automations.read", "automations.manage"],
+  "/chamados": ["tickets.read", "tickets.create", "tickets.manage"],
+  "/relatorios": ["crm.read", "conversations.read", "campaigns.read", "tickets.read"],
+};
 
-const sistemaNav: NavItem[] = [
-  { to: "/configuracoes", label: "Configurações", icon: Settings },
-  { to: "/ajuda", label: "Central de Ajuda", icon: LifeBuoy },
-];
+function canSeeNavItem(item: NavItem, permissions?: string[]) {
+  const required = NAV_PERMISSIONS[item.to];
+  if (!required || !permissions?.length) return true;
+  const granted = new Set(permissions);
+  return required.some((permission) => granted.has(permission));
+}
 
+function filterAdminGroupsByPermissions(
+  groups: { title: string; items: NavItem[] }[],
+  permissions?: string[],
+) {
+  if (!permissions?.length) return groups;
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canSeeNavItem(item, permissions)),
+    }))
+    .filter((group) => group.items.length > 0);
+}
 
+const sistemaNav: NavItem[] = [{ to: "/configuracoes", label: "Configurações", icon: Settings }];
 
 /* ---------- Breadcrumb labels ---------- */
 const LABELS: Record<string, string> = {
@@ -146,15 +176,21 @@ const LABELS: Record<string, string> = {
   atendentes: "Atendentes",
   departamentos: "Departamentos",
   etiquetas: "Etiquetas",
+  agendamentos: "Agendamentos",
   campanhas: "Campanhas",
+  historico: "Histórico de Conversas",
+  "mensagens-rapidas": "Mensagens Rápidas",
   relatorios: "Relatórios",
+  bi: "BI",
   configuracoes: "Configurações",
   perfil: "Perfil",
-  perfis: "Perfis de acesso",
+  perfis: "Perfil de Acesso",
   instancias: "Instâncias",
+  grupos: "Gerenciar Grupos",
   ajuda: "Central de Ajuda",
-  filas: "Filas",
-  
+  geral: "Filas do Chat",
+  filas: "Filas de atendimento",
+
   chatbot: "Fluxo de Bot",
   automacoes: "Automações",
   empresa: "Empresa",
@@ -170,7 +206,7 @@ const LABELS: Record<string, string> = {
 function useBreadcrumbs() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const parts = pathname.split("/").filter(Boolean);
-  const crumbs = [{ href: "/", label: "Nexo" }];
+  const crumbs = [{ href: "/", label: "Trixus" }];
   let acc = "";
   for (const part of parts) {
     acc += "/" + part;
@@ -180,7 +216,7 @@ function useBreadcrumbs() {
 }
 
 /* ---------- Sidebar state ---------- */
-const SIDEBAR_KEY = "nexo.sidebar.collapsed";
+const SIDEBAR_KEY = "trixus.sidebar.collapsed";
 const SidebarCollapseContext = React.createContext<() => void>(() => {});
 let sidebarCollapsedMemory: boolean | undefined;
 function useSidebarState() {
@@ -190,7 +226,11 @@ function useSidebarState() {
   const isInbox = pathname.startsWith("/inbox");
   const [collapsed, setCollapsed] = React.useState(() => {
     if (sidebarCollapsedMemory !== undefined) return sidebarCollapsedMemory;
-    if (typeof document !== "undefined" && document.documentElement.dataset.sidebarCollapsed === "1") return true;
+    if (
+      typeof document !== "undefined" &&
+      document.documentElement.dataset.sidebarCollapsed === "1"
+    )
+      return true;
     if (isInbox && isOperator) {
       sidebarCollapsedMemory = true;
       if (typeof document !== "undefined") document.documentElement.dataset.sidebarCollapsed = "1";
@@ -207,7 +247,9 @@ function useSidebarState() {
         document.documentElement.dataset.sidebarCollapsed = "1";
         setCollapsed(true);
       }
-    } catch {}
+    } catch {
+      // localStorage may be unavailable in restricted browser contexts.
+    }
   }, []);
   // Auto-recolher ao entrar em /inbox (apenas atendentes)
   React.useEffect(() => {
@@ -223,7 +265,9 @@ function useSidebarState() {
     document.documentElement.dataset.sidebarCollapsed = next ? "1" : "0";
     try {
       localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0");
-    } catch {}
+    } catch {
+      // Keep the in-memory state even when persistence is unavailable.
+    }
   }, []);
   const toggle = React.useCallback(() => {
     setCollapsed((v) => {
@@ -268,7 +312,9 @@ function NavLink({
   const role = useSession((s) => s.user?.role);
   const isOperator = role === "operator";
   const isActive =
-    (exact ?? item.to === "/") ? pathname === item.to : pathname === item.to || pathname.startsWith(item.to + "/");
+    (exact ?? item.to === "/")
+      ? pathname === item.to
+      : pathname === item.to || pathname.startsWith(item.to + "/");
   return (
     <Link
       to={item.to}
@@ -279,11 +325,9 @@ function NavLink({
         if (!isOperator || collapsed || isActive) return;
         requestAnimationFrame(() => requestAnimationFrame(() => collapse()));
       }}
-
       className={`group relative flex items-center rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground data-[status=active]:bg-surface-2 data-[status=active]:text-foreground ${
         collapsed ? "h-9 w-9 justify-center" : "gap-3 pl-7 pr-3 py-2"
       }`}
-
     >
       <span
         className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-primary opacity-0 transition-opacity group-data-[status=active]:opacity-100 ${
@@ -320,12 +364,15 @@ function NavSection({
   flush?: boolean;
 }) {
   return (
-    <div className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}>
+    <div
+      className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}
+    >
       {!collapsed && (
-        <p className={`mb-1 ${flush ? "pl-2" : "pl-7"} pr-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground`}>
+        <p
+          className={`mb-0.5 ${flush ? "pl-2" : "pl-7"} pr-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground`}
+        >
           {title}
         </p>
-
       )}
       {collapsed && <div className="my-2 h-px w-6 bg-border" />}
       {items.map((item) => (
@@ -335,10 +382,16 @@ function NavSection({
   );
 }
 
-
 /* ---------- Sidebar bottom actions ---------- */
-function SidebarBottomActions({ collapsed, onToggle, toggleOnly = false }: { collapsed: boolean; onToggle: () => void; toggleOnly?: boolean }) {
-  const { resolved, toggle: toggleTheme } = useTheme();
+function SidebarBottomActions({
+  collapsed,
+  onToggle,
+  toggleOnly = false,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  toggleOnly?: boolean;
+}) {
   return (
     <div
       className={`flex ${
@@ -346,24 +399,7 @@ function SidebarBottomActions({ collapsed, onToggle, toggleOnly = false }: { col
       }`}
     >
       {!toggleOnly && (
-        <>
-          <button
-            className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
-            aria-label="Notificações"
-            title="Notificações"
-          >
-            <Bell className="h-4 w-4" />
-            <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-primary animate-pulse-ring" />
-          </button>
-          <button
-            onClick={toggleTheme}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
-            aria-label="Alternar tema"
-            title={`Trocar para tema ${resolved === "dark" ? "claro" : "escuro"}`}
-          >
-            {resolved === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </button>
-        </>
+        <NotificationsButton compact />
       )}
       <button
         onClick={onToggle}
@@ -410,7 +446,7 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
           collapsed ? "h-9 w-9 justify-center p-0" : "gap-2 px-2 py-1.5"
         }`}
       >
-        <Avatar name={user?.nome ?? "?"} size={26} />
+        <Avatar name={user?.nome ?? "?"} src={user?.avatarUrl} size={26} />
         {!collapsed && (
           <div className="min-w-0 flex-1 text-left">
             <div className="truncate text-xs font-medium">{user?.nome ?? "Convidado"}</div>
@@ -439,20 +475,24 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
             }}
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
           >
-            <Users className="h-4 w-4" /> Meu perfil
+            <User className="h-4 w-4" /> Meu Perfil
           </button>
+          <div className="my-1 h-px bg-border" />
+          <ThemeModeMenuItem />
+          <div className="my-1 h-px bg-border" />
           <button
             onClick={() => {
               setOpen(false);
-              navigate({ to: "/configuracoes" });
+              navigate({ to: "/ajuda" });
             }}
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
           >
-            <Settings className="h-4 w-4" /> Configurações
+            <CircleQuestionMark className="h-4 w-4" /> Central de Ajuda
           </button>
           <div className="my-1 h-px bg-border" />
           <button
             onClick={async () => {
+              if (!window.confirm("Deseja realmente sair do sistema?")) return;
               await signOut();
               logout();
               navigate({ to: "/login" });
@@ -470,10 +510,12 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
 /* ---------- Sidebar ---------- */
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const role = useSession((s) => s.user?.role);
+  const permissions = useSession((s) => s.user?.permissions);
   const isOperator = role === "operator";
   const mainNav = isOperator ? filterForOperator(principalNav) : principalNav;
-  const simNav = isOperator ? filterForOperator(simuladoresNav) : simuladoresNav;
   const sysNav = isOperator ? filterForOperator(sistemaNav) : sistemaNav;
+  const visibleTopNav = topNav.filter((item) => canSeeNavItem(item, permissions));
+  const visibleAdminGroups = filterAdminGroupsByPermissions(adminGroups, permissions);
   return (
     <aside
       className={`hidden shrink-0 border-r border-border bg-surface-1 transition-[width] duration-200 ease-out lg:flex lg:flex-col ${
@@ -487,23 +529,22 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       >
         <Link to={isOperator ? "/inbox" : "/"} className="flex items-center gap-2">
           <LogoMark size={24} />
-          {!collapsed && (
-            <span className="text-sm font-semibold tracking-tight">Nexo</span>
-          )}
+          {!collapsed && <span className="text-sm font-semibold tracking-tight">Trixus</span>}
         </Link>
       </div>
 
       <nav
         className={`flex min-h-0 flex-1 flex-col overflow-x-hidden py-3 ${
-          isOperator ? "gap-5 overflow-y-auto" : "gap-1.5"
+          isOperator ? "gap-5 overflow-y-auto" : "gap-1"
         } ${collapsed ? "px-2" : "px-3"} ${
           !isOperator ? (collapsed ? "sidebar-scroll-hover" : "sidebar-scroll overflow-y-auto") : ""
         }`}
       >
-
         {isOperator ? (
           mainNav.length > 0 && (
-            <div className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}>
+            <div
+              className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}
+            >
               {mainNav.map((item) => (
                 <NavLink key={item.to} item={item} collapsed={collapsed} />
               ))}
@@ -511,23 +552,35 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           )
         ) : (
           <>
-            <div className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}>
-              {topNav.map((item) => (
+            <div
+              className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}
+            >
+              {visibleTopNav.map((item) => (
                 <NavLink key={item.to} item={item} collapsed={collapsed} />
               ))}
             </div>
-            {adminGroups.map((g) => (
-              <NavSection key={g.title} title={g.title} items={g.items} collapsed={collapsed} flush />
+            {visibleAdminGroups.map((g) => (
+              <NavSection
+                key={g.title}
+                title={g.title}
+                items={g.items}
+                collapsed={collapsed}
+                flush
+              />
             ))}
           </>
         )}
-
-        {isOperator && simNav.length > 0 && (
-          <NavSection title="Simuladores" items={simNav} collapsed={collapsed} />
-        )}
       </nav>
       <div className={`shrink-0 border-t border-border ${collapsed ? "px-2" : "px-3"} py-3`}>
-        {sysNav.length > 0 && <NavSection title="Sistema" items={sysNav} collapsed={collapsed} />}
+        {sysNav.length > 0 && (
+          <div
+            className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}
+          >
+            {sysNav.map((item) => (
+              <NavLink key={item.to} item={item} collapsed={collapsed} />
+            ))}
+          </div>
+        )}
         {isOperator && (
           <div className="mt-3 border-t border-border pt-3">
             <SidebarBottomActions collapsed={collapsed} onToggle={onToggle} toggleOnly={false} />
@@ -537,12 +590,9 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
           </div>
         )}
       </div>
-
-
     </aside>
   );
 }
-
 
 /* ---------- User menu ---------- */
 function UserMenu() {
@@ -566,7 +616,7 @@ function UserMenu() {
         onClick={() => setOpen((v) => !v)}
         className="flex shrink-0 items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1 pr-3 transition hover:bg-surface-2"
       >
-        <Avatar name={user?.nome ?? "?"} size={26} />
+        <Avatar name={user?.nome ?? "?"} src={user?.avatarUrl} size={26} />
         <span className="hidden text-sm font-medium sm:inline">
           {user?.nome?.split(" ")[0] ?? "Convidado"}
         </span>
@@ -588,20 +638,24 @@ function UserMenu() {
             }}
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
           >
-            <Users className="h-4 w-4" /> Meu perfil
+            <User className="h-4 w-4" /> Meu Perfil
           </button>
+          <div className="my-1 h-px bg-border" />
+          <ThemeModeMenuItem />
+          <div className="my-1 h-px bg-border" />
           <button
             onClick={() => {
               setOpen(false);
-              navigate({ to: "/configuracoes" });
+              navigate({ to: "/ajuda" });
             }}
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
           >
-            <Settings className="h-4 w-4" /> Configurações
+            <CircleQuestionMark className="h-4 w-4" /> Central de Ajuda
           </button>
           <div className="my-1 h-px bg-border" />
           <button
             onClick={async () => {
+              if (!window.confirm("Deseja realmente sair do sistema?")) return;
               await signOut();
               logout();
               navigate({ to: "/login" });
@@ -616,23 +670,39 @@ function UserMenu() {
   );
 }
 
-/* ---------- Theme toggle ---------- */
-export function ThemeToggle() {
+/* ---------- Theme setting ---------- */
+function ThemeModeMenuItem() {
   const { resolved, toggle } = useTheme();
+  const isDark = resolved === "dark";
   return (
     <button
       onClick={toggle}
-      className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
-      aria-label="Alternar tema"
-      title={`Trocar para tema ${resolved === "dark" ? "claro" : "escuro"}`}
+      role="switch"
+      aria-checked={isDark}
+      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground transition hover:bg-surface-2"
     >
-      {resolved === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      <span className="flex-1 text-left">{isDark ? "Modo Claro" : "Modo Escuro"}</span>
+      <span
+        aria-hidden="true"
+        className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${isDark ? "bg-primary" : "bg-muted"}`}
+      >
+        <span
+          className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isDark ? "translate-x-4" : "translate-x-0"}`}
+        />
+      </span>
     </button>
   );
 }
 
 /* ---------- Topbar ---------- */
-function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
+function Topbar({
+  onToggleSidebar,
+  onOpenMobileNav,
+}: {
+  onToggleSidebar: () => void;
+  onOpenMobileNav: () => void;
+}) {
   const crumbs = useBreadcrumbs();
   const conn = useConnectionStatus();
   return (
@@ -668,16 +738,25 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       </nav>
 
       <div className="flex min-w-0 flex-1 items-center gap-2 md:hidden">
+        <button
+          type="button"
+          onClick={onOpenMobileNav}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+          aria-label="Abrir menu"
+          title="Abrir menu"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
         <LogoMark size={22} />
-        <span className="truncate text-sm font-semibold">Nexo</span>
+        <span className="truncate text-sm font-semibold">Trixus</span>
       </div>
 
       <ConnectionPill status={conn} />
 
-      <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-1.5 transition focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-ring md:flex md:w-64 xl:w-80">
+      <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-1.5 transition focus-within:border-primary md:flex md:w-64 xl:w-80">
         <Search className="h-4 w-4 text-muted-foreground" />
         <input
-          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          className="topbar-search-input w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           placeholder="Buscar…"
         />
         <kbd className="hidden items-center gap-0.5 rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground lg:inline-flex">
@@ -685,57 +764,242 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         </kbd>
       </div>
 
-      <ThemeToggle />
-
-      <button
-        className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
-        aria-label="Notificações"
-      >
-        <Bell className="h-4 w-4" />
-        <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-primary animate-pulse-ring" />
-      </button>
+      <NotificationsButton />
 
       <UserMenu />
     </header>
   );
 }
 
-/* ---------- Mobile bottom nav ---------- */
-function MobileNav() {
-  const role = useSession((s) => s.user?.role);
-  const items: NavItem[] =
-    role === "operator"
-      ? [
-          { to: "/inbox", label: "Inbox", icon: Inbox },
-          { to: "/mensagens-rapidas", label: "Rápidas", icon: Zap },
-          { to: "/simulador", label: "Simulador", icon: MessageSquareText },
-          { to: "/perfil", label: "Perfil", icon: Users },
-          { to: "/ajuda", label: "Ajuda", icon: LifeBuoy },
-        ]
-      : [
-          { to: "/", label: "Início", icon: LayoutDashboard },
-          { to: "/inbox", label: "Inbox", icon: Inbox },
-          { to: "/clientes", label: "Clientes", icon: Users },
-          { to: "/configuracoes", label: "Ajustes", icon: Settings },
-          { to: "/perfil", label: "Perfil", icon: MessageSquareText },
-        ];
+function NotificationsButton({ compact = false }: { compact?: boolean }) {
+  const qc = useQueryClient();
+  const user = useSession((s) => s.user);
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const enabled = !!user?.permissions?.includes("notifications.read");
+  const notifications = useQuery({
+    queryKey: ["trixus", "notifications", "unread"],
+    queryFn: () => notificationApi.list({ status: "UNREAD", pageSize: 10 }),
+    enabled,
+    refetchInterval: enabled ? 60_000 : false,
+  });
+  const unread = notifications.data?.unread ?? 0;
+
+  React.useEffect(() => {
+    if (!enabled) return;
+    return onRealtimeEvent((event) => {
+      if (
+        event.event.startsWith("message.") ||
+        event.event.startsWith("conversation.") ||
+        event.event.startsWith("ticket.") ||
+        event.event === "notification.created"
+      ) {
+        qc.invalidateQueries({ queryKey: ["trixus", "notifications"] });
+      }
+    });
+  }, [enabled, qc]);
+
+  React.useEffect(() => {
+    function onClick(event: MouseEvent) {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  if (!enabled) return null;
+
+  const markAllRead = async () => {
+    await notificationApi.markAllRead();
+    await qc.invalidateQueries({ queryKey: ["trixus", "notifications"] });
+  };
+
   return (
-    <nav className="sticky bottom-0 z-30 grid grid-cols-5 border-t border-border bg-background/95 backdrop-blur-xl lg:hidden">
-      {items.map((item) => {
-        const Icon = item.icon;
-        return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+        aria-label="Notificações"
+        title="Notificações"
+      >
+        <Bell className="h-4 w-4" />
+        {unread > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] font-semibold leading-4 text-primary-foreground">
+            {unread > 9 ? "9+" : unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
+          className={`absolute z-[120] mt-2 w-80 rounded-xl border border-border bg-popover p-2 shadow-elevated ${
+            compact ? "bottom-11 left-0" : "right-0 top-9"
+          }`}
+        >
+          <div className="flex items-center justify-between border-b border-border px-2 pb-2">
+            <p className="text-sm font-semibold">Notificações</p>
+            <button
+              type="button"
+              onClick={markAllRead}
+              disabled={unread === 0}
+              className="text-xs text-primary disabled:text-muted-foreground"
+            >
+              Marcar lidas
+            </button>
+          </div>
+          <div className="max-h-80 overflow-y-auto py-1">
+            {notifications.isLoading ? (
+              <p className="px-2 py-3 text-sm text-muted-foreground">Carregando...</p>
+            ) : notifications.data?.items.length ? (
+              notifications.data.items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={async () => {
+                    await notificationApi.markRead(item.id);
+                    await qc.invalidateQueries({ queryKey: ["trixus", "notifications"] });
+                  }}
+                  className="w-full rounded-lg px-2 py-2 text-left transition hover:bg-surface-2"
+                >
+                  <p className="text-sm font-medium">{item.title}</p>
+                  {item.body && (
+                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{item.body}</p>
+                  )}
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {new Date(item.createdAt).toLocaleString("pt-BR")}
+                  </p>
+                </button>
+              ))
+            ) : (
+              <p className="px-2 py-3 text-sm text-muted-foreground">Nenhuma notificação nova.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Mobile side nav ---------- */
+function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const role = useSession((s) => s.user?.role);
+  const permissions = useSession((s) => s.user?.permissions);
+  const logout = useSession((s) => s.logout);
+  const navigate = useNavigate();
+  const isOperator = role === "operator";
+  const mainNav = isOperator ? filterForOperator(principalNav) : principalNav;
+  const sysNav = isOperator ? filterForOperator(sistemaNav) : sistemaNav;
+  const visibleTopNav = topNav.filter((item) => canSeeNavItem(item, permissions));
+  const visibleAdminGroups = filterAdminGroupsByPermissions(adminGroups, permissions);
+  return (
+    <>
+      {open && (
+        <button
+          type="button"
+          aria-label="Fechar menu"
+          className="fixed inset-0 z-[190] bg-black/45 backdrop-blur-[1px] lg:hidden"
+          onClick={onClose}
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-[200] flex w-72 max-w-[86vw] flex-col border-r border-border bg-surface-1 shadow-2xl transition-transform duration-200 lg:hidden ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
           <Link
-            key={item.to}
-            to={item.to}
-            activeOptions={{ exact: item.to === "/" }}
-            className="flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium text-muted-foreground transition data-[status=active]:text-primary"
+            to={isOperator ? "/inbox" : "/"}
+            className="flex items-center gap-2"
+            onClick={onClose}
           >
-            <Icon className="h-4 w-4" />
-            {item.label}
+            <LogoMark size={24} />
+            <span className="text-sm font-semibold tracking-tight">Trixus</span>
           </Link>
-        );
-      })}
-    </nav>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+            aria-label="Fechar menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <nav className="sidebar-scroll min-h-0 flex-1 overflow-y-auto px-3 py-3">
+          {isOperator ? (
+            <div className="space-y-0.5">
+              {mainNav.map((item) => (
+                <MobileNavLink key={item.to} item={item} onClose={onClose} />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {visibleTopNav.length > 0 && (
+                <div className="space-y-0.5">
+                  {visibleTopNav.map((item) => (
+                    <MobileNavLink key={item.to} item={item} onClose={onClose} />
+                  ))}
+                </div>
+              )}
+              {visibleAdminGroups.map((group) => (
+                <div key={group.title} className="space-y-0.5">
+                  <p className="mb-0.5 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    {group.title}
+                  </p>
+                  <div className="space-y-0.5 pl-3">
+                    {group.items.map((item) => (
+                      <MobileNavLink key={item.to} item={item} onClose={onClose} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </nav>
+        <div className="shrink-0 border-t border-border px-3 py-2">
+          {sysNav.length > 0 && (
+            <div className="space-y-0.5">
+              {sysNav.map((item) => (
+                <MobileNavLink key={item.to} item={item} onClose={onClose} />
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={async () => {
+              if (!window.confirm("Deseja realmente sair do sistema?")) return;
+              await signOut();
+              logout();
+              onClose();
+              navigate({ to: "/login" });
+            }}
+            className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-destructive transition hover:bg-destructive/10"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            Sair
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+function MobileNavLink({ item, onClose }: { item: NavItem; onClose: () => void }) {
+  const Icon = item.icon;
+  return (
+    <Link
+      to={item.to}
+      activeOptions={{ exact: item.to === "/" }}
+      onClick={onClose}
+      className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-surface-2 hover:text-foreground data-[status=active]:bg-surface-2 data-[status=active]:text-foreground"
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      {item.badge && (
+        <Badge tone="brand" dot={false}>
+          {item.badge}
+        </Badge>
+      )}
+    </Link>
   );
 }
 
@@ -766,30 +1030,44 @@ function useAuthGate(expected: "app" | "admin" | "operator") {
   return user;
 }
 
-
-
 /* ---------- Impersonation banner ---------- */
 function ImpersonationBanner() {
   const imp = useSession((s) => s.impersonating);
   const stop = useSession((s) => s.stopImpersonation);
-  const user = useSession((s) => s.user);
+  const loginAs = useSession((s) => s.loginAs);
   const navigate = useNavigate();
-  if (!imp || user?.role !== "super_admin") return null;
+  const expired = imp ? new Date(imp.expiresAt).getTime() <= Date.now() : false;
+  React.useEffect(() => {
+    if (!imp) return;
+    const delay = Math.max(0, new Date(imp.expiresAt).getTime() - Date.now());
+    const timer = window.setTimeout(async () => {
+      const restored = await stopStoredPlatformImpersonation();
+      if (restored) loginAs(restored);
+      stop();
+      navigate({ to: "/admin" });
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [imp, loginAs, navigate, stop]);
+  if (!imp) return null;
   return (
     <div className="flex items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning-foreground md:px-6">
       <Zap className="h-4 w-4 text-warning" />
       <span className="flex-1">
-        Você está visualizando o ambiente da empresa{" "}
-        <strong>{imp.empresaNome}</strong>. Todas as ações ficam registradas em auditoria.
+        Você está acessando o tenant <strong>{imp.empresaNome}</strong> como suporte. Ator real:{" "}
+        <strong>{imp.actorEmail}</strong>. Expiração:{" "}
+        <strong>{new Date(imp.expiresAt).toLocaleString("pt-BR")}</strong>.
       </span>
       <button
-        onClick={() => {
+        disabled={expired}
+        onClick={async () => {
+          const restored = await stopStoredPlatformImpersonation();
+          if (restored) loginAs(restored);
           stop();
           navigate({ to: "/admin" });
         }}
         className="rounded-md border border-warning/50 bg-background/40 px-2.5 py-1 text-xs font-medium hover:bg-background/60"
       >
-        Sair da impersonação
+        Encerrar acesso
       </button>
     </div>
   );
@@ -799,6 +1077,7 @@ function ImpersonationBanner() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   useAuthGate("app");
   const { collapsed, toggle, collapse } = useSidebarState();
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   const role = useSession((s) => s.user?.role);
@@ -811,11 +1090,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <ImpersonationBanner />
           <OfflineBanner />
-          {showTopbar && <Topbar onToggleSidebar={toggle} />}
-          <main key={pathname} className="min-w-0 flex-1 overflow-y-auto animate-fade-in-soft">
+          {showTopbar && (
+            <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
+          )}
+          <main
+            key={pathname}
+            className="min-w-0 flex-1 overflow-y-auto overscroll-contain animate-fade-in-soft"
+          >
             {children}
           </main>
-          <MobileNav />
+          <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
         </div>
       </div>
     </SidebarCollapseContext.Provider>
@@ -825,6 +1109,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 export function AppShellFull({ children }: { children: React.ReactNode }) {
   useAuthGate("app");
   const { collapsed, toggle, collapse } = useSidebarState();
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   const role = useSession((s) => s.user?.role);
   const showTopbar = role !== "operator";
@@ -836,8 +1121,11 @@ export function AppShellFull({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-1 flex-col">
           <ImpersonationBanner />
           <OfflineBanner />
-          {showTopbar && <Topbar onToggleSidebar={toggle} />}
+          {showTopbar && (
+            <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
+          )}
           <main className="min-w-0 flex-1 overflow-hidden animate-fade-in-soft">{children}</main>
+          <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
         </div>
       </div>
     </SidebarCollapseContext.Provider>
@@ -852,7 +1140,9 @@ export function PageContainer({
   className?: string;
 }) {
   return (
-    <div className={`mx-auto w-full max-w-7xl px-4 py-6 md:px-6 md:py-8 lg:px-8 ${className}`}>
+    <div
+      className={`mx-auto w-full max-w-[96rem] px-3 py-4 sm:px-4 sm:py-6 md:px-6 md:py-8 lg:px-8 xl:px-10 2xl:px-12 ${className}`}
+    >
       {children}
     </div>
   );

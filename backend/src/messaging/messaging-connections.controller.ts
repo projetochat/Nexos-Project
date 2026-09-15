@@ -1,0 +1,117 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
+import type { AuthenticatedUser } from "../auth/auth.types";
+import { CurrentUser } from "../auth/current-user.decorator";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { RequirePermissions } from "../auth/permissions.decorator";
+import { PermissionsGuard } from "../auth/permissions.guard";
+import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.dto";
+import { UpdateMessagingConnectionDto } from "./dto/update-messaging-connection.dto";
+import { MessagingConnectionsService } from "./messaging-connections.service";
+
+@Controller("messaging/connections")
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+export class MessagingConnectionsController {
+  constructor(
+    @Inject(MessagingConnectionsService)
+    private readonly connections: MessagingConnectionsService,
+  ) {}
+
+  @Get()
+  @RequirePermissions("connections.read")
+  list(@CurrentUser() current: AuthenticatedUser) {
+    return this.connections.list(current);
+  }
+
+  @Get("health/evolution")
+  @RequirePermissions("connections.read")
+  providerHealth() {
+    return this.connections.providerHealth();
+  }
+
+  @Get(":id")
+  @RequirePermissions("connections.read")
+  detail(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.detail(id, current);
+  }
+
+  @Post("evolution")
+  @RequirePermissions("connections.manage")
+  createEvolution(
+    @Body() dto: CreateEvolutionConnectionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.connections.createEvolution(dto, current);
+  }
+
+  @Patch(":id")
+  @RequirePermissions("connections.manage")
+  update(
+    @Param("id") id: string,
+    @Body() dto: UpdateMessagingConnectionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.connections.update(id, dto, current);
+  }
+
+  @Post(":id/profile-picture")
+  @RequirePermissions("connections.manage")
+  updateProfilePicture(
+    @Param("id") id: string,
+    @Body() dto: { imageDataUrl?: string },
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.connections.updateProfilePicture(id, dto.imageDataUrl, current);
+  }
+
+  @Post(":id/profile-picture/refresh")
+  @RequirePermissions("connections.read")
+  refreshProfilePicture(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.refreshProfilePicture(id, current);
+  }
+
+  @Delete(":id/profile-picture")
+  @RequirePermissions("connections.manage")
+  removeProfilePicture(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.removeProfilePicture(id, current);
+  }
+
+  @Get(":id/status")
+  @RequirePermissions("connections.read")
+  status(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.status(id, current);
+  }
+
+  @Get(":id/qr")
+  @RequirePermissions("connections.manage")
+  qrCode(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.qrCode(id, current);
+  }
+
+  @Patch(":id/logout")
+  @RequirePermissions("connections.manage")
+  logout(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.logout(id, current);
+  }
+
+  @Delete(":id")
+  @RequirePermissions("connections.manage")
+  remove(
+    @Param("id") id: string,
+    @Body() dto: { removeConversationHistory?: boolean } | undefined,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.connections.remove(id, current, {
+      removeConversationHistory: dto?.removeConversationHistory === true,
+    });
+  }
+}

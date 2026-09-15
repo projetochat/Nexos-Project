@@ -1,10 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useSession } from "@/lib/session";
 
 export type ChatPerms = {
   pode_editar_contato: boolean;
   pode_editar_vinculo_cliente: boolean;
+  pode_usar_etiquetas: boolean;
   pode_editar_etiquetas: boolean;
+  pode_gerenciar_respostas_rapidas: boolean;
   visualiza_leads: boolean;
   visualiza_contatos: boolean;
   visualiza_numero: boolean;
@@ -14,12 +15,15 @@ export type ChatPerms = {
   bloquear_contatos: boolean;
   enviar_audio: boolean;
   mostrar_nome_atendente: boolean;
+  visualiza_todas_conversas_ativas: boolean;
 };
 
 export const DEFAULT_PERMS: ChatPerms = {
   pode_editar_contato: true,
   pode_editar_vinculo_cliente: true,
+  pode_usar_etiquetas: true,
   pode_editar_etiquetas: true,
+  pode_gerenciar_respostas_rapidas: true,
   visualiza_leads: true,
   visualiza_contatos: true,
   visualiza_numero: true,
@@ -29,32 +33,32 @@ export const DEFAULT_PERMS: ChatPerms = {
   bloquear_contatos: true,
   enviar_audio: true,
   mostrar_nome_atendente: true,
+  visualiza_todas_conversas_ativas: true,
 };
 
-const COLS =
-  "pode_editar_contato, pode_editar_vinculo_cliente, pode_editar_etiquetas, visualiza_leads, visualiza_contatos, visualiza_numero, excluir_mensagem, editar_mensagem, acessa_mensagens_rapidas, bloquear_contatos, enviar_audio, mostrar_nome_atendente";
+const CHAT_PERMISSION_MAP: Record<keyof ChatPerms, string> = {
+  pode_editar_contato: "chat.contacts.edit",
+  pode_editar_vinculo_cliente: "chat.customer_link.edit",
+  pode_usar_etiquetas: "chat.tags.use",
+  pode_editar_etiquetas: "chat.tags.manage",
+  pode_gerenciar_respostas_rapidas: "chat.quick_replies.manage",
+  visualiza_leads: "chat.leads.read",
+  visualiza_contatos: "chat.contacts.read",
+  visualiza_numero: "chat.phone.read",
+  excluir_mensagem: "chat.messages.delete",
+  editar_mensagem: "chat.messages.edit",
+  acessa_mensagens_rapidas: "chat.quick_replies.read",
+  bloquear_contatos: "chat.contacts.block",
+  enviar_audio: "chat.audio.send",
+  mostrar_nome_atendente: "chat.agent_name.show",
+  visualiza_todas_conversas_ativas: "chat.conversations.view_all_active",
+};
 
 export function useChatPerms(): ChatPerms {
-  const { data } = useQuery({
-    queryKey: ["chat-perms", "current"],
-    queryFn: async (): Promise<ChatPerms> => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return DEFAULT_PERMS;
-      const { data: ag } = await supabase
-        .from("agents")
-        .select("perfil_id")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (!ag?.perfil_id) return DEFAULT_PERMS;
-      const { data: p } = await supabase
-        .from("access_profiles")
-        .select(COLS)
-        .eq("id", ag.perfil_id)
-        .maybeSingle();
-      if (!p) return DEFAULT_PERMS;
-      return { ...DEFAULT_PERMS, ...(p as Partial<ChatPerms>) };
-    },
-    staleTime: 60_000,
-  });
-  return data ?? DEFAULT_PERMS;
+  const permissions = useSession((state) => state.user?.permissions);
+  if (!permissions?.length) return DEFAULT_PERMS;
+  const granted = new Set(permissions);
+  return Object.fromEntries(
+    Object.entries(CHAT_PERMISSION_MAP).map(([key, permission]) => [key, granted.has(permission)]),
+  ) as ChatPerms;
 }

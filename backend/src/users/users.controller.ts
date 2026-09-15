@@ -1,37 +1,676 @@
-import { Controller, Get, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Inject,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
+import { createHash, randomBytes } from "crypto";
+import { compare, hash } from "bcryptjs";
+import { IsArray, IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { AuthenticatedUser } from "../auth/auth.types";
+import type { AuthenticatedUser } from "../auth/auth.types";
+import { RequirePermissions } from "../auth/permissions.decorator";
+import { PermissionsGuard } from "../auth/permissions.guard";
+import { Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { PlanEntitlementService } from "../platform/plan-entitlement.service";
+import { CreateUserDto } from "./dto/create-user.dto";
+import { UpdateUserDto } from "./dto/update-user.dto";
 
-@Controller("me")
+class CreateInvitationDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  roleId!: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  departmentIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
+
+class UpdateMyProfileDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(3_000_000)
+  avatarUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  currentPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  newPassword?: string;
+}
+
+class UpdateAdministratorCredentialsDto {
+  @IsString()
+  currentPassword!: string;
+
+  @IsString()
+  @MinLength(6)
+  newPassword!: string;
+
+  @IsString()
+  confirmPassword!: string;
+}
+
+type MembershipWithRelations = {
+  id: string;
+  tenantId: string;
+  userId: string;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    passwordHash: string;
+    avatarUrl?: string | null;
+    status: string;
+    platformRole: string;
+  };
+  role: {
+    id: string;
+    key: string;
+    name: string;
+  };
+  departments: Array<{
+    department: {
+      id: string;
+      name: string;
+      description: string | null;
+      color: string;
+      active: boolean;
+    };
+  }>;
+};
+
+@Controller()
 @UseGuards(JwtAuthGuard)
 export class UsersController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
+  ) {}
 
-  @Get()
+  @Get("me")
   async me(@CurrentUser() current: AuthenticatedUser) {
     const membership = await this.prisma.tenantMembership.findUniqueOrThrow({
       where: { id: current.membershipId },
-      include: { user: true, tenant: true },
+      include: {
+        user: true,
+        tenant: true,
+        role: { include: { permissions: { select: { permissionId: true } } } },
+        departments: { include: { department: true } },
+      },
     });
+    const permissions = membership.role.permissions.map((item) => item.permissionId);
 
     return {
       user: {
         id: membership.user.id,
         email: membership.user.email,
         name: membership.user.name,
-        role: membership.role,
+        avatarUrl: membership.user.avatarUrl,
+        roleId: membership.roleId,
+        roleKey: membership.role.key,
+        roleName: membership.role.name,
+        platformRole: membership.user.platformRole,
       },
       tenant: {
         id: membership.tenant.id,
         slug: membership.tenant.slug,
         name: membership.tenant.name,
       },
-      permissions: {
-        canManageTenant: ["SUPER_ADMIN", "ADMIN"].includes(membership.role),
-        canOperateInbox: ["ADMIN", "SUPERVISOR", "OPERATOR"].includes(membership.role),
+      departments: membership.departments.map((item) => this.serializeDepartment(item.department)),
+      permissions,
+      capabilities: {
+        canManageTenant: permissions.includes("users.manage"),
+        canOperateInbox: permissions.some((permission) => permission.startsWith("chat.")),
       },
     };
   }
+
+  @Patch("me/profile")
+  async updateMyProfile(
+    @Body() dto: UpdateMyProfileDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const avatarUrl = normalizeAvatarUrl(dto.avatarUrl);
+    const membership = await this.prisma.tenantMembership.findUniqueOrThrow({
+      where: { id: current.membershipId },
+      include: {
+        user: true,
+        tenant: true,
+        role: true,
+        departments: { include: { department: true } },
+      },
+    });
+    if (dto.newPassword) {
+      if (membership.role.key === "tenant_admin") {
+        throw new BadRequestException(
+          "Altere a senha do administrador em Credenciais do Usuário Administrador.",
+        );
+      }
+      if (!dto.currentPassword) throw new BadRequestException("Informe a senha atual.");
+      const validPassword = await compare(dto.currentPassword, membership.user.passwordHash);
+      if (!validPassword) throw new BadRequestException("Senha atual invalida.");
+    }
+    await this.prisma.user.update({
+      where: { id: membership.userId },
+      data: {
+        name: dto.name?.trim() || undefined,
+        ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
+        ...(dto.newPassword ? { passwordHash: await hash(dto.newPassword, 12) } : {}),
+      },
+    });
+    const updated = await this.prisma.tenantMembership.findUniqueOrThrow({
+      where: { id: current.membershipId },
+      include: { user: true, role: true, departments: { include: { department: true } } },
+    });
+    return this.serializeMembership(updated);
+  }
+
+  @Patch("company/administrator-credentials")
+  async updateAdministratorCredentials(
+    @Body() dto: UpdateAdministratorCredentialsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    if (current.roleKey !== "tenant_admin" || current.impersonationSessionId) {
+      throw new ForbiddenException("Somente o Administrador pode alterar estas credenciais.");
+    }
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException("A confirmação da nova senha não confere.");
+    }
+    const membership = await this.prisma.tenantMembership.findFirstOrThrow({
+      where: {
+        id: current.membershipId,
+        tenantId: current.tenantId,
+        userId: current.userId,
+        status: "ACTIVE",
+      },
+      include: { user: true, role: true },
+    });
+    if (membership.role.key !== "tenant_admin") {
+      throw new ForbiddenException("Somente o Administrador pode alterar estas credenciais.");
+    }
+    if (!(await compare(dto.currentPassword, membership.user.passwordHash))) {
+      throw new BadRequestException("Senha atual inválida.");
+    }
+    await this.prisma.user.update({
+      where: { id: membership.userId },
+      data: { passwordHash: await hash(dto.newPassword, 12) },
+    });
+    return { ok: true };
+  }
+
+  @Get("company")
+  async company(@CurrentUser() current: AuthenticatedUser) {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({
+      where: { id: current.tenantId },
+      include: {
+        users: {
+          where: { status: "ACTIVE" },
+          orderBy: { createdAt: "asc" },
+          include: { user: true, role: true },
+        },
+      },
+    });
+    const administrator =
+      tenant.users.find((membership) => membership.role.key === "tenant_admin") ?? tenant.users[0];
+    const administratorEmail = tenant.technicalEmail ?? administrator?.user.email ?? null;
+
+    // Consolida cadastros legados: após a primeira leitura, o e-mail deixa de depender da sessão.
+    if (!tenant.technicalEmail && administratorEmail) {
+      await this.prisma.tenant.update({
+        where: { id: tenant.id },
+        data: { technicalEmail: administratorEmail },
+      });
+    }
+
+    return {
+      name: tenant.name,
+      legalName: tenant.legalName,
+      document: tenant.document,
+      timezone: tenant.timezone,
+      locale: tenant.locale,
+      accessEmail: current.roleKey === "tenant_admin" ? administratorEmail : null,
+      responsibleName: administrator?.user.name ?? null,
+      canManageAdministratorCredentials: current.roleKey === "tenant_admin",
+    };
+  }
+
+  @Get("company/financial")
+  async financial(@CurrentUser() current: AuthenticatedUser) {
+    const invoices = await this.prisma.invoice.findMany({
+      where: { tenantId: current.tenantId },
+      orderBy: [{ dueAt: "desc" }, { createdAt: "desc" }],
+      include: { subscription: { include: { plan: true } } },
+    });
+
+    return invoices.map((invoice) => ({
+      paymentId: invoice.number,
+      subscriptionId: invoice.subscriptionId,
+      service: invoice.subscription.plan.name,
+      referenceAt: invoice.dueAt,
+      paidAt: invoice.paidAt,
+      amountCents: invoice.totalCents,
+      currency: invoice.currency,
+      status: invoice.status,
+    }));
+  }
+
+  @Get("users")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.read")
+  async list(@CurrentUser() current: AuthenticatedUser) {
+    const memberships = await this.prisma.tenantMembership.findMany({
+      where: { tenantId: current.tenantId },
+      orderBy: { user: { name: "asc" } },
+      include: {
+        user: true,
+        role: true,
+        departments: { include: { department: true } },
+      },
+    });
+
+    return memberships
+      .sort((left, right) => {
+        if (left.role.key === "tenant_admin") return -1;
+        if (right.role.key === "tenant_admin") return 1;
+        return left.user.name.localeCompare(right.user.name, "pt-BR", { sensitivity: "base" });
+      })
+      .map((membership) => this.serializeMembership(membership));
+  }
+
+  @Get("users/:id")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.read")
+  async findOne(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    const membership = await this.findMembershipOrThrow(id, current.tenantId);
+    return this.serializeMembership(membership);
+  }
+
+  @Post("users")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.manage")
+  async create(@Body() dto: CreateUserDto, @CurrentUser() current: AuthenticatedUser) {
+    const roleId = dto.roleId ?? (await this.defaultRoleId(current.tenantId));
+    await this.assertAssignableRole(roleId, current.tenantId);
+    await this.assertDepartmentsInTenant(dto.departmentIds ?? [], current.tenantId);
+
+    const passwordHash = await hash(dto.password, 12);
+    const email = dto.email.toLowerCase().trim();
+    const avatarUrl = normalizeAvatarUrl(dto.avatarUrl);
+
+    const membership = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
+      );
+      await this.assertNameAvailable(tx, current.tenantId, dto.name);
+      await this.entitlements.assertTenantOperational(current.tenantId);
+      await this.entitlements.assertWithinLimit(
+        current.tenantId,
+        "maxUsers",
+        await tx.tenantMembership.count({
+          where: { tenantId: current.tenantId, status: "ACTIVE", user: { status: "ACTIVE" } },
+        }),
+      );
+      let user = await tx.user.findUnique({ where: { email } });
+      if (user) {
+        const existing = await tx.tenantMembership.findUnique({
+          where: { tenantId_userId: { tenantId: current.tenantId, userId: user.id } },
+        });
+        if (existing) throw new BadRequestException("Usuário já pertence a este tenant.");
+        user = await tx.user.update({
+          where: { id: user.id },
+          data: {
+            name: dto.name.trim(),
+            passwordHash,
+            status: "ACTIVE",
+            ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
+          },
+        });
+      } else {
+        user = await tx.user.create({
+          data: {
+            email,
+            name: dto.name.trim(),
+            passwordHash,
+            ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
+          },
+        });
+      }
+
+      const created = await tx.tenantMembership.create({
+        data: { tenantId: current.tenantId, userId: user.id, roleId, status: "ACTIVE" },
+      });
+      await this.replaceDepartments(tx, current.tenantId, created.id, dto.departmentIds ?? []);
+      return tx.tenantMembership.findUniqueOrThrow({
+        where: { id: created.id },
+        include: { user: true, role: true, departments: { include: { department: true } } },
+      });
+    });
+
+    return this.serializeMembership(membership);
+  }
+
+  @Patch("users/:id")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.manage")
+  async update(
+    @Param("id") id: string,
+    @Body() dto: UpdateUserDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const existing = await this.findMembershipOrThrow(id, current.tenantId);
+    this.assertMasterMembershipProtected(existing);
+    if (dto.roleId) await this.assertAssignableRole(dto.roleId, current.tenantId);
+    if (dto.departmentIds)
+      await this.assertDepartmentsInTenant(dto.departmentIds, current.tenantId);
+    const avatarUrl = normalizeAvatarUrl(dto.avatarUrl);
+
+    const membership = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
+      );
+      if (dto.name !== undefined) {
+        await this.assertNameAvailable(tx, current.tenantId, dto.name, existing.id);
+      }
+      await tx.user.update({
+        where: { id: existing.userId },
+        data: {
+          email: dto.email?.toLowerCase().trim(),
+          name: dto.name?.trim(),
+          passwordHash: dto.password ? await hash(dto.password, 12) : undefined,
+          status: dto.status,
+          ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
+        },
+      });
+      await tx.tenantMembership.update({
+        where: { id: existing.id },
+        data: { roleId: dto.roleId, status: dto.membershipStatus },
+      });
+      if (dto.departmentIds) {
+        await this.replaceDepartments(tx, current.tenantId, existing.id, dto.departmentIds);
+      }
+      return tx.tenantMembership.findUniqueOrThrow({
+        where: { id: existing.id },
+        include: { user: true, role: true, departments: { include: { department: true } } },
+      });
+    });
+
+    return this.serializeMembership(membership);
+  }
+
+  @Patch("users/:id/activate")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.manage")
+  activate(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.setMembershipStatus(id, current.tenantId, "ACTIVE");
+  }
+
+  @Patch("users/:id/deactivate")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.manage")
+  deactivate(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.setMembershipStatus(id, current.tenantId, "DISABLED");
+  }
+
+  @Get("user-invitations")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.manage")
+  async listInvitations(@CurrentUser() current: AuthenticatedUser) {
+    const invitations = await this.prisma.userInvitation.findMany({
+      where: { tenantId: current.tenantId },
+      include: { role: true },
+      orderBy: { createdAt: "desc" },
+    });
+    return invitations.map((invitation) => ({
+      id: invitation.id,
+      email: invitation.email,
+      role: { id: invitation.role.id, key: invitation.role.key, name: invitation.role.name },
+      departmentIds: invitation.departmentIds,
+      status: invitation.status.toLowerCase(),
+      expiresAt: invitation.expiresAt,
+      acceptedAt: invitation.acceptedAt,
+      revokedAt: invitation.revokedAt,
+      createdAt: invitation.createdAt,
+    }));
+  }
+
+  @Post("user-invitations")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.manage")
+  async createInvitation(
+    @Body() dto: CreateInvitationDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.assertAssignableRole(dto.roleId, current.tenantId);
+    await this.assertDepartmentsInTenant(dto.departmentIds ?? [], current.tenantId);
+    const token = randomBytes(32).toString("base64url");
+    const email = dto.email.toLowerCase().trim();
+    const invitation = await this.prisma.$transaction(async (tx) => {
+      await tx.userInvitation.updateMany({
+        where: { tenantId: current.tenantId, email, status: "PENDING" },
+        data: { status: "REVOKED", revokedAt: new Date() },
+      });
+      return tx.userInvitation.create({
+        data: {
+          tenantId: current.tenantId,
+          email,
+          roleId: dto.roleId,
+          departmentIds: dto.departmentIds ?? [],
+          tokenHash: hashToken(token),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000),
+          invitedByMembershipId: current.membershipId,
+        },
+      });
+    });
+    return {
+      id: invitation.id,
+      email: invitation.email,
+      status: invitation.status.toLowerCase(),
+      expiresAt: invitation.expiresAt,
+      ...(exposeLocalTokens()
+        ? { acceptUrl: `${publicAppUrl()}/login?invite=${token}` }
+        : { delivery: "provider_required" }),
+    };
+  }
+
+  @Patch("user-invitations/:id/revoke")
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions("users.manage")
+  async revokeInvitation(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    await this.prisma.userInvitation.updateMany({
+      where: { id, tenantId: current.tenantId, status: "PENDING" },
+      data: { status: "REVOKED", revokedAt: new Date() },
+    });
+    return { ok: true };
+  }
+
+  private async setMembershipStatus(id: string, tenantId: string, status: "ACTIVE" | "DISABLED") {
+    const membership = await this.findMembershipOrThrow(id, tenantId);
+    this.assertMasterMembershipProtected(membership);
+    const updated = await this.prisma.tenantMembership.update({
+      where: { id: membership.id },
+      data: { status },
+      include: { user: true, role: true, departments: { include: { department: true } } },
+    });
+    return this.serializeMembership(updated);
+  }
+
+  private assertMasterMembershipProtected(membership: { role: { key: string } }) {
+    if (membership.role.key === "tenant_admin") {
+      throw new BadRequestException("O usuário master não pode ser alterado por esta tela.");
+    }
+  }
+
+  private async defaultRoleId(tenantId: string) {
+    const role = await this.prisma.role.findUnique({
+      where: { tenantId_key: { tenantId, key: "agent" } },
+    });
+    if (!role) throw new BadRequestException("Role padrão não encontrada.");
+    return role.id;
+  }
+
+  private async assertRoleInTenant(roleId: string, tenantId: string) {
+    const role = await this.prisma.role.findFirst({ where: { id: roleId, tenantId } });
+    if (!role) throw new BadRequestException("Role inexistente para este tenant.");
+    return role;
+  }
+
+  private async assertAssignableRole(roleId: string, tenantId: string) {
+    const role = await this.assertRoleInTenant(roleId, tenantId);
+    if (role.key === "tenant_admin") {
+      throw new BadRequestException("O perfil Administrador é reservado ao usuário administrador.");
+    }
+  }
+
+  private async assertDepartmentsInTenant(departmentIds: string[], tenantId: string) {
+    if (!departmentIds.length) return;
+    const count = await this.prisma.department.count({
+      where: { tenantId, id: { in: departmentIds }, active: true },
+    });
+    if (count !== new Set(departmentIds).size) {
+      throw new BadRequestException("Departamento inexistente para este tenant.");
+    }
+  }
+
+  private async assertNameAvailable(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    name: string,
+    excludeMembershipId?: string,
+  ) {
+    const normalizedName = normalizeUserName(name);
+    const memberships = await tx.tenantMembership.findMany({
+      where: { tenantId, ...(excludeMembershipId ? { id: { not: excludeMembershipId } } : {}) },
+      select: { user: { select: { name: true } } },
+    });
+    if (
+      memberships.some((membership) => normalizeUserName(membership.user.name) === normalizedName)
+    ) {
+      throw new BadRequestException("Já existe um atendente com este nome.");
+    }
+  }
+
+  private async findMembershipOrThrow(id: string, tenantId: string) {
+    const membership = await this.prisma.tenantMembership.findFirst({
+      where: { id, tenantId },
+      include: { user: true, role: true, departments: { include: { department: true } } },
+    });
+    if (!membership) throw new NotFoundException("Usuário não encontrado.");
+    return membership;
+  }
+
+  private async replaceDepartments(
+    tx: Pick<PrismaService, "departmentMembership">,
+    tenantId: string,
+    membershipId: string,
+    departmentIds: string[],
+  ) {
+    await tx.departmentMembership.deleteMany({ where: { tenantId, membershipId } });
+    if (!departmentIds.length) return;
+    await tx.departmentMembership.createMany({
+      data: [...new Set(departmentIds)].map((departmentId) => ({
+        tenantId,
+        membershipId,
+        departmentId,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  private serializeMembership(membership: MembershipWithRelations) {
+    return {
+      id: membership.id,
+      status: membership.status,
+      createdAt: membership.createdAt,
+      updatedAt: membership.updatedAt,
+      user: {
+        id: membership.user.id,
+        email: membership.user.email,
+        name: membership.user.name,
+        avatarUrl: membership.user.avatarUrl,
+        status: membership.user.status,
+        platformRole: membership.user.platformRole,
+      },
+      role: {
+        id: membership.role.id,
+        key: membership.role.key,
+        name: membership.role.name,
+      },
+      departments: membership.departments.map((item) => this.serializeDepartment(item.department)),
+    };
+  }
+
+  private serializeDepartment(department: {
+    id: string;
+    name: string;
+    description: string | null;
+    color: string;
+    active: boolean;
+  }) {
+    return {
+      id: department.id,
+      name: department.name,
+      description: department.description,
+      color: department.color,
+      active: department.active,
+    };
+  }
+}
+
+function hashToken(token: string) {
+  return createHash("sha256").update(token.trim(), "utf8").digest("hex");
+}
+
+function exposeLocalTokens() {
+  return process.env.NODE_ENV !== "production" || process.env.TRIXUS_EXPOSE_LOCAL_TOKENS === "true";
+}
+
+function publicAppUrl() {
+  return (process.env.TRIXUS_PUBLIC_APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
+}
+
+function normalizeAvatarUrl(value: string | null | undefined) {
+  if (value === undefined) return undefined;
+  if (value === null || value.trim() === "") return null;
+  const trimmed = value.trim();
+  if (!/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(trimmed)) {
+    throw new BadRequestException("Imagem de perfil invalida.");
+  }
+  return trimmed;
+}
+
+function normalizeUserName(value: string) {
+  return value
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("pt-BR");
 }

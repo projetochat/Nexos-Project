@@ -1,0 +1,719 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Patch,
+  NotFoundException,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import { IsArray, IsIn, IsOptional, IsString, IsUUID, Length, MaxLength } from "class-validator";
+import type { AuthenticatedUser } from "../auth/auth.types";
+import { CurrentUser } from "../auth/current-user.decorator";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { RequirePermissions } from "../auth/permissions.decorator";
+import { PermissionsGuard } from "../auth/permissions.guard";
+import {
+  ConversationStatus,
+  ConversationType,
+  MessagingConnectionStatus,
+  MessagingProviderType,
+  Prisma,
+} from "../generated/prisma";
+import { EvolutionClient } from "../messaging/evolution/evolution.client";
+import { MessagingProviderError } from "../messaging/messaging.contracts";
+import { PrismaService } from "../prisma/prisma.service";
+import { GroupsSyncService } from "./groups-sync.service";
+
+class ListGroupsQueryDto {
+  @IsOptional()
+  @IsString()
+  q?: string;
+
+  @IsOptional()
+  @IsString()
+  connectionId?: string;
+
+  @IsOptional()
+  @IsString()
+  page?: string;
+
+  @IsOptional()
+  @IsString()
+  pageSize?: string;
+}
+
+class CreateGroupDto {
+  @IsString()
+  @Length(2, 120)
+  name!: string;
+
+  @IsUUID()
+  connectionId!: string;
+
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  participantContactIds!: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  imageDataUrl?: string;
+}
+
+class SyncGroupsDto {
+  @IsOptional()
+  @IsUUID()
+  connectionId?: string;
+}
+
+class UpdateGroupNameDto {
+  @IsString()
+  @Length(2, 120)
+  name!: string;
+}
+
+class UpdateGroupDescriptionDto {
+  @IsString()
+  @Length(0, 2000)
+  description!: string;
+}
+
+class UpdateGroupParticipantsDto {
+  @IsIn(["add", "remove"])
+  action!: "add" | "remove";
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  participantContactIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  participantIds?: string[];
+}
+
+class UpdateGroupAdminsDto {
+  @IsIn(["promote", "demote"])
+  action!: "promote" | "demote";
+
+  @IsArray()
+  @IsString({ each: true })
+  participantIds!: string[];
+}
+
+const groupInclude = {
+  contact: true,
+  connection: true,
+  participants: {
+    orderBy: [{ isSuperAdmin: "desc" }, { isAdmin: "desc" }, { displayName: "asc" }],
+  },
+} satisfies Prisma.ConversationInclude;
+
+type GroupConversation = Prisma.ConversationGetPayload<{ include: typeof groupInclude }>;
+const EMPTY_GROUP_FILTER_VALUE = "__empty__";
+const visibleGroupConnectionWhere: Prisma.ConversationWhereInput = {
+  OR: [{ connectionId: null }, { connection: { is: { archivedAt: null } } }],
+};
+
+@Controller("groups")
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+export class GroupsController {
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(EvolutionClient) private readonly evolution: EvolutionClient,
+    @Inject(GroupsSyncService) private readonly groupsSync: GroupsSyncService,
+  ) {}
+
+  @Get()
+  @RequirePermissions("conversations.read")
+  async list(@Query() query: ListGroupsQueryDto, @CurrentUser() current: AuthenticatedUser) {
+    const { page, pageSize, skip } = pagination(query);
+    const q = query.q?.trim();
+    const qDigits = q?.replace(/\D/g, "") ?? "";
+    const filterWithoutConnection = query.connectionId === EMPTY_GROUP_FILTER_VALUE;
+    const filters: Prisma.ConversationWhereInput[] = [visibleGroupConnectionWhere];
+    if (q) {
+      filters.push({
+        OR: [
+          { groupName: { contains: q, mode: "insensitive" } },
+          { externalChatId: { contains: q, mode: "insensitive" } },
+          { contact: { name: { contains: q, mode: "insensitive" } } },
+          { participants: { some: { displayName: { contains: q, mode: "insensitive" } } } },
+          ...(qDigits ? [{ participants: { some: { phone: { contains: qDigits } } } }] : []),
+        ],
+      });
+    }
+    const where: Prisma.ConversationWhereInput = {
+      tenantId: current.tenantId,
+      archivedAt: null,
+      conversationType: ConversationType.GROUP,
+      AND: filters,
+      ...(filterWithoutConnection
+        ? { connectionId: null }
+        : query.connectionId
+          ? { connectionId: query.connectionId }
+          : {}),
+    };
+
+    const [allItems, total] = await this.prisma.$transaction([
+      this.prisma.conversation.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        include: groupInclude,
+      }),
+      this.prisma.conversation.count({ where }),
+    ]);
+    const items = allItems.sort(compareGroupsByName).slice(skip, skip + pageSize);
+
+    return paginated(
+      items.map((item) => serializeGroup(item)),
+      total,
+      page,
+      pageSize,
+    );
+  }
+
+  @Get(":id")
+  @RequirePermissions("conversations.read")
+  async detail(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    const group = await this.prisma.conversation.findFirst({
+      where: {
+        id,
+        tenantId: current.tenantId,
+        archivedAt: null,
+        conversationType: ConversationType.GROUP,
+        ...visibleGroupConnectionWhere,
+      },
+      include: groupInclude,
+    });
+    if (!group) throw new NotFoundException("Grupo não encontrado.");
+    return serializeGroup(group);
+  }
+
+  @Post()
+  @RequirePermissions("conversations.manage")
+  async create(@Body() dto: CreateGroupDto, @CurrentUser() current: AuthenticatedUser) {
+    if (dto.participantContactIds.length < 1) {
+      throw new BadRequestException("Selecione ao menos um participante.");
+    }
+    const connection = await this.prisma.messagingConnection.findFirst({
+      where: {
+        id: dto.connectionId,
+        tenantId: current.tenantId,
+        archivedAt: null,
+        providerType: MessagingProviderType.EVOLUTION,
+        status: MessagingConnectionStatus.CONNECTED,
+      },
+    });
+    if (!connection?.externalReference) {
+      throw new BadRequestException("Selecione uma instância WhatsApp conectada.");
+    }
+
+    const contacts = await this.prisma.contact.findMany({
+      where: {
+        tenantId: current.tenantId,
+        id: { in: dto.participantContactIds },
+        archivedAt: null,
+        NOT: { normalizedPhone: { startsWith: "group:" } },
+      },
+      select: { id: true, name: true, phone: true, normalizedPhone: true },
+    });
+    if (!contacts.length) throw new BadRequestException("Nenhum participante valido encontrado.");
+
+    const description = dto.description?.trim() ?? "";
+    const imageDataUrl = validateGroupImageDataUrl(dto.imageDataUrl);
+    const result = await this.evolution.createGroup({
+      instanceName: connection.externalReference,
+      subject: dto.name.trim(),
+      participants: contacts.map((contact) =>
+        providerNumber(contact.normalizedPhone || contact.phone),
+      ),
+    });
+    const groupJid = result.groupJid;
+    if (!groupJid)
+      throw new BadRequestException("Evolution não retornou o identificador do grupo.");
+
+    const group = await this.prisma.$transaction(async (tx) => {
+      const contact = await tx.contact.upsert({
+        where: {
+          tenantId_normalizedPhone: {
+            tenantId: current.tenantId,
+            normalizedPhone: `group:${groupJid}`,
+          },
+        },
+        update: {
+          name: dto.name.trim(),
+          phone: groupJid,
+          instance: connection.externalReference,
+          avatarUrl: imageDataUrl ?? undefined,
+          archivedAt: null,
+        },
+        create: {
+          tenantId: current.tenantId,
+          name: dto.name.trim(),
+          phone: groupJid,
+          normalizedPhone: `group:${groupJid}`,
+          instance: connection.externalReference,
+          avatarUrl: imageDataUrl ?? undefined,
+        },
+      });
+
+      const existingConversation = await tx.conversation.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          connectionId: connection.id,
+          externalChatId: groupJid,
+          conversationType: ConversationType.GROUP,
+        },
+      });
+      const conversation = existingConversation
+        ? await tx.conversation.update({
+            where: { tenantId_id: { tenantId: current.tenantId, id: existingConversation.id } },
+            data: {
+              contactId: contact.id,
+              groupName: dto.name.trim(),
+              groupImageUrl: imageDataUrl ?? undefined,
+              groupMetadataJson: {
+                ...groupMetadataObject(existingConversation.groupMetadataJson),
+                description,
+              },
+              isGroup: true,
+              conversationType: ConversationType.GROUP,
+              archivedAt: null,
+            },
+            include: groupInclude,
+          })
+        : await tx.conversation.create({
+            data: {
+              tenantId: current.tenantId,
+              contactId: contact.id,
+              connectionId: connection.id,
+              status: ConversationStatus.ABERTA,
+              isGroup: true,
+              conversationType: ConversationType.GROUP,
+              externalChatId: groupJid,
+              externalGroupId: groupJid,
+              groupName: dto.name.trim(),
+              groupImageUrl: imageDataUrl ?? undefined,
+              groupMetadataJson: { description },
+              inboxArchivedAt: new Date(),
+            },
+            include: groupInclude,
+          });
+
+      for (const participant of contacts) {
+        await tx.conversationParticipant.upsert({
+          where: {
+            tenantId_conversationId_externalParticipantId: {
+              tenantId: current.tenantId,
+              conversationId: conversation.id,
+              externalParticipantId: providerNumber(
+                participant.normalizedPhone || participant.phone,
+              ),
+            },
+          },
+          update: {
+            phone: providerNumber(participant.normalizedPhone || participant.phone),
+            displayName: participant.name,
+            active: true,
+            lastSeenAt: new Date(),
+          },
+          create: {
+            tenantId: current.tenantId,
+            conversationId: conversation.id,
+            externalParticipantId: providerNumber(participant.normalizedPhone || participant.phone),
+            phone: providerNumber(participant.normalizedPhone || participant.phone),
+            displayName: participant.name,
+          },
+        });
+      }
+
+      return tx.conversation.findUniqueOrThrow({
+        where: { tenantId_id: { tenantId: current.tenantId, id: conversation.id } },
+        include: groupInclude,
+      });
+    });
+
+    const warnings: string[] = [];
+    if (imageDataUrl) {
+      try {
+        await retryNewGroupMetadataUpdate(() =>
+          this.evolution.updateGroupPicture({
+            instanceName: connection.externalReference!,
+            groupJid,
+            image: imageDataUrl,
+          }),
+        );
+      } catch {
+        warnings.push("A foto não pôde ser aplicada no WhatsApp, mas o grupo foi criado.");
+      }
+    }
+    if (description) {
+      try {
+        await retryNewGroupMetadataUpdate(() =>
+          this.evolution.updateGroupDescription({
+            instanceName: connection.externalReference!,
+            groupJid,
+            description,
+          }),
+        );
+      } catch {
+        warnings.push("A descrição não pôde ser aplicada no WhatsApp, mas o grupo foi criado.");
+      }
+    }
+
+    return { ...serializeGroup(group), warnings };
+  }
+
+  @Patch(":id/name")
+  @RequirePermissions("conversations.manage")
+  async updateName(
+    @Param("id") id: string,
+    @Body() dto: UpdateGroupNameDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const group = await this.resolveManagedGroup(id, current);
+    const name = dto.name.trim();
+    await this.evolution.updateGroupSubject({
+      instanceName: group.connection!.externalReference!,
+      groupJid: group.externalChatId!,
+      subject: name,
+    });
+    const updated = await this.prisma.conversation.update({
+      where: { tenantId_id: { tenantId: current.tenantId, id: group.id } },
+      data: {
+        groupName: name,
+        groupSubjectUpdatedAt: new Date(),
+        contact: { update: { name } },
+      },
+      include: groupInclude,
+    });
+    return serializeGroup(updated);
+  }
+
+  @Patch(":id/description")
+  @RequirePermissions("conversations.manage")
+  async updateDescription(
+    @Param("id") id: string,
+    @Body() dto: UpdateGroupDescriptionDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const group = await this.resolveManagedGroup(id, current);
+    const description = dto.description.trim();
+    await this.evolution.updateGroupDescription({
+      instanceName: group.connection!.externalReference!,
+      groupJid: group.externalChatId!,
+      description,
+    });
+    const updated = await this.prisma.conversation.update({
+      where: { tenantId_id: { tenantId: current.tenantId, id: group.id } },
+      data: { groupMetadataJson: { ...groupMetadataObject(group.groupMetadataJson), description } },
+      include: groupInclude,
+    });
+    return serializeGroup(updated);
+  }
+
+  @Post(":id/participants")
+  @RequirePermissions("conversations.manage")
+  async updateParticipants(
+    @Param("id") id: string,
+    @Body() dto: UpdateGroupParticipantsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const group = await this.resolveManagedGroup(id, current);
+    if (dto.action === "add") {
+      const contactIds = [...new Set(dto.participantContactIds ?? [])];
+      if (!contactIds.length) throw new BadRequestException("Selecione ao menos um contato.");
+      const contacts = await this.prisma.contact.findMany({
+        where: {
+          tenantId: current.tenantId,
+          id: { in: contactIds },
+          archivedAt: null,
+          NOT: { normalizedPhone: { startsWith: "group:" } },
+        },
+        select: { id: true, name: true, phone: true, normalizedPhone: true },
+      });
+      if (!contacts.length) throw new BadRequestException("Nenhum contato valido encontrado.");
+      const numbers = contacts.map((contact) =>
+        providerNumber(contact.normalizedPhone || contact.phone),
+      );
+      await this.evolution.updateGroupParticipants({
+        instanceName: group.connection!.externalReference!,
+        groupJid: group.externalChatId!,
+        action: "add",
+        participants: numbers,
+      });
+      const now = new Date();
+      for (const contact of contacts) {
+        const participantId = providerNumber(contact.normalizedPhone || contact.phone);
+        await this.prisma.conversationParticipant.upsert({
+          where: {
+            tenantId_conversationId_externalParticipantId: {
+              tenantId: current.tenantId,
+              conversationId: group.id,
+              externalParticipantId: participantId,
+            },
+          },
+          update: {
+            phone: participantId,
+            displayName: contact.name,
+            active: true,
+            lastSeenAt: now,
+          },
+          create: {
+            tenantId: current.tenantId,
+            conversationId: group.id,
+            externalParticipantId: participantId,
+            phone: participantId,
+            displayName: contact.name,
+            lastSeenAt: now,
+          },
+        });
+      }
+    } else {
+      const participantIds = [...new Set(dto.participantIds ?? [])];
+      if (!participantIds.length) {
+        throw new BadRequestException("Selecione ao menos um participante.");
+      }
+      await this.evolution.updateGroupParticipants({
+        instanceName: group.connection!.externalReference!,
+        groupJid: group.externalChatId!,
+        action: "remove",
+        participants: participantIds,
+      });
+      await this.prisma.conversationParticipant.updateMany({
+        where: {
+          tenantId: current.tenantId,
+          conversationId: group.id,
+          externalParticipantId: { in: participantIds },
+        },
+        data: { active: false, isAdmin: false, isSuperAdmin: false, lastSeenAt: new Date() },
+      });
+    }
+    return this.reloadGroup(group.id, current);
+  }
+
+  @Post(":id/admins")
+  @RequirePermissions("conversations.manage")
+  async updateAdmins(
+    @Param("id") id: string,
+    @Body() dto: UpdateGroupAdminsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const group = await this.resolveManagedGroup(id, current);
+    const participantIds = [...new Set(dto.participantIds)];
+    if (!participantIds.length) {
+      throw new BadRequestException("Selecione ao menos um participante.");
+    }
+    await this.evolution.updateGroupParticipants({
+      instanceName: group.connection!.externalReference!,
+      groupJid: group.externalChatId!,
+      action: dto.action,
+      participants: participantIds,
+    });
+    await this.prisma.conversationParticipant.updateMany({
+      where: {
+        tenantId: current.tenantId,
+        conversationId: group.id,
+        externalParticipantId: { in: participantIds },
+      },
+      data: { isAdmin: dto.action === "promote", lastSeenAt: new Date() },
+    });
+    return this.reloadGroup(group.id, current);
+  }
+
+  @Post(":id/leave")
+  @RequirePermissions("conversations.manage")
+  async leave(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    const group = await this.resolveManagedGroup(id, current);
+    await this.evolution.leaveGroup({
+      instanceName: group.connection!.externalReference!,
+      groupJid: group.externalChatId!,
+    });
+    const now = new Date();
+    await this.prisma.conversation.update({
+      where: { tenantId_id: { tenantId: current.tenantId, id: group.id } },
+      data: { archivedAt: now, status: ConversationStatus.FECHADA, closedAt: now },
+    });
+    return { id: group.id, left: true };
+  }
+
+  @Post("sync")
+  @RequirePermissions("conversations.manage")
+  async sync(@Body() dto: SyncGroupsDto | undefined, @CurrentUser() current: AuthenticatedUser) {
+    return this.groupsSync.sync({ tenantId: current.tenantId, connectionId: dto?.connectionId });
+  }
+
+  private async resolveManagedGroup(id: string, current: AuthenticatedUser) {
+    const group = await this.prisma.conversation.findFirst({
+      where: {
+        id,
+        tenantId: current.tenantId,
+        archivedAt: null,
+        conversationType: ConversationType.GROUP,
+        ...visibleGroupConnectionWhere,
+      },
+      include: groupInclude,
+    });
+    if (!group) throw new NotFoundException("Grupo não encontrado.");
+    if (!group.externalChatId?.endsWith("@g.us") || !group.connection?.externalReference) {
+      throw new BadRequestException("Grupo sem instância WhatsApp conectada.");
+    }
+    if (group.connection.status !== MessagingConnectionStatus.CONNECTED) {
+      throw new BadRequestException("A instância do grupo precisa estar conectada.");
+    }
+    return group;
+  }
+
+  private async reloadGroup(id: string, current: AuthenticatedUser) {
+    const group = await this.prisma.conversation.findFirst({
+      where: {
+        id,
+        tenantId: current.tenantId,
+        archivedAt: null,
+        conversationType: ConversationType.GROUP,
+        ...visibleGroupConnectionWhere,
+      },
+      include: groupInclude,
+    });
+    if (!group) throw new NotFoundException("Grupo não encontrado.");
+    return serializeGroup(group);
+  }
+}
+
+function serializeGroup(group: GroupConversation) {
+  const name = group.groupName || group.contact.name || "Grupo WhatsApp";
+  const activeParticipants = group.participants.filter((participant) => participant.active);
+  return {
+    id: group.id,
+    tenantId: group.tenantId,
+    conversationId: group.id,
+    name,
+    externalChatId: group.externalChatId,
+    imageUrl: group.groupImageUrl || group.contact.avatarUrl,
+    description: groupDescription(group.groupMetadataJson),
+    createdAt: groupCreatedAt(group),
+    updatedAt: group.updatedAt,
+    participantsCount: activeParticipants.length,
+    connection: group.connection
+      ? {
+          id: group.connection.id,
+          name: group.connection.name,
+          externalReference: group.connection.externalReference,
+          status: group.connection.status,
+          color: group.connection.color,
+        }
+      : null,
+    participants: activeParticipants.map((participant) => ({
+      id: participant.id,
+      name: participant.displayName || participant.phone || participant.externalParticipantId,
+      phone: participant.phone,
+      externalParticipantId: participant.externalParticipantId,
+      isAdmin: participant.isAdmin,
+      isSuperAdmin: participant.isSuperAdmin,
+      active: participant.active,
+      lastSeenAt: participant.lastSeenAt,
+    })),
+    lastMessagePreview: group.lastMessagePreview,
+    lastMessageAt: group.lastMessageAt,
+  };
+}
+
+function compareGroupsByName(a: GroupConversation, b: GroupConversation) {
+  const normalizeName = (group: GroupConversation) =>
+    (group.groupName || group.contact.name || "Grupo WhatsApp")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("pt-BR");
+  const comparison = normalizeName(a).localeCompare(normalizeName(b), "pt-BR", {
+    sensitivity: "base",
+    numeric: true,
+  });
+  if (comparison !== 0) return comparison;
+  return b.createdAt.getTime() - a.createdAt.getTime();
+}
+
+function groupDescription(value: Prisma.JsonValue | null) {
+  const metadata = groupMetadataObject(value);
+  const description = metadata.description;
+  return typeof description === "string" ? description : null;
+}
+
+function groupMetadataObject(value: Prisma.JsonValue | null) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, Prisma.JsonValue>)
+    : {};
+}
+
+async function retryNewGroupMetadataUpdate(operation: () => Promise<unknown>) {
+  let lastError: unknown;
+  for (const delayMs of [350, 700, 0]) {
+    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryNewGroupMetadataUpdate(error)) throw error;
+    }
+  }
+  throw lastError;
+}
+
+function shouldRetryNewGroupMetadataUpdate(error: unknown) {
+  return (
+    error instanceof MessagingProviderError &&
+    (error.retryable || error.httpStatus === 404)
+  );
+}
+
+function validateGroupImageDataUrl(value: string | undefined) {
+  if (!value) return undefined;
+  const match = value.match(/^data:image\/(png|jpeg|jpg|webp);base64,([a-z0-9+/=]+)$/i);
+  if (!match) throw new BadRequestException("Selecione uma imagem válida.");
+  const image = Buffer.from(match[2], "base64");
+  if (!image.length || image.length > 2 * 1024 * 1024) {
+    throw new BadRequestException("A imagem deve ter no máximo 2 MB.");
+  }
+  return value;
+}
+
+function groupCreatedAt(group: GroupConversation) {
+  const createdAt = metadataDate(group.groupMetadataJson, "createdAt");
+  return createdAt ?? group.createdAt;
+}
+
+function metadataDate(value: Prisma.JsonValue | null, key: string) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value[key];
+  if (typeof raw !== "string" || !raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function pagination(query: { page?: string; pageSize?: string }) {
+  const page = Math.max(1, Number(query.page) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 12));
+  return { page, pageSize, skip: (page - 1) * pageSize };
+}
+
+function paginated<T>(items: T[], total: number, page: number, pageSize: number) {
+  return { items, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
+}
+
+function onlyDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function providerNumber(value: string) {
+  return value.endsWith("@s.whatsapp.net") ? value : onlyDigits(value);
+}

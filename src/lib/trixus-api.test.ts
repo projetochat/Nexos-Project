@@ -1,0 +1,461 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  activatePlatformImpersonation,
+  apiRequest,
+  clearTrixusApiSession,
+  loginWithTrixusApi,
+  logoutFromTrixusApi,
+  platformApi,
+  readStoredPlatformImpersonation,
+  connectionsApi,
+  stopStoredPlatformImpersonation,
+} from "./trixus-api";
+
+describe("trixus-api auth client", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    clearTrixusApiSession();
+  });
+
+  it("stores tokens and maps the homologation login response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseJson(201, {
+          accessToken: "access",
+          refreshToken: "refresh",
+          user: {
+            id: "user-a",
+            email: "admin@trixus.app",
+            name: "Admin Homologacao",
+            roleId: "role-a",
+            roleKey: "tenant_admin",
+            platformRole: "USER",
+          },
+          tenant: { id: "tenant-a", slug: "homologacao", name: "Homologacao Trixus" },
+          membership: { id: "membership-a", role: "tenant_admin", roleId: "role-a" },
+          permissions: ["users.manage"],
+        }),
+      ),
+    );
+
+    await expect(loginWithTrixusApi("admin@trixus.app", "demo1234")).resolves.toMatchObject({
+      email: "admin@trixus.app",
+      role: "admin",
+      empresaNome: "Homologacao Trixus",
+    });
+
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("access");
+    expect(localStorage.getItem("trixus.api.refreshToken")).toBe("refresh");
+  });
+
+  it("distinguishes invalid credentials", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          responseJson(401, { code: "INVALID_CREDENTIALS", message: "E-mail ou senha invalidos." }),
+        ),
+    );
+
+    await expect(loginWithTrixusApi("admin@trixus.app", "wrong-password")).rejects.toThrow(
+      "E-mail ou senha invalidos.",
+    );
+  });
+
+  it("returns a clear message for network failures", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+
+    await expect(loginWithTrixusApi("admin@trixus.app", "demo1234")).rejects.toThrow(
+      "Não foi possível conectar ao sistema. Verifique sua internet e tente novamente.",
+    );
+  });
+
+  it("distinguishes missing membership", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseJson(403, {
+          code: "USER_WITHOUT_ACTIVE_MEMBERSHIP",
+          message: "Seu usuário não possui acesso a nenhuma organização ativa.",
+        }),
+      ),
+    );
+
+    await expect(loginWithTrixusApi("sem-membership@trixus.app", "demo1234")).rejects.toThrow(
+      "Seu usuário não possui acesso a nenhuma organização ativa.",
+    );
+  });
+
+  it("returns a clear message for internal authentication errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(responseJson(500, {})));
+
+    await expect(loginWithTrixusApi("admin@trixus.app", "demo1234")).rejects.toThrow(
+      "Não foi possível concluir a autenticação. Tente novamente em alguns instantes.",
+    );
+  });
+
+  it("does not expose internal server messages in application requests", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(responseJson(500, { message: "Internal Server Error" })),
+    );
+
+    await expect(apiRequest("/roles")).rejects.toThrow(
+      "Não foi possível concluir a ação agora. Tente novamente em alguns instantes.",
+    );
+  });
+
+  it("keeps a useful domain message returned by the API", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          responseJson(409, { message: "Já existe um perfil de acesso com este nome." }),
+        ),
+    );
+
+    await expect(apiRequest("/roles")).rejects.toThrow(
+      "Já existe um perfil de acesso com este nome.",
+    );
+  });
+
+  it("uses one refresh request for concurrent 401 responses and retries each request once", async () => {
+    localStorage.setItem("trixus.api.accessToken", "old-access");
+    localStorage.setItem("trixus.api.refreshToken", "refresh");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/auth/refresh")) {
+        return responseJson(200, { accessToken: "new-access" });
+      }
+      const authorization = new Headers(init?.headers).get("Authorization");
+      if (authorization === "Bearer old-access") return responseJson(401, { message: "expired" });
+      return responseJson(200, { ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      Promise.all([apiRequest<{ ok: true }>("/conversations"), apiRequest<{ ok: true }>("/users")]),
+    ).resolves.toEqual([{ ok: true }, { ok: true }]);
+
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh")),
+    ).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("new-access");
+  });
+
+  it("does not recursively refresh the refresh endpoint after a definitive 401", async () => {
+    localStorage.setItem("trixus.api.accessToken", "old-access");
+    localStorage.setItem("trixus.api.refreshToken", "refresh");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/auth/refresh")) return responseJson(401, { message: "invalid refresh" });
+      return responseJson(401, { message: "expired" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiRequest("/conversations")).rejects.toThrow("expired");
+
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh")),
+    ).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(localStorage.getItem("trixus.api.accessToken")).toBeNull();
+    expect(localStorage.getItem("trixus.api.refreshToken")).toBeNull();
+  });
+
+  it("activates and stops a platform impersonation by restoring platform tokens", async () => {
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
+    localStorage.setItem("trixus.api.refreshToken", "platform-refresh");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const authorization = new Headers(init?.headers).get("Authorization");
+      expect(authorization).toBe("Bearer platform-access");
+      expect(String(input)).toContain("/platform/impersonation/session-a/stop");
+      return responseJson(201, { id: "session-a" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = activatePlatformImpersonation(
+      {
+        id: "session-a",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        tenant: { id: "tenant-a", name: "Tenant A", slug: "tenant-a" },
+        membership: {
+          id: "membership-a",
+          status: "ACTIVE",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            status: "ACTIVE",
+            platformRole: "USER",
+          },
+          role: { id: "role-a", key: "tenant_admin", name: "Administrador" },
+          departments: [],
+        },
+        tokens: {
+          accessToken: "tenant-access",
+          refreshToken: "tenant-refresh",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            roleId: "role-a",
+            roleKey: "tenant_admin",
+            platformRole: "USER",
+          },
+          tenant: { id: "tenant-a", slug: "tenant-a", name: "Tenant A" },
+          membership: { id: "membership-a", role: "tenant_admin", roleId: "role-a" },
+          permissions: ["users.manage"],
+        },
+      },
+      {
+        id: "platform-user",
+        nome: "Platform Admin",
+        email: "platform@trixus.app",
+        role: "super_admin",
+        empresaId: "platform",
+        empresaNome: "Trixus Platform",
+        permissions: [],
+      },
+    );
+
+    expect(user.role).toBe("admin");
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("tenant-access");
+    expect(readStoredPlatformImpersonation()?.id).toBe("session-a");
+
+    await expect(stopStoredPlatformImpersonation()).resolves.toMatchObject({
+      role: "super_admin",
+      email: "platform@trixus.app",
+    });
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("platform-access");
+    expect(readStoredPlatformImpersonation()).toBeNull();
+  });
+
+  it("expires a local impersonation and restores platform credentials", async () => {
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
+    localStorage.setItem("trixus.api.refreshToken", "platform-refresh");
+    activatePlatformImpersonation(
+      {
+        id: "session-expired",
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+        tenant: { id: "tenant-a", name: "Tenant A", slug: "tenant-a" },
+        membership: {
+          id: "membership-a",
+          status: "ACTIVE",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            status: "ACTIVE",
+            platformRole: "USER",
+          },
+          role: { id: "role-a", key: "tenant_admin", name: "Administrador" },
+          departments: [],
+        },
+        tokens: {
+          accessToken: "tenant-access",
+          refreshToken: "tenant-refresh",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            roleId: "role-a",
+            roleKey: "tenant_admin",
+            platformRole: "USER",
+          },
+          tenant: { id: "tenant-a", slug: "tenant-a", name: "Tenant A" },
+          membership: { id: "membership-a", role: "tenant_admin", roleId: "role-a" },
+          permissions: ["users.manage"],
+        },
+      },
+      {
+        id: "platform-user",
+        nome: "Platform Admin",
+        email: "platform@trixus.app",
+        role: "super_admin",
+        empresaId: "platform",
+        empresaNome: "Trixus Platform",
+        permissions: [],
+      },
+    );
+
+    expect(readStoredPlatformImpersonation()).toBeNull();
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("platform-access");
+  });
+
+  it("stops server-side impersonation before logout clears local tokens", async () => {
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
+    localStorage.setItem("trixus.api.refreshToken", "platform-refresh");
+    activatePlatformImpersonation(
+      {
+        id: "session-logout",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        tenant: { id: "tenant-a", name: "Tenant A", slug: "tenant-a" },
+        membership: {
+          id: "membership-a",
+          status: "ACTIVE",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            status: "ACTIVE",
+            platformRole: "USER",
+          },
+          role: { id: "role-a", key: "tenant_admin", name: "Administrador" },
+          departments: [],
+        },
+        tokens: {
+          accessToken: "tenant-access",
+          refreshToken: "tenant-refresh",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            roleId: "role-a",
+            roleKey: "tenant_admin",
+            platformRole: "USER",
+          },
+          tenant: { id: "tenant-a", slug: "tenant-a", name: "Tenant A" },
+          membership: { id: "membership-a", role: "tenant_admin", roleId: "role-a" },
+          permissions: ["users.manage"],
+        },
+      },
+      {
+        id: "platform-user",
+        nome: "Platform Admin",
+        email: "platform@trixus.app",
+        role: "super_admin",
+        empresaId: "platform",
+        empresaNome: "Trixus Platform",
+        permissions: [],
+      },
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const authorization = new Headers(init?.headers).get("Authorization");
+      if (String(input).endsWith("/platform/impersonation/session-logout/stop")) {
+        expect(authorization).toBe("Bearer platform-access");
+        return responseJson(201, { id: "session-logout" });
+      }
+      expect(String(input)).toContain("/auth/logout");
+      expect(authorization).toBe("Bearer platform-access");
+      return responseJson(201, { ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await logoutFromTrixusApi();
+
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      "http://localhost:3001/api/platform/impersonation/session-logout/stop",
+      "http://localhost:3001/api/auth/logout",
+    ]);
+    expect(localStorage.getItem("trixus.api.accessToken")).toBeNull();
+    expect(readStoredPlatformImpersonation()).toBeNull();
+  });
+
+  it("calls the canonical DELETE endpoint for connection removal", async () => {
+    localStorage.setItem("trixus.api.accessToken", "tenant-access");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://localhost:3001/api/messaging/connections/connection-a");
+      expect(init?.method).toBe("DELETE");
+      return responseJson(200, {
+        id: "connection-a",
+        removed: true,
+        archived: true,
+        status: "removed",
+        providerInstanceExisted: false,
+        idempotent: true,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(connectionsApi.remove("connection-a")).resolves.toMatchObject({
+      removed: true,
+      archived: true,
+      status: "removed",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads platform tenants with the platform token", async () => {
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("http://localhost:3001/api/platform/tenants?pageSize=20");
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer platform-access");
+      return responseJson(200, {
+        items: [
+          {
+            id: "tenant-a",
+            name: "Tenant A",
+            slug: "tenant-a",
+            status: "ACTIVE",
+            plan: null,
+            subscriptionStatus: null,
+            activeUsers: 0,
+            connections: 0,
+            createdAt: "2026-08-04T00:00:00.000Z",
+            updatedAt: "2026-08-04T00:00:00.000Z",
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+        totalPages: 1,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(platformApi.tenants({ pageSize: 20 })).resolves.toMatchObject({
+      total: 1,
+      items: [{ slug: "tenant-a", plan: null }],
+    });
+  });
+
+  it("preserves platform empty states instead of treating them as errors", async () => {
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          responseJson(200, { items: [], total: 0, page: 1, pageSize: 20, totalPages: 1 }),
+        ),
+    );
+
+    await expect(platformApi.tenants({ page: 1, pageSize: 20 })).resolves.toMatchObject({
+      items: [],
+      total: 0,
+    });
+  });
+
+  it("surfaces canonical platform errors without converting them to empty lists", async () => {
+    localStorage.setItem("trixus.api.accessToken", "platform-access");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseJson(500, {
+          requestId: "request-a",
+          code: "PLATFORM_UNEXPECTED_ERROR",
+          message: "Erro seguro no plano de controle. Informe o requestId ao suporte.",
+        }),
+      ),
+    );
+
+    await expect(platformApi.plans()).rejects.toMatchObject({
+      status: 500,
+      code: "PLATFORM_UNEXPECTED_ERROR",
+      message: "Erro seguro no plano de controle. Informe o requestId ao suporte.",
+    });
+  });
+});
+
+function responseJson(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}

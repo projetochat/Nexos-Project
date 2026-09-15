@@ -35,7 +35,7 @@ Escopo nao executado por bloqueio:
 
 | Item | Resultado |
 | --- | --- |
-| Diretorio | `C:\Users\Rabel\Downloads\Nexos Project` |
+| Diretorio | `C:\Users\Rabel\Downloads\Trixus Project` |
 | `git status` | FAIL - `fatal: not a git repository (or any of the parent directories): .git` |
 | Branch | N/A - pasta sem Git |
 | Commit inicial | N/A - pasta sem Git |
@@ -112,7 +112,7 @@ Nenhuma alteracao de dados foi executada.
 
 | Comando | Resultado |
 | --- | --- |
-| `pwd` / `Get-Location` | PASS - `C:\Users\Rabel\Downloads\Nexos Project` |
+| `pwd` / `Get-Location` | PASS - `C:\Users\Rabel\Downloads\Trixus Project` |
 | `git status` | FAIL - pasta sem Git |
 | `git branch --show-current` | FAIL - pasta sem Git |
 | `git rev-parse HEAD` | FAIL - pasta sem Git |

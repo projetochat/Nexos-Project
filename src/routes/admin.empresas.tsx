@@ -1,166 +1,402 @@
 import * as React from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Search, MoreHorizontal, ExternalLink, Ban, Play, ShieldCheck } from "lucide-react";
-import { AdminContainer } from "@/components/admin-shell";
-import { Card, SectionHeader, Badge, Button, Input, Avatar } from "@/components/ui-kit";
-import { tenants, planos, type TenantStatus } from "@/lib/mock/saas";
-import { formatCurrency, fmtDate } from "@/lib/format";
-import { useSession } from "@/lib/session";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Building2, CheckCircle2, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { AdminContainer } from "@/components/admin-shell";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Field,
+  Input,
+  SearchInput,
+  SectionHeader,
+  Select,
+} from "@/components/ui-kit";
+import { platformApi, type PlatformPlan, type PlatformTenant } from "@/lib/trixus-api";
+import { fmtDate } from "@/lib/format";
+import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/empresas")({
-  head: () => ({ meta: [{ title: "Empresas · Nexo Admin" }] }),
+  head: () => ({ meta: [{ title: "Tenants - Trixus Admin" }] }),
   component: EmpresasSaaS,
 });
 
-const STATUS_LABEL: Record<TenantStatus, string> = {
-  ativa: "Ativa",
-  trial: "Trial",
-  bloqueada: "Bloqueada",
-  cancelada: "Cancelada",
-  inadimplente: "Inadimplente",
+const steps = ["Empresa", "Slug", "Região", "Admin", "Plano", "Vigência", "Revisão", "Confirmação"];
+
+type TenantForm = {
+  name: string;
+  slug: string;
+  timezone: string;
+  locale: string;
+  adminName: string;
+  adminEmail: string;
+  adminPassword: string;
+  planId: string;
+  trial: string;
+};
+
+const initialForm: TenantForm = {
+  name: "",
+  slug: "",
+  timezone: "America/Sao_Paulo",
+  locale: "pt-BR",
+  adminName: "",
+  adminEmail: "",
+  adminPassword: "",
+  planId: "",
+  trial: "trial",
 };
 
 function EmpresasSaaS() {
-  const navigate = useNavigate();
-  const impersonate = useSession((s) => s.impersonate);
   const [q, setQ] = React.useState("");
-  const [status, setStatus] = React.useState<"all" | TenantStatus>("all");
-  const [plano, setPlano] = React.useState("all");
+  const [rows, setRows] = React.useState<PlatformTenant[]>([]);
+  const [plans, setPlans] = React.useState<PlatformPlan[]>([]);
+  const [error, setError] = React.useState<string | null>(null);
+  const [creating, setCreating] = React.useState(false);
+  const [step, setStep] = React.useState(0);
+  const [form, setForm] = React.useState<TenantForm>(initialForm);
+  const [created, setCreated] = React.useState<PlatformTenant | null>(null);
 
-  const filtered = tenants.filter((t) => {
-    if (q && !`${t.nome} ${t.responsavel} ${t.email}`.toLowerCase().includes(q.toLowerCase())) return false;
-    if (status !== "all" && t.status !== status) return false;
-    if (plano !== "all" && t.planoId !== plano) return false;
-    return true;
-  });
+  const load = React.useCallback(() => {
+    Promise.all([platformApi.tenants({ q, pageSize: 50 }), platformApi.plans({ pageSize: 50 })])
+      .then(([tenants, planList]) => {
+        setRows(sortByOptionLabel(tenants.items, (tenant) => tenant.name));
+        setPlans(planList.items.filter((plan) => plan.status === "ACTIVE"));
+        setError(null);
+        setForm((current) => ({
+          ...current,
+          planId:
+            current.planId || planList.items.find((plan) => plan.status === "ACTIVE")?.id || "",
+        }));
+      })
+      .catch((err) => setError((err as Error).message));
+  }, [q]);
 
-  function handleImpersonate(t: (typeof tenants)[number]) {
-    impersonate(t.id, t.nome);
-    toast.success(`Impersonando ${t.nome}`, {
-      description: "Sessão registrada em auditoria.",
-    });
-    navigate({ to: "/" });
+  React.useEffect(() => {
+    load();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, 30_000);
+    return () => window.clearInterval(interval);
+  }, [load]);
+
+  function update<K extends keyof TenantForm>(key: K, value: TenantForm[K]) {
+    setForm((current) => ({
+      ...current,
+      [key]: key === "slug" ? normalizeSlug(value) : value,
+      ...(key === "name" && !current.slug ? { slug: normalizeSlug(value) } : {}),
+    }));
   }
+
+  async function submit() {
+    setCreating(true);
+    setError(null);
+    try {
+      const result = await platformApi.createTenant({
+        name: form.name,
+        slug: form.slug,
+        timezone: form.timezone,
+        locale: form.locale,
+        planId: form.planId,
+        initialStatus: form.trial === "active" ? "ACTIVE" : "TRIAL",
+        admin: {
+          name: form.adminName,
+          email: form.adminEmail,
+          password: form.adminPassword,
+        },
+      });
+      setCreated(result);
+      setStep(7);
+      toast.success("Tenant criado com assinatura e tenant_admin inicial");
+      load();
+    } catch (err) {
+      setError((err as Error).message);
+      toast.error("Criação transacional não concluída");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  const selectedPlan = plans.find((plan) => plan.id === form.planId);
+  const canContinue = stepIsValid(step, form);
 
   return (
     <AdminContainer>
       <SectionHeader
-        title="Empresas contratantes"
-        subtitle={`${tenants.length} organizações usando a plataforma.`}
-        actions={<Button variant="primary">Nova empresa</Button>}
+        title="Tenants"
+        subtitle="Gestão de organizações, planos, status e limites pela Plataforma Trixus."
+        actions={
+          <Button onClick={() => setStep(0)}>
+            <Plus className="h-4 w-4" /> Novo tenant
+          </Button>
+        }
       />
 
-      <Card>
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar empresa, responsável, e-mail…" className="pl-9" />
-          </div>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value as never)}
-            className="rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm"
-          >
-            <option value="all">Todos os status</option>
-            {(Object.keys(STATUS_LABEL) as TenantStatus[]).map((s) => (
-              <option key={s} value={s}>{STATUS_LABEL[s]}</option>
-            ))}
-          </select>
-          <select
-            value={plano}
-            onChange={(e) => setPlano(e.target.value)}
-            className="rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm"
-          >
-            <option value="all">Todos os planos</option>
-            {planos.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-          </select>
-        </div>
+      {error && (
+        <Alert tone="destructive" title="Operação não concluída">
+          {error}
+        </Alert>
+      )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                <th className="pb-2">Empresa</th>
-                <th className="pb-2">Plano</th>
-                <th className="pb-2">Status</th>
-                <th className="pb-2">MRR</th>
-                <th className="pb-2">Operadores</th>
-                <th className="pb-2">Criada</th>
-                <th className="pb-2 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((t) => {
-                const p = planos.find((pl) => pl.id === t.planoId);
-                return (
-                  <tr key={t.id} className="border-b border-border/60 transition hover:bg-surface-1">
+      <div className="mt-4 grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <Card>
+          <div className="mb-4 flex items-center gap-2">
+            <SearchInput
+              value={q}
+              onChange={setQ}
+              placeholder="Buscar tenant..."
+              className="max-w-md flex-1"
+            />
+            <Button variant="secondary" onClick={load}>
+              <RefreshCw className="h-4 w-4" /> Atualizar
+            </Button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full table-fixed text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                  <th className="pb-2">Tenant</th>
+                  <th className="pb-2">Plano</th>
+                  <th className="pb-2">Status</th>
+                  <th className="pb-2">Usuarios</th>
+                  <th className="pb-2">Connections</th>
+                  <th className="pb-2">Criado</th>
+                  <th className="pb-2 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((tenant) => (
+                  <tr key={tenant.id} className="border-b border-border/60 hover:bg-surface-1">
                     <td className="py-3">
-                      <div className="flex items-center gap-3">
-                        <Avatar name={t.nome} size={30} />
-                        <div>
-                          <div className="font-medium">{t.nome}</div>
-                          <div className="text-xs text-muted-foreground">{t.responsavel} · {t.cidade}</div>
-                        </div>
-                      </div>
+                      <div className="font-medium">{tenant.name}</div>
+                      <div className="text-xs text-muted-foreground">{tenant.slug}</div>
                     </td>
+                    <td className="py-3">{tenant.plan?.name ?? "Sem plano"}</td>
                     <td className="py-3">
-                      <span className="rounded-md border border-border bg-surface-1 px-2 py-0.5 text-xs">
-                        {p?.nome}
-                      </span>
+                      <TenantStatus status={tenant.status} />
                     </td>
-                    <td className="py-3">
-                      <Badge tone={
-                        t.status === "ativa" ? "success" :
-                        t.status === "trial" ? "info" :
-                        t.status === "inadimplente" ? "warning" :
-                        t.status === "bloqueada" ? "destructive" : "default"
-                      }>
-                        {STATUS_LABEL[t.status]}
-                      </Badge>
+                    <td className="py-3 font-mono text-xs">{tenant.activeUsers}</td>
+                    <td className="py-3 font-mono text-xs">{tenant.connections}</td>
+                    <td className="py-3 text-xs text-muted-foreground">
+                      {fmtDate(new Date(tenant.createdAt).getTime())}
                     </td>
-                    <td className="py-3 font-mono text-xs">{formatCurrency(t.mrr)}</td>
-                    <td className="py-3 text-xs">{t.operadores}</td>
-                    <td className="py-3 text-xs text-muted-foreground">{fmtDate(t.criadaEm)}</td>
-                    <td className="py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => handleImpersonate(t)}
-                          className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-1 px-2 py-1 text-xs font-medium transition hover:bg-surface-2"
-                          title="Acessar como esta empresa (impersonar)"
-                        >
-                          <ShieldCheck className="h-3 w-3" /> Acessar
-                        </button>
-                        {t.status === "bloqueada" ? (
-                          <button
-                            onClick={() => toast.success(`Empresa ${t.nome} reativada`)}
-                            className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-1 px-2 py-1 text-xs transition hover:bg-surface-2"
-                          >
-                            <Play className="h-3 w-3" /> Reativar
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => toast.warning(`Empresa ${t.nome} bloqueada`, { description: "Ação registrada em auditoria" })}
-                            className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-1 px-2 py-1 text-xs transition hover:bg-surface-2"
-                          >
-                            <Ban className="h-3 w-3" /> Bloquear
-                          </button>
-                        )}
-                        <button className="rounded-md border border-border bg-surface-1 p-1 transition hover:bg-surface-2">
-                          <MoreHorizontal className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                    <td className="py-3 text-center">
+                      <Link
+                        to="/admin/empresas/$tenantId"
+                        params={{ tenantId: tenant.id }}
+                        className="inline-flex items-center justify-center rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2"
+                      >
+                        Abrir detalhe
+                      </Link>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {filtered.length === 0 && (
-            <div className="py-16 text-center text-sm text-muted-foreground">Nenhuma empresa encontrada.</div>
+                ))}
+              </tbody>
+            </table>
+            {!rows.length && (
+              <div className="py-12 text-center text-sm text-muted-foreground">
+                Nenhum tenant encontrado.
+              </div>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Criação de tenant</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Etapa {step + 1} de {steps.length}: {steps[step]}
+              </p>
+            </div>
+            <Building2 className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <div className="mb-4 grid grid-cols-8 gap-1">
+            {steps.map((label, index) => (
+              <div
+                key={label}
+                className={`h-1.5 rounded-full ${index <= step ? "bg-primary" : "bg-surface-3"}`}
+              />
+            ))}
+          </div>
+
+          {step === 0 && (
+            <Field label="Nome da empresa">
+              <Input
+                value={form.name}
+                onChange={(e) => update("name", e.target.value)}
+                placeholder="Nome da empresa"
+              />
+            </Field>
           )}
-        </div>
-      </Card>
+          {step === 1 && (
+            <Field label="Slug imutavel">
+              <Input
+                value={form.slug}
+                onChange={(e) => update("slug", e.target.value)}
+                placeholder="slug da empresa"
+              />
+            </Field>
+          )}
+          {step === 2 && (
+            <div className="grid gap-3">
+              <Field label="Timezone">
+                <Input value={form.timezone} onChange={(e) => update("timezone", e.target.value)} />
+              </Field>
+              <Field label="Locale">
+                <Input value={form.locale} onChange={(e) => update("locale", e.target.value)} />
+              </Field>
+            </div>
+          )}
+          {step === 3 && (
+            <div className="grid gap-3">
+              <Field label="Nome do tenant_admin">
+                <Input
+                  value={form.adminName}
+                  onChange={(e) => update("adminName", e.target.value)}
+                />
+              </Field>
+              <Field label="E-mail do tenant_admin">
+                <Input
+                  value={form.adminEmail}
+                  onChange={(e) => update("adminEmail", e.target.value)}
+                />
+              </Field>
+              <Field label="Senha inicial">
+                <Input
+                  type="password"
+                  value={form.adminPassword}
+                  onChange={(e) => update("adminPassword", e.target.value)}
+                />
+              </Field>
+            </div>
+          )}
+          {step === 4 && (
+            <Field label="Plano inicial">
+              <Select value={form.planId} onChange={(e) => update("planId", e.target.value)}>
+                {sortByOptionLabel(plans, (plan) => plan.name).map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+          {step === 5 && (
+            <Field label="Vigência">
+              <Select value={form.trial} onChange={(e) => update("trial", e.target.value)}>
+                <option value="trial">Trial conforme plano</option>
+                <option value="active">Ativar administrativamente após criação</option>
+              </Select>
+            </Field>
+          )}
+          {step === 6 && (
+            <div className="space-y-2 text-sm">
+              <Review label="Tenant" value={form.name} />
+              <Review label="Slug" value={form.slug} />
+              <Review label="Região" value={`${form.timezone} / ${form.locale}`} />
+              <Review label="Admin" value={`${form.adminName} - ${form.adminEmail}`} />
+              <Review label="Plano" value={selectedPlan?.name ?? "Não selecionado"} />
+            </div>
+          )}
+          {step === 7 && created && (
+            <Alert tone="success" title="Tenant criado">
+              Subscription criada, tenant_admin inicial provisionado, status {created.status}, plano{" "}
+              {created.plan?.name ?? "sem plano"}.
+              <div className="mt-3">
+                <Link
+                  to="/admin/empresas/$tenantId"
+                  params={{ tenantId: created.id }}
+                  className="inline-flex items-center rounded-md border border-success/40 px-2 py-1 text-xs font-medium"
+                >
+                  Abrir detalhe
+                </Link>
+              </div>
+            </Alert>
+          )}
+
+          <div className="mt-5 flex items-center justify-between gap-2">
+            <Button
+              variant="secondary"
+              disabled={step === 0 || creating}
+              onClick={() => setStep((value) => Math.max(0, value - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" /> Voltar
+            </Button>
+            {step < 6 ? (
+              <Button
+                disabled={!canContinue || creating}
+                onClick={() => setStep((value) => Math.min(6, value + 1))}
+              >
+                Avancar <ChevronRight className="h-4 w-4" />
+              </Button>
+            ) : step === 6 ? (
+              <Button disabled={!canContinue || creating} onClick={submit}>
+                <CheckCircle2 className="h-4 w-4" /> Confirmar criação
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setForm(initialForm);
+                  setCreated(null);
+                  setStep(0);
+                }}
+              >
+                Nova criação
+              </Button>
+            )}
+          </div>
+        </Card>
+      </div>
     </AdminContainer>
   );
+}
+
+function Review({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-surface-1 px-3 py-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="truncate font-medium">{value}</span>
+    </div>
+  );
+}
+
+function TenantStatus({ status }: { status: string }) {
+  const tone =
+    status === "ACTIVE"
+      ? "success"
+      : status === "TRIAL"
+        ? "info"
+        : status === "SUSPENDED"
+          ? "warning"
+          : status === "TERMINATED"
+            ? "destructive"
+            : "default";
+  return <Badge tone={tone}>{status}</Badge>;
+}
+
+function normalizeSlug(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63);
+}
+
+function stepIsValid(step: number, form: TenantForm) {
+  if (step === 0) return form.name.trim().length >= 2;
+  if (step === 1) return /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(form.slug);
+  if (step === 2) return Boolean(form.timezone.trim() && form.locale.trim());
+  if (step === 3)
+    return Boolean(
+      form.adminName.trim() && form.adminEmail.includes("@") && form.adminPassword.length >= 6,
+    );
+  if (step === 4) return Boolean(form.planId);
+  return true;
 }
