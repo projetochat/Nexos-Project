@@ -72,8 +72,10 @@ async function main() {
   );
 
   run("docker", [
+    "compose",
     "exec",
-    "trixus-postgres",
+    "-T",
+    "postgres",
     "psql",
     "-U",
     "trixus",
@@ -83,15 +85,17 @@ async function main() {
     `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${target.databaseName}';`,
   ]);
   run("docker", [
+    "compose",
     "exec",
-    "trixus-postgres",
+    "-T",
+    "postgres",
     "dropdb",
     "-U",
     "trixus",
     "--if-exists",
     target.databaseName,
   ]);
-  run("docker", ["exec", "trixus-postgres", "createdb", "-U", "trixus", target.databaseName]);
+  run("docker", ["compose", "exec", "-T", "postgres", "createdb", "-U", "trixus", target.databaseName]);
   run("bun", [
     "--cwd",
     "backend",
