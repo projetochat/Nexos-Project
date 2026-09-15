@@ -26,7 +26,6 @@ COPY backend/package.json backend/package.json
 RUN bun install --frozen-lockfile --production
 
 COPY --from=build /app/backend/dist backend/dist
-COPY --from=build /app/backend/src/generated/prisma backend/src/generated/prisma
 COPY backend/prisma backend/prisma
 
 WORKDIR /app/backend
