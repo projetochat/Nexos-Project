@@ -9,7 +9,7 @@ RUN bun install --frozen-lockfile
 COPY backend backend
 # The checkout can contain TypeScript incremental metadata while dist is excluded
 # from the Docker context. Remove it so a fresh image always emits its artifacts.
-RUN rm -rf backend/dist && rm -f backend/*.tsbuildinfo && bun --cwd backend run prisma:generate && bun --cwd backend run build
+RUN rm -rf backend/dist && rm -f backend/*.tsbuildinfo && bun run --cwd backend prisma:generate && bun run --cwd backend build
 
 FROM build AS migrate
 
