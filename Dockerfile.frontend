@@ -18,6 +18,7 @@ ENV HOST=0.0.0.0
 ENV PORT=4173
 
 COPY package.json bun.lock ./
+COPY backend/package.json backend/package.json
 RUN bun install --frozen-lockfile
 
 COPY . .
