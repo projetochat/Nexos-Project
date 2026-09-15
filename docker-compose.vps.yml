@@ -76,6 +76,9 @@ services:
       LOG_LEVEL: ERROR,WARN,INFO
     volumes:
       - evolution-instances:/evolution/instances
+    ports:
+      # Apache terminates TLS and proxies the existing Evolution domain to this loopback-only port.
+      - "127.0.0.1:8080:8080"
 
   backend:
     build:
