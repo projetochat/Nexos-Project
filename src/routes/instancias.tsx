@@ -1,4 +1,4 @@
-import { usePhotoCropper } from "@/components/photo-cropper";
+import { usePhotoCropper } from "@/hooks/use-photo-cropper";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { createFileRoute } from "@tanstack/react-router";
