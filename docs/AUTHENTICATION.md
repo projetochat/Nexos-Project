@@ -269,7 +269,7 @@ Erros canonicos de auth:
 
 | Cenario              | HTTP | Code                             | Mensagem UI                                                                     |
 | -------------------- | ---: | -------------------------------- | ------------------------------------------------------------------------------- |
-| Credencial invalida  |  401 | `INVALID_CREDENTIALS`            | E-mail ou senha invalidos.                                                      |
+| Credencial invalida  |  401 | `INVALID_CREDENTIALS`            | E-mail ou senha inválidos.                                                      |
 | Usuario inativo      |  403 | `USER_INACTIVE`                  | Seu usuario nao possui permissao para acessar este ambiente.                    |
 | Sem membership ativa |  403 | `USER_WITHOUT_ACTIVE_MEMBERSHIP` | Seu usuario nao possui acesso a nenhuma organizacao ativa.                      |
 | Muitas tentativas    |  429 | `TOO_MANY_LOGIN_ATTEMPTS`        | Muitas tentativas de acesso. Aguarde e tente novamente.                         |

@@ -1,6 +1,30 @@
-import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import {
+  ArrayMinSize,
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+  ValidateNested,
+} from "class-validator";
+import { Type } from "class-transformer";
+import { ServiceHoursDto } from "./service-hours.dto";
 
 export class UpdateMessagingConnectionDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(7)
+  @ArrayMaxSize(7)
+  @ValidateNested({ each: true })
+  @Type(() => ServiceHoursDto)
+  serviceHours?: ServiceHoursDto[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  timezone?: string;
   @IsOptional()
   @IsString()
   @MinLength(2)

@@ -35,7 +35,7 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { InfoTooltip } from "@/components/info-tooltip";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
 import { num } from "@/lib/format";
@@ -60,6 +60,21 @@ const STATUS_TONE: Record<
   disconnected: "destructive",
   removed: "default",
 };
+
+export function canEditInstance(connection: ApiMessagingConnection) {
+  const hasWhatsAppNumber = Boolean(connection.ownerPhone || connection.ownerPhoneMasked);
+  return (
+    hasWhatsAppNumber && (connection.status === "connected" || connection.status === "disconnected")
+  );
+}
+
+export function instanceEditUnavailableReason(connection: ApiMessagingConnection) {
+  if (!connection.ownerPhone && !connection.ownerPhoneMasked) {
+    return "Conecte a instância ao WhatsApp para cadastrar o número antes de editá-la.";
+  }
+  if (connection.status === "connecting") return "Aguarde a conexão da instância para editá-la.";
+  return "Esta instância não está disponível para edição.";
+}
 
 function Page() {
   const qc = useQueryClient();
@@ -89,9 +104,10 @@ function Page() {
   const profileSyncAttempted = React.useRef(new Set<string>());
 
   React.useEffect(() => {
-    if (editing && items.some((item) => item.id === editing.id && item.status === "connecting")) {
+    const current = editing && items.find((item) => item.id === editing.id);
+    if (current && !canEditInstance(current)) {
       setEditing(null);
-      toast.info("Aguarde a conexão da instância para editá-la.");
+      toast.info(instanceEditUnavailableReason(current));
     }
   }, [editing, items]);
 
@@ -178,13 +194,35 @@ function Page() {
     };
   }, [qc, qr]);
   const update = useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       connection,
       data,
     }: {
       connection: ApiMessagingConnection;
       data: ConnectionSettingsFormData;
-    }) => connectionsApi.update(connection.id, data),
+    }) => {
+      const saved = await connectionsApi.update(connection.id, data);
+      if (
+        data.serviceHours &&
+        (saved.serviceHours?.length !== data.serviceHours.length ||
+          data.serviceHours.some((row, index) => {
+            const actual = saved.serviceHours?.[index];
+            return (
+              !actual ||
+              actual.day !== row.day ||
+              actual.active !== row.active ||
+              actual.start !== row.start ||
+              actual.end !== row.end
+            );
+          }) ||
+          saved.timezone !== data.timezone)
+      ) {
+        throw new Error(
+          "O servidor não confirmou os horários. Reinicie o backend e tente salvar novamente.",
+        );
+      }
+      return saved;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
       setEditing(null);
@@ -262,6 +300,7 @@ function Page() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {visibleItems.map((connection) => {
+              const canEdit = canEditInstance(connection);
               const canDisconnect =
                 connection.providerType === "evolution" &&
                 (connection.status === "connected" ||
@@ -355,14 +394,8 @@ function Page() {
                       variant="ghost"
                       size="sm"
                       onClick={() => setEditing(connection)}
-                      disabled={
-                        connection.status === "removed" || connection.status === "connecting"
-                      }
-                      title={
-                        connection.status === "connecting"
-                          ? "Aguarde a conexão da instância para editá-la."
-                          : "Editar"
-                      }
+                      disabled={!canEdit}
+                      title={canEdit ? "Editar" : instanceEditUnavailableReason(connection)}
                       aria-label="Editar"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -518,7 +551,9 @@ function ConnectionForm({
         <fieldset>
           <legend className="mb-2.5 flex items-center gap-2 text-sm font-semibold">
             Tipo de conexão
-            <Info className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <InfoTooltip label="tipo de conexão">
+              Escolha como conectar o WhatsApp: QR Code pelo celular ou API Oficial da Meta.
+            </InfoTooltip>
           </legend>
           <div className="grid grid-cols-2 gap-3">
             <button
@@ -793,6 +828,8 @@ type RemoveConnectionOptions = {
 };
 
 type ConnectionSettingsFormData = {
+  timezone?: string;
+  serviceHours?: ServiceHoursRow[];
   name: string;
   color: string | null;
   welcomeEnabled: boolean;
@@ -910,19 +947,29 @@ function ConnectionSettingsModal({
     notes: "",
   });
 
+  const initializedConnection = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (!connection) return;
+    if (!connection) {
+      initializedConnection.current = null;
+      return;
+    }
+    if (initializedConnection.current === connection.id) return;
+    initializedConnection.current = connection.id;
     setTab("general");
     setLogoMenuOpen(false);
     setLogoPreview(connection.logoUrl ?? null);
     setCameraOpen(false);
     setLogoPreviewOpen(false);
-    setTimezone("America/Sao_Paulo");
+    setTimezone(connection.timezone ?? "America/Sao_Paulo");
     setAiAgentId("");
     setAbsenceEnabled(connection.absenceEnabled ?? false);
     setAbsenceActivation(0);
     setAbsenceMessage(connection.absenceMessage ?? "");
-    setServiceHours(defaultServiceHours());
+    setServiceHours(
+      connection.serviceHours?.length === 7
+        ? connection.serviceHours.map((row) => ({ ...row }))
+        : defaultServiceHours(),
+    );
     setShowWelcomeValidation(false);
     setShowAbsenceValidation(false);
     setForm({
@@ -998,7 +1045,20 @@ function ConnectionSettingsModal({
       toast.error("Preencha a mensagem de ausência para salvar.");
       return;
     }
+    const normalizedHours = serviceHours.map((row) => ({
+      ...row,
+      start: formatServiceHourDraft(row.start),
+      end: formatServiceHourDraft(row.end),
+    }));
+    const hoursError = serviceHoursError(normalizedHours);
+    if (hoursError) {
+      setTab("absence");
+      toast.error(hoursError);
+      return;
+    }
     onSubmit(connection, {
+      timezone,
+      serviceHours: normalizedHours,
       ...form,
       name: form.name.trim(),
       color: completeHexColor(form.color, "#22c55e"),
@@ -1017,7 +1077,7 @@ function ConnectionSettingsModal({
         onClose={onClose}
         title="Editar Instância"
         size="xl"
-        className="lg:max-w-5xl"
+        className="sm:max-w-[44.8rem] lg:max-h-[calc(90dvh-2rem)]"
         footer={
           <div className="flex w-full items-center justify-between gap-2">
             <EntityFormLog createdAt={connection?.createdAt} updatedAt={connection?.updatedAt} />
@@ -1211,22 +1271,9 @@ function ConnectionSettingsModal({
                 <div>
                   <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                     <label htmlFor="instance-ai-agent">Agentes de IA</label>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            aria-label="Informações sobre agentes de IA"
-                            className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                          >
-                            <Info className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent className="z-[300] max-w-64">
-                          Será preenchido pelos agentes cadastrados no módulo de IA.
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                    <InfoTooltip label="agentes de IA">
+                      Será preenchido pelos agentes cadastrados no módulo de IA.
+                    </InfoTooltip>
                   </div>
                   <Select
                     id="instance-ai-agent"
@@ -1805,7 +1852,7 @@ function customFieldVariableToken(label: string) {
   return key ? `{{${key}}}` : null;
 }
 
-function ServiceHoursTable({
+export function ServiceHoursTable({
   rows,
   onChange,
   enabled,
@@ -1816,8 +1863,9 @@ function ServiceHoursTable({
   enabled: boolean;
   focusStartSignal: number;
 }) {
+  const errorPrefix = React.useId();
   const [selectedRow, setSelectedRow] = React.useState<number | null>(null);
-  const mondayStartRef = React.useRef<HTMLInputElement>(null);
+  const firstActiveStartRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (!enabled) {
@@ -1827,9 +1875,12 @@ function ServiceHoursTable({
 
   React.useEffect(() => {
     if (!enabled || focusStartSignal === 0) return;
-    requestAnimationFrame(() =>
-      mondayStartRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }),
-    );
+    const frame = requestAnimationFrame(() => {
+      firstActiveStartRef.current?.focus({ preventScroll: true });
+      firstActiveStartRef.current?.select();
+      firstActiveStartRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [enabled, focusStartSignal]);
 
   const updateRow = (index: number, patch: Partial<ServiceHoursRow>) => {
@@ -1871,74 +1922,107 @@ function ServiceHoursTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {rows.map((row, index) => (
-              <tr key={row.day} className="transition hover:bg-surface-1/60">
-                <td className="px-1.5 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm">{row.day}</td>
-                <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
-                  <input
-                    type="checkbox"
-                    checked={row.active}
-                    onChange={(event) => {
-                      setSelectedRow(index);
-                      updateRow(index, { active: event.target.checked });
-                    }}
-                    disabled={!enabled}
-                    className="h-4 w-4 accent-primary"
-                    aria-label={`Ativar atendimento em ${row.day}`}
-                  />
-                </td>
-                <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
-                  <Input
-                    ref={index === 0 ? mondayStartRef : undefined}
-                    type="text"
-                    inputMode="numeric"
-                    value={row.start}
-                    placeholder="00:00"
-                    disabled={!enabled || !row.active}
-                    onFocus={() => setSelectedRow(index)}
-                    onChange={(event) =>
-                      updateRow(index, { start: sanitizeServiceHourDraft(event.target.value) })
-                    }
-                    onBlur={(event) =>
-                      updateRow(index, { start: formatServiceHourDraft(event.target.value) })
-                    }
-                    className="!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:w-24 sm:px-3 sm:!text-sm"
-                  />
-                </td>
-                <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    value={row.end}
-                    placeholder="00:00"
-                    disabled={!enabled || !row.active}
-                    onFocus={() => setSelectedRow(index)}
-                    onChange={(event) =>
-                      updateRow(index, { end: sanitizeServiceHourDraft(event.target.value) })
-                    }
-                    onBlur={(event) =>
-                      updateRow(index, { end: formatServiceHourDraft(event.target.value) })
-                    }
-                    className="!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:w-24 sm:px-3 sm:!text-sm"
-                  />
-                </td>
-                <td className="px-0 py-1.5 text-center sm:px-3 sm:py-2">
-                  {enabled && selectedRow === index && row.active && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToAll(index)}
-                      title="Copiar para todos"
-                      aria-label="Copiar para todos"
-                      className="h-8 w-8 min-h-8 px-0 sm:w-auto sm:px-2"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {rows.map((row, index) => {
+              const error = enabled
+                ? serviceHoursError([
+                    {
+                      ...row,
+                      start: formatServiceHourDraft(row.start),
+                      end: formatServiceHourDraft(row.end),
+                    },
+                  ])
+                : "";
+              const errorId = `${errorPrefix}-${index}`;
+              return (
+                <tr key={row.day} className="transition hover:bg-surface-1/60">
+                  <td className="px-1.5 py-1.5 align-top text-xs sm:px-3 sm:py-2 sm:text-sm">
+                    <p>{row.day}</p>
+                    {error && (
+                      <p
+                        id={errorId}
+                        role="alert"
+                        className="mt-1 block w-full whitespace-normal break-words text-[11px] leading-tight text-destructive [overflow-wrap:anywhere] sm:text-xs"
+                      >
+                        {error}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
+                    <input
+                      type="checkbox"
+                      checked={row.active}
+                      onChange={(event) => {
+                        setSelectedRow(index);
+                        updateRow(index, { active: event.target.checked });
+                      }}
+                      disabled={!enabled}
+                      className="h-4 w-4 accent-primary"
+                      aria-label={`Ativar atendimento em ${row.day}`}
+                    />
+                  </td>
+                  <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
+                    <Input
+                      ref={
+                        index === rows.findIndex((item) => item.active)
+                          ? firstActiveStartRef
+                          : undefined
+                      }
+                      aria-label={`Início de ${row.day}`}
+                      aria-invalid={!!error}
+                      aria-describedby={error ? errorId : undefined}
+                      type="text"
+                      inputMode="numeric"
+                      value={row.start}
+                      placeholder="00:00"
+                      disabled={!enabled || !row.active}
+                      onFocus={() => setSelectedRow(index)}
+                      onChange={(event) =>
+                        updateRow(index, { start: sanitizeServiceHourDraft(event.target.value) })
+                      }
+                      onBlur={(event) =>
+                        updateRow(index, { start: formatServiceHourDraft(event.target.value) })
+                      }
+                      className={`!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:w-24 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
+                    />
+                  </td>
+                  <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      aria-label={`Fim de ${row.day}`}
+                      aria-invalid={!!error}
+                      aria-describedby={error ? errorId : undefined}
+                      value={row.end}
+                      placeholder="00:00"
+                      disabled={!enabled || !row.active}
+                      onFocus={() => setSelectedRow(index)}
+                      onChange={(event) =>
+                        updateRow(index, { end: sanitizeServiceHourDraft(event.target.value) })
+                      }
+                      onBlur={(event) =>
+                        updateRow(index, { end: formatServiceHourDraft(event.target.value) })
+                      }
+                      className={`!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:w-24 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
+                    />
+                  </td>
+                  <td className="px-0 py-1.5 text-center sm:px-3 sm:py-2">
+                    {enabled && selectedRow === index && row.active && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copyToAll(index)}
+                        title="Copiar para todos"
+                        aria-label="Copiar para todos"
+                        className="h-8 w-8 min-h-8 px-0 sm:w-auto sm:px-2"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -1950,14 +2034,27 @@ function sanitizeServiceHourDraft(value: string) {
   return value.replace(/[^\d:]/g, "").slice(0, 5);
 }
 
+export function serviceHoursError(rows: ServiceHoursRow[]) {
+  for (const row of rows) {
+    if (!row.active) continue;
+    const time = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (!time.test(row.start) || !time.test(row.end))
+      return `Informe horários válidos em ${row.day} (HH:mm).`;
+    if (row.end <= row.start) return "Hora final deve ser maior que a inicial.";
+  }
+  return "";
+}
+
 function formatServiceHourDraft(value: string) {
-  const digits = value.replace(/\D/g, "");
-  if (!digits) return "";
-  const padded =
-    digits.length <= 2 ? digits.padStart(2, "0").padEnd(4, "0") : digits.padStart(4, "0");
-  const hour = Math.min(23, Number(padded.slice(0, 2)));
-  const minute = Math.min(59, Number(padded.slice(2, 4)));
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  if (!value) return "";
+  if (/^\d{1,2}:\d{1,2}$/.test(value))
+    return value
+      .split(":")
+      .map((part) => part.padStart(2, "0"))
+      .join(":");
+  if (!/^\d{1,4}$/.test(value)) return value;
+  const digits = value.length <= 2 ? value.padStart(2, "0") + "00" : value.padStart(4, "0");
+  return digits.slice(0, 2) + ":" + digits.slice(2);
 }
 
 function EntityFormLog({
@@ -1988,9 +2085,15 @@ function QrModal({
   onClose: () => void;
 }) {
   return (
-    <Modal open={!!qr} onClose={onClose} title={qr ? `QR - ${qr.name}` : "QR"} size="lg">
+    <Modal
+      open={!!qr}
+      onClose={onClose}
+      title={qr ? `QR - ${qr.name}` : "QR"}
+      size="sm"
+      className="sm:max-w-[30.125rem]"
+    >
       {qr?.value ? (
-        <div className="flex justify-center p-4">
+        <div className="flex justify-center py-2">
           <img
             src={qr.value}
             alt="QR Code WhatsApp"

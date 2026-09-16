@@ -23,6 +23,14 @@ function EmpresaSettings() {
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [showNewPassword, setShowNewPassword] = React.useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
+  const newPasswordMatchesCurrent =
+    Boolean(currentPassword) && Boolean(newPassword) && currentPassword === newPassword;
+  const confirmPasswordMatchesCurrent =
+    Boolean(currentPassword) && Boolean(confirmPassword) && currentPassword === confirmPassword;
+  const passwordsDoNotMatch =
+    Boolean(newPassword) && Boolean(confirmPassword) && newPassword !== confirmPassword;
+  const passwordReuseError = "A nova senha deve ser diferente da senha atual.";
+  const passwordConfirmationError = "A confirmação da senha não confere.";
 
   const savePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
@@ -31,6 +39,10 @@ function EmpresaSettings() {
     }
     if (newPassword.length < 6) {
       toast.error("A nova senha deve ter ao menos 6 caracteres.");
+      return;
+    }
+    if (newPasswordMatchesCurrent) {
+      toast.error(passwordReuseError);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -131,22 +143,36 @@ function EmpresaSettings() {
                   autoComplete="current-password"
                 />
               </Field>
-              <Field label="Nova senha *">
+              <Field
+                label="Nova senha *"
+                error={newPasswordMatchesCurrent ? passwordReuseError : undefined}
+              >
                 <PasswordInput
                   value={newPassword}
                   onChange={setNewPassword}
                   visible={showNewPassword}
                   onToggle={() => setShowNewPassword((current) => !current)}
                   autoComplete="new-password"
+                  invalid={newPasswordMatchesCurrent}
                 />
               </Field>
-              <Field label="Confirmar nova senha *">
+              <Field
+                label="Confirmar nova senha *"
+                error={
+                  passwordsDoNotMatch
+                    ? passwordConfirmationError
+                    : confirmPasswordMatchesCurrent
+                      ? passwordReuseError
+                      : undefined
+                }
+              >
                 <PasswordInput
                   value={confirmPassword}
                   onChange={setConfirmPassword}
                   visible={showConfirmPassword}
                   onToggle={() => setShowConfirmPassword((current) => !current)}
                   autoComplete="new-password"
+                  invalid={passwordsDoNotMatch || confirmPasswordMatchesCurrent}
                 />
               </Field>
             </div>
@@ -171,6 +197,7 @@ function PasswordInput({
   canToggle = true,
   onToggle,
   autoComplete,
+  invalid = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -178,6 +205,7 @@ function PasswordInput({
   canToggle?: boolean;
   onToggle: () => void;
   autoComplete: string;
+  invalid?: boolean;
 }) {
   return (
     <div className="relative">
@@ -186,7 +214,8 @@ function PasswordInput({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         autoComplete={autoComplete}
-        className="pr-10"
+        aria-invalid={invalid}
+        className={`pr-10 ${invalid ? "!border-destructive" : ""}`}
       />
       {canToggle && (
         <button

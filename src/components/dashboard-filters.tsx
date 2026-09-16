@@ -2,7 +2,7 @@ import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays } from "lucide-react";
-import { Card, Input, InstanceFilterSelect, Select } from "@/components/ui-kit";
+import { Card, Input, InstanceFilterSelect, SearchInput, Select } from "@/components/ui-kit";
 import { connectionsApi, crmApi, organizationApi, type OperationalPeriod } from "@/lib/trixus-api";
 import {
   datesForOperationalPeriod,
@@ -26,9 +26,15 @@ const PERIOD_OPTIONS: Array<{ value: OperationalPeriod; label: string }> = [
 export function DashboardFiltersBar({
   value,
   onChange,
+  showDepartment = true,
+  search,
+  className = "mb-6",
 }: {
   value: OperationalReportFilters;
   onChange: (patch: Partial<OperationalReportFilters>) => void;
+  showDepartment?: boolean;
+  search?: { value: string; onChange: (value: string) => void; placeholder: string };
+  className?: string;
 }) {
   const { data: customers } = useQuery({
     queryKey: ["operations", "filters", "customers"],
@@ -37,6 +43,7 @@ export function DashboardFiltersBar({
   const { data: departments = [] } = useQuery({
     queryKey: ["operations", "filters", "departments"],
     queryFn: organizationApi.listDepartments,
+    enabled: showDepartment,
   });
   const { data: connections = [] } = useQuery({
     queryKey: ["operations", "filters", "connections"],
@@ -60,8 +67,15 @@ export function DashboardFiltersBar({
   const end = value.end ?? automaticDates.end;
 
   return (
-    <Card className="mb-6 p-4">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr]">
+    <Card className={`p-4 ${className}`}>
+      <div
+        className={`grid grid-cols-2 gap-3 ${search && !showDepartment ? "xl:grid-cols-[minmax(220px,3fr)_1fr_1fr_1.1fr_1fr_1fr]" : "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr]"}`}
+      >
+        {search && (
+          <FilterField label="Busca" className="col-span-2 min-w-0 xl:col-span-1">
+            <SearchInput {...search} />
+          </FilterField>
+        )}
         <FilterField label="Instância">
           <InstanceFilterSelect
             value={value.connectionId ?? ""}
@@ -86,19 +100,21 @@ export function DashboardFiltersBar({
             ))}
           </Select>
         </FilterField>
-        <FilterField label="Departamento">
-          <Select
-            value={value.departmentId ?? ""}
-            onChange={(event) => onChange({ departmentId: event.target.value || undefined })}
-          >
-            <option value="">Todos</option>
-            {sortedDepartments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.name}
-              </option>
-            ))}
-          </Select>
-        </FilterField>
+        {showDepartment && (
+          <FilterField label="Departamento">
+            <Select
+              value={value.departmentId ?? ""}
+              onChange={(event) => onChange({ departmentId: event.target.value || undefined })}
+            >
+              <option value="">Todos</option>
+              {sortedDepartments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </Select>
+          </FilterField>
+        )}
         <FilterField label="Período">
           <Select
             value={value.period}

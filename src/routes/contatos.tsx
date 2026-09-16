@@ -1,3 +1,4 @@
+import { InfoTooltip } from "@/components/info-tooltip";
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { createPortal } from "react-dom";
@@ -32,7 +33,6 @@ import {
   MessageSquareMore,
   Network,
   Plug,
-  Info,
   Pencil,
   Phone,
   Plus,
@@ -3124,12 +3124,7 @@ export function ContactFormModal({
                             {field.required && <span className="text-destructive"> *</span>}
                           </span>
                           {field.note && (
-                            <span
-                              title={field.note}
-                              className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-full align-middle text-primary transition hover:text-primary/80"
-                            >
-                              <Info className="h-3 w-3" />
-                            </span>
+                            <InfoTooltip label={field.label}>{field.note}</InfoTooltip>
                           )}
                         </div>
                         <div

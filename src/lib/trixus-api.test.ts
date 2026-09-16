@@ -56,12 +56,12 @@ describe("trixus-api auth client", () => {
       vi
         .fn()
         .mockResolvedValue(
-          responseJson(401, { code: "INVALID_CREDENTIALS", message: "E-mail ou senha invalidos." }),
+          responseJson(401, { code: "INVALID_CREDENTIALS", message: "E-mail ou senha inválidos." }),
         ),
     );
 
     await expect(loginWithTrixusApi("admin@trixus.app", "wrong-password")).rejects.toThrow(
-      "E-mail ou senha invalidos.",
+      "E-mail ou senha inválidos.",
     );
   });
 

@@ -4,16 +4,15 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
-import { Avatar, Badge, Button, SearchInput, Select } from "@/components/ui-kit";
+import { Avatar, Badge, Button } from "@/components/ui-kit";
+import { DashboardFiltersBar } from "@/components/dashboard-filters";
+import {
+  datesForOperationalPeriod,
+  type OperationalReportFilters,
+} from "@/lib/operational-filters";
 import { fmtDate, fmtHM, num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
-import {
-  conversationApi,
-  messageApi,
-  operationsApi,
-  type ApiMessage,
-  type OperationalPeriod,
-} from "@/lib/trixus-api";
+import { conversationApi, messageApi, operationsApi, type ApiMessage } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { ContactPanel } from "./inbox.$conversationId";
 
@@ -25,20 +24,23 @@ function HistoricoPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [search, setSearch] = React.useState("");
-  const [period, setPeriod] = React.useState<OperationalPeriod>("30d");
+  const [reportFilters, setReportFilters] = React.useState<OperationalReportFilters>(() => ({
+    period: "today",
+    ...datesForOperationalPeriod("today"),
+  }));
   const [page, setPage] = React.useState(1);
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [panelOpen, setPanelOpen] = React.useState(false);
 
   const filters = React.useMemo(
     () => ({
-      period,
+      ...reportFilters,
       status: "fechada" as const,
       q: search.trim() || undefined,
       page,
       pageSize: PAGE_SIZE,
     }),
-    [page, period, search],
+    [page, reportFilters, search],
   );
 
   const history = useQuery({
@@ -110,32 +112,26 @@ function HistoricoPage() {
           </div>
         </header>
 
+        <DashboardFiltersBar
+          className="shrink-0"
+          value={reportFilters}
+          onChange={(patch) => {
+            setReportFilters((current) => ({ ...current, ...patch }));
+            setPage(1);
+          }}
+          showDepartment={false}
+          search={{
+            value: search,
+            onChange: (value) => {
+              setSearch(value);
+              setPage(1);
+            },
+            placeholder: "Buscar protocolo, contato...",
+          }}
+        />
+
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[380px_1fr]">
           <aside className="flex min-h-0 flex-col rounded-xl border border-border bg-card shadow-card">
-            <div className="grid grid-cols-2 gap-2 border-b border-border p-3">
-              <div className="col-span-2">
-                <SearchInput
-                  value={search}
-                  onChange={(value) => {
-                    setSearch(value);
-                    setPage(1);
-                  }}
-                  placeholder="Buscar protocolo, contato..."
-                />
-              </div>
-              <div>
-                <Select
-                  value={period}
-                  onChange={(event) => setPeriod(event.target.value as OperationalPeriod)}
-                >
-                  <option value="today">Hoje</option>
-                  <option value="yesterday">Ontem</option>
-                  <option value="7d">7 dias</option>
-                  <option value="30d">30 dias</option>
-                </Select>
-              </div>
-            </div>
-
             <ul className="min-h-0 flex-1 overflow-y-auto">
               {history.isLoading && (
                 <li className="px-4 py-8 text-center text-xs text-muted-foreground">

@@ -151,6 +151,26 @@ type ShiftKey = keyof typeof SHIFT_LABELS;
 type WorkShift = { active: boolean; start: string; end: string };
 type WorkSchedule = { noSchedule: boolean; days: Record<WeekDay, Record<ShiftKey, WorkShift>> };
 
+export function workShiftError(shift: WorkShift) {
+  const time = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!time.test(shift.start) || !time.test(shift.end)) return "Informe horários válidos (HH:mm).";
+  if (shift.end <= shift.start) return "Hora final deve ser maior que a inicial.";
+  return "";
+}
+
+export function workScheduleError(schedule: WorkSchedule) {
+  if (schedule.noSchedule) return "";
+  for (const day of WEEK_DAYS) {
+    for (const shift of Object.keys(SHIFT_LABELS) as ShiftKey[]) {
+      const error = schedule.days[day][shift].active
+        ? workShiftError(schedule.days[day][shift])
+        : "";
+      if (error) return `${SHIFT_LABELS[shift]} de ${day}: ${error}`;
+    }
+  }
+  return "";
+}
+
 function countRoleMembers(memberships: ApiUserMembership[]) {
   return memberships.reduce<Record<string, number>>((acc, membership) => {
     acc[membership.role.id] = (acc[membership.role.id] ?? 0) + 1;
@@ -577,6 +597,12 @@ function PerfilForm({
       setActiveTab("geral");
       return;
     }
+    const scheduleError = workScheduleError(form.workSchedule);
+    if (scheduleError) {
+      setActiveTab("jornada");
+      toast.error(scheduleError);
+      return;
+    }
     onSubmit(form);
   };
 
@@ -992,6 +1018,7 @@ function WorkScheduleEditor({
   value: WorkSchedule;
   onChange: (value: WorkSchedule) => void;
 }) {
+  const errorPrefix = React.useId();
   const updateShift = (day: WeekDay, shift: ShiftKey, patch: Partial<WorkShift>) => {
     onChange({
       ...value,
@@ -1068,83 +1095,120 @@ function WorkScheduleEditor({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {WEEK_DAYS.map((day) => (
-              <tr key={day}>
-                <td className="px-2 py-2 font-medium">{day}</td>
-                {(Object.keys(SHIFT_LABELS) as ShiftKey[]).map((shift) => {
-                  const item = value.days[day][shift];
-                  return (
-                    <React.Fragment key={`${day}-${shift}`}>
-                      <td className="px-2 py-2 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input
-                            type="checkbox"
-                            checked={item.active}
-                            disabled={value.noSchedule}
-                            onChange={(event) => {
-                              updateShift(day, shift, { active: event.target.checked });
-                            }}
-                            className="h-4 w-4 accent-primary"
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={value.noSchedule}
-                            onClick={() => copyShiftToAll(day, shift)}
-                            title={`Copiar turno ${SHIFT_LABELS[shift]} para todos os dias`}
-                            aria-label={`Copiar turno ${SHIFT_LABELS[shift]} para todos os dias`}
-                            className="h-7 w-7 p-0"
+            {WEEK_DAYS.map((day) => {
+              const errors = {} as Record<ShiftKey, string>;
+              for (const shift of Object.keys(SHIFT_LABELS) as ShiftKey[]) {
+                const item = value.days[day][shift];
+                errors[shift] =
+                  !value.noSchedule && item.active
+                    ? workShiftError({
+                        ...item,
+                        start: formatWorkHourDraft(item.start),
+                        end: formatWorkHourDraft(item.end),
+                      })
+                    : "";
+              }
+              return (
+                <tr key={day}>
+                  <td className="px-2 py-2 align-top font-medium">
+                    <p>{day}</p>
+                    {(Object.keys(SHIFT_LABELS) as ShiftKey[]).map(
+                      (shift) =>
+                        errors[shift] && (
+                          <p
+                            key={shift}
+                            id={`${errorPrefix}-${day}-${shift}`}
+                            role="alert"
+                            className="mt-1 block w-full whitespace-normal break-words text-[11px] font-normal leading-tight text-destructive [overflow-wrap:anywhere]"
                           >
-                            <Copy className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </td>
-                      <td className="px-2 py-2 text-center">
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          value={item.start}
-                          placeholder="00:00"
-                          disabled={value.noSchedule || !item.active}
-                          className="w-full px-2 text-center"
-                          onChange={(event) =>
-                            updateShift(day, shift, {
-                              start: sanitizeWorkHourDraft(event.target.value),
-                            })
-                          }
-                          onBlur={(event) =>
-                            updateShift(day, shift, {
-                              start: formatWorkHourDraft(event.target.value),
-                            })
-                          }
-                        />
-                      </td>
-                      <td className="px-2 py-2 text-center">
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          value={item.end}
-                          placeholder="00:00"
-                          disabled={value.noSchedule || !item.active}
-                          className="w-full px-2 text-center"
-                          onChange={(event) =>
-                            updateShift(day, shift, {
-                              end: sanitizeWorkHourDraft(event.target.value),
-                            })
-                          }
-                          onBlur={(event) =>
-                            updateShift(day, shift, {
-                              end: formatWorkHourDraft(event.target.value),
-                            })
-                          }
-                        />
-                      </td>
-                    </React.Fragment>
-                  );
-                })}
-              </tr>
-            ))}
+                            {SHIFT_LABELS[shift]}: {errors[shift]}
+                          </p>
+                        ),
+                    )}
+                  </td>
+                  {(Object.keys(SHIFT_LABELS) as ShiftKey[]).map((shift) => {
+                    const item = value.days[day][shift];
+                    const error = errors[shift];
+                    const errorId = `${errorPrefix}-${day}-${shift}`;
+                    return (
+                      <React.Fragment key={`${day}-${shift}`}>
+                        <td className="px-2 py-2 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <input
+                              type="checkbox"
+                              checked={item.active}
+                              disabled={value.noSchedule}
+                              onChange={(event) => {
+                                updateShift(day, shift, { active: event.target.checked });
+                              }}
+                              className="h-4 w-4 accent-primary"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={value.noSchedule}
+                              onClick={() => copyShiftToAll(day, shift)}
+                              title={`Copiar turno ${SHIFT_LABELS[shift]} para todos os dias`}
+                              aria-label={`Copiar turno ${SHIFT_LABELS[shift]} para todos os dias`}
+                              className="h-7 w-7 p-0"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                        <td className="px-2 py-2 text-center">
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            aria-label={`Início do ${SHIFT_LABELS[shift]} de ${day}`}
+                            aria-invalid={!!error}
+                            aria-describedby={error ? errorId : undefined}
+                            value={item.start}
+                            placeholder="00:00"
+                            disabled={value.noSchedule || !item.active}
+                            className={`w-full px-2 text-center ${error ? "!border-destructive" : ""}`}
+                            onChange={(event) =>
+                              updateShift(day, shift, {
+                                start: sanitizeWorkHourDraft(event.target.value),
+                              })
+                            }
+                            onBlur={(event) =>
+                              updateShift(day, shift, {
+                                start: formatWorkHourDraft(event.target.value),
+                              })
+                            }
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-center">
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            aria-label={`Fim do ${SHIFT_LABELS[shift]} de ${day}`}
+                            aria-invalid={!!error}
+                            aria-describedby={error ? errorId : undefined}
+                            value={item.end}
+                            placeholder="00:00"
+                            disabled={value.noSchedule || !item.active}
+                            className={`w-full px-2 text-center ${error ? "!border-destructive" : ""}`}
+                            onChange={(event) =>
+                              updateShift(day, shift, {
+                                end: sanitizeWorkHourDraft(event.target.value),
+                              })
+                            }
+                            onBlur={(event) =>
+                              updateShift(day, shift, {
+                                end: formatWorkHourDraft(event.target.value),
+                              })
+                            }
+                          />
+                        </td>
+                      </React.Fragment>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

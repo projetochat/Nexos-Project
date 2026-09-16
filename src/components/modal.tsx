@@ -104,6 +104,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirmar",
   cancelLabel = "Cancelar",
   destructive,
+  accent,
   onConfirm,
   onClose,
 }: {
@@ -113,6 +114,7 @@ export function ConfirmDialog({
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  accent?: "destructive" | "primary";
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -131,7 +133,7 @@ export function ConfirmDialog({
             {cancelLabel}
           </Button>
           <Button
-            variant={destructive ? "destructive" : "primary"}
+            variant={accent === "primary" ? "primary" : destructive ? "destructive" : "primary"}
             size="sm"
             autoFocus={destructive || /excluir|remover/i.test(confirmLabel)}
             data-confirm-action
@@ -148,7 +150,13 @@ export function ConfirmDialog({
     >
       <div className="flex gap-3">
         {destructive && (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-destructive/15 text-destructive">
+          <div
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+              accent === "primary"
+                ? "bg-primary/15 text-primary"
+                : "bg-destructive/15 text-destructive"
+            }`}
+          >
             <AlertTriangle className="h-4 w-4" />
           </div>
         )}

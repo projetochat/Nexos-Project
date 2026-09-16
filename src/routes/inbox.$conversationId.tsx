@@ -59,6 +59,7 @@ import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { startTyping, stopTyping } from "@/lib/realtime/client";
 import { ContactFormModal, contactPayload } from "./contatos";
+import { InboxImageViewer } from "@/components/inbox-image-viewer";
 
 export const Route = createFileRoute("/inbox/$conversationId")({ component: ConversationPage });
 
@@ -634,19 +635,14 @@ function MessageBubble({
             onClick={() => onQuotedClick?.(m.quoted?.message_id)}
           />
         )}
-        {m.type === "image" && mediaUrl && (
-          <Modal
-            open={imagePreviewOpen}
+        {m.type === "image" && mediaUrl && imagePreviewOpen && (
+          <InboxImageViewer
+            src={mediaUrl}
+            message={m}
             onClose={() => setImagePreviewOpen(false)}
-            title={m.media_data?.file_name ?? "Imagem"}
-            size="xl"
-          >
-            <img
-              src={mediaUrl}
-              alt={m.media_data?.file_name ?? "Imagem ampliada"}
-              className="mx-auto max-h-[75vh] max-w-full object-contain"
-            />
-          </Modal>
+            onReply={onReply}
+            onDownload={download}
+          />
         )}
         {m.type === "image" && m.media_data && (
           <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
