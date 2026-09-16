@@ -34,6 +34,7 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
 import { num } from "@/lib/format";
@@ -85,6 +86,13 @@ function Page() {
     (item) => item.name,
   );
   const profileSyncAttempted = React.useRef(new Set<string>());
+
+  React.useEffect(() => {
+    if (editing && items.some((item) => item.id === editing.id && item.status === "connecting")) {
+      setEditing(null);
+      toast.info("Aguarde a conexão da instância para editá-la.");
+    }
+  }, [editing, items]);
 
   React.useEffect(() => {
     const pending = items.filter(
@@ -283,7 +291,7 @@ function Page() {
                   </div>
                   <div className="mt-4 space-y-2 border-t border-border pt-3 text-xs">
                     <div className="flex justify-between gap-3">
-                      <span className="text-muted-foreground">Referencia</span>
+                      <span className="text-muted-foreground">Referência</span>
                       <span className="truncate text-right">
                         {connection.externalReference ?? "sem referencia externa"}
                       </span>
@@ -348,8 +356,8 @@ function Page() {
                       variant="ghost"
                       size="sm"
                       onClick={() => setEditing(connection)}
-                      disabled={connection.status === "removed"}
-                      title="Editar"
+                      disabled={connection.status === "removed" || connection.status === "connecting"}
+                      title={connection.status === "connecting" ? "Aguarde a conexão da instância para editá-la." : "Editar"}
                       aria-label="Editar"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -429,10 +437,11 @@ function ConnectionForm({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: { name: string; importHistoryEnabled: boolean; importHistoryStartDate?: string; importGroupsEnabled: boolean; importGroupsStartDate?: string }) => void;
+  onSubmit: (data: { name: string; color: string; importHistoryEnabled: boolean; importHistoryStartDate?: string; importGroupsEnabled: boolean; importGroupsStartDate?: string }) => void;
   busy: boolean;
 }) {
   const [name, setName] = React.useState("");
+  const [color, setColor] = React.useState("#22c55e");
   const [connectionType, setConnectionType] = React.useState<"qr-code">("qr-code");
   const [importHistory, setImportHistory] = React.useState(false);
   const [importGroups, setImportGroups] = React.useState(false);
@@ -445,6 +454,7 @@ function ConnectionForm({
   React.useEffect(() => {
     if (!open) {
       setName("");
+      setColor("#22c55e");
       setConnectionType("qr-code");
       setImportHistory(false);
       setImportGroups(false);
@@ -458,6 +468,7 @@ function ConnectionForm({
     if (!canCreate || busy) return;
     onSubmit({
       name: name.trim(),
+      color: completeHexColor(color, "#22c55e"),
       importHistoryEnabled: importHistory,
       importHistoryStartDate: importHistory ? historyStartDate || undefined : undefined,
       importGroupsEnabled: importGroups,
@@ -525,14 +536,36 @@ function ConnectionForm({
           </div>
         </fieldset>
 
-        <Field label="Nome da instância *">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Digite o nome da instância"
-            required
-          />
-        </Field>
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
+          <Field label="Nome da instância *">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Digite o nome da instância"
+              required
+            />
+          </Field>
+          <Field label="Cor" asLabel={false}>
+            <div className="flex h-10 items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 transition focus-within:border-primary">
+              <input
+                type="color"
+                aria-label="Selecionar cor da instância"
+                value={completeHexColor(color, "#22c55e")}
+                onChange={(event) => setColor(normalizeHexColor(event.target.value))}
+                className="h-7 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
+              />
+              <input
+                type="text"
+                aria-label="Código da cor da instância"
+                value={color}
+                onChange={(event) => setColor(normalizeHexColor(event.target.value))}
+                placeholder="#22C55E"
+                maxLength={7}
+                className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+              />
+            </div>
+          </Field>
+        </div>
 
         <section className="space-y-4 border-t border-border pt-5" aria-label="Importar mensagens">
           <h3 className="text-base font-semibold">Importar Mensagens</h3>
@@ -570,7 +603,7 @@ function ConnectionForm({
             </span>
             <div>
               <p className="font-semibold">A importação de mensagens começará após ler o QR Code.</p>
-              <p className="mt-0.5 text-blue-700">Pode levar até 5 minutos para iniciar.</p>
+              <p className="mt-0.5 text-sm font-normal text-blue-700">Pode levar até 5 minutos para iniciar.</p>
             </div>
           </div>
         </section>
@@ -682,7 +715,7 @@ function ImportDate({
         <input
           ref={nativeDateInputRef}
           type="date"
-          value={value}
+          value={value.slice(0, 10)}
           disabled={disabled}
           tabIndex={-1}
           aria-hidden="true"
@@ -699,7 +732,7 @@ function ImportDate({
 }
 
 function formatImportDate(value: string) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/.exec(value);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
 }
 
@@ -1154,14 +1187,26 @@ function ConnectionSettingsModal({
                     ))}
                   </Select>
                 </Field>
-                <Field
-                  label="Agente de IA"
-                  hint="Será preenchido pelos agentes cadastrados no módulo de IA."
-                >
-                  <Select value={aiAgentId} onChange={(event) => setAiAgentId(event.target.value)}>
+                <div>
+                  <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <label htmlFor="instance-ai-agent">Agentes de IA</label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button type="button" aria-label="Informações sobre agentes de IA" className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                            <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="z-[300] max-w-64">
+                          Será preenchido pelos agentes cadastrados no módulo de IA.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <Select id="instance-ai-agent" value={aiAgentId} onChange={(event) => setAiAgentId(event.target.value)}>
                     <option value="">- Selecione um agente -</option>
                   </Select>
-                </Field>
+                </div>
               </div>
               <section className="space-y-4 rounded-xl border border-border bg-surface-1 p-4" aria-label="Importação de Mensagens">
                 <h3 className="text-base font-semibold text-foreground">Importação de Mensagens</h3>
@@ -1916,7 +1961,7 @@ function QrModal({
           <img
             src={qr.value}
             alt="QR Code WhatsApp"
-            className="h-[25rem] w-[25rem] rounded-md border border-border sm:h-[33.75rem] sm:w-[33.75rem]"
+            className="h-auto w-[20rem] max-w-full rounded-md border border-border sm:w-[27rem]"
           />
         </div>
       ) : (
@@ -1939,20 +1984,18 @@ function RemoveConnectionModal({
   onClose: () => void;
   onConfirm: (connection: ApiMessagingConnection, options: RemoveConnectionOptions) => void;
 }) {
-  const [confirmation, setConfirmation] = React.useState("");
   const [removeConversationHistory, setRemoveConversationHistory] = React.useState(false);
   React.useEffect(() => {
     if (!connection) {
-      setConfirmation("");
       setRemoveConversationHistory(false);
     }
   }, [connection]);
-  const canConfirm = confirmation.trim().toUpperCase() === "REMOVER";
   return (
     <Modal
       open={!!connection}
       onClose={onClose}
       title="Remover Instância?"
+      initialFocus="[data-confirm-action]"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
@@ -1961,9 +2004,11 @@ function RemoveConnectionModal({
           <Button
             variant="ghost"
             size="sm"
-            className="trash-action"
+            className="trash-action focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-card"
+            data-confirm-action
+            autoFocus
             onClick={() => connection && onConfirm(connection, { removeConversationHistory })}
-            disabled={busy || !canConfirm}
+            disabled={busy}
           >
             <Trash2 className="h-3.5 w-3.5" /> Remover
           </Button>
@@ -1991,13 +2036,6 @@ function RemoveConnectionModal({
             <span className="font-semibold">Remover histórico de conversas</span>
           </label>
         </div>
-        <Field label='Digite "REMOVER" para confirmar'>
-          <Input
-            value={confirmation}
-            onChange={(event) => setConfirmation(event.target.value)}
-            placeholder="REMOVER"
-          />
-        </Field>
       </div>
     </Modal>
   );

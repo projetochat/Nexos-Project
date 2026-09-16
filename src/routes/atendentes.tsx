@@ -10,6 +10,8 @@ import {
   Copy,
   Eye,
   EyeOff,
+  Lock,
+  LockOpen,
   Pencil,
   Plus,
   Trash2,
@@ -466,6 +468,10 @@ function AtendenteForm({
   const [form, setForm] = React.useState<Partial<Atendente>>({});
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [showPassword, setShowPassword] = React.useState(false);
+  const [passwordUnlocked, setPasswordUnlocked] = React.useState(false);
+  const isEditing = Boolean(initial && !clone);
+  const passwordLocked = isEditing && !passwordUnlocked;
+  const passwordRef = React.useRef<HTMLInputElement>(null);
   const [photoMenuOpen, setPhotoMenuOpen] = React.useState(false);
   const [cameraOpen, setCameraOpen] = React.useState(false);
   const [photoPreviewOpen, setPhotoPreviewOpen] = React.useState(false);
@@ -492,10 +498,9 @@ function AtendenteForm({
               ...initial,
               id: undefined,
               nome: `${initial.nome} - Cópia`,
-              email: "",
               senha: "",
             }
-          : { ...initial }
+          : { ...initial, senha: "" }
         : {
             cargo: "Atendente",
             perfilId: perfis[0]?.id,
@@ -505,6 +510,7 @@ function AtendenteForm({
     );
     setErrors({});
     setShowPassword(false);
+    setPasswordUnlocked(false);
     setPhotoMenuOpen(false);
     setCameraOpen(false);
     setPhotoPreviewOpen(false);
@@ -550,10 +556,10 @@ function AtendenteForm({
       toast.error("Verifique os campos.");
       return;
     }
-    onSubmit(form);
+    onSubmit({ ...form, senha: passwordLocked ? undefined : form.senha });
   };
 
-  const canShowPassword = !initial || clone || Boolean(form.senha);
+  const canShowPassword = !passwordLocked;
 
   return (
     <>
@@ -715,23 +721,44 @@ function AtendenteForm({
                   <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
                 )}
               </Field>
-              <Field label={initial && !clone ? "Senha (deixe em branco para manter)" : "Senha *"}>
+              <Field label={isEditing ? "Senha" : "Senha *"} asLabel={false}>
                 <div className="relative">
                   <Input
+                    ref={passwordRef}
                     type={showPassword ? "text" : "password"}
                     autoComplete="new-password"
+                    aria-label="Senha do atendente"
+                    disabled={passwordLocked}
+                    placeholder={passwordLocked ? "Senha protegida" : isEditing ? "Digite a nova senha" : ""}
                     value={form.senha ?? ""}
                     onChange={(e) => {
                       if (initial && !clone && !e.target.value) setShowPassword(false);
                       setForm({ ...form, senha: e.target.value });
                     }}
-                    className={canShowPassword ? "pr-10" : ""}
+                    className={isEditing ? "pr-20" : "pr-10"}
                   />
+                  {isEditing && (
+                    <button
+                      type="button"
+                      aria-label={passwordLocked ? "Desbloquear alteração de senha" : "Bloquear alteração de senha"}
+                      title={passwordLocked ? "Desbloquear alteração de senha" : "Bloquear alteração de senha"}
+                      onClick={() => {
+                        setPasswordUnlocked(passwordLocked);
+                        setShowPassword(false);
+                        setForm((current) => ({ ...current, senha: "" }));
+                        setErrors((current) => ({ ...current, senha: "" }));
+                        if (passwordLocked) requestAnimationFrame(() => passwordRef.current?.focus());
+                      }}
+                      className={`absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center text-muted-foreground transition ${passwordLocked ? "hover:text-blue-600" : "hover:text-red-600"}`}
+                    >
+                      {passwordLocked ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
+                    </button>
+                  )}
                   {canShowPassword && (
                     <button
                       type="button"
                       onClick={() => setShowPassword((current) => !current)}
-                      className="absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center text-muted-foreground transition hover:text-foreground"
+                      className={`absolute ${isEditing ? "right-11" : "right-3"} top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center text-muted-foreground transition hover:text-foreground`}
                       aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                       title={showPassword ? "Ocultar senha" : "Mostrar senha"}
                     >

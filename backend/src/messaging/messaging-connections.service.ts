@@ -1,3 +1,4 @@
+import { connectionIdAccess } from "../auth/connection-access";
 import {
   BadRequestException,
   Inject,
@@ -52,6 +53,7 @@ export class MessagingConnectionsService {
     const connections = await this.prisma.messagingConnection.findMany({
       where: {
         tenantId: current.tenantId,
+        ...connectionIdAccess(current),
         providerType: MessagingProviderType.EVOLUTION,
         archivedAt: null,
       },
@@ -122,6 +124,7 @@ export class MessagingConnectionsService {
         data: {
           tenantId: current.tenantId,
           name: dto.name.trim(),
+          color: normalizeColor(dto.color),
           providerType: MessagingProviderType.EVOLUTION,
           status: translateInitialStatus(
             response.instance?.status ?? response.instance?.connectionStatus,
@@ -241,6 +244,9 @@ export class MessagingConnectionsService {
     const connection = await this.findTenantConnection(id, current.tenantId);
     if (connection.archivedAt || connection.status === MessagingConnectionStatus.REMOVED) {
       throw new BadRequestException("Connection removida não pode ser editada.");
+    }
+    if (connection.status === MessagingConnectionStatus.CONNECTING) {
+      throw new BadRequestException("Aguarde a conexão da instância para editá-la.");
     }
     const welcomeEnabled = dto.welcomeEnabled ?? connection.welcomeEnabled;
     const welcomeNewMessage =

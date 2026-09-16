@@ -30,11 +30,11 @@ export function datesForOperationalPeriod(period: OperationalPeriod) {
     start.setDate(start.getDate() - 1);
     end.setDate(end.getDate() - 1);
   } else if (period === "week") {
-    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    start.setDate(start.getDate() - start.getDay());
   } else if (period === "previous_week") {
-    const daysSinceMonday = (start.getDay() + 6) % 7;
-    start.setDate(start.getDate() - daysSinceMonday - 7);
-    end.setDate(end.getDate() - daysSinceMonday - 1);
+    const daysSinceSunday = start.getDay();
+    start.setDate(start.getDate() - daysSinceSunday - 7);
+    end.setDate(end.getDate() - daysSinceSunday - 1);
   } else if (period === "month") {
     start.setDate(1);
   } else if (period === "previous_month") {

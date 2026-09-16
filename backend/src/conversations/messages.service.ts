@@ -1,6 +1,6 @@
+import { connectionAccess } from "../auth/connection-access";
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -255,49 +255,14 @@ export class MessagesService {
     });
     if (!membership)
       throw new BadRequestException("Atendente inexistente ou inativo para este tenant.");
-    if (departmentId && membership.role.key !== "tenant_admin") {
-      const inDepartment = membership.departments.some(
-        (item) => item.departmentId === departmentId,
-      );
-      if (!inDepartment)
-        throw new BadRequestException("Atendente não pertence ao departamento da conversa.");
-    }
-  }
 
-  async assertDepartmentScope(current: AuthenticatedUser, departmentId: string) {
-    if (current.roleKey === "tenant_admin") return;
-    const allowed = await this.allowedDepartmentIds(this.prisma, current);
-    if (!allowed.includes(departmentId)) {
-      throw new ForbiddenException("Departamento fora do escopo operacional do usuário.");
-    }
-  }
-
-  async allowedDepartmentIds(db: DbClient, current: AuthenticatedUser) {
-    const memberships = await db.departmentMembership.findMany({
-      where: { tenantId: current.tenantId, membershipId: current.membershipId },
-      select: { departmentId: true },
-    });
-    return memberships.map((item) => item.departmentId);
   }
 
   private async visibilityWhere(
     db: DbClient,
     current: AuthenticatedUser,
   ): Promise<Prisma.ConversationWhereInput> {
-    if (
-      current.roleKey === "tenant_admin" ||
-      current.permissions?.includes("chat.conversations.view_all_active")
-    )
-      return {};
-    const departmentIds = await this.allowedDepartmentIds(db, current);
-    return {
-      OR: [
-        { assignedMembershipId: current.membershipId },
-        departmentIds.length
-          ? { departmentId: { in: departmentIds } }
-          : { id: "__no_department_scope__" },
-      ],
-    };
+    return connectionAccess(current);
   }
 
   private assertCanSend(
@@ -318,9 +283,7 @@ export class MessagesService {
     if (!conversation.assignedMembershipId) {
       throw new BadRequestException("Conversa precisa estar assumida antes do envio.");
     }
-    if (conversation.assignedMembershipId !== current.membershipId) {
-      throw new ForbiddenException("Apenas o atendente responsável pode enviar mensagens.");
-    }
+
   }
 
   private updateConversationFromMessage(

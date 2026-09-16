@@ -1,3 +1,4 @@
+import { useInstanceAccessUpdates } from "@/lib/realtime/hooks";
 import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -93,6 +94,7 @@ const BI_LABELS: Record<DashboardBiId, string> = {
 };
 
 function Dashboard() {
+  useInstanceAccessUpdates();
   const queryClient = useQueryClient();
   const user = useSession((state) => state.user);
   const canEditDashboard =
@@ -146,6 +148,23 @@ function Dashboard() {
     refetchInterval: 30_000,
   });
   const data = query.data;
+  const [refreshing, setRefreshing] = React.useState(false);
+  const loadingCards = query.isLoading || refreshing;
+  const refreshDashboard = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        query.refetch({ throwOnError: true }),
+        new Promise((resolve) => window.setTimeout(resolve, 600)),
+      ]);
+      toast.success("Dashboard atualizado.");
+    } catch {
+      toast.error("Não foi possível atualizar o dashboard. Tente novamente.");
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const kpis = data?.kpis ?? {};
   const queuePrefs = useQueuePrefs();
 
@@ -240,19 +259,19 @@ function Dashboard() {
       <PageContainer className="max-w-none">
         <SectionHeader
           title="Dashboard"
-          subtitle="Panorama operacional com métricas consolidadas do banco Trixus."
+          subtitle="Panorama operacional."
           subtitleClassName="hidden sm:block"
           actions={
             <div className="flex gap-2">
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => void query.refetch()}
-                disabled={query.isFetching}
+                onClick={() => void refreshDashboard()}
+                disabled={query.isFetching || refreshing}
                 title="Atualizar indicadores"
               >
-                <RefreshCw className={`h-3.5 w-3.5 ${query.isFetching ? "animate-spin" : ""}`} />
-                Atualizar
+                <RefreshCw className={`h-3.5 w-3.5 ${query.isFetching || refreshing ? "animate-spin" : ""}`} />
+                {refreshing ? "Atualizando..." : "Atualizar"}
               </Button>
               {canEditDashboard && (
                 <Button
@@ -282,6 +301,26 @@ function Dashboard() {
           onChange={(patch) => setFilters((current) => ({ ...current, ...patch }))}
         />
 
+        {loadingCards ? (
+          <div role="status" aria-live="polite" aria-busy="true" className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <span className="sr-only">Carregando indicadores do dashboard...</span>
+            {dashboardOrder.filter(hasBi).map((id) => (
+              <div key={id} className={dashboardColumnClass(id)}>
+                <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">{biLabel(id)}</p>
+                {id === "counters" ? (
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6">
+                    {Array.from({ length: queueCards.length + 2 }, (_, index) => (
+                      <Card key={index} className="h-28 animate-pulse bg-surface-2">
+                        <div className="h-4 w-2/3 rounded bg-surface-3" />
+                        <div className="mt-4 h-7 w-1/3 rounded bg-surface-3" />
+                      </Card>
+                    ))}
+                  </div>
+                ) : <Card className="h-64 animate-pulse bg-surface-2"><div className="h-full rounded bg-surface-3" /></Card>}
+              </div>
+            ))}
+          </div>
+        ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div
             style={{ order: dashboardPosition("counters") }}
@@ -542,6 +581,7 @@ function Dashboard() {
             </Card>
           </div>
         </div>
+        )}
         <Modal
           open={editingDashboard}
           onClose={() => setEditingDashboard(false)}

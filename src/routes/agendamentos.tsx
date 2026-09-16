@@ -1,3 +1,4 @@
+import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -161,7 +162,7 @@ function SchedulingPage() {
               <InstanceFilterSelect
               value={connectionId}
               onChange={setConnectionId}
-              options={connections.map((connection) => ({
+              options={selectableConnections(connections).map((connection) => ({
                 value: connection.id,
                 label: connection.name,
                 color: connection.color,
@@ -906,7 +907,7 @@ function ScheduleForm({
                 onChange={(e) => update({ connectionId: e.target.value })}
               >
                 <option value="">Selecione</option>
-                {connections.map((entry) => (
+                {selectableConnections(connections).map((entry) => (
                   <option key={entry.id} value={entry.id}>
                     {entry.name}
                   </option>

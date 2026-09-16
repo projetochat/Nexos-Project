@@ -16,7 +16,20 @@ export function useRealtimeStatus() {
   return React.useSyncExternalStore(subscribeRealtime, realtimeSnapshot, realtimeSnapshot);
 }
 
+export function useInstanceAccessUpdates(connect = true) {
+  const user = useSession((state) => state.user);
+  const queryClient = useQueryClient();
+  React.useEffect(() => {
+    if (user && connect) void connectRealtime();
+    return onRealtimeEvent((event) => {
+      if (event.event !== "instance-access.updated") return;
+      void queryClient.cancelQueries().then(() => queryClient.resetQueries());
+    });
+  }, [connect, queryClient, user]);
+}
+
 export function useRealtimeInbox(conversationId?: string | null) {
+  useInstanceAccessUpdates(false);
   const user = useSession((state) => state.user);
   const queryClient = useQueryClient();
   const realtime = useRealtimeStatus();

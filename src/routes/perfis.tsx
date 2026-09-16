@@ -1,3 +1,4 @@
+import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,14 +29,14 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/perfis")({ component: Page });
 
-type PerfilTab = "geral" | "chat" | "chamados" | "jornada";
-type PermissionTab = "chat" | "chamados";
+type PerfilTab = "geral" | "chat" | "administracao" | "chamados" | "jornada";
+type PermissionTab = "chat" | "administracao" | "chamados";
 type PermissionField = { id: string; label: string };
 
 const PERMISSION_GROUPS: Array<{ title: string; tab: PermissionTab; items: PermissionField[] }> = [
   {
     title: "Administração",
-    tab: "chat",
+    tab: "administracao",
     items: [
       { id: "users.read", label: "Ver usuários" },
       { id: "users.manage", label: "Gerenciar usuários" },
@@ -47,7 +48,7 @@ const PERMISSION_GROUPS: Array<{ title: string; tab: PermissionTab; items: Permi
   },
   {
     title: "CRM e leads",
-    tab: "chat",
+    tab: "administracao",
     items: [
       { id: "crm.read", label: "Ver CRM" },
       { id: "crm.manage", label: "Gerenciar CRM" },
@@ -77,7 +78,7 @@ const PERMISSION_GROUPS: Array<{ title: string; tab: PermissionTab; items: Permi
   },
   {
     title: "Catalogos e canais",
-    tab: "chat",
+    tab: "administracao",
     items: [
       { id: "connections.read", label: "Ver instancias" },
       { id: "connections.manage", label: "Gerenciar instancias" },
@@ -91,7 +92,7 @@ const PERMISSION_GROUPS: Array<{ title: string; tab: PermissionTab; items: Permi
   },
   {
     title: "Automacoes e campanhas",
-    tab: "chat",
+    tab: "administracao",
     items: [
       { id: "automations.read", label: "Ver automacoes" },
       { id: "automations.manage", label: "Gerenciar automacoes" },
@@ -651,6 +652,7 @@ function PerfilForm({
     >
       <div className="space-y-5">
         <PerfilTabs active={activeTab} onChange={setActiveTab} />
+        {activeTab !== "geral" && <p className="text-xs text-muted-foreground">Somente a seleção de instâncias controla o acesso neste momento. As demais opções ainda não aplicam restrições.</p>}
 
         {activeTab === "geral" && (
           <GeneralTab
@@ -663,9 +665,9 @@ function PerfilForm({
           />
         )}
 
-        {activeTab === "chat" && (
+        {(activeTab === "chat" || activeTab === "administracao") && (
           <PermissionSettings
-            tab="chat"
+            tab={activeTab}
             form={form}
             departamentos={departamentos}
             connections={connections}
@@ -710,6 +712,7 @@ function PerfilTabs({
   const tabs: Array<{ id: PerfilTab; label: string }> = [
     { id: "geral", label: "Geral" },
     { id: "chat", label: "Chat" },
+    { id: "administracao", label: "Administração" },
     { id: "chamados", label: "Chamados" },
     { id: "jornada", label: "Jornada de Trabalho" },
   ];
@@ -833,14 +836,15 @@ function PermissionSettings({
     checked: boolean,
   ) => void;
 }) {
-  const sortedConnections = sortByOptionLabel(connections, (connection) => connection.name);
+  const sortedConnections = sortByOptionLabel(selectableConnections(connections), (connection) => connection.name);
   const connectionIds = sortedConnections.map((connection) => connection.id);
   const departmentIds = departamentos.map((department) => department.id);
 
   return (
     <div className="space-y-6">
+      {tab === "chat" && <>
       <SelectionSection
-        title="Instancias"
+        title="Instâncias"
         ids={connectionIds}
         selectedIds={form.connectionIds}
         emptyLabel="Nenhuma instancia cadastrada."
@@ -873,6 +877,7 @@ function PermissionSettings({
         ))}
       </SelectionSection>
 
+      </>}
       <section>
         <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           Permissões

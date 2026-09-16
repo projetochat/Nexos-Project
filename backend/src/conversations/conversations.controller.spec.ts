@@ -27,13 +27,13 @@ describe("ConversationsController connection selection", () => {
 
     const connection = await (controller as any).resolveConversationConnection(
       "connection-selected",
-      { tenantId: "tenant-a" },
+      { tenantId: "tenant-a", roleKey: "agent", connectionIds: ["connection-selected"] },
       { instance: "instance-older", instanceIds: ["connection-older", "connection-selected"] },
     );
 
     expect(prisma.messagingConnection.findFirst).toHaveBeenCalledWith({
       where: {
-        id: "connection-selected",
+        AND: [{ id: "connection-selected" }, { id: { in: ["connection-selected"] } }],
         tenantId: "tenant-a",
         archivedAt: null,
       },

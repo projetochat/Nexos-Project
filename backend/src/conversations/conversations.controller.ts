@@ -1,3 +1,4 @@
+import { connectionAccess, connectionIdAccess } from "../auth/connection-access";
 import {
   BadRequestException,
   Body,
@@ -245,20 +246,8 @@ export class ConversationsController {
     if (!dto.unassign && !targetMembershipId) {
       throw new BadRequestException("Informe um atendente ou use self=true.");
     }
-    if (
-      current.roleKey === "agent" &&
-      targetMembershipId &&
-      targetMembershipId !== current.membershipId
-    ) {
-      throw new ForbiddenException("Atendente so pode atribuir a conversa para si.");
-    }
-    if (
-      current.roleKey === "agent" &&
-      dto.unassign &&
-      conversation.assignedMembershipId !== current.membershipId
-    ) {
-      throw new ForbiddenException("Atendente so pode desatribuir conversas proprias.");
-    }
+
+
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const protocol =
@@ -323,26 +312,16 @@ export class ConversationsController {
   ) {
     const conversation = await this.findVisibleConversation(id, current);
     await this.assertDepartmentInTenant(dto.departmentId, current.tenantId);
-    await this.assertDepartmentScope(current, dto.departmentId);
 
-    const assigneeCompatible = conversation.assignedMembershipId
-      ? await this.hasDepartmentMembership(
-          conversation.assignedMembershipId,
-          dto.departmentId,
-          current.tenantId,
-        )
-      : true;
+
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const saved = await tx.conversation.update({
         where: { id: conversation.id },
         data: {
           departmentId: dto.departmentId,
-          assignedMembershipId: assigneeCompatible ? conversation.assignedMembershipId : null,
-          status:
-            assigneeCompatible || conversation.status !== ConversationStatus.EM_ANDAMENTO
-              ? conversation.status
-              : ConversationStatus.ABERTA,
+          assignedMembershipId: conversation.assignedMembershipId,
+          status: conversation.status,
         },
         include: conversationInclude,
       });
@@ -388,13 +367,7 @@ export class ConversationsController {
     const conversation = await this.findVisibleConversation(id, current);
     const target = parseStatus(dto.status);
 
-    if (
-      current.roleKey === "agent" &&
-      conversation.assignedMembershipId &&
-      conversation.assignedMembershipId !== current.membershipId
-    ) {
-      throw new ForbiddenException("Atendente so pode alterar status de conversas proprias.");
-    }
+
     if (
       conversation.status === ConversationStatus.FECHADA &&
       target !== ConversationStatus.FECHADA
@@ -467,50 +440,23 @@ export class ConversationsController {
     return this.serialize(updated);
   }
 
-  @Patch(":id/inbox-archive")
-  @RequirePermissions("conversations.manage")
-  async updateInboxArchive(
-    @Param("id") id: string,
-    @Body() dto: { archived?: boolean },
-    @CurrentUser() current: AuthenticatedUser,
-  ) {
-    const conversation = await this.findVisibleConversation(id, current);
-    const archived = dto.archived !== false;
-    const updated = await this.prisma.conversation.update({
-      where: { id: conversation.id },
-      data: { inboxArchivedAt: archived ? new Date() : null },
-      include: conversationInclude,
-    });
-    this.realtime.publishConversationUpdated({
-      tenantId: current.tenantId,
-      conversationId: updated.id,
-      conversation: this.serialize(updated),
-      reason: archived ? "inbox.archived" : "inbox.unarchived",
-    });
-    return this.serialize(updated);
-  }
-
   private async buildWhere(
     current: AuthenticatedUser,
     query: ListConversationsQueryDto,
-    options: { omitTab?: boolean; includeInboxArchived?: boolean } = {},
+    options: { omitTab?: boolean } = {},
   ) {
-    const archivedOnly = query.source === "arquivados";
+
     const filters: Prisma.ConversationWhereInput[] = [
       {
         tenantId: current.tenantId,
         archivedAt: null,
-        ...(archivedOnly
-          ? { inboxArchivedAt: { not: null } }
-          : options.includeInboxArchived
-            ? {}
-            : { inboxArchivedAt: null }),
+
       },
       await this.visibilityWhere(current),
       this.searchWhere(query),
     ];
 
-    if (!options.omitTab && !archivedOnly) filters.push(tabWhere(query.tab, current));
+    if (!options.omitTab) filters.push(tabWhere(query.tab, current));
     if (query.source === "humano") filters.push({ assignedMembershipId: { not: null } });
     if (query.source === "bots") filters.push({ assignedMembershipId: null });
     if (query.onlyUnread === "true") filters.push({ unreadCount: { gt: 0 } });
@@ -518,7 +464,6 @@ export class ConversationsController {
     if (query.instance) {
       filters.push({
         OR: [
-          { contact: { instance: query.instance } },
           { connection: { externalReference: query.instance } },
           { connectionId: query.instance },
         ],
@@ -534,20 +479,7 @@ export class ConversationsController {
   private async visibilityWhere(
     current: AuthenticatedUser,
   ): Promise<Prisma.ConversationWhereInput> {
-    if (
-      current.roleKey === "tenant_admin" ||
-      current.permissions?.includes("chat.conversations.view_all_active")
-    )
-      return {};
-    const departmentIds = await this.allowedDepartmentIds(current);
-    return {
-      OR: [
-        { assignedMembershipId: current.membershipId },
-        departmentIds.length
-          ? { departmentId: { in: departmentIds } }
-          : { id: "__no_department_scope__" },
-      ],
-    };
+    return connectionAccess(current);
   }
 
   private searchWhere(query: ListConversationsQueryDto): Prisma.ConversationWhereInput {
@@ -601,9 +533,7 @@ export class ConversationsController {
         page: 1,
         pageSize: 1,
       } as ListConversationsQueryDto,
-      {
-        includeInboxArchived: true,
-      },
+
     );
     const conversation = await this.prisma.conversation.findFirst({
       where: { AND: [where, { id }] },
@@ -619,8 +549,7 @@ export class ConversationsController {
   ) {
     if (departmentId) {
       await this.assertDepartmentInTenant(departmentId, current.tenantId);
-      await this.assertDepartmentScope(current, departmentId);
-      return departmentId;
+        return departmentId;
     }
 
     const department = await this.prisma.department.findFirst({
@@ -628,7 +557,6 @@ export class ConversationsController {
       orderBy: { createdAt: "asc" },
     });
     if (!department) throw new BadRequestException("Tenant sem departamento ativo para conversa.");
-    await this.assertDepartmentScope(current, department.id);
     return department.id;
   }
 
@@ -644,7 +572,7 @@ export class ConversationsController {
     if (connectionId) {
       const selectedConnection = await this.prisma.messagingConnection.findFirst({
         where: {
-          id: connectionId,
+          AND: [{ id: connectionId }, connectionIdAccess(current)],
           tenantId: current.tenantId,
           archivedAt: null,
         },
@@ -665,6 +593,7 @@ export class ConversationsController {
           where: {
             tenantId: current.tenantId,
             archivedAt: null,
+            ...connectionIdAccess(current),
             OR: [
               { id: { in: connectionKeys } },
               { externalReference: { in: connectionKeys } },
@@ -675,6 +604,7 @@ export class ConversationsController {
         })
       : null;
 
+    if (!connection && current.roleKey !== "tenant_admin") throw new ForbiddenException("Selecione uma instância permitida pelo perfil.");
     if (!connection) return null;
     return this.assertUsableConversationConnection(connection);
   }
@@ -704,33 +634,6 @@ export class ConversationsController {
     if (!department) throw new BadRequestException("Departamento inexistente para este tenant.");
   }
 
-  private async assertDepartmentScope(current: AuthenticatedUser, departmentId: string) {
-    if (current.roleKey === "tenant_admin") return;
-    const allowed = await this.allowedDepartmentIds(current);
-    if (!allowed.includes(departmentId)) {
-      throw new ForbiddenException("Departamento fora do escopo operacional do usuário.");
-    }
-  }
-
-  private async allowedDepartmentIds(current: AuthenticatedUser) {
-    const memberships = await this.prisma.departmentMembership.findMany({
-      where: { tenantId: current.tenantId, membershipId: current.membershipId },
-      select: { departmentId: true },
-    });
-    return memberships.map((item) => item.departmentId);
-  }
-
-  private async hasDepartmentMembership(
-    membershipId: string,
-    departmentId: string,
-    tenantId: string,
-  ) {
-    const found = await this.prisma.departmentMembership.findFirst({
-      where: { tenantId, membershipId, departmentId },
-    });
-    return !!found;
-  }
-
   private async assertAssignableMembership(
     tx: Prisma.TransactionClient,
     membershipId: string,
@@ -748,13 +651,7 @@ export class ConversationsController {
     });
     if (!membership)
       throw new BadRequestException("Atendente inexistente ou inativo para este tenant.");
-    if (departmentId && membership.role.key !== "tenant_admin") {
-      const inDepartment = membership.departments.some(
-        (item) => item.departmentId === departmentId,
-      );
-      if (!inDepartment)
-        throw new BadRequestException("Atendente não pertence ao departamento da conversa.");
-    }
+
   }
 
   private async nextProtocol(tx: Prisma.TransactionClient, tenantId: string) {
@@ -882,12 +779,7 @@ function tabWhere(
   tab: ListConversationsQueryDto["tab"],
   current: AuthenticatedUser,
 ): Prisma.ConversationWhereInput {
-  if (tab === "ativas") {
-    const canViewAllActive =
-      current.roleKey === "tenant_admin" ||
-      current.permissions?.includes("chat.conversations.view_all_active");
-    return conversationQueueScope("ativas", canViewAllActive ? undefined : current.membershipId);
-  }
+
   return conversationQueueScope(tab);
 }
 

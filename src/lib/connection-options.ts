@@ -3,6 +3,9 @@ import { sortByOptionLabel } from "@/lib/sort-options";
 
 const SUPPORTED_PROVIDER = "evolution";
 const CONNECTED_STATUS = "connected";
+export function selectableConnections(connections: ApiMessagingConnection[]) {
+  return connections.filter((connection) => connection.status === "connected" || connection.status === "disconnected");
+}
 export const EXAMPLE_INSTANCE_NAMES = ["ENORE", "FLOWID", "ZYVO"] as const;
 
 export type ConnectedConnectionOption = {

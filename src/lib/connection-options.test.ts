@@ -4,10 +4,15 @@ import {
   connectedEvolutionConnections,
   connectionDisplayLabel,
   hasExampleInstanceName,
+  selectableConnections,
 } from "@/lib/connection-options";
 import type { ApiMessagingConnection } from "@/lib/trixus-api";
 
 describe("connection options", () => {
+  it("lists only connected and disconnected instances in selectors", () => {
+    const items = ["connected", "disconnected", "connecting", "error", "removed"].map((status) => connection({ id: status, status: status as ApiMessagingConnection["status"] }));
+    expect(selectableConnections(items).map((item) => item.id)).toEqual(["connected", "disconnected"]);
+  });
   it("returns zero options for an empty API response and never invents examples", () => {
     expect(connectedEvolutionConnections([])).toEqual([]);
   });

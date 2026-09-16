@@ -21,7 +21,6 @@ import {
   Reply,
   Download,
   SmilePlus,
-  Archive,
 } from "lucide-react";
 import { toast as systemToast } from "sonner";
 // Notificações desativadas nesta tela — nenhum toast deve aparecer no chat.
@@ -165,7 +164,6 @@ function ConversationPage() {
 
   const [closing, setClosing] = React.useState(false);
   const [gerando, setGerando] = React.useState(false);
-  const [archivingInbox, setArchivingInbox] = React.useState(false);
 
   if (!conv) {
     return (
@@ -182,7 +180,7 @@ function ConversationPage() {
   const isMine = !!user && conv.agent_id === user.id;
   const canSend =
     (conv.is_group && !!conv.protocolo && conv.status !== "fechada" && !isStandby) ||
-    (isStarted && isMine && conv.status !== "fechada" && !isStandby);
+    (isStarted && conv.status !== "fechada" && !isStandby);
   const showStart =
     conv.status !== "fechada" &&
     (conv.is_group ? !conv.protocolo || isStandby : !conv.agent_id || isStandby);
@@ -255,20 +253,6 @@ function ConversationPage() {
     }
   };
 
-  const handleArchiveInbox = async () => {
-    if (!conv) return;
-    setArchivingInbox(true);
-    try {
-      await conversationApi.updateInboxArchive(conv.id, true);
-      await qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-      await qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
-      navigate({ to: "/inbox" });
-    } catch (e) {
-      toast.error((e as Error).message || "Não foi possível arquivar a conversa.");
-    } finally {
-      setArchivingInbox(false);
-    }
-  };
 
   return (
     <InboxLayout>
@@ -316,15 +300,7 @@ function ConversationPage() {
                     <ArrowRightLeft className="h-3.5 w-3.5" />{" "}
                     <span className="hidden lg:inline">Transferir</span>
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleArchiveInbox}
-                    disabled={archivingInbox}
-                  >
-                    <Archive className="h-3.5 w-3.5" />{" "}
-                    <span className="hidden lg:inline">Arquivar</span>
-                  </Button>
+
                   <Button variant="ghost" size="sm" onClick={() => setClosing(true)}>
                     <CheckCircle2 className="h-3.5 w-3.5" />{" "}
                     <span className="hidden lg:inline">Encerrar</span>
@@ -533,6 +509,7 @@ function MessageBubble({
   const qc = useQueryClient();
   const user = useSession((state) => state.user);
   const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
+  const [imagePreviewOpen, setImagePreviewOpen] = React.useState(false);
   const [mediaError, setMediaError] = React.useState(false);
   const mediaState = m.media_data?.state ?? null;
   const mediaReady = !!m.media_data && (!mediaState || mediaState === "ready");
@@ -649,14 +626,17 @@ function MessageBubble({
             onClick={() => onQuotedClick?.(m.quoted?.message_id)}
           />
         )}
+        {m.type === "image" && mediaUrl && (
+          <Modal open={imagePreviewOpen} onClose={() => setImagePreviewOpen(false)} title={m.media_data?.file_name ?? "Imagem"} size="xl">
+            <img src={mediaUrl} alt={m.media_data?.file_name ?? "Imagem ampliada"} className="mx-auto max-h-[75vh] max-w-full object-contain" />
+          </Modal>
+        )}
         {m.type === "image" && m.media_data && (
           <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
             {mediaUrl ? (
-              <img
-                src={mediaUrl}
-                alt={m.media_data.file_name ?? "imagem"}
-                className="max-h-72 max-w-full object-contain"
-              />
+              <button type="button" onClick={() => setImagePreviewOpen(true)} aria-label="Ampliar imagem" className="block cursor-zoom-in">
+                <img src={mediaUrl} alt={m.media_data.file_name ?? "imagem"} className="max-h-72 max-w-full object-contain" />
+              </button>
             ) : mediaError || mediaState === "failed" ? (
               <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>
             ) : mediaReady ? (

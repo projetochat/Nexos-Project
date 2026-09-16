@@ -39,7 +39,7 @@ import { useRealtimeInbox } from "@/lib/realtime/hooks";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 
 type TabId = "ativas" | "standby" | "fila" | "leads";
-type SourceId = "todos" | "arquivados" | "humano" | "bots";
+type SourceId = "todos" | "humano" | "bots";
 
 const TAB_ICONS: Record<TabId, React.ComponentType<{ className?: string }>> = {
   ativas: Play,
@@ -50,7 +50,6 @@ const TAB_ICONS: Record<TabId, React.ComponentType<{ className?: string }>> = {
 
 const SOURCES: { id: SourceId; label: string; hint: string }[] = [
   { id: "todos", label: "Todos", hint: "Todos os chats" },
-  { id: "arquivados", label: "Arquivados", hint: "Somente conversas arquivadas" },
   { id: "humano", label: "Humano", hint: "Atendimento feito por atendentes" },
   { id: "bots", label: "Agente IA", hint: "Atendimento feito por Agente IA" },
 ];
@@ -179,7 +178,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
       }
 
       if (selectedInstancias.size > 0) {
-        const inst = c.contact?.instancia ?? null;
+        const inst = c.connection?.externalReference ?? c.connection?.name ?? null;
         if (!inst || !selectedInstancias.has(inst)) return false;
       }
       return true;
@@ -486,13 +485,13 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
     queryFn: () => crmApi.listContacts({ pageSize: 100 }),
     enabled: open,
   });
-  const { connectedConnections: availableConnections, error: connectionsError } =
+  const { allConnections: availableConnections, error: connectionsError } =
     useConnectedMessagingConnections({ enabled: open });
   const contacts = React.useMemo(() => contactsPage?.items ?? [], [contactsPage?.items]);
 
   React.useEffect(() => {
     if (!open || selectedConnectionId || availableConnections.length === 0) return;
-    setSelectedConnectionId(availableConnections[0].id);
+    setSelectedConnectionId((availableConnections.find((connection) => connection.status === "connected") ?? availableConnections[0]).id);
   }, [availableConnections, open, selectedConnectionId]);
 
   React.useEffect(() => {
@@ -519,6 +518,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
     if (!user) return toast.error("Sessão inválida.");
     if (!firstMsg.trim()) return toast.error("Escreva a primeira mensagem.");
     if (!selectedConnectionId) return toast.error("Selecione uma conexão WhatsApp conectada.");
+    if (availableConnections.find((connection) => connection.id === selectedConnectionId)?.status !== "connected") return toast.error("Conecte a instância selecionada antes de iniciar a conversa.");
     setBusy(true);
     try {
       let contactId = selectedContact?.id;
@@ -643,7 +643,7 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
             onChange={(e) => setSelectedConnectionId(e.target.value)}
           >
             {availableConnections.length === 0 ? (
-              <option value="">Nenhuma instancia conectada disponível.</option>
+              <option value="">Nenhuma instância disponível.</option>
             ) : (
               availableConnections.map((connection) => (
                 <option key={connection.id} value={connection.id}>

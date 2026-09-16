@@ -127,11 +127,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     this.assertRate(socket, "typing.start", 40);
     const conversationId = validId(body?.conversationId);
     if (!conversationId) return { ok: false, code: "NOT_FOUND" };
-    const subscribed = socket.data.conversationRooms?.has(
-      realtimeRooms.conversation(conversationId),
-    );
-    const allowed =
-      subscribed || (await this.realtime.canAccessConversation(context, conversationId));
+    const allowed = await this.realtime.canAccessConversation(context, conversationId);
     if (!allowed) return { ok: false, code: "NOT_FOUND" };
     this.realtime.startTyping(context, conversationId);
     return { ok: true };
@@ -146,9 +142,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     this.assertRate(socket, "typing.stop", 60);
     const conversationId = validId(body?.conversationId);
     if (!conversationId) return { ok: false, code: "NOT_FOUND" };
-    const allowed =
-      socket.data.conversationRooms?.has(realtimeRooms.conversation(conversationId)) ??
-      (await this.realtime.canAccessConversation(context, conversationId));
+    const allowed = await this.realtime.canAccessConversation(context, conversationId);
     if (!allowed) return { ok: false, code: "NOT_FOUND" };
     this.realtime.stopTyping(context, conversationId);
     return { ok: true };

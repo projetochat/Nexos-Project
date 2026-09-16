@@ -24,7 +24,7 @@ describe("GroupsSyncService", () => {
     });
     expect(prismaTx.conversation.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ inboxArchivedAt: expect.any(Date) }),
+        data: expect.objectContaining({ inboxArchivedAt: null }),
       }),
     );
     expect(evolution.fetchProfilePictureUrl).not.toHaveBeenCalled();

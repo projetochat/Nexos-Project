@@ -1,3 +1,4 @@
+import { PERMISSIONS } from "./permissions.constants";
 import {
   ForbiddenException,
   HttpException,
@@ -123,7 +124,7 @@ export class AuthService {
         message: "Organização suspensa ou encerrada.",
       });
     }
-    const permissions = membership.role.permissions.map((item) => item.permissionId);
+    const permissions = [...PERMISSIONS];
 
     const basePayload = {
       sub: user.id,
@@ -366,7 +367,7 @@ export class AuthService {
         role: { include: { permissions: { select: { permissionId: true } } } },
       },
     });
-    const permissions = membership.role.permissions.map((item) => item.permissionId);
+    const permissions = [...PERMISSIONS];
     const basePayload = {
       sub: membership.userId,
       tenantId: membership.tenantId,
@@ -424,7 +425,7 @@ export class AuthService {
         departments: { include: { department: true } },
       },
     });
-    const permissions = membership.role.permissions.map((item) => item.permissionId);
+    const permissions = [...PERMISSIONS];
 
     return {
       user: {

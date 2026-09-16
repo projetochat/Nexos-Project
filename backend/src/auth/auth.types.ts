@@ -23,6 +23,7 @@ export type AuthenticatedUser = {
   context?: "tenant" | "platform";
   platformPermissions?: string[];
   permissions?: PermissionKey[];
+  connectionIds?: string[] | null;
   iatMs?: number;
   impersonationSessionId?: string;
   actorPlatformUserId?: string;

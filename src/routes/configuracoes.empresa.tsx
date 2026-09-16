@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Eye, EyeOff, Lock } from "lucide-react";
 import { toast } from "sonner";
-import { Alert, Button, Card, Field, Input } from "@/components/ui-kit";
+import { Button, Card, Field, Input } from "@/components/ui-kit";
 import { organizationApi } from "@/lib/trixus-api";
 import { useSession } from "@/lib/session";
 
@@ -97,13 +97,13 @@ function EmpresaSettings() {
             </div>
           </div>
 
-          <div className="mt-4">
-            <Alert
-              tone="info"
-              title="Este usuário possui acesso a todas as funcionalidades permitidas pelo plano da empresa."
-            >
+          <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+            <p className="font-semibold">
+              Este usuário possui acesso a todas as funcionalidades permitidas pelo plano da empresa.
+            </p>
+            <p className="mt-0.5 font-normal text-blue-700">
               Utilize as credenciais abaixo para acessar o sistema.
-            </Alert>
+            </p>
           </div>
 
           <div className="mt-4 space-y-4">

@@ -1,4 +1,3 @@
-import { useSession } from "@/lib/session";
 
 export type ChatPerms = {
   pode_editar_contato: boolean;
@@ -36,29 +35,6 @@ export const DEFAULT_PERMS: ChatPerms = {
   visualiza_todas_conversas_ativas: true,
 };
 
-const CHAT_PERMISSION_MAP: Record<keyof ChatPerms, string> = {
-  pode_editar_contato: "chat.contacts.edit",
-  pode_editar_vinculo_cliente: "chat.customer_link.edit",
-  pode_usar_etiquetas: "chat.tags.use",
-  pode_editar_etiquetas: "chat.tags.manage",
-  pode_gerenciar_respostas_rapidas: "chat.quick_replies.manage",
-  visualiza_leads: "chat.leads.read",
-  visualiza_contatos: "chat.contacts.read",
-  visualiza_numero: "chat.phone.read",
-  excluir_mensagem: "chat.messages.delete",
-  editar_mensagem: "chat.messages.edit",
-  acessa_mensagens_rapidas: "chat.quick_replies.read",
-  bloquear_contatos: "chat.contacts.block",
-  enviar_audio: "chat.audio.send",
-  mostrar_nome_atendente: "chat.agent_name.show",
-  visualiza_todas_conversas_ativas: "chat.conversations.view_all_active",
-};
-
 export function useChatPerms(): ChatPerms {
-  const permissions = useSession((state) => state.user?.permissions);
-  if (!permissions?.length) return DEFAULT_PERMS;
-  const granted = new Set(permissions);
-  return Object.fromEntries(
-    Object.entries(CHAT_PERMISSION_MAP).map(([key, permission]) => [key, granted.has(permission)]),
-  ) as ChatPerms;
+  return DEFAULT_PERMS;
 }

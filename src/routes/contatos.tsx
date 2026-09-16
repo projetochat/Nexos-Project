@@ -5439,7 +5439,6 @@ function CountryCodeOption({
 }
 function isSelectableInstanceStatus(status?: string | null) {
   return (
-    !status ||
     status === "CONNECTED" ||
     status === "DISCONNECTED" ||
     status === "connected" ||

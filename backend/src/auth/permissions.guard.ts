@@ -9,7 +9,8 @@ import {
 import { Reflector } from "@nestjs/core";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthenticatedRequest } from "./jwt-auth.guard";
-import { PermissionKey } from "./permissions.constants";
+import { PermissionKey, PERMISSIONS } from "./permissions.constants";
+import { roleConnectionIds } from "./connection-access";
 import { PERMISSIONS_KEY } from "./permissions.decorator";
 
 @Injectable()
@@ -72,13 +73,19 @@ export class PermissionsGuard implements CanActivate {
       if (!session) throw new UnauthorizedException("Sessão de impersonação expirada.");
     }
 
-    const granted = new Set(membership.role.permissions.map((item) => item.permissionId));
+    // Individual permission switches are paused; instance scope remains enforced.
+    const granted = new Set<string>(PERMISSIONS);
     const allowed = required.every((permission) => granted.has(permission));
     if (!allowed) throw new ForbiddenException("Permissão insuficiente.");
 
     request.user.roleId = membership.roleId;
     request.user.roleKey = membership.role.key;
+    request.user.connectionIds = roleConnectionIds(membership.role);
     request.user.permissions = [...granted] as PermissionKey[];
+    const connectionId = /\/messaging\/connections\//.test(request.originalUrl) ? request.params.id : undefined;
+    if (typeof connectionId === "string" && membership.role.key !== "tenant_admin" && !request.user.connectionIds?.includes(connectionId)) {
+      throw new ForbiddenException("Instância não permitida pelo perfil.");
+    }
     return true;
   }
 }

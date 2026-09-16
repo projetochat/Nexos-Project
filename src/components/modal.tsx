@@ -12,6 +12,7 @@ export function Modal({
   size = "md",
   className,
   footer,
+  initialFocus,
 }: {
   open: boolean;
   onClose: () => void;
@@ -21,7 +22,17 @@ export function Modal({
   size?: "sm" | "md" | "lg" | "xl";
   className?: string;
   footer?: React.ReactNode;
+  initialFocus?: string;
 }) {
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!open || !initialFocus) return;
+    const frame = window.requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>(initialFocus)?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, initialFocus]);
+
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -50,6 +61,7 @@ export function Modal({
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div
         role="dialog"
+        ref={dialogRef}
         aria-modal="true"
         className={`relative z-10 flex max-h-[calc(100dvh-1rem)] min-w-0 w-full ${widths[size]} flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl ${className ?? ""}`}
       >
@@ -105,6 +117,7 @@ export function ConfirmDialog({
       onClose={onClose}
       title={title}
       size="sm"
+      initialFocus={destructive || /excluir|remover/i.test(confirmLabel) ? "[data-confirm-action]" : undefined}
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -113,6 +126,9 @@ export function ConfirmDialog({
           <Button
             variant={destructive ? "destructive" : "primary"}
             size="sm"
+            autoFocus={destructive || /excluir|remover/i.test(confirmLabel)}
+            data-confirm-action
+            className="focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-card"
             onClick={() => {
               onConfirm();
               onClose();

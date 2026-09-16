@@ -784,7 +784,7 @@ type ContactPayload = {
 
 type ListConversationsParams = ListParams & {
   tab?: "ativas" | "standby" | "fila" | "leads";
-  source?: "todos" | "arquivados" | "humano" | "bots";
+  source?: "todos" | "humano" | "bots";
   onlyUnread?: boolean;
   customerId?: string;
   instance?: string;
@@ -1296,11 +1296,6 @@ export const conversationApi = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
-  updateInboxArchive: (id: string, archived: boolean) =>
-    apiRequest<ApiConversation>(`/conversations/${id}/inbox-archive`, {
-      method: "PATCH",
-      body: JSON.stringify({ archived }),
-    }),
 };
 
 export const leadApi = {
@@ -1474,7 +1469,7 @@ export const operationsApi = {
 
 export const connectionsApi = {
   list: () => apiRequest<ApiMessagingConnection[]>("/messaging/connections"),
-  createEvolution: (data: { name: string; instanceName?: string; importHistoryEnabled?: boolean; importHistoryStartDate?: string; importGroupsEnabled?: boolean; importGroupsStartDate?: string }) =>
+  createEvolution: (data: { name: string; color?: string; instanceName?: string; importHistoryEnabled?: boolean; importHistoryStartDate?: string; importGroupsEnabled?: boolean; importGroupsStartDate?: string }) =>
     apiRequest<ApiMessagingConnection>("/messaging/connections/evolution", {
       method: "POST",
       body: JSON.stringify(data),

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   connectedConnectionOptions,
   connectedEvolutionConnections,
+  selectableConnections,
 } from "@/lib/connection-options";
 import { connectionsApi } from "@/lib/trixus-api";
 
@@ -15,7 +16,7 @@ export function useConnectedMessagingConnections(options: { enabled?: boolean } 
     staleTime: 0,
     refetchOnMount: "always",
   });
-  const allConnections = query.data ?? [];
+  const allConnections = selectableConnections(query.data ?? []);
 
   return {
     ...query,

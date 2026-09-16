@@ -12,6 +12,7 @@ export type RealtimeServerEvent =
   | "conversation.assignment.updated"
   | "conversation.unread.updated"
   | "connection.status.updated"
+  | "instance-access.updated"
   | "contact.updated"
   | "contact.tags.updated"
   | "lead.created"

@@ -1,3 +1,4 @@
+import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays } from "lucide-react";
@@ -50,7 +51,7 @@ export function DashboardFiltersBar({
     [departments],
   );
   const sortedConnections = React.useMemo(
-    () => sortByOptionLabel(connections, (connection) => connection.name),
+    () => sortByOptionLabel(selectableConnections(connections), (connection) => connection.name),
     [connections],
   );
   const automaticDates = datesForOperationalPeriod(value.period);
@@ -103,7 +104,7 @@ export function DashboardFiltersBar({
             value={value.period}
             onChange={(event) => {
               const period = event.target.value as OperationalPeriod;
-              const dates = datesForOperationalPeriod(period);
+              const dates = period === "custom" ? { start, end } : datesForOperationalPeriod(period);
               onChange({ period, start: dates.start, end: dates.end });
             }}
           >

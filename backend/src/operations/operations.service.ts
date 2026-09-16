@@ -1,3 +1,4 @@
+import { connectionAccess } from "../auth/connection-access";
 import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
 import {
   ConversationStatus,
@@ -61,16 +62,17 @@ export class OperationsService {
     });
     const range = periodRange(query, "today", tenant?.timezone);
     const previous = previousRange(range);
+    const scopedQuery = { ...query, allowedConnectionIds: current.roleKey === "tenant_admin" ? undefined : current.connectionIds ?? [] };
     this.logger.log({
       event: "operations.dashboard.query",
       tenantId: current.tenantId,
       period: query.period ?? "today",
     });
     const [now, before, charts, recent] = await Promise.all([
-      this.metrics.snapshot(current.tenantId, range, query),
-      this.metrics.snapshot(current.tenantId, previous, query),
-      this.metrics.chartData(current.tenantId, range, query),
-      this.recentConversations(current.tenantId),
+      this.metrics.snapshot(current.tenantId, range, scopedQuery),
+      this.metrics.snapshot(current.tenantId, previous, scopedQuery),
+      this.metrics.chartData(current.tenantId, range, scopedQuery),
+      this.recentConversations(current.tenantId, connectionAccess(current)),
     ]);
     return {
       range: serializeRange(range),
@@ -85,7 +87,7 @@ export class OperationsService {
     const range = periodRange(query, "30d");
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
-    const where = conversationWhere(current.tenantId, query, range);
+    const where = { AND: [conversationWhere(current.tenantId, query, range), connectionAccess(current)] };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.conversation.findMany({
         where,
@@ -114,7 +116,7 @@ export class OperationsService {
 
   async timeline(current: AuthenticatedUser, conversationId: string) {
     const conversation = await this.prisma.conversation.findFirstOrThrow({
-      where: { id: conversationId, tenantId: current.tenantId },
+      where: { id: conversationId, tenantId: current.tenantId, ...connectionAccess(current) },
       include: conversationInclude,
     });
     const [lead, messages, tickets] = await Promise.all([
@@ -192,10 +194,11 @@ export class OperationsService {
   }
 
   async report(current: AuthenticatedUser, query: OperationalQuery) {
+    const scopedQuery = { ...query, allowedConnectionIds: current.roleKey === "tenant_admin" ? undefined : current.connectionIds ?? [] };
     const range = periodRange(query, "30d");
     const [snapshot, charts, conversations] = await Promise.all([
-      this.metrics.snapshot(current.tenantId, range, query),
-      this.metrics.chartData(current.tenantId, range, query),
+      this.metrics.snapshot(current.tenantId, range, scopedQuery),
+      this.metrics.chartData(current.tenantId, range, scopedQuery),
       this.history(current, { ...query, pageSize: query.pageSize ?? 50 }),
     ]);
     this.logger.log({
@@ -531,10 +534,10 @@ export class OperationsService {
     };
   }
 
-  private recentConversations(tenantId: string) {
+  private recentConversations(tenantId: string, scope: Prisma.ConversationWhereInput = {}) {
     return this.prisma.conversation
       .findMany({
-        where: { tenantId, archivedAt: null },
+        where: { tenantId, archivedAt: null, ...scope },
         include: conversationInclude,
         orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
         take: 8,
@@ -669,13 +672,13 @@ function periodRange(
   }
   if (period === "week") {
     const weekday = new Date(Date.UTC(today.year, today.month - 1, today.day)).getUTCDay();
-    const weekStart = shiftCalendarDate(today, -((weekday + 6) % 7));
+    const weekStart = shiftCalendarDate(today, -weekday);
     const start = startOfDayInTimezone(weekStart.year, weekStart.month, weekStart.day, timezone);
     return { start, end: now };
   }
   if (period === "previous_week") {
     const weekday = new Date(Date.UTC(today.year, today.month - 1, today.day)).getUTCDay();
-    const currentWeekStart = shiftCalendarDate(today, -((weekday + 6) % 7));
+    const currentWeekStart = shiftCalendarDate(today, -weekday);
     const previousWeekStart = shiftCalendarDate(currentWeekStart, -7);
     const start = startOfDayInTimezone(previousWeekStart.year, previousWeekStart.month, previousWeekStart.day, timezone);
     const end = startOfDayInTimezone(currentWeekStart.year, currentWeekStart.month, currentWeekStart.day, timezone);

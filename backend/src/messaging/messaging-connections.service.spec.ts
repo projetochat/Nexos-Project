@@ -14,6 +14,23 @@ const current = {
 };
 
 describe("MessagingConnectionsService", () => {
+  it("rejects editing a connecting instance without saving changes", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.CONNECTING,
+    });
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, {} as never).update(
+        "connection-a",
+        { name: "Novo nome" },
+        current as never,
+      ),
+    ).rejects.toThrow("Aguarde a conexão da instância para editá-la.");
+    expect(prisma.messagingConnection.update).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     process.env.EVOLUTION_BASE_URL = "http://evolution.local";
     process.env.EVOLUTION_API_KEY = "key";
@@ -32,10 +49,13 @@ describe("MessagingConnectionsService", () => {
     };
 
     await new MessagingConnectionsService(prisma as never, evolution as never).createEvolution(
-      { name: "Suporte" },
+      { name: "Suporte", color: "#A855F7" },
       current as never,
     );
 
+    expect(prisma.messagingConnection.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: "Suporte", color: "#A855F7" }),
+    });
     expect(evolution.createInstance).toHaveBeenCalledWith({
       instanceName: expect.stringMatching(/^tenant-a-suporte-/),
     });
@@ -320,7 +340,7 @@ describe("MessagingConnectionsService", () => {
           connectionId: "connection-a",
           direction: MessageDirection.SYSTEM,
           type: MessageType.SYSTEM,
-          content: "Conversa encerrada via remoção da instancia",
+          content: "Conversa encerrada via remoção da instância",
           createdAt: expect.any(Date),
         },
       ],

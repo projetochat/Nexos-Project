@@ -207,7 +207,6 @@ function GroupsPage() {
   };
   const openGroupChat = async (group: ApiWhatsappGroup) => {
     try {
-      await conversationApi.updateInboxArchive(group.conversationId, false);
       navigate({
         to: "/inbox/$conversationId",
         params: { conversationId: group.conversationId },

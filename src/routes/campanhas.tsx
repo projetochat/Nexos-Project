@@ -1,3 +1,4 @@
+import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -112,7 +113,7 @@ function Page() {
     queryFn: connectionsApi.list,
   });
   const sortedConnections = React.useMemo(
-    () => sortByOptionLabel(connectionsQuery.data ?? [], (connection) => connection.name),
+    () => sortByOptionLabel(selectableConnections(connectionsQuery.data ?? []), (connection) => connection.name),
     [connectionsQuery.data],
   );
   const selectedCampaign =
@@ -794,7 +795,7 @@ function CampaignEditor({
               onChange={(event) => setForm({ ...form, connectionId: event.target.value })}
             >
               <option value="">Selecione uma connection</option>
-              {connections.map((connection) => (
+              {selectableConnections(connections).map((connection) => (
                 <option key={connection.id} value={connection.id}>
                   {connection.name} · {connection.providerType} · {connection.status}
                 </option>
