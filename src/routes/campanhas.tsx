@@ -113,7 +113,11 @@ function Page() {
     queryFn: connectionsApi.list,
   });
   const sortedConnections = React.useMemo(
-    () => sortByOptionLabel(selectableConnections(connectionsQuery.data ?? []), (connection) => connection.name),
+    () =>
+      sortByOptionLabel(
+        selectableConnections(connectionsQuery.data ?? []),
+        (connection) => connection.name,
+      ),
     [connectionsQuery.data],
   );
   const selectedCampaign =
@@ -218,7 +222,10 @@ function Page() {
               <Select
                 value={filters.status}
                 onChange={(event) =>
-                  setFilters({ ...filters, status: event.target.value as CampaignFilters["status"] })
+                  setFilters({
+                    ...filters,
+                    status: event.target.value as CampaignFilters["status"],
+                  })
                 }
               >
                 <option value="ALL">Todos</option>
@@ -467,7 +474,12 @@ function CampaignDetail({
           <Copy className="h-3.5 w-3.5" /> Duplicar
         </Button>
         {canArchive && (
-          <Button size="sm" variant="ghost" className="trash-action" onClick={() => onAction("archive", campaign)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="trash-action"
+            onClick={() => onAction("archive", campaign)}
+          >
             <Trash2 className="h-3.5 w-3.5" /> Arquivar
           </Button>
         )}

@@ -73,7 +73,9 @@ export class MessagingConnectionsService {
     const importGroupsEnabled = dto.importGroupsEnabled === true;
     const importGroupsStartDate = parseImportStartDate(dto.importGroupsStartDate);
     if (importHistoryEnabled && !importHistoryStartDate) {
-      throw new BadRequestException("Informe a data inicial para importar o histórico de mensagens.");
+      throw new BadRequestException(
+        "Informe a data inicial para importar o histórico de mensagens.",
+      );
     }
     if (importGroupsEnabled && !importGroupsStartDate) {
       throw new BadRequestException("Informe a data inicial para importar mensagens de grupo.");

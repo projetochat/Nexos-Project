@@ -1,0 +1,56 @@
+name: Check Trixus production access
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - name: Verify SSH connection and command restriction
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          : "${DEPLOY_HOST:?Missing DEPLOY_HOST}"
+          : "${DEPLOY_PORT:?Missing DEPLOY_PORT}"
+          : "${DEPLOY_USER:?Missing DEPLOY_USER}"
+          : "${DEPLOY_SSH_KEY:?Missing DEPLOY_SSH_KEY}"
+          : "${DEPLOY_KNOWN_HOSTS:?Missing DEPLOY_KNOWN_HOSTS}"
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
+          [[ "$DEPLOY_USER" == trixus-deploy ]]
+          scratch=$(mktemp -d)
+          trap 'rm -rf -- "$scratch"' EXIT
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$scratch/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$scratch/known_hosts"
+          unset DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS
+          options=(-i "$scratch/key" -p "$DEPLOY_PORT"
+            -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o "UserKnownHostsFile=$scratch/known_hosts"
+            -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=2)
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          reply=$(ssh "${options[@]}" "$target" check)
+          [[ "$reply" == 'Conexao Trixus OK. Deploy ainda desabilitado.' || "$reply" == 'Conexao Trixus OK. Acesso restrito.' ]]
+          status=0
+          denied=$(ssh "${options[@]}" "$target" id 2>&1) || status=$?
+          if [[ "$status" != 1 || "$denied" != 'Comando nao autorizado.' ]]; then
+            echo 'Restricted-command check failed (or SSH connection failed).' >&2
+            exit 1
+          fi
+          printf '%s\n' 'SSH authentication and command restriction verified. No deployment performed.'
+          printf '%s\n' '### Trixus access verified' \
+            '- SSH authentication succeeded.' \
+            '- Arbitrary command was rejected.' \
+            '- No deployment or service changes were performed.' >> "$GITHUB_STEP_SUMMARY"

@@ -704,7 +704,6 @@ export class MessagingOutboundService {
     });
     if (!membership)
       throw new BadRequestException("Atendente inexistente ou inativo para este tenant.");
-
   }
 
   private async resolveConnection(
@@ -750,7 +749,6 @@ export class MessagingOutboundService {
     if (!conversation.assignedMembershipId) {
       throw new BadRequestException("Conversa precisa estar assumida antes do envio.");
     }
-
   }
 
   private async prepareOutboundText(

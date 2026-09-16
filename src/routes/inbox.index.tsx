@@ -491,7 +491,12 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
 
   React.useEffect(() => {
     if (!open || selectedConnectionId || availableConnections.length === 0) return;
-    setSelectedConnectionId((availableConnections.find((connection) => connection.status === "connected") ?? availableConnections[0]).id);
+    setSelectedConnectionId(
+      (
+        availableConnections.find((connection) => connection.status === "connected") ??
+        availableConnections[0]
+      ).id,
+    );
   }, [availableConnections, open, selectedConnectionId]);
 
   React.useEffect(() => {
@@ -518,7 +523,11 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
     if (!user) return toast.error("Sessão inválida.");
     if (!firstMsg.trim()) return toast.error("Escreva a primeira mensagem.");
     if (!selectedConnectionId) return toast.error("Selecione uma conexão WhatsApp conectada.");
-    if (availableConnections.find((connection) => connection.id === selectedConnectionId)?.status !== "connected") return toast.error("Conecte a instância selecionada antes de iniciar a conversa.");
+    if (
+      availableConnections.find((connection) => connection.id === selectedConnectionId)?.status !==
+      "connected"
+    )
+      return toast.error("Conecte a instância selecionada antes de iniciar a conversa.");
     setBusy(true);
     try {
       let contactId = selectedContact?.id;
@@ -738,7 +747,8 @@ function MultiSelect({
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-full"
               style={{
-                backgroundColor: options.find((option) => selected.has(option.id))?.color ?? "#22c55e",
+                backgroundColor:
+                  options.find((option) => selected.has(option.id))?.color ?? "#22c55e",
               }}
             />
           )}

@@ -26,7 +26,10 @@ import { UpdateRoleDto } from "./dto/update-role.dto";
 @Controller()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class RolesController {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService, @Inject(RealtimeService) private readonly realtime: RealtimeService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(RealtimeService) private readonly realtime: RealtimeService,
+  ) {}
 
   @Get("permissions")
   @RequirePermissions("roles.read")
@@ -130,7 +133,9 @@ export class RolesController {
         include: { permissions: true },
       });
     });
-    this.realtime.publish({ tenantId: current.tenantId }, "instance-access.updated", { roleId: role.id });
+    this.realtime.publish({ tenantId: current.tenantId }, "instance-access.updated", {
+      roleId: role.id,
+    });
     return this.serialize(role);
   }
 

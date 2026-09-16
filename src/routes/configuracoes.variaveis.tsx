@@ -6,7 +6,9 @@ import { toast } from "sonner";
 import { Card, Button } from "@/components/ui-kit";
 import { crmApi, type ApiContactCustomField } from "@/lib/trixus-api";
 
-export const Route = createFileRoute("/configuracoes/variaveis")({ component: VariablesSettingsPage });
+export const Route = createFileRoute("/configuracoes/variaveis")({
+  component: VariablesSettingsPage,
+});
 
 const BASE_VARIABLES = [
   ["{{cumprimento}}", "Saudação adequada ao horário do envio."],

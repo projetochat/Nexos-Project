@@ -104,7 +104,8 @@ export function DashboardFiltersBar({
             value={value.period}
             onChange={(event) => {
               const period = event.target.value as OperationalPeriod;
-              const dates = period === "custom" ? { start, end } : datesForOperationalPeriod(period);
+              const dates =
+                period === "custom" ? { start, end } : datesForOperationalPeriod(period);
               onChange({ period, start: dates.start, end: dates.end });
             }}
           >

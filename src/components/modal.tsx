@@ -83,7 +83,9 @@ export function Modal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
+        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+          {children}
+        </div>
         {footer && (
           <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-surface-1 px-4 py-3 sm:px-6">
             {footer}
@@ -120,7 +122,9 @@ export function ConfirmDialog({
       onClose={onClose}
       title={title}
       size="sm"
-      initialFocus={destructive || /excluir|remover/i.test(confirmLabel) ? "[data-confirm-action]" : undefined}
+      initialFocus={
+        destructive || /excluir|remover/i.test(confirmLabel) ? "[data-confirm-action]" : undefined
+      }
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>

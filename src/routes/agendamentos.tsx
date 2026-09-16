@@ -137,7 +137,11 @@ function SchedulingPage() {
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(16rem,1fr)_10rem_10rem_12rem_12rem]">
             <div className="col-span-2 xl:col-span-1">
               <Field label="Busca">
-                <SearchInput value={query} onChange={setQuery} placeholder="Buscar agendamento..." />
+                <SearchInput
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Buscar agendamento..."
+                />
               </Field>
             </div>
             <Filter
@@ -160,13 +164,13 @@ function SchedulingPage() {
             />
             <Field label="Instância">
               <InstanceFilterSelect
-              value={connectionId}
-              onChange={setConnectionId}
-              options={selectableConnections(connections).map((connection) => ({
-                value: connection.id,
-                label: connection.name,
-                color: connection.color,
-              }))}
+                value={connectionId}
+                onChange={setConnectionId}
+                options={selectableConnections(connections).map((connection) => ({
+                  value: connection.id,
+                  label: connection.name,
+                  color: connection.color,
+                }))}
               />
             </Field>
             <Filter

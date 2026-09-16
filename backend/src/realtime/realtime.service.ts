@@ -120,7 +120,14 @@ export class RealtimeService {
 
   private async currentConnectionScope(context: RealtimeSocketContext) {
     const membership = await this.prisma.tenantMembership.findFirst({
-      where: { id: context.membershipId, tenantId: context.tenantId, userId: context.userId, status: "ACTIVE", user: { status: "ACTIVE" }, tenant: { status: { in: ["ACTIVE", "TRIAL"] } } },
+      where: {
+        id: context.membershipId,
+        tenantId: context.tenantId,
+        userId: context.userId,
+        status: "ACTIVE",
+        user: { status: "ACTIVE" },
+        tenant: { status: { in: ["ACTIVE", "TRIAL"] } },
+      },
       include: { role: true },
     });
     if (!membership) return null;
@@ -130,37 +137,53 @@ export class RealtimeService {
   async canAccessConversation(context: RealtimeSocketContext, conversationId: string) {
     const scope = await this.currentConnectionScope(context);
     if (!scope) return false;
-    return !!await this.prisma.conversation.findFirst({
-      where: { id: conversationId, tenantId: context.tenantId, archivedAt: null, ...connectionAccess(scope) },
+    return !!(await this.prisma.conversation.findFirst({
+      where: {
+        id: conversationId,
+        tenantId: context.tenantId,
+        archivedAt: null,
+        ...connectionAccess(scope),
+      },
       select: { id: true },
-    });
+    }));
   }
 
   private async publishScoped<T>(room: string, event: RealtimeServerEvent, data: T) {
     if (!this.server) return;
     const payload = data as { conversationId?: string; connectionId?: string; contactId?: string };
     const sockets = await this.server.in(room).fetchSockets();
-    await Promise.all(sockets.map(async (socket) => {
-      const context = socket.data.context as RealtimeSocketContext | undefined;
-      if (!context) return;
-      const scope = await this.currentConnectionScope(context);
-      if (!scope) return;
-      if (payload.conversationId) {
-        const conversation = await this.prisma.conversation.findFirst({ where: {
-          id: payload.conversationId, tenantId: context.tenantId, ...connectionAccess(scope),
-        }, select: { id: true } });
-        if (!conversation) return;
-      } else if (payload.connectionId && scope.roleKey !== "tenant_admin") {
-        if (!scope.connectionIds?.includes(payload.connectionId)) return;
-      } else if (payload.contactId && scope.roleKey !== "tenant_admin") {
-        const contact = await this.prisma.contact.findFirst({ where: {
-          id: payload.contactId, tenantId: context.tenantId,
-          conversations: { some: connectionAccess(scope) },
-        }, select: { id: true } });
-        if (!contact) return;
-      }
-      socket.emit(event, realtimeEnvelope(event, data));
-    }));
+    await Promise.all(
+      sockets.map(async (socket) => {
+        const context = socket.data.context as RealtimeSocketContext | undefined;
+        if (!context) return;
+        const scope = await this.currentConnectionScope(context);
+        if (!scope) return;
+        if (payload.conversationId) {
+          const conversation = await this.prisma.conversation.findFirst({
+            where: {
+              id: payload.conversationId,
+              tenantId: context.tenantId,
+              ...connectionAccess(scope),
+            },
+            select: { id: true },
+          });
+          if (!conversation) return;
+        } else if (payload.connectionId && scope.roleKey !== "tenant_admin") {
+          if (!scope.connectionIds?.includes(payload.connectionId)) return;
+        } else if (payload.contactId && scope.roleKey !== "tenant_admin") {
+          const contact = await this.prisma.contact.findFirst({
+            where: {
+              id: payload.contactId,
+              tenantId: context.tenantId,
+              conversations: { some: connectionAccess(scope) },
+            },
+            select: { id: true },
+          });
+          if (!contact) return;
+        }
+        socket.emit(event, realtimeEnvelope(event, data));
+      }),
+    );
   }
 
   publish<T>(target: EmitTarget, event: RealtimeServerEvent, data: T) {
@@ -169,7 +192,9 @@ export class RealtimeService {
     const room = targetRoom(target);
     const payload = data as { conversationId?: string; connectionId?: string; contactId?: string };
     if (payload.conversationId || payload.connectionId || payload.contactId) {
-      void this.publishScoped(room, event, data).catch(() => { this.emitFailures += 1; });
+      void this.publishScoped(room, event, data).catch(() => {
+        this.emitFailures += 1;
+      });
       return;
     }
     try {

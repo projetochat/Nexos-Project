@@ -11,7 +11,19 @@ import { OperationsService } from "./operations.service";
 
 class OperationalQueryDto {
   @IsOptional()
-  @IsIn(["today", "yesterday", "week", "previous_week", "month", "previous_month", "year", "previous_year", "7d", "30d", "custom"])
+  @IsIn([
+    "today",
+    "yesterday",
+    "week",
+    "previous_week",
+    "month",
+    "previous_month",
+    "year",
+    "previous_year",
+    "7d",
+    "30d",
+    "custom",
+  ])
   period?:
     | "today"
     | "yesterday"

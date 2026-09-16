@@ -253,11 +253,19 @@ function AtendentesPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className={a.ativo ? "text-amber-600 hover:text-amber-700" : "text-emerald-600 hover:text-emerald-700"}
+                          className={
+                            a.ativo
+                              ? "text-amber-600 hover:text-amber-700"
+                              : "text-emerald-600 hover:text-emerald-700"
+                          }
                           onClick={() => setDeleting(a)}
                           title={a.ativo ? "Bloquear" : "Desbloquear"}
                         >
-                          {a.ativo ? <Ban className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                          {a.ativo ? (
+                            <Ban className="h-3.5 w-3.5" />
+                          ) : (
+                            <Unlock className="h-3.5 w-3.5" />
+                          )}
                         </Button>
                       </div>
                     )}
@@ -337,12 +345,20 @@ function AtendentesPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className={a.ativo ? "text-amber-600 hover:text-amber-700" : "text-emerald-600 hover:text-emerald-700"}
+                              className={
+                                a.ativo
+                                  ? "text-amber-600 hover:text-amber-700"
+                                  : "text-emerald-600 hover:text-emerald-700"
+                              }
                               onClick={() => setDeleting(a)}
                               title={a.ativo ? "Bloquear" : "Desbloquear"}
                               aria-label={a.ativo ? "Bloquear" : "Desbloquear"}
                             >
-                              {a.ativo ? <Ban className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                              {a.ativo ? (
+                                <Ban className="h-3.5 w-3.5" />
+                              ) : (
+                                <Unlock className="h-3.5 w-3.5" />
+                              )}
                             </Button>
                           </div>
                         )}
@@ -409,14 +425,20 @@ function AtendentesPage() {
         <AtendenteForm
           open={novo.open}
           atendentes={atendentes}
-          perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
+          perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({
+            id: p.id,
+            nome: p.name,
+          }))}
           onClose={novo.hide}
           onSubmit={(data) => create.mutate(data)}
         />
         <AtendenteForm
           open={!!editing}
           atendentes={atendentes}
-          perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
+          perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({
+            id: p.id,
+            nome: p.name,
+          }))}
           initial={editing ?? undefined}
           onClose={() => setEditing(null)}
           onSubmit={(data) => editing && update.mutate({ id: editing.id, data })}
@@ -424,7 +446,10 @@ function AtendentesPage() {
         <AtendenteForm
           open={!!duplicating}
           atendentes={atendentes}
-          perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({ id: p.id, nome: p.name }))}
+          perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({
+            id: p.id,
+            nome: p.name,
+          }))}
           initial={duplicating ?? undefined}
           clone
           onClose={() => setDuplicating(null)}
@@ -722,7 +747,9 @@ function AtendenteForm({
                     autoComplete="new-password"
                     aria-label="Senha do atendente"
                     disabled={passwordLocked}
-                    placeholder={passwordLocked ? "Senha protegida" : isEditing ? "Digite a nova senha" : ""}
+                    placeholder={
+                      passwordLocked ? "Senha protegida" : isEditing ? "Digite a nova senha" : ""
+                    }
                     value={form.senha ?? ""}
                     onChange={(e) => {
                       if (initial && !clone && !e.target.value) setShowPassword(false);
@@ -733,18 +760,31 @@ function AtendenteForm({
                   {isEditing && (
                     <button
                       type="button"
-                      aria-label={passwordLocked ? "Desbloquear alteração de senha" : "Bloquear alteração de senha"}
-                      title={passwordLocked ? "Desbloquear alteração de senha" : "Bloquear alteração de senha"}
+                      aria-label={
+                        passwordLocked
+                          ? "Desbloquear alteração de senha"
+                          : "Bloquear alteração de senha"
+                      }
+                      title={
+                        passwordLocked
+                          ? "Desbloquear alteração de senha"
+                          : "Bloquear alteração de senha"
+                      }
                       onClick={() => {
                         setPasswordUnlocked(passwordLocked);
                         setShowPassword(false);
                         setForm((current) => ({ ...current, senha: "" }));
                         setErrors((current) => ({ ...current, senha: "" }));
-                        if (passwordLocked) requestAnimationFrame(() => passwordRef.current?.focus());
+                        if (passwordLocked)
+                          requestAnimationFrame(() => passwordRef.current?.focus());
                       }}
                       className={`absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center text-muted-foreground transition ${passwordLocked ? "hover:text-blue-600" : "hover:text-red-600"}`}
                     >
-                      {passwordLocked ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
+                      {passwordLocked ? (
+                        <Lock className="h-4 w-4" />
+                      ) : (
+                        <LockOpen className="h-4 w-4" />
+                      )}
                     </button>
                   )}
                   {canShowPassword && (

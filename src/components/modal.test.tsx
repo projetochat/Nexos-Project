@@ -11,14 +11,24 @@ it("focuses the delete action each time a confirmation opens", async () => {
   const root = createRoot(container);
   const onConfirm = vi.fn();
   const onClose = vi.fn();
-  const render = (open: boolean) => root.render(
-    <ConfirmDialog open={open} title="Excluir?" confirmLabel="Excluir" destructive onConfirm={onConfirm} onClose={onClose} />,
-  );
+  const render = (open: boolean) =>
+    root.render(
+      <ConfirmDialog
+        open={open}
+        title="Excluir?"
+        confirmLabel="Excluir"
+        destructive
+        onConfirm={onConfirm}
+        onClose={onClose}
+      />,
+    );
   try {
     await React.act(() => render(true));
     expect(document.activeElement?.textContent).toBe("Excluir");
     // Simulate the opening control restoring focus after the portal mounts.
-    const cancel = Array.from(document.querySelectorAll("button")).find((button) => button.textContent === "Cancelar")!;
+    const cancel = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Cancelar",
+    )!;
     cancel.focus();
     await React.act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
     expect(document.activeElement?.textContent).toBe("Excluir");

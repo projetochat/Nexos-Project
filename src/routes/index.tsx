@@ -119,9 +119,8 @@ function Dashboard() {
   const [dashboardColumns, setDashboardColumns] = React.useState<
     Partial<Record<DashboardBiId, DashboardColumnCount>>
   >(() => loadDashboardPreferences(storageKey).columns);
-  const [draftColumns, setDraftColumns] = React.useState<
-    Partial<Record<DashboardBiId, DashboardColumnCount>>
-  >(dashboardColumns);
+  const [draftColumns, setDraftColumns] =
+    React.useState<Partial<Record<DashboardBiId, DashboardColumnCount>>>(dashboardColumns);
   const [editingBiId, setEditingBiId] = React.useState<DashboardBiId | null>(null);
   const [editingBiTitle, setEditingBiTitle] = React.useState("");
   const [draggingBiId, setDraggingBiId] = React.useState<DashboardBiId | null>(null);
@@ -202,9 +201,7 @@ function Dashboard() {
     .map((queue) => ({
       id: queue.id,
       label: queue.label,
-      value: kpiValue(
-        kpis[queueKpiById[queue.id][0]] ?? kpis[queueKpiById[queue.id][1]],
-      ),
+      value: kpiValue(kpis[queueKpiById[queue.id][0]] ?? kpis[queueKpiById[queue.id][1]]),
       Icon: queueIconById[queue.id],
     }));
   const closedConversations = kpiValue(kpis.contadorFechadasAtuais ?? kpis.conversasEncerradas);
@@ -225,7 +222,7 @@ function Dashboard() {
     }[columns];
   };
   const dashboardColumnCount = (id: DashboardBiId): DashboardColumnCount =>
-    id === "counters" ? 4 : dashboardColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id];
+    id === "counters" ? 4 : (dashboardColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id]);
   const messagesColumns = dashboardColumns.messages ?? DEFAULT_DASHBOARD_COLUMNS.messages;
   const compactMessagesChart = messagesColumns <= 2;
 
@@ -270,7 +267,9 @@ function Dashboard() {
                 disabled={query.isFetching || refreshing}
                 title="Atualizar indicadores"
               >
-                <RefreshCw className={`h-3.5 w-3.5 ${query.isFetching || refreshing ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${query.isFetching || refreshing ? "animate-spin" : ""}`}
+                />
                 {refreshing ? "Atualizando..." : "Atualizar"}
               </Button>
               {canEditDashboard && (
@@ -302,11 +301,18 @@ function Dashboard() {
         />
 
         {loadingCards ? (
-          <div role="status" aria-live="polite" aria-busy="true" className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+            className="grid grid-cols-1 gap-4 md:grid-cols-4"
+          >
             <span className="sr-only">Carregando indicadores do dashboard...</span>
             {dashboardOrder.filter(hasBi).map((id) => (
               <div key={id} className={dashboardColumnClass(id)}>
-                <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">{biLabel(id)}</p>
+                <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                  {biLabel(id)}
+                </p>
                 {id === "counters" ? (
                   <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6">
                     {Array.from({ length: queueCards.length + 2 }, (_, index) => (
@@ -316,152 +322,158 @@ function Dashboard() {
                       </Card>
                     ))}
                   </div>
-                ) : <Card className="h-64 animate-pulse bg-surface-2"><div className="h-full rounded bg-surface-3" /></Card>}
+                ) : (
+                  <Card className="h-64 animate-pulse bg-surface-2">
+                    <div className="h-full rounded bg-surface-3" />
+                  </Card>
+                )}
               </div>
             ))}
           </div>
         ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <div
-            style={{ order: dashboardPosition("counters") }}
-            className={`${dashboardColumnClass("counters")} ${hasBi("counters") ? "" : "hidden"}`}
-          >
-            <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              {biLabel("counters")}
-            </p>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6">
-              {queueCards.map((queue) => {
-                const Icon = queue.Icon;
-                return (
-                  <KPI
-                    key={queue.id}
-                    label={queue.label}
-                    value={num(queue.value)}
-                    tone="info"
-                    icon={<Icon className="h-6 w-6" />}
-                  />
-                );
-              })}
-              <KPI
-                label="Fechadas"
-                value={num(closedConversations)}
-                tone="info"
-                icon={<CheckCircle2 className="h-6 w-6" />}
-              />
-              <KPI
-                label="Total"
-                value={num(totalConversations)}
-                tone="info"
-                icon={<MessagesSquare className="h-6 w-6" />}
-              />
-            </div>
-          </div>
-
-          <div
-            style={{ order: dashboardPosition("messages") }}
-            className={`${dashboardColumnClass("messages")} ${hasBi("messages") ? "" : "hidden"}`}
-          >
-            <Card className="h-full">
-              <div className="mb-4">
-                <div>
-                  <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                    {biLabel("messages")}
-                  </p>
-                </div>
-              </div>
-              <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={data?.charts.messagesByHour ?? []}>
-                  <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis
-                    dataKey="hora"
-                    stroke="hsl(var(--muted-foreground))"
-                    fontSize={11}
-                    interval={messagesColumns === 1 ? 3 : compactMessagesChart ? 0 : "preserveEnd"}
-                    angle={compactMessagesChart ? -45 : 0}
-                    textAnchor={compactMessagesChart ? "end" : "middle"}
-                    height={compactMessagesChart ? 48 : 30}
-                    tickMargin={compactMessagesChart ? 8 : 0}
-                  />
-                  <YAxis
-                    stroke="hsl(var(--muted-foreground))"
-                    fontSize={11}
-                    allowDecimals={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "hsl(var(--popover))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: 8,
-                      fontSize: 12,
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line
-                    type="monotone"
-                    dataKey="recebidas"
-                    name="Recebidas"
-                    stroke="#2563eb"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="enviadas"
-                    name="Enviadas"
-                    stroke="#16a34a"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="total"
-                    name="Total"
-                    stroke="#94a3b8"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </Card>
-          </div>
-
-          <div
-            style={{ order: dashboardPosition("distribution") }}
-            className={`${dashboardColumnClass("distribution")} ${hasBi("distribution") ? "" : "hidden"}`}
-          >
-            <Card className="h-full">
-              <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
-                {biLabel("distribution")}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div
+              style={{ order: dashboardPosition("counters") }}
+              className={`${dashboardColumnClass("counters")} ${hasBi("counters") ? "" : "hidden"}`}
+            >
+              <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                {biLabel("counters")}
               </p>
-              <ResponsiveContainer width="100%" height={260}>
-                <PieChart>
-                  <Tooltip
-                    contentStyle={{
-                      background: "hsl(var(--popover))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: 8,
-                      fontSize: 12,
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Pie
-                    data={statusSerie}
-                    dataKey="total"
-                    nameKey="nome"
-                    innerRadius={48}
-                    outerRadius={82}
-                    paddingAngle={3}
-                  >
-                    {statusSerie.map((item, index) => (
-                      <Cell key={item.nome} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </Card>
-          </div>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6">
+                {queueCards.map((queue) => {
+                  const Icon = queue.Icon;
+                  return (
+                    <KPI
+                      key={queue.id}
+                      label={queue.label}
+                      value={num(queue.value)}
+                      tone="info"
+                      icon={<Icon className="h-6 w-6" />}
+                    />
+                  );
+                })}
+                <KPI
+                  label="Fechadas"
+                  value={num(closedConversations)}
+                  tone="info"
+                  icon={<CheckCircle2 className="h-6 w-6" />}
+                />
+                <KPI
+                  label="Total"
+                  value={num(totalConversations)}
+                  tone="info"
+                  icon={<MessagesSquare className="h-6 w-6" />}
+                />
+              </div>
+            </div>
 
-          {[
+            <div
+              style={{ order: dashboardPosition("messages") }}
+              className={`${dashboardColumnClass("messages")} ${hasBi("messages") ? "" : "hidden"}`}
+            >
+              <Card className="h-full">
+                <div className="mb-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-muted-foreground">
+                      {biLabel("messages")}
+                    </p>
+                  </div>
+                </div>
+                <ResponsiveContainer width="100%" height={260}>
+                  <LineChart data={data?.charts.messagesByHour ?? []}>
+                    <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis
+                      dataKey="hora"
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={11}
+                      interval={
+                        messagesColumns === 1 ? 3 : compactMessagesChart ? 0 : "preserveEnd"
+                      }
+                      angle={compactMessagesChart ? -45 : 0}
+                      textAnchor={compactMessagesChart ? "end" : "middle"}
+                      height={compactMessagesChart ? 48 : 30}
+                      tickMargin={compactMessagesChart ? 8 : 0}
+                    />
+                    <YAxis
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={11}
+                      allowDecimals={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "hsl(var(--popover))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: 8,
+                        fontSize: 12,
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Line
+                      type="monotone"
+                      dataKey="recebidas"
+                      name="Recebidas"
+                      stroke="#2563eb"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="enviadas"
+                      name="Enviadas"
+                      stroke="#16a34a"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="total"
+                      name="Total"
+                      stroke="#94a3b8"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </Card>
+            </div>
+
+            <div
+              style={{ order: dashboardPosition("distribution") }}
+              className={`${dashboardColumnClass("distribution")} ${hasBi("distribution") ? "" : "hidden"}`}
+            >
+              <Card className="h-full">
+                <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
+                  {biLabel("distribution")}
+                </p>
+                <ResponsiveContainer width="100%" height={260}>
+                  <PieChart>
+                    <Tooltip
+                      contentStyle={{
+                        background: "hsl(var(--popover))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: 8,
+                        fontSize: 12,
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Pie
+                      data={statusSerie}
+                      dataKey="total"
+                      nameKey="nome"
+                      innerRadius={48}
+                      outerRadius={82}
+                      paddingAngle={3}
+                    >
+                      {statusSerie.map((item, index) => (
+                        <Cell key={item.nome} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              </Card>
+            </div>
+
+            {[
               {
                 id: "connection",
                 title: biLabel("connection"),
@@ -489,7 +501,8 @@ function Dashboard() {
                   chart.data,
                   dashboardColumnCount(chart.id as DashboardBiId),
                 );
-                const rotateLabels = chartData.length > 5 || chartData.some((item) => item.nome.length > 14);
+                const rotateLabels =
+                  chartData.length > 5 || chartData.some((item) => item.nome.length > 14);
                 return (
                   <div
                     key={chart.id}
@@ -540,47 +553,47 @@ function Dashboard() {
                 );
               })}
 
-          <div
-            style={{ order: dashboardPosition("recent") }}
-            className={`${dashboardColumnClass("recent")} ${hasBi("recent") ? "" : "hidden"}`}
-          >
-            <Card className="p-0">
-              <div className="border-b border-border px-5 py-4">
-                <p className="text-sm font-semibold">{biLabel("recent")}</p>
-                <p className="text-xs text-muted-foreground">Ultimas conversas movimentadas.</p>
-              </div>
-              <ul className="divide-y divide-border">
-                {recent.map((conversation) => (
-                  <li key={conversation.id} className="flex items-center gap-3 px-5 py-3 text-sm">
-                    <span className="h-2 w-2 rounded-full bg-primary" />
-                    <span className="min-w-0 flex-1 truncate">
-                      <Link
-                        to="/inbox/$conversationId"
-                        params={{ conversationId: conversation.id }}
-                        className="font-medium hover:underline"
-                      >
-                        {conversation.contact?.nome ?? "Contato"}
-                      </Link>
-                      <span className="ml-2 text-muted-foreground">
-                        {conversation.protocolo
-                          ? `#${conversation.protocolo}`
-                          : conversation.status}
+            <div
+              style={{ order: dashboardPosition("recent") }}
+              className={`${dashboardColumnClass("recent")} ${hasBi("recent") ? "" : "hidden"}`}
+            >
+              <Card className="p-0">
+                <div className="border-b border-border px-5 py-4">
+                  <p className="text-sm font-semibold">{biLabel("recent")}</p>
+                  <p className="text-xs text-muted-foreground">Ultimas conversas movimentadas.</p>
+                </div>
+                <ul className="divide-y divide-border">
+                  {recent.map((conversation) => (
+                    <li key={conversation.id} className="flex items-center gap-3 px-5 py-3 text-sm">
+                      <span className="h-2 w-2 rounded-full bg-primary" />
+                      <span className="min-w-0 flex-1 truncate">
+                        <Link
+                          to="/inbox/$conversationId"
+                          params={{ conversationId: conversation.id }}
+                          className="font-medium hover:underline"
+                        >
+                          {conversation.contact?.nome ?? "Contato"}
+                        </Link>
+                        <span className="ml-2 text-muted-foreground">
+                          {conversation.protocolo
+                            ? `#${conversation.protocolo}`
+                            : conversation.status}
+                        </span>
                       </span>
-                    </span>
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      ha {relativeTime(new Date(conversation.last_message_at).getTime())}
-                    </span>
-                  </li>
-                ))}
-                {!query.isLoading && recent.length === 0 && (
-                  <li className="px-5 py-6 text-center text-xs text-muted-foreground">
-                    Nenhuma atividade operacional encontrada.
-                  </li>
-                )}
-              </ul>
-            </Card>
+                      <span className="font-mono text-[11px] text-muted-foreground">
+                        ha {relativeTime(new Date(conversation.last_message_at).getTime())}
+                      </span>
+                    </li>
+                  ))}
+                  {!query.isLoading && recent.length === 0 && (
+                    <li className="px-5 py-6 text-center text-xs text-muted-foreground">
+                      Nenhuma atividade operacional encontrada.
+                    </li>
+                  )}
+                </ul>
+              </Card>
+            </div>
           </div>
-        </div>
         )}
         <Modal
           open={editingDashboard}
@@ -592,10 +605,10 @@ function Dashboard() {
               <Button
                 variant="ghost"
                 onClick={() => {
-                    setDraftBis([...DASHBOARD_BIS]);
-                    setDraftOrder([...DASHBOARD_BIS]);
-                    setDraftLabels({});
-                    setDraftColumns(DEFAULT_DASHBOARD_COLUMNS);
+                  setDraftBis([...DASHBOARD_BIS]);
+                  setDraftOrder([...DASHBOARD_BIS]);
+                  setDraftLabels({});
+                  setDraftColumns(DEFAULT_DASHBOARD_COLUMNS);
                   setEditingBiId(null);
                   toast.success("Configurações restauradas para o padrão do sistema.");
                 }}

@@ -3,10 +3,17 @@ import { connectionAccess, connectionIdAccess, roleConnectionIds } from "./conne
 
 describe("instance access", () => {
   it("limits custom profiles to their selected instances even with all chat permissions", () => {
-    const connectionIds = roleConnectionIds({ key: "custom", metadata: { connectionIds: ["vocical", "vocical", 1] } });
+    const connectionIds = roleConnectionIds({
+      key: "custom",
+      metadata: { connectionIds: ["vocical", "vocical", 1] },
+    });
     expect(connectionIds).toEqual(["vocical"]);
-    expect(connectionAccess({ roleKey: "custom", connectionIds })).toEqual({ connectionId: { in: ["vocical"] } });
-    expect(connectionIdAccess({ roleKey: "custom", connectionIds })).toEqual({ id: { in: ["vocical"] } });
+    expect(connectionAccess({ roleKey: "custom", connectionIds })).toEqual({
+      connectionId: { in: ["vocical"] },
+    });
+    expect(connectionIdAccess({ roleKey: "custom", connectionIds })).toEqual({
+      id: { in: ["vocical"] },
+    });
   });
   it("denies access when a non-administrator has no configured instances", () => {
     expect(roleConnectionIds({ key: "agent", metadata: {} })).toEqual([]);

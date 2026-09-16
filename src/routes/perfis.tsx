@@ -652,7 +652,12 @@ function PerfilForm({
     >
       <div className="space-y-5">
         <PerfilTabs active={activeTab} onChange={setActiveTab} />
-        {activeTab !== "geral" && <p className="text-xs text-muted-foreground">Somente a seleção de instâncias controla o acesso neste momento. As demais opções ainda não aplicam restrições.</p>}
+        {activeTab !== "geral" && (
+          <p className="text-xs text-muted-foreground">
+            Somente a seleção de instâncias controla o acesso neste momento. As demais opções ainda
+            não aplicam restrições.
+          </p>
+        )}
 
         {activeTab === "geral" && (
           <GeneralTab
@@ -836,48 +841,52 @@ function PermissionSettings({
     checked: boolean,
   ) => void;
 }) {
-  const sortedConnections = sortByOptionLabel(selectableConnections(connections), (connection) => connection.name);
+  const sortedConnections = sortByOptionLabel(
+    selectableConnections(connections),
+    (connection) => connection.name,
+  );
   const connectionIds = sortedConnections.map((connection) => connection.id);
   const departmentIds = departamentos.map((department) => department.id);
 
   return (
     <div className="space-y-6">
-      {tab === "chat" && <>
-      <SelectionSection
-        title="Instâncias"
-        ids={connectionIds}
-        selectedIds={form.connectionIds}
-        emptyLabel="Nenhuma instancia cadastrada."
-        onToggleAll={(checked) => toggleMany("connectionIds", connectionIds, checked)}
-      >
-        {sortedConnections.map((connection) => (
-          <CheckField
-            key={connection.id}
-            label={connection.name}
-            checked={form.connectionIds.includes(connection.id)}
-            onChange={(checked) => toggleConnection(connection.id, checked)}
-          />
-        ))}
-      </SelectionSection>
+      {tab === "chat" && (
+        <>
+          <SelectionSection
+            title="Instâncias"
+            ids={connectionIds}
+            selectedIds={form.connectionIds}
+            emptyLabel="Nenhuma instancia cadastrada."
+            onToggleAll={(checked) => toggleMany("connectionIds", connectionIds, checked)}
+          >
+            {sortedConnections.map((connection) => (
+              <CheckField
+                key={connection.id}
+                label={connection.name}
+                checked={form.connectionIds.includes(connection.id)}
+                onChange={(checked) => toggleConnection(connection.id, checked)}
+              />
+            ))}
+          </SelectionSection>
 
-      <SelectionSection
-        title="Departamentos"
-        ids={departmentIds}
-        selectedIds={form.departmentIds}
-        emptyLabel="Nenhum departamento cadastrado."
-        onToggleAll={(checked) => toggleMany("departmentIds", departmentIds, checked)}
-      >
-        {departamentos.map((department) => (
-          <CheckField
-            key={department.id}
-            label={department.name}
-            checked={form.departmentIds.includes(department.id)}
-            onChange={(checked) => toggleDepartment(department.id, checked)}
-          />
-        ))}
-      </SelectionSection>
-
-      </>}
+          <SelectionSection
+            title="Departamentos"
+            ids={departmentIds}
+            selectedIds={form.departmentIds}
+            emptyLabel="Nenhum departamento cadastrado."
+            onToggleAll={(checked) => toggleMany("departmentIds", departmentIds, checked)}
+          >
+            {departamentos.map((department) => (
+              <CheckField
+                key={department.id}
+                label={department.name}
+                checked={form.departmentIds.includes(department.id)}
+                onChange={(checked) => toggleDepartment(department.id, checked)}
+              />
+            ))}
+          </SelectionSection>
+        </>
+      )}
       <section>
         <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           Permissões
@@ -1068,15 +1077,15 @@ function WorkScheduleEditor({
                     <React.Fragment key={`${day}-${shift}`}>
                       <td className="px-2 py-2 text-center">
                         <div className="flex items-center justify-center gap-1">
-                        <input
-                          type="checkbox"
-                          checked={item.active}
-                          disabled={value.noSchedule}
-                          onChange={(event) => {
-                            updateShift(day, shift, { active: event.target.checked });
-                          }}
-                          className="h-4 w-4 accent-primary"
-                        />
+                          <input
+                            type="checkbox"
+                            checked={item.active}
+                            disabled={value.noSchedule}
+                            onChange={(event) => {
+                              updateShift(day, shift, { active: event.target.checked });
+                            }}
+                            className="h-4 w-4 accent-primary"
+                          />
                           <Button
                             type="button"
                             variant="ghost"
@@ -1100,10 +1109,14 @@ function WorkScheduleEditor({
                           disabled={value.noSchedule || !item.active}
                           className="w-full px-2 text-center"
                           onChange={(event) =>
-                            updateShift(day, shift, { start: sanitizeWorkHourDraft(event.target.value) })
+                            updateShift(day, shift, {
+                              start: sanitizeWorkHourDraft(event.target.value),
+                            })
                           }
                           onBlur={(event) =>
-                            updateShift(day, shift, { start: formatWorkHourDraft(event.target.value) })
+                            updateShift(day, shift, {
+                              start: formatWorkHourDraft(event.target.value),
+                            })
                           }
                         />
                       </td>
@@ -1116,10 +1129,14 @@ function WorkScheduleEditor({
                           disabled={value.noSchedule || !item.active}
                           className="w-full px-2 text-center"
                           onChange={(event) =>
-                            updateShift(day, shift, { end: sanitizeWorkHourDraft(event.target.value) })
+                            updateShift(day, shift, {
+                              end: sanitizeWorkHourDraft(event.target.value),
+                            })
                           }
                           onBlur={(event) =>
-                            updateShift(day, shift, { end: formatWorkHourDraft(event.target.value) })
+                            updateShift(day, shift, {
+                              end: formatWorkHourDraft(event.target.value),
+                            })
                           }
                         />
                       </td>

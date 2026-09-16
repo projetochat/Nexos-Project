@@ -37,10 +37,27 @@ const HOMOLOGATION_TAGS = [
 ] as const;
 
 const HOMOLOGATION_CUSTOMERS = [
-  "AGROCONTAR", "DIPS", "DINACO", "QRIAR", "VOCICAL", "SDE", "NORDESTE", "PESSOAL", "SOLUTI", "GOLDTEK", "AC ADVOGADOS", "ÍNTEGRA",
+  "AGROCONTAR",
+  "DIPS",
+  "DINACO",
+  "QRIAR",
+  "VOCICAL",
+  "SDE",
+  "NORDESTE",
+  "PESSOAL",
+  "SOLUTI",
+  "GOLDTEK",
+  "AC ADVOGADOS",
+  "ÍNTEGRA",
 ] as const;
 
-const HOMOLOGATION_CONTACT_PROFILES = ["Proprietário", "Dietor", "Gestor Dpto", "Supervisor", "Colaborador"] as const;
+const HOMOLOGATION_CONTACT_PROFILES = [
+  "Proprietário",
+  "Dietor",
+  "Gestor Dpto",
+  "Supervisor",
+  "Colaborador",
+] as const;
 
 const HOMOLOGATION_STAFF = [
   { name: "Douglas Flow iD", email: "douglas@flowid.com.br", role: "supervisor" },
@@ -50,12 +67,45 @@ const HOMOLOGATION_STAFF = [
 ] as const;
 
 const HOMOLOGATION_QUICK_REPLIES = [
-  { title: "Bom dia", shortcut: "bd", content: "Bom dia, *{{nome}}*,\nTudo bem?\n\n## Em que podemos te ajudar?", closeOnSend: false },
-  { title: "Boa tarde", shortcut: "bt", content: "Boa tarde, *{{nome}}*,\nTudo bem?\n\n## Em que podemos te ajudar?", closeOnSend: false },
-  { title: "Boa noite", shortcut: "bn", content: "Boa noite, *{{nome}}*,\nTudo bem?\n\n## Em que podemos te ajudar?", closeOnSend: false },
-  { title: "Finalizar atendimento", shortcut: "f", content: "Seu atendimento será finalizado.\nEspero ter ajudado!\nCaso precise de um novo atendimento, basta nos acionar novamente.\n\nUm abraço!\n*Equipe Trixus* ✅", closeOnSend: true },
-  { title: "Finalizar por inatividade", shortcut: "fi", content: "Este atendimento será encerrado por falta de interação. Se ainda precisar de atendimento, basta nos acionar novamente.\n\n*Equipe Trixus* ✅", closeOnSend: true },
-  { title: "Atendimento inicial", shortcut: "ola", content: "{{cumprimento}} *{{nome}}*,\nTudo bem?\n\nBem vindo ao atendimento inicial do *Suporte Trixus*.\n\nNosso horário de funcionamento é de Segunda a Sexta:\n\n- 08:00h às 12:00h\n- 13:30h às 18:00h\n- Fuso horário de São Paulo (GMT-3)\n\nComo deseja o atendimento?", closeOnSend: false },
+  {
+    title: "Bom dia",
+    shortcut: "bd",
+    content: "Bom dia, *{{nome}}*,\nTudo bem?\n\n## Em que podemos te ajudar?",
+    closeOnSend: false,
+  },
+  {
+    title: "Boa tarde",
+    shortcut: "bt",
+    content: "Boa tarde, *{{nome}}*,\nTudo bem?\n\n## Em que podemos te ajudar?",
+    closeOnSend: false,
+  },
+  {
+    title: "Boa noite",
+    shortcut: "bn",
+    content: "Boa noite, *{{nome}}*,\nTudo bem?\n\n## Em que podemos te ajudar?",
+    closeOnSend: false,
+  },
+  {
+    title: "Finalizar atendimento",
+    shortcut: "f",
+    content:
+      "Seu atendimento será finalizado.\nEspero ter ajudado!\nCaso precise de um novo atendimento, basta nos acionar novamente.\n\nUm abraço!\n*Equipe Trixus* ✅",
+    closeOnSend: true,
+  },
+  {
+    title: "Finalizar por inatividade",
+    shortcut: "fi",
+    content:
+      "Este atendimento será encerrado por falta de interação. Se ainda precisar de atendimento, basta nos acionar novamente.\n\n*Equipe Trixus* ✅",
+    closeOnSend: true,
+  },
+  {
+    title: "Atendimento inicial",
+    shortcut: "ola",
+    content:
+      "{{cumprimento}} *{{nome}}*,\nTudo bem?\n\nBem vindo ao atendimento inicial do *Suporte Trixus*.\n\nNosso horário de funcionamento é de Segunda a Sexta:\n\n- 08:00h às 12:00h\n- 13:30h às 18:00h\n- Fuso horário de São Paulo (GMT-3)\n\nComo deseja o atendimento?",
+    closeOnSend: false,
+  },
 ] as const;
 import {
   AGENT_PERMISSIONS,
@@ -298,7 +348,13 @@ async function seedProductionStaging() {
         }),
       ),
     );
-    await seedHomologationOperationalData(tx, savedTenant.id, roles, departments, staffPasswordHash);
+    await seedHomologationOperationalData(
+      tx,
+      savedTenant.id,
+      roles,
+      departments,
+      staffPasswordHash,
+    );
     const subscription = await tx.tenantSubscription.findFirst({
       where: {
         tenantId: savedTenant.id,
@@ -606,7 +662,11 @@ async function seedHomologationOperationalData(
     HOMOLOGATION_CUSTOMERS.map((name, index) =>
       client.customer.upsert({
         where: { tenantId_id: { tenantId, id: `seed-customer-${normalizeSeedCatalogName(name)}` } },
-        update: { name, archivedAt: null, color: HOMOLOGATION_TAGS[index % HOMOLOGATION_TAGS.length].color },
+        update: {
+          name,
+          archivedAt: null,
+          color: HOMOLOGATION_TAGS[index % HOMOLOGATION_TAGS.length].color,
+        },
         create: {
           id: `seed-customer-${normalizeSeedCatalogName(name)}`,
           tenantId,

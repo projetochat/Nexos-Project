@@ -724,7 +724,9 @@ export class CrmController {
       })),
     ];
     const instanceUpdatePhones = new Set(
-      activeRegisteredItems.map((item) => item.normalizedPhone).filter((phone): phone is string => Boolean(phone)),
+      activeRegisteredItems
+        .map((item) => item.normalizedPhone)
+        .filter((phone): phone is string => Boolean(phone)),
     );
 
     if (!candidates.length && !instanceUpdatePhones.size) {
@@ -2166,7 +2168,10 @@ function contactNameSortKey(name: string) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLocaleLowerCase("pt-BR");
-  const lettersOnly = value.replace(/[^\p{L}\s]+/gu, " ").replace(/\s+/g, " ").trim();
+  const lettersOnly = value
+    .replace(/[^\p{L}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return {
     symbolOnly: !/\p{L}/u.test(lettersOnly),
     value: lettersOnly,
@@ -2192,7 +2197,9 @@ function importedEvolutionContactRawPhone(item: {
   remoteJid?: string | null;
   number?: string | null;
 }) {
-  return cleanNullable(item.number) ?? cleanNullable(item.remoteJid) ?? cleanNullable(item.id) ?? "";
+  return (
+    cleanNullable(item.number) ?? cleanNullable(item.remoteJid) ?? cleanNullable(item.id) ?? ""
+  );
 }
 
 function importedEvolutionContactName(item: {

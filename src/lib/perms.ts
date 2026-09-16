@@ -1,4 +1,3 @@
-
 export type ChatPerms = {
   pode_editar_contato: boolean;
   pode_editar_vinculo_cliente: boolean;

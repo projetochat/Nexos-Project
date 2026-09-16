@@ -99,7 +99,8 @@ function EmpresaSettings() {
 
           <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
             <p className="font-semibold">
-              Este usuário possui acesso a todas as funcionalidades permitidas pelo plano da empresa.
+              Este usuário possui acesso a todas as funcionalidades permitidas pelo plano da
+              empresa.
             </p>
             <p className="mt-0.5 font-normal text-blue-700">
               Utilize as credenciais abaixo para acessar o sistema.

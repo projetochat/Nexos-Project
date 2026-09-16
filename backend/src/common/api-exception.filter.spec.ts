@@ -14,7 +14,12 @@ describe("mapApiError", () => {
 
   it("returns a recoverable message when group creation cannot be confirmed", () => {
     const mapped = mapApiError(
-      new MessagingProviderError(MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE, "timeout", true, 504),
+      new MessagingProviderError(
+        MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+        "timeout",
+        true,
+        504,
+      ),
     );
 
     expect(mapped).toMatchObject({

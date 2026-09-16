@@ -142,7 +142,10 @@ export class GroupsController {
     const q = query.q?.trim();
     const qDigits = q?.replace(/\D/g, "") ?? "";
     const filterWithoutConnection = query.connectionId === EMPTY_GROUP_FILTER_VALUE;
-    const filters: Prisma.ConversationWhereInput[] = [visibleGroupConnectionWhere, connectionAccess(current)];
+    const filters: Prisma.ConversationWhereInput[] = [
+      visibleGroupConnectionWhere,
+      connectionAccess(current),
+    ];
     if (q) {
       filters.push({
         OR: [
@@ -208,7 +211,8 @@ export class GroupsController {
     if (dto.participantContactIds.length < 1) {
       throw new BadRequestException("Selecione ao menos um participante.");
     }
-    if (current.roleKey !== "tenant_admin" && !current.connectionIds?.includes(dto.connectionId)) throw new BadRequestException("Instância não permitida pelo perfil.");
+    if (current.roleKey !== "tenant_admin" && !current.connectionIds?.includes(dto.connectionId))
+      throw new BadRequestException("Instância não permitida pelo perfil.");
     const connection = await this.prisma.messagingConnection.findFirst({
       where: {
         id: dto.connectionId,
@@ -554,11 +558,23 @@ export class GroupsController {
   @Post("sync")
   @RequirePermissions("conversations.manage")
   async sync(@Body() dto: SyncGroupsDto | undefined, @CurrentUser() current: AuthenticatedUser) {
-    if (current.roleKey === "tenant_admin") return this.groupsSync.sync({ tenantId: current.tenantId, connectionId: dto?.connectionId });
+    if (current.roleKey === "tenant_admin")
+      return this.groupsSync.sync({ tenantId: current.tenantId, connectionId: dto?.connectionId });
     const ids = current.connectionIds ?? [];
-    if (dto?.connectionId && !ids.includes(dto.connectionId)) throw new BadRequestException("Instância não permitida pelo perfil.");
-    const results = await Promise.all((dto?.connectionId ? [dto.connectionId] : ids).map((connectionId) => this.groupsSync.sync({ tenantId: current.tenantId, connectionId })));
-    return results.reduce((total, result) => ({ synced: total.synced + result.synced, participants: total.participants + result.participants }), { synced: 0, participants: 0 });
+    if (dto?.connectionId && !ids.includes(dto.connectionId))
+      throw new BadRequestException("Instância não permitida pelo perfil.");
+    const results = await Promise.all(
+      (dto?.connectionId ? [dto.connectionId] : ids).map((connectionId) =>
+        this.groupsSync.sync({ tenantId: current.tenantId, connectionId }),
+      ),
+    );
+    return results.reduce(
+      (total, result) => ({
+        synced: total.synced + result.synced,
+        participants: total.participants + result.participants,
+      }),
+      { synced: 0, participants: 0 },
+    );
   }
 
   private async resolveManagedGroup(id: string, current: AuthenticatedUser) {
@@ -679,10 +695,7 @@ async function retryNewGroupMetadataUpdate(operation: () => Promise<unknown>) {
 }
 
 function shouldRetryNewGroupMetadataUpdate(error: unknown) {
-  return (
-    error instanceof MessagingProviderError &&
-    (error.retryable || error.httpStatus === 404)
-  );
+  return error instanceof MessagingProviderError && (error.retryable || error.httpStatus === 404);
 }
 
 function validateGroupImageDataUrl(value: string | undefined) {

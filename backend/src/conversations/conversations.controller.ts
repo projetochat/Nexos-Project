@@ -247,8 +247,6 @@ export class ConversationsController {
       throw new BadRequestException("Informe um atendente ou use self=true.");
     }
 
-
-
     const updated = await this.prisma.$transaction(async (tx) => {
       const protocol =
         conversation.protocol ??
@@ -313,8 +311,6 @@ export class ConversationsController {
     const conversation = await this.findVisibleConversation(id, current);
     await this.assertDepartmentInTenant(dto.departmentId, current.tenantId);
 
-
-
     const updated = await this.prisma.$transaction(async (tx) => {
       const saved = await tx.conversation.update({
         where: { id: conversation.id },
@@ -366,7 +362,6 @@ export class ConversationsController {
   ) {
     const conversation = await this.findVisibleConversation(id, current);
     const target = parseStatus(dto.status);
-
 
     if (
       conversation.status === ConversationStatus.FECHADA &&
@@ -445,12 +440,10 @@ export class ConversationsController {
     query: ListConversationsQueryDto,
     options: { omitTab?: boolean } = {},
   ) {
-
     const filters: Prisma.ConversationWhereInput[] = [
       {
         tenantId: current.tenantId,
         archivedAt: null,
-
       },
       await this.visibilityWhere(current),
       this.searchWhere(query),
@@ -527,14 +520,10 @@ export class ConversationsController {
   }
 
   private async findVisibleConversation(id: string, current: AuthenticatedUser) {
-    const where = await this.buildWhere(
-      current,
-      {
-        page: 1,
-        pageSize: 1,
-      } as ListConversationsQueryDto,
-
-    );
+    const where = await this.buildWhere(current, {
+      page: 1,
+      pageSize: 1,
+    } as ListConversationsQueryDto);
     const conversation = await this.prisma.conversation.findFirst({
       where: { AND: [where, { id }] },
       include: conversationInclude,
@@ -549,7 +538,7 @@ export class ConversationsController {
   ) {
     if (departmentId) {
       await this.assertDepartmentInTenant(departmentId, current.tenantId);
-        return departmentId;
+      return departmentId;
     }
 
     const department = await this.prisma.department.findFirst({
@@ -583,10 +572,7 @@ export class ConversationsController {
       return this.assertUsableConversationConnection(selectedConnection);
     }
 
-    const connectionKeys = uniqueValues([
-      ...(contact?.instanceIds ?? []),
-      contact?.instance,
-    ]);
+    const connectionKeys = uniqueValues([...(contact?.instanceIds ?? []), contact?.instance]);
 
     const connection = connectionKeys.length
       ? await this.prisma.messagingConnection.findFirst({
@@ -604,7 +590,8 @@ export class ConversationsController {
         })
       : null;
 
-    if (!connection && current.roleKey !== "tenant_admin") throw new ForbiddenException("Selecione uma instância permitida pelo perfil.");
+    if (!connection && current.roleKey !== "tenant_admin")
+      throw new ForbiddenException("Selecione uma instância permitida pelo perfil.");
     if (!connection) return null;
     return this.assertUsableConversationConnection(connection);
   }
@@ -651,7 +638,6 @@ export class ConversationsController {
     });
     if (!membership)
       throw new BadRequestException("Atendente inexistente ou inativo para este tenant.");
-
   }
 
   private async nextProtocol(tx: Prisma.TransactionClient, tenantId: string) {
@@ -779,7 +765,6 @@ function tabWhere(
   tab: ListConversationsQueryDto["tab"],
   current: AuthenticatedUser,
 ): Prisma.ConversationWhereInput {
-
   return conversationQueueScope(tab);
 }
 

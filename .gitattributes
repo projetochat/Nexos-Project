@@ -1,0 +1,2 @@
+scripts/production/*.py text eol=lf
+scripts/production/*.sh text eol=lf

@@ -24,7 +24,9 @@ export type StoredMessagingMedia = {
 @Injectable()
 export class MessagingMediaStorageService {
   readonly provider = storageProvider();
-  private readonly root = resolve(process.env.TRIXUS_MESSAGE_STORAGE_LOCAL_PATH ?? ".trixus-storage");
+  private readonly root = resolve(
+    process.env.TRIXUS_MESSAGE_STORAGE_LOCAL_PATH ?? ".trixus-storage",
+  );
 
   async storeUpload(input: { tenantId: string; conversationId: string; req: Request }): Promise<
     StoredMessagingMedia & {

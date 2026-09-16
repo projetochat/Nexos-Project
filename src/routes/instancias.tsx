@@ -98,25 +98,23 @@ function Page() {
   React.useEffect(() => {
     const pending = items.filter(
       (item) =>
-        item.status === "connected" &&
-        !item.logoUrl &&
-        !profileSyncAttempted.current.has(item.id),
+        item.status === "connected" && !item.logoUrl && !profileSyncAttempted.current.has(item.id),
     );
     if (pending.length === 0) return;
     pending.forEach((item) => profileSyncAttempted.current.add(item.id));
-    void Promise.all(
-      pending.map((item) =>
-        connectionsApi.status(item.id).catch(() => null),
-      ),
-    ).then((updated) => {
-      const byId = new Map(
-        updated.filter((item): item is ApiMessagingConnection => item !== null).map((item) => [item.id, item]),
-      );
-      if (byId.size === 0) return;
-      qc.setQueryData<ApiMessagingConnection[]>(["trixus", "messaging-connections"], (current) =>
-        current?.map((item) => byId.get(item.id) ?? item),
-      );
-    });
+    void Promise.all(pending.map((item) => connectionsApi.status(item.id).catch(() => null))).then(
+      (updated) => {
+        const byId = new Map(
+          updated
+            .filter((item): item is ApiMessagingConnection => item !== null)
+            .map((item) => [item.id, item]),
+        );
+        if (byId.size === 0) return;
+        qc.setQueryData<ApiMessagingConnection[]>(["trixus", "messaging-connections"], (current) =>
+          current?.map((item) => byId.get(item.id) ?? item),
+        );
+      },
+    );
   }, [items, qc]);
 
   React.useEffect(() => {
@@ -357,8 +355,14 @@ function Page() {
                       variant="ghost"
                       size="sm"
                       onClick={() => setEditing(connection)}
-                      disabled={connection.status === "removed" || connection.status === "connecting"}
-                      title={connection.status === "connecting" ? "Aguarde a conexão da instância para editá-la." : "Editar"}
+                      disabled={
+                        connection.status === "removed" || connection.status === "connecting"
+                      }
+                      title={
+                        connection.status === "connecting"
+                          ? "Aguarde a conexão da instância para editá-la."
+                          : "Editar"
+                      }
                       aria-label="Editar"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -407,8 +411,10 @@ function Page() {
           description={
             <p>
               Deseja desligar a instância{" "}
-              <strong className="font-semibold text-foreground">"{disconnecting?.name ?? ""}"</strong>?
-              Será necessário conectá-la novamente para enviar e receber mensagens.
+              <strong className="font-semibold text-foreground">
+                "{disconnecting?.name ?? ""}"
+              </strong>
+              ? Será necessário conectá-la novamente para enviar e receber mensagens.
             </p>
           }
           confirmLabel="Desligar"
@@ -438,7 +444,14 @@ function ConnectionForm({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: { name: string; color: string; importHistoryEnabled: boolean; importHistoryStartDate?: string; importGroupsEnabled: boolean; importGroupsStartDate?: string }) => void;
+  onSubmit: (data: {
+    name: string;
+    color: string;
+    importHistoryEnabled: boolean;
+    importHistoryStartDate?: string;
+    importGroupsEnabled: boolean;
+    importGroupsStartDate?: string;
+  }) => void;
   busy: boolean;
 }) {
   const [name, setName] = React.useState("");
@@ -603,8 +616,12 @@ function ConnectionForm({
               <Info className="h-5 w-5 text-blue-600" aria-hidden="true" />
             </span>
             <div>
-              <p className="font-semibold">A importação de mensagens começará após ler o QR Code.</p>
-              <p className="mt-0.5 text-sm font-normal text-blue-700">Pode levar até 5 minutos para iniciar.</p>
+              <p className="font-semibold">
+                A importação de mensagens começará após ler o QR Code.
+              </p>
+              <p className="mt-0.5 text-sm font-normal text-blue-700">
+                Pode levar até 5 minutos para iniciar.
+              </p>
             </div>
           </div>
         </section>
@@ -625,7 +642,9 @@ function ImportOption({
   disabled?: boolean;
 }) {
   return (
-    <label className={`flex items-center gap-3 text-sm text-muted-foreground ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
+    <label
+      className={`flex items-center gap-3 text-sm text-muted-foreground ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+    >
       <button
         type="button"
         role="switch"
@@ -677,7 +696,8 @@ function ImportDate({
 
   return (
     <label className="block text-sm font-medium text-muted-foreground">
-      {label}{required ? <span className="text-destructive"> *</span> : null}
+      {label}
+      {required ? <span className="text-destructive"> *</span> : null}
       <span className="relative mt-1.5 block">
         <input
           type="text"
@@ -763,7 +783,10 @@ function parseImportDate(value: string) {
     return null;
   }
   const display = `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
-  return { display, iso: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}` };
+  return {
+    display,
+    iso: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+  };
 }
 type RemoveConnectionOptions = {
   removeConversationHistory: boolean;
@@ -1084,7 +1107,9 @@ function ConnectionSettingsModal({
                       onClick={async () => {
                         if (!connection) return;
                         try {
-                          applyConnectionUpdate(await connectionsApi.removeProfilePicture(connection.id));
+                          applyConnectionUpdate(
+                            await connectionsApi.removeProfilePicture(connection.id),
+                          );
                           toast.success("Foto removida do perfil do WhatsApp.");
                         } catch (error) {
                           toast.error((error as Error).message);
@@ -1162,7 +1187,6 @@ function ConnectionSettingsModal({
                 </div>
               </div>
 
-
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Provedor">
                   <Select value="evolution" disabled>
@@ -1190,7 +1214,11 @@ function ConnectionSettingsModal({
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <button type="button" aria-label="Informações sobre agentes de IA" className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                          <button
+                            type="button"
+                            aria-label="Informações sobre agentes de IA"
+                            className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                          >
                             <Info className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
                         </TooltipTrigger>
@@ -1200,12 +1228,19 @@ function ConnectionSettingsModal({
                       </Tooltip>
                     </TooltipProvider>
                   </div>
-                  <Select id="instance-ai-agent" value={aiAgentId} onChange={(event) => setAiAgentId(event.target.value)}>
+                  <Select
+                    id="instance-ai-agent"
+                    value={aiAgentId}
+                    onChange={(event) => setAiAgentId(event.target.value)}
+                  >
                     <option value="">- Selecione um agente -</option>
                   </Select>
                 </div>
               </div>
-              <section className="space-y-4 rounded-xl border border-border bg-surface-1 p-4" aria-label="Importação de Mensagens">
+              <section
+                className="space-y-4 rounded-xl border border-border bg-surface-1 p-4"
+                aria-label="Importação de Mensagens"
+              >
                 <h3 className="text-base font-semibold text-foreground">Importação de Mensagens</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <ImportOption
@@ -1361,7 +1396,6 @@ function ConnectionSettingsModal({
               />
             </div>
           )}
-
         </div>
       </Modal>
       {photoCrop.dialog}
@@ -1421,7 +1455,10 @@ function LogoMenuButton({
   return (
     <button
       type="button"
-      className={"flex w-full items-center gap-3 px-4 py-2 text-left text-foreground transition hover:bg-surface-1 " + className}
+      className={
+        "flex w-full items-center gap-3 px-4 py-2 text-left text-foreground transition hover:bg-surface-1 " +
+        className
+      }
       onClick={onClick}
     >
       <span className="text-muted-foreground">{icon}</span>
