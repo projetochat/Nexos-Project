@@ -117,9 +117,8 @@ function Dashboard() {
   const [dashboardColumns, setDashboardColumns] = React.useState<
     Partial<Record<DashboardBiId, DashboardColumnCount>>
   >(() => loadDashboardPreferences(storageKey).columns);
-  const [draftColumns, setDraftColumns] = React.useState<
-    Partial<Record<DashboardBiId, DashboardColumnCount>>
-  >(dashboardColumns);
+  const [draftColumns, setDraftColumns] =
+    React.useState<Partial<Record<DashboardBiId, DashboardColumnCount>>>(dashboardColumns);
   const [editingBiId, setEditingBiId] = React.useState<DashboardBiId | null>(null);
   const [editingBiTitle, setEditingBiTitle] = React.useState("");
   const [draggingBiId, setDraggingBiId] = React.useState<DashboardBiId | null>(null);
@@ -183,9 +182,7 @@ function Dashboard() {
     .map((queue) => ({
       id: queue.id,
       label: queue.label,
-      value: kpiValue(
-        kpis[queueKpiById[queue.id][0]] ?? kpis[queueKpiById[queue.id][1]],
-      ),
+      value: kpiValue(kpis[queueKpiById[queue.id][0]] ?? kpis[queueKpiById[queue.id][1]]),
       Icon: queueIconById[queue.id],
     }));
   const closedConversations = kpiValue(kpis.contadorFechadasAtuais ?? kpis.conversasEncerradas);
@@ -206,7 +203,7 @@ function Dashboard() {
     }[columns];
   };
   const dashboardColumnCount = (id: DashboardBiId): DashboardColumnCount =>
-    id === "counters" ? 4 : dashboardColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id];
+    id === "counters" ? 4 : (dashboardColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id]);
   const messagesColumns = dashboardColumns.messages ?? DEFAULT_DASHBOARD_COLUMNS.messages;
   const compactMessagesChart = messagesColumns <= 2;
 
@@ -423,83 +420,84 @@ function Dashboard() {
           </div>
 
           {[
-              {
-                id: "connection",
-                title: biLabel("connection"),
-                data: data?.charts.byConnection ?? [],
-              },
-              { id: "customer", title: biLabel("customer"), data: data?.charts.byCustomer ?? [] },
-              {
-                id: "department",
-                title: biLabel("department"),
-                data: data?.charts.byDepartment ?? [],
-              },
-              {
-                id: "tag",
-                title: biLabel("tag"),
-                data: (data?.charts.byTag ?? []).map((item) => ({
-                  ...item,
-                  nome: `${item.nome} (${item.percentual ?? 0}%)`,
-                })),
-              },
-              { id: "agent", title: biLabel("agent"), data: data?.charts.byAgent ?? [] },
-            ]
-              .filter((chart) => hasBi(chart.id as DashboardBiId))
-              .map((chart) => {
-                const chartData = compactDashboardChartData(
-                  chart.data,
-                  dashboardColumnCount(chart.id as DashboardBiId),
-                );
-                const rotateLabels = chartData.length > 5 || chartData.some((item) => item.nome.length > 14);
-                return (
-                  <div
-                    key={chart.id}
-                    style={{ order: dashboardPosition(chart.id as DashboardBiId) }}
-                    className={dashboardColumnClass(chart.id as DashboardBiId)}
-                  >
-                    <Card className="h-full">
-                      <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
-                        {chart.title}
-                      </p>
-                      {chart.data.length === 0 ? (
-                        <div className="flex h-[270px] items-center justify-center text-xs text-muted-foreground">
-                          Sem dados para o periodo.
-                        </div>
-                      ) : (
-                        <ResponsiveContainer width="100%" height={270}>
-                          <BarChart data={chartData}>
-                            <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
-                            <XAxis
-                              dataKey="nome"
-                              stroke="hsl(var(--muted-foreground))"
-                              fontSize={11}
-                              interval={0}
-                              angle={rotateLabels ? -35 : 0}
-                              textAnchor={rotateLabels ? "end" : "middle"}
-                              height={rotateLabels ? 78 : 30}
-                              tickMargin={rotateLabels ? 8 : 0}
-                            />
-                            <YAxis
-                              stroke="hsl(var(--muted-foreground))"
-                              fontSize={11}
-                              allowDecimals={false}
-                            />
-                            <Tooltip content={<DashboardBarTooltip />} />
-                            <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-                              {chartData.map((item, index) => (
-                                <Cell
-                                  key={`${item.nome}-${index}`}
-                                  fill={item.cor || COLORS[index % COLORS.length]}
-                                />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      )}
-                    </Card>
-                  </div>
-                );
-              })}
+            {
+              id: "connection",
+              title: biLabel("connection"),
+              data: data?.charts.byConnection ?? [],
+            },
+            { id: "customer", title: biLabel("customer"), data: data?.charts.byCustomer ?? [] },
+            {
+              id: "department",
+              title: biLabel("department"),
+              data: data?.charts.byDepartment ?? [],
+            },
+            {
+              id: "tag",
+              title: biLabel("tag"),
+              data: (data?.charts.byTag ?? []).map((item) => ({
+                ...item,
+                nome: `${item.nome} (${item.percentual ?? 0}%)`,
+              })),
+            },
+            { id: "agent", title: biLabel("agent"), data: data?.charts.byAgent ?? [] },
+          ]
+            .filter((chart) => hasBi(chart.id as DashboardBiId))
+            .map((chart) => {
+              const chartData = compactDashboardChartData(
+                chart.data,
+                dashboardColumnCount(chart.id as DashboardBiId),
+              );
+              const rotateLabels =
+                chartData.length > 5 || chartData.some((item) => item.nome.length > 14);
+              return (
+                <div
+                  key={chart.id}
+                  style={{ order: dashboardPosition(chart.id as DashboardBiId) }}
+                  className={dashboardColumnClass(chart.id as DashboardBiId)}
+                >
+                  <Card className="h-full">
+                    <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
+                      {chart.title}
+                    </p>
+                    {chart.data.length === 0 ? (
+                      <div className="flex h-[270px] items-center justify-center text-xs text-muted-foreground">
+                        Sem dados para o periodo.
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={270}>
+                        <BarChart data={chartData}>
+                          <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+                          <XAxis
+                            dataKey="nome"
+                            stroke="hsl(var(--muted-foreground))"
+                            fontSize={11}
+                            interval={0}
+                            angle={rotateLabels ? -35 : 0}
+                            textAnchor={rotateLabels ? "end" : "middle"}
+                            height={rotateLabels ? 78 : 30}
+                            tickMargin={rotateLabels ? 8 : 0}
+                          />
+                          <YAxis
+                            stroke="hsl(var(--muted-foreground))"
+                            fontSize={11}
+                            allowDecimals={false}
+                          />
+                          <Tooltip content={<DashboardBarTooltip />} />
+                          <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                            {chartData.map((item, index) => (
+                              <Cell
+                                key={`${item.nome}-${index}`}
+                                fill={item.cor || COLORS[index % COLORS.length]}
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </Card>
+                </div>
+              );
+            })}
 
           <div
             style={{ order: dashboardPosition("recent") }}
@@ -552,10 +550,10 @@ function Dashboard() {
               <Button
                 variant="ghost"
                 onClick={() => {
-                    setDraftBis([...DASHBOARD_BIS]);
-                    setDraftOrder([...DASHBOARD_BIS]);
-                    setDraftLabels({});
-                    setDraftColumns(DEFAULT_DASHBOARD_COLUMNS);
+                  setDraftBis([...DASHBOARD_BIS]);
+                  setDraftOrder([...DASHBOARD_BIS]);
+                  setDraftLabels({});
+                  setDraftColumns(DEFAULT_DASHBOARD_COLUMNS);
                   setEditingBiId(null);
                   toast.success("Configurações restauradas para o padrão do sistema.");
                 }}

@@ -655,10 +655,7 @@ export class ConversationsController {
       return this.assertUsableConversationConnection(selectedConnection);
     }
 
-    const connectionKeys = uniqueValues([
-      ...(contact?.instanceIds ?? []),
-      contact?.instance,
-    ]);
+    const connectionKeys = uniqueValues([...(contact?.instanceIds ?? []), contact?.instance]);
 
     const connection = connectionKeys.length
       ? await this.prisma.messagingConnection.findFirst({

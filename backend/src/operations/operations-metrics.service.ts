@@ -162,7 +162,11 @@ export class OperationsMetricsService {
         },
       }),
       this.prisma.conversation.count({
-        where: { ...queueConversationScope, ...conversationQueueScope("standby"), archivedAt: null },
+        where: {
+          ...queueConversationScope,
+          ...conversationQueueScope("standby"),
+          archivedAt: null,
+        },
       }),
       this.prisma.conversation.count({
         where: {

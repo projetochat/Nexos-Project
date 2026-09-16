@@ -757,7 +757,11 @@ describe("Trixus API organization and RBAC", () => {
     await request(app.getHttpServer())
       .post("/api/users")
       .set("Authorization", `Bearer ${token}`)
-      .send({ email: `seed-user-${Date.now()}@trixus.app`, name: "Seed User", password: "demo1234" })
+      .send({
+        email: `seed-user-${Date.now()}@trixus.app`,
+        name: "Seed User",
+        password: "demo1234",
+      })
       .expect(201);
 
     const suffix = Date.now();

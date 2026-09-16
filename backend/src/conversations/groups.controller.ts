@@ -670,10 +670,7 @@ async function retryNewGroupMetadataUpdate(operation: () => Promise<unknown>) {
 }
 
 function shouldRetryNewGroupMetadataUpdate(error: unknown) {
-  return (
-    error instanceof MessagingProviderError &&
-    (error.retryable || error.httpStatus === 404)
-  );
+  return error instanceof MessagingProviderError && (error.retryable || error.httpStatus === 404);
 }
 
 function validateGroupImageDataUrl(value: string | undefined) {

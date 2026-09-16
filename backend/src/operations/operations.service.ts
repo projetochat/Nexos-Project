@@ -677,8 +677,18 @@ function periodRange(
     const weekday = new Date(Date.UTC(today.year, today.month - 1, today.day)).getUTCDay();
     const currentWeekStart = shiftCalendarDate(today, -((weekday + 6) % 7));
     const previousWeekStart = shiftCalendarDate(currentWeekStart, -7);
-    const start = startOfDayInTimezone(previousWeekStart.year, previousWeekStart.month, previousWeekStart.day, timezone);
-    const end = startOfDayInTimezone(currentWeekStart.year, currentWeekStart.month, currentWeekStart.day, timezone);
+    const start = startOfDayInTimezone(
+      previousWeekStart.year,
+      previousWeekStart.month,
+      previousWeekStart.day,
+      timezone,
+    );
+    const end = startOfDayInTimezone(
+      currentWeekStart.year,
+      currentWeekStart.month,
+      currentWeekStart.day,
+      timezone,
+    );
     return { start, end };
   }
   if (period === "month") {
@@ -758,7 +768,11 @@ function parseDateValue(value: string): CalendarDate {
 
 function shiftCalendarDate(date: CalendarDate, days: number): CalendarDate {
   const shifted = new Date(Date.UTC(date.year, date.month - 1, date.day + days));
-  return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate() };
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+  };
 }
 
 function previousRange(range: { start: Date; end: Date }) {

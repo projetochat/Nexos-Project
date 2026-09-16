@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  MessagingConnectionStatus,
-  MessagingProviderType,
-} from "../generated/prisma";
+import { MessagingConnectionStatus, MessagingProviderType } from "../generated/prisma";
 import { ConversationsController } from "./conversations.controller";
 
 describe("ConversationsController connection selection", () => {
@@ -25,9 +22,16 @@ describe("ConversationsController connection selection", () => {
       {} as never,
     );
 
-    const connection = await (controller as any).resolveConversationConnection(
+    const connection = await controller["resolveConversationConnection"](
       "connection-selected",
-      { tenantId: "tenant-a" },
+      {
+        userId: "user-a",
+        tenantId: "tenant-a",
+        membershipId: "membership-a",
+        roleId: "role-a",
+        roleKey: "admin",
+        platformRole: "USER",
+      },
       { instance: "instance-older", instanceIds: ["connection-older", "connection-selected"] },
     );
 
