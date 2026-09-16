@@ -1,6 +1,12 @@
 import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ConversationStatus, MessageDirection, MessageType, MessagingConnectionStatus, MessagingProviderType } from "../generated/prisma";
+import {
+  ConversationStatus,
+  MessageDirection,
+  MessageType,
+  MessagingConnectionStatus,
+  MessagingProviderType,
+} from "../generated/prisma";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 import { evolutionQrBase64, MessagingConnectionsService } from "./messaging-connections.service";
 

@@ -336,7 +336,10 @@ function ChamadosPage() {
           description={
             <p>
               Deseja realmente excluir o chamado "
-              <strong className="font-semibold text-foreground">{deletingTicket?.protocol ?? ""}</strong>"?
+              <strong className="font-semibold text-foreground">
+                {deletingTicket?.protocol ?? ""}
+              </strong>
+              "?
             </p>
           }
           confirmLabel="Excluir"
@@ -478,7 +481,9 @@ function TicketEditor({
       setAssignedMembershipId(conversation.assigned_membership_id ?? "");
     }
     if (!dirtyFieldsRef.current.title) {
-      setTitle(`Chamado aberto pelo Chat - ${conversation.protocolo ?? conversation.id.slice(0, 8)}`);
+      setTitle(
+        `Chamado aberto pelo Chat - ${conversation.protocolo ?? conversation.id.slice(0, 8)}`,
+      );
     }
   }, [defaultDepartmentId, initialConversation.data, initialTicket, open, sessionKey]);
 
@@ -630,7 +635,9 @@ function TicketEditor({
                       >
                         <span className="min-w-0 truncate font-medium">{item.nome}</span>
                         <span className="shrink-0 text-xs text-muted-foreground">
-                          {item.telefone ? formatPhoneForDisplay(item.telefone) : item.email || "Sem telefone"}
+                          {item.telefone
+                            ? formatPhoneForDisplay(item.telefone)
+                            : item.email || "Sem telefone"}
                         </span>
                       </button>
                     ))

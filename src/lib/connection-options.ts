@@ -20,12 +20,14 @@ export function connectedEvolutionConnections(connections: ApiMessagingConnectio
 }
 
 export function connectedConnectionOptions(connections: ApiMessagingConnection[]) {
-  return sortByOptionLabel(connectedEvolutionConnections(connections), connectionDisplayLabel).map((connection) => ({
-    id: connection.id,
-    value: connectionInstanceValue(connection),
-    label: connectionDisplayLabel(connection),
-    connection,
-  }));
+  return sortByOptionLabel(connectedEvolutionConnections(connections), connectionDisplayLabel).map(
+    (connection) => ({
+      id: connection.id,
+      value: connectionInstanceValue(connection),
+      label: connectionDisplayLabel(connection),
+      connection,
+    }),
+  );
 }
 
 export function connectionDisplayLabel(connection: ApiMessagingConnection) {

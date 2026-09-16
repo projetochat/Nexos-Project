@@ -70,7 +70,10 @@ function LoginPage() {
 
             <form onSubmit={handleLogin} className="mt-6 space-y-4 sm:mt-7">
               <div>
-                <label htmlFor="email" className="mb-1.5 block text-sm font-semibold text-slate-500">
+                <label
+                  htmlFor="email"
+                  className="mb-1.5 block text-sm font-semibold text-slate-500"
+                >
                   E-mail
                 </label>
                 <input

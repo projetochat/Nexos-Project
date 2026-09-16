@@ -95,7 +95,16 @@ async function main() {
     "--if-exists",
     target.databaseName,
   ]);
-  run("docker", ["compose", "exec", "-T", "postgres", "createdb", "-U", "trixus", target.databaseName]);
+  run("docker", [
+    "compose",
+    "exec",
+    "-T",
+    "postgres",
+    "createdb",
+    "-U",
+    "trixus",
+    target.databaseName,
+  ]);
   run("bun", [
     "--cwd",
     "backend",
@@ -150,7 +159,9 @@ async function validateCounts(databaseUrl) {
       contactProfiles: await prisma.contactProfile.count({
         where: { tenantId: tenant.id, archivedAt: null },
       }),
-      quickReplies: await prisma.quickReply.count({ where: { tenantId: tenant.id, archivedAt: null } }),
+      quickReplies: await prisma.quickReply.count({
+        where: { tenantId: tenant.id, archivedAt: null },
+      }),
       contacts: await prisma.contact.count({ where: { tenantId: tenant.id } }),
       conversations: await prisma.conversation.count({ where: { tenantId: tenant.id } }),
       messages: await prisma.message.count({ where: { tenantId: tenant.id } }),

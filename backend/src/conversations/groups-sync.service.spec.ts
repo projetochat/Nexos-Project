@@ -103,7 +103,10 @@ describe("GroupsSyncService", () => {
     prisma.contact.findMany.mockResolvedValue([
       { normalizedPhone: "+5562985125113", name: "Douglas Rezende" },
     ]);
-    const service = new GroupsSyncService(prisma as never, evolutionMock({ imageUrl: null }) as never);
+    const service = new GroupsSyncService(
+      prisma as never,
+      evolutionMock({ imageUrl: null }) as never,
+    );
 
     const result = await service.reconcileGroupParticipantNames({ tenantId: "tenant-a" });
 

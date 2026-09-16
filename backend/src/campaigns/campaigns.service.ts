@@ -565,7 +565,10 @@ export class CampaignsService {
       return { skipped: true, status: campaign.status };
     if (campaign.status !== CampaignStatus.RUNNING) {
       const claimed = await this.prisma.campaign.updateMany({
-        where: { id: campaign.id, status: { in: [CampaignStatus.SCHEDULED, CampaignStatus.QUEUED] } },
+        where: {
+          id: campaign.id,
+          status: { in: [CampaignStatus.SCHEDULED, CampaignStatus.QUEUED] },
+        },
         data: { status: CampaignStatus.RUNNING, startedAt: campaign.startedAt ?? new Date() },
       });
       if (claimed.count !== 1) return { skipped: true };

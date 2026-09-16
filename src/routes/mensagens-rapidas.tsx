@@ -354,7 +354,13 @@ function QuickReplyEditor({
     <Modal
       open={open}
       onClose={onClose}
-      title={clone ? "Duplicar Mensagem Rápida" : initial ? "Editar Mensagem Rápida" : "Nova Mensagem Rápida"}
+      title={
+        clone
+          ? "Duplicar Mensagem Rápida"
+          : initial
+            ? "Editar Mensagem Rápida"
+            : "Nova Mensagem Rápida"
+      }
       description="Atalhos curtos aceleram respostas."
       size="lg"
       footer={
@@ -397,79 +403,79 @@ function QuickReplyEditor({
           />
         </Field>
         <div className="space-y-3">
-            <Field label="Mensagem *">
-              <textarea
-                rows={8}
-                value={texto}
-                onChange={(event) => setTexto(event.target.value)}
-                className="min-h-48 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary"
-                placeholder="Bom dia! Como posso ajudar?"
-              />
-            </Field>
-            <div className="rounded-lg border border-border bg-surface-1 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">Arquivo</p>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {attachment
-                      ? `${attachment.fileName} (${formatFileSize(attachment.size)})`
-                      : "Nenhum arquivo anexado."}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {attachment && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Remover arquivo"
-                      aria-label="Remover arquivo"
-                      onClick={() => setAttachment(null)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  )}
+          <Field label="Mensagem *">
+            <textarea
+              rows={8}
+              value={texto}
+              onChange={(event) => setTexto(event.target.value)}
+              className="min-h-48 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary"
+              placeholder="Bom dia! Como posso ajudar?"
+            />
+          </Field>
+          <div className="rounded-lg border border-border bg-surface-1 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Arquivo</p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {attachment
+                    ? `${attachment.fileName} (${formatFileSize(attachment.size)})`
+                    : "Nenhum arquivo anexado."}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {attachment && (
                   <Button
                     variant="ghost"
-                    size="sm"
-                    title="Anexar arquivo"
-                    onClick={() => fileRef.current?.click()}
+                    size="icon"
+                    title="Remover arquivo"
+                    aria-label="Remover arquivo"
+                    onClick={() => setAttachment(null)}
                   >
-                    <Paperclip className="h-4 w-4" /> Anexar
+                    <X className="h-4 w-4" />
                   </Button>
-                </div>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Anexar arquivo"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <Paperclip className="h-4 w-4" /> Anexar
+                </Button>
               </div>
-              <input
-                ref={fileRef}
-                type="file"
-                className="hidden"
-                onChange={async (event) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = "";
-                  if (!file) return;
-                  try {
-                    setAttachment(await readAttachment(file));
-                  } catch (error) {
-                    toast.error((error as Error).message);
-                  }
-                }}
-              />
             </div>
-            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm transition hover:bg-surface-2">
-              <input
-                type="checkbox"
-                checked={closeOnSend}
-                onChange={(event) => setCloseOnSend(event.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-primary"
-              />
-              <span>
-                <span className="flex items-center gap-1 font-medium">
-                  <Info className="h-4 w-4 text-primary" /> Encerrar conversa
-                </span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  Ao enviar este atalho no chat, a conversa será encerrada automaticamente.
-                </span>
+            <input
+              ref={fileRef}
+              type="file"
+              className="hidden"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (!file) return;
+                try {
+                  setAttachment(await readAttachment(file));
+                } catch (error) {
+                  toast.error((error as Error).message);
+                }
+              }}
+            />
+          </div>
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm transition hover:bg-surface-2">
+            <input
+              type="checkbox"
+              checked={closeOnSend}
+              onChange={(event) => setCloseOnSend(event.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-primary"
+            />
+            <span>
+              <span className="flex items-center gap-1 font-medium">
+                <Info className="h-4 w-4 text-primary" /> Encerrar conversa
               </span>
-            </label>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Ao enviar este atalho no chat, a conversa será encerrada automaticamente.
+              </span>
+            </span>
+          </label>
         </div>
       </div>
     </Modal>

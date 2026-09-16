@@ -65,14 +65,19 @@ function useGroupContactPicker(open: boolean, query: string) {
     let cancelled = false;
     setLoading(true);
     void crmApi
-      .listContactsForGroupPicker({ q: deferredQuery || undefined, page, pageSize: GROUP_PICKER_PAGE_SIZE })
+      .listContactsForGroupPicker({
+        q: deferredQuery || undefined,
+        page,
+        pageSize: GROUP_PICKER_PAGE_SIZE,
+      })
       .then((response) => {
         if (cancelled) return;
         setItems(response.items);
         setTotal(response.total);
       })
       .catch((error) => {
-        if (!cancelled) toast.error("Falha ao carregar contatos", { description: (error as Error).message });
+        if (!cancelled)
+          toast.error("Falha ao carregar contatos", { description: (error as Error).message });
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -107,11 +112,23 @@ function ContactPickerPager({
   if (totalPages <= 1) return null;
   return (
     <div className="mt-2 flex items-center justify-end gap-2 rounded-lg bg-surface-1 px-2 py-1 text-xs text-muted-foreground">
-      <Button variant="ghost" size="sm" onClick={() => onPageChange((current) => Math.max(1, current - 1))} disabled={page <= 1}>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onPageChange((current) => Math.max(1, current - 1))}
+        disabled={page <= 1}
+      >
         <ChevronLeft className="h-3.5 w-3.5" />
       </Button>
-      <span>{page} / {totalPages}</span>
-      <Button variant="ghost" size="sm" onClick={() => onPageChange((current) => Math.min(totalPages, current + 1))} disabled={page >= totalPages}>
+      <span>
+        {page} / {totalPages}
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onPageChange((current) => Math.min(totalPages, current + 1))}
+        disabled={page >= totalPages}
+      >
         <ChevronRight className="h-3.5 w-3.5" />
       </Button>
     </div>
@@ -367,7 +384,10 @@ function GroupsPage() {
           description={
             <p>
               Deseja realmente sair do grupo{" "}
-              <strong className="font-semibold text-foreground">"{leavingGroup?.name ?? ""}"</strong>?
+              <strong className="font-semibold text-foreground">
+                "{leavingGroup?.name ?? ""}"
+              </strong>
+              ?
             </p>
           }
           onClose={() => setLeavingGroup(null)}
@@ -437,46 +457,46 @@ function GroupCard({
         )}
       </div>
       <div className="mt-4 flex min-w-0 justify-end gap-1 border-t border-border pt-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            title="Abrir conversa"
-            aria-label="Abrir conversa"
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenChat();
-            }}
-            onDoubleClick={(event) => event.stopPropagation()}
-          >
-            <MessageSquareMore className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            title="Editar grupo"
-            aria-label="Editar grupo"
-            onClick={(event) => {
-              event.stopPropagation();
-              onDetail();
-            }}
-            onDoubleClick={(event) => event.stopPropagation()}
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            title="Sair do grupo"
-            aria-label="Sair do grupo"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={(event) => {
-              event.stopPropagation();
-              onLeave();
-            }}
-            onDoubleClick={(event) => event.stopPropagation()}
-          >
-            <LogOut className="h-4 w-4" />
-          </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          title="Abrir conversa"
+          aria-label="Abrir conversa"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenChat();
+          }}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          <MessageSquareMore className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          title="Editar grupo"
+          aria-label="Editar grupo"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDetail();
+          }}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          title="Sair do grupo"
+          aria-label="Sair do grupo"
+          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={(event) => {
+            event.stopPropagation();
+            onLeave();
+          }}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          <LogOut className="h-4 w-4" />
+        </Button>
       </div>
     </div>
   );
@@ -616,182 +636,189 @@ function CreateGroupModal({
 
   return (
     <>
-    <Modal
-      open={open && step === "selection"}
-      onClose={onClose}
-      title="Criar Grupo"
-      size="xl"
-      footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" size="sm" onClick={goToDetails} disabled={busy}>
-            Próximo
-          </Button>
-        </>
-      }
-    >
-      <div className="min-w-0 space-y-4">
-        <div className="grid min-w-0 gap-3 md:grid-cols-2">
-          <Field label="Nome do grupo *">
-            <Input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Digite o nome do grupo"
-            />
-          </Field>
-          <Field label="Instância *">
-            <InstanceSelect
-              value={connectionId}
-              onChange={setConnectionId}
-              instances={instances}
-              emptyLabel="Selecione uma instância"
-            />
-          </Field>
-        </div>
-        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-          <section className="order-2 min-w-0 rounded-xl border border-border p-3 sm:p-4 lg:order-1">
-            <div className="mb-3 flex items-center gap-2">
-              <h3 className="text-lg font-semibold">Contatos disponíveis</h3>
-              <Badge tone="default">{num(picker.total)}</Badge>
-            </div>
-            <SearchInput
-              value={availableQuery}
-              onChange={setAvailableQuery}
-              placeholder="Buscar contato ou WhatsApp..."
-            />
-            <div className="mt-3 max-h-[28rem] divide-y divide-border overflow-y-auto">
-              {filteredContacts.map((contact) => (
-                <div key={contact.id} className="flex items-center gap-3 py-2.5 text-sm">
-                  <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={40} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{contact.nome}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {contact.telefone}
-                    </span>
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    type="button"
-                    onClick={() => addContact(contact)}
-                    title={`Adicionar ${contact.nome}`}
-                    aria-label={`Adicionar ${contact.nome}`}
-                  >
-                    <UserPlus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-              {filteredContacts.length === 0 && (
-                <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                  Nenhum contato encontrado.
-                </div>
-              )}
-            </div>
-            <ContactPickerPager
-              page={picker.page}
-              total={picker.total}
-              onPageChange={picker.setPage}
-            />
-          </section>
-
-          {selectedContacts.length > 0 && (
-          <section className="order-1 min-w-0 rounded-xl border border-border p-3 sm:p-4 lg:order-2">
-            <div className="mb-3 flex items-center gap-2">
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold">Contatos selecionados</h3>
-                <Badge tone="default">{num(selectedContacts.length)}</Badge>
+      <Modal
+        open={open && step === "selection"}
+        onClose={onClose}
+        title="Criar Grupo"
+        size="xl"
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="sm" onClick={goToDetails} disabled={busy}>
+              Próximo
+            </Button>
+          </>
+        }
+      >
+        <div className="min-w-0 space-y-4">
+          <div className="grid min-w-0 gap-3 md:grid-cols-2">
+            <Field label="Nome do grupo *">
+              <Input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Digite o nome do grupo"
+              />
+            </Field>
+            <Field label="Instância *">
+              <InstanceSelect
+                value={connectionId}
+                onChange={setConnectionId}
+                instances={instances}
+                emptyLabel="Selecione uma instância"
+              />
+            </Field>
+          </div>
+          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+            <section className="order-2 min-w-0 rounded-xl border border-border p-3 sm:p-4 lg:order-1">
+              <div className="mb-3 flex items-center gap-2">
+                <h3 className="text-lg font-semibold">Contatos disponíveis</h3>
+                <Badge tone="default">{num(picker.total)}</Badge>
               </div>
-            </div>
-            <SearchInput
-              value={selectedQuery}
-              onChange={setSelectedQuery}
-              placeholder="Buscar nos selecionados..."
-            />
-            <div className="mt-3 max-h-[28rem] divide-y divide-border overflow-y-auto">
-              {filteredSelectedContacts.map((contact) => (
-                <div key={contact.id} className="flex items-center gap-3 py-2.5 text-sm">
-                  <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={40} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{contact.nome}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {contact.telefone}
+              <SearchInput
+                value={availableQuery}
+                onChange={setAvailableQuery}
+                placeholder="Buscar contato ou WhatsApp..."
+              />
+              <div className="mt-3 max-h-[28rem] divide-y divide-border overflow-y-auto">
+                {filteredContacts.map((contact) => (
+                  <div key={contact.id} className="flex items-center gap-3 py-2.5 text-sm">
+                    <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={40} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{contact.nome}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {contact.telefone}
+                      </span>
                     </span>
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    title={`Remover ${contact.nome}`}
-                    aria-label={`Remover ${contact.nome}`}
-                    className="trash-action"
-                    onClick={() => removeContact(contact.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      type="button"
+                      onClick={() => addContact(contact)}
+                      title={`Adicionar ${contact.nome}`}
+                      aria-label={`Adicionar ${contact.nome}`}
+                    >
+                      <UserPlus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+                {filteredContacts.length === 0 && (
+                  <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                    Nenhum contato encontrado.
+                  </div>
+                )}
+              </div>
+              <ContactPickerPager
+                page={picker.page}
+                total={picker.total}
+                onPageChange={picker.setPage}
+              />
+            </section>
+
+            {selectedContacts.length > 0 && (
+              <section className="order-1 min-w-0 rounded-xl border border-border p-3 sm:p-4 lg:order-2">
+                <div className="mb-3 flex items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold">Contatos selecionados</h3>
+                    <Badge tone="default">{num(selectedContacts.length)}</Badge>
+                  </div>
                 </div>
-              ))}
-              {filteredSelectedContacts.length === 0 && (
-                <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                  Nenhum participante selecionado.
+                <SearchInput
+                  value={selectedQuery}
+                  onChange={setSelectedQuery}
+                  placeholder="Buscar nos selecionados..."
+                />
+                <div className="mt-3 max-h-[28rem] divide-y divide-border overflow-y-auto">
+                  {filteredSelectedContacts.map((contact) => (
+                    <div key={contact.id} className="flex items-center gap-3 py-2.5 text-sm">
+                      <Avatar name={contact.nome} src={contact.avatar_url ?? undefined} size={40} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{contact.nome}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {contact.telefone}
+                        </span>
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        title={`Remover ${contact.nome}`}
+                        aria-label={`Remover ${contact.nome}`}
+                        className="trash-action"
+                        onClick={() => removeContact(contact.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                  {filteredSelectedContacts.length === 0 && (
+                    <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                      Nenhum participante selecionado.
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </section>
-          )}
+              </section>
+            )}
+          </div>
         </div>
-      </div>
-    </Modal>
-    <Modal
-      open={open && step === "details"}
-      onClose={() => setStep("selection")}
-      title="Detalhes do Grupo"
-      size="sm"
-      footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={() => setStep("selection")} disabled={busy}>
-            Voltar
-          </Button>
-          <Button variant="primary" size="sm" onClick={submit} disabled={busy}>
-            {busy ? "Criando..." : "Criar Grupo"}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-5">
-        <div className="flex flex-col items-center gap-3">
-          <Avatar name={name || "Grupo"} src={imageDataUrl ?? undefined} size={112} />
-          <Button variant="secondary" size="sm" type="button" onClick={() => imageInputRef.current?.click()}>
-            <Upload className="h-3.5 w-3.5" /> Escolher foto
-          </Button>
-          <input
-            ref={imageInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.currentTarget.value = "";
-              if (!file) return;
-              void readGroupImageDataUrl(file)
-                .then(setImageDataUrl)
-                .catch((error) => toast.error((error as Error).message));
-            }}
-          />
+      </Modal>
+      <Modal
+        open={open && step === "details"}
+        onClose={() => setStep("selection")}
+        title="Detalhes do Grupo"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setStep("selection")} disabled={busy}>
+              Voltar
+            </Button>
+            <Button variant="primary" size="sm" onClick={submit} disabled={busy}>
+              {busy ? "Criando..." : "Criar Grupo"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-5">
+          <div className="flex flex-col items-center gap-3">
+            <Avatar name={name || "Grupo"} src={imageDataUrl ?? undefined} size={112} />
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+            >
+              <Upload className="h-3.5 w-3.5" /> Escolher foto
+            </Button>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.currentTarget.value = "";
+                if (!file) return;
+                void readGroupImageDataUrl(file)
+                  .then(setImageDataUrl)
+                  .catch((error) => toast.error((error as Error).message));
+              }}
+            />
+          </div>
+          <Field label="Descrição">
+            <Textarea
+              rows={6}
+              maxLength={2000}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="Escreva uma descrição para o grupo"
+            />
+            <p className="mt-1 text-right text-xs text-muted-foreground">
+              {description.length}/2000
+            </p>
+          </Field>
         </div>
-        <Field label="Descrição">
-          <Textarea
-            rows={6}
-            maxLength={2000}
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder="Escreva uma descrição para o grupo"
-          />
-          <p className="mt-1 text-right text-xs text-muted-foreground">{description.length}/2000</p>
-        </Field>
-      </div>
-    </Modal>
+      </Modal>
     </>
   );
 }
@@ -1052,83 +1079,83 @@ function GroupDetailModal({
                           {name || "Sem nome"}
                         </p>
                       )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title={editingName ? "Salvar nome" : "Editar nome"}
-                        aria-label={editingName ? "Salvar nome" : "Editar nome"}
-                        onClick={editingName ? saveName : () => setEditingName(true)}
-                        disabled={busy === "name"}
-                        className="h-9 w-9"
-                      >
-                        {editingName ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-                      </Button>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title={editingName ? "Salvar nome" : "Editar nome"}
+                      aria-label={editingName ? "Salvar nome" : "Editar nome"}
+                      onClick={editingName ? saveName : () => setEditingName(true)}
+                      disabled={busy === "name"}
+                      className="h-9 w-9"
+                    >
+                      {editingName ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                    </Button>
+                    <span
+                      className="hidden h-9 max-w-44 shrink-0 items-center gap-1 rounded-full border border-border bg-surface-2 px-3 text-sm font-medium text-foreground sm:inline-flex"
+                      title={`Instância: ${group.connection?.name ?? "-"}`}
+                    >
                       <span
-                        className="hidden h-9 max-w-44 shrink-0 items-center gap-1 rounded-full border border-border bg-surface-2 px-3 text-sm font-medium text-foreground sm:inline-flex"
-                        title={`Instância: ${group.connection?.name ?? "-"}`}
-                      >
-                        <span
-                          className="h-2 w-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: group.connection?.color ?? "#22c55e" }}
-                        />
-                        <span className="truncate">{group.connection?.name ?? "-"}</span>
-                      </span>
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: group.connection?.color ?? "#22c55e" }}
+                      />
+                      <span className="truncate">{group.connection?.name ?? "-"}</span>
+                    </span>
                   </div>
                   <p className="text-xs text-muted-foreground sm:text-sm">
                     {num(group.participantsCount)} participante(s)
                   </p>
-              </div>
-
-              <Field label="Descrição">
-                <div className="grid grid-cols-[minmax(0,1fr)_2.75rem] gap-2">
-                  <div className="relative min-w-0">
-                    {editingDescription ? (
-                      <>
-                        <Textarea
-                          autoFocus
-                          rows={3}
-                          maxLength={2000}
-                          value={description}
-                          onChange={(event) => setDescription(event.target.value)}
-                          disabled={busy === "description"}
-                          className="min-h-16 pr-9 sm:min-h-20"
-                        />
-                        <button
-                          type="button"
-                          onClick={cancelDescriptionEdit}
-                          className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-                          aria-label="Cancelar edição da descrição"
-                          title="Cancelar edição"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </>
-                    ) : (
-                      <p className="min-h-14 break-words whitespace-pre-wrap py-1.5 text-sm text-foreground sm:min-h-20 sm:py-2">
-                        {description || "Sem descrição"}
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    title={editingDescription ? "Salvar descrição" : "Editar descrição"}
-                    aria-label={editingDescription ? "Salvar descrição" : "Editar descrição"}
-                    onClick={
-                      editingDescription ? saveDescription : () => setEditingDescription(true)
-                    }
-                    disabled={busy === "description"}
-                    className="h-9 w-9 self-center sm:h-10 sm:w-10"
-                  >
-                    {editingDescription ? (
-                      <Check className="h-4 w-4" />
-                    ) : (
-                      <Pencil className="h-4 w-4" />
-                    )}
-                  </Button>
                 </div>
-              </Field>
+
+                <Field label="Descrição">
+                  <div className="grid grid-cols-[minmax(0,1fr)_2.75rem] gap-2">
+                    <div className="relative min-w-0">
+                      {editingDescription ? (
+                        <>
+                          <Textarea
+                            autoFocus
+                            rows={3}
+                            maxLength={2000}
+                            value={description}
+                            onChange={(event) => setDescription(event.target.value)}
+                            disabled={busy === "description"}
+                            className="min-h-16 pr-9 sm:min-h-20"
+                          />
+                          <button
+                            type="button"
+                            onClick={cancelDescriptionEdit}
+                            className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                            aria-label="Cancelar edição da descrição"
+                            title="Cancelar edição"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </>
+                      ) : (
+                        <p className="min-h-14 break-words whitespace-pre-wrap py-1.5 text-sm text-foreground sm:min-h-20 sm:py-2">
+                          {description || "Sem descrição"}
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title={editingDescription ? "Salvar descrição" : "Editar descrição"}
+                      aria-label={editingDescription ? "Salvar descrição" : "Editar descrição"}
+                      onClick={
+                        editingDescription ? saveDescription : () => setEditingDescription(true)
+                      }
+                      disabled={busy === "description"}
+                      className="h-9 w-9 self-center sm:h-10 sm:w-10"
+                    >
+                      {editingDescription ? (
+                        <Check className="h-4 w-4" />
+                      ) : (
+                        <Pencil className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </Field>
               </div>
               {!viewMode && (
                 <div>
@@ -1244,7 +1271,9 @@ function GroupDetailModal({
                               }
                               disabled={!!busy || participant.isSuperAdmin}
                               className={`h-8 w-8 ${
-                                participant.isAdmin ? "hover:text-destructive" : "hover:text-success"
+                                participant.isAdmin
+                                  ? "hover:text-destructive"
+                                  : "hover:text-success"
                               }`}
                             >
                               <Crown className="h-3.5 w-3.5" />
@@ -1285,7 +1314,10 @@ function GroupDetailModal({
                   />
                   <div className="mt-2 max-h-56 divide-y divide-border overflow-y-auto sm:mt-3 sm:max-h-80">
                     {availableContacts.map((contact) => (
-                      <div key={contact.id} className="flex items-center gap-2 py-2 text-xs sm:gap-3 sm:py-2.5 sm:text-sm">
+                      <div
+                        key={contact.id}
+                        className="flex items-center gap-2 py-2 text-xs sm:gap-3 sm:py-2.5 sm:text-sm"
+                      >
                         <Avatar
                           name={contact.nome}
                           src={contact.avatar_url ?? undefined}
@@ -1348,7 +1380,10 @@ function GroupDetailModal({
                   />
                   <div className="mt-2 max-h-56 divide-y divide-border overflow-y-auto sm:mt-3 sm:max-h-80">
                     {selectedParticipantsPage.map((participant) => (
-                      <div key={participant.id} className="flex items-center gap-2 py-2 text-xs sm:gap-3 sm:py-2.5 sm:text-sm">
+                      <div
+                        key={participant.id}
+                        className="flex items-center gap-2 py-2 text-xs sm:gap-3 sm:py-2.5 sm:text-sm"
+                      >
                         <Avatar
                           name={participant.name}
                           size={40}
@@ -1372,7 +1407,9 @@ function GroupDetailModal({
                           variant="ghost"
                           size="icon"
                           title={participant.isAdmin ? "Rebaixar de admin" : "Promover a admin"}
-                          aria-label={participant.isAdmin ? "Rebaixar de admin" : "Promover a admin"}
+                          aria-label={
+                            participant.isAdmin ? "Rebaixar de admin" : "Promover a admin"
+                          }
                           onClick={() =>
                             updateParticipant(
                               participant,
