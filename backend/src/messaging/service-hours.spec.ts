@@ -17,10 +17,11 @@ describe("instance service hours", () => {
     expect(() => validateServiceHours(duplicate)).toThrow();
   });
   it("saves and returns edited hours, inactive days and timezone", async () => {
-    let record: any = {
+    let record = {
       id: "instance",
       tenantId: "tenant",
       status: "DISCONNECTED",
+      ownerPhoneNormalized: "5511999999999",
       providerType: "EVOLUTION",
       absenceEnabled: true,
       absenceMessage: "Ausente",

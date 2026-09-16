@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { workShiftError } from "./perfis";
+import { workShiftError } from "@/lib/work-schedule";
 
 describe("jornada de trabalho", () => {
   it("requires the end of an active shift to be later than its start", () => {

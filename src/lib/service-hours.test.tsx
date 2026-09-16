@@ -4,7 +4,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
-import { ServiceHoursTable, serviceHoursError } from "../routes/instancias";
+import { ServiceHoursTable } from "../routes/instancias";
+import { serviceHoursError } from "./instance-validation";
 
 describe("service hours editor", () => {
   it("shows and clears an inline error while typing, without blur or saving", async () => {

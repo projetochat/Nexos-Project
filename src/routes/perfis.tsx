@@ -1,3 +1,13 @@
+import {
+  WEEK_DAYS,
+  SHIFT_LABELS,
+  workScheduleError,
+  workShiftError,
+  type WeekDay,
+  type ShiftKey,
+  type WorkShift,
+  type WorkSchedule,
+} from "@/lib/work-schedule";
 import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
@@ -125,12 +135,6 @@ const PERMISSION_GROUPS: Array<{ title: string; tab: PermissionTab; items: Permi
   },
 ];
 
-const WEEK_DAYS = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"] as const;
-const SHIFT_LABELS = {
-  morning: "Turno manha",
-  afternoon: "Turno tarde",
-  night: "Turno noite",
-} as const;
 const TIMEZONE_OPTIONS = [
   { value: "America/Sao_Paulo", label: "Fuso horário de São Paulo (GMT-3)" },
   { value: "America/Manaus", label: "Fuso horário de Manaus (GMT-4)" },
@@ -146,31 +150,6 @@ const LANGUAGE_OPTIONS = [
   { value: "es", label: "Espanhol" },
 ];
 const DEFAULT_ROLE_COLOR = "#3B82F6";
-type WeekDay = (typeof WEEK_DAYS)[number];
-type ShiftKey = keyof typeof SHIFT_LABELS;
-type WorkShift = { active: boolean; start: string; end: string };
-type WorkSchedule = { noSchedule: boolean; days: Record<WeekDay, Record<ShiftKey, WorkShift>> };
-
-export function workShiftError(shift: WorkShift) {
-  const time = /^([01]\d|2[0-3]):[0-5]\d$/;
-  if (!time.test(shift.start) || !time.test(shift.end)) return "Informe horários válidos (HH:mm).";
-  if (shift.end <= shift.start) return "Hora final deve ser maior que a inicial.";
-  return "";
-}
-
-export function workScheduleError(schedule: WorkSchedule) {
-  if (schedule.noSchedule) return "";
-  for (const day of WEEK_DAYS) {
-    for (const shift of Object.keys(SHIFT_LABELS) as ShiftKey[]) {
-      const error = schedule.days[day][shift].active
-        ? workShiftError(schedule.days[day][shift])
-        : "";
-      if (error) return `${SHIFT_LABELS[shift]} de ${day}: ${error}`;
-    }
-  }
-  return "";
-}
-
 function countRoleMembers(memberships: ApiUserMembership[]) {
   return memberships.reduce<Record<string, number>>((acc, membership) => {
     acc[membership.role.id] = (acc[membership.role.id] ?? 0) + 1;

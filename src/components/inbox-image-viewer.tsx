@@ -108,9 +108,9 @@ export function InboxImageViewer({
         mimeType: blob.type || "image/jpeg",
         mediaType: "image",
         caption,
-      clientMessageId: clientIds.current.get(target),
-    });
-    clientIds.current.delete(target);
+        clientMessageId: clientIds.current.get(target),
+      });
+      clientIds.current.delete(target);
       void qc.invalidateQueries({ queryKey: ["trixus", "messages", target] });
       void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
       setForwarding(false);

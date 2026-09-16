@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TrixusApiError } from "@/lib/trixus-api";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
-import { canEditInstance, instanceEditUnavailableReason } from "./instancias";
+import { canEditInstance, instanceEditUnavailableReason } from "@/lib/instance-validation";
 import type { ApiMessagingConnection } from "@/lib/trixus-api";
 
 function connection(overrides: Partial<ApiMessagingConnection>): ApiMessagingConnection {

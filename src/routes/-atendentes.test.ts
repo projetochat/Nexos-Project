@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { sortAtendentes } from "./atendentes";
+import { sortAtendentes } from "@/lib/attendant-sort";
 
 it("lists the administrator, active attendants and inactive attendants in that order", () => {
   const attendees = sortAtendentes([

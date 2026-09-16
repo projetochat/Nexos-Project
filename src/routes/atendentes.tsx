@@ -1,3 +1,4 @@
+import { sortAtendentes } from "@/lib/attendant-sort";
 import { usePhotoCropper } from "@/hooks/use-photo-cropper";
 import * as React from "react";
 import { createPortal } from "react-dom";
@@ -69,18 +70,6 @@ function normalizeAtendenteName(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ")
     .toLocaleLowerCase("pt-BR");
-}
-
-export function sortAtendentes<T extends Pick<Atendente, "perfilKey" | "ativo" | "nome">>(
-  atendentes: T[],
-) {
-  return [...atendentes].sort((a, b) => {
-    const aIsAdministrator = a.perfilKey === "tenant_admin";
-    const bIsAdministrator = b.perfilKey === "tenant_admin";
-    if (aIsAdministrator !== bIsAdministrator) return aIsAdministrator ? -1 : 1;
-    if (!aIsAdministrator && a.ativo !== b.ativo) return a.ativo ? -1 : 1;
-    return a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" });
-  });
 }
 
 function AtendentesPage() {
