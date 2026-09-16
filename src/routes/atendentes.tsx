@@ -71,6 +71,18 @@ function normalizeAtendenteName(value: string) {
     .toLocaleLowerCase("pt-BR");
 }
 
+export function sortAtendentes<T extends Pick<Atendente, "perfilKey" | "ativo" | "nome">>(
+  atendentes: T[],
+) {
+  return [...atendentes].sort((a, b) => {
+    const aIsAdministrator = a.perfilKey === "tenant_admin";
+    const bIsAdministrator = b.perfilKey === "tenant_admin";
+    if (aIsAdministrator !== bIsAdministrator) return aIsAdministrator ? -1 : 1;
+    if (!aIsAdministrator && a.ativo !== b.ativo) return a.ativo ? -1 : 1;
+    return a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" });
+  });
+}
+
 function AtendentesPage() {
   const qc = useQueryClient();
   const sessionUser = useSession((state) => state.user);
@@ -89,12 +101,7 @@ function AtendentesPage() {
   );
 
   const atendentes = React.useMemo(
-    () =>
-      memberships.map(toAtendente).sort((a, b) => {
-        if (a.perfilKey === "tenant_admin") return -1;
-        if (b.perfilKey === "tenant_admin") return 1;
-        return a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" });
-      }),
+    () => sortAtendentes(memberships.map(toAtendente)),
     [memberships],
   );
   const [query, setQuery] = React.useState("");
@@ -459,6 +466,7 @@ function AtendentesPage() {
           open={!!deleting}
           title={deleting?.ativo ? "Bloquear Atendente?" : "Desbloquear Atendente?"}
           destructive
+          accent={deleting?.ativo ? "destructive" : "primary"}
           description={
             <p>
               Deseja realmente {deleting?.ativo ? "bloquear" : "desbloquear"} o atendente{" "}
@@ -542,7 +550,10 @@ function AtendenteForm({
     setPhotoPreviewOpen(false);
   }, [clone, initial, open, perfis]);
 
-  const photoCrop = usePhotoCropper((avatarUrl) => setForm((current) => ({ ...current, avatarUrl })), open);
+  const photoCrop = usePhotoCropper(
+    (avatarUrl) => setForm((current) => ({ ...current, avatarUrl })),
+    open,
+  );
   const onPickFile = (file?: File | null) => {
     photoCrop.choose(file);
     setPhotoMenuOpen(false);

@@ -462,7 +462,11 @@ export type ApiAutomationRule = {
   updatedAt: string;
 };
 
+export type ApiServiceHoursRow = { day: string; active: boolean; start: string; end: string };
+
 export type ApiMessagingConnection = {
+  serviceHours?: ApiServiceHoursRow[] | null;
+  timezone?: string;
   id: string;
   tenantId: string;
   name: string;
@@ -1506,6 +1510,8 @@ export const connectionsApi = {
       welcomeEnabled?: boolean;
       welcomeNewMessage?: string | null;
       welcomeExistingMessage?: string | null;
+      serviceHours?: ApiServiceHoursRow[];
+      timezone?: string;
       absenceEnabled?: boolean;
       absenceMessage?: string | null;
       notes?: string | null;
@@ -2162,7 +2168,7 @@ function trixusMessageFromCode(code?: string) {
 }
 
 function authMessageFromStatus(status: number, code?: string) {
-  if (status === 401) return "E-mail ou senha invalidos.";
+  if (status === 401) return "E-mail ou senha inválidos.";
   if (status === 403) {
     if (code === "USER_WITHOUT_ACTIVE_MEMBERSHIP") {
       return "Seu usuário não possui acesso a nenhuma organização ativa.";

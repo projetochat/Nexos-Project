@@ -1,3 +1,4 @@
+import { validateServiceHours } from "./dto/service-hours.dto";
 import { connectionIdAccess } from "../auth/connection-access";
 import {
   BadRequestException,
@@ -247,8 +248,17 @@ export class MessagingConnectionsService {
     if (connection.archivedAt || connection.status === MessagingConnectionStatus.REMOVED) {
       throw new BadRequestException("Connection removida não pode ser editada.");
     }
-    if (connection.status === MessagingConnectionStatus.CONNECTING) {
-      throw new BadRequestException("Aguarde a conexão da instância para editá-la.");
+    const hasWhatsAppNumber = Boolean(connection.ownerPhoneNormalized);
+    const canEdit =
+      hasWhatsAppNumber &&
+      (connection.status === MessagingConnectionStatus.CONNECTED ||
+        connection.status === MessagingConnectionStatus.DISCONNECTED);
+    if (!canEdit) {
+      throw new BadRequestException(
+        hasWhatsAppNumber
+          ? "Esta instância não está disponível para edição."
+          : "Conecte a instância ao WhatsApp para cadastrar o número antes de editá-la.",
+      );
     }
     const welcomeEnabled = dto.welcomeEnabled ?? connection.welcomeEnabled;
     const welcomeNewMessage =
@@ -263,6 +273,15 @@ export class MessagingConnectionsService {
       throw new BadRequestException(
         "Preencha as mensagens para novo contato e contato existente antes de ativar a saudação.",
       );
+    }
+    const serviceHours =
+      dto.serviceHours === undefined ? undefined : validateServiceHours(dto.serviceHours);
+    if (dto.timezone !== undefined) {
+      try {
+        new Intl.DateTimeFormat("pt-BR", { timeZone: dto.timezone }).format();
+      } catch {
+        throw new BadRequestException("Fuso horário inválido.");
+      }
     }
     const absenceEnabled = dto.absenceEnabled ?? connection.absenceEnabled;
     const absenceMessage =
@@ -282,6 +301,8 @@ export class MessagingConnectionsService {
         welcomeExistingMessage,
         absenceEnabled,
         absenceMessage,
+        serviceHours,
+        timezone: dto.timezone,
         notes: cleanOptionalText(dto.notes),
       },
     });
@@ -832,6 +853,8 @@ export class MessagingConnectionsService {
       welcomeExistingMessage: connection.welcomeExistingMessage,
       absenceEnabled: connection.absenceEnabled,
       absenceMessage: connection.absenceMessage,
+      serviceHours: connection.serviceHours,
+      timezone: connection.timezone,
       notes: connection.notes,
       importHistoryEnabled: connection.importHistoryEnabled,
       importHistoryStartDate: connection.importHistoryStartDate,

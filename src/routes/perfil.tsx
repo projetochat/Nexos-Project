@@ -2,20 +2,11 @@ import { usePhotoCropper } from "@/hooks/use-photo-cropper";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { createFileRoute } from "@tanstack/react-router";
-import { Camera, Eye, Trash2, Upload } from "lucide-react";
+import { Camera, Eye, EyeOff, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Modal } from "@/components/modal";
-import {
-  SectionHeader,
-  Card,
-  Button,
-  Field,
-  Input,
-  Textarea,
-  Avatar,
-  Badge,
-} from "@/components/ui-kit";
+import { SectionHeader, Card, Button, Field, Input, Avatar, Badge } from "@/components/ui-kit";
 import { organizationApi } from "@/lib/trixus-api";
 import { ROLE_META, useSession } from "@/lib/session";
 
@@ -33,11 +24,22 @@ function PerfilPage() {
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = React.useState(false);
+  const [showNewPassword, setShowNewPassword] = React.useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const photoButtonRef = React.useRef<HTMLButtonElement>(null);
   const roleMeta = user ? ROLE_META[user.role] : null;
   const displayName = user?.nome ?? "Usuário";
   const initialsScope = user?.empresaNome ?? roleMeta?.scope ?? "Trixus";
+  const newPasswordMatchesCurrent =
+    Boolean(currentPassword) && Boolean(newPassword) && currentPassword === newPassword;
+  const confirmPasswordMatchesCurrent =
+    Boolean(currentPassword) && Boolean(confirmPassword) && currentPassword === confirmPassword;
+  const passwordsDoNotMatch =
+    Boolean(newPassword) && Boolean(confirmPassword) && newPassword !== confirmPassword;
+  const passwordReuseError = "A nova senha deve ser diferente da senha atual.";
+  const passwordConfirmationError = "A confirmação da senha não confere.";
 
   const saveAvatarUrl = async (avatarUrl: string | null) => {
     if (!user) return;
@@ -77,6 +79,10 @@ function PerfilPage() {
       toast.error("A nova senha deve ter ao menos 6 caracteres.");
       return;
     }
+    if (newPasswordMatchesCurrent) {
+      toast.error(passwordReuseError);
+      return;
+    }
     if (newPassword !== confirmPassword) {
       toast.error("A confirmação da senha não confere.");
       return;
@@ -98,13 +104,10 @@ function PerfilPage() {
   return (
     <AppShell>
       <PageContainer>
-        <SectionHeader
-          title="Seu perfil"
-          subtitle="Informações do usuário autenticado nesta sessão."
-        />
+        <SectionHeader title="Seu Perfil" />
 
-        <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <Card className="flex flex-col items-center text-center">
+        <div className="grid items-stretch gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <Card className="flex h-full flex-col items-center text-center">
             <div className="relative">
               <button
                 ref={photoButtonRef}
@@ -202,10 +205,10 @@ function PerfilPage() {
             </div>
           </Card>
 
-          <Card>
-            <p className="text-sm font-semibold">Dados pessoais</p>
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              <Field label="Nome completo">
+          <Card className="h-full">
+            <p className="text-sm font-semibold">Dados Pessoais</p>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <Field label="Nome">
                 <Input value={displayName} readOnly />
               </Field>
               <Field label="Perfil">
@@ -217,52 +220,54 @@ function PerfilPage() {
               <Field label="Empresa">
                 <Input value={user?.empresaNome ?? ""} readOnly />
               </Field>
-              <div className="md:col-span-2">
-                <Field label="Escopo operacional">
-                  <Textarea rows={2} value={roleMeta?.scope ?? ""} readOnly />
+            </div>
+            <section className="mt-5">
+              <p className="text-sm font-semibold">Alterar senha</p>
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <Field label="Senha atual *">
+                  <PasswordInput
+                    value={currentPassword}
+                    visible={showCurrentPassword}
+                    autoComplete="current-password"
+                    onChange={setCurrentPassword}
+                    onToggle={() => setShowCurrentPassword((value) => !value)}
+                  />
+                </Field>
+                <Field label="Nova senha *">
+                  <PasswordInput
+                    value={newPassword}
+                    visible={showNewPassword}
+                    autoComplete="new-password"
+                    onChange={setNewPassword}
+                    onToggle={() => setShowNewPassword((value) => !value)}
+                    error={newPasswordMatchesCurrent ? passwordReuseError : undefined}
+                    errorId="profile-new-password-reuse-error"
+                  />
+                </Field>
+                <Field label="Confirmar senha *">
+                  <PasswordInput
+                    value={confirmPassword}
+                    visible={showConfirmPassword}
+                    autoComplete="new-password"
+                    onChange={setConfirmPassword}
+                    onToggle={() => setShowConfirmPassword((value) => !value)}
+                    error={
+                      passwordsDoNotMatch
+                        ? passwordConfirmationError
+                        : confirmPasswordMatchesCurrent
+                          ? passwordReuseError
+                          : undefined
+                    }
+                    errorId="profile-confirm-password-reuse-error"
+                  />
                 </Field>
               </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
-              <Button variant="primary" disabled>
-                Dados sincronizados pela sessão
-              </Button>
-            </div>
-          </Card>
-
-          <Card className="lg:col-start-2">
-            <p className="text-sm font-semibold">Alterar senha</p>
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
-              <Field label="Senha atual *">
-                <Input
-                  type="password"
-                  autoComplete="current-password"
-                  value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
-                />
-              </Field>
-              <Field label="Nova senha *">
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                />
-              </Field>
-              <Field label="Confirmar senha *">
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                />
-              </Field>
-            </div>
-            <div className="mt-6 flex justify-end border-t border-border pt-4">
-              <Button variant="primary" onClick={savePassword} disabled={savingPassword}>
-                Salvar senha
-              </Button>
-            </div>
+              <div className="mt-4 flex justify-end">
+                <Button variant="primary" onClick={savePassword} disabled={savingPassword}>
+                  Salvar senha
+                </Button>
+              </div>
+            </section>
           </Card>
         </div>
         {photoCrop.dialog}
@@ -281,6 +286,58 @@ function PerfilPage() {
         />
       </PageContainer>
     </AppShell>
+  );
+}
+
+function PasswordInput({
+  value,
+  visible,
+  autoComplete,
+  onChange,
+  onToggle,
+  error,
+  errorId,
+}: {
+  value: string;
+  visible: boolean;
+  autoComplete: string;
+  onChange: (value: string) => void;
+  onToggle: () => void;
+  error?: string;
+  errorId?: string;
+}) {
+  return (
+    <div>
+      <div className="relative">
+        <Input
+          type={visible ? "text" : "password"}
+          autoComplete={autoComplete}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? errorId : undefined}
+          className={`pr-10 ${error ? "!border-destructive" : ""}`}
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+          aria-label={visible ? "Ocultar senha" : "Mostrar senha"}
+          title={visible ? "Ocultar senha" : "Mostrar senha"}
+        >
+          {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </div>
+      {error && (
+        <span
+          id={errorId}
+          role="alert"
+          className="mt-1 block text-[11px] font-medium text-destructive"
+        >
+          {error}
+        </span>
+      )}
+    </div>
   );
 }
 

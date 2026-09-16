@@ -1046,6 +1046,8 @@ model OutboxEvent {
 }
 
 model MessagingConnection {
+  serviceHours         Json?
+  timezone             String                    @default("America/Sao_Paulo")
   id                   String                    @id @default(uuid())
   tenantId             String
   name                 String

@@ -169,14 +169,12 @@ export class UsersController {
       },
     });
     if (dto.newPassword) {
-      if (membership.role.key === "tenant_admin") {
-        throw new BadRequestException(
-          "Altere a senha do administrador em Credenciais do Usuário Administrador.",
-        );
-      }
       if (!dto.currentPassword) throw new BadRequestException("Informe a senha atual.");
       const validPassword = await compare(dto.currentPassword, membership.user.passwordHash);
       if (!validPassword) throw new BadRequestException("Senha atual invalida.");
+      if (dto.newPassword === dto.currentPassword) {
+        throw new BadRequestException("A nova senha deve ser diferente da senha atual.");
+      }
     }
     await this.prisma.user.update({
       where: { id: membership.userId },
@@ -218,6 +216,9 @@ export class UsersController {
     }
     if (!(await compare(dto.currentPassword, membership.user.passwordHash))) {
       throw new BadRequestException("Senha atual inválida.");
+    }
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException("A nova senha deve ser diferente da senha atual.");
     }
     await this.prisma.user.update({
       where: { id: membership.userId },

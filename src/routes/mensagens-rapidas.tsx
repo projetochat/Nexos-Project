@@ -1,7 +1,8 @@
+import { InfoTooltip } from "@/components/info-tooltip";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Copy, Info, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -583,12 +584,12 @@ export function QuickReplyEditor({
             />
             <span>
               <span className="flex items-center gap-1 font-medium">
-                <Info className="h-4 w-4 text-primary" /> Encerrar conversa
+                Encerrar conversa
+                <InfoTooltip label="encerrar conversa">
+                  Ao enviar este atalho no chat, a conversa será encerrada após o envio de todas as mensagens.
+                </InfoTooltip>
               </span>
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Ao enviar este atalho no chat, a conversa será encerrada após o envio de todas as
-                mensagens.
-              </span>
+
             </span>
           </label>
         </div>
