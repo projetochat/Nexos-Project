@@ -11,7 +11,7 @@ export function normalizePhone(phone: string) {
 
   if (raw.startsWith("+")) {
     if (digits.startsWith("55") && digits.slice(2).startsWith("0")) {
-      throw new BadRequestException("Telefone celular brasileiro deve conter DDD é 9 digitos.");
+      throw new BadRequestException("Telefone celular brasileiro deve conter DDD e 9 digitos.");
     }
     const phoneNumber = parsePhoneNumberFromString(raw);
     if (!phoneNumber?.isPossible()) {
@@ -62,7 +62,7 @@ export function isWhatsAppGroupPhone(digits: string) {
 function normalizeBrazilPhone(digits: string) {
   const local = digits.length === 10 ? `${digits.slice(0, 2)}9${digits.slice(2)}` : digits;
   if (local.length !== 11 || local[2] !== "9" || !BRAZIL_AREA_CODES.has(local.slice(0, 2))) {
-    throw new BadRequestException("Telefone celular brasileiro deve conter DDD é 9 digitos.");
+    throw new BadRequestException("Telefone celular brasileiro deve conter DDD e 9 digitos.");
   }
   const subscriber = local.slice(3);
   if (/^(\d)\1+$/.test(subscriber)) {

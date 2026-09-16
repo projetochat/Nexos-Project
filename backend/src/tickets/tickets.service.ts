@@ -322,7 +322,7 @@ export class TicketsService {
     const body = await readLimitedRequest(req, this.maxAttachmentSizeBytes());
     this.validateAttachment(declaredMimeType, body.byteLength);
     const detectedMimeType = detectMimeType(body, declaredMimeType);
-    if (detectedMimeType && detectedMimeType !== declaredMimeType) {
+    if (detectedMimeType !== declaredMimeType) {
       throw canonicalException(
         HttpStatus.UNSUPPORTED_MEDIA_TYPE,
         "ATTACHMENT_MIME_MISMATCH",
@@ -616,6 +616,15 @@ export class TicketsService {
   }
 
   private validateAttachment(mimeType: string, sizeBytes: number) {
+    if (
+      !["application/pdf", "image/png", "image/jpeg", "image/webp", "text/plain"].includes(mimeType)
+    ) {
+      throw canonicalException(
+        HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+        "ATTACHMENT_MIME_NOT_ALLOWED",
+        "Tipo de arquivo não permitido.",
+      );
+    }
     const limit = this.maxAttachmentSizeBytes();
     if (sizeBytes > limit) {
       throw canonicalException(

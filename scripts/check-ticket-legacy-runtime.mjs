@@ -5,6 +5,7 @@ const root = resolve(import.meta.dirname, "..");
 const chamados = readFileSync(resolve(root, "src/routes/chamados.tsx"), "utf8");
 const inbox = readFileSync(resolve(root, "src/routes/inbox.$conversationId.tsx"), "utf8");
 const api = readFileSync(resolve(root, "src/lib/trixus-api.ts"), "utf8");
+const editor = readFileSync(resolve(root, "src/components/ticket-rich-text-editor.tsx"), "utf8");
 
 const forbidden = [
   { pattern: /@\/lib\/mvp/, label: "@/lib/mvp" },
@@ -17,6 +18,20 @@ const forbidden = [
 ];
 
 const failures = forbidden.filter(({ pattern }) => pattern.test(chamados));
+// Rich editing is isolated behind tested DOM sanitization. Do not permit raw
+// HTML sinks to return in the editor when the page delegates to this component.
+if (/\.innerHTML|dangerouslySetInnerHTML|insertHTML/.test(editor)) {
+  failures.push({ label: "raw HTML access in ticket editor" });
+}
+for (const boundary of [
+  "writeTicketEditorHtml",
+  "readTicketEditorHtml",
+  "pasteTicketEditorText",
+  "onPaste",
+  "onDrop",
+]) {
+  if (!editor.includes(boundary)) failures.push({ label: `missing editor boundary: ${boundary}` });
+}
 if (
   /attachments\/init|attachments\/[^"`']+\/complete|contentBase64|arrayBufferToBase64/.test(api)
 ) {

@@ -33,7 +33,7 @@
     "test:prc06-platform-admin-final-contract": "node scripts/check-prc06-platform-admin-final-contract.mjs",
     "test:prc07-reports-operations-contract": "node scripts/check-prc07-reports-operations-contract.mjs",
     "test:operational-runtime": "vitest run src/lib/operational-runtime-rules.test.ts",
-    "test:security": "vitest run src/lib/sanitize-html.test.ts --environment jsdom",
+    "test:security": "vitest run src/lib/sanitize-html.test.ts src/lib/ticket-editor-dom.test.ts src/components/ticket-rich-text-editor.test.tsx --environment jsdom",
     "typecheck": "tsc --noEmit",
     "verify": "node scripts/verify.mjs",
     "format": "prettier --write ."
