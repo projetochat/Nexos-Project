@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Info, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Info, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -14,7 +14,13 @@ import {
   SectionHeader,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
-import { quickReplyApi, type ApiQuickReply } from "@/lib/trixus-api";
+import {
+  quickReplyApi,
+  type ApiQuickReply,
+  type QuickReplyAttachment,
+  type QuickReplyMessage,
+} from "@/lib/trixus-api";
+import { assertQuickReplySaved, quickReplyMessages } from "@/lib/quick-reply-sequence";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
@@ -32,12 +38,6 @@ export const Route = createFileRoute("/mensagens-rapidas")({
 });
 
 const quickRepliesQueryKey = ["trixus", "quick-replies"] as const;
-type QuickReplyAttachment = {
-  fileName: string;
-  mimeType: string;
-  size: number;
-  dataUrl: string;
-};
 const MESSAGE_VARIABLES = [
   ["{{cumprimento}}", "Bom dia, Boa tarde e Boa noite. Será apresentado conforme a hora do dia."],
   ["{{nome}}", "Nome do Contato."],
@@ -65,7 +65,13 @@ function QuickRepliesPage() {
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     const matchingItems = q
-      ? items.filter((item) => `${item.atalho} ${item.texto}`.toLowerCase().includes(q))
+      ? items.filter((item) =>
+          `${item.atalho} ${quickReplyMessages(item)
+            .map((message) => `${message.text} ${message.attachment?.fileName ?? ""}`)
+            .join(" ")}`
+            .toLowerCase()
+            .includes(q),
+        )
       : items;
     return sortByOptionLabel(matchingItems, (item) => item.atalho);
   }, [items, query]);
@@ -152,6 +158,11 @@ function QuickRepliesPage() {
                     <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-foreground/90">
                       {previewQuickReplyText(reply.texto)}
                     </p>
+                    {(reply.messages?.length ?? 0) > 1 && (
+                      <span className="text-xs text-primary">
+                        {reply.messages!.length} mensagens
+                      </span>
+                    )}
                     {reply.close_on_send && (
                       <p className="mt-auto truncate pt-2 text-[10px] uppercase tracking-widest text-muted-foreground">
                         Encerra conversa
@@ -251,7 +262,7 @@ function QuickRepliesPage() {
   );
 }
 
-function QuickReplyEditor({
+export function QuickReplyEditor({
   open,
   onClose,
   initial,
@@ -267,12 +278,11 @@ function QuickReplyEditor({
   onSaved: () => void;
 }) {
   const [atalho, setAtalho] = React.useState("");
-  const [texto, setTexto] = React.useState("");
-  const [attachment, setAttachment] = React.useState<QuickReplyAttachment | null>(null);
+  const [messages, setMessages] = React.useState<QuickReplyMessage[]>([{ text: "" }]);
+  const [intervalSeconds, setIntervalSeconds] = React.useState(0);
   const [closeOnSend, setCloseOnSend] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [shortcutError, setShortcutError] = React.useState("");
-  const fileRef = React.useRef<HTMLInputElement>(null);
 
   const duplicateShortcutError = (value: string) => {
     const shortcut = sanitizeQuickReplyShortcut(value);
@@ -289,26 +299,27 @@ function QuickReplyEditor({
   React.useEffect(() => {
     if (!open) return;
     setAtalho(initial ? duplicateShortcut(initial.atalho, clone) : "");
-    setTexto(initial?.texto ?? "");
-    setAttachment(
-      initial?.attachmentDataUrl
-        ? {
-            fileName: initial.attachmentFileName ?? "atrixus",
-            mimeType: initial.attachmentMimeType ?? "application/octet-stream",
-            size: initial.attachmentSize ?? 0,
-            dataUrl: initial.attachmentDataUrl,
-          }
-        : null,
-    );
+    setMessages(initial ? quickReplyMessages(initial) : [{ text: "" }]);
+    setIntervalSeconds(initial?.intervalSeconds ?? 0);
     setCloseOnSend(initial?.close_on_send ?? false);
     setShortcutError("");
   }, [clone, open, initial]);
 
   const save = async () => {
     const shortcut = sanitizeQuickReplyShortcut(atalho);
-    const content = texto.trim();
+    const content = messages
+      .map((message) => message.text.trim() || message.attachment?.fileName || "")
+      .join("\n")
+      .slice(0, 2000);
+    const attachment = messages[0]?.attachment;
     if (!shortcut) return toast.error("Informe o atalho.");
-    if (!content) return toast.error("Informe o texto.");
+    if (messages.some((message) => !message.text.trim() && !message.attachment))
+      return toast.error("Preencha o texto ou anexe um arquivo em cada mensagem.");
+    if (
+      messages.reduce((total, message) => total + (message.attachment?.dataUrl.length ?? 0), 0) >
+      40 * 1024 * 1024
+    )
+      return toast.error("Os anexos da sequência excedem o limite de 30 MB.");
     const duplicateError = duplicateShortcutError(shortcut);
     if (duplicateError) {
       setShortcutError(duplicateError);
@@ -316,11 +327,14 @@ function QuickReplyEditor({
     }
     setBusy(true);
     try {
+      let saved: ApiQuickReply;
       if (initial && !clone) {
-        await quickReplyApi.update(initial.id, {
+        saved = await quickReplyApi.update(initial.id, {
           title: shortcut,
           shortcut,
           content,
+          messages,
+          intervalSeconds,
           departmentId: initial.departmentId,
           closeOnSend,
           attachmentFileName: attachment?.fileName ?? null,
@@ -329,10 +343,12 @@ function QuickReplyEditor({
           attachmentDataUrl: attachment?.dataUrl ?? null,
         });
       } else {
-        await quickReplyApi.create({
+        saved = await quickReplyApi.create({
           title: shortcut,
           shortcut,
           content,
+          messages,
+          intervalSeconds,
           departmentId: null,
           closeOnSend,
           attachmentFileName: attachment?.fileName ?? null,
@@ -341,6 +357,7 @@ function QuickReplyEditor({
           attachmentDataUrl: attachment?.dataUrl ?? null,
         });
       }
+      assertQuickReplySaved(saved, messages, intervalSeconds);
       toast.success("Salvo");
       onSaved();
     } catch (error) {
@@ -354,7 +371,13 @@ function QuickReplyEditor({
     <Modal
       open={open}
       onClose={onClose}
-      title={clone ? "Duplicar Mensagem Rápida" : initial ? "Editar Mensagem Rápida" : "Nova Mensagem Rápida"}
+      title={
+        clone
+          ? "Duplicar Mensagem Rápida"
+          : initial
+            ? "Editar Mensagem Rápida"
+            : "Nova Mensagem Rápida"
+      }
       description="Atalhos curtos aceleram respostas."
       size="lg"
       footer={
@@ -397,79 +420,177 @@ function QuickReplyEditor({
           />
         </Field>
         <div className="space-y-3">
-            <Field label="Mensagem *">
-              <textarea
-                rows={8}
-                value={texto}
-                onChange={(event) => setTexto(event.target.value)}
-                className="min-h-48 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary"
-                placeholder="Bom dia! Como posso ajudar?"
-              />
-            </Field>
-            <div className="rounded-lg border border-border bg-surface-1 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">Arquivo</p>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {attachment
-                      ? `${attachment.fileName} (${formatFileSize(attachment.size)})`
-                      : "Nenhum arquivo anexado."}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {attachment && (
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium">
+              {messages.length > 1 ? "Mensagens múltiplas" : "Mensagem"}
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy || messages.length >= 20}
+              onClick={() => setMessages((items) => [...items, { text: "" }])}
+            >
+              <Plus className="h-4 w-4" /> Adicionar mensagem
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Cada item será enviado separadamente, na ordem abaixo. Até 20 mensagens.
+          </p>
+          {messages.map((message, index) => (
+            <div key={index} className="space-y-3 rounded-lg border border-border bg-surface-1 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Mensagem {index + 1}</span>
+                <div className="flex gap-1">
+                  {([-1, 1] as const).map((direction) => (
                     <Button
+                      key={direction}
                       variant="ghost"
                       size="icon"
-                      title="Remover arquivo"
-                      aria-label="Remover arquivo"
-                      onClick={() => setAttachment(null)}
+                      aria-label={direction < 0 ? "Mover para cima" : "Mover para baixo"}
+                      disabled={
+                        busy || index + direction < 0 || index + direction >= messages.length
+                      }
+                      onClick={() =>
+                        setMessages((items) => {
+                          const next = [...items];
+                          [next[index], next[index + direction]] = [
+                            next[index + direction],
+                            next[index],
+                          ];
+                          return next;
+                        })
+                      }
                     >
-                      <X className="h-4 w-4" />
+                      {direction < 0 ? (
+                        <ArrowUp className="h-4 w-4" />
+                      ) : (
+                        <ArrowDown className="h-4 w-4" />
+                      )}
                     </Button>
-                  )}
+                  ))}
                   <Button
                     variant="ghost"
-                    size="sm"
-                    title="Anexar arquivo"
-                    onClick={() => fileRef.current?.click()}
+                    size="icon"
+                    aria-label="Remover mensagem"
+                    disabled={busy || messages.length === 1}
+                    onClick={() =>
+                      setMessages((items) => items.filter((_, position) => position !== index))
+                    }
                   >
-                    <Paperclip className="h-4 w-4" /> Anexar
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
-              <input
-                ref={fileRef}
-                type="file"
-                className="hidden"
-                onChange={async (event) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = "";
-                  if (!file) return;
-                  try {
-                    setAttachment(await readAttachment(file));
-                  } catch (error) {
-                    toast.error((error as Error).message);
-                  }
-                }}
+              <textarea
+                rows={3}
+                maxLength={2000}
+                value={message.text}
+                disabled={busy}
+                aria-label={`Texto da mensagem ${index + 1}`}
+                onChange={(event) =>
+                  setMessages((items) =>
+                    items.map((item, position) =>
+                      position === index ? { ...item, text: event.target.value } : item,
+                    ),
+                  )
+                }
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary"
+                placeholder="Texto da mensagem ou legenda do arquivo"
               />
+              <div className="flex items-center gap-2">
+                <Paperclip className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  {message.attachment
+                    ? `${message.attachment.fileName} (${formatFileSize(message.attachment.size)})`
+                    : "Arquivo opcional · imagens até 8 MB; demais arquivos até 10 MB"}
+                </span>
+                {message.attachment && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Remover arquivo"
+                    disabled={busy}
+                    onClick={() =>
+                      setMessages((items) =>
+                        items.map((item, position) =>
+                          position === index ? { ...item, attachment: null } : item,
+                        ),
+                      )
+                    }
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+                <label className="cursor-pointer text-xs font-medium text-primary">
+                  Anexar
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,video/mp4,video/3gpp,video/webm,audio/ogg,audio/mpeg,audio/mp4,audio/webm,.pdf,.txt,.doc,.docx,.xls,.xlsx"
+                    className="sr-only"
+                    disabled={busy}
+                    aria-label={`Anexar arquivo à mensagem ${index + 1}`}
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      if (!file) return;
+                      if (file.size > 10 * 1024 * 1024)
+                        return toast.error("O arquivo deve ter no máximo 10 MB.");
+                      if (file.type.startsWith("image/") && file.size > 8 * 1024 * 1024)
+                        return toast.error("A imagem deve ter no máximo 8 MB.");
+                      setBusy(true);
+                      try {
+                        const attachment = await readAttachment(file);
+                        setMessages((items) =>
+                          items.map((item) => (item === message ? { ...item, attachment } : item)),
+                        );
+                      } catch (error) {
+                        toast.error((error as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  />
+                </label>
+              </div>
             </div>
-            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm transition hover:bg-surface-2">
-              <input
-                type="checkbox"
-                checked={closeOnSend}
-                onChange={(event) => setCloseOnSend(event.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-primary"
+          ))}
+          {messages.length > 1 && (
+            <Field
+              label="Intervalo entre mensagens (segundos)"
+              hint="De 0 a 60 segundos, após a confirmação de envio do item anterior."
+            >
+              <Input
+                type="number"
+                min={0}
+                max={60}
+                step={1}
+                value={intervalSeconds}
+                disabled={busy}
+                onChange={(event) =>
+                  setIntervalSeconds(
+                    Math.min(60, Math.max(0, Math.floor(Number(event.target.value) || 0))),
+                  )
+                }
               />
-              <span>
-                <span className="flex items-center gap-1 font-medium">
-                  <Info className="h-4 w-4 text-primary" /> Encerrar conversa
-                </span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  Ao enviar este atalho no chat, a conversa será encerrada automaticamente.
-                </span>
+            </Field>
+          )}
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm transition hover:bg-surface-2">
+            <input
+              type="checkbox"
+              checked={closeOnSend}
+              onChange={(event) => setCloseOnSend(event.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-primary"
+            />
+            <span>
+              <span className="flex items-center gap-1 font-medium">
+                <Info className="h-4 w-4 text-primary" /> Encerrar conversa
               </span>
-            </label>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Ao enviar este atalho no chat, a conversa será encerrada após o envio de todas as
+                mensagens.
+              </span>
+            </span>
+          </label>
         </div>
       </div>
     </Modal>

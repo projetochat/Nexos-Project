@@ -103,6 +103,16 @@ export class MessagesService {
     return this.outbound.sendText(conversationId, dto, current);
   }
 
+  async get(conversationId: string, messageId: string, current: AuthenticatedUser) {
+    await this.findVisibleConversation(this.prisma, conversationId, current);
+    const message = await this.prisma.message.findFirst({
+      where: { id: messageId, conversationId, tenantId: current.tenantId },
+      include: messageInclude,
+    });
+    if (!message) throw new NotFoundException("Mensagem não encontrada.");
+    return this.serialize(message);
+  }
+
   async sendMedia(conversationId: string, req: Request, current: AuthenticatedUser) {
     return this.outbound.sendMedia(conversationId, req, current);
   }
@@ -255,7 +265,6 @@ export class MessagesService {
     });
     if (!membership)
       throw new BadRequestException("Atendente inexistente ou inativo para este tenant.");
-
   }
 
   private async visibilityWhere(
@@ -283,7 +292,6 @@ export class MessagesService {
     if (!conversation.assignedMembershipId) {
       throw new BadRequestException("Conversa precisa estar assumida antes do envio.");
     }
-
   }
 
   private updateConversationFromMessage(

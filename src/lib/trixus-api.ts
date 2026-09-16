@@ -302,7 +302,17 @@ export type ApiWhatsappGroup = {
   warnings?: string[];
 };
 
+export type QuickReplyAttachment = {
+  fileName: string;
+  mimeType: string;
+  size: number;
+  dataUrl: string;
+};
+export type QuickReplyMessage = { text: string; attachment?: QuickReplyAttachment | null };
+
 export type ApiQuickReply = {
+  messages?: QuickReplyMessage[] | null;
+  intervalSeconds?: number;
   id: string;
   tenantId: string;
   title: string;
@@ -1241,6 +1251,8 @@ export const quickReplyApi = {
     content: string;
     departmentId?: string | null;
     closeOnSend?: boolean;
+    messages?: QuickReplyMessage[];
+    intervalSeconds?: number;
     attachmentFileName?: string | null;
     attachmentMimeType?: string | null;
     attachmentSize?: number | null;
@@ -1254,6 +1266,8 @@ export const quickReplyApi = {
       content?: string;
       departmentId?: string | null;
       closeOnSend?: boolean;
+      messages?: QuickReplyMessage[];
+      intervalSeconds?: number;
       attachmentFileName?: string | null;
       attachmentMimeType?: string | null;
       attachmentSize?: number | null;
@@ -1352,12 +1366,14 @@ export const automationApi = {
 };
 
 export const messageApi = {
+  get: (conversationId: string, messageId: string) =>
+    apiRequest<ApiMessage>(`/conversations/${conversationId}/messages/${messageId}`),
   list: (conversationId: string, params: { limit?: number; cursor?: string } = {}) =>
     apiRequest<MessagePage>(`/conversations/${conversationId}/messages${queryString(params)}`),
   sendText: (
     conversationId: string,
     content: string,
-    clientMessageId = crypto.randomUUID(),
+    clientMessageId: string = crypto.randomUUID(),
     quotedMessageId?: string | null,
     mentions?: string[],
   ) =>
@@ -1469,7 +1485,15 @@ export const operationsApi = {
 
 export const connectionsApi = {
   list: () => apiRequest<ApiMessagingConnection[]>("/messaging/connections"),
-  createEvolution: (data: { name: string; color?: string; instanceName?: string; importHistoryEnabled?: boolean; importHistoryStartDate?: string; importGroupsEnabled?: boolean; importGroupsStartDate?: string }) =>
+  createEvolution: (data: {
+    name: string;
+    color?: string;
+    instanceName?: string;
+    importHistoryEnabled?: boolean;
+    importHistoryStartDate?: string;
+    importGroupsEnabled?: boolean;
+    importGroupsStartDate?: string;
+  }) =>
     apiRequest<ApiMessagingConnection>("/messaging/connections/evolution", {
       method: "POST",
       body: JSON.stringify(data),

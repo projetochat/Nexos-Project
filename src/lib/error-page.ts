@@ -1,8 +1,11 @@
+import { FAVICON_HREF } from "./favicon";
+
 export function renderErrorPage(): string {
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <link rel="icon" href="${FAVICON_HREF}" type="image/x-icon" />
     <title>This page didn't load</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>

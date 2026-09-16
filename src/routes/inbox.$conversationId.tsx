@@ -46,6 +46,12 @@ import {
   type ApiQuickReply as QuickReply,
   type ApiTag as Tag,
 } from "@/lib/trixus-api";
+import {
+  createSequence,
+  quickReplyMessages,
+  sendSequence,
+  type SequenceDraft,
+} from "@/lib/quick-reply-sequence";
 import { useSession } from "@/lib/session";
 import { fmtHM, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
@@ -55,6 +61,8 @@ import { startTyping, stopTyping } from "@/lib/realtime/client";
 import { ContactFormModal, contactPayload } from "./contatos";
 
 export const Route = createFileRoute("/inbox/$conversationId")({ component: ConversationPage });
+
+const quickReplyDrafts = new Map<string, SequenceDraft>();
 
 type Message = ApiMessage;
 type MentionOption = { id: string; label: string; phone: string };
@@ -253,7 +261,6 @@ function ConversationPage() {
     }
   };
 
-
   return (
     <InboxLayout>
       <div className="relative flex h-full min-h-0">
@@ -362,6 +369,7 @@ function ConversationPage() {
 
           <div className="relative">
             <Composer
+              key={conversationId}
               conversationId={conv.id}
               authorId={user?.id ?? null}
               disabled={!canSend}
@@ -627,15 +635,33 @@ function MessageBubble({
           />
         )}
         {m.type === "image" && mediaUrl && (
-          <Modal open={imagePreviewOpen} onClose={() => setImagePreviewOpen(false)} title={m.media_data?.file_name ?? "Imagem"} size="xl">
-            <img src={mediaUrl} alt={m.media_data?.file_name ?? "Imagem ampliada"} className="mx-auto max-h-[75vh] max-w-full object-contain" />
+          <Modal
+            open={imagePreviewOpen}
+            onClose={() => setImagePreviewOpen(false)}
+            title={m.media_data?.file_name ?? "Imagem"}
+            size="xl"
+          >
+            <img
+              src={mediaUrl}
+              alt={m.media_data?.file_name ?? "Imagem ampliada"}
+              className="mx-auto max-h-[75vh] max-w-full object-contain"
+            />
           </Modal>
         )}
         {m.type === "image" && m.media_data && (
           <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
             {mediaUrl ? (
-              <button type="button" onClick={() => setImagePreviewOpen(true)} aria-label="Ampliar imagem" className="block cursor-zoom-in">
-                <img src={mediaUrl} alt={m.media_data.file_name ?? "imagem"} className="max-h-72 max-w-full object-contain" />
+              <button
+                type="button"
+                onClick={() => setImagePreviewOpen(true)}
+                aria-label="Ampliar imagem"
+                className="block cursor-zoom-in"
+              >
+                <img
+                  src={mediaUrl}
+                  alt={m.media_data.file_name ?? "imagem"}
+                  className="max-h-72 max-w-full object-contain"
+                />
               </button>
             ) : mediaError || mediaState === "failed" ? (
               <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>
@@ -978,6 +1004,21 @@ function Composer({
   const [qrFilter, setQrFilter] = React.useState("");
   const [mentionFilter, setMentionFilter] = React.useState<string | null>(null);
   const [pendingCloseAfter, setPendingCloseAfter] = React.useState(false);
+  const draftKey = `${authorId}:${conversationId}`;
+  const [sequence, setSequence] = React.useState<SequenceDraft | null>(
+    () => quickReplyDrafts.get(draftKey) ?? null,
+  );
+  const [sequenceSending, setSequenceSending] = React.useState(false);
+  const [sequenceError, setSequenceError] = React.useState("");
+  const sequenceAbort = React.useRef<AbortController | null>(null);
+  const sequenceMounted = React.useRef(true);
+  React.useEffect(() => {
+    sequenceMounted.current = true;
+    return () => {
+      sequenceMounted.current = false;
+      sequenceAbort.current?.abort();
+    };
+  }, []);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const typingActiveRef = React.useRef(false);
@@ -1024,12 +1065,30 @@ function Composer({
   const filteredQR = React.useMemo(() => {
     if (!qrFilter) return quickReplies;
     return quickReplies.filter(
-      (q) => q.atalho.toLowerCase().includes(qrFilter) || q.texto.toLowerCase().includes(qrFilter),
+      (q) =>
+        q.atalho.toLowerCase().includes(qrFilter) ||
+        quickReplyMessages(q).some((message) =>
+          `${message.text} ${message.attachment?.fileName ?? ""}`.toLowerCase().includes(qrFilter),
+        ),
     );
   }, [quickReplies, qrFilter]);
 
   const applyQR = (qr: QuickReply) => {
-    setText(qr.texto);
+    if (sequenceAbort.current) return;
+    const items = quickReplyMessages(qr);
+    if (items.length > 1 || items[0]?.attachment) {
+      const draft = createSequence(qr);
+      quickReplyDrafts.set(draftKey, draft);
+      setSequence(draft);
+      setSequenceError("");
+      setText("");
+      if (pendingFile?.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
+      setPendingFile(null);
+    } else {
+      quickReplyDrafts.delete(draftKey);
+      setSequence(null);
+      setText(items[0]?.text ?? qr.texto);
+    }
     setPendingCloseAfter(!!qr.close_on_send);
     setShowQR(false);
     setTimeout(() => textareaRef.current?.focus(), 0);
@@ -1068,19 +1127,102 @@ function Composer({
     return normalized || fallbackPhone;
   };
 
+  const sendQuickReply = async (draft: SequenceDraft) => {
+    if (sequenceAbort.current || disabled || !authorId) return;
+    const controller = new AbortController();
+    sequenceAbort.current = controller;
+    quickReplyDrafts.set(draftKey, draft);
+    setSequence(draft);
+    setSequenceSending(true);
+    setSequenceError("");
+    try {
+      await sendSequence(draft, controller.signal, {
+        send: async (item) => {
+          if (!item.attachment)
+            return messageApi.sendText(
+              conversationId,
+              item.text,
+              item.clientMessageId,
+              replyTo?.id ?? null,
+            );
+          const attachment = item.attachment;
+          const blob = await (await fetch(attachment.dataUrl)).blob();
+          if (controller.signal.aborted) throw new Error("Envio interrompido.");
+          const mediaType = attachment.mimeType.startsWith("image/")
+            ? "image"
+            : attachment.mimeType.startsWith("video/")
+              ? "video"
+              : attachment.mimeType.startsWith("audio/")
+                ? "audio"
+                : "document";
+          return messageApi.sendMedia(conversationId, blob, {
+            fileName: attachment.fileName,
+            mimeType: attachment.mimeType,
+            mediaType,
+            caption: item.text || null,
+            clientMessageId: item.clientMessageId,
+            quotedMessageId: replyTo?.id ?? null,
+          });
+        },
+        get: (id) => messageApi.get(conversationId, id),
+        progress: () => {
+          if (!controller.signal.aborted) setSequence({ ...draft });
+          void qc.invalidateQueries({ queryKey: ["trixus", "messages", conversationId] });
+        },
+      });
+      if (controller.signal.aborted) return;
+      if (draft.closeAfter) await conversationApi.updateStatus(conversationId, "fechada");
+      quickReplyDrafts.delete(draftKey);
+      setSequence(null);
+      setText("");
+      setPendingCloseAfter(false);
+      setShowQR(false);
+      setQrFilter("");
+      void messageApi
+        .markRead(conversationId)
+        .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }))
+        .catch(() => {});
+      onSent();
+    } catch (error) {
+      if (sequenceMounted.current)
+        setSequenceError(
+          controller.signal.aborted
+            ? "Sequência pausada. Você pode continuar de onde parou."
+            : (error as Error).message,
+        );
+    } finally {
+      if (sequenceMounted.current) {
+        setSequence(quickReplyDrafts.has(draftKey) ? { ...draft } : null);
+        setSequenceSending(false);
+      }
+      sequenceAbort.current = null;
+    }
+  };
+
   const handleSend = async () => {
-    if (disabled || !authorId) return;
+    if (disabled || !authorId || sequenceAbort.current) return;
     emitTypingStop();
+    if (sequence) {
+      await sendQuickReply(sequence);
+      return;
+    }
     let t = text.trim();
     let closeAfter = pendingCloseAfter;
     // Expand quick reply shortcut like "/bd" → full text
     if (allowQuickReplies && t.startsWith("/")) {
       const atalho = t.slice(1).toLowerCase();
       const match =
-        quickReplies.find((q) => q.atalho.toLowerCase() === atalho) ??
+        quickReplies.find((q) => q.atalho.replace(/^\//, "").toLowerCase() === atalho) ??
         (filteredQR.length === 1 ? filteredQR[0] : undefined);
       if (match) {
-        t = match.texto;
+        const items = quickReplyMessages(match);
+        if (items.length > 1 || items[0]?.attachment) {
+          setShowQR(false);
+          setText("");
+          await sendQuickReply(createSequence(match));
+          return;
+        }
+        t = items[0]?.text ?? match.texto;
         closeAfter = closeAfter || !!match.close_on_send;
       }
     }
@@ -1247,6 +1389,58 @@ function Composer({
   return (
     <div className="border-t border-border bg-surface-1 p-3">
       <div className="mx-auto max-w-3xl">
+        {sequence && (
+          <div
+            className="mb-2 space-y-2 rounded-lg border border-primary/30 bg-card p-3"
+            aria-live="polite"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <strong className="text-sm">
+                {sequence.items.length > 1 ? "Mensagens múltiplas" : "Mensagem rápida com arquivo"}{" "}
+                · {sequence.next}/{sequence.items.length} enviadas
+              </strong>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (sequenceSending) {
+                    sequenceAbort.current?.abort();
+                    return;
+                  }
+                  quickReplyDrafts.delete(draftKey);
+                  setSequence(null);
+                  setSequenceError("");
+                  setPendingCloseAfter(false);
+                }}
+              >
+                {sequenceSending ? "Pausar" : "Cancelar sequência"}
+              </Button>
+            </div>
+            <ol className="max-h-40 space-y-1 overflow-y-auto text-xs text-muted-foreground">
+              {sequence.items.map((item, index) => (
+                <li
+                  key={item.clientMessageId}
+                  className={index < sequence.next ? "opacity-50" : ""}
+                >
+                  {index + 1}. {item.text || item.attachment?.fileName}
+                  {item.text && item.attachment ? ` · ${item.attachment.fileName}` : ""}
+                  {index < sequence.next ? " ✓" : ""}
+                </li>
+              ))}
+            </ol>
+            <p className="text-xs text-muted-foreground">
+              {sequenceSending
+                ? "Enviando na ordem cadastrada…"
+                : "Clique em Enviar para iniciar ou Continuar para retomar."}{" "}
+              Ao sair da conversa, a sequência será pausada.
+            </p>
+            {sequenceError && (
+              <p role="alert" className="text-xs text-destructive">
+                {sequenceError}
+              </p>
+            )}
+          </div>
+        )}
         {pendingFile && (
           <div className="mb-2 flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
             {pendingFile.previewUrl ? (
@@ -1308,12 +1502,16 @@ function Composer({
                 key={qr.id}
                 type="button"
                 onClick={() => applyQR(qr)}
+                disabled={sequenceSending || !!sequence || recording || !!pendingAudio}
                 className="flex w-full items-start gap-3 border-b border-border/60 px-3 py-2 text-left hover:bg-surface-1"
               >
                 <span className="font-mono text-xs text-primary">
                   /{qr.atalho.replace(/^\//, "")}
                 </span>
-                <span className="flex-1 text-xs text-foreground/80 line-clamp-1">{qr.texto}</span>
+                <span className="flex-1 text-xs text-foreground/80 line-clamp-1">
+                  {(qr.messages?.length ?? 0) > 1 ? `${qr.messages!.length} mensagens · ` : ""}
+                  {qr.texto}
+                </span>
               </button>
             ))}
           </div>
@@ -1368,7 +1566,7 @@ function Composer({
                 size="icon"
                 aria-label="Mensagens rápidas"
                 onClick={() => setShowQR((v) => !v)}
-                disabled={disabled}
+                disabled={disabled || sequenceSending || !!sequence}
               >
                 <Zap className="h-4 w-4" />
               </Button>
@@ -1378,7 +1576,7 @@ function Composer({
               size="icon"
               aria-label="Anexar imagem"
               onClick={() => fileRef.current?.click()}
-              disabled={disabled}
+              disabled={disabled || sequenceSending || !!sequence}
             >
               <Paperclip className="h-4 w-4" />
             </Button>
@@ -1408,7 +1606,7 @@ function Composer({
               }
               if (e.key === "Escape") setShowQR(false);
             }}
-            disabled={disabled}
+            disabled={disabled || sequenceSending || !!sequence}
             placeholder={
               disabledReason === "closed"
                 ? "Conversa encerrada."
@@ -1431,7 +1629,7 @@ function Composer({
                 size="icon"
                 aria-label="Gravar áudio"
                 onClick={startRecording}
-                disabled={disabled || !!pendingAudio}
+                disabled={disabled || sequenceSending || !!sequence || !!pendingAudio}
               >
                 <Mic className="h-4 w-4" />
               </Button>
@@ -1445,8 +1643,18 @@ function Composer({
                 <Square className="h-4 w-4" />
               </Button>
             ))}
-          <Button variant="primary" size="sm" onClick={handleSend} disabled={disabled}>
-            <Send className="h-3.5 w-3.5" /> Enviar
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleSend}
+            disabled={disabled || sequenceSending}
+          >
+            <Send className="h-3.5 w-3.5" />{" "}
+            {sequenceSending
+              ? "Enviando…"
+              : sequence && (sequence.next > 0 || sequenceError)
+                ? "Continuar"
+                : "Enviar"}
           </Button>
         </div>
         {recording && (

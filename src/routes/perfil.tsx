@@ -1,3 +1,4 @@
+import { usePhotoCropper } from "@/components/photo-cropper";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { createFileRoute } from "@tanstack/react-router";
@@ -55,28 +56,16 @@ function PerfilPage() {
       toast.success(avatarUrl ? "Foto de perfil atualizada." : "Foto de perfil removida.");
     } catch (error) {
       toast.error((error as Error).message || "Não foi possível salvar a foto.");
+      throw error;
     } finally {
       setSavingAvatar(false);
     }
   };
 
-  const saveAvatar = async (file: File | undefined) => {
-    if (!file) return;
-    if (!/^image\/(png|jpe?g|webp)$/i.test(file.type)) {
-      toast.error("Use uma imagem PNG, JPG ou WebP.");
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("A imagem deve ter até 2 MB.");
-      return;
-    }
-    try {
-      await saveAvatarUrl(await readImageAsCompressedDataUrl(file));
-    } catch (error) {
-      toast.error((error as Error).message || "Não foi possível salvar a foto.");
-    } finally {
-      if (inputRef.current) inputRef.current.value = "";
-    }
+  const photoCrop = usePhotoCropper(saveAvatarUrl);
+  const saveAvatar = (file: File | undefined) => {
+    photoCrop.choose(file);
+    if (inputRef.current) inputRef.current.value = "";
   };
 
   const savePassword = async () => {
@@ -171,7 +160,7 @@ function PerfilPage() {
                   icon={<Trash2 className="h-3.5 w-3.5" />}
                   onClick={() => {
                     setPhotoMenuOpen(false);
-                    void saveAvatarUrl(null);
+                    void saveAvatarUrl(null).catch(() => {});
                   }}
                 >
                   Remover foto
@@ -276,12 +265,13 @@ function PerfilPage() {
             </div>
           </Card>
         </div>
+        {photoCrop.dialog}
         <ProfileCameraModal
           open={cameraOpen}
           onClose={() => setCameraOpen(false)}
           onCapture={(avatarUrl) => {
             setCameraOpen(false);
-            void saveAvatarUrl(avatarUrl);
+            photoCrop.choose(avatarUrl);
           }}
         />
         <ProfilePhotoPreviewModal
@@ -416,7 +406,7 @@ function ProfileCameraModal({
     const video = videoRef.current;
     if (!video?.videoWidth || !video.videoHeight)
       return setError("A câmera ainda não está pronta.");
-    const ratio = Math.min(1, 512 / Math.max(video.videoWidth, video.videoHeight));
+    const ratio = Math.min(1, 2048 / Math.max(video.videoWidth, video.videoHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(video.videoWidth * ratio));
     canvas.height = Math.max(1, Math.round(video.videoHeight * ratio));
@@ -481,32 +471,4 @@ function ProfilePhotoPreviewModal({
       </div>
     </Modal>
   );
-}
-
-function readImageAsCompressedDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const maxSize = 512;
-      const ratio = Math.min(1, maxSize / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(img.width * ratio));
-      canvas.height = Math.max(1, Math.round(img.height * ratio));
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        URL.revokeObjectURL(url);
-        reject(new Error("Não foi possível processar a imagem."));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/jpeg", 0.82));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Não foi possível ler a imagem."));
-    };
-    img.src = url;
-  });
 }

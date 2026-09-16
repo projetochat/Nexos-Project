@@ -1,3 +1,4 @@
+import { usePhotoCropper } from "@/components/photo-cropper";
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -534,6 +535,7 @@ function CreateGroupModal({
   const [step, setStep] = React.useState<"selection" | "details">("selection");
   const [description, setDescription] = React.useState("");
   const [imageDataUrl, setImageDataUrl] = React.useState<string | null>(null);
+  const photoCrop = usePhotoCropper(setImageDataUrl, open);
   const imageInputRef = React.useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = React.useState(false);
   const picker = useGroupContactPicker(open, availableQuery);
@@ -773,9 +775,7 @@ function CreateGroupModal({
               const file = event.target.files?.[0];
               event.currentTarget.value = "";
               if (!file) return;
-              void readGroupImageDataUrl(file)
-                .then(setImageDataUrl)
-                .catch((error) => toast.error((error as Error).message));
+              photoCrop.choose(file);
             }}
           />
         </div>
@@ -791,6 +791,7 @@ function CreateGroupModal({
         </Field>
       </div>
     </Modal>
+    {photoCrop.dialog}
     </>
   );
 }
@@ -1490,37 +1491,6 @@ function formatParticipantPhone(value?: string | null) {
 function normalizeBrazilMobileDigits(digits: string) {
   if (digits.length === 10) return `${digits.slice(0, 2)}9${digits.slice(2)}`;
   return digits;
-}
-
-function readGroupImageDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    if (!file.type.match(/^image\/(png|jpeg|jpg|webp)$/i)) {
-      reject(new Error("Selecione uma imagem PNG, JPEG ou WebP."));
-      return;
-    }
-    const image = new Image();
-    const url = URL.createObjectURL(file);
-    image.onload = () => {
-      const maxSize = 512;
-      const ratio = Math.min(1, maxSize / Math.max(image.width, image.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(image.width * ratio));
-      canvas.height = Math.max(1, Math.round(image.height * ratio));
-      const context = canvas.getContext("2d");
-      URL.revokeObjectURL(url);
-      if (!context) {
-        reject(new Error("Não foi possível processar a imagem."));
-        return;
-      }
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/jpeg", 0.82));
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Não foi possível ler a imagem."));
-    };
-    image.src = url;
-  });
 }
 
 function onlyDigits(value: string) {

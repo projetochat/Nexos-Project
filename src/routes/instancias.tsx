@@ -1,3 +1,4 @@
+import { usePhotoCropper } from "@/components/photo-cropper";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { createFileRoute } from "@tanstack/react-router";
@@ -927,14 +928,10 @@ function ConnectionSettingsModal({
     toast.success("Foto de perfil do WhatsApp atualizada.");
   };
 
-  const handleLogoFile = async (file?: File | null) => {
-    if (!file) return;
-    try {
-      await updateWhatsAppProfilePicture(await readImageAsCompressedDataUrl(file));
-      setLogoMenuOpen(false);
-    } catch (error) {
-      toast.error((error as Error).message);
-    }
+  const photoCrop = usePhotoCropper(updateWhatsAppProfilePicture, !!connection);
+  const handleLogoFile = (file?: File | null) => {
+    photoCrop.choose(file);
+    setLogoMenuOpen(false);
   };
 
   const showWhatsAppProfilePicture = () => {
@@ -1367,13 +1364,12 @@ function ConnectionSettingsModal({
 
         </div>
       </Modal>
+      {photoCrop.dialog}
       <CameraCaptureModal
         open={cameraOpen}
         onClose={() => setCameraOpen(false)}
         onCapture={(dataUrl) => {
-          void updateWhatsAppProfilePicture(dataUrl).catch((error) =>
-            toast.error((error as Error).message),
-          );
+          photoCrop.choose(dataUrl);
           setCameraOpen(false);
         }}
       />
@@ -1547,7 +1543,7 @@ function CameraCaptureModal({
       setError("A câmera ainda não está pronta.");
       return;
     }
-    const maxSize = 512;
+    const maxSize = 2048;
     const ratio = Math.min(1, maxSize / Math.max(video.videoWidth, video.videoHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(video.videoWidth * ratio));
@@ -2128,36 +2124,4 @@ function normalizeHexColor(value?: string | null, _fallback = "#22c55e") {
 function completeHexColor(value?: string | null, fallback = "#22c55e") {
   const normalized = normalizeHexColor(value);
   return normalized.length === 7 ? normalized : normalizeHexColor(fallback);
-}
-
-function readImageAsCompressedDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    if (!file.type.startsWith("image/")) {
-      reject(new Error("Selecione um arquivo de imagem."));
-      return;
-    }
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const maxSize = 512;
-      const ratio = Math.min(1, maxSize / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(img.width * ratio));
-      canvas.height = Math.max(1, Math.round(img.height * ratio));
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        URL.revokeObjectURL(url);
-        reject(new Error("Não foi possível processar a imagem."));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/jpeg", 0.82));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Não foi possível ler a imagem."));
-    };
-    img.src = url;
-  });
 }
