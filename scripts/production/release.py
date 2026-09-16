@@ -28,7 +28,11 @@ BASE = ['/usr/bin/docker', 'compose', '--project-directory', str(APP),
 
 def command(args, *, output=None, timeout=120, input_file=None):
     # Do not send Compose configuration, database URLs or application logs to CI.
-    result = subprocess.run(args, stdin=input_file, stdout=output or subprocess.PIPE,
+    # SSH stdin belongs exclusively to receive(). In particular, compose exec
+    # forwards stdin by default and could drain the archive during inventory.
+    # Only backup verification explicitly receives a separate input file.
+    result = subprocess.run(args, stdin=input_file if input_file is not None else subprocess.DEVNULL,
+                            stdout=output or subprocess.PIPE,
                             stderr=subprocess.PIPE, timeout=timeout)
     if result.returncode:
         with (STATE / 'last-error.log').open('ab') as log:

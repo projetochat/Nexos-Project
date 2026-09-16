@@ -2,6 +2,8 @@ import copy
 import hashlib
 import io
 import json
+import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -34,6 +36,26 @@ def make_archive(path, mutate=lambda value: None, extra=None):
 
 
 class ReleaseTest(unittest.TestCase):
+    def test_preflight_subprocess_cannot_consume_incoming_ssh_archive(self):
+        folder = str(Path(__file__).resolve().parent)
+        child = 'import sys; print(len(sys.stdin.buffer.read()))'
+        harness = (
+            f'import sys, json; sys.path.insert(0, {folder!r}); import release; '
+            f'count = release.command([sys.executable, "-c", {child!r}]); '
+            'print(json.dumps([count, sys.stdin.buffer.read().decode()]))'
+        )
+        result = subprocess.run([sys.executable, '-B', '-c', harness], input=b'archive-payload',
+                                capture_output=True, check=True, timeout=20)
+        self.assertEqual(json.loads(result.stdout), ['0', 'archive-payload'])
+
+    def test_explicit_backup_stream_is_still_passed_to_subprocess(self):
+        with tempfile.TemporaryFile() as stream:
+            stream.write(b'backup')
+            stream.seek(0)
+            count = release.command([sys.executable, '-c',
+                                     'import sys; print(len(sys.stdin.buffer.read()))'], input_file=stream)
+        self.assertEqual(count, '6')
+
     def test_request_rejects_shell_injection_unbounded_size_and_other_verbs(self):
         valid = ['plan', SHA, 'b' * 64, '10']
         self.assertEqual(release.parse_request(valid)[-1], 10)
