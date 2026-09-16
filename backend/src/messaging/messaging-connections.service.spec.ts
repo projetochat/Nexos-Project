@@ -326,7 +326,7 @@ describe("MessagingConnectionsService", () => {
           connectionId: "connection-a",
           direction: MessageDirection.SYSTEM,
           type: MessageType.SYSTEM,
-          content: "Conversa encerrada via remoção da instancia",
+          content: "Conversa encerrada via remoção da instância",
           createdAt: expect.any(Date),
         },
       ],

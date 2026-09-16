@@ -22,11 +22,12 @@ Apache e MariaDB sao servicos do host; o GLPI compartilha o Apache.
    `SUPABASE_SERVICE_ROLE_KEY` nem qualquer senha como variable de frontend.
 3. Integrar o workflow na main e executar **Build Trixus production images**
    manualmente na main.
-4. O job validate instala dependencias pelo lockfile e executa `bun run verify`
-   com PostgreSQL e Redis descartaveis. A verificacao inclui migrations do
-   banco de testes e os testes existentes do projeto.
+4. O job validate instala dependencias pelo lockfile, aplica migrations e
+   carrega fixtures com `SEED_MODE=demo` exclusivamente no PostgreSQL
+   descartavel do runner. Depois executa `bun run verify` com esse banco e
+   Redis descartavel. As contas ficticias do CI nunca sao criadas na VPS.
 5. O job build cria as tres imagens, verifica arquivos/executaveis e gera um
-   artifact privado do repositorio com tags vinculadas ao commit, manifesto e
+   artifact do repositorio com tags vinculadas ao commit, manifesto e
    SHA256SUMS. A retencao e de tres dias para limitar armazenamento cobrado.
 
 Esse primeiro build permite medir o pacote real antes de dimensionar a

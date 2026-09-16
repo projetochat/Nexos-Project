@@ -47,8 +47,8 @@ const gates = bunAvailable
       ["backend:build", bun(), ["run", "backend:build"]],
       [
         "backend:test-db:migrate",
-        bunx(),
-        ["prisma", "migrate", "deploy", "--schema", "backend/prisma/schema.prisma"],
+        bun(),
+        ["run", "--cwd", "backend", "prisma:migrate:deploy"],
         { env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL } },
       ],
       ["backend:test", bun(), ["run", "backend:test"]],
@@ -97,7 +97,7 @@ const gates = bunAvailable
       ["backend:build:copy-prisma", process.execPath, ["backend/scripts/copy-prisma-client.mjs"]],
       [
         "backend:test-db:migrate",
-        bin("prisma"),
+        backendBin("prisma"),
         ["migrate", "deploy", "--schema", "backend/prisma/schema.prisma"],
         { env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL } },
       ],
@@ -106,7 +106,14 @@ const gates = bunAvailable
       [
         "security:xss",
         bin("vitest"),
-        ["run", "src/lib/sanitize-html.test.ts", "--environment", "jsdom"],
+        [
+          "run",
+          "src/lib/sanitize-html.test.ts",
+          "src/lib/ticket-editor-dom.test.ts",
+          "src/components/ticket-rich-text-editor.test.tsx",
+          "--environment",
+          "jsdom",
+        ],
       ],
     ];
 

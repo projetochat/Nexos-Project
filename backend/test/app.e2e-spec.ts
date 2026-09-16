@@ -1009,7 +1009,7 @@ describe("Trixus API organization and RBAC", () => {
       })
       .expect(409)
       .expect(({ body }) => {
-        expect(body.message).toBe("Ja existe um contato ativo com este telefone.");
+        expect(body.message).toBe("Já existe um contato ativo com este telefone.");
       });
 
     const orbitToken = await login("admin-orbit@trixus.app", "demo1234", "orbit");
@@ -1301,10 +1301,24 @@ describe("Trixus API organization and RBAC", () => {
     const contact = await prisma.contact.findFirstOrThrow({
       where: { tenant: { slug: "acme" }, archivedAt: null },
     });
+    const connection = await prisma.messagingConnection.create({
+      data: {
+        tenantId: contact.tenantId,
+        name: "Evolution E2E Status",
+        providerType: MessagingProviderType.EVOLUTION,
+        status: MessagingConnectionStatus.CONNECTED,
+        externalReference: `e2e-status-${Date.now()}`,
+      },
+    });
     const created = await request(app.getHttpServer())
       .post("/api/conversations")
       .set("Authorization", `Bearer ${adminToken}`)
-      .send({ contactId: contact.id, assignToSelf: true, firstMessagePreview: "Status test" })
+      .send({
+        contactId: contact.id,
+        connectionId: connection.id,
+        assignToSelf: true,
+        firstMessagePreview: "Status test",
+      })
       .expect(201);
 
     await request(app.getHttpServer())
@@ -2040,7 +2054,7 @@ describe("Trixus API organization and RBAC", () => {
       prisma.messagingConnection.findUniqueOrThrow({ where: { id: acmeSecond.id } }),
     ).resolves.toMatchObject({
       status: MessagingConnectionStatus.ERROR,
-      ownerPhoneNormalized: "+551188880000",
+      ownerPhoneNormalized: "+5511988880000",
     });
   });
 
@@ -2362,7 +2376,7 @@ describe("Trixus API organization and RBAC", () => {
     const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     const orbitToken = await login("admin-orbit@trixus.app", "demo1234", "orbit");
     const suffix = Date.now();
-    const shortcut = `s10${suffix}`;
+    const shortcut = `sprint-${String(suffix).replace(/\d/g, (digit) => String.fromCharCode(97 + Number(digit)))}`;
 
     const created = await request(app.getHttpServer())
       .post("/api/quick-replies")
@@ -2671,6 +2685,18 @@ describe("Trixus API organization and RBAC", () => {
       .expect(415)
       .expect(({ body }) => {
         expect(body.code).toBe("ATTACHMENT_MIME_NOT_ALLOWED");
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/tickets/${created.body.id}/attachments`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .set("Content-Type", "image/png")
+      .set("X-File-Name", "fake.png")
+      .set("X-File-Size", "4")
+      .send(Buffer.from("MZxx"))
+      .expect(415)
+      .expect(({ body }) => {
+        expect(body.code).toBe("ATTACHMENT_MIME_MISMATCH");
       });
 
     await request(app.getHttpServer())
