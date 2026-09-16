@@ -20,22 +20,29 @@ const current = {
 };
 
 describe("MessagingConnectionsService", () => {
-  it("rejects editing a connecting instance without saving changes", async () => {
-    const prisma = prismaMock();
-    prisma.messagingConnection.findFirst.mockResolvedValue({
-      ...connection(),
-      status: MessagingConnectionStatus.CONNECTING,
-    });
+  it.each([
+    [null, "Conecte a instância ao WhatsApp para cadastrar o número antes de editá-la."],
+    ["5511999999999", "Esta instância não está disponível para edição."],
+  ])(
+    "rejects editing a connecting instance with phone %s without saving changes",
+    async (ownerPhoneNormalized, message) => {
+      const prisma = prismaMock();
+      prisma.messagingConnection.findFirst.mockResolvedValue({
+        ...connection(),
+        status: MessagingConnectionStatus.CONNECTING,
+        ownerPhoneNormalized,
+      });
 
-    await expect(
-      new MessagingConnectionsService(prisma as never, {} as never).update(
-        "connection-a",
-        { name: "Novo nome" },
-        current as never,
-      ),
-    ).rejects.toThrow("Aguarde a conexão da instância para editá-la.");
-    expect(prisma.messagingConnection.update).not.toHaveBeenCalled();
-  });
+      await expect(
+        new MessagingConnectionsService(prisma as never, {} as never).update(
+          "connection-a",
+          { name: "Novo nome" },
+          current as never,
+        ),
+      ).rejects.toThrow(message);
+      expect(prisma.messagingConnection.update).not.toHaveBeenCalled();
+    },
+  );
 
   beforeEach(() => {
     process.env.EVOLUTION_BASE_URL = "http://evolution.local";
