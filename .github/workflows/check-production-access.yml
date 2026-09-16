@@ -42,7 +42,7 @@ jobs:
             -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=2)
           target="$DEPLOY_USER@$DEPLOY_HOST"
           reply=$(ssh "${options[@]}" "$target" check)
-          [[ "$reply" == 'Conexao Trixus OK. Deploy ainda desabilitado.' ]]
+          [[ "$reply" == 'Conexao Trixus OK. Deploy ainda desabilitado.' || "$reply" == 'Conexao Trixus OK. Acesso restrito.' ]]
           status=0
           denied=$(ssh "${options[@]}" "$target" id 2>&1) || status=$?
           if [[ "$status" != 1 || "$denied" != 'Comando nao autorizado.' ]]; then

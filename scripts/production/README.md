@@ -17,9 +17,9 @@ Consultas feitas:
 - Espaco livre, memoria disponivel e tamanho do banco via consulta SQL.
 
 O sucesso nao autoriza deploy nem garante isolamento absoluto dos recursos
-compartilhados. O procedimento de publicacao ainda devera verificar o tamanho
-descompactado das imagens, limitar recursos e usar somente configuracao fixa
-controlada por root. Apache ativo tambem nao substitui um teste HTTP do GLPI.
+compartilhados. O executor em `release.py` verifica tambem imagens, recursos
+e HTTP do GLPI. Instalacao, simulacao, aprovacao e recuperacao estao descritas
+em [PRODUCTION-AUTOMATION.md](../../docs/PRODUCTION-AUTOMATION.md).
 
 Execute `python3 -B -m unittest discover -s scripts/production` no repositorio
 para testar a validacao de configuracao sem acessar Docker ou a VPS.
