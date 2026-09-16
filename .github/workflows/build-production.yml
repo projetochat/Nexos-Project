@@ -1,8 +1,16 @@
 name: Build Trixus production images
 
-# Build and package only. This workflow does not connect to the VPS.
+# Publication requires explicit mode, or a repository-level opt-in for pushes.
 on:
   workflow_dispatch:
+    inputs:
+      release_mode:
+        description: 'build = somente imagens; plan = simular na VPS; deploy = publicar'
+        type: choice
+        default: build
+        options: [build, plan, deploy]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -47,6 +55,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.14'
+      - name: Test production release protections
+        run: python3 -m unittest discover -s scripts/production -p 'test_*.py' -v
       - run: bun install --frozen-lockfile
       - run: bun run --cwd backend prisma:generate
       - name: Prepare fixtures in the disposable test database
@@ -141,3 +151,34 @@ jobs:
           retention-days: 3
           compression-level: 0
           if-no-files-found: error
+
+  release:
+    needs: build
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.release_mode != 'build') ||
+       (github.event_name == 'push' && vars.TRIXUS_AUTO_DEPLOY == 'true'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: production
+    env:
+      RELEASE_MODE: ${{ github.event_name == 'push' && 'deploy' || inputs.release_mode }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: trixus-linux-amd64-${{ github.sha }}
+          path: release
+      - name: Verify release checksums
+        working-directory: release
+        run: sha256sum --check SHA256SUMS
+      - name: Transfer to restricted production runner
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: bash scripts/production/transfer.sh
