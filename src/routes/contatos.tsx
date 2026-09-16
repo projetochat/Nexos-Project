@@ -1161,7 +1161,9 @@ function ContatosPage() {
               />
             </div>
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">Instância</span>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                Instância
+              </span>
               <InstanceFilterSelect
                 value={instanciaFilter}
                 onChange={setInstanciaFilter}
@@ -3878,7 +3880,7 @@ function InstanceMultiSelect({
     count === 0
       ? "- Selecione -"
       : count === 1
-        ? selectedInstances[0]?.name ?? "1 selecionada"
+        ? (selectedInstances[0]?.name ?? "1 selecionada")
         : `${count} selecionadas`;
 
   React.useEffect(() => {
@@ -3939,43 +3941,43 @@ function InstanceMultiSelect({
           role="listbox"
           className="absolute bottom-full z-[90] mb-2 max-h-[min(22rem,calc(100vh-10rem))] w-full overflow-auto rounded-lg border border-border bg-card p-1 shadow-card"
         >
-            {instances.map((instance) => {
-              const active = [instance.value, instance.id, instance.externalReference].some(
-                (key) => key && selectedIds.includes(key),
-              );
-              return (
-                <button
-                  key={instance.value}
-                  type="button"
-                  onClick={() => toggle(instance.value)}
-                  role="option"
-                  aria-selected={active}
-                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition hover:bg-surface-1 ${
-                    active ? "text-foreground" : "text-muted-foreground"
+          {instances.map((instance) => {
+            const active = [instance.value, instance.id, instance.externalReference].some(
+              (key) => key && selectedIds.includes(key),
+            );
+            return (
+              <button
+                key={instance.value}
+                type="button"
+                onClick={() => toggle(instance.value)}
+                role="option"
+                aria-selected={active}
+                className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition hover:bg-surface-1 ${
+                  active ? "text-foreground" : "text-muted-foreground"
+                }`}
+              >
+                <span
+                  className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
+                    active
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-surface-1"
                   }`}
                 >
-                  <span
-                    className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
-                      active
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-surface-1"
-                    }`}
-                  >
-                    {active && <Check className="h-2.5 w-2.5" />}
-                  </span>
-                  <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: instance.color ?? "#22c55e" }}
-                  />
-                  <span className="truncate">{instance.name}</span>
-                </button>
-              );
-            })}
-            {instances.length === 0 && (
-              <div className="px-2 py-3 text-center text-xs text-muted-foreground">
-                Nenhuma instância cadastrada.
-              </div>
-            )}
+                  {active && <Check className="h-2.5 w-2.5" />}
+                </span>
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: instance.color ?? "#22c55e" }}
+                />
+                <span className="truncate">{instance.name}</span>
+              </button>
+            );
+          })}
+          {instances.length === 0 && (
+            <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+              Nenhuma instância cadastrada.
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -4016,7 +4018,8 @@ function TagMultiSelect({
   };
   const toggleAll = () => {
     const availableIds = availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id);
-    const allSelected = availableIds.length > 0 && availableIds.every((id) => selectedIds.includes(id));
+    const allSelected =
+      availableIds.length > 0 && availableIds.every((id) => selectedIds.includes(id));
     if (allSelected) {
       onChange([]);
       return;
@@ -5681,7 +5684,10 @@ function resolveContactInstances(values: string[] | undefined, instances: Contac
   );
 }
 
-function canonicalContactInstanceIds(values: string[] | undefined, instances: ContactInstanceOption[]) {
+function canonicalContactInstanceIds(
+  values: string[] | undefined,
+  instances: ContactInstanceOption[],
+) {
   return resolveContactInstances(values, instances).map((instance) => instance.id);
 }
 

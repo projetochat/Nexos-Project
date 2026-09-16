@@ -4,7 +4,9 @@ import { sortByOptionLabel } from "@/lib/sort-options";
 const SUPPORTED_PROVIDER = "evolution";
 const CONNECTED_STATUS = "connected";
 export function selectableConnections(connections: ApiMessagingConnection[]) {
-  return connections.filter((connection) => connection.status === "connected" || connection.status === "disconnected");
+  return connections.filter(
+    (connection) => connection.status === "connected" || connection.status === "disconnected",
+  );
 }
 export const EXAMPLE_INSTANCE_NAMES = ["ENORE", "FLOWID", "ZYVO"] as const;
 
@@ -23,12 +25,14 @@ export function connectedEvolutionConnections(connections: ApiMessagingConnectio
 }
 
 export function connectedConnectionOptions(connections: ApiMessagingConnection[]) {
-  return sortByOptionLabel(connectedEvolutionConnections(connections), connectionDisplayLabel).map((connection) => ({
-    id: connection.id,
-    value: connectionInstanceValue(connection),
-    label: connectionDisplayLabel(connection),
-    connection,
-  }));
+  return sortByOptionLabel(connectedEvolutionConnections(connections), connectionDisplayLabel).map(
+    (connection) => ({
+      id: connection.id,
+      value: connectionInstanceValue(connection),
+      label: connectionDisplayLabel(connection),
+      connection,
+    }),
+  );
 }
 
 export function connectionDisplayLabel(connection: ApiMessagingConnection) {

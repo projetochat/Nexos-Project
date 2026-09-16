@@ -253,7 +253,6 @@ function ConversationPage() {
     }
   };
 
-
   return (
     <InboxLayout>
       <div className="relative flex h-full min-h-0">
@@ -627,15 +626,33 @@ function MessageBubble({
           />
         )}
         {m.type === "image" && mediaUrl && (
-          <Modal open={imagePreviewOpen} onClose={() => setImagePreviewOpen(false)} title={m.media_data?.file_name ?? "Imagem"} size="xl">
-            <img src={mediaUrl} alt={m.media_data?.file_name ?? "Imagem ampliada"} className="mx-auto max-h-[75vh] max-w-full object-contain" />
+          <Modal
+            open={imagePreviewOpen}
+            onClose={() => setImagePreviewOpen(false)}
+            title={m.media_data?.file_name ?? "Imagem"}
+            size="xl"
+          >
+            <img
+              src={mediaUrl}
+              alt={m.media_data?.file_name ?? "Imagem ampliada"}
+              className="mx-auto max-h-[75vh] max-w-full object-contain"
+            />
           </Modal>
         )}
         {m.type === "image" && m.media_data && (
           <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
             {mediaUrl ? (
-              <button type="button" onClick={() => setImagePreviewOpen(true)} aria-label="Ampliar imagem" className="block cursor-zoom-in">
-                <img src={mediaUrl} alt={m.media_data.file_name ?? "imagem"} className="max-h-72 max-w-full object-contain" />
+              <button
+                type="button"
+                onClick={() => setImagePreviewOpen(true)}
+                aria-label="Ampliar imagem"
+                className="block cursor-zoom-in"
+              >
+                <img
+                  src={mediaUrl}
+                  alt={m.media_data.file_name ?? "imagem"}
+                  className="max-h-72 max-w-full object-contain"
+                />
               </button>
             ) : mediaError || mediaState === "failed" ? (
               <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>

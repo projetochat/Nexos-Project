@@ -28,16 +28,16 @@ describe("MessagingInboundService", () => {
       connectionId: "connection-a",
       externalMessageId: "inbound-1",
       sender: {
-        phone: "551199999999@s.whatsapp.net",
-        normalizedPhone: "+551199999999",
+        phone: "551187654321@s.whatsapp.net",
+        normalizedPhone: "+551187654321",
         displayName: "Cliente",
       },
       type: MessageType.TEXT,
       content: "Resposta real",
       occurredAt: new Date("2026-08-03T12:00:00.000Z"),
       metadata: {
-        remoteJid: "551199999999@s.whatsapp.net",
-        normalizedPhoneCandidates: ["+551199999999", "+5511999999999"],
+        remoteJid: "551187654321@s.whatsapp.net",
+        normalizedPhoneCandidates: ["+5511987654321", "+551187654321"],
       },
     });
 
@@ -45,7 +45,7 @@ describe("MessagingInboundService", () => {
     expect(prisma.contact.findFirst).toHaveBeenCalledWith({
       where: {
         tenantId: "tenant-a",
-        normalizedPhone: { in: ["+551199999999", "+5511999999999"] },
+        normalizedPhone: { in: ["+5511987654321", "+551187654321"] },
         archivedAt: null,
       },
       orderBy: { updatedAt: "desc" },
@@ -73,7 +73,7 @@ describe("MessagingInboundService", () => {
       tenantId: "tenant-a",
       connectionId: "connection-a",
       externalMessageId: "inbound-1",
-      sender: { phone: "5511999999999", normalizedPhone: "+5511999999999" },
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
       type: MessageType.TEXT,
       content: "Replay",
       occurredAt: new Date("2026-08-03T12:00:00.000Z"),
@@ -102,7 +102,7 @@ describe("MessagingInboundService", () => {
       tenantId: "tenant-a",
       connectionId: "connection-a",
       externalMessageId: "inbound-new",
-      sender: { phone: "5511999999999", normalizedPhone: "+5511999999999" },
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
       type: MessageType.TEXT,
       content: "Nova conversa apos fechamento",
       occurredAt: new Date("2026-08-03T12:00:00.000Z"),
@@ -169,12 +169,12 @@ describe("MessagingInboundService", () => {
       tenantId: "tenant-a",
       connectionId: "connection-a",
       externalMessageId: "inbound-race",
-      externalChatId: "5511999999999@s.whatsapp.net",
+      externalChatId: "5511987654321@s.whatsapp.net",
       conversationType: "DIRECT",
       fromMe: false,
       sender: {
-        phone: "5511999999999@s.whatsapp.net",
-        normalizedPhone: "+5511999999999",
+        phone: "5511987654321@s.whatsapp.net",
+        normalizedPhone: "+5511987654321",
         displayName: "Cliente",
       },
       type: MessageType.TEXT,
@@ -187,16 +187,16 @@ describe("MessagingInboundService", () => {
       where: {
         tenantId_normalizedPhone: {
           tenantId: "tenant-a",
-          normalizedPhone: "+5511999999999",
+          normalizedPhone: "+5511987654321",
         },
       },
       update: expect.objectContaining({
         archivedAt: null,
-        phone: "5511999999999@s.whatsapp.net",
+        phone: "5511987654321@s.whatsapp.net",
       }),
       create: expect.objectContaining({
         tenantId: "tenant-a",
-        normalizedPhone: "+5511999999999",
+        normalizedPhone: "+5511987654321",
       }),
     });
     expect(prisma.message.create).toHaveBeenCalledWith({
@@ -238,18 +238,18 @@ describe("MessagingInboundService", () => {
       tenantId: "tenant-a",
       connectionId: "connection-a",
       externalMessageId: "inbound-photo",
-      externalChatId: "5511999999999@s.whatsapp.net",
+      externalChatId: "5511987654321@s.whatsapp.net",
       conversationType: "DIRECT",
       fromMe: false,
       sender: {
-        phone: "5511999999999@s.whatsapp.net",
-        normalizedPhone: "+5511999999999",
+        phone: "5511987654321@s.whatsapp.net",
+        normalizedPhone: "+5511987654321",
         displayName: "Douglas Rezende",
       },
       type: MessageType.TEXT,
       content: "Oi",
       occurredAt: new Date("2026-08-03T12:00:00.000Z"),
-      metadata: { remoteJid: "5511999999999@s.whatsapp.net" },
+      metadata: { remoteJid: "5511987654321@s.whatsapp.net" },
     });
 
     expect(evolution.fetchProfilePictureUrl).not.toHaveBeenCalled();
@@ -283,19 +283,19 @@ describe("MessagingInboundService", () => {
       tenantId: "tenant-a",
       connectionId: "connection-a",
       externalMessageId: "inbound-photo-webhook",
-      externalChatId: "5511999999999@s.whatsapp.net",
+      externalChatId: "5511987654321@s.whatsapp.net",
       conversationType: "DIRECT",
       fromMe: false,
       sender: {
-        phone: "5511999999999@s.whatsapp.net",
-        normalizedPhone: "+5511999999999",
+        phone: "5511987654321@s.whatsapp.net",
+        normalizedPhone: "+5511987654321",
         displayName: "Douglas Rezende",
       },
       type: MessageType.TEXT,
       content: "Oi",
       occurredAt: new Date("2026-08-03T12:00:00.000Z"),
       metadata: {
-        remoteJid: "5511999999999@s.whatsapp.net",
+        remoteJid: "5511987654321@s.whatsapp.net",
         profilePictureUrl: "https://pps.whatsapp.net/v/profile-picture-from-webhook.jpg",
       },
     });
@@ -347,10 +347,10 @@ describe("MessagingInboundService", () => {
       tenantId: "tenant-a",
       connectionId: "connection-a",
       externalMessageId: "image-1",
-      externalChatId: "5511999999999@s.whatsapp.net",
+      externalChatId: "5511987654321@s.whatsapp.net",
       conversationType: "DIRECT",
       fromMe: false,
-      sender: { phone: "5511999999999", normalizedPhone: "+5511999999999" },
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
       type: MessageType.IMAGE,
       content: "Foto",
       media: {
@@ -412,10 +412,10 @@ describe("MessagingInboundService", () => {
       tenantId: "tenant-a",
       connectionId: "connection-a",
       externalMessageId: "voice-1",
-      externalChatId: "5511999999999@s.whatsapp.net",
+      externalChatId: "5511987654321@s.whatsapp.net",
       conversationType: "DIRECT",
       fromMe: false,
-      sender: { phone: "5511999999999", normalizedPhone: "+5511999999999" },
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
       type: MessageType.VOICE,
       media: {
         url: "https://mmg.whatsapp.net/v/audio.enc",
@@ -449,8 +449,8 @@ function contact() {
   return {
     id: "contact-a",
     tenantId: "tenant-a",
-    phone: "5511999999999",
-    normalizedPhone: "+5511999999999",
+    phone: "5511987654321",
+    normalizedPhone: "+5511987654321",
     name: "Cliente",
     instance: "tenant-a-suporte",
     departmentId: "department-a",

@@ -62,7 +62,11 @@ export class OperationsService {
     });
     const range = periodRange(query, "today", tenant?.timezone);
     const previous = previousRange(range);
-    const scopedQuery = { ...query, allowedConnectionIds: current.roleKey === "tenant_admin" ? undefined : current.connectionIds ?? [] };
+    const scopedQuery = {
+      ...query,
+      allowedConnectionIds:
+        current.roleKey === "tenant_admin" ? undefined : (current.connectionIds ?? []),
+    };
     this.logger.log({
       event: "operations.dashboard.query",
       tenantId: current.tenantId,
@@ -87,7 +91,9 @@ export class OperationsService {
     const range = periodRange(query, "30d");
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
-    const where = { AND: [conversationWhere(current.tenantId, query, range), connectionAccess(current)] };
+    const where = {
+      AND: [conversationWhere(current.tenantId, query, range), connectionAccess(current)],
+    };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.conversation.findMany({
         where,
@@ -194,7 +200,11 @@ export class OperationsService {
   }
 
   async report(current: AuthenticatedUser, query: OperationalQuery) {
-    const scopedQuery = { ...query, allowedConnectionIds: current.roleKey === "tenant_admin" ? undefined : current.connectionIds ?? [] };
+    const scopedQuery = {
+      ...query,
+      allowedConnectionIds:
+        current.roleKey === "tenant_admin" ? undefined : (current.connectionIds ?? []),
+    };
     const range = periodRange(query, "30d");
     const [snapshot, charts, conversations] = await Promise.all([
       this.metrics.snapshot(current.tenantId, range, scopedQuery),
@@ -680,8 +690,18 @@ function periodRange(
     const weekday = new Date(Date.UTC(today.year, today.month - 1, today.day)).getUTCDay();
     const currentWeekStart = shiftCalendarDate(today, -weekday);
     const previousWeekStart = shiftCalendarDate(currentWeekStart, -7);
-    const start = startOfDayInTimezone(previousWeekStart.year, previousWeekStart.month, previousWeekStart.day, timezone);
-    const end = startOfDayInTimezone(currentWeekStart.year, currentWeekStart.month, currentWeekStart.day, timezone);
+    const start = startOfDayInTimezone(
+      previousWeekStart.year,
+      previousWeekStart.month,
+      previousWeekStart.day,
+      timezone,
+    );
+    const end = startOfDayInTimezone(
+      currentWeekStart.year,
+      currentWeekStart.month,
+      currentWeekStart.day,
+      timezone,
+    );
     return { start, end };
   }
   if (period === "month") {
@@ -761,7 +781,11 @@ function parseDateValue(value: string): CalendarDate {
 
 function shiftCalendarDate(date: CalendarDate, days: number): CalendarDate {
   const shifted = new Date(Date.UTC(date.year, date.month - 1, date.day + days));
-  return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate() };
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+  };
 }
 
 function previousRange(range: { start: Date; end: Date }) {

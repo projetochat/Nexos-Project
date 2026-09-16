@@ -82,8 +82,14 @@ export class PermissionsGuard implements CanActivate {
     request.user.roleKey = membership.role.key;
     request.user.connectionIds = roleConnectionIds(membership.role);
     request.user.permissions = [...granted] as PermissionKey[];
-    const connectionId = /\/messaging\/connections\//.test(request.originalUrl) ? request.params.id : undefined;
-    if (typeof connectionId === "string" && membership.role.key !== "tenant_admin" && !request.user.connectionIds?.includes(connectionId)) {
+    const connectionId = /\/messaging\/connections\//.test(request.originalUrl)
+      ? request.params.id
+      : undefined;
+    if (
+      typeof connectionId === "string" &&
+      membership.role.key !== "tenant_admin" &&
+      !request.user.connectionIds?.includes(connectionId)
+    ) {
       throw new ForbiddenException("Instância não permitida pelo perfil.");
     }
     return true;

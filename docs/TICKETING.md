@@ -2,6 +2,18 @@
 
 Sprint 11 transforma Chamados em dominio oficial do Trixus API.
 
+## Editor e validacao de anexos
+
+O editor de descricao fica em `src/components/ticket-rich-text-editor.tsx`.
+O HTML recebido e enviado passa pela sanitizacao de `ticket-editor-dom.ts`;
+colagem insere texto puro e arrastar conteudo para o editor e bloqueado.
+Imagens e documentos devem usar o fluxo de anexos. Os testes de seguranca
+exercitam o componente e sua fronteira de manipulacao do DOM.
+
+Uploads aceitam PDF, PNG, JPEG, WebP e texto puro. O backend rejeita MIME
+fora dessa lista e arquivos binarios cuja assinatura nao corresponde ao tipo
+declarado, alem de manter as verificacoes de tamanho, permissao e tenant.
+
 ## Modelo
 
 - `Ticket`: protocolo tenant-scoped `TKT-000001`, titulo, descricao texto, HTML sanitizado, status, prioridade, categoria, departamento, responsavel, Contact, Customer e Conversation opcionais.

@@ -1469,7 +1469,15 @@ export const operationsApi = {
 
 export const connectionsApi = {
   list: () => apiRequest<ApiMessagingConnection[]>("/messaging/connections"),
-  createEvolution: (data: { name: string; color?: string; instanceName?: string; importHistoryEnabled?: boolean; importHistoryStartDate?: string; importGroupsEnabled?: boolean; importGroupsStartDate?: string }) =>
+  createEvolution: (data: {
+    name: string;
+    color?: string;
+    instanceName?: string;
+    importHistoryEnabled?: boolean;
+    importHistoryStartDate?: string;
+    importGroupsEnabled?: boolean;
+    importGroupsStartDate?: string;
+  }) =>
     apiRequest<ApiMessagingConnection>("/messaging/connections/evolution", {
       method: "POST",
       body: JSON.stringify(data),

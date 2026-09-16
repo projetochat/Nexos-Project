@@ -1,0 +1,184 @@
+name: Build Trixus production images
+
+# Publication requires explicit mode, or a repository-level opt-in for pushes.
+on:
+  workflow_dispatch:
+    inputs:
+      release_mode:
+        description: 'build = somente imagens; plan = simular na VPS; deploy = publicar'
+        type: choice
+        default: build
+        options: [build, plan, deploy]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trixus-production-build
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: trixus
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: trixus_1200
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U trixus -d trixus_1200"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://trixus:ci-only-password@127.0.0.1:5432/trixus_1200?schema=public
+      TRIXUS_TEST_DATABASE_URL: postgresql://trixus:ci-only-password@127.0.0.1:5432/trixus_1200?schema=public
+      REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+      - name: Test production release protections
+        run: python3 -m unittest discover -s scripts/production -p 'test_*.py' -v
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd backend prisma:generate
+      - name: Prepare fixtures in the disposable test database
+        env:
+          SEED_MODE: demo
+          NODE_ENV: test
+          TRIXUS_PLATFORM_ADMIN_EMAIL: platform@trixus.app
+          TRIXUS_PLATFORM_ADMIN_PASSWORD: demo1234
+          TRIXUS_PLATFORM_SUPPORT_EMAIL: platform-support@trixus.app
+          TRIXUS_PLATFORM_SUPPORT_PASSWORD: demo1234
+          TRIXUS_PLATFORM_READONLY_EMAIL: platform-readonly@trixus.app
+          TRIXUS_PLATFORM_READONLY_PASSWORD: demo1234
+        run: |
+          bun run --cwd backend prisma:migrate:deploy
+          bun run --cwd backend prisma:seed
+      - name: Validate Compose without production credentials
+        env:
+          TRIXUS_ENV_FILE: .env.vps.example
+        run: docker compose --env-file .env.vps.example -f docker-compose.vps.yml config --quiet
+      - name: Run project verification with disposable databases
+        run: bun run verify
+
+  build:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: production
+    env:
+      VITE_TRIXUS_API_URL: ${{ vars.VITE_TRIXUS_API_URL }}
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_SUPABASE_PROJECT_ID: ${{ vars.VITE_SUPABASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build immutable images for the VPS architecture
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          : "${VITE_TRIXUS_API_URL:?Set the production Environment variable VITE_TRIXUS_API_URL}"
+          [[ "$VITE_TRIXUS_API_URL" == https://* ]]
+          docker build --platform linux/amd64 -f backend/Dockerfile \
+            --target runtime -t "trixus-release/backend:$GITHUB_SHA" .
+          docker build --platform linux/amd64 -f backend/Dockerfile \
+            --target migrate -t "trixus-release/migrate:$GITHUB_SHA" .
+          docker build --platform linux/amd64 -f Dockerfile.frontend \
+            --build-arg VITE_TRIXUS_API_URL \
+            --build-arg VITE_APP_MODE=production \
+            --build-arg VITE_SUPABASE_URL \
+            --build-arg VITE_SUPABASE_PUBLISHABLE_KEY \
+            --build-arg VITE_SUPABASE_PROJECT_ID \
+            -t "trixus-release/frontend:$GITHUB_SHA" .
+      - name: Check executable and application files in images
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run --rm --entrypoint sh "trixus-release/backend:$GITHUB_SHA" \
+            -c 'command -v node && test -s /app/backend/dist/src/main.js'
+          docker run --rm --entrypoint bun "trixus-release/migrate:$GITHUB_SHA" \
+            run prisma:migrate:deploy --help
+          docker run --rm --entrypoint sh "trixus-release/frontend:$GITHUB_SHA" \
+            -c 'command -v bun && test -s /app/.output/server/index.mjs'
+      - name: Package images and checksums
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir release
+          docker image inspect \
+            "trixus-release/backend:$GITHUB_SHA" \
+            "trixus-release/migrate:$GITHUB_SHA" \
+            "trixus-release/frontend:$GITHUB_SHA" \
+            --format '{{.Id}} {{json .RepoTags}}' > release/images.txt
+          docker save \
+            "trixus-release/backend:$GITHUB_SHA" \
+            "trixus-release/migrate:$GITHUB_SHA" \
+            "trixus-release/frontend:$GITHUB_SHA" | gzip -1 > release/images.tar.gz
+          printf '%s\n' "$GITHUB_SHA" > release/commit.txt
+          cd release
+          sha256sum images.tar.gz images.txt commit.txt > SHA256SUMS
+          {
+            echo '### Production images packaged — deployment disabled'
+            echo "Commit: $GITHUB_SHA"
+            echo "Compressed image archive: $(du -h images.tar.gz | cut -f1)"
+            echo 'Tests and migrations ran only against disposable GitHub runner services.'
+            echo 'No SSH connection, VPS changes, or production migrations were performed.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trixus-linux-amd64-${{ github.sha }}
+          path: release/
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.release_mode != 'build') ||
+       (github.event_name == 'push' && vars.TRIXUS_AUTO_DEPLOY == 'true'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: production
+    env:
+      RELEASE_MODE: ${{ github.event_name == 'push' && 'deploy' || inputs.release_mode }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: trixus-linux-amd64-${{ github.sha }}
+          path: release
+      - name: Verify release checksums
+        working-directory: release
+        run: sha256sum --check SHA256SUMS
+      - name: Transfer to restricted production runner
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: bash scripts/production/transfer.sh

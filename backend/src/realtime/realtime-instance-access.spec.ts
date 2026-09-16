@@ -6,7 +6,15 @@ describe("realtime instance access", () => {
     const role = { key: "agent", metadata: { connectionIds: ["vocical"] } };
     const prisma = {
       tenantMembership: { findFirst: vi.fn().mockImplementation(async () => ({ role })) },
-      conversation: { findFirst: vi.fn().mockImplementation(async ({ where }) => where.connectionId.in.includes("vocical") && where.id === "vocical-chat" ? { id: where.id } : null) },
+      conversation: {
+        findFirst: vi
+          .fn()
+          .mockImplementation(async ({ where }) =>
+            where.connectionId.in.includes("vocical") && where.id === "vocical-chat"
+              ? { id: where.id }
+              : null,
+          ),
+      },
     };
     const service = new RealtimeService({} as never, prisma as never);
     const context = { membershipId: "member-a", userId: "user-a", tenantId: "tenant-a" } as never;
@@ -17,15 +25,38 @@ describe("realtime instance access", () => {
   });
 
   it("does not broadcast conversation data to sockets outside the instance", async () => {
-    const allowed = { data: { context: { membershipId: "allowed", tenantId: "tenant-a" } }, emit: vi.fn() };
-    const denied = { data: { context: { membershipId: "denied", tenantId: "tenant-a" } }, emit: vi.fn() };
+    const allowed = {
+      data: { context: { membershipId: "allowed", tenantId: "tenant-a" } },
+      emit: vi.fn(),
+    };
+    const denied = {
+      data: { context: { membershipId: "denied", tenantId: "tenant-a" } },
+      emit: vi.fn(),
+    };
     const prisma = {
-      tenantMembership: { findFirst: vi.fn().mockImplementation(async ({ where }) => ({ role: { key: "agent", metadata: { connectionIds: where.id === "allowed" ? ["vocical"] : [] } } })) },
-      conversation: { findFirst: vi.fn().mockImplementation(async ({ where }) => where.connectionId.in.includes("vocical") ? { id: where.id } : null) },
+      tenantMembership: {
+        findFirst: vi.fn().mockImplementation(async ({ where }) => ({
+          role: {
+            key: "agent",
+            metadata: { connectionIds: where.id === "allowed" ? ["vocical"] : [] },
+          },
+        })),
+      },
+      conversation: {
+        findFirst: vi
+          .fn()
+          .mockImplementation(async ({ where }) =>
+            where.connectionId.in.includes("vocical") ? { id: where.id } : null,
+          ),
+      },
     };
     const service = new RealtimeService({} as never, prisma as never);
-    (service as any).server = { in: () => ({ fetchSockets: async () => [allowed, denied] }) };
-    await (service as any).publishScoped("tenant:tenant-a", "conversation.updated", { conversationId: "vocical-chat" });
+    service["server"] = {
+      in: () => ({ fetchSockets: async () => [allowed, denied] }),
+    } as unknown as NonNullable<RealtimeService["server"]>;
+    await service["publishScoped"]("tenant:tenant-a", "conversation.updated", {
+      conversationId: "vocical-chat",
+    });
     expect(allowed.emit).toHaveBeenCalledOnce();
     expect(denied.emit).not.toHaveBeenCalled();
   });

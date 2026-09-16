@@ -255,7 +255,6 @@ export class MessagesService {
     });
     if (!membership)
       throw new BadRequestException("Atendente inexistente ou inativo para este tenant.");
-
   }
 
   private async visibilityWhere(
@@ -283,7 +282,6 @@ export class MessagesService {
     if (!conversation.assignedMembershipId) {
       throw new BadRequestException("Conversa precisa estar assumida antes do envio.");
     }
-
   }
 
   private updateConversationFromMessage(

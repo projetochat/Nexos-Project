@@ -115,7 +115,9 @@ export class GroupsSyncService implements OnModuleDestroy {
           select: { name: true, normalizedPhone: true },
         })
       : [];
-    const contactByPhone = new Map(contacts.map((contact) => [contact.normalizedPhone, contact.name]));
+    const contactByPhone = new Map(
+      contacts.map((contact) => [contact.normalizedPhone, contact.name]),
+    );
 
     let updated = 0;
     for (const participant of participantCandidates) {
@@ -187,12 +189,21 @@ export class GroupsSyncService implements OnModuleDestroy {
         });
         result.groups += groups.length;
 
-        const groupResults = await mapWithConcurrency(groups, GROUP_SYNC_CONCURRENCY, async (group) => {
-          const detailedGroup = includeParticipants
-            ? await this.safeGroupInfo(connection.externalReference!, group)
-            : group;
-          return this.upsertSyncedGroup(input.tenantId, connection.id, connection.externalReference!, detailedGroup);
-        });
+        const groupResults = await mapWithConcurrency(
+          groups,
+          GROUP_SYNC_CONCURRENCY,
+          async (group) => {
+            const detailedGroup = includeParticipants
+              ? await this.safeGroupInfo(connection.externalReference!, group)
+              : group;
+            return this.upsertSyncedGroup(
+              input.tenantId,
+              connection.id,
+              connection.externalReference!,
+              detailedGroup,
+            );
+          },
+        );
 
         for (const groupResult of groupResults) {
           if (groupResult.status === "fulfilled") {
@@ -207,7 +218,9 @@ export class GroupsSyncService implements OnModuleDestroy {
             result.failed += 1;
             this.logger.warn(
               `Nao foi possivel sincronizar um grupo da instancia ${connection.id}: ${
-                groupResult.reason instanceof Error ? groupResult.reason.message : String(groupResult.reason)
+                groupResult.reason instanceof Error
+                  ? groupResult.reason.message
+                  : String(groupResult.reason)
               }`,
             );
           }
@@ -215,7 +228,13 @@ export class GroupsSyncService implements OnModuleDestroy {
       } catch (error) {
         connectionFailed = true;
         result.failed += 1;
-        await this.markConnectionSyncFinished(input.tenantId, connection.id, "ERROR", connectionSynced, error);
+        await this.markConnectionSyncFinished(
+          input.tenantId,
+          connection.id,
+          "ERROR",
+          connectionSynced,
+          error,
+        );
         this.logger.warn(
           `Nao foi possivel buscar grupos da instancia ${connection.id}: ${
             error instanceof Error ? error.message : String(error)
@@ -234,7 +253,9 @@ export class GroupsSyncService implements OnModuleDestroy {
     }
 
     if (includeParticipants) {
-      const reconciliation = await this.reconcileGroupParticipantNames({ tenantId: input.tenantId });
+      const reconciliation = await this.reconcileGroupParticipantNames({
+        tenantId: input.tenantId,
+      });
       result.participantNamesUpdated = reconciliation.updated;
     } else if (input.followUpFullSync && result.synced > 0) {
       this.enqueue({
@@ -306,14 +327,18 @@ export class GroupsSyncService implements OnModuleDestroy {
     const key = `${target.tenantId}:${target.conversationId}`;
     const now = Date.now();
     const lastAttempt = this.recentPictureAttempts.get(key);
-    if (this.queuedPictureKeys.has(key) || (lastAttempt && now - lastAttempt < GROUP_PICTURE_RETRY_INTERVAL_MS)) {
+    if (
+      this.queuedPictureKeys.has(key) ||
+      (lastAttempt && now - lastAttempt < GROUP_PICTURE_RETRY_INTERVAL_MS)
+    ) {
       return;
     }
     this.queuedPictureKeys.add(key);
     this.pendingPictures.push(target);
     if (this.pendingPictures.length > 100) {
       const overflow = this.pendingPictures.splice(0, this.pendingPictures.length - 100);
-      for (const item of overflow) this.queuedPictureKeys.delete(`${item.tenantId}:${item.conversationId}`);
+      for (const item of overflow)
+        this.queuedPictureKeys.delete(`${item.tenantId}:${item.conversationId}`);
     }
     this.schedulePictureDrain();
   }
@@ -486,7 +511,9 @@ export class GroupsSyncService implements OnModuleDestroy {
             },
           });
 
-      const participants = group.participants.filter((participant) => participant.externalParticipantId);
+      const participants = group.participants.filter(
+        (participant) => participant.externalParticipantId,
+      );
       for (const participant of participants) {
         await tx.conversationParticipant.upsert({
           where: {
@@ -524,7 +551,9 @@ export class GroupsSyncService implements OnModuleDestroy {
             tenantId,
             conversationId: conversation.id,
             active: true,
-            externalParticipantId: { notIn: participants.map((participant) => participant.externalParticipantId) },
+            externalParticipantId: {
+              notIn: participants.map((participant) => participant.externalParticipantId),
+            },
           },
           data: { active: false },
         });
@@ -619,7 +648,8 @@ function resolveParticipantDisplayName(
   contactByPhone: Map<string, string>,
 ) {
   const ownerCandidates = participantPhoneCandidates(participant.ownerPhone);
-  if (ownerCandidates.some((candidate) => participant.candidates.includes(candidate))) return "Você";
+  if (ownerCandidates.some((candidate) => participant.candidates.includes(candidate)))
+    return "Você";
   for (const candidate of participant.candidates) {
     const contactName = contactByPhone.get(candidate)?.trim();
     if (contactName) return contactName;
