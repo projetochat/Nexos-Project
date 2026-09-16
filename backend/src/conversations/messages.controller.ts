@@ -46,6 +46,16 @@ export class MessagesController {
     return this.messages.sendText(conversationId, dto, current);
   }
 
+  @Get(":messageId")
+  @RequirePermissions("conversations.read")
+  get(
+    @Param("conversationId") conversationId: string,
+    @Param("messageId") messageId: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.messages.get(conversationId, messageId, current);
+  }
+
   @Post("media")
   @RequirePermissions("messages.send")
   sendMedia(

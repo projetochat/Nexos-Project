@@ -1088,6 +1088,8 @@ model MessagingConnection {
 }
 
 model QuickReply {
+  messages              Json?
+  intervalSeconds       Int      @default(0)
   id                    String            @id @default(uuid())
   tenantId              String
   title                 String

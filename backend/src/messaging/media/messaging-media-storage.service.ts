@@ -142,7 +142,7 @@ function storageProvider() {
   return value === "s3" || value === "r2" ? value : "local";
 }
 
-function validatePolicy(type: MessageType, mimeType: string, sizeBytes: number) {
+export function validatePolicy(type: MessageType, mimeType: string, sizeBytes: number) {
   const allowed = allowedMimeTypes(type);
   if (!allowed.has(mimeType))
     throw new UnsupportedMediaTypeException("Tipo de mídia não permitido.");
@@ -206,7 +206,7 @@ function normalizeMimeType(value: string) {
   return value.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
 }
 
-function resolveMessageType(mimeType: string, explicit: string) {
+export function resolveMessageType(mimeType: string, explicit: string) {
   const normalized = explicit.toLowerCase();
   if (normalized === "voice") return MessageType.VOICE;
   if (normalized === "audio") return MessageType.AUDIO;

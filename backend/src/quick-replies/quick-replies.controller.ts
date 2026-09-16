@@ -24,6 +24,11 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CreateQuickReplyDto } from "./dto/create-quick-reply.dto";
 import { ListQuickRepliesQueryDto } from "./dto/list-quick-replies-query.dto";
 import { UpdateQuickReplyDto } from "./dto/update-quick-reply.dto";
+import { QuickReplyMessageDto } from "./dto/quick-reply-message.dto";
+import {
+  resolveMessageType,
+  validatePolicy,
+} from "../messaging/media/messaging-media-storage.service";
 
 @Controller("quick-replies")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -45,6 +50,7 @@ export class QuickRepliesController {
   @Post()
   @RequirePermissions("chat.quick_replies.manage")
   async create(@Body() dto: CreateQuickReplyDto, @CurrentUser() current: AuthenticatedUser) {
+    const messages = normalizeMessages(dto.messages);
     const departmentId = await this.resolveDepartmentId(dto.departmentId ?? null, current);
     const normalizedShortcut = normalizeShortcut(dto.shortcut);
     await this.ensureShortcutAvailable(current.tenantId, departmentId, normalizedShortcut);
@@ -56,6 +62,8 @@ export class QuickRepliesController {
           shortcut: normalizeShortcutDisplay(dto.shortcut),
           normalizedShortcut,
           content: dto.content.trim(),
+          messages,
+          intervalSeconds: dto.intervalSeconds ?? 0,
           attachmentFileName: dto.attachmentFileName ?? null,
           attachmentMimeType: dto.attachmentMimeType ?? null,
           attachmentSize: dto.attachmentSize ?? null,
@@ -80,6 +88,7 @@ export class QuickRepliesController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const existing = await this.findOrThrow(id, current.tenantId);
+    const messages = normalizeMessages(dto.messages);
     const departmentId =
       dto.departmentId === undefined
         ? undefined
@@ -102,6 +111,8 @@ export class QuickRepliesController {
           shortcut: dto.shortcut ? normalizeShortcutDisplay(dto.shortcut) : undefined,
           normalizedShortcut: dto.shortcut ? normalizedShortcut : undefined,
           content: dto.content?.trim(),
+          messages,
+          intervalSeconds: dto.intervalSeconds,
           attachmentFileName: dto.attachmentFileName,
           attachmentMimeType: dto.attachmentMimeType,
           attachmentSize: dto.attachmentSize,
@@ -233,6 +244,8 @@ function serializeQuickReply(reply: QuickReplyWithRelations) {
     shortcut: reply.shortcut,
     texto: reply.content,
     content: reply.content,
+    messages: reply.messages,
+    intervalSeconds: reply.intervalSeconds,
     attachmentFileName: reply.attachmentFileName,
     attachmentMimeType: reply.attachmentMimeType,
     attachmentSize: reply.attachmentSize,
@@ -251,6 +264,40 @@ function serializeQuickReply(reply: QuickReplyWithRelations) {
 
 function clean(value: string) {
   return value.trim().replace(/\s+/g, " ");
+}
+
+export function normalizeMessages(messages?: QuickReplyMessageDto[]) {
+  if (messages === undefined) return undefined;
+  if (!Array.isArray(messages) || messages.length < 1 || messages.length > 20) {
+    throw new BadRequestException("Cadastre de 1 a 20 mensagens.");
+  }
+  if (messages.some((message) => !message.text.trim() && !message.attachment)) {
+    throw new BadRequestException("Cada mensagem precisa de texto ou arquivo.");
+  }
+  for (const message of messages) {
+    const attachment = message.attachment;
+    if (!attachment) continue;
+    const [metadata, encoded] = attachment.dataUrl.split(",");
+    const size = Buffer.from(encoded ?? "", "base64").byteLength;
+    if (
+      metadata !== `data:${attachment.mimeType};base64` ||
+      size !== attachment.size ||
+      size > 10 * 1024 * 1024
+    ) {
+      throw new BadRequestException("Os dados do arquivo são inválidos ou excedem 10 MB.");
+    }
+    validatePolicy(resolveMessageType(attachment.mimeType, ""), attachment.mimeType, size);
+  }
+  if (
+    messages.reduce((total, message) => total + (message.attachment?.dataUrl.length ?? 0), 0) >
+    40 * 1024 * 1024
+  ) {
+    throw new BadRequestException("Os anexos da sequência excedem o limite de 30 MB.");
+  }
+  return messages.map((message) => ({
+    text: message.text.trim(),
+    attachment: message.attachment ? { ...message.attachment } : null,
+  }));
 }
 
 function normalizeShortcut(value: string) {

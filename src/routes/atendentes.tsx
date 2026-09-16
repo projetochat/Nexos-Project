@@ -1,3 +1,4 @@
+import { usePhotoCropper } from "@/components/photo-cropper";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { createFileRoute } from "@tanstack/react-router";
@@ -541,18 +542,10 @@ function AtendenteForm({
     setPhotoPreviewOpen(false);
   }, [clone, initial, open, perfis]);
 
+  const photoCrop = usePhotoCropper((avatarUrl) => setForm((current) => ({ ...current, avatarUrl })), open);
   const onPickFile = (file?: File | null) => {
-    if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("Imagem maior que 2MB.");
-      return;
-    }
-    void readImageAsCompressedDataUrl(file)
-      .then((avatarUrl) => {
-        setForm((f) => ({ ...f, avatarUrl }));
-        setPhotoMenuOpen(false);
-      })
-      .catch((error) => toast.error((error as Error).message));
+    photoCrop.choose(file);
+    setPhotoMenuOpen(false);
   };
 
   const showPhoto = () => {
@@ -814,11 +807,12 @@ function AtendenteForm({
           </div>
         </div>
       </Modal>
+      {photoCrop.dialog}
       <AtendenteCameraModal
         open={cameraOpen}
         onClose={() => setCameraOpen(false)}
         onCapture={(avatarUrl) => {
-          setForm((current) => ({ ...current, avatarUrl }));
+          photoCrop.choose(avatarUrl);
           setCameraOpen(false);
         }}
       />
@@ -971,7 +965,7 @@ function AtendenteCameraModal({
       setError("A câmera ainda não está pronta.");
       return;
     }
-    const maxSize = 512;
+    const maxSize = 2048;
     const ratio = Math.min(1, maxSize / Math.max(video.videoWidth, video.videoHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(video.videoWidth * ratio));
@@ -1127,32 +1121,4 @@ function formatDateTime(value?: string | null) {
   })
     .format(new Date(value))
     .replace(",", "");
-}
-
-function readImageAsCompressedDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const maxSize = 512;
-      const ratio = Math.min(1, maxSize / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(img.width * ratio));
-      canvas.height = Math.max(1, Math.round(img.height * ratio));
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        URL.revokeObjectURL(url);
-        reject(new Error("Não foi possível processar a imagem."));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL("image/jpeg", 0.82));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Não foi possível ler a imagem."));
-    };
-    img.src = url;
-  });
 }

@@ -1,6 +1,8 @@
 import { IsBoolean, IsOptional, IsString, IsUUID, Length, Matches } from "class-validator";
 
-export class UpdateQuickReplyDto {
+import { QuickReplySequenceDto } from "./quick-reply-message.dto";
+
+export class UpdateQuickReplyDto extends QuickReplySequenceDto {
   @IsOptional()
   @IsString()
   @Length(1, 120)

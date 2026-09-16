@@ -1167,7 +1167,7 @@ function ContatosPage() {
               <InstanceFilterSelect
                 value={instanciaFilter}
                 onChange={setInstanciaFilter}
-                extraOptions={[{ value: EMPTY_FILTER_VALUE, label: "- Sem instância -" }]}
+                extraOptions={[{ value: EMPTY_FILTER_VALUE, label: "- Sem instância -", color: "#9ca3af" }]}
                 options={visibleInstances.map((option) => ({
                   value: option.value,
                   label: option.name,
