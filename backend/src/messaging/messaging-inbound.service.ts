@@ -186,6 +186,7 @@ export class MessagingInboundService {
           type: event.type,
           status: event.fromMe ? MessageStatus.SENT : MessageStatus.CREATED,
           content: event.content ?? null,
+          interactiveData: event.interactive ?? undefined,
           externalMessageId: event.externalMessageId,
           providerMessageId: event.externalMessageId,
           providerChatId: event.externalChatId,

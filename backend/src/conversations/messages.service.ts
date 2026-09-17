@@ -322,6 +322,7 @@ export class MessagesService {
       author_name:
         message.authorMembership?.presentationName ?? message.authorMembership?.user.name ?? null,
       content: message.content ?? "",
+      interactive_data: message.interactiveData ?? null,
       created_at: message.createdAt,
       updated_at: message.updatedAt,
       read_at: message.readAt,

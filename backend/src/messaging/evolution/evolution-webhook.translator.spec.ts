@@ -517,8 +517,12 @@ describe("EvolutionWebhookTranslator", () => {
       event: {
         externalMessageId: "LIST-1",
         fromMe: true,
-        content:
-          "Olá **Flow iD - Douglas**, Tudo bem?\n\nComo deseja o atendimento?\n\nOpções (Clique para ver):\n• Suporte",
+        content: "Olá **Flow iD - Douglas**, Tudo bem?\n\nComo deseja o atendimento?",
+        interactive: {
+          kind: "list",
+          buttonText: "Clique para ver",
+          sections: [{ title: "Atendimento", options: [{ title: "Suporte" }] }],
+        },
       },
     });
   });

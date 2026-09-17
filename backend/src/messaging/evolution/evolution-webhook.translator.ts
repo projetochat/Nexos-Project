@@ -160,6 +160,7 @@ export class EvolutionWebhookTranslator {
         },
         type: content.type,
         content: text,
+        interactive: content.interactive ?? null,
         media,
         quotedProviderMessageId: quoted.providerMessageId,
         quotedContentPreview: quoted.preview,
@@ -252,6 +253,7 @@ function extractReaction(message: Record<string, unknown> | null) {
 function extractMessageContent(message: Record<string, unknown> | null): {
   type: Extract<MessageType, "TEXT" | "IMAGE" | "AUDIO" | "VOICE" | "VIDEO" | "DOCUMENT">;
   text?: string | null;
+  interactive?: InboundMessageEvent["interactive"];
   caption?: string | null;
   media?: InboundMessageEvent["media"];
 } {
@@ -263,7 +265,14 @@ function extractMessageContent(message: Record<string, unknown> | null): {
   const extendedText = readString(extended ?? undefined, "text");
   if (extendedText) return { type: MessageType.TEXT, text: extendedText };
   const list = readRecord(message, "listMessage");
-  if (list) return { type: MessageType.TEXT, text: interactiveListText(list) };
+  if (list) {
+    const interactive = interactiveListData(list);
+    return {
+      type: MessageType.TEXT,
+      text: joinMessageParts([readString(list, "title"), readString(list, "description") ?? readString(list, "text")]),
+      interactive,
+    };
+  }
   const buttons = readRecord(message, "buttonsMessage");
   if (buttons) return { type: MessageType.TEXT, text: interactiveButtonsText(buttons) };
   const interactive = readRecord(message, "interactiveMessage");
@@ -314,15 +323,19 @@ function extractMessageContent(message: Record<string, unknown> | null): {
  * WhatsApp list messages have no `conversation` field. Persisting a readable
  * representation keeps messages sent by third-party bots visible in Trixus.
  */
-function interactiveListText(list: Record<string, unknown>) {
-  const options = rowsFromSections(list.sections).map(optionLine);
-  return joinMessageParts([
-    readString(list, "title"),
-    readString(list, "description") ?? readString(list, "text"),
-    options.length
-      ? `Opções (${readString(list, "buttonText") ?? "Clique para ver"}):\n${options.join("\n")}`
-      : readString(list, "buttonText"),
-  ]);
+function interactiveListData(list: Record<string, unknown>): NonNullable<InboundMessageEvent["interactive"]> {
+  const sections = recordArray(list.sections).map((section) => ({
+    title: readString(section, "title"),
+    options: recordArray(section.rows).map((row) => ({
+      title: readString(row, "title") ?? "Opção",
+      description: readString(row, "description"),
+    })),
+  }));
+  return {
+    kind: "list",
+    buttonText: readString(list, "buttonText") ?? "Clique para ver",
+    sections: sections.filter((section) => section.options.length > 0),
+  };
 }
 
 function interactiveButtonsText(buttons: Record<string, unknown>) {
@@ -368,12 +381,6 @@ function nativeFlowButtonLabels(button: Record<string, unknown>) {
 
 function rowsFromSections(value: unknown) {
   return recordArray(value).flatMap((section) => recordArray(section.rows));
-}
-
-function optionLine(row: Record<string, unknown>) {
-  const title = readString(row, "title") ?? "Opção";
-  const description = readString(row, "description");
-  return description ? `• ${title} — ${description}` : `• ${title}`;
 }
 
 function joinMessageParts(parts: Array<string | null | undefined>) {

@@ -21,6 +21,7 @@ import {
   Reply,
   Download,
   SmilePlus,
+  List,
 } from "lucide-react";
 import { toast as systemToast } from "sonner";
 // Notificações desativadas nesta tela — nenhum toast deve aparecer no chat.
@@ -743,6 +744,9 @@ function MessageBubble({
         {m.content && m.content !== "[áudio]" && m.content !== "[imagem]" && (
           <MessageText content={m.content} />
         )}
+        {m.interactive_data?.kind === "list" && (
+          <WhatsAppListMessage interactive={m.interactive_data} mine={mine} />
+        )}
         <p
           className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
         >
@@ -802,6 +806,65 @@ function MessageBubble({
         </Button>
       )}
     </div>
+  );
+}
+
+function WhatsAppListMessage({
+  interactive,
+  mine,
+}: {
+  interactive: NonNullable<Message["interactive_data"]>;
+  mine: boolean;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const options = interactive.sections.flatMap((section) => section.options);
+  if (!options.length) return null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={`mt-3 flex w-full items-center justify-center gap-2 border-t pt-2 text-sm font-medium transition hover:brightness-110 ${
+          mine ? "border-white/25 text-white" : "border-border text-primary"
+        }`}
+        aria-label={`${interactive.buttonText}: abrir opções`}
+      >
+        <List className="h-4 w-4" />
+        {interactive.buttonText}
+      </button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Lista"
+        description="Escolha uma das opções abaixo"
+        size="sm"
+      >
+        <div className="space-y-4">
+          {interactive.sections.map((section, sectionIndex) => (
+            <section key={`${section.title ?? "opções"}-${sectionIndex}`}>
+              {section.title && (
+                <p className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {section.title}
+                </p>
+              )}
+              <div className="overflow-hidden rounded-xl border border-border">
+                {section.options.map((option, optionIndex) => (
+                  <div
+                    key={`${option.title}-${optionIndex}`}
+                    className="border-b border-border px-3 py-3 last:border-b-0"
+                  >
+                    <p className="text-sm font-medium">{option.title}</p>
+                    {option.description && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">{option.description}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </Modal>
+    </>
   );
 }
 

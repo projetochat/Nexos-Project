@@ -911,6 +911,7 @@ model Message {
   status               MessageStatus        @default(CREATED)
   authorMembershipId   String?
   content              String?
+  interactiveData      Json?
   clientMessageId      String?
   providerMessageId    String?
   providerChatId       String?

@@ -346,6 +346,14 @@ export type ApiMessage = {
   author_membership_id: string | null;
   author_name?: string | null;
   content: string;
+  interactive_data?: {
+    kind: "list";
+    buttonText: string;
+    sections: Array<{
+      title?: string | null;
+      options: Array<{ title: string; description?: string | null }>;
+    }>;
+  } | null;
   created_at: string;
   updated_at: string;
   read_at: string | null;
