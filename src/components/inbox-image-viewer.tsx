@@ -64,7 +64,14 @@ export function InboxImageViewer({
   const qc = useQueryClient();
   const destinations = useQuery({
     queryKey: ["trixus", "conversations", "image-forward", search, page],
-    queryFn: () => conversationApi.list({ q: search || undefined, page, pageSize: 50 }),
+    queryFn: () =>
+      conversationApi.list({
+        q: search || undefined,
+        page,
+        pageSize: 50,
+        sort: "lastMessageAt",
+        direction: "desc",
+      }),
     enabled: forwarding,
   });
   const activeMessage = gallery[activeIndex] ?? message;

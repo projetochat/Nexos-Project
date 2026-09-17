@@ -771,8 +771,20 @@ function paginated<T>(items: T[], total: number, page: number, pageSize: number)
 
 function orderBy(sort: "lastMessageAt" | "createdAt" | "status", direction: "asc" | "desc") {
   if (sort === "createdAt") return [{ createdAt: direction }];
-  if (sort === "status") return [{ status: direction }, { lastMessageAt: "desc" as const }];
-  return [{ lastMessageAt: direction }, { createdAt: direction }];
+  if (sort === "status") {
+    return [
+      { status: direction },
+      { lastMessageAt: { sort: "desc" as const, nulls: "last" as const } },
+      { updatedAt: "desc" as const },
+    ];
+  }
+  // `lastMessageAt` comes from WhatsApp and is commonly precise only to seconds.
+  // `updatedAt` preserves the actual server arrival order when messages share a timestamp.
+  return [
+    { lastMessageAt: { sort: direction, nulls: "last" as const } },
+    { updatedAt: direction },
+    { id: direction },
+  ];
 }
 
 function tabWhere(

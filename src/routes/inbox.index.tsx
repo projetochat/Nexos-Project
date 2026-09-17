@@ -143,6 +143,8 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
         q: query,
         customerId: selectedCliente,
         instance: selectedInstancia,
+        sort: "lastMessageAt",
+        direction: "desc",
         pageSize: 100,
       }),
     refetchInterval: realtime.status === "connected" ? false : 30_000,
