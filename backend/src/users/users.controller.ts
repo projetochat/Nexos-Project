@@ -216,8 +216,9 @@ export class UsersController {
     if (current.roleKey !== "tenant_admin" || current.impersonationSessionId) {
       throw new ForbiddenException("Somente o Administrador pode alterar estas credenciais.");
     }
-    const isChangingPassword =
-      dto.currentPassword !== undefined || dto.newPassword !== undefined || dto.confirmPassword !== undefined;
+    // A senha atual pode permanecer preenchida enquanto o administrador altera apenas o nome.
+    // A troca só começa quando algum dos campos da nova senha recebe valor.
+    const isChangingPassword = dto.newPassword !== undefined || dto.confirmPassword !== undefined;
     if (isChangingPassword && (!dto.currentPassword || !dto.newPassword || !dto.confirmPassword)) {
       throw new BadRequestException("Preencha todos os campos de senha.");
     }

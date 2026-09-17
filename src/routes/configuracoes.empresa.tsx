@@ -39,7 +39,8 @@ function EmpresaSettings() {
 
   const savePassword = async () => {
     const trimmedPresentationName = presentationName.trim();
-    const isChangingPassword = Boolean(currentPassword || newPassword || confirmPassword);
+    // A senha atual pode continuar preenchida sem transformar a edição do nome em troca de senha.
+    const isChangingPassword = Boolean(newPassword || confirmPassword);
     if (!trimmedPresentationName) return toast.error("Informe o nome de apresentação.");
     if (isChangingPassword) {
       if (!currentPassword || !newPassword || !confirmPassword) {
@@ -129,28 +130,27 @@ function EmpresaSettings() {
           </div>
 
           <div className="mt-4 space-y-4">
-            <Field
-              label="Nome de apresentação *"
-              hint="Este nome será exibido nas mensagens enviadas pelo chat."
-            >
-              <Input
-                value={presentationName}
-                onChange={(event) => setPresentationName(event.target.value)}
-                disabled={isLoadingCompany || savingPassword}
-                maxLength={120}
-              />
-            </Field>
-            <Field label="E-mail de acesso *">
-              <div className="relative">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Nome de apresentação *">
                 <Input
-                  value={company?.accessEmail ?? ""}
-                  readOnly
-                  disabled={isLoadingCompany}
-                  className="pr-10"
+                  value={presentationName}
+                  onChange={(event) => setPresentationName(event.target.value)}
+                  disabled={isLoadingCompany || savingPassword}
+                  maxLength={120}
                 />
-                <Lock className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              </div>
-            </Field>
+              </Field>
+              <Field label="E-mail de acesso *">
+                <div className="relative">
+                  <Input
+                    value={company?.accessEmail ?? ""}
+                    readOnly
+                    disabled={isLoadingCompany}
+                    className="pr-10"
+                  />
+                  <Lock className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                </div>
+              </Field>
+            </div>
 
             <div className="grid gap-4 md:grid-cols-3">
               <Field label="Senha atual *">
