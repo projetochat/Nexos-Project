@@ -603,7 +603,7 @@ function MessageBubble({
   const mine = m.sender === "agent";
   const authorName =
     showAgentName && mine && m.author_id
-      ? (agents.find((a) => a.id === m.author_id)?.nome ?? null)
+      ? (m.author_name ?? agents.find((a) => a.id === m.author_id)?.nome ?? null)
       : null;
   const avatarName = mine ? (authorName ?? "Atendente") : (m.participant?.name ?? contactName);
   return (

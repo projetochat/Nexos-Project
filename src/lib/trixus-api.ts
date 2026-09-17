@@ -341,6 +341,7 @@ export type ApiMessage = {
   sender: "contact" | "agent";
   author_id: string | null;
   author_membership_id: string | null;
+  author_name?: string | null;
   content: string;
   created_at: string;
   updated_at: string;
@@ -515,6 +516,7 @@ export type ApiCompanyProfile = {
   locale: string;
   accessEmail: string | null;
   responsibleName: string | null;
+  presentationName: string | null;
   canManageAdministratorCredentials: boolean;
 };
 
@@ -1019,9 +1021,10 @@ export const organizationApi = {
       body: JSON.stringify(data),
     }),
   updateAdministratorCredentials: (data: {
-    currentPassword: string;
-    newPassword: string;
-    confirmPassword: string;
+    currentPassword?: string;
+    newPassword?: string;
+    confirmPassword?: string;
+    presentationName?: string;
   }) =>
     apiRequest<{ ok: true }>("/company/administrator-credentials", {
       method: "PATCH",

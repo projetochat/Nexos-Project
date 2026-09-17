@@ -920,6 +920,8 @@ export class MessagingOutboundService {
       sender: message.direction === MessageDirection.INBOUND ? "contact" : "agent",
       author_id: message.authorMembership?.user.id ?? null,
       author_membership_id: message.authorMembershipId,
+      author_name:
+        message.authorMembership?.presentationName ?? message.authorMembership?.user.name ?? null,
       content: message.content ?? "",
       created_at: message.createdAt,
       updated_at: message.updatedAt,

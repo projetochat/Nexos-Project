@@ -18,6 +18,7 @@ function EmpresaSettings() {
     queryFn: organizationApi.getCompany,
   });
   const [savingPassword, setSavingPassword] = React.useState(false);
+  const [presentationName, setPresentationName] = React.useState("");
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
@@ -32,34 +33,42 @@ function EmpresaSettings() {
   const passwordReuseError = "A nova senha deve ser diferente da senha atual.";
   const passwordConfirmationError = "A confirmação da senha não confere.";
 
+  React.useEffect(() => {
+    setPresentationName(company?.presentationName ?? company?.responsibleName ?? "Administrador");
+  }, [company?.presentationName, company?.responsibleName]);
+
   const savePassword = async () => {
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      toast.error("Preencha todos os campos de senha.");
-      return;
-    }
-    if (newPassword.length < 6) {
-      toast.error("A nova senha deve ter ao menos 6 caracteres.");
-      return;
-    }
-    if (newPasswordMatchesCurrent) {
-      toast.error(passwordReuseError);
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      toast.error("A confirmação da senha não confere.");
-      return;
+    const trimmedPresentationName = presentationName.trim();
+    const isChangingPassword = Boolean(currentPassword || newPassword || confirmPassword);
+    if (!trimmedPresentationName) return toast.error("Informe o nome de apresentação.");
+    if (isChangingPassword) {
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        toast.error("Preencha todos os campos de senha.");
+        return;
+      }
+      if (newPassword.length < 6) {
+        toast.error("A nova senha deve ter ao menos 6 caracteres.");
+        return;
+      }
+      if (newPasswordMatchesCurrent) {
+        toast.error(passwordReuseError);
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        toast.error("A confirmação da senha não confere.");
+        return;
+      }
     }
     setSavingPassword(true);
     try {
       await organizationApi.updateAdministratorCredentials({
-        currentPassword,
-        newPassword,
-        confirmPassword,
+        presentationName: trimmedPresentationName,
+        ...(isChangingPassword ? { currentPassword, newPassword, confirmPassword } : {}),
       });
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      toast.success("Senha atualizada.");
+      toast.success(isChangingPassword ? "Credenciais atualizadas." : "Nome de apresentação atualizado.");
     } catch (error) {
       toast.error((error as Error).message || "Não foi possível alterar a senha.");
     } finally {
@@ -120,6 +129,17 @@ function EmpresaSettings() {
           </div>
 
           <div className="mt-4 space-y-4">
+            <Field
+              label="Nome de apresentação *"
+              hint="Este nome será exibido nas mensagens enviadas pelo chat."
+            >
+              <Input
+                value={presentationName}
+                onChange={(event) => setPresentationName(event.target.value)}
+                disabled={isLoadingCompany || savingPassword}
+                maxLength={120}
+              />
+            </Field>
             <Field label="E-mail de acesso *">
               <div className="relative">
                 <Input
@@ -181,7 +201,7 @@ function EmpresaSettings() {
           <div className="mt-6 flex justify-end border-t border-border pt-4">
             <Button variant="primary" size="lg" onClick={savePassword} disabled={savingPassword}>
               <Lock className="h-4 w-4" />
-              {savingPassword ? "Confirmando..." : "Confirmar nova senha"}
+              {savingPassword ? "Salvando..." : "Salvar alterações"}
             </Button>
           </div>
         </Card>

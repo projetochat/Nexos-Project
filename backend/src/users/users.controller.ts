@@ -64,15 +64,24 @@ class UpdateMyProfileDto {
 }
 
 class UpdateAdministratorCredentialsDto {
+  @IsOptional()
   @IsString()
-  currentPassword!: string;
+  currentPassword?: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(6)
-  newPassword!: string;
+  newPassword?: string;
 
+  @IsOptional()
   @IsString()
-  confirmPassword!: string;
+  confirmPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  presentationName?: string;
 }
 
 type MembershipWithRelations = {
@@ -91,6 +100,7 @@ type MembershipWithRelations = {
     status: string;
     platformRole: string;
   };
+  presentationName?: string | null;
   role: {
     id: string;
     key: string;
@@ -168,6 +178,13 @@ export class UsersController {
         departments: { include: { department: true } },
       },
     });
+    if (
+      current.roleKey === "tenant_admin" &&
+      dto.name !== undefined &&
+      dto.name.trim() !== membership.user.name
+    ) {
+      throw new ForbiddenException("O nome do Administrador não pode ser alterado.");
+    }
     if (dto.newPassword) {
       if (!dto.currentPassword) throw new BadRequestException("Informe a senha atual.");
       const validPassword = await compare(dto.currentPassword, membership.user.passwordHash);
@@ -199,7 +216,12 @@ export class UsersController {
     if (current.roleKey !== "tenant_admin" || current.impersonationSessionId) {
       throw new ForbiddenException("Somente o Administrador pode alterar estas credenciais.");
     }
-    if (dto.newPassword !== dto.confirmPassword) {
+    const isChangingPassword =
+      dto.currentPassword !== undefined || dto.newPassword !== undefined || dto.confirmPassword !== undefined;
+    if (isChangingPassword && (!dto.currentPassword || !dto.newPassword || !dto.confirmPassword)) {
+      throw new BadRequestException("Preencha todos os campos de senha.");
+    }
+    if (isChangingPassword && dto.newPassword !== dto.confirmPassword) {
       throw new BadRequestException("A confirmação da nova senha não confere.");
     }
     const membership = await this.prisma.tenantMembership.findFirstOrThrow({
@@ -214,17 +236,29 @@ export class UsersController {
     if (membership.role.key !== "tenant_admin") {
       throw new ForbiddenException("Somente o Administrador pode alterar estas credenciais.");
     }
-    if (!(await compare(dto.currentPassword, membership.user.passwordHash))) {
-      throw new BadRequestException("Senha atual inválida.");
+    if (isChangingPassword) {
+      if (!(await compare(dto.currentPassword!, membership.user.passwordHash))) {
+        throw new BadRequestException("Senha atual inválida.");
+      }
+      if (dto.newPassword === dto.currentPassword) {
+        throw new BadRequestException("A nova senha deve ser diferente da senha atual.");
+      }
     }
-    if (dto.newPassword === dto.currentPassword) {
-      throw new BadRequestException("A nova senha deve ser diferente da senha atual.");
-    }
-    await this.prisma.user.update({
-      where: { id: membership.userId },
-      data: { passwordHash: await hash(dto.newPassword, 12) },
+    await this.prisma.$transaction(async (tx) => {
+      if (isChangingPassword) {
+        await tx.user.update({
+          where: { id: membership.userId },
+          data: { passwordHash: await hash(dto.newPassword!, 12) },
+        });
+      }
+      if (dto.presentationName !== undefined) {
+        await tx.tenantMembership.update({
+          where: { id: membership.id },
+          data: { presentationName: dto.presentationName.trim() },
+        });
+      }
     });
-    return { ok: true };
+    return { ok: true, presentationName: dto.presentationName?.trim() ?? membership.presentationName };
   }
 
   @Get("company")
@@ -259,6 +293,8 @@ export class UsersController {
       locale: tenant.locale,
       accessEmail: current.roleKey === "tenant_admin" ? administratorEmail : null,
       responsibleName: administrator?.user.name ?? null,
+      presentationName:
+        current.roleKey === "tenant_admin" ? administrator?.presentationName ?? administrator?.user.name ?? null : null,
       canManageAdministratorCredentials: current.roleKey === "tenant_admin",
     };
   }
@@ -615,6 +651,7 @@ export class UsersController {
         id: membership.user.id,
         email: membership.user.email,
         name: membership.user.name,
+        presentationName: membership.presentationName,
         avatarUrl: membership.user.avatarUrl,
         status: membership.user.status,
         platformRole: membership.user.platformRole,

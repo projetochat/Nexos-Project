@@ -553,6 +553,7 @@ model TenantMembership {
   tenantId           String
   userId             String
   roleId             String
+  presentationName   String?                @map("presentation_name")
   status             MembershipStatus       @default(ACTIVE)
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
