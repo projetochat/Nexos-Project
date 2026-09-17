@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Eye, EyeOff, Lock } from "lucide-react";
 import { toast } from "sonner";
-import { Button, Card, Field, Input } from "@/components/ui-kit";
+import { Avatar, Button, Card, Field, Input } from "@/components/ui-kit";
 import { organizationApi } from "@/lib/trixus-api";
 import { useSession } from "@/lib/session";
 
@@ -129,72 +129,81 @@ function EmpresaSettings() {
             </p>
           </div>
 
-          <div className="mt-4 space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Nome do atendente *">
-                <Input
-                  value={presentationName}
-                  onChange={(event) => setPresentationName(event.target.value)}
-                  disabled={isLoadingCompany || savingPassword}
-                  maxLength={120}
-                />
-              </Field>
-              <Field label="E-mail de acesso *">
-                <div className="relative">
-                  <Input
-                    value={company?.accessEmail ?? ""}
-                    readOnly
-                    disabled={isLoadingCompany}
-                    className="pr-10"
-                  />
-                  <Lock className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                </div>
-              </Field>
+          <div className="mt-4 grid gap-5 md:grid-cols-[112px_minmax(0,1fr)]">
+            <div className="flex justify-center md:justify-start">
+              <Avatar
+                name={presentationName || "Administrador"}
+                src={company?.administratorAvatarUrl ?? sessionUser?.avatarUrl}
+                size={96}
+              />
             </div>
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Nome do atendente *">
+                  <Input
+                    value={presentationName}
+                    onChange={(event) => setPresentationName(event.target.value)}
+                    disabled={isLoadingCompany || savingPassword}
+                    maxLength={120}
+                  />
+                </Field>
+                <Field label="E-mail de acesso *">
+                  <div className="relative">
+                    <Input
+                      value={company?.accessEmail ?? ""}
+                      readOnly
+                      disabled={isLoadingCompany}
+                      className="pr-10"
+                    />
+                    <Lock className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                </Field>
+              </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
-              <Field label="Senha atual *">
-                <PasswordInput
-                  value={currentPassword}
-                  onChange={setCurrentPassword}
-                  visible={false}
-                  canToggle={false}
-                  onToggle={() => undefined}
-                  autoComplete="current-password"
-                />
-              </Field>
-              <Field
-                label="Nova senha *"
-                error={newPasswordMatchesCurrent ? passwordReuseError : undefined}
-              >
-                <PasswordInput
-                  value={newPassword}
-                  onChange={setNewPassword}
-                  visible={showNewPassword}
-                  onToggle={() => setShowNewPassword((current) => !current)}
-                  autoComplete="new-password"
-                  invalid={newPasswordMatchesCurrent}
-                />
-              </Field>
-              <Field
-                label="Confirmar nova senha *"
-                error={
-                  passwordsDoNotMatch
-                    ? passwordConfirmationError
-                    : confirmPasswordMatchesCurrent
-                      ? passwordReuseError
-                      : undefined
-                }
-              >
-                <PasswordInput
-                  value={confirmPassword}
-                  onChange={setConfirmPassword}
-                  visible={showConfirmPassword}
-                  onToggle={() => setShowConfirmPassword((current) => !current)}
-                  autoComplete="new-password"
-                  invalid={passwordsDoNotMatch || confirmPasswordMatchesCurrent}
-                />
-              </Field>
+              <div className="grid gap-4 md:grid-cols-3">
+                <Field label="Senha atual *">
+                  <PasswordInput
+                    value={currentPassword}
+                    onChange={setCurrentPassword}
+                    visible={false}
+                    canToggle={false}
+                    onToggle={() => undefined}
+                    autoComplete="current-password"
+                  />
+                </Field>
+                <Field
+                  label="Nova senha *"
+                  error={newPasswordMatchesCurrent ? passwordReuseError : undefined}
+                >
+                  <PasswordInput
+                    value={newPassword}
+                    onChange={setNewPassword}
+                    visible={showNewPassword}
+                    onToggle={() => setShowNewPassword((current) => !current)}
+                    autoComplete="new-password"
+                    invalid={newPasswordMatchesCurrent}
+                  />
+                </Field>
+                <Field
+                  label="Confirmar nova senha *"
+                  error={
+                    passwordsDoNotMatch
+                      ? passwordConfirmationError
+                      : confirmPasswordMatchesCurrent
+                        ? passwordReuseError
+                        : undefined
+                  }
+                >
+                  <PasswordInput
+                    value={confirmPassword}
+                    onChange={setConfirmPassword}
+                    visible={showConfirmPassword}
+                    onToggle={() => setShowConfirmPassword((current) => !current)}
+                    autoComplete="new-password"
+                    invalid={passwordsDoNotMatch || confirmPasswordMatchesCurrent}
+                  />
+                </Field>
+              </div>
             </div>
           </div>
 

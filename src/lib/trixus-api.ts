@@ -16,6 +16,7 @@ type LoginResponse = {
     id: string;
     email: string;
     name: string;
+    presentationName?: string | null;
     avatarUrl?: string | null;
     roleId: string;
     roleKey: ApiRoleKey;
@@ -97,6 +98,7 @@ export type ApiUserMembership = {
     id: string;
     email: string;
     name: string;
+    presentationName?: string | null;
     avatarUrl?: string | null;
     status: "ACTIVE" | "DISABLED";
     platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
@@ -518,6 +520,7 @@ export type ApiCompanyProfile = {
   accessEmail: string | null;
   responsibleName: string | null;
   presentationName: string | null;
+  administratorAvatarUrl: string | null;
   canManageAdministratorCredentials: boolean;
 };
 

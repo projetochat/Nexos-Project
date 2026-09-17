@@ -762,7 +762,7 @@ export class MessagingOutboundService {
       where: { id: current.membershipId, tenantId: current.tenantId },
       include: { user: { select: { name: true } } },
     });
-    const agentName = membership?.user.name?.trim();
+    const agentName = membership?.presentationName?.trim() || membership?.user.name?.trim();
     if (!agentName) return content;
     return cleanMessageContent(`*${agentName}:*\n\n${content}`);
   }

@@ -297,6 +297,8 @@ export class UsersController {
       responsibleName: administrator?.user.name ?? null,
       presentationName:
         current.roleKey === "tenant_admin" ? administrator?.presentationName ?? administrator?.user.name ?? null : null,
+      administratorAvatarUrl:
+        current.roleKey === "tenant_admin" ? administrator?.user.avatarUrl ?? null : null,
       canManageAdministratorCredentials: current.roleKey === "tenant_admin",
     };
   }
@@ -653,7 +655,9 @@ export class UsersController {
       user: {
         id: membership.user.id,
         email: membership.user.email,
-        name: membership.user.name,
+        // A listagem de atendentes deve sempre exibir o nome configurado para o administrador.
+        // O nome persistido no usuário continua intacto e é usado apenas para regras internas.
+        name: membership.presentationName?.trim() || membership.user.name,
         presentationName: membership.presentationName,
         avatarUrl: membership.user.avatarUrl,
         status: membership.user.status,
