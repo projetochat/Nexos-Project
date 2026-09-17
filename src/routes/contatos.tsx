@@ -3894,12 +3894,6 @@ function InstanceMultiSelect({
     ),
   );
   const count = selectedInstances.length;
-  const summary =
-    count === 0
-      ? "- Selecione -"
-      : count === 1
-        ? (selectedInstances[0]?.name ?? "1 selecionada")
-        : `${count} selecionadas`;
 
   React.useEffect(() => {
     if (!open) return;
@@ -3927,14 +3921,23 @@ function InstanceMultiSelect({
           count > 0 ? "text-foreground" : "text-muted-foreground"
         }`}
       >
-        <span className="flex min-w-0 items-center gap-2">
-          {count === 1 && selectedInstances[0] && (
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ backgroundColor: selectedInstances[0].color ?? "#22c55e" }}
-            />
+        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+          {count === 0 ? (
+            <span className="text-muted-foreground">- Selecione -</span>
+          ) : (
+            selectedInstances.map((instance) => (
+              <span
+                key={instance.value}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-medium"
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: instance.color ?? "#22c55e" }}
+                />
+                <span className="truncate">{instance.name}</span>
+              </span>
+            ))
           )}
-          <span className="truncate">{summary}</span>
         </span>
         <span className="flex shrink-0 items-center gap-1">
           {count > 0 && (
@@ -4016,9 +4019,9 @@ function TagMultiSelect({
   flow?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
-  const [availableTagIds, setAvailableTagIds] = React.useState<string[]>([]);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const selectedTags = tags.filter((tag) => selectedIds.includes(tag.id));
+  const hasSelection = selectedIds.length > 0;
 
   React.useEffect(() => {
     if (!open) return;
@@ -4034,32 +4037,11 @@ function TagMultiSelect({
       selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id],
     );
   };
-  const toggleAll = () => {
-    const availableIds = availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id);
-    const allSelected =
-      availableIds.length > 0 && availableIds.every((id) => selectedIds.includes(id));
-    if (allSelected) {
-      onChange([]);
-      return;
-    }
-    onChange(Array.from(new Set([...selectedIds, ...availableIds])));
-  };
-  const availableIds = availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id);
-  const allAvailableSelected =
-    availableIds.length > 0 && availableIds.every((id) => selectedIds.includes(id));
-
   return (
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() =>
-          setOpen((current) => {
-            if (!current) {
-              setAvailableTagIds(tags.map((tag) => tag.id));
-            }
-            return !current;
-          })
-        }
+        onClick={() => setOpen((current) => !current)}
         className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm text-foreground outline-none transition focus:border-primary"
       >
         <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
@@ -4126,19 +4108,19 @@ function TagMultiSelect({
           <div className="grid grid-cols-2 gap-2 border-t border-border bg-popover p-2">
             <button
               type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
+              onClick={(event) => {
                 event.stopPropagation();
-                toggleAll();
+                onChange(hasSelection ? [] : tags.map((tag) => tag.id));
               }}
-              disabled={tags.length === 0}
-              className={`flex items-center justify-center gap-1 rounded-md px-2 py-2 text-xs font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                allAvailableSelected
-                  ? "border border-destructive bg-destructive hover:bg-destructive/90"
-                  : "border border-success bg-success hover:bg-success/90"
-              }`}
+              disabled={!hasSelection && tags.length === 0}
+              className={
+                "flex items-center justify-center gap-1 rounded-md border px-2 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-45 " +
+                (hasSelection
+                  ? "border-destructive/30 text-destructive hover:border-destructive hover:bg-destructive/10"
+                  : "border-success/30 text-success hover:border-success hover:bg-success/10")
+              }
             >
-              {allAvailableSelected ? (
+              {hasSelection ? (
                 <>
                   <X className="h-3 w-3" /> Limpar seleção
                 </>
@@ -4147,6 +4129,17 @@ function TagMultiSelect({
                   <Check className="h-3 w-3" /> Selecionar todos
                 </>
               )}
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+              }}
+              className="flex items-center justify-center gap-1 rounded-md border border-primary/45 px-2 py-2 text-xs font-medium text-primary transition hover:border-primary hover:bg-primary/10"
+            >
+              <Check className="h-3 w-3" /> Confirmar seleção
             </button>
           </div>
         </div>
