@@ -12,6 +12,7 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import {
   ConversationStatus,
+  MessagingHistoryImportKind,
   MessageDirection,
   MessageType,
   MessagingConnectionStatus,
@@ -70,6 +71,21 @@ export class MessagingConnectionsService {
   async detail(id: string, current: AuthenticatedUser) {
     const connection = await this.findTenantConnection(id, current.tenantId);
     return this.serialize(connection);
+  }
+
+  async importStatus(id: string, current: AuthenticatedUser) {
+    const connection = await this.findTenantConnection(id, current.tenantId);
+    return this.prisma.messagingHistoryImport.findMany({
+      where: { tenantId: connection.tenantId, connectionId: connection.id },
+      orderBy: { kind: "asc" },
+    });
+  }
+
+  async retryImport(id: string, current: AuthenticatedUser, kind?: MessagingHistoryImportKind) {
+    const connection = await this.findTenantConnection(id, current.tenantId);
+    if (!this.historyImport) throw new ServiceUnavailableException("Importação indisponível.");
+    await this.historyImport.retry(connection.id, kind);
+    return this.importStatus(id, current);
   }
 
   async webhookStatus(id: string, current: AuthenticatedUser) {
@@ -987,7 +1003,7 @@ export function translateEvolutionState(value: string | null | undefined) {
   return MessagingConnectionStatus.ERROR;
 }
 
-function parseImportStartDate(value: string | undefined) {
+export function parseImportStartDate(value: string | undefined) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "");
   if (!match) return null;
   const year = Number(match[1]);

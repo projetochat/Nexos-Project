@@ -50,6 +50,7 @@ import {
   connectionsApi,
   crmApi,
   type ApiContactCustomField,
+  type ApiMessagingHistoryImport,
   type ApiMessagingConnection,
 } from "@/lib/trixus-api";
 
@@ -699,6 +700,29 @@ function ImportOption({
   );
 }
 
+function ImportStatusBadge({ job }: { job?: ApiMessagingHistoryImport }) {
+  if (!job) return <span className="text-muted-foreground">Aguardando conexão</span>;
+  const labels: Record<ApiMessagingHistoryImport["status"], string> = {
+    PENDING: "Na fila",
+    RUNNING: "Em andamento",
+    COMPLETED: "Concluída",
+    PARTIAL_FAILED: "Concluída com falhas",
+    FAILED: "Falhou",
+  };
+  const tones: Record<ApiMessagingHistoryImport["status"], string> = {
+    PENDING: "bg-amber-50 text-amber-700",
+    RUNNING: "bg-blue-50 text-blue-700",
+    COMPLETED: "bg-emerald-50 text-emerald-700",
+    PARTIAL_FAILED: "bg-amber-50 text-amber-700",
+    FAILED: "bg-red-50 text-red-700",
+  };
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tones[job.status]}`}>
+      {labels[job.status]}
+    </span>
+  );
+}
+
 function ImportDate({
   label,
   required = false,
@@ -947,6 +971,21 @@ function ConnectionSettingsModal({
     absenceEnabled: false,
     absenceMessage: "",
     notes: "",
+  });
+  const { data: importJobs = [] } = useQuery({
+    queryKey: ["trixus", "messaging-connection-imports", connection?.id],
+    queryFn: () => connectionsApi.importStatus(connection!.id),
+    enabled: Boolean(connection),
+    refetchInterval: connection ? 3_000 : false,
+  });
+  const retryImport = useMutation({
+    mutationFn: (kind?: ApiMessagingHistoryImport["kind"]) =>
+      connectionsApi.retryImport(connection!.id, kind),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["trixus", "messaging-connection-imports", connection?.id] });
+      toast.success("Importação agendada para nova tentativa.");
+    },
+    onError: (error) => toast.error((error as Error).message),
   });
 
   const initializedConnection = React.useRef<string | null>(null);
@@ -1310,6 +1349,38 @@ function ConnectionSettingsModal({
                     onChange={() => undefined}
                     disabled
                   />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(["DIRECT", "GROUP"] as const).map((kind) => {
+                    const job = importJobs.find((item) => item.kind === kind);
+                    const label = kind === "DIRECT" ? "Histórico de mensagens" : "Mensagens de grupo";
+                    return (
+                      <div key={kind} className="rounded-lg border border-border bg-background px-3 py-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-foreground">{label}</span>
+                          <ImportStatusBadge job={job} />
+                        </div>
+                        {job && (
+                          <p className="mt-1 text-muted-foreground">
+                            {job.chatsProcessed} conversa(s) · {job.messagesImported} mensagem(ns) importada(s)
+                          </p>
+                        )}
+                        {job?.error && <p className="mt-1 text-destructive">{job.error}</p>}
+                        {job && (job.status === "FAILED" || job.status === "PARTIAL_FAILED") && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="mt-2"
+                            disabled={retryImport.isPending}
+                            onClick={() => retryImport.mutate(kind)}
+                          >
+                            Tentar novamente
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             </div>

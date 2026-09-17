@@ -58,6 +58,59 @@ describe("MessagingInboundService", () => {
     );
   });
 
+  it("does not create leads, unread messages or automatic replies while importing history", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      welcomeEnabled: true,
+      welcomeNewMessage: "Olá {{nome}}",
+      welcomeExistingMessage: "Olá {{nome}}",
+    });
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(null);
+    prisma.conversation.create.mockResolvedValue(conversation({ id: "conversation-imported" }));
+    prisma.message.create.mockResolvedValue({
+      id: "message-imported",
+      conversationId: "conversation-imported",
+      status: MessageStatus.CREATED,
+      createdAt: new Date(),
+    });
+    prisma.conversation.update.mockResolvedValue(
+      conversation({ id: "conversation-imported", unreadCount: 0 }),
+    );
+    const outbound = { queueAutomatedText: vi.fn() };
+
+    await new MessagingInboundService(
+      prisma as never,
+      undefined,
+      undefined,
+      undefined,
+      outbound as never,
+    ).process(
+      {
+        tenantId: "tenant-a",
+        connectionId: "connection-a",
+        externalMessageId: "imported-1",
+        externalChatId: "5511987654321@s.whatsapp.net",
+        conversationType: "DIRECT",
+        fromMe: false,
+        sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+        type: MessageType.TEXT,
+        content: "Mensagem antiga",
+        occurredAt: new Date("2026-09-01T12:00:00.000Z"),
+      },
+      { historical: true },
+    );
+
+    expect(prisma.lead.upsert).not.toHaveBeenCalled();
+    expect(outbound.queueAutomatedText).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ unreadCount: 0 }) }),
+    );
+  });
+
   it("reuses an existing contact and open conversation for inbound replies", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());

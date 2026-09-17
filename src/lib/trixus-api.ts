@@ -510,6 +510,19 @@ export type ApiMessagingConnection = {
   qrCodeBase64?: string | null;
 };
 
+export type ApiMessagingHistoryImport = {
+  id: string;
+  kind: "DIRECT" | "GROUP";
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "PARTIAL_FAILED" | "FAILED";
+  startDate: string;
+  chatsProcessed: number;
+  messagesImported: number;
+  messagesSkipped: number;
+  error?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+};
+
 export type ApiWebhookAudit = {
   instanceName: string;
   urlCorrect: boolean;
@@ -1566,6 +1579,13 @@ export const connectionsApi = {
       method: "POST",
     }),
   status: (id: string) => apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/status`),
+  importStatus: (id: string) =>
+    apiRequest<ApiMessagingHistoryImport[]>(`/messaging/connections/${id}/imports`),
+  retryImport: (id: string, kind?: ApiMessagingHistoryImport["kind"]) =>
+    apiRequest<ApiMessagingHistoryImport[]>(`/messaging/connections/${id}/imports/retry`, {
+      method: "POST",
+      body: JSON.stringify(kind ? { kind } : {}),
+    }),
   qr: (id: string) =>
     apiRequest<{ connectionId: string; qrCodeBase64: string | null; status: string }>(
       `/messaging/connections/${id}/qr`,

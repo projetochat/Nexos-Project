@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Delete,
   Get,
@@ -17,6 +18,7 @@ import { PermissionsGuard } from "../auth/permissions.guard";
 import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.dto";
 import { UpdateMessagingConnectionDto } from "./dto/update-messaging-connection.dto";
 import { MessagingConnectionsService } from "./messaging-connections.service";
+import { MessagingHistoryImportKind } from "../generated/prisma";
 
 @Controller("messaging/connections")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -54,6 +56,26 @@ export class MessagingConnectionsController {
   @RequirePermissions("connections.read")
   detail(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.connections.detail(id, current);
+  }
+
+  @Get(":id/imports")
+  @RequirePermissions("connections.read")
+  importStatus(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.importStatus(id, current);
+  }
+
+  @Post(":id/imports/retry")
+  @RequirePermissions("connections.manage")
+  retryImport(
+    @Param("id") id: string,
+    @Body() dto: { kind?: string },
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    const kind = dto?.kind?.toUpperCase();
+    if (kind && kind !== MessagingHistoryImportKind.DIRECT && kind !== MessagingHistoryImportKind.GROUP) {
+      throw new BadRequestException("Tipo de importação inválido.");
+    }
+    return this.connections.retryImport(id, current, kind as MessagingHistoryImportKind | undefined);
   }
 
   @Post("evolution")
