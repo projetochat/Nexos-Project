@@ -60,6 +60,24 @@ export class MessagingHistoryImportService implements OnModuleInit {
       }
       this.enqueue(job.id);
     }
+
+    // Existing connected instances may have been configured before this
+    // process started. Scheduling them here makes the feature deployable
+    // without requiring the operator to disconnect and scan the QR code again.
+    const eligibleConnections = await this.prisma.messagingConnection.findMany({
+      where: {
+        archivedAt: null,
+        status: MessagingConnectionStatus.CONNECTED,
+        externalReference: { not: null },
+        OR: [
+          { importHistoryEnabled: true, importHistoryStartDate: { not: null } },
+          { importGroupsEnabled: true, importGroupsStartDate: { not: null } },
+        ],
+      },
+    });
+    for (const connection of eligibleConnections) {
+      await this.enqueueForConnection(connection);
+    }
   }
 
   async enqueueForConnection(connection: ImportConnection) {

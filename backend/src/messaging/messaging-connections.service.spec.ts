@@ -8,7 +8,11 @@ import {
   MessagingProviderType,
 } from "../generated/prisma";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
-import { evolutionQrBase64, MessagingConnectionsService } from "./messaging-connections.service";
+import {
+  evolutionQrBase64,
+  MessagingConnectionsService,
+  parseImportStartDate,
+} from "./messaging-connections.service";
 
 const current = {
   userId: "user-a",
@@ -20,6 +24,11 @@ const current = {
 };
 
 describe("MessagingConnectionsService", () => {
+  it("treats the selected import date as midnight in São Paulo", () => {
+    expect(parseImportStartDate("2026-09-17")?.toISOString()).toBe("2026-09-17T03:00:00.000Z");
+    expect(parseImportStartDate("2026-02-31")).toBeNull();
+  });
+
   it.each([
     [null, "Conecte a instância ao WhatsApp para cadastrar o número antes de editá-la."],
     ["5511999999999", "Esta instância não está disponível para edição."],

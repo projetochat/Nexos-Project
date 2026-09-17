@@ -190,5 +190,86 @@ describe("MessagingHistoryImportService", () => {
       }),
     );
   });
+
+  it("always stores imported group conversations in history without creating leads", async () => {
+    const conversationUpdate = vi.fn().mockResolvedValue({});
+    const leadDeleteMany = vi.fn().mockResolvedValue({ count: 0 });
+    const prisma = {
+      messagingHistoryImport: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "import-3",
+          tenantId: "tenant-1",
+          kind: MessagingHistoryImportKind.GROUP,
+          startDate: new Date("2026-09-01T03:00:00.000Z"),
+          status: MessagingHistoryImportStatus.PENDING,
+          connection: {
+            id: "connection-1",
+            tenantId: "tenant-1",
+            externalReference: "instance-1",
+            status: MessagingConnectionStatus.CONNECTED,
+            archivedAt: null,
+          },
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      conversation: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "group-conversation-1",
+          contactId: "group-contact-1",
+          departmentId: null,
+          isGroup: true,
+        }),
+        update: conversationUpdate,
+      },
+      lead: { deleteMany: leadDeleteMany, upsert: vi.fn() },
+      $transaction: vi.fn(async (work: unknown) =>
+        typeof work === "function" ? work(prisma) : Promise.all(work as Promise<unknown>[]),
+      ),
+    };
+    const evolution = {
+      findChats: vi.fn().mockResolvedValue([{ remoteJid: "12345-67890@g.us" }]),
+      findMessages: vi.fn().mockResolvedValue([{ key: { id: "group-1" }, messageTimestamp: 1_789_000_000 }]),
+    };
+    const translator = {
+      translate: vi.fn(() => ({
+        kind: "inbound",
+        event: {
+          tenantId: "tenant-1",
+          connectionId: "connection-1",
+          externalMessageId: "group-1",
+          externalChatId: "12345-67890@g.us",
+          conversationType: "GROUP",
+          fromMe: false,
+          sender: { phone: "+5511999999999", normalizedPhone: "+5511999999999" },
+          type: "TEXT",
+          content: "Mensagem do grupo",
+          occurredAt: new Date(1_789_000_000_000),
+        },
+      })),
+    };
+    const inbound = {
+      process: vi.fn().mockResolvedValue({
+        duplicate: false,
+        message: { conversationId: "group-conversation-1" },
+        conversationId: "group-conversation-1",
+      }),
+    };
+
+    const service = new MessagingHistoryImportService(
+      prisma as never,
+      evolution as never,
+      translator as never,
+      inbound as never,
+    );
+
+    await (service as any).run("import-3");
+
+    expect(conversationUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: ConversationStatus.FECHADA }) }),
+    );
+    expect(leadDeleteMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tenantId: "tenant-1", conversationId: "group-conversation-1" } }),
+    );
+  });
 });
 
