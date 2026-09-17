@@ -16,6 +16,8 @@ import { InboundMessageEvent, MessageEditEvent } from "./messaging.contracts";
 import { MessagingMediaStorageService } from "./media/messaging-media-storage.service";
 import { normalizeRemotePhoneCandidates } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
+import { MessagingOutboundService } from "./messaging-outbound.service";
+import { resolveMessageTemplate } from "./message-template";
 
 @Injectable()
 export class MessagingInboundService {
@@ -28,6 +30,7 @@ export class MessagingInboundService {
     private readonly mediaStorage?: MessagingMediaStorageService,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
     @Optional() @Inject(EvolutionClient) private readonly evolution?: EvolutionClient,
+    @Optional() @Inject(MessagingOutboundService) private readonly outbound?: MessagingOutboundService,
   ) {}
 
   async process(event: InboundMessageEvent) {
@@ -263,6 +266,26 @@ export class MessagingInboundService {
               contactName: contact.name,
             })
           : [];
+      const welcome =
+        createdConversation &&
+        !isGroup &&
+        !event.fromMe &&
+        connection.welcomeEnabled &&
+        (existingContact ? connection.welcomeExistingMessage : connection.welcomeNewMessage)
+          ? {
+              template: (existingContact
+                ? connection.welcomeExistingMessage
+                : connection.welcomeNewMessage)!,
+              contactExisting: Boolean(existingContact),
+              contact,
+              departmentName: updatedConversation.departmentId
+                ? (await tx.department.findFirst({
+                    where: { id: updatedConversation.departmentId, tenantId: event.tenantId },
+                    select: { name: true },
+                  }))?.name ?? null
+                : null,
+            }
+          : null;
       return {
         message,
         duplicate: false,
@@ -273,6 +296,7 @@ export class MessagingInboundService {
         leadId: lead?.id ?? null,
         notifications,
         unreadCount: updatedConversation.unreadCount,
+        welcome,
       };
     });
 
@@ -307,9 +331,9 @@ export class MessagingInboundService {
         connectionId: event.connectionId,
         message: {
           id: result.message.id,
-          direction: result.message.direction.toLowerCase(),
-          status: result.message.status.toLowerCase(),
-          createdAt: result.message.createdAt,
+          direction: result.message.direction?.toLowerCase() ?? (event.fromMe ? "outbound" : "inbound"),
+          status: result.message.status?.toLowerCase() ?? (event.fromMe ? "sent" : "created"),
+          createdAt: result.message.createdAt ?? event.occurredAt,
         },
       });
       this.realtime?.publishConversationUpdated({
@@ -350,6 +374,48 @@ export class MessagingInboundService {
           conversationId: result.message.conversationId,
           unreadCount: result.unreadCount ?? 0,
         });
+      }
+      if (result.welcome && this.outbound) {
+        try {
+          const customFieldValues = await this.prisma.contactCustomFieldValue.findMany({
+            where: { tenantId: event.tenantId, contactId: result.contactId! },
+            include: { field: { select: { label: true } } },
+          });
+          const content = resolveMessageTemplate(result.welcome.template, {
+            contactName: result.welcome.contact.name,
+            phone: result.welcome.contact.phone,
+            email: result.welcome.contact.email,
+            instance: result.providerInstanceName,
+            department: result.welcome.departmentName,
+            customFields: Object.fromEntries(
+              customFieldValues.map((item) => [item.field.label, item.value]),
+            ),
+            now: event.occurredAt,
+          });
+          await this.outbound.queueAutomatedText({
+            tenantId: event.tenantId,
+            conversationId: result.conversationId,
+            connectionId: event.connectionId,
+            externalChatId: event.externalChatId,
+            content,
+            kind: "welcome",
+          });
+          this.logger.log({
+            event: "messaging.welcome.queued",
+            tenantId: event.tenantId,
+            connectionId: event.connectionId,
+            conversationId: result.conversationId,
+            contactKind: result.welcome.contactExisting ? "existing" : "new",
+          });
+        } catch (error) {
+          this.logger.error({
+            event: "messaging.welcome.queue_failed",
+            tenantId: event.tenantId,
+            connectionId: event.connectionId,
+            conversationId: result.conversationId,
+            error: error instanceof Error ? error.message : "Welcome dispatch failed.",
+          });
+        }
       }
     }
     return result;

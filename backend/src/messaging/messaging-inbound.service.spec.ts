@@ -8,6 +8,56 @@ import {
 import { MessagingInboundService } from "./messaging-inbound.service";
 
 describe("MessagingInboundService", () => {
+  it("queues the configured welcome message when a direct conversation starts", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      welcomeEnabled: true,
+      welcomeNewMessage: "Olá {{nome}}, bem-vindo!",
+      welcomeExistingMessage: "Olá novamente {{nome}}!",
+    });
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(null);
+    prisma.conversation.create.mockResolvedValue(conversation({ id: "conversation-new" }));
+    prisma.message.create.mockResolvedValue({
+      id: "message-inbound",
+      conversationId: "conversation-new",
+      status: MessageStatus.CREATED,
+      createdAt: new Date(),
+    });
+    prisma.conversation.update.mockResolvedValue(conversation({ id: "conversation-new", unreadCount: 1 }));
+    const outbound = { queueAutomatedText: vi.fn().mockResolvedValue({ created: true }) };
+
+    await new MessagingInboundService(
+      prisma as never,
+      undefined,
+      undefined,
+      undefined,
+      outbound as never,
+    ).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "inbound-welcome",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321", displayName: "Douglas" },
+      type: MessageType.TEXT,
+      content: "Oi",
+      occurredAt: new Date("2026-09-17T19:44:00"),
+    });
+
+    expect(outbound.queueAutomatedText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "welcome",
+        conversationId: "conversation-new",
+        content: "Olá novamente Cliente!",
+      }),
+    );
+  });
+
   it("reuses an existing contact and open conversation for inbound replies", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
@@ -498,6 +548,7 @@ function prismaMock() {
         },
       ]),
     },
+    contactCustomFieldValue: { findMany: vi.fn().mockResolvedValue([]) },
     $transaction: vi.fn(async (callback) => callback(prisma)),
   };
   return prisma;
