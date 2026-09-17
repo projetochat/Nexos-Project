@@ -4,8 +4,8 @@ import { selectAutomaticReply } from "./automatic-reply";
 const hours = [
   { day: "Segunda", active: false, start: "08:00", end: "18:00" },
   { day: "Terça", active: false, start: "08:00", end: "18:00" },
-  { day: "Quarta", active: true, start: "08:00", end: "18:00" },
-  { day: "Quinta", active: false, start: "08:00", end: "18:00" },
+  { day: "Quarta", active: false, start: "08:00", end: "18:00" },
+  { day: "Quinta", active: true, start: "08:00", end: "18:00" },
   { day: "Sexta", active: false, start: "08:00", end: "18:00" },
   { day: "Sábado", active: false, start: "08:00", end: "18:00" },
   { day: "Domingo", active: false, start: "08:00", end: "18:00" },
