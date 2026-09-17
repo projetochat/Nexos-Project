@@ -110,6 +110,10 @@ function EmpresaSettings() {
         presentationName: trimmedPresentationName,
         ...(isChangingPassword ? { currentPassword, newPassword, confirmPassword } : {}),
       });
+      useSession.setState((state) => ({
+        user: state.user ? { ...state.user, nome: trimmedPresentationName } : state.user,
+      }));
+      await queryClient.invalidateQueries({ queryKey: ["trixus", "company"] });
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");

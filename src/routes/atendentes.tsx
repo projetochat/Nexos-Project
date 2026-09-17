@@ -611,7 +611,7 @@ function AtendenteForm({
         }
       >
         <div className="grid gap-5 md:grid-cols-[150px_minmax(0,1fr)]">
-          <div className="relative flex justify-center md:justify-start md:pt-9">
+          <div className="relative flex min-h-full items-center justify-center self-stretch">
             <button
               ref={photoButtonRef}
               type="button"
