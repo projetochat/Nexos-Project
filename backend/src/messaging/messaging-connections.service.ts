@@ -33,6 +33,7 @@ import {
 import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.dto";
 import { UpdateMessagingConnectionDto } from "./dto/update-messaging-connection.dto";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
+import { MessagingHistoryImportService } from "./messaging-history-import.service";
 
 @Injectable()
 export class MessagingConnectionsService {
@@ -48,6 +49,9 @@ export class MessagingConnectionsService {
     private readonly entitlements?: PlanEntitlementService,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
     @Optional() @Inject(GroupsSyncService) private readonly groupsSync?: GroupsSyncService,
+    @Optional()
+    @Inject(MessagingHistoryImportService)
+    private readonly historyImport?: MessagingHistoryImportService,
   ) {}
 
   async list(current: AuthenticatedUser) {
@@ -174,6 +178,7 @@ export class MessagingConnectionsService {
       updatedAt: connection.updatedAt,
     });
     this.enqueueGroupSyncForConnectedConnection(connection);
+    void this.historyImport?.enqueueForConnection(connection);
     return {
       ...this.serialize(connection),
       qrCodeBase64: evolutionQrBase64(response),
@@ -225,6 +230,7 @@ export class MessagingConnectionsService {
       });
     }
     this.enqueueGroupSyncForConnectedConnection(updated);
+    void this.historyImport?.enqueueForConnection(updated);
     return this.serialize(updated, { existsInProvider: true, webhookUrl: instance.Webhook?.url });
   }
 
@@ -764,6 +770,7 @@ export class MessagingConnectionsService {
       });
     }
     this.enqueueGroupSyncForConnectedConnection(updated);
+    void this.historyImport?.enqueueForConnection(updated);
     return updated;
   }
 
@@ -981,9 +988,51 @@ export function translateEvolutionState(value: string | null | undefined) {
 }
 
 function parseImportStartDate(value: string | undefined) {
-  if (!value) return null;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "");
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const localUtc = Date.UTC(year, month - 1, day);
+  if (
+    new Date(localUtc).getUTCFullYear() !== year ||
+    new Date(localUtc).getUTCMonth() !== month - 1 ||
+    new Date(localUtc).getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return dateAtStartOfDayInTimezone(year, month, day, "America/Sao_Paulo");
+}
+
+function dateAtStartOfDayInTimezone(year: number, month: number, day: number, timezone: string) {
+  const intendedUtc = Date.UTC(year, month - 1, day);
+  let candidate = intendedUtc;
+  // Resolve the zone offset twice so the calculation remains correct around
+  // daylight-saving transitions in timezones that still observe them.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23",
+      minute: "2-digit",
+      second: "2-digit",
+    }).formatToParts(new Date(candidate));
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      Number(parts.find((item) => item.type === type)?.value ?? 0);
+    const displayedUtc = Date.UTC(
+      part("year"),
+      part("month") - 1,
+      part("day"),
+      part("hour"),
+      part("minute"),
+      part("second"),
+    );
+    candidate = intendedUtc - (displayedUtc - candidate);
+  }
+  return new Date(candidate);
 }
 
 function translateInitialStatus(value: string | null | undefined) {
