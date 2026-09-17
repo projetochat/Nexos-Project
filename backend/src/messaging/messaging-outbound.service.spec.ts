@@ -61,6 +61,38 @@ describe("MessagingOutboundService", () => {
     expect(dispatcher.dispatchMessage).toHaveBeenCalledWith("message-a");
   });
 
+  it("prefixes a new administrator message with the current presentation name", async () => {
+    const prisma = prismaMock();
+    const dispatcher = { dispatchMessage: vi.fn().mockResolvedValue(true) };
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.create.mockResolvedValue(message({ status: MessageStatus.QUEUED }));
+    const senderName = { resolve: vi.fn().mockResolvedValue("Natã Rabelo") };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcher as never,
+      undefined,
+      undefined,
+      undefined,
+      senderName as never,
+    );
+
+    await service.sendText(
+      "conversation-a",
+      { content: "Teste" },
+      { ...current, permissions: ["chat.agent_name.show"] } as never,
+    );
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: "*Natã Rabelo:*\n\nTeste" }),
+      }),
+    );
+    expect(senderName.resolve).toHaveBeenCalled();
+  });
+
   it("marks QUEUED messages as SENT after provider acceptance", async () => {
     const provider = {
       send: vi.fn().mockResolvedValue({ accepted: true, providerMessageId: "wa-1" }),

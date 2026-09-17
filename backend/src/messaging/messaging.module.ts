@@ -22,6 +22,7 @@ import { MessagingOutboundWorker } from "./messaging-outbound.worker";
 import { MessagingProviderRegistry } from "./messaging-provider.registry";
 import { MessagingReactionService } from "./messaging-reaction.service";
 import { MessagingStatusService } from "./messaging-status.service";
+import { SenderDisplayNameService } from "./sender-display-name.service";
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { MessagingStatusService } from "./messaging-status.service";
     MessagingProviderRegistry,
     MessagingMediaStorageService,
     MessagingOutboundService,
+    SenderDisplayNameService,
     MessagingOutboundWorker,
     MessagingInboundService,
     ContactProfilePictureSyncService,

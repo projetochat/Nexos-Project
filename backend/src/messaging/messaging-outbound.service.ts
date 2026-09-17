@@ -36,6 +36,7 @@ import { MessagingMediaStorageService } from "./media/messaging-media-storage.se
 import { EvolutionClient } from "./evolution/evolution.client";
 import { EvolutionOutboundPayloadFactory } from "./evolution/evolution-outbound-payload.factory";
 import { normalizeEvolutionRecipient } from "./evolution/evolution-recipient.normalizer";
+import { SenderDisplayNameService } from "./sender-display-name.service";
 
 const messageInclude = {
   authorMembership: {
@@ -104,6 +105,9 @@ export class MessagingOutboundService {
     @Inject(EvolutionClient)
     private readonly evolution?: EvolutionClient,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
+    @Optional()
+    @Inject(SenderDisplayNameService)
+    private readonly senderDisplayName?: SenderDisplayNameService,
   ) {}
 
   async sendText(conversationId: string, dto: SendMessageDto, current: AuthenticatedUser) {
@@ -219,6 +223,9 @@ export class MessagingOutboundService {
         if (existing) return { message: existing, dispatch: false };
       }
       const connection = await this.resolveConnection(tx, current.tenantId, conversation);
+      const caption = stored.caption
+        ? await this.prepareOutboundText(tx, stored.caption, conversation, current)
+        : stored.caption;
       const quoted = quotedMessageId
         ? await this.resolveQuotedMessage(tx, {
             tenantId: current.tenantId,
@@ -227,7 +234,7 @@ export class MessagingOutboundService {
           })
         : null;
       const now = new Date();
-      const preview = mediaPreview(stored.messageType, stored.caption, stored.fileName);
+      const preview = mediaPreview(stored.messageType, caption, stored.fileName);
       const message = await tx.message.create({
         data: {
           tenantId: current.tenantId,
@@ -237,7 +244,7 @@ export class MessagingOutboundService {
           type: stored.messageType,
           status: MessageStatus.QUEUED,
           authorMembershipId: current.membershipId,
-          content: stored.caption,
+          content: caption,
           providerChatId: conversation.externalChatId,
           quotedMessageId: quoted?.id ?? null,
           quotedProviderMessageId: quoted?.providerMessageId ?? null,
@@ -248,7 +255,7 @@ export class MessagingOutboundService {
           mediaMimeType: stored.mimeType,
           mediaFileName: stored.fileName,
           mediaSize: stored.sizeBytes,
-          mediaCaption: stored.caption,
+          mediaCaption: caption,
           mediaChecksum: stored.checksum,
           mediaSha256: stored.checksum,
           mediaDurationMs: stored.durationMs,
@@ -758,11 +765,9 @@ export class MessagingOutboundService {
     current: AuthenticatedUser,
   ) {
     if (!current.permissions?.includes("chat.agent_name.show")) return content;
-    const membership = await tx.tenantMembership.findFirst({
-      where: { id: current.membershipId, tenantId: current.tenantId },
-      include: { user: { select: { name: true } } },
-    });
-    const agentName = membership?.presentationName?.trim() || membership?.user.name?.trim();
+    const agentName = this.senderDisplayName
+      ? await this.senderDisplayName.resolve(tx, current)
+      : null;
     if (!agentName) return content;
     return cleanMessageContent(`*${agentName}:*\n\n${content}`);
   }
