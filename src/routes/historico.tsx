@@ -12,6 +12,7 @@ import {
 } from "@/lib/operational-filters";
 import { fmtDate, fmtHM, num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
+import { useSession } from "@/lib/session";
 import { conversationApi, messageApi, operationsApi, type ApiMessage } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { ContactPanel } from "./inbox.$conversationId";
@@ -19,18 +20,97 @@ import { ContactPanel } from "./inbox.$conversationId";
 export const Route = createFileRoute("/historico")({ component: HistoricoPage });
 
 const PAGE_SIZE = 20;
+const HISTORY_PERIODS = new Set([
+  "today",
+  "yesterday",
+  "week",
+  "previous_week",
+  "month",
+  "previous_month",
+  "year",
+  "previous_year",
+  "7d",
+  "30d",
+  "custom",
+]);
+
+type HistoryFiltersMemory = {
+  search: string;
+  filters: OperationalReportFilters;
+};
+
+function defaultHistoryFilters(): OperationalReportFilters {
+  return {
+    period: "today",
+    ...datesForOperationalPeriod("today"),
+  };
+}
+
+function loadHistoryFilters(storageKey: string): HistoryFiltersMemory {
+  const fallback = { search: "", filters: defaultHistoryFilters() };
+  if (typeof window === "undefined") return fallback;
+
+  try {
+    const stored = window.localStorage.getItem(storageKey);
+    if (!stored) return fallback;
+    const parsed: unknown = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") return fallback;
+    const memory = parsed as Record<string, unknown>;
+    if (!memory.filters || typeof memory.filters !== "object") return fallback;
+    const filters = memory.filters as Record<string, unknown>;
+    if (typeof filters.period !== "string" || !HISTORY_PERIODS.has(filters.period)) {
+      return fallback;
+    }
+    return {
+      search: typeof memory.search === "string" ? memory.search : "",
+      filters: {
+        period: filters.period as OperationalReportFilters["period"],
+        ...(typeof filters.q === "string" ? { q: filters.q } : {}),
+        ...(typeof filters.departmentId === "string" ? { departmentId: filters.departmentId } : {}),
+        ...(typeof filters.customerId === "string" ? { customerId: filters.customerId } : {}),
+        ...(typeof filters.connectionId === "string" ? { connectionId: filters.connectionId } : {}),
+        ...(typeof filters.start === "string" ? { start: filters.start } : {}),
+        ...(typeof filters.end === "string" ? { end: filters.end } : {}),
+      },
+    };
+  } catch {
+    return fallback;
+  }
+}
 
 function HistoricoPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [search, setSearch] = React.useState("");
-  const [reportFilters, setReportFilters] = React.useState<OperationalReportFilters>(() => ({
-    period: "today",
-    ...datesForOperationalPeriod("today"),
-  }));
+  const user = useSession((state) => state.user);
+  const filtersStorageKey = `trixus.history.filters.${user?.id ?? "anonymous"}`;
+  const [search, setSearch] = React.useState(() => loadHistoryFilters(filtersStorageKey).search);
+  const [reportFilters, setReportFilters] = React.useState<OperationalReportFilters>(
+    () => loadHistoryFilters(filtersStorageKey).filters,
+  );
+  const [loadedFiltersStorageKey, setLoadedFiltersStorageKey] = React.useState(filtersStorageKey);
   const [page, setPage] = React.useState(1);
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [panelOpen, setPanelOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    const saved = loadHistoryFilters(filtersStorageKey);
+    setSearch(saved.search);
+    setReportFilters(saved.filters);
+    setPage(1);
+    setLoadedFiltersStorageKey(filtersStorageKey);
+  }, [filtersStorageKey]);
+
+  React.useEffect(() => {
+    if (loadedFiltersStorageKey !== filtersStorageKey) return;
+    try {
+      window.localStorage.setItem(
+        filtersStorageKey,
+        JSON.stringify({ search, filters: reportFilters } satisfies HistoryFiltersMemory),
+      );
+    } catch {
+      // A indisponibilidade do armazenamento não deve impedir o uso da tela.
+    }
+  }, [filtersStorageKey, loadedFiltersStorageKey, reportFilters, search]);
 
   const filters = React.useMemo(
     () => ({
@@ -120,6 +200,11 @@ function HistoricoPage() {
             setPage(1);
           }}
           showDepartment={false}
+          onClear={() => {
+            setSearch("");
+            setReportFilters(defaultHistoryFilters());
+            setPage(1);
+          }}
           search={{
             value: search,
             onChange: (value) => {

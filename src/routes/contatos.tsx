@@ -66,6 +66,7 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { isValidEmail, maskBrazilPhone, onlyDigits } from "@/lib/input-masks";
+import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import {
   conversationApi,
@@ -88,6 +89,51 @@ const CUSTOMER_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 const DEFAULT_CUSTOMER_PAGE_SIZE = 10;
 const FAVORITE_COUNTRY_CODES_KEY = "trixus.favorite-country-codes";
 const EMPTY_FILTER_VALUE = "__empty__";
+type ContactFiltersMemory = {
+  query: string;
+  instance: string;
+  department: string;
+  customer: string;
+  tag: string;
+  pageSize: number;
+};
+
+function defaultContactFiltersMemory(): ContactFiltersMemory {
+  return {
+    query: "",
+    instance: "",
+    department: "",
+    customer: "",
+    tag: "",
+    pageSize: DEFAULT_PAGE_SIZE,
+  };
+}
+
+function loadContactFiltersMemory(storageKey: string): ContactFiltersMemory {
+  const fallback = defaultContactFiltersMemory();
+  if (typeof window === "undefined") return fallback;
+
+  try {
+    const stored = window.localStorage.getItem(storageKey);
+    if (!stored) return fallback;
+    const parsed: unknown = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") return fallback;
+    const filters = parsed as Record<string, unknown>;
+    const pageSize = Number(filters.pageSize);
+    return {
+      query: typeof filters.query === "string" ? filters.query : fallback.query,
+      instance: typeof filters.instance === "string" ? filters.instance : fallback.instance,
+      department: typeof filters.department === "string" ? filters.department : fallback.department,
+      customer: typeof filters.customer === "string" ? filters.customer : fallback.customer,
+      tag: typeof filters.tag === "string" ? filters.tag : fallback.tag,
+      pageSize: PAGE_SIZE_OPTIONS.includes(pageSize as (typeof PAGE_SIZE_OPTIONS)[number])
+        ? pageSize
+        : fallback.pageSize,
+    };
+  } catch {
+    return fallback;
+  }
+}
 const COUNTRY_CODES = [
   { id: "br", code: "55", country: "Brasil", flag: "🇧🇷" },
   { id: "us", code: "1", country: "Estados Unidos", flag: "🇺🇸" },
@@ -328,6 +374,8 @@ type AgendaImportPreviewState = {
 
 function ContatosPage() {
   const navigate = useNavigate();
+  const user = useSession((state) => state.user);
+  const filtersStorageKey = `trixus.contacts.filters.${user?.id ?? "anonymous"}`;
   const [contacts, setContacts] = React.useState<Contact[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [tags, setTags] = React.useState<Tag[]>([]);
@@ -338,13 +386,22 @@ function ContatosPage() {
     [],
   );
   const [loading, setLoading] = React.useState(true);
-  const [query, setQuery] = React.useState("");
-  const [instanciaFilter, setInstanciaFilter] = React.useState("");
-  const [departamentoFilter, setDepartamentoFilter] = React.useState("");
-  const [clienteFilter, setClienteFilter] = React.useState("");
-  const [tagFilter, setTagFilter] = React.useState("");
+  const [query, setQuery] = React.useState(() => loadContactFiltersMemory(filtersStorageKey).query);
+  const [instanciaFilter, setInstanciaFilter] = React.useState(
+    () => loadContactFiltersMemory(filtersStorageKey).instance,
+  );
+  const [departamentoFilter, setDepartamentoFilter] = React.useState(
+    () => loadContactFiltersMemory(filtersStorageKey).department,
+  );
+  const [clienteFilter, setClienteFilter] = React.useState(
+    () => loadContactFiltersMemory(filtersStorageKey).customer,
+  );
+  const [tagFilter, setTagFilter] = React.useState(() => loadContactFiltersMemory(filtersStorageKey).tag);
   const [page, setPage] = React.useState(1);
-  const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
+  const [pageSize, setPageSize] = React.useState(
+    () => loadContactFiltersMemory(filtersStorageKey).pageSize,
+  );
+  const [loadedFiltersStorageKey, setLoadedFiltersStorageKey] = React.useState(filtersStorageKey);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [allFilteredSelected, setAllFilteredSelected] = React.useState(false);
   const [bulkAction, setBulkAction] = React.useState("");
@@ -437,6 +494,46 @@ function ContatosPage() {
     }),
     [clienteFilter, departamentoFilter, instanciaFilter, query, tagFilter],
   );
+
+  React.useEffect(() => {
+    const saved = loadContactFiltersMemory(filtersStorageKey);
+    setQuery(saved.query);
+    setInstanciaFilter(saved.instance);
+    setDepartamentoFilter(saved.department);
+    setClienteFilter(saved.customer);
+    setTagFilter(saved.tag);
+    setPageSize(saved.pageSize);
+    setPage(1);
+    setLoadedFiltersStorageKey(filtersStorageKey);
+  }, [filtersStorageKey]);
+
+  React.useEffect(() => {
+    if (loadedFiltersStorageKey !== filtersStorageKey) return;
+    try {
+      window.localStorage.setItem(
+        filtersStorageKey,
+        JSON.stringify({
+          query,
+          instance: instanciaFilter,
+          department: departamentoFilter,
+          customer: clienteFilter,
+          tag: tagFilter,
+          pageSize,
+        } satisfies ContactFiltersMemory),
+      );
+    } catch {
+      // A indisponibilidade do armazenamento não deve impedir o uso da tela.
+    }
+  }, [
+    clienteFilter,
+    departamentoFilter,
+    filtersStorageKey,
+    instanciaFilter,
+    loadedFiltersStorageKey,
+    pageSize,
+    query,
+    tagFilter,
+  ]);
 
   const load = React.useCallback(async () => {
     setLoading(true);

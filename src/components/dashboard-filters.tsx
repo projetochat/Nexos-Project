@@ -69,7 +69,9 @@ export function DashboardFiltersBar({
   const end = value.end ?? automaticDates.end;
   const gridClass =
     search && !showDepartment
-      ? "xl:grid-cols-[minmax(220px,3fr)_1fr_1fr_1.1fr_1fr_1fr]"
+      ? onClear
+        ? "xl:grid-cols-[minmax(220px,3fr)_1fr_1fr_1.1fr_1fr_1fr_auto]"
+        : "xl:grid-cols-[minmax(220px,3fr)_1fr_1fr_1.1fr_1fr_1fr]"
       : onClear
         ? "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr_auto]"
         : "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr]";
