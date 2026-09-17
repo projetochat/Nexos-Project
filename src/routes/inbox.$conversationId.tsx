@@ -57,6 +57,7 @@ import { fmtHM, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { resolveMessageVariables, type MessageVariableContext } from "@/lib/message-variables";
 import { startTyping, stopTyping } from "@/lib/realtime/client";
 import { ContactFormModal, contactPayload } from "./contatos";
 import { InboxImageViewer } from "@/components/inbox-image-viewer";
@@ -67,14 +68,6 @@ const quickReplyDrafts = new Map<string, SequenceDraft>();
 
 type Message = ApiMessage;
 type MentionOption = { id: string; label: string; phone: string };
-
-function resolveMessageVariables(text: string, contactName?: string | null) {
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
-  return text
-    .replace(/{{\s*cumprimento\s*}}/gi, greeting)
-    .replace(/{{\s*nome\s*}}/gi, contactName?.trim() || "");
-}
 
 const STATUS_TONE: Record<ConvStatus, "warning" | "info" | "success" | "default"> = {
   aberta: "warning",
@@ -386,7 +379,14 @@ function ConversationPage() {
               key={conversationId}
               conversationId={conv.id}
               authorId={user?.id ?? null}
-              contactName={conv.contact?.nome ?? null}
+              variableContext={{
+                contactName: conv.contact?.nome,
+                phone: conv.contact?.telefone,
+                email: conv.contact?.email,
+                instance: conv.connection?.name,
+                customer: conv.contact?.customer?.nome,
+                department: conv.department?.nome ?? conv.contact?.departamento,
+              }}
               disabled={!canSend}
               disabledReason={
                 conv.status === "fechada"
@@ -986,7 +986,7 @@ type DisabledReason = "closed" | "standby" | "lead" | "not-mine" | null;
 function Composer({
   conversationId,
   authorId,
-  contactName,
+  variableContext,
   disabled,
   disabledReason,
   onStart,
@@ -999,7 +999,7 @@ function Composer({
 }: {
   conversationId: string;
   authorId: string | null;
-  contactName?: string | null;
+  variableContext: MessageVariableContext;
   disabled: boolean;
   disabledReason?: DisabledReason;
   onStart?: () => void;
@@ -1091,11 +1091,16 @@ function Composer({
     );
   }, [quickReplies, qrFilter]);
 
+  const resolveVariables = React.useCallback(
+    (value: string) => resolveMessageVariables(value, variableContext),
+    [variableContext],
+  );
+
   const applyQR = (qr: QuickReply) => {
     if (sequenceAbort.current) return;
     const items = quickReplyMessages(qr);
     if (items.length > 1 || items[0]?.attachment) {
-      const draft = createSequence(qr);
+      const draft = createSequence(qr, resolveVariables);
       quickReplyDrafts.set(draftKey, draft);
       setSequence(draft);
       setSequenceError("");
@@ -1105,7 +1110,7 @@ function Composer({
     } else {
       quickReplyDrafts.delete(draftKey);
       setSequence(null);
-      setText(resolveMessageVariables(items[0]?.text ?? qr.texto, contactName));
+      setText(resolveVariables(items[0]?.text ?? qr.texto));
     }
     setPendingCloseAfter(!!qr.close_on_send);
     setShowQR(false);
@@ -1237,13 +1242,14 @@ function Composer({
         if (items.length > 1 || items[0]?.attachment) {
           setShowQR(false);
           setText("");
-          await sendQuickReply(createSequence(match));
+          await sendQuickReply(createSequence(match, resolveVariables));
           return;
         }
-        t = resolveMessageVariables(items[0]?.text ?? match.texto, contactName);
+        t = resolveVariables(items[0]?.text ?? match.texto);
         closeAfter = closeAfter || !!match.close_on_send;
       }
     }
+    t = resolveVariables(t);
     if (pendingFile) {
       try {
         await messageApi.sendMedia(conversationId, pendingFile.file, {

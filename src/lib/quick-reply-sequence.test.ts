@@ -53,6 +53,15 @@ describe("quick reply sequences", () => {
     ).toEqual([{ text: "Mensagem antiga", attachment }]);
   });
 
+  it("resolves variables before a sequence is sent", () => {
+    const sequence = createSequence(
+      reply({ messages: [{ text: "Olá, {{nome}}" }, { text: "Instância: {{instancia}}" }] }),
+      (text) => text.replace("{{nome}}", "Ana").replace("{{instancia}}", "Comercial"),
+    );
+
+    expect(sequence.items.map((item) => item.text)).toEqual(["Olá, Ana", "Instância: Comercial"]);
+  });
+
   it("waits for provider confirmation before sending the next text or file", async () => {
     const sequence = draft();
     const events: string[] = [];
