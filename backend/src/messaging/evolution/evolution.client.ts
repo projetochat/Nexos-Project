@@ -8,6 +8,7 @@ import {
   EvolutionCreateInstanceResponse,
   EvolutionProfilePictureResponse,
   EvolutionInstance,
+  EvolutionWebhook,
   EvolutionSendTextResponse,
 } from "./evolution.types";
 import type { EvolutionMediaKind, EvolutionQuotedKey } from "./evolution-outbound-payload.factory";
@@ -93,6 +94,10 @@ export class EvolutionClient {
         (instance) => instance.name === instanceName || instance.instanceName === instanceName,
       ) ?? null
     );
+  }
+
+  findWebhook(instanceName: string) {
+    return this.request<EvolutionWebhook>(`/webhook/find/${instanceName}`);
   }
 
   setWebhook(input: { instanceName: string; webhookUrl: string; webhookSecret?: string | null }) {

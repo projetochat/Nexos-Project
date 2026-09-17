@@ -639,6 +639,36 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
+  it("repairs a connected instance whose outgoing-message webhook is missing", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findMany.mockResolvedValue([
+      { id: "connection-a", tenantId: "tenant-a", externalReference: "tenant-a-suporte" },
+    ]);
+    const evolution = {
+      findInstance: vi
+        .fn()
+        .mockResolvedValueOnce({ name: "tenant-a-suporte", Webhook: { events: [] } })
+        .mockResolvedValueOnce({
+          name: "tenant-a-suporte",
+          Webhook: {
+            url: "http://host.docker.internal:3001/api/webhooks/evolution",
+            events: ["MESSAGES_UPSERT"],
+            headers: { jwt_key: "secret" },
+          },
+        }),
+      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
+    };
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, evolution as never).reconcileConnectedWebhooks(),
+    ).resolves.toMatchObject({ scanned: 1, healthy: 0, repaired: 1, failed: 0 });
+    expect(evolution.setWebhook).toHaveBeenCalledWith({
+      instanceName: "tenant-a-suporte",
+      webhookUrl: "http://host.docker.internal:3001/api/webhooks/evolution",
+      webhookSecret: "secret",
+    });
+  });
+
   it("reads QR base64 from create and connect Evolution payload shapes", () => {
     expect(evolutionQrBase64({ qrcode: { base64: "create-qr" } })).toBe("create-qr");
     expect(evolutionQrBase64({ base64: "connect-qr" })).toBe("connect-qr");

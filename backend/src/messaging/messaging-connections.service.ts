@@ -674,13 +674,22 @@ export class MessagingConnectionsService {
 
   async auditWebhookConfiguration(instanceName: string) {
     const config = evolutionConfigFromEnv();
-    const instance = await this.evolution.findInstance(instanceName);
-    const headers = instance?.Webhook?.headers ?? null;
+    const clientWithWebhookLookup = this.evolution as EvolutionClient & {
+      findWebhook?: (name: string) => Promise<{
+        url?: string | null;
+        events?: string[] | null;
+        headers?: Record<string, string | undefined> | null;
+      }>;
+    };
+    const webhook = clientWithWebhookLookup.findWebhook
+      ? await clientWithWebhookLookup.findWebhook(instanceName)
+      : (await this.evolution.findInstance(instanceName))?.Webhook;
+    const headers = webhook?.headers ?? null;
     const evolutionSecret = normalizeSecret(headers?.jwt_key);
     const result = {
       instanceName,
-      urlCorrect: instance?.Webhook?.url === config.webhookPublicUrl,
-      messagesUpsertPresent: !!instance?.Webhook?.events?.includes("MESSAGES_UPSERT"),
+      urlCorrect: webhook?.url === config.webhookPublicUrl,
+      messagesUpsertPresent: !!webhook?.events?.includes("MESSAGES_UPSERT"),
       secretBackendConfigured: !!config.webhookSecret,
       secretEvolutionConfigured: !!evolutionSecret,
       secretMatch:
