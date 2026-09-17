@@ -41,6 +41,9 @@ const conversationInclude = {
     include: {
       customer: true,
       tags: { include: { tag: true }, where: { tag: { archivedAt: null } } },
+      customFieldValues: {
+        include: { field: true },
+      },
     },
   },
   connection: true,
@@ -658,7 +661,7 @@ export class ConversationsController {
       where: { id: membershipId, tenantId },
       include: { user: { select: { name: true, email: true } } },
     });
-    return membership?.user.name ?? membership?.user.email ?? "atendente selecionado";
+    return membership?.presentationName?.trim() ?? membership?.user.name ?? membership?.user.email ?? "atendente selecionado";
   }
 
   private serialize(conversation: ConversationWithRelations) {
@@ -711,6 +714,15 @@ export class ConversationsController {
               nome: item.tag.name,
               cor: item.tag.color,
             })),
+            customFields: Object.fromEntries(
+              conversation.contact.customFieldValues.map((item) => [item.fieldId, item.value ?? ""]),
+            ),
+            customFieldValues: conversation.contact.customFieldValues.map((item) => ({
+              fieldId: item.fieldId,
+              label: item.field.label,
+              type: item.field.type.toLowerCase(),
+              value: item.value,
+            })),
             createdAt: conversation.contact.createdAt,
             updatedAt: conversation.contact.updatedAt,
           }
@@ -727,7 +739,9 @@ export class ConversationsController {
         ? {
             id: conversation.assignedMembership.user.id,
             membershipId: conversation.assignedMembership.id,
-            nome: conversation.assignedMembership.user.name,
+            nome:
+              conversation.assignedMembership.presentationName?.trim() ||
+              conversation.assignedMembership.user.name,
             email: conversation.assignedMembership.user.email,
           }
         : null,

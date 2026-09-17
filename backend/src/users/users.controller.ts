@@ -82,6 +82,11 @@ class UpdateAdministratorCredentialsDto {
   @MinLength(1)
   @MaxLength(120)
   presentationName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(3_000_000)
+  avatarUrl?: string | null;
 }
 
 type MembershipWithRelations = {
@@ -143,7 +148,7 @@ export class UsersController {
       user: {
         id: membership.user.id,
         email: membership.user.email,
-        name: membership.user.name,
+        name: membership.presentationName?.trim() || membership.user.name,
         avatarUrl: membership.user.avatarUrl,
         roleId: membership.roleId,
         roleKey: membership.role.key,
@@ -259,8 +264,18 @@ export class UsersController {
           data: { presentationName: dto.presentationName.trim() },
         });
       }
+      if (dto.avatarUrl !== undefined) {
+        await tx.user.update({
+          where: { id: membership.userId },
+          data: { avatarUrl: normalizeAvatarUrl(dto.avatarUrl) },
+        });
+      }
     });
-    return { ok: true, presentationName: dto.presentationName?.trim() ?? membership.presentationName };
+    return {
+      ok: true,
+      presentationName: dto.presentationName?.trim() ?? membership.presentationName,
+      avatarUrl: dto.avatarUrl === undefined ? membership.user.avatarUrl ?? null : normalizeAvatarUrl(dto.avatarUrl),
+    };
   }
 
   @Get("company")

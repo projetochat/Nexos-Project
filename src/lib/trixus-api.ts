@@ -1029,8 +1029,9 @@ export const organizationApi = {
     newPassword?: string;
     confirmPassword?: string;
     presentationName?: string;
+    avatarUrl?: string | null;
   }) =>
-    apiRequest<{ ok: true }>("/company/administrator-credentials", {
+    apiRequest<{ ok: true; presentationName?: string | null; avatarUrl?: string | null }>("/company/administrator-credentials", {
       method: "PATCH",
       body: JSON.stringify(data),
     }),

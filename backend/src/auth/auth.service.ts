@@ -146,7 +146,7 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
-        name: user.name,
+        name: membershipDisplayName(membership),
         avatarUrl: user.avatarUrl,
         roleId: membership.roleId,
         roleKey: membership.role.key,
@@ -389,7 +389,7 @@ export class AuthService {
       user: {
         id: membership.user.id,
         email: membership.user.email,
-        name: membership.user.name,
+        name: membershipDisplayName(membership),
         avatarUrl: membership.user.avatarUrl,
         roleId: membership.roleId,
         roleKey: membership.role.key,
@@ -431,7 +431,7 @@ export class AuthService {
       user: {
         id: membership.user.id,
         email: membership.user.email,
-        name: membership.user.name,
+        name: membershipDisplayName(membership),
         avatarUrl: membership.user.avatarUrl,
         roleId: membership.roleId,
         roleKey: membership.role.key,
@@ -538,6 +538,13 @@ export class AuthService {
 
 function secureToken() {
   return randomBytes(32).toString("base64url");
+}
+
+function membershipDisplayName(membership: {
+  presentationName?: string | null;
+  user: { name: string };
+}) {
+  return membership.presentationName?.trim() || membership.user.name;
 }
 
 function hashToken(token: string) {

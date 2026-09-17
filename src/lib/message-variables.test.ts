@@ -29,4 +29,12 @@ describe("chat message variables", () => {
       }),
     ).toBe("Ana {{ desconhecida }}");
   });
+
+  it("replaces variables for configurable contact fields by their visible label", () => {
+    expect(
+      resolveMessageVariables("CPF: {{cpf}} | Código: {{ codigo do cliente }}", {
+        customFields: { CPF: "123.456.789-00", "Código do cliente": "TRX-42" },
+      }),
+    ).toBe("CPF: 123.456.789-00 | Código: TRX-42");
+  });
 });
