@@ -339,10 +339,10 @@ export class MessagingInboundService {
       this.realtime?.publishConversationUpdated({
         tenantId: event.tenantId,
         conversationId: result.message.conversationId,
-        reason: result.createdConversation
-          ? "inbound.created"
-          : profilePictureUpdated
-            ? "contact.profile_picture.updated"
+        reason: event.fromMe
+          ? "outbound.synced"
+          : result.createdConversation
+            ? "inbound.created"
             : "inbound.updated",
       });
       if (profilePictureUpdated && result.contactId) {
