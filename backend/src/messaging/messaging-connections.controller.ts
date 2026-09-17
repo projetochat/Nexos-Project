@@ -38,6 +38,18 @@ export class MessagingConnectionsController {
     return this.connections.providerHealth();
   }
 
+  @Get(":id/webhook")
+  @RequirePermissions("connections.read")
+  webhookStatus(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.webhookStatus(id, current);
+  }
+
+  @Post(":id/webhook/ensure")
+  @RequirePermissions("connections.manage")
+  ensureWebhook(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.connections.ensureWebhookForConnection(id, current);
+  }
+
   @Get(":id")
   @RequirePermissions("connections.read")
   detail(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {

@@ -498,6 +498,15 @@ export type ApiMessagingConnection = {
   qrCodeBase64?: string | null;
 };
 
+export type ApiWebhookAudit = {
+  instanceName: string;
+  urlCorrect: boolean;
+  messagesUpsertPresent: boolean;
+  secretBackendConfigured: boolean;
+  secretEvolutionConfigured: boolean;
+  secretMatch: boolean;
+};
+
 export type ApiCompanyProfile = {
   name: string;
   legalName: string | null;
@@ -1533,6 +1542,12 @@ export const connectionsApi = {
   removeProfilePicture: (id: string) =>
     apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/profile-picture`, {
       method: "DELETE",
+    }),
+  webhookStatus: (id: string) =>
+    apiRequest<ApiWebhookAudit>(`/messaging/connections/${id}/webhook`),
+  ensureWebhook: (id: string) =>
+    apiRequest<ApiWebhookAudit>(`/messaging/connections/${id}/webhook/ensure`, {
+      method: "POST",
     }),
   status: (id: string) => apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/status`),
   qr: (id: string) =>

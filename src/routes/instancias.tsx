@@ -155,8 +155,14 @@ function Page() {
     onError: (e) => toast.error((e as Error).message),
   });
   const refresh = useMutation({
-    mutationFn: connectionsApi.status,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] }),
+    mutationFn: async (id: string) => {
+      await connectionsApi.ensureWebhook(id);
+      return connectionsApi.status(id);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
+      toast.success("Integração verificada");
+    },
     onError: (e) => toast.error((e as Error).message),
   });
 
@@ -367,8 +373,8 @@ function Page() {
                       variant="outline"
                       size="sm"
                       onClick={() => refresh.mutate(connection.id)}
-                      title="Status"
-                      aria-label="Status"
+                      title="Verificar integração do WhatsApp"
+                      aria-label="Verificar integração do WhatsApp"
                       className="group"
                     >
                       <RefreshCw className="h-3.5 w-3.5 transition-transform duration-500 group-hover:rotate-[720deg]" />
