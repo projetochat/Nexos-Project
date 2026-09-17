@@ -13,6 +13,8 @@ import {
   Reply,
   Download,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { conversationApi, messageApi, type ApiMessage } from "@/lib/trixus-api";
 import { Button, SearchInput } from "@/components/ui-kit";
@@ -22,15 +24,17 @@ const initialView = { zoom: 1, x: 0, y: 0, rotation: 0, flipX: 1, flipY: 1 };
 export function InboxImageViewer({
   src,
   message,
+  images,
   onClose,
   onReply,
   onDownload,
 }: {
   src: string;
   message: ApiMessage;
+  images?: ApiMessage[];
   onClose: () => void;
-  onReply?: () => void;
-  onDownload: () => Promise<void>;
+  onReply?: (message: ApiMessage) => void;
+  onDownload: (message: ApiMessage) => Promise<void>;
 }) {
   const [view, setView] = React.useState(initialView);
   const [dragging, setDragging] = React.useState(false);
@@ -45,6 +49,17 @@ export function InboxImageViewer({
   const busyRef = React.useRef(false);
   const [error, setError] = React.useState("");
   const [notice, setNotice] = React.useState("");
+  const gallery = React.useMemo(() => {
+    const available = (images ?? []).filter((item) => item.type === "image");
+    return available.some((item) => item.id === message.id) ? available : [message];
+  }, [images, message]);
+  const galleryKey = React.useMemo(() => gallery.map((item) => item.id).join(","), [gallery]);
+  const [activeIndex, setActiveIndex] = React.useState(() =>
+    Math.max(0, gallery.findIndex((item) => item.id === message.id)),
+  );
+  const [galleryUrls, setGalleryUrls] = React.useState<Map<string, string>>(
+    () => new Map([[message.id, src]]),
+  );
   const clientIds = React.useRef(new Map<string, string>());
   const qc = useQueryClient();
   const destinations = useQuery({
@@ -52,7 +67,46 @@ export function InboxImageViewer({
     queryFn: () => conversationApi.list({ q: search || undefined, page, pageSize: 50 }),
     enabled: forwarding,
   });
-  const caption = message.content && message.content !== "[imagem]" ? message.content : "";
+  const activeMessage = gallery[activeIndex] ?? message;
+  const activeSrc = galleryUrls.get(activeMessage.id);
+  const caption =
+    activeMessage.content && activeMessage.content !== "[imagem]" ? activeMessage.content : "";
+
+  React.useEffect(() => {
+    const nextIndex = gallery.findIndex((item) => item.id === message.id);
+    setActiveIndex(Math.max(0, nextIndex));
+  }, [galleryKey, gallery, message.id]);
+
+  React.useEffect(() => {
+    setView(initialView);
+  }, [activeMessage.id]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const createdUrls: string[] = [];
+    setGalleryUrls(new Map([[message.id, src]]));
+
+    const loadGallery = async () => {
+      for (const item of gallery) {
+        if (item.id === message.id) continue;
+        try {
+          const blob = await messageApi.downloadMedia(item.conversation_id, item.id, true);
+          if (cancelled) return;
+          const objectUrl = URL.createObjectURL(blob);
+          createdUrls.push(objectUrl);
+          setGalleryUrls((current) => new Map(current).set(item.id, objectUrl));
+        } catch {
+          // Uma foto indisponível não impede a navegação pelas demais imagens.
+        }
+      }
+    };
+
+    void loadGallery();
+    return () => {
+      cancelled = true;
+      createdUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [gallery, galleryKey, message.id, src]);
 
   const zoom = React.useCallback((factor: number, point = { x: 0, y: 0 }) => {
     setView((current) => {
@@ -102,10 +156,10 @@ export function InboxImageViewer({
   const forward = () =>
     run(async () => {
       if (!target) return;
-      const blob = await messageApi.downloadMedia(message.conversation_id, message.id);
+      const blob = await messageApi.downloadMedia(activeMessage.conversation_id, activeMessage.id);
       if (!clientIds.current.has(target)) clientIds.current.set(target, crypto.randomUUID());
       await messageApi.sendMedia(target, blob, {
-        fileName: message.media_data?.file_name ?? "imagem.jpg",
+        fileName: activeMessage.media_data?.file_name ?? "imagem.jpg",
         mimeType: blob.type || "image/jpeg",
         mediaType: "image",
         caption,
@@ -152,7 +206,7 @@ export function InboxImageViewer({
           }}
         >
           <Dialog.Title className="sr-only">
-            Visualizar imagem: {message.media_data?.file_name ?? "Imagem"}
+            Visualizar imagem: {activeMessage.media_data?.file_name ?? "Imagem"}
           </Dialog.Title>
           <div className="z-10 flex shrink-0 flex-wrap justify-between gap-2 p-3">
             <div
@@ -194,11 +248,11 @@ export function InboxImageViewer({
                   Reply,
                   () => {
                     onClose();
-                    onReply();
+                    onReply(activeMessage);
                   },
                   busy,
                 )}
-              {action("Baixar imagem", Download, () => void run(onDownload), busy)}
+              {action("Baixar imagem", Download, () => void run(() => onDownload(activeMessage)), busy)}
               {action("Fechar", X, onClose, busy)}
             </div>
           </div>
@@ -350,18 +404,82 @@ export function InboxImageViewer({
                 setDragging(false);
               }}
             >
+              {gallery.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Foto anterior"
+                    title="Foto anterior"
+                    disabled={activeIndex === 0}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => setActiveIndex((current) => Math.max(0, current - 1))}
+                    className="absolute left-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white shadow-lg transition hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:cursor-not-allowed disabled:opacity-30 sm:left-6"
+                  >
+                    <ChevronLeft className="h-6 w-6" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Próxima foto"
+                    title="Próxima foto"
+                    disabled={activeIndex === gallery.length - 1}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() =>
+                      setActiveIndex((current) => Math.min(gallery.length - 1, current + 1))
+                    }
+                    className="absolute right-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white shadow-lg transition hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:cursor-not-allowed disabled:opacity-30 sm:right-6"
+                  >
+                    <ChevronRight className="h-6 w-6" />
+                  </button>
+                </>
+              )}
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
-                <img
-                  ref={imageRef}
-                  src={src}
-                  alt={message.media_data?.file_name ?? "Imagem ampliada"}
-                  draggable={false}
-                  className="max-h-full max-w-full select-none object-contain"
-                  style={{
-                    transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom}) rotate(${view.rotation}deg) scale(${view.flipX}, ${view.flipY})`,
-                  }}
-                />
+                {activeSrc ? (
+                  <img
+                    ref={imageRef}
+                    src={activeSrc}
+                    alt={activeMessage.media_data?.file_name ?? "Imagem ampliada"}
+                    draggable={false}
+                    className="max-h-full max-w-full select-none object-contain"
+                    style={{
+                      transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom}) rotate(${view.rotation}deg) scale(${view.flipX}, ${view.flipY})`,
+                    }}
+                  />
+                ) : (
+                  <p className="text-sm text-white/70">Carregando imagem...</p>
+                )}
               </div>
+            </div>
+          )}
+          {!forwarding && gallery.length > 1 && (
+            <div className="flex shrink-0 items-center justify-center gap-2 overflow-x-auto border-t border-white/10 bg-black/30 px-4 py-3">
+              {gallery.map((item, index) => {
+                const thumbnail = galleryUrls.get(item.id);
+                const selected = index === activeIndex;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-label={`Ver foto ${index + 1} de ${gallery.length}`}
+                    aria-current={selected ? "true" : undefined}
+                    onClick={() => setActiveIndex(index)}
+                    className={`h-14 w-14 shrink-0 overflow-hidden rounded-md border-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:h-16 sm:w-16 ${
+                      selected ? "border-white" : "border-transparent opacity-65 hover:opacity-100"
+                    }`}
+                  >
+                    {thumbnail ? (
+                      <img
+                        src={thumbnail}
+                        alt={`Miniatura ${index + 1}`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-full w-full items-center justify-center bg-white/10 text-xs text-white/60">
+                        {index + 1}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
           <div className="shrink-0 px-4 py-3 text-center">

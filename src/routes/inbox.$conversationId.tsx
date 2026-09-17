@@ -122,6 +122,10 @@ function ConversationPage() {
     () => agents.map((agent) => ({ id: agent.userId, nome: agent.nome })),
     [agents],
   );
+  const galleryImages = React.useMemo(
+    () => mensagens.filter((message) => message.type === "image" && !!message.media_data),
+    [mensagens],
+  );
   const { data: apiDepartments = [] } = useQuery({
     queryKey: ["trixus", "departments", "conversation-transfer"],
     queryFn: organizationApi.listDepartments,
@@ -359,11 +363,12 @@ function ConversationPage() {
                     m={m}
                     agents={messageAgents}
                     showAgentName={showAgentName}
-                    onReply={() => setReplyTo(m)}
+                    onReply={(message) => setReplyTo(message)}
                     onQuotedClick={scrollToMessage}
                     highlighted={highlightedMessageId === m.id}
                     contactName={conv.contact?.nome ?? "Contato"}
                     contactAvatarUrl={conv.contact?.avatar_url ?? null}
+                    galleryImages={galleryImages}
                     setMessageRef={(node) => {
                       if (node) messageRefs.current.set(m.id, node);
                       else messageRefs.current.delete(m.id);
@@ -512,16 +517,18 @@ function MessageBubble({
   highlighted,
   contactName,
   contactAvatarUrl,
+  galleryImages,
   setMessageRef,
 }: {
   m: Message;
   agents: { id: string; nome: string }[];
   showAgentName?: boolean;
-  onReply?: () => void;
+  onReply?: (message: Message) => void;
   onQuotedClick?: (messageId: string | null | undefined) => void;
   highlighted?: boolean;
   contactName: string;
   contactAvatarUrl?: string | null;
+  galleryImages: Message[];
   setMessageRef?: (node: HTMLDivElement | null) => void;
 }) {
   const qc = useQueryClient();
@@ -556,12 +563,12 @@ function MessageBubble({
     qc.invalidateQueries({ queryKey: ["trixus", "messages", m.conversation_id] });
   };
 
-  const download = async () => {
-    const blob = await messageApi.downloadMedia(m.conversation_id, m.id);
+  const download = async (message: Message = m) => {
+    const blob = await messageApi.downloadMedia(message.conversation_id, message.id);
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = m.media_data?.file_name ?? "media";
+    anchor.download = message.media_data?.file_name ?? "media";
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -613,7 +620,7 @@ function MessageBubble({
           size="icon"
           aria-label="Responder"
           className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-          onClick={onReply}
+          onClick={() => onReply(m)}
         >
           <Reply className="h-3.5 w-3.5" />
         </Button>
@@ -648,9 +655,13 @@ function MessageBubble({
           <InboxImageViewer
             src={mediaUrl}
             message={m}
+            images={galleryImages}
             onClose={() => setImagePreviewOpen(false)}
-            onReply={onReply}
-            onDownload={download}
+            onReply={(image) => {
+              setImagePreviewOpen(false);
+              onReply?.(image as Message);
+            }}
+            onDownload={(image) => download(image as Message)}
           />
         )}
         {m.type === "image" && m.media_data && (
@@ -710,7 +721,7 @@ function MessageBubble({
         {m.type === "document" && m.media_data && (
           <button
             type="button"
-            onClick={mediaReady ? download : undefined}
+            onClick={mediaReady ? () => void download() : undefined}
             disabled={!mediaReady}
             className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
               mine ? "border-white/30 bg-white/10" : "border-border/60 bg-surface-2"
@@ -782,7 +793,7 @@ function MessageBubble({
           size="icon"
           aria-label="Responder"
           className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-          onClick={onReply}
+          onClick={() => onReply(m)}
         >
           <Reply className="h-3.5 w-3.5" />
         </Button>

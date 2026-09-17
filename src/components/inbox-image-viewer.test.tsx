@@ -3,7 +3,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { InboxImageViewer } from "./inbox-image-viewer";
-import type { ApiMessage } from "@/lib/trixus-api";
+import { messageApi, type ApiMessage } from "@/lib/trixus-api";
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({}),
@@ -123,6 +123,54 @@ it("closes when clicking outside the displayed image", async () => {
     await React.act(() => stage.dispatchEvent(event));
     expect(close).toHaveBeenCalledOnce();
   } finally {
+    await React.act(() => root.unmount());
+    container.remove();
+  }
+});
+
+it("navigates through the conversation images using arrows and thumbnails", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const first = {
+    id: "image1",
+    conversation_id: "conversation1",
+    type: "image",
+    media_data: { file_name: "primeira.jpg" },
+  } as ApiMessage;
+  const second = {
+    id: "image2",
+    conversation_id: "conversation1",
+    type: "image",
+    media_data: { file_name: "segunda.jpg" },
+  } as ApiMessage;
+  const downloadMedia = vi.spyOn(messageApi, "downloadMedia").mockResolvedValue(new Blob(["x"]));
+  const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:thumbnail");
+  try {
+    await React.act(() =>
+      root.render(
+        <InboxImageViewer
+          src="blob:primeira"
+          message={first}
+          images={[first, second]}
+          onClose={vi.fn()}
+          onDownload={vi.fn().mockResolvedValue(undefined)}
+        />,
+      ),
+    );
+    await React.act(async () => {
+      await Promise.resolve();
+    });
+    await React.act(() =>
+      (document.querySelector('[aria-label="Próxima foto"]') as HTMLButtonElement).click(),
+    );
+    expect(document.querySelector('img[alt="segunda.jpg"]')).not.toBeNull();
+    expect(downloadMedia).toHaveBeenCalledWith("conversation1", "image2", true);
+    expect(createObjectUrl).toHaveBeenCalled();
+  } finally {
+    downloadMedia.mockRestore();
+    createObjectUrl.mockRestore();
     await React.act(() => root.unmount());
     container.remove();
   }
