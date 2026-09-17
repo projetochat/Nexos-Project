@@ -18,6 +18,7 @@ import { normalizeRemotePhoneCandidates } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
 import { MessagingOutboundService } from "./messaging-outbound.service";
 import { resolveMessageTemplate } from "./message-template";
+import { selectAutomaticReply } from "./automatic-reply";
 
 @Injectable()
 export class MessagingInboundService {
@@ -266,16 +267,21 @@ export class MessagingInboundService {
               contactName: contact.name,
             })
           : [];
-      const welcome =
-        createdConversation &&
-        !isGroup &&
-        !event.fromMe &&
-        connection.welcomeEnabled &&
-        (existingContact ? connection.welcomeExistingMessage : connection.welcomeNewMessage)
-          ? {
-              template: (existingContact
-                ? connection.welcomeExistingMessage
-                : connection.welcomeNewMessage)!,
+      const automaticReply = selectAutomaticReply({
+        createdConversation,
+        isGroup,
+        fromMe: event.fromMe,
+        welcomeEnabled: connection.welcomeEnabled,
+        welcomeTemplate: existingContact ? connection.welcomeExistingMessage : connection.welcomeNewMessage,
+        absenceEnabled: connection.absenceEnabled,
+        absenceTemplate: connection.absenceMessage,
+        serviceHours: connection.serviceHours,
+        timezone: connection.timezone,
+        at: event.occurredAt,
+      });
+      const reply = automaticReply
+        ? {
+              ...automaticReply,
               contactExisting: Boolean(existingContact),
               contact,
               departmentName: updatedConversation.departmentId
@@ -285,7 +291,7 @@ export class MessagingInboundService {
                   }))?.name ?? null
                 : null,
             }
-          : null;
+        : null;
       return {
         message,
         duplicate: false,
@@ -296,7 +302,7 @@ export class MessagingInboundService {
         leadId: lead?.id ?? null,
         notifications,
         unreadCount: updatedConversation.unreadCount,
-        welcome,
+        automaticReply: reply,
       };
     });
 
@@ -375,18 +381,18 @@ export class MessagingInboundService {
           unreadCount: result.unreadCount ?? 0,
         });
       }
-      if (result.welcome && this.outbound) {
+      if (result.automaticReply && this.outbound) {
         try {
           const customFieldValues = await this.prisma.contactCustomFieldValue.findMany({
             where: { tenantId: event.tenantId, contactId: result.contactId! },
             include: { field: { select: { label: true } } },
           });
-          const content = resolveMessageTemplate(result.welcome.template, {
-            contactName: result.welcome.contact.name,
-            phone: result.welcome.contact.phone,
-            email: result.welcome.contact.email,
+          const content = resolveMessageTemplate(result.automaticReply.template, {
+            contactName: result.automaticReply.contact.name,
+            phone: result.automaticReply.contact.phone,
+            email: result.automaticReply.contact.email,
             instance: result.providerInstanceName,
-            department: result.welcome.departmentName,
+            department: result.automaticReply.departmentName,
             customFields: Object.fromEntries(
               customFieldValues.map((item) => [item.field.label, item.value]),
             ),
@@ -398,22 +404,22 @@ export class MessagingInboundService {
             connectionId: event.connectionId,
             externalChatId: event.externalChatId,
             content,
-            kind: "welcome",
+            kind: result.automaticReply.kind,
           });
           this.logger.log({
-            event: "messaging.welcome.queued",
+            event: `messaging.${result.automaticReply.kind}.queued`,
             tenantId: event.tenantId,
             connectionId: event.connectionId,
             conversationId: result.conversationId,
-            contactKind: result.welcome.contactExisting ? "existing" : "new",
+            contactKind: result.automaticReply.contactExisting ? "existing" : "new",
           });
         } catch (error) {
           this.logger.error({
-            event: "messaging.welcome.queue_failed",
+            event: `messaging.${result.automaticReply.kind}.queue_failed`,
             tenantId: event.tenantId,
             connectionId: event.connectionId,
             conversationId: result.conversationId,
-            error: error instanceof Error ? error.message : "Welcome dispatch failed.",
+            error: error instanceof Error ? error.message : "Automatic reply dispatch failed.",
           });
         }
       }

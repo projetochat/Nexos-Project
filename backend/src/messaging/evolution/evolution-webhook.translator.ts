@@ -262,6 +262,12 @@ function extractMessageContent(message: Record<string, unknown> | null): {
   const extended = readRecord(message, "extendedTextMessage");
   const extendedText = readString(extended ?? undefined, "text");
   if (extendedText) return { type: MessageType.TEXT, text: extendedText };
+  const list = readRecord(message, "listMessage");
+  if (list) return { type: MessageType.TEXT, text: interactiveListText(list) };
+  const buttons = readRecord(message, "buttonsMessage");
+  if (buttons) return { type: MessageType.TEXT, text: interactiveButtonsText(buttons) };
+  const interactive = readRecord(message, "interactiveMessage");
+  if (interactive) return { type: MessageType.TEXT, text: nativeInteractiveText(interactive) };
   const image = readRecord(message, "imageMessage");
   if (image) {
     return {
@@ -302,6 +308,85 @@ function extractMessageContent(message: Record<string, unknown> | null): {
     };
   }
   return { type: MessageType.TEXT };
+}
+
+/**
+ * WhatsApp list messages have no `conversation` field. Persisting a readable
+ * representation keeps messages sent by third-party bots visible in Trixus.
+ */
+function interactiveListText(list: Record<string, unknown>) {
+  const options = rowsFromSections(list.sections).map(optionLine);
+  return joinMessageParts([
+    readString(list, "title"),
+    readString(list, "description") ?? readString(list, "text"),
+    options.length
+      ? `Opções (${readString(list, "buttonText") ?? "Clique para ver"}):\n${options.join("\n")}`
+      : readString(list, "buttonText"),
+  ]);
+}
+
+function interactiveButtonsText(buttons: Record<string, unknown>) {
+  const options = recordArray(buttons.buttons)
+    .map((button) => readNestedString(button, ["buttonText", "displayText"]) ?? readString(button, "displayText"))
+    .filter((option): option is string => Boolean(option))
+    .map((option) => `• ${option}`);
+  return joinMessageParts([
+    readString(buttons, "title") ?? readString(buttons, "headerText"),
+    readString(buttons, "contentText") ?? readString(buttons, "text"),
+    readString(buttons, "footerText"),
+    options.length ? `Opções:\n${options.join("\n")}` : null,
+  ]);
+}
+
+function nativeInteractiveText(interactive: Record<string, unknown>) {
+  const nativeFlow = readRecord(interactive, "nativeFlowMessage");
+  const options = recordArray(nativeFlow?.buttons)
+    .flatMap(nativeFlowButtonLabels)
+    .map((option) => `• ${option}`);
+  return joinMessageParts([
+    readNestedString(interactive, ["header", "title"]),
+    readNestedString(interactive, ["body", "text"]),
+    readNestedString(interactive, ["footer", "text"]),
+    options.length ? `Opções:\n${options.join("\n")}` : null,
+  ]);
+}
+
+function nativeFlowButtonLabels(button: Record<string, unknown>) {
+  const params = readString(button, "buttonParamsJson");
+  if (!params) return readString(button, "name") ? [readString(button, "name")!] : [];
+  try {
+    const parsed: unknown = JSON.parse(params);
+    if (!parsed || typeof parsed !== "object") return [];
+    const record = parsed as Record<string, unknown>;
+    const direct = stringValue(record.display_text) ?? stringValue(record.title);
+    if (direct) return [direct];
+    return rowsFromSections(record.sections).map((row) => stringValue(row.title)).filter((row): row is string => Boolean(row));
+  } catch {
+    return [];
+  }
+}
+
+function rowsFromSections(value: unknown) {
+  return recordArray(value).flatMap((section) => recordArray(section.rows));
+}
+
+function optionLine(row: Record<string, unknown>) {
+  const title = readString(row, "title") ?? "Opção";
+  const description = readString(row, "description");
+  return description ? `• ${title} — ${description}` : `• ${title}`;
+}
+
+function joinMessageParts(parts: Array<string | null | undefined>) {
+  const unique = parts.filter((part): part is string => Boolean(part?.trim())).filter(
+    (part, index, items) => items.indexOf(part) === index,
+  );
+  return unique.length ? unique.join("\n\n") : null;
+}
+
+function recordArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    : [];
 }
 
 function extractMediaEnvelope(media: Record<string, unknown>): InboundMessageEvent["media"] {
