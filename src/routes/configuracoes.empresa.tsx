@@ -131,7 +131,7 @@ function EmpresaSettings() {
 
           <div className="mt-4 space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Nome de apresentação *">
+              <Field label="Nome do atendente *">
                 <Input
                   value={presentationName}
                   onChange={(event) => setPresentationName(event.target.value)}

@@ -89,6 +89,7 @@ type MembershipWithRelations = {
   tenantId: string;
   userId: string;
   status: string;
+  presentationName?: string | null;
   createdAt: Date;
   updatedAt: Date;
   user: {
@@ -648,6 +649,7 @@ export class UsersController {
       status: membership.status,
       createdAt: membership.createdAt,
       updatedAt: membership.updatedAt,
+      presentationName: membership.presentationName,
       user: {
         id: membership.user.id,
         email: membership.user.email,

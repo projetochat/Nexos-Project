@@ -90,6 +90,7 @@ export type ApiRole = {
 export type ApiUserMembership = {
   id: string;
   status: "ACTIVE" | "DISABLED" | "INVITED";
+  presentationName?: string | null;
   createdAt?: string;
   updatedAt?: string;
   user: {

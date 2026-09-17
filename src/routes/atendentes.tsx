@@ -1097,7 +1097,7 @@ function toAtendente(membership: ApiUserMembership): Atendente {
   const active = membership.status === "ACTIVE" && membership.user.status === "ACTIVE";
   return {
     id: membership.id,
-    nome: membership.user.name,
+    nome: membership.presentationName?.trim() || membership.user.name,
     email: membership.user.email,
     cargo: membership.role.name,
     perfilId: membership.role.id,
