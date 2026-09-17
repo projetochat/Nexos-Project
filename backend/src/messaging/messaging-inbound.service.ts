@@ -34,7 +34,8 @@ export class MessagingInboundService {
     @Optional() @Inject(MessagingOutboundService) private readonly outbound?: MessagingOutboundService,
   ) {}
 
-  async process(event: InboundMessageEvent) {
+  async process(event: InboundMessageEvent, options: { historical?: boolean } = {}) {
+    const historical = options.historical === true;
     const normalizedPhoneCandidates = uniqueNormalizedPhones([
       ...(event.metadata?.normalizedPhoneCandidates ?? []),
       event.sender.normalizedPhone,
@@ -215,7 +216,7 @@ export class MessagingInboundService {
       const updatedConversation = await tx.conversation.update({
         where: { tenantId_id: { tenantId: event.tenantId, id: conversation.id } },
         data: {
-          unreadCount: event.fromMe ? conversation.unreadCount : { increment: 1 },
+          unreadCount: event.fromMe || historical ? conversation.unreadCount : { increment: 1 },
           lastMessagePreview: truncatePreview(preview),
           lastMessageAt: event.occurredAt,
           inboxArchivedAt: isGroup ? null : conversation.inboxArchivedAt,
@@ -234,7 +235,7 @@ export class MessagingInboundService {
         },
       });
       const lead =
-        createdConversation && !isGroup && !event.fromMe
+        !historical && createdConversation && !isGroup && !event.fromMe
           ? await tx.lead.upsert({
               where: {
                 tenantId_conversationId: {
@@ -259,7 +260,7 @@ export class MessagingInboundService {
             })
           : null;
       const notifications =
-        createdConversation && lead
+        !historical && createdConversation && lead
           ? await this.notifyLeadCreated(tx, {
               tenantId: event.tenantId,
               leadId: lead.id,
@@ -268,7 +269,9 @@ export class MessagingInboundService {
               contactName: contact.name,
             })
           : [];
-      const automaticReply = selectAutomaticReply({
+      const automaticReply = historical
+        ? null
+        : selectAutomaticReply({
         createdConversation,
         isGroup,
         fromMe: event.fromMe,
@@ -330,7 +333,7 @@ export class MessagingInboundService {
       duplicate: result.duplicate,
       resolutionResult: result.duplicate ? "ignored_duplicate" : "persisted",
     });
-    if (!result.duplicate) {
+    if (!result.duplicate && !historical) {
       this.realtime?.publishMessageCreated({
         tenantId: event.tenantId,
         conversationId: result.message.conversationId,
