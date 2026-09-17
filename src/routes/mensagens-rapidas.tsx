@@ -29,7 +29,7 @@ export const Route = createFileRoute("/mensagens-rapidas")({
   component: QuickRepliesPage,
   head: () => ({
     meta: [
-      { title: "Mensagens Rápidas · Trixus" },
+      { title: "Trixus" },
       {
         name: "description",
         content: "Atalhos de mensagens rápidas para agilizar respostas no atendimento.",

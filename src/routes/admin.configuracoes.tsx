@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { platformApi, type PlatformSettings } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/configuracoes")({
-  head: () => ({ meta: [{ title: "Configurações · Trixus Admin" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: PlatformSettingsPage,
 });
 

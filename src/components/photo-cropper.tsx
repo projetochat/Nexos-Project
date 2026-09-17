@@ -77,8 +77,7 @@ export function PhotoCropper({
   return (
     <Modal
       open
-      title="Ajustar foto"
-      description="Arraste a foto e ajuste o zoom para escolher o enquadramento."
+      title="Ajustar Foto"
       size="sm"
       initialFocus="[data-photo-crop-frame]"
       onClose={() => {

@@ -24,7 +24,7 @@ import { num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/automacoes")({
-  head: () => ({ meta: [{ title: "Automações - Trixus" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: Page,
 });
 

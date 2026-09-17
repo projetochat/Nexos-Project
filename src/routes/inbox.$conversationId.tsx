@@ -68,6 +68,14 @@ const quickReplyDrafts = new Map<string, SequenceDraft>();
 type Message = ApiMessage;
 type MentionOption = { id: string; label: string; phone: string };
 
+function resolveMessageVariables(text: string, contactName?: string | null) {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+  return text
+    .replace(/{{\s*cumprimento\s*}}/gi, greeting)
+    .replace(/{{\s*nome\s*}}/gi, contactName?.trim() || "");
+}
+
 const STATUS_TONE: Record<ConvStatus, "warning" | "info" | "success" | "default"> = {
   aberta: "warning",
   em_andamento: "info",
@@ -373,6 +381,7 @@ function ConversationPage() {
               key={conversationId}
               conversationId={conv.id}
               authorId={user?.id ?? null}
+              contactName={conv.contact?.nome ?? null}
               disabled={!canSend}
               disabledReason={
                 conv.status === "fechada"
@@ -966,6 +975,7 @@ type DisabledReason = "closed" | "standby" | "lead" | "not-mine" | null;
 function Composer({
   conversationId,
   authorId,
+  contactName,
   disabled,
   disabledReason,
   onStart,
@@ -978,6 +988,7 @@ function Composer({
 }: {
   conversationId: string;
   authorId: string | null;
+  contactName?: string | null;
   disabled: boolean;
   disabledReason?: DisabledReason;
   onStart?: () => void;
@@ -1083,7 +1094,7 @@ function Composer({
     } else {
       quickReplyDrafts.delete(draftKey);
       setSequence(null);
-      setText(items[0]?.text ?? qr.texto);
+      setText(resolveMessageVariables(items[0]?.text ?? qr.texto, contactName));
     }
     setPendingCloseAfter(!!qr.close_on_send);
     setShowQR(false);
@@ -1218,7 +1229,7 @@ function Composer({
           await sendQuickReply(createSequence(match));
           return;
         }
-        t = items[0]?.text ?? match.texto;
+        t = resolveMessageVariables(items[0]?.text ?? match.texto, contactName);
         closeAfter = closeAfter || !!match.close_on_send;
       }
     }

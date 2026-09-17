@@ -74,7 +74,9 @@ export class MessagingInboundService {
                 ? groupDisplayName && existingContact.name === "Grupo WhatsApp"
                   ? groupDisplayName
                   : existingContact.name
-                : (event.metadata?.displayName ?? event.sender.displayName ?? undefined),
+                : event.fromMe
+                  ? undefined
+                  : (event.metadata?.displayName ?? event.sender.displayName ?? undefined),
               departmentId: existingContact.departmentId ?? defaultDepartmentId,
               instance: connection.externalReference ?? existingContact.instance,
             },
@@ -89,7 +91,9 @@ export class MessagingInboundService {
             update: {
               name: isGroup
                 ? (groupDisplayName ?? "Grupo WhatsApp")
-                : (event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone),
+                : event.fromMe
+                  ? event.sender.phone
+                  : (event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone),
               phone: isGroup ? event.externalChatId : event.sender.phone,
               departmentId: defaultDepartmentId,
               instance: connection.externalReference,
@@ -174,9 +178,9 @@ export class MessagingInboundService {
           tenantId: event.tenantId,
           conversationId: conversation.id,
           connectionId: event.connectionId,
-          direction: MessageDirection.INBOUND,
+          direction: event.fromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND,
           type: event.type,
-          status: MessageStatus.CREATED,
+          status: event.fromMe ? MessageStatus.SENT : MessageStatus.CREATED,
           content: event.content ?? null,
           externalMessageId: event.externalMessageId,
           providerMessageId: event.externalMessageId,
@@ -199,14 +203,14 @@ export class MessagingInboundService {
           mediaDurationMs: event.media?.durationMs ?? null,
           mediaProviderUrl: event.media?.url ?? null,
           mediaState: resolveInboundMediaState(event, downloadedMedia),
-          providerStatus: "inbound_received",
+          providerStatus: event.fromMe ? "outbound_synced" : "inbound_received",
           createdAt: event.occurredAt,
         },
       });
       const updatedConversation = await tx.conversation.update({
         where: { tenantId_id: { tenantId: event.tenantId, id: conversation.id } },
         data: {
-          unreadCount: { increment: 1 },
+          unreadCount: event.fromMe ? conversation.unreadCount : { increment: 1 },
           lastMessagePreview: truncatePreview(preview),
           lastMessageAt: event.occurredAt,
           inboxArchivedAt: isGroup ? null : conversation.inboxArchivedAt,
@@ -225,7 +229,7 @@ export class MessagingInboundService {
         },
       });
       const lead =
-        createdConversation && !isGroup
+        createdConversation && !isGroup && !event.fromMe
           ? await tx.lead.upsert({
               where: {
                 tenantId_conversationId: {
@@ -303,7 +307,7 @@ export class MessagingInboundService {
         connectionId: event.connectionId,
         message: {
           id: result.message.id,
-          direction: "inbound",
+          direction: result.message.direction.toLowerCase(),
           status: result.message.status.toLowerCase(),
           createdAt: result.message.createdAt,
         },
@@ -340,11 +344,13 @@ export class MessagingInboundService {
           kind: notification.kind,
         });
       }
-      this.realtime?.publishUnreadUpdated({
-        tenantId: event.tenantId,
-        conversationId: result.message.conversationId,
-        unreadCount: result.unreadCount ?? 0,
-      });
+      if (!event.fromMe) {
+        this.realtime?.publishUnreadUpdated({
+          tenantId: event.tenantId,
+          conversationId: result.message.conversationId,
+          unreadCount: result.unreadCount ?? 0,
+        });
+      }
     }
     return result;
   }
@@ -357,7 +363,7 @@ export class MessagingInboundService {
       providerInstanceName?: string | null;
     },
   ) {
-    if (result.duplicate || event.conversationType === "GROUP") return false;
+    if (result.duplicate || event.fromMe || event.conversationType === "GROUP") return false;
     if (!result.contactId || !result.providerInstanceName) return false;
     const avatarUrl = event.metadata?.profilePictureUrl;
     if (!avatarUrl) return false;

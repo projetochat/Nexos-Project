@@ -2131,8 +2131,8 @@ async function readError(response: Response) {
     };
     const candidate = Array.isArray(data.message) ? data.message.join(", ") : data.message;
     const message =
-      (isHelpfulApiMessage(candidate) && candidate) ||
       trixusMessageFromCode(data.code) ||
+      (isHelpfulApiMessage(candidate) && candidate) ||
       apiMessageFromStatus(response.status, data.code);
     return new TrixusApiError(message, response.status, data.code, data.details);
   } catch {
@@ -2159,7 +2159,7 @@ async function authErrorFromResponse(response: Response) {
 
 function trixusMessageFromCode(code?: string) {
   if (code === "PLAN_LIMIT_CONNECTIONS_REACHED") {
-    return "Limite de instâncias atingido para o plano atual.";
+    return "Número máximo de conexões excedidas.";
   }
   if (code === "PLAN_FEATURE_NOT_AVAILABLE") {
     return "Recurso não disponível para o plano atual.";

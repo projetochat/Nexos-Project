@@ -87,3 +87,43 @@ it("zooms with the wheel, drags, transforms and restores the image without chang
     container.remove();
   }
 });
+
+it("closes when clicking outside the displayed image", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const close = vi.fn();
+  try {
+    await React.act(() =>
+      root.render(
+        <InboxImageViewer
+          src="blob:test-image"
+          message={{ id: "image1", media_data: { file_name: "foto.jpg" } } as ApiMessage}
+          onClose={close}
+          onDownload={vi.fn().mockResolvedValue(undefined)}
+        />,
+      ),
+    );
+    const stage = document.querySelector<HTMLElement>('[data-testid="image-stage"]')!;
+    const image = stage.querySelector("img")!;
+    vi.spyOn(image, "getBoundingClientRect").mockReturnValue({
+      bottom: 200,
+      height: 100,
+      left: 100,
+      right: 200,
+      top: 100,
+      width: 100,
+      x: 100,
+      y: 100,
+      toJSON: () => ({}),
+    });
+    const event = new Event("pointerdown", { bubbles: true, cancelable: true });
+    Object.assign(event, { pointerId: 1, button: 0, clientX: 50, clientY: 50 });
+    await React.act(() => stage.dispatchEvent(event));
+    expect(close).toHaveBeenCalledOnce();
+  } finally {
+    await React.act(() => root.unmount());
+    container.remove();
+  }
+});

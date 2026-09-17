@@ -301,26 +301,30 @@ function HistoricoPage() {
 function HistoryBubble({ message }: { message: ApiMessage }) {
   if (message.type === "system" || message.direction === "system") {
     const timestamp = new Date(message.created_at).getTime();
-    const isInstanceRemovalClose =
-      (message.content ?? "").trim() === "Conversa encerrada via remoção da instancia";
-    const tone = isInstanceRemovalClose
-      ? {
-          line: "bg-destructive/40",
-          pill: "border-destructive/40 bg-destructive/10 text-destructive",
-        }
-      : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
+    const content = message.content ?? "Evento do sistema";
+    const normalizedContent = content.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const isStart = /conversa (iniciada|retomada)|protocolo gerado/.test(normalizedContent);
+    const isEnd = /conversa encerrada|encerrada via remocao/.test(normalizedContent);
+    const isBoundary = isStart || isEnd;
+    const tone = isStart
+      ? { line: "bg-success/40", pill: "border-success/40 bg-success/10 text-success" }
+      : isEnd
+        ? { line: "bg-destructive/40", pill: "border-destructive/40 bg-destructive/10 text-destructive" }
+        : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
     return (
       <div className="flex items-center gap-3">
-        <span className={`h-0.5 flex-1 ${tone.line}`} />
+        {isBoundary && <span className={`h-0.5 flex-1 ${tone.line}`} />}
         <span
-          className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${tone.pill}`}
+          className={`rounded-full border px-3 py-1 text-center text-[10px] uppercase tracking-widest ${tone.pill} ${
+            isBoundary ? "" : "mx-auto"
+          }`}
         >
-          {(message.content ?? "Evento do sistema").toUpperCase()}
+          {content.toUpperCase()}
           <span className="ml-2 opacity-80">
             - {fmtDate(timestamp)} {fmtHM(timestamp)}
           </span>
         </span>
-        <span className={`h-0.5 flex-1 ${tone.line}`} />
+        {isBoundary && <span className={`h-0.5 flex-1 ${tone.line}`} />}
       </div>
     );
   }

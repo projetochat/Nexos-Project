@@ -1,8 +1,8 @@
 import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays } from "lucide-react";
-import { Card, Input, InstanceFilterSelect, SearchInput, Select } from "@/components/ui-kit";
+import { CalendarDays, FilterX } from "lucide-react";
+import { Button, Card, Input, InstanceFilterSelect, SearchInput, Select } from "@/components/ui-kit";
 import { connectionsApi, crmApi, organizationApi, type OperationalPeriod } from "@/lib/trixus-api";
 import {
   datesForOperationalPeriod,
@@ -28,12 +28,14 @@ export function DashboardFiltersBar({
   onChange,
   showDepartment = true,
   search,
+  onClear,
   className = "mb-6",
 }: {
   value: OperationalReportFilters;
   onChange: (patch: Partial<OperationalReportFilters>) => void;
   showDepartment?: boolean;
   search?: { value: string; onChange: (value: string) => void; placeholder: string };
+  onClear?: () => void;
   className?: string;
 }) {
   const { data: customers } = useQuery({
@@ -65,11 +67,17 @@ export function DashboardFiltersBar({
   const isCustom = value.period === "custom";
   const start = value.start ?? automaticDates.start;
   const end = value.end ?? automaticDates.end;
+  const gridClass =
+    search && !showDepartment
+      ? "xl:grid-cols-[minmax(220px,3fr)_1fr_1fr_1.1fr_1fr_1fr]"
+      : onClear
+        ? "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr_auto]"
+        : "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr]";
 
   return (
     <Card className={`p-4 ${className}`}>
       <div
-        className={`grid grid-cols-2 gap-3 ${search && !showDepartment ? "xl:grid-cols-[minmax(220px,3fr)_1fr_1fr_1.1fr_1fr_1fr]" : "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr]"}`}
+        className={`grid grid-cols-2 gap-3 ${gridClass}`}
       >
         {search && (
           <FilterField label="Busca" className="col-span-2 min-w-0 xl:col-span-1">
@@ -146,6 +154,21 @@ export function DashboardFiltersBar({
             onChange={(date) => onChange({ end: date })}
           />
         </FilterField>
+        {onClear && (
+          <div className="flex items-end">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={onClear}
+              title="Limpar filtros"
+              aria-label="Limpar filtros"
+              className="min-h-10 w-10 px-0"
+            >
+              <FilterX className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </div>
     </Card>
   );

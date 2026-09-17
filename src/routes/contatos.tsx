@@ -22,6 +22,7 @@ import {
   ChevronRight,
   Download,
   Expand,
+  FilterX,
   FileSpreadsheet,
   FileUp,
   Italic,
@@ -479,6 +480,15 @@ function ContatosPage() {
     setSelectedIds([]);
     setAllFilteredSelected(false);
   }, [query, instanciaFilter, departamentoFilter, clienteFilter, tagFilter, pageSize]);
+  const clearContactFilters = () => {
+    setQuery("");
+    setInstanciaFilter("");
+    setDepartamentoFilter("");
+    setClienteFilter("");
+    setTagFilter("");
+    setPage(1);
+    setAllFilteredSelected(false);
+  };
   React.useEffect(() => {
     if (allFilteredSelected) return;
     setSelectedIds((current) =>
@@ -1151,7 +1161,7 @@ function ContatosPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))]">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))_auto]">
             <div className="col-span-2 xl:col-span-1">
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Busca</label>
               <SearchInput
@@ -1224,6 +1234,19 @@ function ContatosPage() {
                 )),
               ]}
             </FilterSelect>
+            <div className="flex items-end">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={clearContactFilters}
+                title="Limpar filtros"
+                aria-label="Limpar filtros"
+                className="min-h-10 w-10 px-0"
+              >
+                <FilterX className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </Card>
 
@@ -4021,6 +4044,9 @@ function TagMultiSelect({
     }
     onChange(Array.from(new Set([...selectedIds, ...availableIds])));
   };
+  const availableIds = availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id);
+  const allAvailableSelected =
+    availableIds.length > 0 && availableIds.every((id) => selectedIds.includes(id));
 
   return (
     <div ref={rootRef} className="relative">
@@ -4106,13 +4132,15 @@ function TagMultiSelect({
                 toggleAll();
               }}
               disabled={tags.length === 0}
-              className="flex items-center justify-center gap-1 rounded-md border border-success/50 bg-white px-2 py-2 text-xs font-medium text-success transition hover:bg-success/5 disabled:cursor-not-allowed disabled:opacity-50"
+              className={`flex items-center justify-center gap-1 rounded-md px-2 py-2 text-xs font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                allAvailableSelected
+                  ? "border border-destructive bg-destructive hover:bg-destructive/90"
+                  : "border border-success bg-success hover:bg-success/90"
+              }`}
             >
-              {(availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id)).every((id) =>
-                selectedIds.includes(id),
-              ) ? (
+              {allAvailableSelected ? (
                 <>
-                  <X className="h-3 w-3" /> Remover todas
+                  <X className="h-3 w-3" /> Limpar seleção
                 </>
               ) : (
                 <>

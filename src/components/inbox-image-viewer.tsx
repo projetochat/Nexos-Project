@@ -36,6 +36,7 @@ export function InboxImageViewer({
   const [dragging, setDragging] = React.useState(false);
   const drag = React.useRef<{ id: number; x: number; y: number } | null>(null);
   const [stage, setStage] = React.useState<HTMLDivElement | null>(null);
+  const imageRef = React.useRef<HTMLImageElement>(null);
   const [forwarding, setForwarding] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [page, setPage] = React.useState(1);
@@ -310,6 +311,19 @@ export function InboxImageViewer({
               onDoubleClick={() => setView(initialView)}
               onPointerDown={(event) => {
                 if (event.button !== 0 || drag.current) return;
+                const imageBounds = imageRef.current?.getBoundingClientRect();
+                const clickedOutsideImage =
+                  imageBounds &&
+                  imageBounds.width > 0 &&
+                  imageBounds.height > 0 &&
+                  (event.clientX < imageBounds.left ||
+                    event.clientX > imageBounds.right ||
+                    event.clientY < imageBounds.top ||
+                    event.clientY > imageBounds.bottom);
+                if (clickedOutsideImage) {
+                  if (!busyRef.current) onClose();
+                  return;
+                }
                 event.preventDefault();
                 event.currentTarget.setPointerCapture(event.pointerId);
                 drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
@@ -338,6 +352,7 @@ export function InboxImageViewer({
             >
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
                 <img
+                  ref={imageRef}
                   src={src}
                   alt={message.media_data?.file_name ?? "Imagem ampliada"}
                   draggable={false}

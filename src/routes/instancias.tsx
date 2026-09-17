@@ -319,6 +319,10 @@ function Page() {
                   </div>
                   <div className="mt-4 space-y-2 border-t border-border pt-3 text-xs">
                     <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">Provedor</span>
+                      <span>{providerLabel(connection.providerType)}</span>
+                    </div>
+                    <div className="flex justify-between gap-3">
                       <span className="text-muted-foreground">Referência</span>
                       <span className="truncate text-right">
                         {connection.externalReference ?? "sem referencia externa"}
@@ -575,7 +579,7 @@ function ConnectionForm({
           </div>
         </fieldset>
 
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
+        <div className="grid grid-cols-[minmax(0,1fr)_8.5rem] gap-3">
           <Field label="Nome da instância *">
             <Input
               value={name}
@@ -609,32 +613,34 @@ function ConnectionForm({
         <section className="space-y-4 border-t border-border pt-5" aria-label="Importar mensagens">
           <h3 className="text-base font-semibold">Importar Mensagens</h3>
           <div className="grid gap-4 sm:grid-cols-2">
-            <ImportOption
-              label="Importar histórico de mensagens"
-              checked={importHistory}
-              onCheckedChange={setImportHistory}
-            />
-            <ImportOption
-              label="Importar mensagens de grupo"
-              checked={importGroups}
-              onCheckedChange={setImportGroups}
-            />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ImportDate
-              label="Dt. início p/ importação"
-              required={importHistory}
-              value={historyStartDate}
-              onChange={setHistoryStartDate}
-              disabled={!importHistory}
-            />
-            <ImportDate
-              label="Dt. início p/ importação"
-              required={importGroups}
-              value={groupStartDate}
-              onChange={setGroupStartDate}
-              disabled={!importGroups}
-            />
+            <div className="space-y-3">
+              <ImportOption
+                label="Importar histórico de mensagens"
+                checked={importHistory}
+                onCheckedChange={setImportHistory}
+              />
+              <ImportDate
+                label="Dt. início p/ importação"
+                required={importHistory}
+                value={historyStartDate}
+                onChange={setHistoryStartDate}
+                disabled={!importHistory}
+              />
+            </div>
+            <div className="space-y-3">
+              <ImportOption
+                label="Importar mensagens de grupo"
+                checked={importGroups}
+                onCheckedChange={setImportGroups}
+              />
+              <ImportDate
+                label="Dt. início p/ importação"
+                required={importGroups}
+                value={groupStartDate}
+                onChange={setGroupStartDate}
+                disabled={!importGroups}
+              />
+            </div>
           </div>
           <div className="flex items-stretch gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
             <span className="flex w-6 shrink-0 items-center justify-center">
@@ -1103,7 +1109,7 @@ function ConnectionSettingsModal({
           {tab === "general" && (
             <div className="space-y-5">
               <div className="grid gap-5 lg:grid-cols-[170px_minmax(0,1fr)]">
-                <div className="relative flex justify-center lg:justify-start">
+                <div className="relative flex items-center justify-center">
                   <button
                     ref={logoButtonRef}
                     type="button"
@@ -1183,13 +1189,8 @@ function ConnectionSettingsModal({
                   />
                 </div>
 
-                <div className="grid grid-cols-[minmax(7rem,1fr)_10.5rem] gap-4 sm:grid-cols-[minmax(0,1.25fr)_minmax(11rem,0.85fr)] md:grid-cols-2">
-                  <Field label="Telefone *">
-                    <Input
-                      value={connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""}
-                      readOnly
-                    />
-                  </Field>
+                <div className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Status">
                     <div className="flex h-10 items-center">
                       {connection ? (
@@ -1199,12 +1200,6 @@ function ConnectionSettingsModal({
                         </Badge>
                       ) : null}
                     </div>
-                  </Field>
-                  <Field label="Nome *">
-                    <Input
-                      value={form.name}
-                      onChange={(event) => setForm({ ...form, name: event.target.value })}
-                    />
                   </Field>
                   <Field label="Cor">
                     <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
@@ -1234,44 +1229,47 @@ function ConnectionSettingsModal({
                       />
                     </div>
                   </Field>
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Provedor">
-                  <Select value="evolution" disabled>
-                    <option value="evolution">Evolution API</option>
-                  </Select>
-                </Field>
-                <Field label="Referência">
-                  <Input
-                    value={connection?.externalReference ?? "sem referência externa"}
-                    readOnly
-                  />
-                </Field>
-                <Field label="Time Zone">
-                  <Select value={timezone} onChange={(event) => setTimezone(event.target.value)}>
-                    {TIMEZONE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <div>
-                  <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <label htmlFor="instance-ai-agent">Agentes de IA</label>
-                    <InfoTooltip label="agentes de IA">
-                      Será preenchido pelos agentes cadastrados no módulo de IA.
-                    </InfoTooltip>
                   </div>
-                  <Select
-                    id="instance-ai-agent"
-                    value={aiAgentId}
-                    onChange={(event) => setAiAgentId(event.target.value)}
-                  >
-                    <option value="">- Selecione um agente -</option>
-                  </Select>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Nome *">
+                      <Input
+                        value={form.name}
+                        onChange={(event) => setForm({ ...form, name: event.target.value })}
+                      />
+                    </Field>
+                    <Field label="Telefone *">
+                      <Input
+                        value={connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""}
+                        readOnly
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                        <label htmlFor="instance-ai-agent">Agentes de IA</label>
+                        <InfoTooltip label="agentes de IA">
+                          Será preenchido pelos agentes cadastrados no módulo de IA.
+                        </InfoTooltip>
+                      </div>
+                      <Select
+                        id="instance-ai-agent"
+                        value={aiAgentId}
+                        onChange={(event) => setAiAgentId(event.target.value)}
+                      >
+                        <option value="">- Selecione um agente -</option>
+                      </Select>
+                    </div>
+                    <Field label="Time Zone">
+                      <Select value={timezone} onChange={(event) => setTimezone(event.target.value)}>
+                        {TIMEZONE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  </div>
                 </div>
               </div>
               <section

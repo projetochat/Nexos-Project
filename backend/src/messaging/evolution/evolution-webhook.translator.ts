@@ -72,7 +72,7 @@ export class EvolutionWebhookTranslator {
   ): EvolutionWebhookTranslation {
     const data = payload.data ?? {};
     const key = readRecord(data, "key");
-    if (key?.fromMe === true) return { kind: "ignored", reason: "FROM_ME" };
+    const fromMe = key?.fromMe === true;
 
     const externalMessageId = stringValue(key?.id);
     const remoteJid = stringValue(key?.remoteJid);
@@ -148,7 +148,7 @@ export class EvolutionWebhookTranslator {
         externalMessageId,
         externalChatId: remoteJid,
         conversationType,
-        fromMe: false,
+        fromMe,
         participantExternalId,
         participantPhone,
         participantLid,
