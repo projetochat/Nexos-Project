@@ -478,7 +478,9 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
           </ul>
         </aside>
 
-        <section className="min-w-0 flex-1">{children}</section>
+        <section className={`${activeId ? "flex" : "hidden md:flex"} min-w-0 flex-1`}>
+          {children}
+        </section>
       </div>
 
       <NewConversationModal open={newConv.open} onClose={newConv.hide} />

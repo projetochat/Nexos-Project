@@ -22,6 +22,7 @@ import {
   Reply,
   Download,
   List,
+  ArrowLeft,
 } from "lucide-react";
 import { toast as systemToast } from "sonner";
 // Notificações desativadas nesta tela — nenhum toast deve aparecer no chat.
@@ -279,6 +280,16 @@ function ConversationPage() {
       <div className="relative flex h-full min-h-0">
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-surface-1 px-5 py-3">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              aria-label="Voltar para a lista de conversas"
+              onClick={() => navigate({ to: "/inbox" })}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
             <button
               type="button"
               onClick={() => setPanelOpen((v) => !v)}

@@ -30,7 +30,7 @@ describe("instance service hours", () => {
     };
     const prisma = {
       messagingConnection: {
-        findFirst: vi.fn(async () => record),
+        findFirst: vi.fn(async (query: { select?: unknown }) => (query.select ? null : record)),
         update: vi.fn(async ({ data }) => {
           record = {
             ...record,

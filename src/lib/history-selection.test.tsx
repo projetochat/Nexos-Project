@@ -57,11 +57,17 @@ it("selects a different conversation on one click and loads its messages and tim
     );
     await flush();
     await flush();
+    const conversationList = host.querySelector('[aria-label="Lista de conversas do histórico"]')!;
+    const conversationDetail = host.querySelector('[aria-label="Conversa do histórico"]')!;
+    expect(conversationList.className).not.toContain("hidden lg:flex");
+    expect(conversationDetail.className).toContain("hidden lg:flex");
     const target = [...host.querySelectorAll("li button")].find((button) =>
       button.textContent?.includes("Natã R"),
     ) as HTMLButtonElement;
     await act(async () => target.click());
     await flush();
+    expect(conversationList.className).toContain("hidden lg:flex");
+    expect(conversationDetail.className).not.toContain("hidden lg:flex");
     expect(target.getAttribute("aria-pressed")).toBe("true");
     expect(
       host.querySelector('[aria-label="Abrir informações do contato"]')?.textContent,
@@ -83,6 +89,12 @@ it("selects a different conversation on one click and loads its messages and tim
         .find((button) => button.textContent?.includes("Natã R"))
         ?.getAttribute("aria-pressed"),
     ).toBe("true");
+    const backButton = host.querySelector(
+      '[aria-label="Voltar para a lista do histórico"]',
+    ) as HTMLButtonElement;
+    await act(async () => backButton.click());
+    expect(conversationList.className).not.toContain("hidden lg:flex");
+    expect(conversationDetail.className).toContain("hidden lg:flex");
   } finally {
     await act(async () => root.unmount());
     client.clear();

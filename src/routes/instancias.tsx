@@ -32,15 +32,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import {
-  Badge,
-  Button,
-  Card,
-  Field,
-  Input,
-  SectionHeader,
-  Select,
-} from "@/components/ui-kit";
+import { Badge, Button, Card, Field, Input, SectionHeader, Select } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { InfoTooltip } from "@/components/info-tooltip";
