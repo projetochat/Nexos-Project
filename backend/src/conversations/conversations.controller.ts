@@ -365,7 +365,11 @@ export class ConversationsController {
   ) {
     const where: Prisma.ConversationWhereInput = {
       AND: [
-        { tenantId: current.tenantId, archivedAt: null, status: { not: ConversationStatus.FECHADA } },
+        {
+          tenantId: current.tenantId,
+          archivedAt: null,
+          status: { not: ConversationStatus.FECHADA },
+        },
         connectionAccess(current),
         { OR: dto.queues.map((queue) => conversationQueueScope(queue)) },
       ],
@@ -373,43 +377,82 @@ export class ConversationsController {
     let closedIds: string[] = [];
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        closedIds = await this.prisma.$transaction(async (tx) => {
-          const conversations = await tx.conversation.findMany({
-            where,
-            select: { id: true, protocol: true },
-            orderBy: { id: "asc" },
-          });
-          const now = new Date();
-          for (const conversation of conversations) {
-            const protocol = conversation.protocol ?? await this.nextProtocol(tx, current.tenantId);
-            const startNote = `Conversa iniciada - protocolo ${protocol}.`;
-            const start = await tx.message.findFirst({
-              where: { tenantId: current.tenantId, conversationId: conversation.id, type: "SYSTEM", content: startNote },
-              select: { id: true },
+        closedIds = await this.prisma.$transaction(
+          async (tx) => {
+            const conversations = await tx.conversation.findMany({
+              where,
+              select: { id: true, protocol: true },
+              orderBy: { id: "asc" },
             });
-            if (!start) {
-              await this.messages.createSystemMessage(tx, conversation.id, current, startNote, now, { updateConversation: false });
+            const now = new Date();
+            for (const conversation of conversations) {
+              const protocol =
+                conversation.protocol ?? (await this.nextProtocol(tx, current.tenantId));
+              const startNote = `Conversa iniciada - protocolo ${protocol}.`;
+              const start = await tx.message.findFirst({
+                where: {
+                  tenantId: current.tenantId,
+                  conversationId: conversation.id,
+                  type: "SYSTEM",
+                  content: startNote,
+                },
+                select: { id: true },
+              });
+              if (!start) {
+                await this.messages.createSystemMessage(
+                  tx,
+                  conversation.id,
+                  current,
+                  startNote,
+                  now,
+                  { updateConversation: false },
+                );
+              }
+              const endNote = `Conversa encerrada - protocolo ${protocol}.`;
+              await this.messages.createSystemMessage(
+                tx,
+                conversation.id,
+                current,
+                endNote,
+                new Date(now.getTime() + 1),
+                { updateConversation: false },
+              );
+              await tx.conversation.update({
+                where: { tenantId_id: { tenantId: current.tenantId, id: conversation.id } },
+                data: {
+                  status: ConversationStatus.FECHADA,
+                  protocol,
+                  closedAt: new Date(now.getTime() + 1),
+                  unreadCount: 0,
+                  inboxArchivedAt: null,
+                  lastMessageAt: new Date(now.getTime() + 1),
+                  lastMessagePreview: endNote,
+                },
+              });
+              await tx.lead.updateMany({
+                where: {
+                  tenantId: current.tenantId,
+                  conversationId: conversation.id,
+                  status: { in: ["NEW", "QUEUED", "ASSIGNED"] },
+                },
+                data: { status: "DISCARDED", discardedAt: now },
+              });
             }
-            const endNote = `Conversa encerrada - protocolo ${protocol}.`;
-            await this.messages.createSystemMessage(tx, conversation.id, current, endNote, new Date(now.getTime() + 1), { updateConversation: false });
-            await tx.conversation.update({
-              where: { tenantId_id: { tenantId: current.tenantId, id: conversation.id } },
-              data: { status: ConversationStatus.FECHADA, protocol, closedAt: new Date(now.getTime() + 1), unreadCount: 0, inboxArchivedAt: null, lastMessageAt: new Date(now.getTime() + 1), lastMessagePreview: endNote },
-            });
-            await tx.lead.updateMany({
-              where: { tenantId: current.tenantId, conversationId: conversation.id, status: { in: ["NEW", "QUEUED", "ASSIGNED"] } },
-              data: { status: "DISCARDED", discardedAt: now },
-            });
-          }
-          return conversations.map((conversation) => conversation.id);
-        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 60_000 });
+            return conversations.map((conversation) => conversation.id);
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 60_000 },
+        );
         break;
       } catch (error) {
         if ((error as { code?: string }).code !== "P2034" || attempt === 2) throw error;
       }
     }
     for (const conversationId of closedIds) {
-      this.realtime.publishConversationUpdated({ tenantId: current.tenantId, conversationId, reason: "status.updated" });
+      this.realtime.publishConversationUpdated({
+        tenantId: current.tenantId,
+        conversationId,
+        reason: "status.updated",
+      });
     }
     return { closed: closedIds.length };
   }

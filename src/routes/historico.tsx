@@ -89,7 +89,7 @@ export function HistoricoPage() {
   );
   const [loadedFiltersStorageKey, setLoadedFiltersStorageKey] = React.useState(filtersStorageKey);
   const [page, setPage] = React.useState(1);
-  const [activeId, setActiveId] = React.useState<string | null>(null);
+  const [selectedId, setActiveId] = React.useState<string | null>(null);
   const [panelOpen, setPanelOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -129,13 +129,11 @@ export function HistoricoPage() {
   });
   const conversations = React.useMemo(() => history.data?.items ?? [], [history.data?.items]);
 
-  React.useEffect(() => {
-    const first = conversations[0]?.id ?? null;
-    if (!activeId && first) setActiveId(first);
-    if (activeId && !conversations.some((conversation) => conversation.id === activeId)) {
-      setActiveId(first);
-    }
-  }, [activeId, conversations]);
+  // Derive the fallback without an effect that can overwrite a user's click
+  // when the list is refreshed or temporarily has no cached data.
+  const activeId = conversations.some((conversation) => conversation.id === selectedId)
+    ? selectedId
+    : (conversations[0]?.id ?? null);
 
   React.useEffect(
     () =>
@@ -235,7 +233,6 @@ export function HistoricoPage() {
                         setPanelOpen(false);
                       }}
                       aria-pressed={selected}
-                      title="Visualizar conversa"
                       className={`flex w-full items-start gap-3 border-b border-border/60 px-3 py-3 text-left transition ${
                         selected ? "bg-surface-2" : "hover:bg-surface-1"
                       }`}

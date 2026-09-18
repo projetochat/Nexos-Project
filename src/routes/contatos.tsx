@@ -595,6 +595,9 @@ function ContatosPage() {
     setSelectedIds([]);
     setAllFilteredSelected(false);
   }, [query, instanciaFilter, departamentoFilter, clienteFilter, tagFilter, pageSize]);
+  const hasContactFilters = Boolean(
+    query.trim() || instanciaFilter || departamentoFilter || clienteFilter || tagFilter,
+  );
   const clearContactFilters = () => {
     setQuery("");
     setInstanciaFilter("");
@@ -1276,7 +1279,9 @@ function ContatosPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))_auto]">
+          <div
+            className={`grid grid-cols-2 gap-3 ${hasContactFilters ? "xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))_auto]" : "xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))]"}`}
+          >
             <div className="col-span-2 xl:col-span-1">
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Busca</label>
               <SearchInput
@@ -1351,19 +1356,21 @@ function ContatosPage() {
                 )),
               ]}
             </FilterSelect>
-            <div className="flex items-end">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={clearContactFilters}
-                title="Limpar filtros"
-                aria-label="Limpar filtros"
-                className="min-h-10 w-10 px-0"
-              >
-                <FilterX className="h-4 w-4" />
-              </Button>
-            </div>
+            {hasContactFilters && (
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={clearContactFilters}
+                  title="Limpar filtros"
+                  aria-label="Limpar filtros"
+                  className="min-h-10 w-10 px-0"
+                >
+                  <FilterX className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         </Card>
 

@@ -70,6 +70,19 @@ it("selects a different conversation on one click and loads its messages and tim
     expect(host.textContent).toContain("Timeline 1");
     expect(host.querySelector("h1")?.textContent).toBe("Histórico de Conversas");
     expect(host.textContent).not.toContain("Consulta operacional");
+    const historyQuery = client
+      .getQueryCache()
+      .find({ queryKey: ["operations", "history"], exact: false })!;
+    const savedHistory = historyQuery.state.data;
+    await act(async () => client.setQueryData(historyQuery.queryKey, { items: [] }));
+    await flush();
+    await act(async () => client.setQueryData(historyQuery.queryKey, savedHistory));
+    await flush();
+    expect(
+      [...host.querySelectorAll("li button")]
+        .find((button) => button.textContent?.includes("Natã R"))
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
   } finally {
     await act(async () => root.unmount());
     client.clear();

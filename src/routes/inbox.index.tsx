@@ -17,12 +17,20 @@ import {
   Pencil,
   ChevronLeft,
   ChevronRight,
+  MoreVertical,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Badge, Button, Field, Input, SearchInput, Select } from "@/components/ui-kit";
 import { ContactFormModal, contactPayload } from "./contatos";
 import { Modal, useDisclosure } from "@/components/modal";
+import { BulkCloseConversationsModal } from "@/components/bulk-close-conversations-modal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { TipoBadge, type TipoInstancia } from "@/components/instancia-tipos";
 import { connectionDisplayLabel, connectionInstanceValue } from "@/lib/connection-options";
 import { maskBrazilPhone } from "@/lib/input-masks";
@@ -92,6 +100,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const activeId = params.conversationId;
   const qc = useQueryClient();
   const newConv = useDisclosure();
+  const bulkClose = useDisclosure();
   const queuePrefs = useQueuePrefs();
   const perms = useChatPerms();
   const activeTabs = React.useMemo(
@@ -257,6 +266,21 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
               >
                 <Plus className="h-4 w-4" />
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    aria-label="Ações das conversas"
+                    title="Ações das conversas"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={bulkClose.show}>Fechar Conversas</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
             {/* Instância + Cliente (multi-select, mesma linha) */}
@@ -443,6 +467,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <NewConversationModal open={newConv.open} onClose={newConv.hide} />
+      {bulkClose.open && <BulkCloseConversationsModal onClose={bulkClose.hide} />}
     </AppShellFull>
   );
 }
