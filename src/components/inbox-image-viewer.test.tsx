@@ -10,7 +10,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 
-it("hides the viewing controls on mobile and keeps image actions below the top-right close button", async () => {
+it("hides advanced viewing controls and aligns actions with rotation controls on mobile", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const container = document.createElement("div");
   document.body.append(container);
@@ -32,15 +32,21 @@ it("hides the viewing controls on mobile and keeps image actions below the top-r
     )!;
     const imageActions = document.querySelector<HTMLElement>('[aria-label="Ações da imagem"]')!;
     const closeWrapper = document.querySelector('[aria-label="Fechar"]')!.parentElement!;
+    const rotateLeft = document.querySelector(
+      '[aria-label="Girar foto à esquerda"]',
+    )!.parentElement!;
+    const rotateRight = document.querySelector(
+      '[aria-label="Girar foto à direita"]',
+    )!.parentElement!;
 
     expect(viewingControls.className).toContain("hidden");
     expect(viewingControls.className).toContain("sm:flex");
-    expect(imageActions.className).toContain("pt-12");
-    expect(imageActions.className).toContain("sm:pt-0");
-    expect(closeWrapper.className).toContain("absolute");
-    expect(closeWrapper.className).toContain("right-0");
-    expect(closeWrapper.className).toContain("top-0");
-    expect(closeWrapper.className).toContain("sm:static");
+    expect(imageActions.className).toContain("items-center");
+    expect(imageActions.className).not.toContain("pt-12");
+    expect(rotateLeft.className).toContain("sm:hidden");
+    expect(rotateRight.className).toContain("sm:hidden");
+    expect(closeWrapper.className).toContain("ml-auto");
+    expect(closeWrapper.className).toContain("sm:ml-0");
   } finally {
     await React.act(() => root.unmount());
     container.remove();

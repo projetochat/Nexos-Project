@@ -1,9 +1,4 @@
-import {
-  CUSTOM_FIELD_FORMATS,
-  customFieldFormat,
-  formatCustomField,
-  customFieldError,
-} from "@/lib/custom-field-formats";
+import { customFieldFormat, formatCustomField, customFieldError } from "@/lib/custom-field-formats";
 import { InfoTooltip } from "@/components/info-tooltip";
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -3270,6 +3265,12 @@ export function ContactFormModal({
               <div className="grid gap-4 md:grid-cols-2">
                 {fields.map((field) => {
                   const isHtmlField = field.type === "text" && contactTextVariant(field) === "html";
+                  const errorKey = `custom_${field.id}`;
+                  const format = customFieldFormat(field);
+                  const liveError = format
+                    ? customFieldError(String(customFields[field.id] ?? ""), format)
+                    : null;
+                  const fieldError = liveError ?? errors[errorKey];
                   return (
                     <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
                       <div>
@@ -3288,14 +3289,21 @@ export function ContactFormModal({
                           <CustomContactFieldInput
                             field={field}
                             value={customFields[field.id]}
-                            onChange={(value) =>
-                              setCustomFields((current) => ({ ...current, [field.id]: value }))
-                            }
+                            error={fieldError}
+                            onChange={(value) => {
+                              setCustomFields((current) => ({ ...current, [field.id]: value }));
+                              setErrors((current) => {
+                                if (!current[errorKey]) return current;
+                                const next = { ...current };
+                                delete next[errorKey];
+                                return next;
+                              });
+                            }}
                           />
                         </div>
-                        {errors[`custom_${field.id}`] && (
+                        {fieldError && (
                           <span className="mt-1 block text-[11px] text-destructive">
-                            {errors[`custom_${field.id}`]}
+                            {fieldError}
                           </span>
                         )}
                       </div>
@@ -4319,20 +4327,29 @@ function CustomContactFieldInput({
   field,
   value,
   onChange,
+  error,
 }: {
   field: ContactCustomField;
   value: string | boolean | undefined;
   onChange: (value: string | boolean) => void;
+  error?: string | null;
 }) {
   const format = customFieldFormat(field);
   if (format) {
-    const option = CUSTOM_FIELD_FORMATS.find((option) => option.value === format)!;
+    if (format === "phone")
+      return (
+        <CustomContactPhoneInput
+          value={String(value ?? "")}
+          onChange={(next) => onChange(next)}
+          invalid={Boolean(error)}
+        />
+      );
     return (
       <Input
         type={format === "email" ? "email" : "text"}
-        inputMode={format === "email" ? "email" : format === "phone" ? "tel" : "numeric"}
+        inputMode={format === "email" ? "email" : "numeric"}
         value={formatCustomField(String(value ?? ""), format)}
-        placeholder={option.placeholder}
+        aria-invalid={Boolean(error)}
         onChange={(event) => onChange(formatCustomField(event.target.value, format))}
       />
     );
@@ -4407,10 +4424,82 @@ function CustomContactFieldInput({
       inputMode="decimal"
       className="text-right"
       value={String(value ?? "")}
-      placeholder={numberPlaceholder(numberConfig)}
       onChange={(event) => onChange(maskAdditionalNumber(event.target.value, numberConfig))}
     />
   );
+}
+
+function CustomContactPhoneInput({
+  value,
+  onChange,
+  invalid,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  invalid: boolean;
+}) {
+  const [initial] = React.useState(() => customPhoneParts(value));
+  const [countryCode, setCountryCode] = React.useState(initial.countryCode);
+  const [draft, setDraft] = React.useState(() =>
+    formatPhoneDraftOnBlur(initial.localPhone, initial.countryCode),
+  );
+  const lastEmitted = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (lastEmitted.current === value) {
+      lastEmitted.current = null;
+      return;
+    }
+    const next = customPhoneParts(value);
+    setCountryCode(next.countryCode);
+    setDraft(formatPhoneDraftOnBlur(next.localPhone, next.countryCode));
+  }, [value]);
+
+  const emit = (localPhone: string, code: string) => {
+    const next = localPhone ? formatPhoneForSubmit(localPhone, code) : "";
+    lastEmitted.current = next;
+    onChange(next);
+  };
+
+  return (
+    <div
+      className={`flex h-9 w-full overflow-hidden rounded-md border bg-transparent transition-colors focus-within:border-primary ${
+        invalid ? "border-destructive" : "border-input"
+      }`}
+    >
+      <CountryCodeSelect
+        value={countryCode}
+        onChange={(nextCode) => {
+          const nextDraft = formatPhoneDraftOnBlur(draft, nextCode);
+          setCountryCode(nextCode);
+          setDraft(nextDraft);
+          emit(nextDraft, nextCode);
+        }}
+        compact
+        embedded
+      />
+      <Input
+        type="tel"
+        inputMode="tel"
+        value={draft}
+        aria-invalid={invalid}
+        onChange={(event) => {
+          const parsed = parsePhoneDraftInput(event.target.value, countryCode);
+          const nextDraft = phoneDraftByCountry(parsed.localPhone, parsed.countryCode);
+          setCountryCode(parsed.countryCode);
+          setDraft(nextDraft);
+          emit(nextDraft, parsed.countryCode);
+        }}
+        onBlur={() => setDraft((current) => formatPhoneDraftOnBlur(current, countryCode))}
+        className="!h-9 !min-h-0 rounded-none border-0 !py-0 !pl-0 leading-normal shadow-none focus-visible:ring-0"
+      />
+    </div>
+  );
+}
+
+function customPhoneParts(value: string) {
+  if (value.trim().startsWith("+")) return splitPhoneByCountry(value);
+  return { countryCode: "55", localPhone: onlyDigits(value) };
 }
 
 function CustomListMultiSelect({
@@ -4802,7 +4891,6 @@ function CustomDateInput({
       type="text"
       inputMode="numeric"
       value={draft}
-      placeholder={variant === "datetime" ? "00/00/0000 00:00" : "00/00/0000"}
       data-date-input="true"
       onKeyDown={(event) => {
         if (event.key.toLowerCase() !== "h") return;
@@ -4943,13 +5031,6 @@ function parseDateDraft(value: string, variant: ContactDateVariant) {
     display: variant === "datetime" ? `${displayDate} ${pad(hour)}:${pad(minute)}` : displayDate,
     iso: date.toISOString(),
   };
-}
-
-function numberPlaceholder(config: ReturnType<typeof contactNumberConfig>) {
-  const decimals = config.decimals > 0 ? `,${"0".repeat(config.decimals)}` : "";
-  const base = `0${decimals}`;
-  if (!config.symbol) return base;
-  return config.symbol === "%" ? `${base}%` : `${config.symbol} ${base}`;
 }
 
 function maskAdditionalNumber(value: string, config: ReturnType<typeof contactNumberConfig>) {

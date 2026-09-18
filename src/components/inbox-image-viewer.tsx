@@ -251,7 +251,7 @@ export function InboxImageViewer({
               <span className="text-xs tabular-nums">{Math.round(view.zoom * 100)}%</span>
             </div>
             <div
-              className="relative flex w-full flex-wrap gap-2 pt-12 sm:w-auto sm:flex-nowrap sm:pt-0"
+              className="flex w-full flex-nowrap items-center gap-2 sm:w-auto"
               role="group"
               aria-label="Ações da imagem"
             >
@@ -281,9 +281,17 @@ export function InboxImageViewer({
                 () => void run(() => onDownload(activeMessage)),
                 busy,
               )}
-              <div className="absolute right-0 top-0 sm:static">
-                {action("Fechar", X, onClose, busy)}
+              <div className="sm:hidden">
+                {action("Girar foto à esquerda", RotateCcw, () =>
+                  setView((v) => ({ ...v, rotation: v.rotation - 90 })),
+                )}
               </div>
+              <div className="sm:hidden">
+                {action("Girar foto à direita", RotateCw, () =>
+                  setView((v) => ({ ...v, rotation: v.rotation + 90 })),
+                )}
+              </div>
+              <div className="ml-auto sm:ml-0">{action("Fechar", X, onClose, busy)}</div>
             </div>
           </div>
           {error && (
