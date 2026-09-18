@@ -1344,66 +1344,61 @@ function ConnectionSettingsModal({
               >
                 <h3 className="text-base font-semibold text-foreground">Importação de Mensagens</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <ImportOption
-                    label="Importar histórico de mensagens"
-                    checked={connection?.importHistoryEnabled === true}
-                    onCheckedChange={() => undefined}
-                    disabled
-                  />
-                  <ImportOption
-                    label="Importar mensagens de grupo"
-                    checked={connection?.importGroupsEnabled === true}
-                    onCheckedChange={() => undefined}
-                    disabled
-                  />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <ImportDate
-                    label="Dt. início p/ importação"
-                    value={connection?.importHistoryStartDate ?? ""}
-                    onChange={() => undefined}
-                    disabled
-                  />
-                  <ImportDate
-                    label="Dt. início p/ importação"
-                    value={connection?.importGroupsStartDate ?? ""}
-                    onChange={() => undefined}
-                    disabled
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
                   {(["DIRECT", "GROUP"] as const).map((kind) => {
                     const job = importJobs.find((item) => item.kind === kind);
                     const label =
                       kind === "DIRECT" ? "Histórico de mensagens" : "Mensagens de grupo";
                     return (
-                      <div
-                        key={kind}
-                        className="rounded-lg border border-border bg-background px-3 py-2 text-xs"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-foreground">{label}</span>
-                          <ImportStatusBadge job={job} />
+                      <div key={kind} className="min-w-0 space-y-4">
+                        <ImportOption
+                          label={
+                            kind === "DIRECT"
+                              ? "Importar histórico de mensagens"
+                              : "Importar mensagens de grupo"
+                          }
+                          checked={
+                            kind === "DIRECT"
+                              ? connection?.importHistoryEnabled === true
+                              : connection?.importGroupsEnabled === true
+                          }
+                          onCheckedChange={() => undefined}
+                          disabled
+                        />
+                        <ImportDate
+                          label="Dt. início p/ importação"
+                          value={
+                            (kind === "DIRECT"
+                              ? connection?.importHistoryStartDate
+                              : connection?.importGroupsStartDate) ?? ""
+                          }
+                          onChange={() => undefined}
+                          disabled
+                        />
+                        <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-foreground">{label}</span>
+                            <ImportStatusBadge job={job} />
+                          </div>
+                          {job && (
+                            <p className="mt-1 text-muted-foreground">
+                              {job.chatsProcessed} conversa(s) · {job.messagesImported} mensagem(ns)
+                              importada(s)
+                            </p>
+                          )}
+                          {job?.error && <p className="mt-1 text-destructive">{job.error}</p>}
+                          {job && (job.status === "FAILED" || job.status === "PARTIAL_FAILED") && (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="mt-2"
+                              disabled={retryImport.isPending}
+                              onClick={() => retryImport.mutate(kind)}
+                            >
+                              Tentar novamente
+                            </Button>
+                          )}
                         </div>
-                        {job && (
-                          <p className="mt-1 text-muted-foreground">
-                            {job.chatsProcessed} conversa(s) · {job.messagesImported} mensagem(ns)
-                            importada(s)
-                          </p>
-                        )}
-                        {job?.error && <p className="mt-1 text-destructive">{job.error}</p>}
-                        {job && (job.status === "FAILED" || job.status === "PARTIAL_FAILED") && (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            className="mt-2"
-                            disabled={retryImport.isPending}
-                            onClick={() => retryImport.mutate(kind)}
-                          >
-                            Tentar novamente
-                          </Button>
-                        )}
                       </div>
                     );
                   })}
