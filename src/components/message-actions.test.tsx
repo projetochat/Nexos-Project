@@ -17,10 +17,12 @@ it("opens the emoji selector, submits a reaction and supports removal", async ()
     expect(host.textContent).not.toContain("👍");
     await act(async () => host.querySelector("button")!.click());
     await act(async () =>
-      document.querySelector<HTMLButtonElement>('[aria-label="Reagir com 👍"]')!.click(),
+      [...document.querySelectorAll("button")]
+        .find((button) => button.getAttribute("aria-label") === "Reagir com 👍")!
+        .click(),
     );
     expect(onReact).toHaveBeenLastCalledWith("👍");
-    expect(document.querySelector('[aria-label="Reagir com 👍"]')).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     await act(async () => host.querySelector("button")!.click());
     await act(async () =>
       [...document.querySelectorAll("button")]
