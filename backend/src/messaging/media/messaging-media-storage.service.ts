@@ -156,7 +156,7 @@ function allowedMimeTypes(type: MessageType) {
   if (type === MessageType.DOCUMENT) {
     return envSet(
       "TRIXUS_MESSAGE_ALLOWED_DOCUMENT_MIME_TYPES",
-      "application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/pdf,text/plain,text/vcard,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
   }
   if (type === MessageType.VIDEO) {

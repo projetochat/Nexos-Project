@@ -35,6 +35,8 @@ import { Avatar, Button, Field, Input, Select } from "@/components/ui-kit";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MessageStatusIcon } from "@/components/message-status-icon";
 import { MessageReactionPicker } from "@/components/message-reaction-picker";
+import { InboxMobileActions } from "@/components/inbox-mobile-actions";
+import { InboxContactPicker } from "@/components/inbox-contact-picker";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import {
@@ -420,6 +422,8 @@ function ConversationPage() {
               onStart={showStart ? handleAssume : undefined}
               allowQuickReplies={perms.acessa_mensagens_rapidas}
               allowAudio={perms.enviar_audio}
+              onTicket={handleGerarChamado}
+              ticketDisabled={gerando || !conv.protocolo}
               mentionOptions={conv.is_group ? mentionOptions : []}
               replyTo={replyTo}
               onCancelReply={() => setReplyTo(null)}
@@ -445,7 +449,7 @@ function ConversationPage() {
               </Button>
             </div>
           </div>
-          <div className="border-t border-border bg-surface-1 px-3 pb-3 xl:hidden">
+          <div className="hidden border-t border-border bg-surface-1 px-3 pb-3 md:block xl:hidden">
             <Button
               variant="secondary"
               size="sm"
@@ -1039,6 +1043,8 @@ function Composer({
   onCancelReply,
   allowQuickReplies = true,
   allowAudio = true,
+  onTicket,
+  ticketDisabled,
   mentionOptions = [],
 }: {
   conversationId: string;
@@ -1052,6 +1058,8 @@ function Composer({
   onCancelReply?: () => void;
   allowQuickReplies?: boolean;
   allowAudio?: boolean;
+  onTicket: () => void;
+  ticketDisabled: boolean;
   mentionOptions?: MentionOption[];
 }) {
   const qc = useQueryClient();
@@ -1084,6 +1092,8 @@ function Composer({
   }, []);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const cameraRef = React.useRef<HTMLInputElement>(null);
+  const [showContacts, setShowContacts] = React.useState(false);
   const typingActiveRef = React.useRef(false);
   const typingStopTimerRef = React.useRef<number | null>(null);
 
@@ -1629,7 +1639,19 @@ function Composer({
 
         <div className="flex items-end gap-2 rounded-xl border border-border bg-card p-2 shadow-card focus-within:border-primary">
           <div className="flex items-center gap-0.5">
-            {allowQuickReplies && (
+            {isMobile && (
+              <InboxMobileActions
+                disabled={disabled || sequenceSending || !!sequence || recording || !!pendingAudio}
+                allowQuickReplies={allowQuickReplies}
+                ticketDisabled={ticketDisabled}
+                onQuickReplies={() => setShowQR((value) => !value)}
+                onAttach={() => fileRef.current?.click()}
+                onCamera={() => cameraRef.current?.click()}
+                onContact={() => setShowContacts(true)}
+                onTicket={onTicket}
+              />
+            )}
+            {!isMobile && allowQuickReplies && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -1640,15 +1662,25 @@ function Composer({
                 <Zap className="h-4 w-4" />
               </Button>
             )}
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Anexar imagem"
-              onClick={() => fileRef.current?.click()}
-              disabled={disabled || sequenceSending || !!sequence}
-            >
-              <Paperclip className="h-4 w-4" />
-            </Button>
+            {!isMobile && (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Anexar imagem"
+                onClick={() => fileRef.current?.click()}
+                disabled={disabled || sequenceSending || !!sequence}
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+            )}
+            <input
+              ref={cameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={onFilePick}
+            />
             <input
               ref={fileRef}
               type="file"
@@ -1732,6 +1764,16 @@ function Composer({
           <p className="mt-2 text-center text-[11px] text-destructive">
             ● Gravando… clique no quadrado para parar.
           </p>
+        )}
+        {showContacts && (
+          <InboxContactPicker
+            onClose={() => setShowContacts(false)}
+            onSelect={(file) => {
+              if (pendingFile?.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
+              setPendingFile({ file, previewUrl: null, mediaType: "document" });
+              setShowContacts(false);
+            }}
+          />
         )}
       </div>
     </div>
