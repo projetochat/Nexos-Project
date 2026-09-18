@@ -580,6 +580,31 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
     }
   }, [open]);
 
+  const startConversation = async (contact: ApiContact, connectionId: string) => {
+    if (!user) return toast.error("Sessão inválida.");
+    if (
+      availableConnections.find((connection) => connection.id === connectionId)?.status !==
+      "connected"
+    )
+      return toast.error("Conecte a instância selecionada antes de iniciar a conversa.");
+    setBusy(true);
+    try {
+      const conversation = await conversationApi.create({
+        contactId: contact.id,
+        connectionId,
+        assignToSelf: true,
+      });
+      toast.success("Conversa iniciada");
+      void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+      onClose();
+      void navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const selectContact = (contact: ApiContact) => {
     const connectedInstances = resolveConnectedContactInstances(contact, instances);
     if (connectedInstances.length === 0) {
@@ -600,30 +625,20 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
     setConnectionChoice({ contact, instances: connectedInstances });
   };
 
-  const submit = async () => {
-    if (!user) return toast.error("Sessão inválida.");
-    if (!selectedContact) return toast.error("Selecione um contato.");
-    if (
-      availableConnections.find((connection) => connection.id === selectedConnectionId)?.status !==
-      "connected"
-    )
-      return toast.error("Conecte a instância selecionada antes de iniciar a conversa.");
-    setBusy(true);
-    try {
-      const conversation = await conversationApi.create({
-        contactId: selectedContact.id,
-        connectionId: selectedConnectionId,
-        assignToSelf: true,
-      });
-      toast.success("Conversa iniciada");
-      void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-      onClose();
-      void navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(false);
+  const openContactOnDoubleClick = (contact: ApiContact) => {
+    const connectedInstances = resolveConnectedContactInstances(contact, instances);
+    if (connectedInstances.length !== 1) {
+      selectContact(contact);
+      return;
     }
+    setSelectedContact(contact);
+    setSelectedConnectionId(connectedInstances[0].id);
+    void startConversation(contact, connectedInstances[0].id);
+  };
+
+  const submit = async () => {
+    if (!selectedContact) return toast.error("Selecione um contato.");
+    await startConversation(selectedContact, selectedConnectionId);
   };
 
   return (
@@ -632,7 +647,6 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
         open={open}
         onClose={onClose}
         title="Nova Conversa"
-        description="Selecione um contato existente ou cadastre um novo."
         footer={
           <>
             <Button variant="ghost" size="sm" onClick={onClose}>
@@ -698,8 +712,9 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
                 <button
                   type="button"
                   aria-pressed={selectedContact?.id === contact.id}
-                  disabled={!contactOptions}
+                  disabled={!contactOptions || busy}
                   onClick={() => selectContact(contact)}
+                  onDoubleClick={() => openContactOnDoubleClick(contact)}
                   className="flex h-full min-w-0 flex-1 items-center gap-3 px-3 text-left text-sm"
                 >
                   <Avatar name={contact.nome} src={contact.avatar_url} size={30} />

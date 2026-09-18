@@ -67,6 +67,10 @@ import { invalidateConversationQueries } from "@/lib/realtime/invalidate-convers
 import { startTyping, stopTyping } from "@/lib/realtime/client";
 import { ContactFormModal, contactPayload } from "./contatos";
 import { InboxImageViewer } from "@/components/inbox-image-viewer";
+import {
+  CALL_UNAVAILABLE_MESSAGE,
+  ConversationCallButton,
+} from "@/components/conversation-call-button";
 
 export const Route = createFileRoute("/inbox/$conversationId")({ component: ConversationPage });
 
@@ -299,6 +303,10 @@ function ConversationPage() {
               </div>
             </button>
             <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+              <ConversationCallButton
+                enabled={canSend}
+                onClick={() => systemToast.info(CALL_UNAVAILABLE_MESSAGE)}
+              />
               {conv.status === "fechada" ? (
                 <Button variant="secondary" size="sm" onClick={handleNewConversation}>
                   <Plus className="h-3.5 w-3.5" /> Nova conversa

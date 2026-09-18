@@ -195,4 +195,21 @@ describe("new conversation contact picker", () => {
       params: { conversationId: "conversation" },
     });
   });
+  it("opens a conversation by double-clicking a contact with one connected instance", async () => {
+    await mount();
+    const contactButton = document.querySelector("ul li button") as HTMLButtonElement;
+    await act(async () => {
+      contactButton.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+    await flush();
+    expect(mocks.create).toHaveBeenCalledWith({
+      contactId: "0",
+      connectionId: "a",
+      assignToSelf: true,
+    });
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: "/inbox/$conversationId",
+      params: { conversationId: "conversation" },
+    });
+  });
 });
