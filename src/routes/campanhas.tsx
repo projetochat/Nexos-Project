@@ -19,7 +19,8 @@ import {
   SectionHeader,
   Textarea,
 } from "@/components/ui-kit";
-import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
+import { ConfirmDialog, Modal } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import {
   campaignApi,

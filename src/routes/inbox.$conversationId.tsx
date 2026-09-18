@@ -38,7 +38,8 @@ import { MessageStatusIcon } from "@/components/message-status-icon";
 import { MessageActionsMenu } from "@/components/message-actions-menu";
 import { InboxMobileActions } from "@/components/inbox-mobile-actions";
 import { InboxContactPicker } from "@/components/inbox-contact-picker";
-import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
+import { Modal, ConfirmDialog } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import {
   conversationApi,

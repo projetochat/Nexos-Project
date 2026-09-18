@@ -22,7 +22,7 @@ vi.mock("@/lib/trixus-api", () => ({
   messageApi: { list: api.messages },
   conversationApi: {},
 }));
-import { HistoricoPage } from "../routes/historico";
+import { HistoricoPage } from "../routes/-historico-page";
 it("selects a different conversation on one click and loads its messages and timeline", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   api.history.mockResolvedValue({

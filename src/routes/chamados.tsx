@@ -16,7 +16,8 @@ import {
   SectionHeader,
   Select,
 } from "@/components/ui-kit";
-import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
+import { ConfirmDialog, Modal } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import { formatPhoneForDisplay } from "@/lib/input-masks";
 import {

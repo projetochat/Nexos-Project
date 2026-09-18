@@ -7,7 +7,8 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Copy, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
+import { ConfirmDialog, Modal } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   Button,
   Card,

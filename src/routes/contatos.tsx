@@ -52,7 +52,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
+import { Modal, ConfirmDialog } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   Avatar,
   Badge,

@@ -23,7 +23,6 @@ import {
   Bot,
   Workflow,
   Sparkles,
-  CheckCircle2,
   History,
   Ticket,
   Headset,
@@ -38,7 +37,7 @@ import {
 import { LogoMark, Avatar, Badge } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
-import { useTheme } from "./theme-provider";
+import { useTheme } from "./theme-context";
 import { useSession, ROLE_META, signOut } from "@/lib/session";
 import { notificationApi, stopStoredPlatformImpersonation } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
@@ -1145,6 +1144,3 @@ export function PageContainer({
     </div>
   );
 }
-
-/* Re-exports for admin/operator shells */
-export { useAuthGate, useSidebarState, Topbar, MobileNav, ImpersonationBanner, CheckCircle2 };

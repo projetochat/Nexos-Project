@@ -15,7 +15,8 @@ import {
   SearchInput,
   SectionHeader,
 } from "@/components/ui-kit";
-import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
+import { ConfirmDialog, Modal } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   crmApi,
   quickReplyApi,

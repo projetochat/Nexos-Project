@@ -23,7 +23,8 @@ import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Badge, Button, Field, Input, SearchInput, Select } from "@/components/ui-kit";
 import { ContactFormModal, contactPayload } from "./contatos";
-import { Modal, useDisclosure } from "@/components/modal";
+import { Modal } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import { BulkCloseConversationsModal } from "@/components/bulk-close-conversations-modal";
 import {
   DropdownMenu,

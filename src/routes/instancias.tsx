@@ -38,7 +38,8 @@ import {
   Select,
   Textarea,
 } from "@/components/ui-kit";
-import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
+import { ConfirmDialog, Modal } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";

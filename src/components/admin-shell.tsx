@@ -24,7 +24,7 @@ import {
 import { LogoMark, Avatar } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
-import { useTheme } from "./theme-provider";
+import { useTheme } from "./theme-context";
 import { useSession, ROLE_META } from "@/lib/session";
 
 /* ============================================================
