@@ -15,6 +15,25 @@ export function instanceEditUnavailableReason(connection: ApiMessagingConnection
   return "Esta instância não está disponível para edição.";
 }
 
+export function normalizeInstanceName(name: string) {
+  return name.trim().toLocaleLowerCase("pt-BR");
+}
+
+export function instanceNameAlreadyExists(
+  name: string,
+  connections: ApiMessagingConnection[],
+  excludeConnectionId?: string,
+) {
+  const normalizedName = normalizeInstanceName(name);
+  if (!normalizedName) return false;
+  return connections.some(
+    (connection) =>
+      connection.id !== excludeConnectionId &&
+      connection.status !== "removed" &&
+      normalizeInstanceName(connection.name) === normalizedName,
+  );
+}
+
 export function serviceHoursError(
   rows: Array<{ day: string; active: boolean; start: string; end: string }>,
 ) {

@@ -47,7 +47,7 @@ export function AudioRecorderButton({
         if (event.data.size) chunksRef.current.push(event.data);
       };
       recorder.onstop = () => {
-        const mimeType = recorder.mimeType || "audio/webm";
+        const mimeType = (recorder.mimeType || "audio/webm").split(";")[0] || "audio/webm";
         const extension = mimeType.includes("ogg")
           ? "ogg"
           : mimeType.includes("mp4")

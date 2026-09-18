@@ -1,5 +1,6 @@
 import {
   canEditInstance,
+  instanceNameAlreadyExists,
   instanceEditUnavailableReason,
   serviceHoursError,
 } from "@/lib/instance-validation";
@@ -39,7 +40,6 @@ import {
   Input,
   SectionHeader,
   Select,
-  Textarea,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
 import { useDisclosure } from "@/hooks/use-disclosure";
@@ -438,11 +438,13 @@ function Page() {
         <ConnectionForm
           open={novo.open}
           busy={create.isPending}
+          connections={visibleItems}
           onClose={novo.hide}
           onSubmit={(data) => create.mutate(data)}
         />
         <ConnectionSettingsModal
           connection={editing}
+          connections={visibleItems}
           contactCustomFields={contactCustomFields}
           busy={update.isPending}
           onClose={() => setEditing(null)}
@@ -491,6 +493,7 @@ function ConnectionForm({
   onClose,
   onSubmit,
   busy,
+  connections,
 }: {
   open: boolean;
   onClose: () => void;
@@ -503,6 +506,7 @@ function ConnectionForm({
     importGroupsStartDate?: string;
   }) => void;
   busy: boolean;
+  connections: ApiMessagingConnection[];
 }) {
   const [name, setName] = React.useState("");
   const [color, setColor] = React.useState("#22c55e");
@@ -513,7 +517,8 @@ function ConnectionForm({
   const [groupStartDate, setGroupStartDate] = React.useState("");
   const missingImportDate =
     (importHistory && !historyStartDate) || (importGroups && !groupStartDate);
-  const canCreate = name.trim().length > 0 && !missingImportDate;
+  const duplicateName = instanceNameAlreadyExists(name, connections);
+  const canCreate = name.trim().length >= 2 && !missingImportDate && !duplicateName;
 
   React.useEffect(() => {
     if (!open) {
@@ -608,8 +613,15 @@ function ConnectionForm({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Digite o nome da instância"
+              aria-invalid={duplicateName}
+              className={duplicateName ? "border-destructive focus:border-destructive" : undefined}
               required
             />
+            {duplicateName && (
+              <p className="mt-1 text-xs text-destructive" role="alert">
+                Já existe uma instância com este nome.
+              </p>
+            )}
           </Field>
           <Field label="Cor" asLabel={false}>
             <div className="flex h-10 items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 transition focus-within:border-primary">
@@ -960,12 +972,14 @@ function defaultServiceHours(): ServiceHoursRow[] {
 
 function ConnectionSettingsModal({
   connection,
+  connections,
   contactCustomFields,
   busy,
   onClose,
   onSubmit,
 }: {
   connection: ApiMessagingConnection | null;
+  connections: ApiMessagingConnection[];
   contactCustomFields: ApiContactCustomField[];
   busy: boolean;
   onClose: () => void;
@@ -999,6 +1013,7 @@ function ConnectionSettingsModal({
     absenceMessage: "",
     notes: "",
   });
+  const duplicateName = instanceNameAlreadyExists(form.name, connections, connection?.id);
   const { data: importJobs = [] } = useQuery({
     queryKey: ["trixus", "messaging-connection-imports", connection?.id],
     queryFn: () => connectionsApi.importStatus(connection!.id),
@@ -1101,7 +1116,7 @@ function ConnectionSettingsModal({
   };
 
   const save = () => {
-    if (!connection || form.name.trim().length < 2) return;
+    if (!connection || form.name.trim().length < 2 || duplicateName) return;
     const missingWelcomeNewMessage = form.welcomeEnabled && !form.welcomeNewMessage?.trim();
     const missingWelcomeExistingMessage =
       form.welcomeEnabled && !form.welcomeExistingMessage?.trim();
@@ -1163,7 +1178,7 @@ function ConnectionSettingsModal({
                 variant="primary"
                 size="sm"
                 onClick={save}
-                disabled={busy || form.name.trim().length < 2}
+                disabled={busy || form.name.trim().length < 2 || duplicateName}
               >
                 Salvar
               </Button>
@@ -1304,7 +1319,18 @@ function ConnectionSettingsModal({
                         <Input
                           value={form.name}
                           onChange={(event) => setForm({ ...form, name: event.target.value })}
+                          aria-invalid={duplicateName}
+                          className={
+                            duplicateName
+                              ? "border-destructive focus:border-destructive"
+                              : undefined
+                          }
                         />
+                        {duplicateName && (
+                          <p className="mt-1 text-xs text-destructive" role="alert">
+                            Já existe uma instância com este nome.
+                          </p>
+                        )}
                       </Field>
                     </div>
                     <div className="min-w-0 sm:col-start-2 sm:row-start-1">
@@ -1543,19 +1569,22 @@ function ConnectionSettingsModal({
                     : undefined
                 }
               >
-                <div>
-                  <Textarea
-                    rows={6}
-                    value={absenceMessage}
-                    onChange={(event) => {
-                      setAbsenceMessage(event.target.value);
-                      setShowAbsenceValidation(false);
-                    }}
-                    disabled={!absenceEnabled}
-                    aria-invalid={showAbsenceValidation && absenceEnabled && !absenceMessage.trim()}
-                    placeholder={ABSENCE_MESSAGE_PLACEHOLDER}
-                  />
-                </div>
+                <GreetingMessageEditor
+                  value={absenceMessage}
+                  attachment={null}
+                  variables={mergeMessageVariables(
+                    CONNECTION_MESSAGE_VARIABLES,
+                    contactCustomFields,
+                  )}
+                  disabled={!absenceEnabled}
+                  invalid={showAbsenceValidation && absenceEnabled && !absenceMessage.trim()}
+                  placeholder={ABSENCE_MESSAGE_PLACEHOLDER}
+                  showAttachment={false}
+                  onChange={(value) => {
+                    setAbsenceMessage(value);
+                    setShowAbsenceValidation(false);
+                  }}
+                />
               </Field>
               <ServiceHoursTable
                 rows={serviceHours}
@@ -1617,6 +1646,7 @@ function GreetingMessageEditor({
   disabled,
   invalid,
   placeholder,
+  showAttachment = true,
   onChange,
 }: {
   value: string;
@@ -1625,6 +1655,7 @@ function GreetingMessageEditor({
   disabled: boolean;
   invalid: boolean;
   placeholder: string;
+  showAttachment?: boolean;
   onChange: (value: string, attachment: QuickReplyAttachment | null) => void;
 }) {
   const [variablesOpen, setVariablesOpen] = React.useState(false);
@@ -1709,7 +1740,7 @@ function GreetingMessageEditor({
             ))}
           </div>
         )}
-        {attachment && (
+        {showAttachment && attachment && (
           <Button
             type="button"
             variant="outline"
@@ -1722,28 +1753,32 @@ function GreetingMessageEditor({
             <X className="h-3.5 w-3.5" />
           </Button>
         )}
-        <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs text-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
-          <Paperclip className="h-3.5 w-3.5" /> Anexar mídia
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,video/mp4,video/3gpp,video/webm,audio/ogg,audio/mpeg,audio/mp4,audio/webm,.pdf,.txt,.doc,.docx,.xls,.xlsx"
-            className="sr-only"
-            disabled={disabled || loadingAttachment}
-            aria-label="Anexar arquivo à mensagem de saudação"
-            onChange={(event) => {
-              void attach(event.target.files?.[0]);
-              event.target.value = "";
-            }}
-          />
-        </label>
-        <span
-          className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
-          title={attachment?.fileName}
-        >
-          {attachment
-            ? `${attachment.fileName} (${formatMessageAttachmentSize(attachment.size)})`
-            : "Imagens até 8 MB; demais arquivos até 10 MB."}
-        </span>
+        {showAttachment && (
+          <>
+            <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs text-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+              <Paperclip className="h-3.5 w-3.5" /> Anexar mídia
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,video/mp4,video/3gpp,video/webm,audio/ogg,audio/mpeg,audio/mp4,audio/webm,.pdf,.txt,.doc,.docx,.xls,.xlsx"
+                className="sr-only"
+                disabled={disabled || loadingAttachment}
+                aria-label="Anexar arquivo à mensagem de saudação"
+                onChange={(event) => {
+                  void attach(event.target.files?.[0]);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+            <span
+              className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+              title={attachment?.fileName}
+            >
+              {attachment
+                ? `${attachment.fileName} (${formatMessageAttachmentSize(attachment.size)})`
+                : "Imagens até 8 MB; demais arquivos até 10 MB."}
+            </span>
+          </>
+        )}
       </div>
     </div>
   );

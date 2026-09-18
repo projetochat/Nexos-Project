@@ -103,4 +103,16 @@ describe("quick reply sequence validation", () => {
       ]),
     ).toThrow();
   });
+
+  it("accepts recorded WebM audio with the browser codec parameter", () => {
+    const attachment = {
+      fileName: "audio.webm",
+      mimeType: "audio/webm;codecs=opus",
+      size: 1,
+      dataUrl: "data:audio/webm;codecs=opus;base64,YQ==",
+    };
+    expect(normalizeMessages([{ text: "Bom dia", attachment }])).toEqual([
+      { text: "Bom dia", attachment },
+    ]);
+  });
 });

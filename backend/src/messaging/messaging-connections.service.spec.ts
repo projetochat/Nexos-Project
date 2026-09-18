@@ -132,6 +132,51 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
+  it("rejects a duplicate active instance name before calling Evolution", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue({ id: "connection-existing" });
+    const evolution = { createInstance: vi.fn() };
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, evolution as never).createEvolution(
+        { name: "  SUPORTE " },
+        current as never,
+      ),
+    ).rejects.toThrow("Já existe uma instância com este nome.");
+
+    expect(evolution.createInstance).not.toHaveBeenCalled();
+    expect(prisma.messagingConnection.findFirst).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        archivedAt: null,
+        id: undefined,
+        name: { equals: "SUPORTE", mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+  });
+
+  it("rejects renaming an instance to another active instance name", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst
+      .mockResolvedValueOnce({
+        ...connection(),
+        status: MessagingConnectionStatus.CONNECTED,
+        ownerPhoneNormalized: "5511999999999",
+      })
+      .mockResolvedValueOnce({ id: "connection-b" });
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, {} as never).update(
+        "connection-a",
+        { name: "Comercial" },
+        current as never,
+      ),
+    ).rejects.toThrow("Já existe uma instância com este nome.");
+
+    expect(prisma.messagingConnection.update).not.toHaveBeenCalled();
+  });
+
   it("keeps the created instance when webhook registration fails temporarily", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.create.mockResolvedValue(connection());

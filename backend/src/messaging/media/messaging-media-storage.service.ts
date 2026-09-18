@@ -144,7 +144,7 @@ function storageProvider() {
 
 export function validatePolicy(type: MessageType, mimeType: string, sizeBytes: number) {
   const allowed = allowedMimeTypes(type);
-  if (!allowed.has(mimeType))
+  if (!allowed.has(normalizeMimeType(mimeType)))
     throw new UnsupportedMediaTypeException("Tipo de mídia não permitido.");
   if (sizeBytes > maxSizeBytes(type))
     throw new PayloadTooLargeException("Arquivo excede o limite permitido.");

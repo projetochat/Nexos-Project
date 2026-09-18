@@ -17,6 +17,7 @@ import {
   SectionHeader,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   crmApi,
@@ -504,31 +505,32 @@ export function QuickReplyEditor({
                   role="menu"
                   aria-label="Variáveis disponíveis"
                 >
-                  {[
-                    ...MESSAGE_VARIABLES.map(([token, description]) => ({
-                      name: token.slice(2, -2),
-                      description,
-                    })),
-                    ...customVariables,
-                  ].map(({ name, description }) => (
-                    <div key={name} className="group relative">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-surface-2"
-                        onClick={() => insertVariable(name)}
-                        aria-label={`Inserir variável ${name}: ${description}`}
-                      >
-                        {"{{" + name + "}}"}
-                      </button>
-                      <span
-                        role="tooltip"
-                        className="pointer-events-none absolute right-full top-1/2 z-30 mr-2 hidden w-64 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg group-hover:block group-focus-within:block"
-                      >
-                        {description}
-                      </span>
-                    </div>
-                  ))}
+                  <TooltipProvider delayDuration={150}>
+                    {[
+                      ...MESSAGE_VARIABLES.map(([token, description]) => ({
+                        name: token.slice(2, -2),
+                        description,
+                      })),
+                      ...customVariables,
+                    ].map(({ name, description }) => (
+                      <Tooltip key={name}>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="block w-full rounded px-3 py-2 text-left text-xs transition-colors hover:bg-surface-2 hover:text-blue-600 focus-visible:text-blue-600"
+                            onClick={() => insertVariable(name)}
+                            aria-label={`Inserir variável ${name}: ${description}`}
+                          >
+                            {"{{" + name + "}}"}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="left" className="max-w-64">
+                          {description}
+                        </TooltipContent>
+                      </Tooltip>
+                    ))}
+                  </TooltipProvider>
                 </div>
               )}
               <Button
