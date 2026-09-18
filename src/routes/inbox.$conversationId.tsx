@@ -59,6 +59,7 @@ import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { resolveMessageVariables, type MessageVariableContext } from "@/lib/message-variables";
+import { invalidateConversationQueries } from "@/lib/realtime/invalidate-conversation";
 import { startTyping, stopTyping } from "@/lib/realtime/client";
 import { ContactFormModal, contactPayload } from "./contatos";
 import { InboxImageViewer } from "@/components/inbox-image-viewer";
@@ -157,9 +158,10 @@ function ConversationPage() {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const messageRefs = React.useRef(new Map<string, HTMLDivElement>());
   const [highlightedMessageId, setHighlightedMessageId] = React.useState<string | null>(null);
+  const latestMessageId = mensagens.at(-1)?.id;
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [mensagens.length]);
+  }, [conversationId, latestMessageId, mensagens.length]);
 
   const scrollToMessage = React.useCallback((messageId: string | null | undefined) => {
     if (!messageId) return;
@@ -210,9 +212,7 @@ function ConversationPage() {
     try {
       const hadProtocolo = !!conv.protocolo;
       await conversationApi.assign(conv.id, { self: true });
-      if (isStandby) await conversationApi.updateStatus(conv.id, "em_andamento");
-      qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-      qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+      void invalidateConversationQueries(qc, conv.id);
       toast.success(
         hadProtocolo || isStandby ? "Conversa retomada" : "Conversa iniciada — protocolo gerado",
       );
@@ -230,7 +230,7 @@ function ConversationPage() {
         assignToSelf: true,
         firstMessagePreview: "Nova conversa iniciada pelo atendimento.",
       });
-      qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+      void invalidateConversationQueries(qc, conversation.id);
       toast.success("Nova conversa iniciada — protocolo gerado");
       navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
     } catch (e) {
@@ -417,9 +417,7 @@ function ConversationPage() {
               onCancelReply={() => setReplyTo(null)}
               onSent={() => {
                 setReplyTo(null);
-                qc.invalidateQueries({ queryKey: ["trixus", "messages", conv.id] });
-                qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-                qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+                void invalidateConversationQueries(qc, conv.id);
               }}
             />
             <div className="pointer-events-none absolute inset-y-0 right-4 hidden items-center xl:flex">
@@ -479,23 +477,20 @@ function ConversationPage() {
         departments={departments.filter((d) => d.id !== conv.department_id)}
         onSubmitAgent={async (id) => {
           await conversationApi.assign(conv.id, { membershipId: id });
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+          void invalidateConversationQueries(qc, conv.id);
           toast.success("Conversa transferida");
           transferModal.hide();
         }}
         onSubmitDepartment={async (id) => {
           await conversationApi.transferDepartment(conv.id, id);
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+          void invalidateConversationQueries(qc, conv.id);
           toast.success("Conversa movida");
           transferModal.hide();
         }}
         onSubmitStatus={async (status) => {
           const label = status === "fila" ? filaLabel : standbyLabel;
           await conversationApi.updateStatus(conv.id, status === "fila" ? "aberta" : "aguardando");
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+          void invalidateConversationQueries(qc, conv.id);
           toast.success(`Conversa movida para ${label}`);
           transferModal.hide();
         }}
@@ -508,8 +503,7 @@ function ConversationPage() {
         onClose={() => setClosing(false)}
         onConfirm={async () => {
           await conversationApi.updateStatus(conv.id, "fechada");
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+          void invalidateConversationQueries(qc, conv.id);
           toast.success("Conversa encerrada");
         }}
       />

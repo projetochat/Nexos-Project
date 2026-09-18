@@ -80,6 +80,7 @@ describe("realtime client runtime state", () => {
 
     await client.connectRealtime();
     await client.connectRealtime();
+    lastSocket?.on.mock.calls.find(([name]) => name === "realtime.ready")?.[1]();
     client.subscribeConversation("conversation-a");
     client.subscribeConversation("conversation-a");
     client.unsubscribeConversation("conversation-a");
@@ -91,5 +92,38 @@ describe("realtime client runtime state", () => {
       ["conversation.unsubscribe", { conversationId: "conversation-a" }],
     ]);
     expect(client.realtimeDiagnostics().conversationSubscriptions).toBe(0);
+  });
+
+  it("waits for gateway authentication before subscribing and restores rooms after reconnect", async () => {
+    vi.stubEnv("VITE_TRIXUS_REALTIME_ENABLED", "true");
+    localStorage.setItem("trixus.api.accessToken", "access");
+    const client = await import("./client");
+    await client.connectRealtime();
+    const emitServer = (event: string) =>
+      lastSocket?.on.mock.calls.find(([name]) => name === event)?.[1]();
+    emitServer("connect");
+    client.subscribeConversation("conversation-a");
+    expect(client.realtimeSnapshot().status).toBe("connecting");
+    expect(lastSocket?.emit).not.toHaveBeenCalled();
+
+    emitServer("realtime.ready");
+    client.subscribeConversation("conversation-a");
+    expect(client.realtimeSnapshot().status).toBe("connected");
+    expect(lastSocket?.emit).toHaveBeenCalledTimes(1);
+
+    emitServer("disconnect");
+    emitServer("connect");
+    expect(client.realtimeSnapshot().status).toBe("connecting");
+    emitServer("realtime.ready");
+    expect(lastSocket?.emit.mock.calls).toEqual([
+      ["conversation.subscribe", { conversationId: "conversation-a" }],
+      ["conversation.subscribe", { conversationId: "conversation-a" }],
+    ]);
+    client.unsubscribeConversation("conversation-a");
+    lastSocket?.emit.mockClear();
+    emitServer("disconnect");
+    emitServer("connect");
+    emitServer("realtime.ready");
+    expect(lastSocket?.emit).not.toHaveBeenCalled();
   });
 });
