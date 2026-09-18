@@ -20,7 +20,6 @@ import {
   Ticket,
   Reply,
   Download,
-  SmilePlus,
   List,
 } from "lucide-react";
 import { toast as systemToast } from "sonner";
@@ -34,6 +33,8 @@ const toast = {
 import { InboxLayout } from "./inbox.index";
 import { Avatar, Button, Field, Input, Select } from "@/components/ui-kit";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { MessageStatusIcon } from "@/components/message-status-icon";
+import { MessageReactionPicker } from "@/components/message-reaction-picker";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import {
@@ -370,6 +371,7 @@ function ConversationPage() {
                     onQuotedClick={scrollToMessage}
                     highlighted={highlightedMessageId === m.id}
                     contactName={conv.contact?.nome ?? "Contato"}
+                    isGroup={conv.is_group}
                     contactAvatarUrl={conv.contact?.avatar_url ?? null}
                     galleryImages={galleryImages}
                     setMessageRef={(node) => {
@@ -531,6 +533,7 @@ function MessageBubble({
   highlighted,
   contactName,
   contactAvatarUrl,
+  isGroup = false,
   galleryImages,
   setMessageRef,
 }: {
@@ -542,6 +545,7 @@ function MessageBubble({
   highlighted?: boolean;
   contactName: string;
   contactAvatarUrl?: string | null;
+  isGroup?: boolean;
   galleryImages: Message[];
   setMessageRef?: (node: HTMLDivElement | null) => void;
 }) {
@@ -628,29 +632,18 @@ function MessageBubble({
         mine ? "justify-end" : "justify-start"
       } ${highlighted ? "rounded-xl ring-2 ring-primary/60 ring-offset-2 ring-offset-background" : ""}`}
     >
-      {!mine && onReply && (
-        <div className="hidden shrink-0 md:block">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Responder"
-            className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-            onClick={() => onReply(m)}
-          >
-            <Reply className="h-3.5 w-3.5" />
-          </Button>
+      {!mine && (
+        <div className={isGroup ? "shrink-0" : "hidden shrink-0 md:block"}>
+          <Avatar
+            name={avatarName}
+            size={30}
+            src={contactAvatarUrl}
+            className="mb-5 ring-1 ring-border/70"
+          />
         </div>
       )}
-      {!mine && (
-        <Avatar
-          name={avatarName}
-          size={30}
-          src={contactAvatarUrl}
-          className="mb-5 ring-1 ring-border/70"
-        />
-      )}
       <div
-        className={`min-w-0 max-w-[calc(100%-38px)] rounded-2xl px-3 py-2 text-sm shadow-card md:max-w-[75%] ${
+        className={`min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} rounded-2xl px-3 py-2 text-sm shadow-card md:max-w-[75%] ${
           mine
             ? "rounded-br-sm bg-gradient-brand text-white"
             : "rounded-bl-sm border border-border bg-surface-1"
@@ -763,7 +756,7 @@ function MessageBubble({
           className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
         >
           {fmtHM(new Date(m.created_at).getTime())}
-          {mine && <span className="ml-2">{messageStatusLabel(m.status)}</span>}
+          {mine && <MessageStatusIcon status={m.status} />}
         </p>
         {m.reactions && m.reactions.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
@@ -779,56 +772,29 @@ function MessageBubble({
         )}
         <div className={`mt-1 flex gap-1 ${mine ? "justify-end" : "justify-start"}`}>
           {onReply && (
-            <span className="inline-flex md:hidden">
+            <span className="inline-flex">
               <button
                 type="button"
                 aria-label="Responder"
                 onClick={() => onReply(m)}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-full opacity-70 hover:bg-black/10 hover:opacity-100"
+                title="Responder"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full opacity-70 hover:bg-black/10 hover:opacity-100"
               >
                 <Reply className="h-3.5 w-3.5" />
               </button>
             </span>
           )}
-          {["👍", "❤️", "😂"].map((emoji) => (
-            <button
-              key={emoji}
-              type="button"
-              onClick={() => react(emoji)}
-              className="rounded-full px-1 text-[12px] opacity-70 hover:bg-black/10 hover:opacity-100"
-            >
-              {emoji}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => react(null)}
-            className="rounded-full px-1 text-[12px] opacity-70 hover:bg-black/10 hover:opacity-100"
-            aria-label="Remover reacao"
-          >
-            <SmilePlus className="h-3 w-3" />
-          </button>
+          <MessageReactionPicker onReact={react} />
         </div>
       </div>
       {mine && (
-        <Avatar
-          name={avatarName}
-          src={user?.avatarUrl}
-          size={30}
-          className="mb-5 ring-1 ring-border/70"
-        />
-      )}
-      {mine && onReply && (
-        <div className="hidden shrink-0 md:block">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Responder"
-            className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-            onClick={() => onReply(m)}
-          >
-            <Reply className="h-3.5 w-3.5" />
-          </Button>
+        <div className={isGroup ? "shrink-0" : "hidden shrink-0 md:block"}>
+          <Avatar
+            name={avatarName}
+            src={user?.avatarUrl}
+            size={30}
+            className="mb-5 ring-1 ring-border/70"
+          />
         </div>
       )}
     </div>
@@ -1004,20 +970,6 @@ function QuotedPreview({
       )}
     </button>
   );
-}
-
-function messageStatusLabel(status: Message["status"]) {
-  const labels: Record<Message["status"], string> = {
-    pending: "pendente",
-    created: "criada",
-    queued: "fila",
-    sending: "enviando",
-    sent: "enviada",
-    failed: "falhou",
-    delivered: "entregue",
-    read: "lida",
-  };
-  return labels[status];
 }
 
 function messageTypeLabel(type: Message["type"] | null) {
