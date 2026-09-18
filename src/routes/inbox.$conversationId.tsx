@@ -72,6 +72,7 @@ type Message = ApiMessage;
 type MentionOption = { id: string; label: string; phone: string };
 
 function ConversationPage() {
+  const isMobile = useIsMobile();
   const { conversationId } = Route.useParams();
   const user = useSession((s) => s.user);
   const qc = useQueryClient();
@@ -452,19 +453,23 @@ function ConversationPage() {
             >
               <Ticket className="h-3.5 w-3.5" /> {gerando ? "Gerando…" : "Gerar Chamado"}
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                navigate({
-                  to: "/chamados",
-                  search: { conversationId: conv.id, ticketId: undefined },
-                })
-              }
-              className="hidden w-full md:inline-flex"
-            >
-              Ver chamados relacionados
-            </Button>
+            {!isMobile && (
+              <div className="hidden md:block">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    navigate({
+                      to: "/chamados",
+                      search: { conversationId: conv.id, ticketId: undefined },
+                    })
+                  }
+                  className="w-full"
+                >
+                  Ver chamados relacionados
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
