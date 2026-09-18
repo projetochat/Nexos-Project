@@ -2891,6 +2891,7 @@ export function ContactFormModal({
   onClose,
   onSubmit,
   initial,
+  defaultInstanceId,
   customers,
   tags,
   departments,
@@ -2924,6 +2925,7 @@ export function ContactFormModal({
     avatarUrl: string | null;
   }) => void | Promise<void>;
   initial?: Contact;
+  defaultInstanceId?: string;
 }) {
   const [nome, setNome] = React.useState("");
   const [telefone, setTelefone] = React.useState("");
@@ -2963,7 +2965,8 @@ export function ContactFormModal({
     setContactProfileId(initial?.contactProfileId ?? "");
     setInstanceIds(
       canonicalContactInstanceIds(
-        initial?.instanceIds ?? (initial?.instancia ? [initial.instancia] : []),
+        initial?.instanceIds ??
+          (initial?.instancia ? [initial.instancia] : defaultInstanceId ? [defaultInstanceId] : []),
         instances,
       ),
     );
@@ -2976,7 +2979,7 @@ export function ContactFormModal({
       .listContactCustomFields()
       .then(setCustomFieldDefinitions)
       .catch(() => setCustomFieldDefinitions([]));
-  }, [initial, instances, open]);
+  }, [defaultInstanceId, initial, instances, open]);
 
   const contactTabs = React.useMemo(
     () => uniqueLabels(["Geral", ...customFieldDefinitions.map(normalizeContactCustomFieldTab)]),

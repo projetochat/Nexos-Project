@@ -14,10 +14,14 @@ import {
   X,
   PauseCircle,
   RefreshCw,
+  Pencil,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Badge, Button, Field, Input, SearchInput, Select } from "@/components/ui-kit";
+import { ContactFormModal, contactPayload } from "./contatos";
 import { Modal, useDisclosure } from "@/components/modal";
 import { TipoBadge, type TipoInstancia } from "@/components/instancia-tipos";
 import { connectionDisplayLabel, connectionInstanceValue } from "@/lib/connection-options";
@@ -27,7 +31,6 @@ import {
   crmApi,
   type ApiConversation,
   type ApiContact,
-  messageApi,
   type ApiConversationStatus as ConvStatus,
 } from "@/lib/trixus-api";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
@@ -248,7 +251,8 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
               <Button
                 variant="primary"
                 size="icon"
-                aria-label="Nova conversa"
+                aria-label="Nova mensagem"
+                title="Nova mensagem"
                 onClick={newConv.show}
               >
                 <Plus className="h-4 w-4" />
@@ -490,27 +494,50 @@ function InboxIndex() {
   );
 }
 
-function NewConversationModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function NewConversationModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const user = useSession((s) => s.user);
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [tab, setTab] = React.useState<"existing" | "new">("existing");
   const [q, setQ] = React.useState("");
+  const [page, setPage] = React.useState(1);
   const [selectedContact, setSelectedContact] = React.useState<ApiContact | null>(null);
-  const [newName, setNewName] = React.useState("");
-  const [newPhone, setNewPhone] = React.useState("");
   const [selectedConnectionId, setSelectedConnectionId] = React.useState("");
-  const [firstMsg, setFirstMsg] = React.useState("");
+  const [contactForm, setContactForm] = React.useState<{ initial?: ApiContact } | null>(null);
   const [busy, setBusy] = React.useState(false);
-
-  const { data: contactsPage } = useQuery({
-    queryKey: ["trixus", "contacts", "conversation-modal"],
-    queryFn: () => crmApi.listContacts({ pageSize: 100 }),
-    enabled: open,
-  });
+  const savingContact = React.useRef(false);
   const { allConnections: availableConnections, error: connectionsError } =
     useConnectedMessagingConnections({ enabled: open });
-  const contacts = React.useMemo(() => contactsPage?.items ?? [], [contactsPage?.items]);
+  const {
+    data: contactsPage,
+    isFetching: loadingContacts,
+    error: contactsError,
+  } = useQuery({
+    queryKey: ["trixus", "contacts", "conversation-modal", selectedConnectionId, q.trim(), page],
+    queryFn: () =>
+      crmApi.listContacts({
+        instance: selectedConnectionId,
+        q: q.trim() || undefined,
+        page,
+        pageSize: 7,
+      }),
+    enabled: open && !!selectedConnectionId,
+  });
+  const { data: contactOptions, error: optionsError } = useQuery({
+    queryKey: ["trixus", "contacts", "conversation-options"],
+    queryFn: crmApi.contactOptions,
+    enabled: open,
+  });
+  const { data: customersPage, error: customersError } = useQuery({
+    queryKey: ["trixus", "customers", "conversation-options"],
+    queryFn: () => crmApi.listCustomers({ pageSize: 10000 }),
+    enabled: open,
+  });
+  const instances = React.useMemo(
+    () => contactOptions?.instances ?? [],
+    [contactOptions?.instances],
+  );
+  const contacts = contactsPage?.items ?? [];
+  const formReady = !!contactOptions && !!customersPage;
 
   React.useEffect(() => {
     if (!open || selectedConnectionId || availableConnections.length === 0) return;
@@ -525,27 +552,16 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
   React.useEffect(() => {
     if (!open) {
       setQ("");
+      setPage(1);
       setSelectedContact(null);
-      setNewName("");
-      setNewPhone("");
       setSelectedConnectionId("");
-      setFirstMsg("");
-      setTab("existing");
+      setContactForm(null);
     }
   }, [open]);
 
-  const filtered = React.useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s) return contacts.slice(0, 20);
-    return contacts
-      .filter((c) => (c.nome + " " + c.telefone).toLowerCase().includes(s))
-      .slice(0, 20);
-  }, [contacts, q]);
-
   const submit = async () => {
     if (!user) return toast.error("Sessão inválida.");
-    if (!firstMsg.trim()) return toast.error("Escreva a primeira mensagem.");
-    if (!selectedConnectionId) return toast.error("Selecione uma conexão WhatsApp conectada.");
+    if (!selectedContact) return toast.error("Selecione um contato.");
     if (
       availableConnections.find((connection) => connection.id === selectedConnectionId)?.status !==
       "connected"
@@ -553,33 +569,15 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
       return toast.error("Conecte a instância selecionada antes de iniciar a conversa.");
     setBusy(true);
     try {
-      let contactId = selectedContact?.id;
-      if (tab === "new") {
-        if (!newName.trim() || !newPhone.trim()) {
-          toast.error("Informe nome e telefone.");
-          setBusy(false);
-          return;
-        }
-        const c = await crmApi.createContact({ name: newName.trim(), phone: newPhone.trim() });
-        contactId = c.id;
-      }
-      if (!contactId) {
-        toast.error("Selecione um contato.");
-        setBusy(false);
-        return;
-      }
       const conversation = await conversationApi.create({
-        contactId,
+        contactId: selectedContact.id,
         connectionId: selectedConnectionId,
         assignToSelf: true,
       });
-      const sent = await messageApi.sendText(conversation.id, firstMsg.trim());
-      if (sent.status === "failed") toast.warning("Conversa criada, mas o envio falhou.");
-      else toast.success("Conversa iniciada");
-      qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-      qc.invalidateQueries({ queryKey: ["trixus", "messages", conversation.id] });
+      toast.success("Conversa iniciada");
+      void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
       onClose();
-      navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
+      void navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -588,124 +586,243 @@ function NewConversationModal({ open, onClose }: { open: boolean; onClose: () =>
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Nova Conversa"
-      description="Selecione um contato existente ou cadastre um novo."
-      footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button variant="primary" size="sm" onClick={submit} disabled={busy}>
-            {busy ? "Enviando…" : "Iniciar conversa"}
-          </Button>
-        </>
-      }
-    >
-      <div className="mb-3 inline-flex rounded-lg border border-border bg-surface-1 p-1 text-xs">
-        <button
-          onClick={() => setTab("existing")}
-          className={`rounded-md px-3 py-1.5 ${tab === "existing" ? "bg-card text-foreground shadow-card" : "text-muted-foreground"}`}
-        >
-          Contato existente
-        </button>
-        <button
-          onClick={() => setTab("new")}
-          className={`rounded-md px-3 py-1.5 ${tab === "new" ? "bg-card text-foreground shadow-card" : "text-muted-foreground"}`}
-        >
-          Novo contato
-        </button>
-      </div>
-
-      {tab === "existing" ? (
-        <div className="space-y-2">
-          <Field label="Buscar contato">
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Nome ou telefone…"
-            />
-          </Field>
-          <ul className="max-h-56 overflow-y-auto rounded-lg border border-border">
-            {filtered.map((c) => {
-              const active = selectedContact?.id === c.id;
-              return (
-                <li key={c.id}>
-                  <button
-                    onClick={() => setSelectedContact(c)}
-                    className={`flex w-full items-center gap-3 border-b border-border/60 px-3 py-2 text-left text-sm ${active ? "bg-surface-2" : "hover:bg-surface-1"}`}
-                  >
-                    <Avatar name={c.nome} size={30} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate">{c.nome}</p>
-                      <p className="truncate text-[11px] text-muted-foreground">
-                        {maskBrazilPhone(c.telefone)}
-                      </p>
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
-            {filtered.length === 0 && (
-              <li className="p-4 text-center text-xs text-muted-foreground">Nenhum contato.</li>
-            )}
-          </ul>
-        </div>
-      ) : (
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        title="Nova Conversa"
+        description="Selecione um contato existente ou cadastre um novo."
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={submit}
+              disabled={busy || !selectedContact || !selectedConnectionId}
+            >
+              {busy ? "Iniciando…" : "Iniciar conversa"}
+            </Button>
+          </>
+        }
+      >
         <div className="space-y-3">
-          <Field label="Nome">
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} />
-          </Field>
-          <Field label="Telefone">
-            <Input
-              value={newPhone}
-              onChange={(e) => setNewPhone(maskBrazilPhone(e.target.value))}
-              placeholder="(11) 90000-0000"
-            />
-          </Field>
-        </div>
-      )}
-
-      <div className="mt-3">
-        <Field label="Conexão WhatsApp">
-          <Select
-            value={selectedConnectionId}
-            onChange={(e) => setSelectedConnectionId(e.target.value)}
-          >
-            {availableConnections.length === 0 ? (
-              <option value="">Nenhuma instância disponível.</option>
-            ) : (
-              availableConnections.map((connection) => (
+          <div className="flex justify-end">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!formReady || !selectedConnectionId}
+              onClick={() => setContactForm({})}
+            >
+              <Plus className="h-3.5 w-3.5" /> Novo Contato
+            </Button>
+          </div>
+          {(optionsError || customersError) && (
+            <p className="text-xs text-destructive">
+              Não foi possível carregar o cadastro de contatos. Tente abrir novamente.
+            </p>
+          )}
+          <Field label="Instância">
+            <Select
+              value={selectedConnectionId}
+              onChange={(e) => {
+                setSelectedConnectionId(e.target.value);
+                setSelectedContact(null);
+                setPage(1);
+              }}
+            >
+              {!selectedConnectionId && <option value="">Selecione uma instância</option>}
+              {availableConnections.map((connection) => (
                 <option key={connection.id} value={connection.id}>
                   {connectionDisplayLabel(connection)}
                 </option>
-              ))
+              ))}
+            </Select>
+            {connectionsError ? (
+              <p className="mt-1 text-xs text-destructive">{(connectionsError as Error).message}</p>
+            ) : availableConnections.length === 0 ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Conecte uma instância antes de iniciar uma conversa.
+              </p>
+            ) : null}
+          </Field>
+          <Field label="Buscar contato">
+            <Input
+              value={q}
+              disabled={!selectedConnectionId}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Nome ou telefone…"
+            />
+          </Field>
+          <ul
+            aria-label="Contatos da instância"
+            aria-busy={loadingContacts}
+            className="overflow-hidden rounded-lg border border-border"
+          >
+            {contacts.map((contact) => (
+              <li
+                key={contact.id}
+                className={
+                  "flex h-12 items-center gap-2 border-b border-border/60 pr-3 last:border-b-0 " +
+                  (selectedContact?.id === contact.id ? "bg-surface-2" : "hover:bg-surface-1")
+                }
+              >
+                <button
+                  type="button"
+                  aria-pressed={selectedContact?.id === contact.id}
+                  onClick={() => setSelectedContact(contact)}
+                  className="flex h-full min-w-0 flex-1 items-center gap-3 px-3 text-left text-sm"
+                >
+                  <Avatar name={contact.nome} src={contact.avatar_url} size={30} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate">{contact.nome}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">
+                      {maskBrazilPhone(contact.telefone)}
+                    </p>
+                  </div>
+                  {selectedContact?.id === contact.id && (
+                    <Check className="h-4 w-4 shrink-0 text-primary" />
+                  )}
+                </button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  title="Editar contato"
+                  aria-label={"Editar contato " + contact.nome}
+                  disabled={!formReady}
+                  onClick={() => setContactForm({ initial: contact })}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </li>
+            ))}
+            {contacts.length === 0 && (
+              <li className="p-4 text-center text-xs text-muted-foreground">
+                {!selectedConnectionId
+                  ? "Selecione uma instância para listar os contatos."
+                  : loadingContacts
+                    ? "Buscando contatos…"
+                    : contactsError
+                      ? "Não foi possível carregar os contatos."
+                      : "Nenhum contato encontrado nesta instância."}
+              </li>
             )}
-          </Select>
-          {connectionsError ? (
-            <p className="mt-1 text-xs text-destructive">{(connectionsError as Error).message}</p>
-          ) : availableConnections.length === 0 ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Conecte uma instancia antes de iniciar uma conversa.
-            </p>
-          ) : null}
-        </Field>
-      </div>
-
-      <div className="mt-3">
-        <Field label="Primeira mensagem">
-          <textarea
-            rows={3}
-            value={firstMsg}
-            onChange={(e) => setFirstMsg(e.target.value)}
-            className="w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary"
-            placeholder="Olá! Como posso ajudar?"
-          />
-        </Field>
-      </div>
-    </Modal>
+          </ul>
+          {(contactsPage?.totalPages ?? 0) > 1 && (
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                Página {page} de {contactsPage?.totalPages}
+              </span>
+              <div className="flex gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Página anterior de contatos"
+                  disabled={loadingContacts || page <= 1}
+                  onClick={() => setPage(page - 1)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Próxima página de contatos"
+                  disabled={loadingContacts || page >= (contactsPage?.totalPages ?? 1)}
+                  onClick={() => setPage(page + 1)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+      {contactForm && formReady && (
+        <ContactFormModal
+          open={open}
+          initial={contactForm.initial}
+          defaultInstanceId={selectedConnectionId}
+          onClose={() => setContactForm(null)}
+          customers={customersPage.items}
+          tags={contactOptions.tags}
+          departments={contactOptions.departments}
+          profiles={contactOptions.profiles}
+          instances={instances}
+          onCustomerCreated={(customer) =>
+            qc.setQueryData<typeof customersPage>(
+              ["trixus", "customers", "conversation-options"],
+              (current) =>
+                current
+                  ? {
+                      ...current,
+                      items: [...current.items.filter((item) => item.id !== customer.id), customer],
+                    }
+                  : current,
+            )
+          }
+          onDepartmentSaved={(department) =>
+            qc.setQueryData<typeof contactOptions>(
+              ["trixus", "contacts", "conversation-options"],
+              (current) =>
+                current
+                  ? {
+                      ...current,
+                      departments: [
+                        ...current.departments.filter((item) => item.id !== department.id),
+                        department,
+                      ],
+                    }
+                  : current,
+            )
+          }
+          onProfileSaved={(profile) =>
+            qc.setQueryData<typeof contactOptions>(
+              ["trixus", "contacts", "conversation-options"],
+              (current) =>
+                current
+                  ? {
+                      ...current,
+                      profiles: [
+                        ...current.profiles.filter((item) => item.id !== profile.id),
+                        profile,
+                      ],
+                    }
+                  : current,
+            )
+          }
+          onSubmit={async (data) => {
+            if (savingContact.current) return;
+            savingContact.current = true;
+            try {
+              const payload = contactPayload(data);
+              const contact = contactForm.initial
+                ? await crmApi.updateContact(contactForm.initial.id, payload)
+                : await crmApi.createContact(payload);
+              const linked =
+                contact.instanceIds.includes(selectedConnectionId) ||
+                contact.instancia === selectedConnectionId;
+              setSelectedContact(linked ? contact : null);
+              setQ(linked ? contact.nome : "");
+              setPage(1);
+              setContactForm(null);
+              void qc.invalidateQueries({ queryKey: ["trixus", "contacts"] });
+              void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+              toast.success(contactForm.initial ? "Contato atualizado" : "Contato criado");
+            } catch (e) {
+              toast.error("Falha ao salvar contato", { description: (e as Error).message });
+            } finally {
+              savingContact.current = false;
+            }
+          }}
+        />
+      )}
+    </>
   );
 }
 
