@@ -21,6 +21,7 @@ import {
   Reply,
   Download,
   SmilePlus,
+  List,
 } from "lucide-react";
 import { toast as systemToast } from "sonner";
 // Notificações desativadas nesta tela — nenhum toast deve aparecer no chat.
@@ -57,6 +58,7 @@ import { fmtHM, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { resolveMessageVariables, type MessageVariableContext } from "@/lib/message-variables";
 import { startTyping, stopTyping } from "@/lib/realtime/client";
 import { ContactFormModal, contactPayload } from "./contatos";
 import { InboxImageViewer } from "@/components/inbox-image-viewer";
@@ -105,7 +107,10 @@ function ConversationPage() {
         .map((membership) => ({
           id: membership.id,
           userId: membership.user.id,
-          nome: membership.user.name,
+          nome:
+            membership.presentationName?.trim() ||
+            membership.user.presentationName?.trim() ||
+            membership.user.name,
           email: membership.user.email,
         })),
     [memberships],
@@ -113,6 +118,10 @@ function ConversationPage() {
   const messageAgents = React.useMemo(
     () => agents.map((agent) => ({ id: agent.userId, nome: agent.nome })),
     [agents],
+  );
+  const galleryImages = React.useMemo(
+    () => mensagens.filter((message) => message.type === "image" && !!message.media_data),
+    [mensagens],
   );
   const { data: apiDepartments = [] } = useQuery({
     queryKey: ["trixus", "departments", "conversation-transfer"],
@@ -351,11 +360,12 @@ function ConversationPage() {
                     m={m}
                     agents={messageAgents}
                     showAgentName={showAgentName}
-                    onReply={() => setReplyTo(m)}
+                    onReply={(message) => setReplyTo(message)}
                     onQuotedClick={scrollToMessage}
                     highlighted={highlightedMessageId === m.id}
                     contactName={conv.contact?.nome ?? "Contato"}
                     contactAvatarUrl={conv.contact?.avatar_url ?? null}
+                    galleryImages={galleryImages}
                     setMessageRef={(node) => {
                       if (node) messageRefs.current.set(m.id, node);
                       else messageRefs.current.delete(m.id);
@@ -373,6 +383,20 @@ function ConversationPage() {
               key={conversationId}
               conversationId={conv.id}
               authorId={user?.id ?? null}
+              variableContext={{
+                contactName: conv.contact?.nome,
+                phone: conv.contact?.telefone,
+                email: conv.contact?.email,
+                instance: conv.connection?.name,
+                customer: conv.contact?.customer?.nome,
+                department: conv.department?.nome ?? conv.contact?.departamento,
+                customFields: Object.fromEntries(
+                  (conv.contact?.customFieldValues ?? []).map((field) => [
+                    field.label,
+                    field.value,
+                  ]),
+                ),
+              }}
               disabled={!canSend}
               disabledReason={
                 conv.status === "fechada"
@@ -503,16 +527,18 @@ function MessageBubble({
   highlighted,
   contactName,
   contactAvatarUrl,
+  galleryImages,
   setMessageRef,
 }: {
   m: Message;
   agents: { id: string; nome: string }[];
   showAgentName?: boolean;
-  onReply?: () => void;
+  onReply?: (message: Message) => void;
   onQuotedClick?: (messageId: string | null | undefined) => void;
   highlighted?: boolean;
   contactName: string;
   contactAvatarUrl?: string | null;
+  galleryImages: Message[];
   setMessageRef?: (node: HTMLDivElement | null) => void;
 }) {
   const qc = useQueryClient();
@@ -547,12 +573,12 @@ function MessageBubble({
     qc.invalidateQueries({ queryKey: ["trixus", "messages", m.conversation_id] });
   };
 
-  const download = async () => {
-    const blob = await messageApi.downloadMedia(m.conversation_id, m.id);
+  const download = async (message: Message = m) => {
+    const blob = await messageApi.downloadMedia(message.conversation_id, message.id);
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = m.media_data?.file_name ?? "media";
+    anchor.download = message.media_data?.file_name ?? "media";
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -587,7 +613,7 @@ function MessageBubble({
   const mine = m.sender === "agent";
   const authorName =
     showAgentName && mine && m.author_id
-      ? (agents.find((a) => a.id === m.author_id)?.nome ?? null)
+      ? (m.author_name ?? agents.find((a) => a.id === m.author_id)?.nome ?? null)
       : null;
   const avatarName = mine ? (authorName ?? "Atendente") : (m.participant?.name ?? contactName);
   return (
@@ -604,7 +630,7 @@ function MessageBubble({
           size="icon"
           aria-label="Responder"
           className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-          onClick={onReply}
+          onClick={() => onReply(m)}
         >
           <Reply className="h-3.5 w-3.5" />
         </Button>
@@ -639,9 +665,13 @@ function MessageBubble({
           <InboxImageViewer
             src={mediaUrl}
             message={m}
+            images={galleryImages}
             onClose={() => setImagePreviewOpen(false)}
-            onReply={onReply}
-            onDownload={download}
+            onReply={(image) => {
+              setImagePreviewOpen(false);
+              onReply?.(image as Message);
+            }}
+            onDownload={(image) => download(image as Message)}
           />
         )}
         {m.type === "image" && m.media_data && (
@@ -701,7 +731,7 @@ function MessageBubble({
         {m.type === "document" && m.media_data && (
           <button
             type="button"
-            onClick={mediaReady ? download : undefined}
+            onClick={mediaReady ? () => void download() : undefined}
             disabled={!mediaReady}
             className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
               mine ? "border-white/30 bg-white/10" : "border-border/60 bg-surface-2"
@@ -719,6 +749,9 @@ function MessageBubble({
         )}
         {m.content && m.content !== "[áudio]" && m.content !== "[imagem]" && (
           <MessageText content={m.content} />
+        )}
+        {m.interactive_data?.kind === "list" && (
+          <WhatsAppListMessage interactive={m.interactive_data} mine={mine} />
         )}
         <p
           className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
@@ -773,12 +806,71 @@ function MessageBubble({
           size="icon"
           aria-label="Responder"
           className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-          onClick={onReply}
+          onClick={() => onReply(m)}
         >
           <Reply className="h-3.5 w-3.5" />
         </Button>
       )}
     </div>
+  );
+}
+
+function WhatsAppListMessage({
+  interactive,
+  mine,
+}: {
+  interactive: NonNullable<Message["interactive_data"]>;
+  mine: boolean;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const options = interactive.sections.flatMap((section) => section.options);
+  if (!options.length) return null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={`mt-3 flex w-full items-center justify-center gap-2 border-t pt-2 text-sm font-medium transition hover:brightness-110 ${
+          mine ? "border-white/25 text-white" : "border-border text-primary"
+        }`}
+        aria-label={`${interactive.buttonText}: abrir opções`}
+      >
+        <List className="h-4 w-4" />
+        {interactive.buttonText}
+      </button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Lista"
+        description="Escolha uma das opções abaixo"
+        size="sm"
+      >
+        <div className="space-y-4">
+          {interactive.sections.map((section, sectionIndex) => (
+            <section key={`${section.title ?? "opções"}-${sectionIndex}`}>
+              {section.title && (
+                <p className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {section.title}
+                </p>
+              )}
+              <div className="overflow-hidden rounded-xl border border-border">
+                {section.options.map((option, optionIndex) => (
+                  <div
+                    key={`${option.title}-${optionIndex}`}
+                    className="border-b border-border px-3 py-3 last:border-b-0"
+                  >
+                    <p className="text-sm font-medium">{option.title}</p>
+                    {option.description && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">{option.description}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -966,6 +1058,7 @@ type DisabledReason = "closed" | "standby" | "lead" | "not-mine" | null;
 function Composer({
   conversationId,
   authorId,
+  variableContext,
   disabled,
   disabledReason,
   onStart,
@@ -978,6 +1071,7 @@ function Composer({
 }: {
   conversationId: string;
   authorId: string | null;
+  variableContext: MessageVariableContext;
   disabled: boolean;
   disabledReason?: DisabledReason;
   onStart?: () => void;
@@ -1069,11 +1163,16 @@ function Composer({
     );
   }, [quickReplies, qrFilter]);
 
+  const resolveVariables = React.useCallback(
+    (value: string) => resolveMessageVariables(value, variableContext),
+    [variableContext],
+  );
+
   const applyQR = (qr: QuickReply) => {
     if (sequenceAbort.current) return;
     const items = quickReplyMessages(qr);
     if (items.length > 1 || items[0]?.attachment) {
-      const draft = createSequence(qr);
+      const draft = createSequence(qr, resolveVariables);
       quickReplyDrafts.set(draftKey, draft);
       setSequence(draft);
       setSequenceError("");
@@ -1083,7 +1182,7 @@ function Composer({
     } else {
       quickReplyDrafts.delete(draftKey);
       setSequence(null);
-      setText(items[0]?.text ?? qr.texto);
+      setText(resolveVariables(items[0]?.text ?? qr.texto));
     }
     setPendingCloseAfter(!!qr.close_on_send);
     setShowQR(false);
@@ -1215,13 +1314,14 @@ function Composer({
         if (items.length > 1 || items[0]?.attachment) {
           setShowQR(false);
           setText("");
-          await sendQuickReply(createSequence(match));
+          await sendQuickReply(createSequence(match, resolveVariables));
           return;
         }
-        t = items[0]?.text ?? match.texto;
+        t = resolveVariables(items[0]?.text ?? match.texto);
         closeAfter = closeAfter || !!match.close_on_send;
       }
     }
+    t = resolveVariables(t);
     if (pendingFile) {
       try {
         await messageApi.sendMedia(conversationId, pendingFile.file, {

@@ -64,15 +64,29 @@ class UpdateMyProfileDto {
 }
 
 class UpdateAdministratorCredentialsDto {
+  @IsOptional()
   @IsString()
-  currentPassword!: string;
+  currentPassword?: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(6)
-  newPassword!: string;
+  newPassword?: string;
 
+  @IsOptional()
   @IsString()
-  confirmPassword!: string;
+  confirmPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  presentationName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(3_000_000)
+  avatarUrl?: string | null;
 }
 
 type MembershipWithRelations = {
@@ -80,6 +94,7 @@ type MembershipWithRelations = {
   tenantId: string;
   userId: string;
   status: string;
+  presentationName?: string | null;
   createdAt: Date;
   updatedAt: Date;
   user: {
@@ -132,7 +147,7 @@ export class UsersController {
       user: {
         id: membership.user.id,
         email: membership.user.email,
-        name: membership.user.name,
+        name: membership.presentationName?.trim() || membership.user.name,
         avatarUrl: membership.user.avatarUrl,
         roleId: membership.roleId,
         roleKey: membership.role.key,
@@ -168,6 +183,13 @@ export class UsersController {
         departments: { include: { department: true } },
       },
     });
+    if (
+      current.roleKey === "tenant_admin" &&
+      dto.name !== undefined &&
+      dto.name.trim() !== membership.user.name
+    ) {
+      throw new ForbiddenException("O nome do Administrador não pode ser alterado.");
+    }
     if (dto.newPassword) {
       if (!dto.currentPassword) throw new BadRequestException("Informe a senha atual.");
       const validPassword = await compare(dto.currentPassword, membership.user.passwordHash);
@@ -199,7 +221,13 @@ export class UsersController {
     if (current.roleKey !== "tenant_admin" || current.impersonationSessionId) {
       throw new ForbiddenException("Somente o Administrador pode alterar estas credenciais.");
     }
-    if (dto.newPassword !== dto.confirmPassword) {
+    // A senha atual pode permanecer preenchida enquanto o administrador altera apenas o nome.
+    // A troca só começa quando algum dos campos da nova senha recebe valor.
+    const isChangingPassword = dto.newPassword !== undefined || dto.confirmPassword !== undefined;
+    if (isChangingPassword && (!dto.currentPassword || !dto.newPassword || !dto.confirmPassword)) {
+      throw new BadRequestException("Preencha todos os campos de senha.");
+    }
+    if (isChangingPassword && dto.newPassword !== dto.confirmPassword) {
       throw new BadRequestException("A confirmação da nova senha não confere.");
     }
     const membership = await this.prisma.tenantMembership.findFirstOrThrow({
@@ -214,17 +242,42 @@ export class UsersController {
     if (membership.role.key !== "tenant_admin") {
       throw new ForbiddenException("Somente o Administrador pode alterar estas credenciais.");
     }
-    if (!(await compare(dto.currentPassword, membership.user.passwordHash))) {
-      throw new BadRequestException("Senha atual inválida.");
+    if (isChangingPassword) {
+      if (!(await compare(dto.currentPassword!, membership.user.passwordHash))) {
+        throw new BadRequestException("Senha atual inválida.");
+      }
+      if (dto.newPassword === dto.currentPassword) {
+        throw new BadRequestException("A nova senha deve ser diferente da senha atual.");
+      }
     }
-    if (dto.newPassword === dto.currentPassword) {
-      throw new BadRequestException("A nova senha deve ser diferente da senha atual.");
-    }
-    await this.prisma.user.update({
-      where: { id: membership.userId },
-      data: { passwordHash: await hash(dto.newPassword, 12) },
+    await this.prisma.$transaction(async (tx) => {
+      if (isChangingPassword) {
+        await tx.user.update({
+          where: { id: membership.userId },
+          data: { passwordHash: await hash(dto.newPassword!, 12) },
+        });
+      }
+      if (dto.presentationName !== undefined) {
+        await tx.tenantMembership.update({
+          where: { id: membership.id },
+          data: { presentationName: dto.presentationName.trim() },
+        });
+      }
+      if (dto.avatarUrl !== undefined) {
+        await tx.user.update({
+          where: { id: membership.userId },
+          data: { avatarUrl: normalizeAvatarUrl(dto.avatarUrl) },
+        });
+      }
     });
-    return { ok: true };
+    return {
+      ok: true,
+      presentationName: dto.presentationName?.trim() ?? membership.presentationName,
+      avatarUrl:
+        dto.avatarUrl === undefined
+          ? (membership.user.avatarUrl ?? null)
+          : normalizeAvatarUrl(dto.avatarUrl),
+    };
   }
 
   @Get("company")
@@ -259,6 +312,12 @@ export class UsersController {
       locale: tenant.locale,
       accessEmail: current.roleKey === "tenant_admin" ? administratorEmail : null,
       responsibleName: administrator?.user.name ?? null,
+      presentationName:
+        current.roleKey === "tenant_admin"
+          ? (administrator?.presentationName ?? administrator?.user.name ?? null)
+          : null,
+      administratorAvatarUrl:
+        current.roleKey === "tenant_admin" ? (administrator?.user.avatarUrl ?? null) : null,
       canManageAdministratorCredentials: current.roleKey === "tenant_admin",
     };
   }
@@ -611,10 +670,14 @@ export class UsersController {
       status: membership.status,
       createdAt: membership.createdAt,
       updatedAt: membership.updatedAt,
+      presentationName: membership.presentationName,
       user: {
         id: membership.user.id,
         email: membership.user.email,
-        name: membership.user.name,
+        // A listagem de atendentes deve sempre exibir o nome configurado para o administrador.
+        // O nome persistido no usuário continua intacto e é usado apenas para regras internas.
+        name: membership.presentationName?.trim() || membership.user.name,
+        presentationName: membership.presentationName,
         avatarUrl: membership.user.avatarUrl,
         status: membership.user.status,
         platformRole: membership.user.platformRole,

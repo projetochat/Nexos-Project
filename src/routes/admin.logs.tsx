@@ -6,7 +6,7 @@ import { fmtDateTime } from "@/lib/format";
 import { platformApi, type PlatformAuditLog } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/logs")({
-  head: () => ({ meta: [{ title: "Logs · Trixus Admin" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: LogsAdmin,
 });
 

@@ -243,9 +243,9 @@ Atualizados:
 | M02 | worktree inicial clean         | Limpo                        | preflight git                             | PASS    |
 | M03 | branch 08.01                   | Criada                       | `sprint/08.01-inbound-reconnect-recovery` | PASS    |
 | M04 | verify inicial                 | PASS                         | `bun run verify`                          | PASS    |
-| M05 | banco trixus_0801               | Criado                       | migrations aplicadas                      | PASS    |
+| M05 | banco trixus_0801              | Criado                       | migrations aplicadas                      | PASS    |
 | M06 | migrations                     | Aplicadas                    | 07.03 e 08 presentes                      | PASS    |
-| M07 | seed minimo                    | Implementado                 | `trixus_0801_seedcheck` zerou mocks        | PASS    |
+| M07 | seed minimo                    | Implementado                 | `trixus_0801_seedcheck` zerou mocks       | PASS    |
 | M08 | demo seed opt-in               | Implementado                 | `SEED_DEMO_DATA=true`                     | PASS    |
 | M09 | cleanup script                 | Criado                       | script novo                               | PASS    |
 | M10 | cleanup dry-run                | PASS                         | zero deletes                              | PASS    |
@@ -271,7 +271,7 @@ Atualizados:
 | M30 | no new Conversation reconnect  | Coberto por owner/connection | service spec                              | PASS    |
 | M31 | outbound queue preserved       | Preservado                   | sem alteracao queue                       | PASS    |
 | M32 | ordering preserved             | Preservado                   | Sprint 08 tests                           | PASS    |
-| M33 | Redis architecture preserved   | Preservado                   | `trixus-redis` intacto                     | PASS    |
+| M33 | Redis architecture preserved   | Preservado                   | `trixus-redis` intacto                    | PASS    |
 | M34 | outbox preserved               | Preservado                   | sem alteracao outbox                      | PASS    |
 | M35 | worker preserved               | Preservado                   | worker intacto                            | PASS    |
 | M36 | retry preserved                | Preservado                   | queue options intactas                    | PASS    |

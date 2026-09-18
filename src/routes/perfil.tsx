@@ -24,7 +24,6 @@ function PerfilPage() {
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
-  const [showCurrentPassword, setShowCurrentPassword] = React.useState(false);
   const [showNewPassword, setShowNewPassword] = React.useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -225,12 +224,11 @@ function PerfilPage() {
               <p className="text-sm font-semibold">Alterar senha</p>
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <Field label="Senha atual *">
-                  <PasswordInput
-                    value={currentPassword}
-                    visible={showCurrentPassword}
+                  <Input
+                    type="password"
                     autoComplete="current-password"
-                    onChange={setCurrentPassword}
-                    onToggle={() => setShowCurrentPassword((value) => !value)}
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
                   />
                 </Field>
                 <Field label="Nova senha *">

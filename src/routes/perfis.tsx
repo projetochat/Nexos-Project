@@ -1,11 +1,11 @@
 import {
   WEEK_DAYS,
-  SHIFT_LABELS,
+  createWorkPeriod,
+  normalizeWorkSchedule,
   workScheduleError,
-  workShiftError,
+  workPeriodError,
   type WeekDay,
-  type ShiftKey,
-  type WorkShift,
+  type WorkPeriod,
   type WorkSchedule,
 } from "@/lib/work-schedule";
 import { selectableConnections } from "@/lib/connection-options";
@@ -206,9 +206,8 @@ function defaultWorkSchedule(): WorkSchedule {
   for (const day of WEEK_DAYS) {
     const weekday = !["Sabado", "Domingo"].includes(day);
     days[day] = {
-      morning: { active: weekday, start: "08:00", end: "12:00" },
-      afternoon: { active: weekday, start: "13:00", end: "18:00" },
-      night: { active: false, start: "19:00", end: "22:00" },
+      active: weekday,
+      periods: [createWorkPeriod()],
     };
   }
   return { noSchedule: true, days };
@@ -542,7 +541,7 @@ function PerfilForm({
             permissionIds: initial.permissionIds,
             departmentIds: metadata.departmentIds ?? [],
             connectionIds: metadata.connectionIds ?? [],
-            workSchedule: metadata.workSchedule ?? defaultWorkSchedule(),
+            workSchedule: normalizeWorkSchedule(metadata.workSchedule ?? defaultWorkSchedule()),
           }
         : {
             name: "",
@@ -637,6 +636,7 @@ function PerfilForm({
             : "Novo Perfil de Acesso"
       }
       size="xl"
+      className="sm:max-w-[50rem]"
       footer={
         <div className="flex w-full items-center justify-between gap-4">
           <EntityFormLog
@@ -998,33 +998,48 @@ function WorkScheduleEditor({
   onChange: (value: WorkSchedule) => void;
 }) {
   const errorPrefix = React.useId();
-  const updateShift = (day: WeekDay, shift: ShiftKey, patch: Partial<WorkShift>) => {
+  const updateDay = (day: WeekDay, patch: Partial<WorkSchedule["days"][WeekDay]>) => {
     onChange({
       ...value,
       days: {
         ...value.days,
         [day]: {
           ...value.days[day],
-          [shift]: { ...value.days[day][shift], ...patch },
+          ...patch,
         },
       },
     });
   };
 
-  const copyShiftToAll = (sourceDay: WeekDay, shift: ShiftKey) => {
+  const updatePeriod = (day: WeekDay, periodId: string, patch: Partial<WorkPeriod>) => {
+    updateDay(day, {
+      periods: value.days[day].periods.map((period) =>
+        period.id === periodId ? { ...period, ...patch } : period,
+      ),
+    });
+  };
+
+  const addPeriod = (day: WeekDay) => {
+    const periods = value.days[day].periods;
+    const previous = periods[periods.length - 1];
+    updateDay(day, { periods: [...periods, createWorkPeriod(previous?.end || "", "")] });
+  };
+
+  const removePeriod = (day: WeekDay, periodId: string) => {
+    const periods = value.days[day].periods.filter((period) => period.id !== periodId);
+    updateDay(day, { periods: periods.length ? periods : [createWorkPeriod()] });
+  };
+
+  const copyDayToAll = (sourceDay: WeekDay) => {
     const source = value.days[sourceDay];
     const days = { ...value.days };
 
     WEEK_DAYS.forEach((day) => {
       if (day === sourceDay) return;
-      const targetShift = value.days[day][shift];
       days[day] = {
         ...value.days[day],
-        [shift]: {
-          ...targetShift,
-          start: source[shift].start,
-          end: source[shift].end,
-        },
+        active: source.active,
+        periods: source.periods.map((period) => createWorkPeriod(period.start, period.end)),
       };
     });
 
@@ -1048,143 +1063,174 @@ function WorkScheduleEditor({
         </label>
       </div>
       <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[900px] table-fixed text-xs">
+        <table className="w-full min-w-[580px] table-fixed text-xs">
           <thead className="bg-surface-2 text-[11px] uppercase tracking-widest text-muted-foreground">
             <tr>
-              <th className="w-24 px-2 py-2 text-left">Dia</th>
-              {Object.values(SHIFT_LABELS).map((label) => (
-                <th key={label} className="px-2 py-2 text-center" colSpan={3}>
-                  {label}
-                </th>
-              ))}
-            </tr>
-            <tr>
-              <th />
-              {Object.keys(SHIFT_LABELS).flatMap((shift) => [
-                <th key={`${shift}-active`} className="w-12 px-2 py-2 text-center">
-                  Ativo
-                </th>,
-                <th key={`${shift}-start`} className="px-2 py-2 text-center">
-                  Início
-                </th>,
-                <th key={`${shift}-end`} className="px-2 py-2 text-center">
-                  Fim
-                </th>,
-              ])}
+              <th className="w-28 px-3 py-2 text-left">Dia da semana</th>
+              <th className="w-14 px-2 py-2 text-center">Ativo</th>
+              <th className="px-2 py-2 text-center">Início</th>
+              <th className="px-2 py-2 text-center">Fim</th>
+              <th className="w-[116px] px-2 py-2 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {WEEK_DAYS.map((day) => {
-              const errors = {} as Record<ShiftKey, string>;
-              for (const shift of Object.keys(SHIFT_LABELS) as ShiftKey[]) {
-                const item = value.days[day][shift];
-                errors[shift] =
-                  !value.noSchedule && item.active
-                    ? workShiftError({
-                        ...item,
-                        start: formatWorkHourDraft(item.start),
-                        end: formatWorkHourDraft(item.end),
-                      })
-                    : "";
-              }
+              const item = value.days[day];
+              const errors =
+                !value.noSchedule && item.active
+                  ? item.periods.map((period) =>
+                      workPeriodError({
+                        ...period,
+                        start: formatWorkHourDraft(period.start),
+                        end: formatWorkHourDraft(period.end),
+                      }),
+                    )
+                  : [];
               return (
                 <tr key={day}>
-                  <td className="px-2 py-2 align-top font-medium">
+                  <td className="px-3 py-3 align-top font-medium">
                     <p>{day}</p>
-                    {(Object.keys(SHIFT_LABELS) as ShiftKey[]).map(
-                      (shift) =>
-                        errors[shift] && (
+                    {errors.map(
+                      (error, index) =>
+                        error && (
                           <p
-                            key={shift}
-                            id={`${errorPrefix}-${day}-${shift}`}
+                            key={item.periods[index].id}
+                            id={`${errorPrefix}-${day}-${item.periods[index].id}`}
                             role="alert"
-                            className="mt-1 block w-full whitespace-normal break-words text-[11px] font-normal leading-tight text-destructive [overflow-wrap:anywhere]"
+                            className="mt-1 whitespace-normal break-words text-[11px] font-normal leading-tight text-destructive [overflow-wrap:anywhere]"
                           >
-                            {SHIFT_LABELS[shift]}: {errors[shift]}
+                            {error}
                           </p>
                         ),
                     )}
                   </td>
-                  {(Object.keys(SHIFT_LABELS) as ShiftKey[]).map((shift) => {
-                    const item = value.days[day][shift];
-                    const error = errors[shift];
-                    const errorId = `${errorPrefix}-${day}-${shift}`;
-                    return (
-                      <React.Fragment key={`${day}-${shift}`}>
-                        <td className="px-2 py-2 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <input
-                              type="checkbox"
-                              checked={item.active}
-                              disabled={value.noSchedule}
-                              onChange={(event) => {
-                                updateShift(day, shift, { active: event.target.checked });
-                              }}
-                              className="h-4 w-4 accent-primary"
-                            />
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              disabled={value.noSchedule}
-                              onClick={() => copyShiftToAll(day, shift)}
-                              title={`Copiar turno ${SHIFT_LABELS[shift]} para todos os dias`}
-                              aria-label={`Copiar turno ${SHIFT_LABELS[shift]} para todos os dias`}
-                              className="h-7 w-7 p-0"
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </td>
-                        <td className="px-2 py-2 text-center">
+                  <td className="px-2 py-3 align-top text-center">
+                    <input
+                      type="checkbox"
+                      checked={item.active}
+                      disabled={value.noSchedule}
+                      onChange={(event) => updateDay(day, { active: event.target.checked })}
+                      className="h-4 w-4 accent-primary"
+                      aria-label={`Ativar jornada de ${day}`}
+                    />
+                  </td>
+                  <td className="px-2 py-2 align-top">
+                    <div className="space-y-2">
+                      {item.periods.map((period, index) => {
+                        const error = errors[index];
+                        return (
                           <Input
+                            key={period.id}
                             type="text"
                             inputMode="numeric"
-                            aria-label={`Início do ${SHIFT_LABELS[shift]} de ${day}`}
+                            aria-label={`Início do período ${index + 1} de ${day}`}
                             aria-invalid={!!error}
-                            aria-describedby={error ? errorId : undefined}
-                            value={item.start}
+                            aria-describedby={
+                              error ? `${errorPrefix}-${day}-${period.id}` : undefined
+                            }
+                            value={period.start}
                             placeholder="00:00"
                             disabled={value.noSchedule || !item.active}
                             className={`w-full px-2 text-center ${error ? "!border-destructive" : ""}`}
                             onChange={(event) =>
-                              updateShift(day, shift, {
+                              updatePeriod(day, period.id, {
                                 start: sanitizeWorkHourDraft(event.target.value),
                               })
                             }
                             onBlur={(event) =>
-                              updateShift(day, shift, {
+                              updatePeriod(day, period.id, {
                                 start: formatWorkHourDraft(event.target.value),
                               })
                             }
                           />
-                        </td>
-                        <td className="px-2 py-2 text-center">
+                        );
+                      })}
+                    </div>
+                  </td>
+                  <td className="px-2 py-2 align-top">
+                    <div className="space-y-2">
+                      {item.periods.map((period, index) => {
+                        const error = errors[index];
+                        return (
                           <Input
+                            key={period.id}
                             type="text"
                             inputMode="numeric"
-                            aria-label={`Fim do ${SHIFT_LABELS[shift]} de ${day}`}
+                            aria-label={`Fim do período ${index + 1} de ${day}`}
                             aria-invalid={!!error}
-                            aria-describedby={error ? errorId : undefined}
-                            value={item.end}
+                            aria-describedby={
+                              error ? `${errorPrefix}-${day}-${period.id}` : undefined
+                            }
+                            value={period.end}
                             placeholder="00:00"
                             disabled={value.noSchedule || !item.active}
                             className={`w-full px-2 text-center ${error ? "!border-destructive" : ""}`}
                             onChange={(event) =>
-                              updateShift(day, shift, {
+                              updatePeriod(day, period.id, {
                                 end: sanitizeWorkHourDraft(event.target.value),
                               })
                             }
                             onBlur={(event) =>
-                              updateShift(day, shift, {
+                              updatePeriod(day, period.id, {
                                 end: formatWorkHourDraft(event.target.value),
                               })
                             }
                           />
-                        </td>
-                      </React.Fragment>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  </td>
+                  <td className="px-2 py-2 align-top">
+                    <div className="space-y-2">
+                      {item.periods.map((period, index) => (
+                        <div
+                          key={period.id}
+                          className="flex h-10 items-center justify-center gap-1"
+                        >
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={value.noSchedule || !item.active}
+                            onClick={() => removePeriod(day, period.id)}
+                            title="Excluir horário"
+                            aria-label={`Excluir período ${index + 1} de ${day}`}
+                            className="h-8 w-8 p-0"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                          {index === 0 && (
+                            <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={value.noSchedule || !item.active}
+                                onClick={() => copyDayToAll(day)}
+                                title="Duplicar horários para todos os dias"
+                                aria-label={`Duplicar horários de ${day} para todos os dias`}
+                                className="h-8 w-8 p-0"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={value.noSchedule || !item.active}
+                                onClick={() => addPeriod(day)}
+                                title="Incluir novo horário"
+                                aria-label={`Incluir horário em ${day}`}
+                                className="h-8 w-8 p-0"
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </td>
                 </tr>
               );
             })}

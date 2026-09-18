@@ -18,7 +18,7 @@ import { platformApi, type PlatformPlan } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/planos")({
-  head: () => ({ meta: [{ title: "Planos · Trixus Admin" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: PlanosAdmin,
 });
 

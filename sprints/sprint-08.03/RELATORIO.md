@@ -38,7 +38,7 @@ Artefatos auditados:
 | ------------------------------ | -------------------- | ----------------------------------------------------------------------------- |
 | `src/routes/login.tsx`         | REWRITE / LEGACY MVP | Reescrito sem perfil demo, sem credenciais preenchidas e sem tenant `acme`    |
 | `src/lib/session.ts`           | KEEP / ADAPT         | Sessao unica Zustand mantida; logout real e sync multi-tab adicionados        |
-| `src/lib/trixus-api.ts`         | KEEP / ADAPT         | API URL unica, login sem tenant default, refresh e erros especificos          |
+| `src/lib/trixus-api.ts`        | KEEP / ADAPT         | API URL unica, login sem tenant default, refresh e erros especificos          |
 | `src/routes/__root.tsx`        | KEEP / ADAPT         | Bootstrap preservado e sync de logout entre abas adicionado                   |
 | `src/components/app-shell.tsx` | KEEP                 | Guards client-side preservados                                                |
 | `src/start.ts`                 | LEGACY ISOLATED      | Supabase auth attacher permanece para server functions legadas, fora do login |
@@ -319,7 +319,7 @@ Atualizados:
 | M06 | legacy MVP auth inventory | Registrado                | relatorio secao 5                              | PASS    |
 | M07 | mock auth removed         | Login real sem demo       | `src/routes/login.tsx`                         | PASS    |
 | M08 | dead auth code removed    | Legado isolado            | Supabase fora do login                         | PARTIAL |
-| M09 | single API base URL       | Implementado              | `VITE_TRIXUS_API_URL`                           | PASS    |
+| M09 | single API base URL       | Implementado              | `VITE_TRIXUS_API_URL`                          | PASS    |
 | M10 | API health pre-login      | Implementado              | `/api/health` + UI health                      | PASS    |
 | M11 | network error mapping     | Implementado              | UI TypeError mapping                           | PASS    |
 | M12 | 401 mapping               | Implementado              | frontend/backend tests                         | PASS    |
@@ -338,12 +338,12 @@ Atualizados:
 | M25 | /me                       | Implementado              | `/api/auth/me`                                 | PASS    |
 | M26 | logout                    | Implementado              | E2E + frontend cleanup                         | PASS    |
 | M27 | database startup log      | Implementado              | `PrismaService` sanitized log                  | PASS    |
-| M28 | trixus_0802 assertion      | Implementado              | `SEED_MODE=homologation` guard                 | PASS    |
+| M28 | trixus_0802 assertion     | Implementado              | `SEED_MODE=homologation` guard                 | PASS    |
 | M29 | seed admin email          | Implementado              | `SEED_ADMIN_EMAIL`                             | PASS    |
 | M30 | seed admin password       | Implementado              | `SEED_ADMIN_PASSWORD`                          | PASS    |
 | M31 | seed docs                 | Atualizado                | docs/env examples                              | PASS    |
 | M32 | login smoke script        | Criado                    | `verify-homologation-login.mjs`                | PASS    |
-| M33 | API login real            | PASS                      | HTTP real `trixus_0802`                         | PASS    |
+| M33 | API login real            | PASS                      | HTTP real `trixus_0802`                        | PASS    |
 | M34 | API me real               | PASS                      | HTTP real `/auth/me`                           | PASS    |
 | M35 | UI login real             | Nao executado             | browser indisponivel                           | PARTIAL |
 | M36 | UI wrong password         | Nao executado fisicamente | backend/frontend tests cobrem                  | PARTIAL |
@@ -375,13 +375,13 @@ Atualizados:
 | M62 | me tests                  | PASS                      | E2E                                            | PASS    |
 | M63 | logout tests              | PASS                      | E2E stateless                                  | PASS    |
 | M64 | frontend offline test     | Implementado parcial      | TypeError path                                 | PARTIAL |
-| M65 | frontend 401 test         | PASS                      | trixus-api test                                 | PASS    |
-| M66 | frontend 403 test         | PASS                      | trixus-api test                                 | PASS    |
-| M67 | frontend 500 test         | PASS                      | trixus-api test                                 | PASS    |
-| M68 | frontend success test     | PASS                      | trixus-api test                                 | PASS    |
+| M65 | frontend 401 test         | PASS                      | trixus-api test                                | PASS    |
+| M66 | frontend 403 test         | PASS                      | trixus-api test                                | PASS    |
+| M67 | frontend 500 test         | PASS                      | trixus-api test                                | PASS    |
+| M68 | frontend success test     | PASS                      | trixus-api test                                | PASS    |
 | M69 | frontend F5 test          | Nao executado             | browser indisponivel                           | PARTIAL |
 | M70 | frontend logout test      | Nao executado fisicamente | code path implementado                         | PARTIAL |
-| M71 | reset trixus_0802          | PASS                      | reset oficial                                  | PASS    |
+| M71 | reset trixus_0802         | PASS                      | reset oficial                                  | PASS    |
 | M72 | seed homologation         | PASS                      | reset + audit                                  | PASS    |
 | M73 | physical API health       | PASS                      | Invoke-RestMethod                              | PASS    |
 | M74 | physical API login        | PASS                      | Invoke-RestMethod                              | PASS    |

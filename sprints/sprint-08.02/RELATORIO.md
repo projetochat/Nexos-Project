@@ -312,7 +312,7 @@ Atualizados docs principais com reset de homologacao, seed modes, Contact delete
 | M02 | worktree inicial clean          | Limpo                                          | preflight git                                           | PASS    |
 | M03 | branch 08.02                    | Criada                                         | `sprint/08.02-homologation-reset-contact-recovery`      | PASS    |
 | M04 | verify inicial                  | PASS                                           | `bun run verify`                                        | PASS    |
-| M05 | current DB inventory            | Registrado                                     | inventario `trixus_0801`                                 | PASS    |
+| M05 | current DB inventory            | Registrado                                     | inventario `trixus_0801`                                | PASS    |
 | M06 | soft-deleted Contacts audit     | 6 em acme                                      | audit script                                            | PASS    |
 | M07 | duplicate normalizedPhone audit | Nenhum                                         | audit script                                            | PASS    |
 | M08 | orphan audit                    | 48 conversations sem connection na base antiga | audit script                                            | PASS    |
@@ -320,7 +320,7 @@ Atualizados docs principais com reset de homologacao, seed modes, Contact delete
 | M10 | Contact recreate rule           | Restore                                        | mesmo id + lifecycle restored                           | PASS    |
 | M11 | canonical API errors            | Implementado                                   | `CONTACT_ALREADY_EXISTS`                                | PASS    |
 | M12 | frontend error UX               | Implementado                                   | toast usa mensagem/lifecycle                            | PASS    |
-| M13 | database trixus_0802             | Criado/resetado                                | reset oficial                                           | PASS    |
+| M13 | database trixus_0802            | Criado/resetado                                | reset oficial                                           | PASS    |
 | M14 | reset script                    | Criado                                         | `reset-homologation.mjs`                                | PASS    |
 | M15 | reset allowlist                 | Implementado                                   | safety tests                                            | PASS    |
 | M16 | production guard                | Implementado                                   | safety tests                                            | PASS    |
@@ -349,8 +349,8 @@ Atualizados docs principais com reset de homologacao, seed modes, Contact delete
 | M39 | frontend recreate Contact       | Automatizado por build/typecheck               | UI fisica pendente                                      | PARTIAL |
 | M40 | useful error messages           | Implementado                                   | API message + toast                                     | PASS    |
 | M41 | reset guard tests               | PASS                                           | reset-safety.spec.ts                                    | PASS    |
-| M42 | reset success test              | PASS                                           | reset oficial `trixus_0802`                              | PASS    |
-| M43 | seed empty test                 | PASS                                           | audit `trixus_0802`                                      | PASS    |
+| M42 | reset success test              | PASS                                           | reset oficial `trixus_0802`                             | PASS    |
+| M43 | seed empty test                 | PASS                                           | audit `trixus_0802`                                     | PASS    |
 | M44 | seed idempotency test           | PASS                                           | seed duas vezes + audit                                 | PASS    |
 | M45 | demo opt-in test                | Coberto por modo/config                        | execucao demo fisica nao feita                          | PARTIAL |
 | M46 | Contact create tests            | PASS                                           | E2E                                                     | PASS    |

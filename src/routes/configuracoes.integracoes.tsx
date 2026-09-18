@@ -7,12 +7,37 @@ export const Route = createFileRoute("/configuracoes/integracoes")({
 });
 
 const INTEGRATIONS = [
-  { name: "WhatsApp Business", desc: "Canal principal de atendimento", status: "Conectado", tone: "success" },
-  { name: "Instagram Direct", desc: "Mensagens do Meta Business", status: "Disponível", tone: "info" },
-  { name: "Webchat do site", desc: "Widget embutido no seu site", status: "Disponível", tone: "info" },
-  { name: "CRM · HubSpot", desc: "Sincronização de contatos e deals", status: "Em breve", tone: "warning" },
+  {
+    name: "WhatsApp Business",
+    desc: "Canal principal de atendimento",
+    status: "Conectado",
+    tone: "success",
+  },
+  {
+    name: "Instagram Direct",
+    desc: "Mensagens do Meta Business",
+    status: "Disponível",
+    tone: "info",
+  },
+  {
+    name: "Webchat do site",
+    desc: "Widget embutido no seu site",
+    status: "Disponível",
+    tone: "info",
+  },
+  {
+    name: "CRM · HubSpot",
+    desc: "Sincronização de contatos e deals",
+    status: "Em breve",
+    tone: "warning",
+  },
   { name: "Zapier", desc: "Automações com 5.000+ apps", status: "Em breve", tone: "warning" },
-  { name: "API pública", desc: "Endpoints REST para integração custom", status: "Disponível", tone: "info" },
+  {
+    name: "API pública",
+    desc: "Endpoints REST para integração custom",
+    status: "Disponível",
+    tone: "info",
+  },
 ];
 
 function IntegracoesSettings() {

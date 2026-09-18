@@ -7,7 +7,7 @@ import { fmtDateTime } from "@/lib/format";
 import { platformApi, type PlatformAuditLog } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/auditoria")({
-  head: () => ({ meta: [{ title: "Auditoria · Trixus Admin" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: AuditoriaAdmin,
 });
 

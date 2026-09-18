@@ -12,6 +12,7 @@ import {
 } from "@/lib/operational-filters";
 import { fmtDate, fmtHM, num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
+import { useSession } from "@/lib/session";
 import { conversationApi, messageApi, operationsApi, type ApiMessage } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { ContactPanel } from "./inbox.$conversationId";
@@ -19,18 +20,97 @@ import { ContactPanel } from "./inbox.$conversationId";
 export const Route = createFileRoute("/historico")({ component: HistoricoPage });
 
 const PAGE_SIZE = 20;
+const HISTORY_PERIODS = new Set([
+  "today",
+  "yesterday",
+  "week",
+  "previous_week",
+  "month",
+  "previous_month",
+  "year",
+  "previous_year",
+  "7d",
+  "30d",
+  "custom",
+]);
+
+type HistoryFiltersMemory = {
+  search: string;
+  filters: OperationalReportFilters;
+};
+
+function defaultHistoryFilters(): OperationalReportFilters {
+  return {
+    period: "today",
+    ...datesForOperationalPeriod("today"),
+  };
+}
+
+function loadHistoryFilters(storageKey: string): HistoryFiltersMemory {
+  const fallback = { search: "", filters: defaultHistoryFilters() };
+  if (typeof window === "undefined") return fallback;
+
+  try {
+    const stored = window.localStorage.getItem(storageKey);
+    if (!stored) return fallback;
+    const parsed: unknown = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") return fallback;
+    const memory = parsed as Record<string, unknown>;
+    if (!memory.filters || typeof memory.filters !== "object") return fallback;
+    const filters = memory.filters as Record<string, unknown>;
+    if (typeof filters.period !== "string" || !HISTORY_PERIODS.has(filters.period)) {
+      return fallback;
+    }
+    return {
+      search: typeof memory.search === "string" ? memory.search : "",
+      filters: {
+        period: filters.period as OperationalReportFilters["period"],
+        ...(typeof filters.q === "string" ? { q: filters.q } : {}),
+        ...(typeof filters.departmentId === "string" ? { departmentId: filters.departmentId } : {}),
+        ...(typeof filters.customerId === "string" ? { customerId: filters.customerId } : {}),
+        ...(typeof filters.connectionId === "string" ? { connectionId: filters.connectionId } : {}),
+        ...(typeof filters.start === "string" ? { start: filters.start } : {}),
+        ...(typeof filters.end === "string" ? { end: filters.end } : {}),
+      },
+    };
+  } catch {
+    return fallback;
+  }
+}
 
 function HistoricoPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [search, setSearch] = React.useState("");
-  const [reportFilters, setReportFilters] = React.useState<OperationalReportFilters>(() => ({
-    period: "today",
-    ...datesForOperationalPeriod("today"),
-  }));
+  const user = useSession((state) => state.user);
+  const filtersStorageKey = `trixus.history.filters.${user?.id ?? "anonymous"}`;
+  const [search, setSearch] = React.useState(() => loadHistoryFilters(filtersStorageKey).search);
+  const [reportFilters, setReportFilters] = React.useState<OperationalReportFilters>(
+    () => loadHistoryFilters(filtersStorageKey).filters,
+  );
+  const [loadedFiltersStorageKey, setLoadedFiltersStorageKey] = React.useState(filtersStorageKey);
   const [page, setPage] = React.useState(1);
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [panelOpen, setPanelOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    const saved = loadHistoryFilters(filtersStorageKey);
+    setSearch(saved.search);
+    setReportFilters(saved.filters);
+    setPage(1);
+    setLoadedFiltersStorageKey(filtersStorageKey);
+  }, [filtersStorageKey]);
+
+  React.useEffect(() => {
+    if (loadedFiltersStorageKey !== filtersStorageKey) return;
+    try {
+      window.localStorage.setItem(
+        filtersStorageKey,
+        JSON.stringify({ search, filters: reportFilters } satisfies HistoryFiltersMemory),
+      );
+    } catch {
+      // A indisponibilidade do armazenamento não deve impedir o uso da tela.
+    }
+  }, [filtersStorageKey, loadedFiltersStorageKey, reportFilters, search]);
 
   const filters = React.useMemo(
     () => ({
@@ -120,6 +200,11 @@ function HistoricoPage() {
             setPage(1);
           }}
           showDepartment={false}
+          onClear={() => {
+            setSearch("");
+            setReportFilters(defaultHistoryFilters());
+            setPage(1);
+          }}
           search={{
             value: search,
             onChange: (value) => {
@@ -301,26 +386,36 @@ function HistoricoPage() {
 function HistoryBubble({ message }: { message: ApiMessage }) {
   if (message.type === "system" || message.direction === "system") {
     const timestamp = new Date(message.created_at).getTime();
-    const isInstanceRemovalClose =
-      (message.content ?? "").trim() === "Conversa encerrada via remoção da instancia";
-    const tone = isInstanceRemovalClose
-      ? {
-          line: "bg-destructive/40",
-          pill: "border-destructive/40 bg-destructive/10 text-destructive",
-        }
-      : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
+    const content = message.content ?? "Evento do sistema";
+    const normalizedContent = content
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+    const isStart = /conversa (iniciada|retomada)|protocolo gerado/.test(normalizedContent);
+    const isEnd = /conversa encerrada|encerrada via remocao/.test(normalizedContent);
+    const isBoundary = isStart || isEnd;
+    const tone = isStart
+      ? { line: "bg-success/40", pill: "border-success/40 bg-success/10 text-success" }
+      : isEnd
+        ? {
+            line: "bg-destructive/40",
+            pill: "border-destructive/40 bg-destructive/10 text-destructive",
+          }
+        : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
     return (
       <div className="flex items-center gap-3">
-        <span className={`h-0.5 flex-1 ${tone.line}`} />
+        {isBoundary && <span className={`h-0.5 flex-1 ${tone.line}`} />}
         <span
-          className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${tone.pill}`}
+          className={`rounded-full border px-3 py-1 text-center text-[10px] uppercase tracking-widest ${tone.pill} ${
+            isBoundary ? "" : "mx-auto"
+          }`}
         >
-          {(message.content ?? "Evento do sistema").toUpperCase()}
+          {content.toUpperCase()}
           <span className="ml-2 opacity-80">
             - {fmtDate(timestamp)} {fmtHM(timestamp)}
           </span>
         </span>
-        <span className={`h-0.5 flex-1 ${tone.line}`} />
+        {isBoundary && <span className={`h-0.5 flex-1 ${tone.line}`} />}
       </div>
     );
   }

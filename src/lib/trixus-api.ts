@@ -16,6 +16,7 @@ type LoginResponse = {
     id: string;
     email: string;
     name: string;
+    presentationName?: string | null;
     avatarUrl?: string | null;
     roleId: string;
     roleKey: ApiRoleKey;
@@ -90,12 +91,14 @@ export type ApiRole = {
 export type ApiUserMembership = {
   id: string;
   status: "ACTIVE" | "DISABLED" | "INVITED";
+  presentationName?: string | null;
   createdAt?: string;
   updatedAt?: string;
   user: {
     id: string;
     email: string;
     name: string;
+    presentationName?: string | null;
     avatarUrl?: string | null;
     status: "ACTIVE" | "DISABLED";
     platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
@@ -341,7 +344,16 @@ export type ApiMessage = {
   sender: "contact" | "agent";
   author_id: string | null;
   author_membership_id: string | null;
+  author_name?: string | null;
   content: string;
+  interactive_data?: {
+    kind: "list";
+    buttonText: string;
+    sections: Array<{
+      title?: string | null;
+      options: Array<{ title: string; description?: string | null }>;
+    }>;
+  } | null;
   created_at: string;
   updated_at: string;
   read_at: string | null;
@@ -498,6 +510,28 @@ export type ApiMessagingConnection = {
   qrCodeBase64?: string | null;
 };
 
+export type ApiMessagingHistoryImport = {
+  id: string;
+  kind: "DIRECT" | "GROUP";
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "PARTIAL_FAILED" | "FAILED";
+  startDate: string;
+  chatsProcessed: number;
+  messagesImported: number;
+  messagesSkipped: number;
+  error?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+};
+
+export type ApiWebhookAudit = {
+  instanceName: string;
+  urlCorrect: boolean;
+  messagesUpsertPresent: boolean;
+  secretBackendConfigured: boolean;
+  secretEvolutionConfigured: boolean;
+  secretMatch: boolean;
+};
+
 export type ApiCompanyProfile = {
   name: string;
   legalName: string | null;
@@ -506,6 +540,8 @@ export type ApiCompanyProfile = {
   locale: string;
   accessEmail: string | null;
   responsibleName: string | null;
+  presentationName: string | null;
+  administratorAvatarUrl: string | null;
   canManageAdministratorCredentials: boolean;
 };
 
@@ -1010,14 +1046,19 @@ export const organizationApi = {
       body: JSON.stringify(data),
     }),
   updateAdministratorCredentials: (data: {
-    currentPassword: string;
-    newPassword: string;
-    confirmPassword: string;
+    currentPassword?: string;
+    newPassword?: string;
+    confirmPassword?: string;
+    presentationName?: string;
+    avatarUrl?: string | null;
   }) =>
-    apiRequest<{ ok: true }>("/company/administrator-credentials", {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
+    apiRequest<{ ok: true; presentationName?: string | null; avatarUrl?: string | null }>(
+      "/company/administrator-credentials",
+      {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      },
+    ),
 };
 
 export const crmApi = {
@@ -1534,7 +1575,20 @@ export const connectionsApi = {
     apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/profile-picture`, {
       method: "DELETE",
     }),
+  webhookStatus: (id: string) =>
+    apiRequest<ApiWebhookAudit>(`/messaging/connections/${id}/webhook`),
+  ensureWebhook: (id: string) =>
+    apiRequest<ApiWebhookAudit>(`/messaging/connections/${id}/webhook/ensure`, {
+      method: "POST",
+    }),
   status: (id: string) => apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/status`),
+  importStatus: (id: string) =>
+    apiRequest<ApiMessagingHistoryImport[]>(`/messaging/connections/${id}/imports`),
+  retryImport: (id: string, kind?: ApiMessagingHistoryImport["kind"]) =>
+    apiRequest<ApiMessagingHistoryImport[]>(`/messaging/connections/${id}/imports/retry`, {
+      method: "POST",
+      body: JSON.stringify(kind ? { kind } : {}),
+    }),
   qr: (id: string) =>
     apiRequest<{ connectionId: string; qrCodeBase64: string | null; status: string }>(
       `/messaging/connections/${id}/qr`,
@@ -2131,8 +2185,8 @@ async function readError(response: Response) {
     };
     const candidate = Array.isArray(data.message) ? data.message.join(", ") : data.message;
     const message =
-      (isHelpfulApiMessage(candidate) && candidate) ||
       trixusMessageFromCode(data.code) ||
+      (isHelpfulApiMessage(candidate) && candidate) ||
       apiMessageFromStatus(response.status, data.code);
     return new TrixusApiError(message, response.status, data.code, data.details);
   } catch {
@@ -2159,7 +2213,7 @@ async function authErrorFromResponse(response: Response) {
 
 function trixusMessageFromCode(code?: string) {
   if (code === "PLAN_LIMIT_CONNECTIONS_REACHED") {
-    return "Limite de instâncias atingido para o plano atual.";
+    return "Número máximo de conexões excedidas.";
   }
   if (code === "PLAN_FEATURE_NOT_AVAILABLE") {
     return "Recurso não disponível para o plano atual.";

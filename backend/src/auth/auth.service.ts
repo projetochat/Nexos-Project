@@ -37,6 +37,10 @@ export class AuthService {
       include: {
         memberships: {
           include: {
+            // The login response exposes the membership display name. Load the
+            // membership user explicitly so the fallback to its immutable name
+            // is available when no presentation name was configured.
+            user: true,
             tenant: true,
             role: { include: { permissions: { select: { permissionId: true } } } },
           },
@@ -146,7 +150,7 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
-        name: user.name,
+        name: membershipDisplayName(membership, user.name),
         avatarUrl: user.avatarUrl,
         roleId: membership.roleId,
         roleKey: membership.role.key,
@@ -389,7 +393,7 @@ export class AuthService {
       user: {
         id: membership.user.id,
         email: membership.user.email,
-        name: membership.user.name,
+        name: membershipDisplayName(membership),
         avatarUrl: membership.user.avatarUrl,
         roleId: membership.roleId,
         roleKey: membership.role.key,
@@ -431,7 +435,7 @@ export class AuthService {
       user: {
         id: membership.user.id,
         email: membership.user.email,
-        name: membership.user.name,
+        name: membershipDisplayName(membership),
         avatarUrl: membership.user.avatarUrl,
         roleId: membership.roleId,
         roleKey: membership.role.key,
@@ -538,6 +542,16 @@ export class AuthService {
 
 function secureToken() {
   return randomBytes(32).toString("base64url");
+}
+
+function membershipDisplayName(
+  membership: {
+    presentationName?: string | null;
+    user?: { name: string } | null;
+  },
+  fallbackName?: string,
+) {
+  return membership.presentationName?.trim() || membership.user?.name || fallbackName || "";
 }
 
 function hashToken(token: string) {

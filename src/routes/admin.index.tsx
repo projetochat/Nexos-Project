@@ -14,7 +14,7 @@ import { Badge, Card, SectionHeader } from "@/components/ui-kit";
 import { platformApi, type PlatformDashboard } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/")({
-  head: () => ({ meta: [{ title: "Dashboard · Trixus Admin" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: AdminDashboard,
 });
 

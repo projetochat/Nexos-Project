@@ -12,6 +12,7 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import {
   ConversationStatus,
+  MessagingHistoryImportKind,
   MessageDirection,
   MessageType,
   MessagingConnectionStatus,
@@ -33,6 +34,7 @@ import {
 import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.dto";
 import { UpdateMessagingConnectionDto } from "./dto/update-messaging-connection.dto";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
+import { MessagingHistoryImportService } from "./messaging-history-import.service";
 
 @Injectable()
 export class MessagingConnectionsService {
@@ -48,6 +50,9 @@ export class MessagingConnectionsService {
     private readonly entitlements?: PlanEntitlementService,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
     @Optional() @Inject(GroupsSyncService) private readonly groupsSync?: GroupsSyncService,
+    @Optional()
+    @Inject(MessagingHistoryImportService)
+    private readonly historyImport?: MessagingHistoryImportService,
   ) {}
 
   async list(current: AuthenticatedUser) {
@@ -66,6 +71,44 @@ export class MessagingConnectionsService {
   async detail(id: string, current: AuthenticatedUser) {
     const connection = await this.findTenantConnection(id, current.tenantId);
     return this.serialize(connection);
+  }
+
+  async importStatus(id: string, current: AuthenticatedUser) {
+    const connection = await this.findTenantConnection(id, current.tenantId);
+    return this.prisma.messagingHistoryImport.findMany({
+      where: { tenantId: connection.tenantId, connectionId: connection.id },
+      orderBy: { kind: "asc" },
+    });
+  }
+
+  async retryImport(id: string, current: AuthenticatedUser, kind?: MessagingHistoryImportKind) {
+    const connection = await this.findTenantConnection(id, current.tenantId);
+    if (!this.historyImport) throw new ServiceUnavailableException("Importação indisponível.");
+    await this.historyImport.retry(connection.id, kind);
+    return this.importStatus(id, current);
+  }
+
+  async webhookStatus(id: string, current: AuthenticatedUser) {
+    const connection = await this.findTenantConnection(id, current.tenantId);
+    if (
+      connection.providerType !== MessagingProviderType.EVOLUTION ||
+      !connection.externalReference
+    ) {
+      throw new BadRequestException("Esta instância não usa a integração Evolution.");
+    }
+    return this.auditWebhookConfiguration(connection.externalReference);
+  }
+
+  async ensureWebhookForConnection(id: string, current: AuthenticatedUser) {
+    const connection = await this.findTenantConnection(id, current.tenantId);
+    if (
+      connection.providerType !== MessagingProviderType.EVOLUTION ||
+      !connection.externalReference
+    ) {
+      throw new BadRequestException("Esta instância não usa a integração Evolution.");
+    }
+    await this.ensureWebhookConfigured(connection.externalReference);
+    return this.auditWebhookConfiguration(connection.externalReference);
   }
 
   async createEvolution(dto: CreateEvolutionConnectionDto, current: AuthenticatedUser) {
@@ -157,6 +200,7 @@ export class MessagingConnectionsService {
       updatedAt: connection.updatedAt,
     });
     this.enqueueGroupSyncForConnectedConnection(connection);
+    void this.historyImport?.enqueueForConnection(connection);
     return {
       ...this.serialize(connection),
       qrCodeBase64: evolutionQrBase64(response),
@@ -208,6 +252,7 @@ export class MessagingConnectionsService {
       });
     }
     this.enqueueGroupSyncForConnectedConnection(updated);
+    void this.historyImport?.enqueueForConnection(updated);
     return this.serialize(updated, { existsInProvider: true, webhookUrl: instance.Webhook?.url });
   }
 
@@ -595,15 +640,84 @@ export class MessagingConnectionsService {
     return { configured: true };
   }
 
+  async reconcileConnectedWebhooks() {
+    const config = evolutionConfigFromEnv();
+    if (!assertEvolutionConfigured(config) || !config.webhookPublicUrl || !config.webhookSecret) {
+      return { scanned: 0, healthy: 0, repaired: 0, failed: 0, skipped: true };
+    }
+    const connections = await this.prisma.messagingConnection.findMany({
+      where: {
+        providerType: MessagingProviderType.EVOLUTION,
+        status: MessagingConnectionStatus.CONNECTED,
+        externalReference: { not: null },
+        archivedAt: null,
+      },
+      select: { id: true, tenantId: true, externalReference: true },
+    });
+    let healthy = 0;
+    let repaired = 0;
+    let failed = 0;
+    for (const connection of connections) {
+      const instanceName = connection.externalReference;
+      if (!instanceName) continue;
+      try {
+        const audit = await this.auditWebhookConfiguration(instanceName);
+        if (audit.urlCorrect && audit.messagesUpsertPresent && audit.secretMatch) {
+          healthy += 1;
+          continue;
+        }
+        await this.ensureWebhookConfigured(instanceName);
+        const verified = await this.auditWebhookConfiguration(instanceName);
+        if (verified.urlCorrect && verified.messagesUpsertPresent && verified.secretMatch) {
+          repaired += 1;
+          this.logger.log({
+            event: "evolution.webhook.reconciled",
+            connectionId: connection.id,
+            tenantId: connection.tenantId,
+            instanceName: sanitizeInstanceName(instanceName),
+          });
+        } else {
+          failed += 1;
+          this.logger.warn({
+            event: "evolution.webhook.reconcile_failed",
+            connectionId: connection.id,
+            tenantId: connection.tenantId,
+            instanceName: sanitizeInstanceName(instanceName),
+            reason: "VERIFICATION_FAILED",
+          });
+        }
+      } catch (error) {
+        failed += 1;
+        this.logger.warn({
+          event: "evolution.webhook.reconcile_failed",
+          connectionId: connection.id,
+          tenantId: connection.tenantId,
+          instanceName: sanitizeInstanceName(instanceName),
+          reason: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+    return { scanned: connections.length, healthy, repaired, failed, skipped: false };
+  }
+
   async auditWebhookConfiguration(instanceName: string) {
     const config = evolutionConfigFromEnv();
-    const instance = await this.evolution.findInstance(instanceName);
-    const headers = instance?.Webhook?.headers ?? null;
+    const clientWithWebhookLookup = this.evolution as EvolutionClient & {
+      findWebhook?: (name: string) => Promise<{
+        url?: string | null;
+        events?: string[] | null;
+        headers?: Record<string, string | undefined> | null;
+      }>;
+    };
+    const webhook = clientWithWebhookLookup.findWebhook
+      ? await clientWithWebhookLookup.findWebhook(instanceName)
+      : (await this.evolution.findInstance(instanceName))?.Webhook;
+    const headers = webhook?.headers ?? null;
     const evolutionSecret = normalizeSecret(headers?.jwt_key);
     const result = {
       instanceName,
-      urlCorrect: instance?.Webhook?.url === config.webhookPublicUrl,
-      messagesUpsertPresent: !!instance?.Webhook?.events?.includes("MESSAGES_UPSERT"),
+      urlCorrect: webhook?.url === config.webhookPublicUrl,
+      messagesUpsertPresent: !!webhook?.events?.includes("MESSAGES_UPSERT"),
       secretBackendConfigured: !!config.webhookSecret,
       secretEvolutionConfigured: !!evolutionSecret,
       secretMatch:
@@ -678,6 +792,7 @@ export class MessagingConnectionsService {
       });
     }
     this.enqueueGroupSyncForConnectedConnection(updated);
+    void this.historyImport?.enqueueForConnection(updated);
     return updated;
   }
 
@@ -894,10 +1009,52 @@ export function translateEvolutionState(value: string | null | undefined) {
   return MessagingConnectionStatus.ERROR;
 }
 
-function parseImportStartDate(value: string | undefined) {
-  if (!value) return null;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
+export function parseImportStartDate(value: string | undefined) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "");
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const localUtc = Date.UTC(year, month - 1, day);
+  if (
+    new Date(localUtc).getUTCFullYear() !== year ||
+    new Date(localUtc).getUTCMonth() !== month - 1 ||
+    new Date(localUtc).getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return dateAtStartOfDayInTimezone(year, month, day, "America/Sao_Paulo");
+}
+
+function dateAtStartOfDayInTimezone(year: number, month: number, day: number, timezone: string) {
+  const intendedUtc = Date.UTC(year, month - 1, day);
+  let candidate = intendedUtc;
+  // Resolve the zone offset twice so the calculation remains correct around
+  // daylight-saving transitions in timezones that still observe them.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23",
+      minute: "2-digit",
+      second: "2-digit",
+    }).formatToParts(new Date(candidate));
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      Number(parts.find((item) => item.type === type)?.value ?? 0);
+    const displayedUtc = Date.UTC(
+      part("year"),
+      part("month") - 1,
+      part("day"),
+      part("hour"),
+      part("minute"),
+      part("second"),
+    );
+    candidate = intendedUtc - (displayedUtc - candidate);
+  }
+  return new Date(candidate);
 }
 
 function translateInitialStatus(value: string | null | undefined) {

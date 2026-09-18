@@ -22,6 +22,7 @@ import {
   ChevronRight,
   Download,
   Expand,
+  FilterX,
   FileSpreadsheet,
   FileUp,
   Italic,
@@ -65,7 +66,10 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { isValidEmail, maskBrazilPhone, onlyDigits } from "@/lib/input-masks";
+import { connectionInstanceValue } from "@/lib/connection-options";
+import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 import {
   conversationApi,
   crmApi,
@@ -87,6 +91,51 @@ const CUSTOMER_PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 const DEFAULT_CUSTOMER_PAGE_SIZE = 10;
 const FAVORITE_COUNTRY_CODES_KEY = "trixus.favorite-country-codes";
 const EMPTY_FILTER_VALUE = "__empty__";
+type ContactFiltersMemory = {
+  query: string;
+  instance: string;
+  department: string;
+  customer: string;
+  tag: string;
+  pageSize: number;
+};
+
+function defaultContactFiltersMemory(): ContactFiltersMemory {
+  return {
+    query: "",
+    instance: "",
+    department: "",
+    customer: "",
+    tag: "",
+    pageSize: DEFAULT_PAGE_SIZE,
+  };
+}
+
+function loadContactFiltersMemory(storageKey: string): ContactFiltersMemory {
+  const fallback = defaultContactFiltersMemory();
+  if (typeof window === "undefined") return fallback;
+
+  try {
+    const stored = window.localStorage.getItem(storageKey);
+    if (!stored) return fallback;
+    const parsed: unknown = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") return fallback;
+    const filters = parsed as Record<string, unknown>;
+    const pageSize = Number(filters.pageSize);
+    return {
+      query: typeof filters.query === "string" ? filters.query : fallback.query,
+      instance: typeof filters.instance === "string" ? filters.instance : fallback.instance,
+      department: typeof filters.department === "string" ? filters.department : fallback.department,
+      customer: typeof filters.customer === "string" ? filters.customer : fallback.customer,
+      tag: typeof filters.tag === "string" ? filters.tag : fallback.tag,
+      pageSize: PAGE_SIZE_OPTIONS.includes(pageSize as (typeof PAGE_SIZE_OPTIONS)[number])
+        ? pageSize
+        : fallback.pageSize,
+    };
+  } catch {
+    return fallback;
+  }
+}
 const COUNTRY_CODES = [
   { id: "br", code: "55", country: "Brasil", flag: "🇧🇷" },
   { id: "us", code: "1", country: "Estados Unidos", flag: "🇺🇸" },
@@ -327,23 +376,50 @@ type AgendaImportPreviewState = {
 
 function ContatosPage() {
   const navigate = useNavigate();
+  const user = useSession((state) => state.user);
+  const filtersStorageKey = `trixus.contacts.filters.${user?.id ?? "anonymous"}`;
   const [contacts, setContacts] = React.useState<Contact[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [tags, setTags] = React.useState<Tag[]>([]);
   const [departments, setDepartments] = React.useState<ContactCatalog[]>([]);
   const [profiles, setProfiles] = React.useState<ContactCatalog[]>([]);
-  const [instances, setInstances] = React.useState<ContactInstanceOption[]>([]);
+  const { allConnections } = useConnectedMessagingConnections();
+  const instances = React.useMemo<ContactInstanceOption[]>(
+    () =>
+      allConnections.map((connection) => ({
+        id: connection.id,
+        value: connectionInstanceValue(connection),
+        name: connection.name,
+        color: connection.color ?? null,
+        externalReference: connection.externalReference,
+        ownerPhone: connection.ownerPhone ?? null,
+        instanceName: connection.name,
+        status: connection.status.toUpperCase(),
+      })),
+    [allConnections],
+  );
   const [customFieldDefinitions, setCustomFieldDefinitions] = React.useState<ContactCustomField[]>(
     [],
   );
   const [loading, setLoading] = React.useState(true);
-  const [query, setQuery] = React.useState("");
-  const [instanciaFilter, setInstanciaFilter] = React.useState("");
-  const [departamentoFilter, setDepartamentoFilter] = React.useState("");
-  const [clienteFilter, setClienteFilter] = React.useState("");
-  const [tagFilter, setTagFilter] = React.useState("");
+  const [query, setQuery] = React.useState(() => loadContactFiltersMemory(filtersStorageKey).query);
+  const [instanciaFilter, setInstanciaFilter] = React.useState(
+    () => loadContactFiltersMemory(filtersStorageKey).instance,
+  );
+  const [departamentoFilter, setDepartamentoFilter] = React.useState(
+    () => loadContactFiltersMemory(filtersStorageKey).department,
+  );
+  const [clienteFilter, setClienteFilter] = React.useState(
+    () => loadContactFiltersMemory(filtersStorageKey).customer,
+  );
+  const [tagFilter, setTagFilter] = React.useState(
+    () => loadContactFiltersMemory(filtersStorageKey).tag,
+  );
   const [page, setPage] = React.useState(1);
-  const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
+  const [pageSize, setPageSize] = React.useState(
+    () => loadContactFiltersMemory(filtersStorageKey).pageSize,
+  );
+  const [loadedFiltersStorageKey, setLoadedFiltersStorageKey] = React.useState(filtersStorageKey);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [allFilteredSelected, setAllFilteredSelected] = React.useState(false);
   const [bulkAction, setBulkAction] = React.useState("");
@@ -437,6 +513,46 @@ function ContatosPage() {
     [clienteFilter, departamentoFilter, instanciaFilter, query, tagFilter],
   );
 
+  React.useEffect(() => {
+    const saved = loadContactFiltersMemory(filtersStorageKey);
+    setQuery(saved.query);
+    setInstanciaFilter(saved.instance);
+    setDepartamentoFilter(saved.department);
+    setClienteFilter(saved.customer);
+    setTagFilter(saved.tag);
+    setPageSize(saved.pageSize);
+    setPage(1);
+    setLoadedFiltersStorageKey(filtersStorageKey);
+  }, [filtersStorageKey]);
+
+  React.useEffect(() => {
+    if (loadedFiltersStorageKey !== filtersStorageKey) return;
+    try {
+      window.localStorage.setItem(
+        filtersStorageKey,
+        JSON.stringify({
+          query,
+          instance: instanciaFilter,
+          department: departamentoFilter,
+          customer: clienteFilter,
+          tag: tagFilter,
+          pageSize,
+        } satisfies ContactFiltersMemory),
+      );
+    } catch {
+      // A indisponibilidade do armazenamento não deve impedir o uso da tela.
+    }
+  }, [
+    clienteFilter,
+    departamentoFilter,
+    filtersStorageKey,
+    instanciaFilter,
+    loadedFiltersStorageKey,
+    pageSize,
+    query,
+    tagFilter,
+  ]);
+
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
@@ -457,12 +573,6 @@ function ContatosPage() {
       setTags(sortByOptionLabel(options.tags, (tag) => tag.nome));
       setDepartments(sortByOptionLabel(options.departments, (department) => department.nome));
       setProfiles(sortByOptionLabel(options.profiles, (profile) => profile.nome));
-      setInstances(
-        sortByOptionLabel(
-          options.instances.filter((instance) => isSelectableInstanceStatus(instance.status)),
-          (instance) => instance.name,
-        ),
-      );
       setCustomFieldDefinitions(customFields);
     } catch (e) {
       toast.error("Falha ao carregar", { description: (e as Error).message });
@@ -479,6 +589,15 @@ function ContatosPage() {
     setSelectedIds([]);
     setAllFilteredSelected(false);
   }, [query, instanciaFilter, departamentoFilter, clienteFilter, tagFilter, pageSize]);
+  const clearContactFilters = () => {
+    setQuery("");
+    setInstanciaFilter("");
+    setDepartamentoFilter("");
+    setClienteFilter("");
+    setTagFilter("");
+    setPage(1);
+    setAllFilteredSelected(false);
+  };
   React.useEffect(() => {
     if (allFilteredSelected) return;
     setSelectedIds((current) =>
@@ -1151,7 +1270,7 @@ function ContatosPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))]">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))_auto]">
             <div className="col-span-2 xl:col-span-1">
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Busca</label>
               <SearchInput
@@ -1167,7 +1286,9 @@ function ContatosPage() {
               <InstanceFilterSelect
                 value={instanciaFilter}
                 onChange={setInstanciaFilter}
-                extraOptions={[{ value: EMPTY_FILTER_VALUE, label: "- Sem instância -", color: "#9ca3af" }]}
+                extraOptions={[
+                  { value: EMPTY_FILTER_VALUE, label: "- Sem instância -", color: "#9ca3af" },
+                ]}
                 options={visibleInstances.map((option) => ({
                   value: option.value,
                   label: option.name,
@@ -1224,6 +1345,19 @@ function ContatosPage() {
                 )),
               ]}
             </FilterSelect>
+            <div className="flex items-end">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={clearContactFilters}
+                title="Limpar filtros"
+                aria-label="Limpar filtros"
+                className="min-h-10 w-10 px-0"
+              >
+                <FilterX className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </Card>
 
@@ -3871,12 +4005,6 @@ function InstanceMultiSelect({
     ),
   );
   const count = selectedInstances.length;
-  const summary =
-    count === 0
-      ? "- Selecione -"
-      : count === 1
-        ? (selectedInstances[0]?.name ?? "1 selecionada")
-        : `${count} selecionadas`;
 
   React.useEffect(() => {
     if (!open) return;
@@ -3904,14 +4032,23 @@ function InstanceMultiSelect({
           count > 0 ? "text-foreground" : "text-muted-foreground"
         }`}
       >
-        <span className="flex min-w-0 items-center gap-2">
-          {count === 1 && selectedInstances[0] && (
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ backgroundColor: selectedInstances[0].color ?? "#22c55e" }}
-            />
+        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+          {count === 0 ? (
+            <span className="text-muted-foreground">- Selecione -</span>
+          ) : (
+            selectedInstances.map((instance) => (
+              <span
+                key={instance.value}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-medium"
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: instance.color ?? "#22c55e" }}
+                />
+                <span className="truncate">{instance.name}</span>
+              </span>
+            ))
           )}
-          <span className="truncate">{summary}</span>
         </span>
         <span className="flex shrink-0 items-center gap-1">
           {count > 0 && (
@@ -3993,9 +4130,9 @@ function TagMultiSelect({
   flow?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
-  const [availableTagIds, setAvailableTagIds] = React.useState<string[]>([]);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const selectedTags = tags.filter((tag) => selectedIds.includes(tag.id));
+  const hasSelection = selectedIds.length > 0;
 
   React.useEffect(() => {
     if (!open) return;
@@ -4011,29 +4148,11 @@ function TagMultiSelect({
       selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id],
     );
   };
-  const toggleAll = () => {
-    const availableIds = availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id);
-    const allSelected =
-      availableIds.length > 0 && availableIds.every((id) => selectedIds.includes(id));
-    if (allSelected) {
-      onChange([]);
-      return;
-    }
-    onChange(Array.from(new Set([...selectedIds, ...availableIds])));
-  };
-
   return (
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() =>
-          setOpen((current) => {
-            if (!current) {
-              setAvailableTagIds(tags.map((tag) => tag.id));
-            }
-            return !current;
-          })
-        }
+        onClick={() => setOpen((current) => !current)}
         className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-sm text-foreground outline-none transition focus:border-primary"
       >
         <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
@@ -4100,25 +4219,38 @@ function TagMultiSelect({
           <div className="grid grid-cols-2 gap-2 border-t border-border bg-popover p-2">
             <button
               type="button"
-              onPointerDown={(event) => {
-                event.preventDefault();
+              onClick={(event) => {
                 event.stopPropagation();
-                toggleAll();
+                onChange(hasSelection ? [] : tags.map((tag) => tag.id));
               }}
-              disabled={tags.length === 0}
-              className="flex items-center justify-center gap-1 rounded-md border border-success/50 bg-white px-2 py-2 text-xs font-medium text-success transition hover:bg-success/5 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!hasSelection && tags.length === 0}
+              className={
+                "flex items-center justify-center gap-1 rounded-md border px-2 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-45 " +
+                (hasSelection
+                  ? "border-destructive/30 text-destructive hover:border-destructive hover:bg-destructive/10"
+                  : "border-success/30 text-success hover:border-success hover:bg-success/10")
+              }
             >
-              {(availableTagIds.length ? availableTagIds : tags.map((tag) => tag.id)).every((id) =>
-                selectedIds.includes(id),
-              ) ? (
+              {hasSelection ? (
                 <>
-                  <X className="h-3 w-3" /> Remover todas
+                  <X className="h-3 w-3" /> Limpar seleção
                 </>
               ) : (
                 <>
                   <Check className="h-3 w-3" /> Selecionar todos
                 </>
               )}
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+              }}
+              className="flex items-center justify-center gap-1 rounded-md border border-primary/45 px-2 py-2 text-xs font-medium text-primary transition hover:border-primary hover:bg-primary/10"
+            >
+              <Check className="h-3 w-3" /> Confirmar seleção
             </button>
           </div>
         </div>
@@ -4874,7 +5006,7 @@ const IMPORT_TEMPLATE_ROWS = [
     "Maria Exemplo",
     "+55 (11) 90000-0000",
     "maria@empresa.com",
-    "FLOWID",
+    "Empresa Exemplo",
     "Financeiro",
     "Gerente",
     "SMCLICK",

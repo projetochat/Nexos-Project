@@ -8,7 +8,11 @@ import {
   MessagingProviderType,
 } from "../generated/prisma";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
-import { evolutionQrBase64, MessagingConnectionsService } from "./messaging-connections.service";
+import {
+  evolutionQrBase64,
+  MessagingConnectionsService,
+  parseImportStartDate,
+} from "./messaging-connections.service";
 
 const current = {
   userId: "user-a",
@@ -20,6 +24,11 @@ const current = {
 };
 
 describe("MessagingConnectionsService", () => {
+  it("treats the selected import date as midnight in São Paulo", () => {
+    expect(parseImportStartDate("2026-09-17")?.toISOString()).toBe("2026-09-17T03:00:00.000Z");
+    expect(parseImportStartDate("2026-02-31")).toBeNull();
+  });
+
   it.each([
     [null, "Conecte a instância ao WhatsApp para cadastrar o número antes de editá-la."],
     ["5511999999999", "Esta instância não está disponível para edição."],
@@ -636,6 +645,39 @@ describe("MessagingConnectionsService", () => {
       secretEvolutionConfigured: true,
       secretMatch: true,
       headerJwtKeyPresent: true,
+    });
+  });
+
+  it("repairs a connected instance whose outgoing-message webhook is missing", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findMany.mockResolvedValue([
+      { id: "connection-a", tenantId: "tenant-a", externalReference: "tenant-a-suporte" },
+    ]);
+    const evolution = {
+      findInstance: vi
+        .fn()
+        .mockResolvedValueOnce({ name: "tenant-a-suporte", Webhook: { events: [] } })
+        .mockResolvedValueOnce({
+          name: "tenant-a-suporte",
+          Webhook: {
+            url: "http://host.docker.internal:3001/api/webhooks/evolution",
+            events: ["MESSAGES_UPSERT"],
+            headers: { jwt_key: "secret" },
+          },
+        }),
+      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
+    };
+
+    await expect(
+      new MessagingConnectionsService(
+        prisma as never,
+        evolution as never,
+      ).reconcileConnectedWebhooks(),
+    ).resolves.toMatchObject({ scanned: 1, healthy: 0, repaired: 1, failed: 0 });
+    expect(evolution.setWebhook).toHaveBeenCalledWith({
+      instanceName: "tenant-a-suporte",
+      webhookUrl: "http://host.docker.internal:3001/api/webhooks/evolution",
+      webhookSecret: "secret",
     });
   });
 

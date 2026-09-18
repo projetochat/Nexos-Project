@@ -72,7 +72,7 @@ export class EvolutionWebhookTranslator {
   ): EvolutionWebhookTranslation {
     const data = payload.data ?? {};
     const key = readRecord(data, "key");
-    if (key?.fromMe === true) return { kind: "ignored", reason: "FROM_ME" };
+    const fromMe = key?.fromMe === true;
 
     const externalMessageId = stringValue(key?.id);
     const remoteJid = stringValue(key?.remoteJid);
@@ -148,7 +148,7 @@ export class EvolutionWebhookTranslator {
         externalMessageId,
         externalChatId: remoteJid,
         conversationType,
-        fromMe: false,
+        fromMe,
         participantExternalId,
         participantPhone,
         participantLid,
@@ -160,6 +160,7 @@ export class EvolutionWebhookTranslator {
         },
         type: content.type,
         content: text,
+        interactive: content.interactive ?? null,
         media,
         quotedProviderMessageId: quoted.providerMessageId,
         quotedContentPreview: quoted.preview,
@@ -252,6 +253,7 @@ function extractReaction(message: Record<string, unknown> | null) {
 function extractMessageContent(message: Record<string, unknown> | null): {
   type: Extract<MessageType, "TEXT" | "IMAGE" | "AUDIO" | "VOICE" | "VIDEO" | "DOCUMENT">;
   text?: string | null;
+  interactive?: InboundMessageEvent["interactive"];
   caption?: string | null;
   media?: InboundMessageEvent["media"];
 } {
@@ -262,6 +264,22 @@ function extractMessageContent(message: Record<string, unknown> | null): {
   const extended = readRecord(message, "extendedTextMessage");
   const extendedText = readString(extended ?? undefined, "text");
   if (extendedText) return { type: MessageType.TEXT, text: extendedText };
+  const list = readRecord(message, "listMessage");
+  if (list) {
+    const interactive = interactiveListData(list);
+    return {
+      type: MessageType.TEXT,
+      text: joinMessageParts([
+        readString(list, "title"),
+        readString(list, "description") ?? readString(list, "text"),
+      ]),
+      interactive,
+    };
+  }
+  const buttons = readRecord(message, "buttonsMessage");
+  if (buttons) return { type: MessageType.TEXT, text: interactiveButtonsText(buttons) };
+  const interactive = readRecord(message, "interactiveMessage");
+  if (interactive) return { type: MessageType.TEXT, text: nativeInteractiveText(interactive) };
   const image = readRecord(message, "imageMessage");
   if (image) {
     return {
@@ -302,6 +320,93 @@ function extractMessageContent(message: Record<string, unknown> | null): {
     };
   }
   return { type: MessageType.TEXT };
+}
+
+/**
+ * WhatsApp list messages have no `conversation` field. Persisting a readable
+ * representation keeps messages sent by third-party bots visible in Trixus.
+ */
+function interactiveListData(
+  list: Record<string, unknown>,
+): NonNullable<InboundMessageEvent["interactive"]> {
+  const sections = recordArray(list.sections).map((section) => ({
+    title: readString(section, "title"),
+    options: recordArray(section.rows).map((row) => ({
+      title: readString(row, "title") ?? "Opção",
+      description: readString(row, "description"),
+    })),
+  }));
+  return {
+    kind: "list",
+    buttonText: readString(list, "buttonText") ?? "Clique para ver",
+    sections: sections.filter((section) => section.options.length > 0),
+  };
+}
+
+function interactiveButtonsText(buttons: Record<string, unknown>) {
+  const options = recordArray(buttons.buttons)
+    .map(
+      (button) =>
+        readNestedString(button, ["buttonText", "displayText"]) ??
+        readString(button, "displayText"),
+    )
+    .filter((option): option is string => Boolean(option))
+    .map((option) => `• ${option}`);
+  return joinMessageParts([
+    readString(buttons, "title") ?? readString(buttons, "headerText"),
+    readString(buttons, "contentText") ?? readString(buttons, "text"),
+    readString(buttons, "footerText"),
+    options.length ? `Opções:\n${options.join("\n")}` : null,
+  ]);
+}
+
+function nativeInteractiveText(interactive: Record<string, unknown>) {
+  const nativeFlow = readRecord(interactive, "nativeFlowMessage");
+  const options = recordArray(nativeFlow?.buttons)
+    .flatMap(nativeFlowButtonLabels)
+    .map((option) => `• ${option}`);
+  return joinMessageParts([
+    readNestedString(interactive, ["header", "title"]),
+    readNestedString(interactive, ["body", "text"]),
+    readNestedString(interactive, ["footer", "text"]),
+    options.length ? `Opções:\n${options.join("\n")}` : null,
+  ]);
+}
+
+function nativeFlowButtonLabels(button: Record<string, unknown>) {
+  const params = readString(button, "buttonParamsJson");
+  if (!params) return readString(button, "name") ? [readString(button, "name")!] : [];
+  try {
+    const parsed: unknown = JSON.parse(params);
+    if (!parsed || typeof parsed !== "object") return [];
+    const record = parsed as Record<string, unknown>;
+    const direct = stringValue(record.display_text) ?? stringValue(record.title);
+    if (direct) return [direct];
+    return rowsFromSections(record.sections)
+      .map((row) => stringValue(row.title))
+      .filter((row): row is string => Boolean(row));
+  } catch {
+    return [];
+  }
+}
+
+function rowsFromSections(value: unknown) {
+  return recordArray(value).flatMap((section) => recordArray(section.rows));
+}
+
+function joinMessageParts(parts: Array<string | null | undefined>) {
+  const unique = parts
+    .filter((part): part is string => Boolean(part?.trim()))
+    .filter((part, index, items) => items.indexOf(part) === index);
+  return unique.length ? unique.join("\n\n") : null;
+}
+
+function recordArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object",
+      )
+    : [];
 }
 
 function extractMediaEnvelope(media: Record<string, unknown>): InboundMessageEvent["media"] {

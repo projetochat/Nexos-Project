@@ -7,7 +7,7 @@ import { platformApi, type PlatformTenant } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/licencas")({
-  head: () => ({ meta: [{ title: "Licenças · Trixus Admin" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: LicencasAdmin,
 });
 

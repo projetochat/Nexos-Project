@@ -7,7 +7,7 @@ import { num } from "@/lib/format";
 import { automationApi } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/chatbot")({
-  head: () => ({ meta: [{ title: "Chatbot - Trixus" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: Page,
 });
 

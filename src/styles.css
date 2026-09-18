@@ -628,7 +628,6 @@ button[aria-label*="Duplicar"]:hover svg,
   background-color: color-mix(in oklab, var(--foreground) 30%, transparent);
 }
 
-
 /* ============================================================
    SIDEBAR — tipografia responsiva (admin)
    Em notebooks (viewports < 1536px) reduz o tamanho da fonte
@@ -647,11 +646,6 @@ button[aria-label*="Duplicar"]:hover svg,
     height: 15px;
   }
 }
-
-
-
-
-
 
 .login-bank-gothic {
   font-family: "Bank Gothic", "Century Gothic", "Arial Narrow", sans-serif;

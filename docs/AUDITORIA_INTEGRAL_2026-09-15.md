@@ -16,18 +16,18 @@ Esta é uma auditoria de código e testes locais. Não foram executadas ações 
 
 ## Mapa funcional consolidado
 
-| Área | Funcionalidades e ações identificadas | Regras e dependências principais |
-|---|---|---|
-| Acesso e perfil | Login multi-tenant, refresh, recuperação de senha, convite, perfil e alteração de credenciais | JWT, membership de tenant, senha com bcrypt, papéis e permissões |
-| Usuários, perfis e departamentos | CRUD de usuários, memberships, funções, permissões e departamentos | limites do plano, vínculo por tenant, associação a departamentos |
-| CRM | Clientes/contatos, etiquetas, campos personalizados, importação/exportação e preferências | normalização de telefone, escopo de tenant, etiquetas e catálogos |
-| Inbox e mensagens | Conversas, atribuição, transferência, status, histórico, favoritos, mídia, reação, leitura e grupos | permissões, escopo de departamento, realtime e fila de envio |
-| Instâncias e WhatsApp | Criar/editar/remover conexão, QR, status, logout, foto e grupos | Evolution API, webhook autenticado e armazenamento de mídia |
-| Campanhas e automações | CRUD, público, prévia, agendar, iniciar, pausar, retomar, cancelar, duplicar e métricas | permissões específicas, filas e destinatários |
-| Chamados | CRUD, protocolo, status, atribuição, comentários, anexos e histórico | permissões, sanitização de HTML e armazenamento privado |
-| Operação | Dashboard, histórico, filas, relatórios, exportação e BI | dados de conversas, mensagens e chamados |
-| Configurações | Empresa, financeiro, usuários, permissões, integrações, horários, filas, variáveis e campos | RBAC e dados do tenant |
-| Plataforma SaaS | Tenants, planos, assinaturas, faturas, auditoria, logs, monitoramento, suporte e impersonação | permissões de plataforma e ciclo de vida do tenant |
+| Área                             | Funcionalidades e ações identificadas                                                               | Regras e dependências principais                                  |
+| -------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Acesso e perfil                  | Login multi-tenant, refresh, recuperação de senha, convite, perfil e alteração de credenciais       | JWT, membership de tenant, senha com bcrypt, papéis e permissões  |
+| Usuários, perfis e departamentos | CRUD de usuários, memberships, funções, permissões e departamentos                                  | limites do plano, vínculo por tenant, associação a departamentos  |
+| CRM                              | Clientes/contatos, etiquetas, campos personalizados, importação/exportação e preferências           | normalização de telefone, escopo de tenant, etiquetas e catálogos |
+| Inbox e mensagens                | Conversas, atribuição, transferência, status, histórico, favoritos, mídia, reação, leitura e grupos | permissões, escopo de departamento, realtime e fila de envio      |
+| Instâncias e WhatsApp            | Criar/editar/remover conexão, QR, status, logout, foto e grupos                                     | Evolution API, webhook autenticado e armazenamento de mídia       |
+| Campanhas e automações           | CRUD, público, prévia, agendar, iniciar, pausar, retomar, cancelar, duplicar e métricas             | permissões específicas, filas e destinatários                     |
+| Chamados                         | CRUD, protocolo, status, atribuição, comentários, anexos e histórico                                | permissões, sanitização de HTML e armazenamento privado           |
+| Operação                         | Dashboard, histórico, filas, relatórios, exportação e BI                                            | dados de conversas, mensagens e chamados                          |
+| Configurações                    | Empresa, financeiro, usuários, permissões, integrações, horários, filas, variáveis e campos         | RBAC e dados do tenant                                            |
+| Plataforma SaaS                  | Tenants, planos, assinaturas, faturas, auditoria, logs, monitoramento, suporte e impersonação       | permissões de plataforma e ciclo de vida do tenant                |
 
 Referências principais: `src/routes/*`, `src/lib/trixus-api.ts`, `backend/src/*`, `backend/prisma/schema.prisma` e `docs/USER_FLOW.md`.
 
@@ -107,15 +107,15 @@ O teste backend falha: oito cenários de inbound falham antes da lógica devido 
 
 ## Validações executadas
 
-| Verificação | Resultado |
-|---|---|
-| TypeScript (`bunx tsc --noEmit`) | Aprovado |
-| Regras operacionais (`bun run test:operational-runtime`) | 5 testes aprovados |
-| Sanitização XSS (`bun run test:security`) | 3 testes aprovados |
-| Dependência legada do Inbox | Aprovada |
-| Dependência legada de Chamados | Falhou por `contentEditable` e uso de HTML; requer decisão/ajuste de regra ou implementação |
-| Lint | Falhou; 1.339 erros atuais, majoritariamente Prettier, com regressões em relação ao baseline |
-| Backend/E2E | Não aprovado: falhas de unitário e E2E integralmente skipped |
+| Verificação                                              | Resultado                                                                                    |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| TypeScript (`bunx tsc --noEmit`)                         | Aprovado                                                                                     |
+| Regras operacionais (`bun run test:operational-runtime`) | 5 testes aprovados                                                                           |
+| Sanitização XSS (`bun run test:security`)                | 3 testes aprovados                                                                           |
+| Dependência legada do Inbox                              | Aprovada                                                                                     |
+| Dependência legada de Chamados                           | Falhou por `contentEditable` e uso de HTML; requer decisão/ajuste de regra ou implementação  |
+| Lint                                                     | Falhou; 1.339 erros atuais, majoritariamente Prettier, com regressões em relação ao baseline |
+| Backend/E2E                                              | Não aprovado: falhas de unitário e E2E integralmente skipped                                 |
 
 ## Aspectos positivos confirmados
 

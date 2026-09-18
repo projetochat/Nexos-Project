@@ -71,12 +71,7 @@ export type Mensagem = {
   createdAt: number;
 };
 
-export type ConversaStatus =
-  | "aguardando"
-  | "atendendo"
-  | "resolvida"
-  | "perdida"
-  | "arquivada";
+export type ConversaStatus = "aguardando" | "atendendo" | "resolvida" | "perdida" | "arquivada";
 
 export type Conversa = {
   id: ID;

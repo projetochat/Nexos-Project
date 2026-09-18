@@ -33,4 +33,3 @@ Reativacao retorna o tenant para `ACTIVE`, preserva roles e dados e nao reconect
 ## Termination
 
 `TERMINATED` exige confirmacao por slug e motivo. A sprint nao executa hard delete.
-

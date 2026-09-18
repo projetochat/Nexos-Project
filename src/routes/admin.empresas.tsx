@@ -19,7 +19,7 @@ import { fmtDate } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/empresas")({
-  head: () => ({ meta: [{ title: "Tenants - Trixus Admin" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: EmpresasSaaS,
 });
 

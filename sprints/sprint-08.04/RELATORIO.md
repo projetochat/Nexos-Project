@@ -217,7 +217,7 @@ Atualizados: README, ARCHITECTURE, API, BUSINESS_RULES, USER_FLOW, COMPONENTS, D
 | M01  | baseline 08.03                      | `546e96b`                                       | `git rev-parse HEAD` inicial   | PASS    |
 | M02  | worktree inicial clean              | limpo                                           | `git status`                   | PASS    |
 | M03  | branch 08.04                        | criada                                          | `git branch --show-current`    | PASS    |
-| M04  | verify inicial                      | `trixus_0802` parcial                            | backend E2E exige `acme/orbit` | PARTIAL |
+| M04  | verify inicial                      | `trixus_0802` parcial                           | backend E2E exige `acme/orbit` | PARTIAL |
 | M05  | dropdown source audit               | executado                                       | `rg`                           | PASS    |
 | M06  | mock source identified              | `contactOptions.instances` e legados mapeados   | audit                          | PASS    |
 | M07  | mock source removed                 | Inbox operacional sem mock                      | diff                           | PASS    |
@@ -308,8 +308,8 @@ Atualizados: README, ARCHITECTURE, API, BUSINESS_RULES, USER_FLOW, COMPONENTS, D
 | M92  | frontend build                      | PASS                                            | verify                         | PASS    |
 | M93  | backend build                       | PASS                                            | verify                         | PASS    |
 | M94  | backend tests                       | 94 PASS                                         | verify                         | PASS    |
-| M95  | verify #1                           | `trixus_0802` parcial                            | backend data mismatch          | PARTIAL |
-| M96  | verify #2                           | `trixus_0801` PASS                               | verify                         | PASS    |
+| M95  | verify #1                           | `trixus_0802` parcial                           | backend data mismatch          | PARTIAL |
+| M96  | verify #2                           | `trixus_0801` PASS                              | verify                         | PASS    |
 | M97  | adendo 08.01                        | criado                                          | file                           | PASS    |
 | M98  | adendo 08.02                        | criado                                          | file                           | PASS    |
 | M99  | adendo 08.03                        | criado                                          | file                           | PASS    |

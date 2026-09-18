@@ -47,7 +47,7 @@ export const Route = createFileRoute("/chamados")({
   }),
   head: () => ({
     meta: [
-      { title: "Chamados · Trixus" },
+      { title: "Trixus" },
       { name: "description", content: "Chamados gerenciados pela API Trixus." },
     ],
   }),

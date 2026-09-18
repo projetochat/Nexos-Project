@@ -40,6 +40,13 @@ export type EvolutionInstance = {
   } | null;
 };
 
+export type EvolutionWebhook = {
+  enabled?: boolean;
+  url?: string | null;
+  events?: string[] | null;
+  headers?: Record<string, string | undefined> | null;
+};
+
 export type EvolutionSendTextResponse = {
   key?: {
     id?: string;

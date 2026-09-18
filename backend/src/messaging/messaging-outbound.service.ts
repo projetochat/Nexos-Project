@@ -36,6 +36,7 @@ import { MessagingMediaStorageService } from "./media/messaging-media-storage.se
 import { EvolutionClient } from "./evolution/evolution.client";
 import { EvolutionOutboundPayloadFactory } from "./evolution/evolution-outbound-payload.factory";
 import { normalizeEvolutionRecipient } from "./evolution/evolution-recipient.normalizer";
+import { SenderDisplayNameService } from "./sender-display-name.service";
 
 const messageInclude = {
   authorMembership: {
@@ -104,6 +105,9 @@ export class MessagingOutboundService {
     @Inject(EvolutionClient)
     private readonly evolution?: EvolutionClient,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
+    @Optional()
+    @Inject(SenderDisplayNameService)
+    private readonly senderDisplayName?: SenderDisplayNameService,
   ) {}
 
   async sendText(conversationId: string, dto: SendMessageDto, current: AuthenticatedUser) {
@@ -195,6 +199,87 @@ export class MessagingOutboundService {
     return this.serialize(prepared.message);
   }
 
+  /** Queues a system-configured message (welcome/absence) without an agent author. */
+  async queueAutomatedText(input: {
+    tenantId: string;
+    conversationId: string;
+    connectionId: string;
+    externalChatId: string;
+    content: string;
+    kind: "welcome" | "absence";
+  }) {
+    const content = cleanMessageContent(input.content);
+    const prepared: PreparedOutbound = await this.prisma.$transaction(async (tx) => {
+      const clientMessageId = `automatic:${input.kind}`;
+      const existing = await tx.message.findFirst({
+        where: {
+          tenantId: input.tenantId,
+          conversationId: input.conversationId,
+          clientMessageId,
+        },
+        include: messageInclude,
+      });
+      if (existing) return { message: existing, dispatch: false };
+
+      const now = new Date();
+      const message = await tx.message.create({
+        data: {
+          tenantId: input.tenantId,
+          conversationId: input.conversationId,
+          connectionId: input.connectionId,
+          direction: MessageDirection.OUTBOUND,
+          type: MessageType.TEXT,
+          status: MessageStatus.QUEUED,
+          content,
+          providerChatId: input.externalChatId,
+          clientMessageId,
+          providerStatus: `${input.kind}_queued`,
+          queuedAt: now,
+          createdAt: now,
+        },
+        include: messageInclude,
+      });
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          type: OUTBOX_MESSAGING_OUTBOUND_REQUESTED,
+          aggregateId: message.id,
+          payload: { tenantId: input.tenantId, messageId: message.id },
+        },
+      });
+      await this.updateConversationFromMessage(
+        tx,
+        input.conversationId,
+        input.tenantId,
+        content,
+        now,
+      );
+      return { message, dispatch: true };
+    });
+
+    if (!prepared.dispatch) return { created: false, message: this.serialize(prepared.message) };
+    this.realtime?.publishMessageCreated({
+      tenantId: prepared.message.tenantId,
+      conversationId: prepared.message.conversationId,
+      connectionId: prepared.message.connectionId,
+      message: this.serialize(prepared.message),
+    });
+    this.realtime?.publishConversationUpdated({
+      tenantId: prepared.message.tenantId,
+      conversationId: prepared.message.conversationId,
+      reason: `${input.kind}.queued`,
+    });
+    void this.outboxDispatcher.dispatchMessage(prepared.message.id).catch((error) => {
+      this.logger.warn({
+        event: `messaging.${input.kind}.immediate_dispatch_failed`,
+        tenantId: input.tenantId,
+        messageId: prepared.message.id,
+        error: error instanceof Error ? error.message : "Outbox dispatch failed.",
+      });
+    });
+    return { created: true, message: this.serialize(prepared.message) };
+  }
+
   async sendMedia(conversationId: string, req: Request, current: AuthenticatedUser) {
     const conversation = await this.findVisibleConversation(this.prisma, conversationId, current, {
       contact: true,
@@ -219,6 +304,9 @@ export class MessagingOutboundService {
         if (existing) return { message: existing, dispatch: false };
       }
       const connection = await this.resolveConnection(tx, current.tenantId, conversation);
+      const caption = stored.caption
+        ? await this.prepareOutboundText(tx, stored.caption, conversation, current)
+        : stored.caption;
       const quoted = quotedMessageId
         ? await this.resolveQuotedMessage(tx, {
             tenantId: current.tenantId,
@@ -227,7 +315,7 @@ export class MessagingOutboundService {
           })
         : null;
       const now = new Date();
-      const preview = mediaPreview(stored.messageType, stored.caption, stored.fileName);
+      const preview = mediaPreview(stored.messageType, caption, stored.fileName);
       const message = await tx.message.create({
         data: {
           tenantId: current.tenantId,
@@ -237,7 +325,7 @@ export class MessagingOutboundService {
           type: stored.messageType,
           status: MessageStatus.QUEUED,
           authorMembershipId: current.membershipId,
-          content: stored.caption,
+          content: caption,
           providerChatId: conversation.externalChatId,
           quotedMessageId: quoted?.id ?? null,
           quotedProviderMessageId: quoted?.providerMessageId ?? null,
@@ -248,7 +336,7 @@ export class MessagingOutboundService {
           mediaMimeType: stored.mimeType,
           mediaFileName: stored.fileName,
           mediaSize: stored.sizeBytes,
-          mediaCaption: stored.caption,
+          mediaCaption: caption,
           mediaChecksum: stored.checksum,
           mediaSha256: stored.checksum,
           mediaDurationMs: stored.durationMs,
@@ -758,11 +846,9 @@ export class MessagingOutboundService {
     current: AuthenticatedUser,
   ) {
     if (!current.permissions?.includes("chat.agent_name.show")) return content;
-    const membership = await tx.tenantMembership.findFirst({
-      where: { id: current.membershipId, tenantId: current.tenantId },
-      include: { user: { select: { name: true } } },
-    });
-    const agentName = membership?.user.name?.trim();
+    const agentName = this.senderDisplayName
+      ? await this.senderDisplayName.resolve(tx, current)
+      : null;
     if (!agentName) return content;
     return cleanMessageContent(`*${agentName}:*\n\n${content}`);
   }
@@ -920,6 +1006,8 @@ export class MessagingOutboundService {
       sender: message.direction === MessageDirection.INBOUND ? "contact" : "agent",
       author_id: message.authorMembership?.user.id ?? null,
       author_membership_id: message.authorMembershipId,
+      author_name:
+        message.authorMembership?.presentationName ?? message.authorMembership?.user.name ?? null,
       content: message.content ?? "",
       created_at: message.createdAt,
       updated_at: message.updatedAt,

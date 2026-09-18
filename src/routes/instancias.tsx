@@ -50,6 +50,7 @@ import {
   connectionsApi,
   crmApi,
   type ApiContactCustomField,
+  type ApiMessagingHistoryImport,
   type ApiMessagingConnection,
 } from "@/lib/trixus-api";
 
@@ -155,8 +156,14 @@ function Page() {
     onError: (e) => toast.error((e as Error).message),
   });
   const refresh = useMutation({
-    mutationFn: connectionsApi.status,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] }),
+    mutationFn: async (id: string) => {
+      await connectionsApi.ensureWebhook(id);
+      return connectionsApi.status(id);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
+      toast.success("Integração verificada");
+    },
     onError: (e) => toast.error((e as Error).message),
   });
 
@@ -319,6 +326,10 @@ function Page() {
                   </div>
                   <div className="mt-4 space-y-2 border-t border-border pt-3 text-xs">
                     <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">Provedor</span>
+                      <span>{providerLabel(connection.providerType)}</span>
+                    </div>
+                    <div className="flex justify-between gap-3">
                       <span className="text-muted-foreground">Referência</span>
                       <span className="truncate text-right">
                         {connection.externalReference ?? "sem referencia externa"}
@@ -363,8 +374,8 @@ function Page() {
                       variant="outline"
                       size="sm"
                       onClick={() => refresh.mutate(connection.id)}
-                      title="Status"
-                      aria-label="Status"
+                      title="Verificar integração do WhatsApp"
+                      aria-label="Verificar integração do WhatsApp"
                       className="group"
                     >
                       <RefreshCw className="h-3.5 w-3.5 transition-transform duration-500 group-hover:rotate-[720deg]" />
@@ -575,7 +586,7 @@ function ConnectionForm({
           </div>
         </fieldset>
 
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
+        <div className="grid grid-cols-[minmax(0,1fr)_8.5rem] gap-3">
           <Field label="Nome da instância *">
             <Input
               value={name}
@@ -609,32 +620,34 @@ function ConnectionForm({
         <section className="space-y-4 border-t border-border pt-5" aria-label="Importar mensagens">
           <h3 className="text-base font-semibold">Importar Mensagens</h3>
           <div className="grid gap-4 sm:grid-cols-2">
-            <ImportOption
-              label="Importar histórico de mensagens"
-              checked={importHistory}
-              onCheckedChange={setImportHistory}
-            />
-            <ImportOption
-              label="Importar mensagens de grupo"
-              checked={importGroups}
-              onCheckedChange={setImportGroups}
-            />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ImportDate
-              label="Dt. início p/ importação"
-              required={importHistory}
-              value={historyStartDate}
-              onChange={setHistoryStartDate}
-              disabled={!importHistory}
-            />
-            <ImportDate
-              label="Dt. início p/ importação"
-              required={importGroups}
-              value={groupStartDate}
-              onChange={setGroupStartDate}
-              disabled={!importGroups}
-            />
+            <div className="space-y-3">
+              <ImportOption
+                label="Importar histórico de mensagens"
+                checked={importHistory}
+                onCheckedChange={setImportHistory}
+              />
+              <ImportDate
+                label="Dt. início p/ importação"
+                required={importHistory}
+                value={historyStartDate}
+                onChange={setHistoryStartDate}
+                disabled={!importHistory}
+              />
+            </div>
+            <div className="space-y-3">
+              <ImportOption
+                label="Importar mensagens de grupo"
+                checked={importGroups}
+                onCheckedChange={setImportGroups}
+              />
+              <ImportDate
+                label="Dt. início p/ importação"
+                required={importGroups}
+                value={groupStartDate}
+                onChange={setGroupStartDate}
+                disabled={!importGroups}
+              />
+            </div>
           </div>
           <div className="flex items-stretch gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
             <span className="flex w-6 shrink-0 items-center justify-center">
@@ -684,6 +697,29 @@ function ImportOption({
       </button>
       <span>{label}</span>
     </label>
+  );
+}
+
+function ImportStatusBadge({ job }: { job?: ApiMessagingHistoryImport }) {
+  if (!job) return <span className="text-muted-foreground">Aguardando conexão</span>;
+  const labels: Record<ApiMessagingHistoryImport["status"], string> = {
+    PENDING: "Na fila",
+    RUNNING: "Em andamento",
+    COMPLETED: "Concluída",
+    PARTIAL_FAILED: "Concluída com falhas",
+    FAILED: "Falhou",
+  };
+  const tones: Record<ApiMessagingHistoryImport["status"], string> = {
+    PENDING: "bg-amber-50 text-amber-700",
+    RUNNING: "bg-blue-50 text-blue-700",
+    COMPLETED: "bg-emerald-50 text-emerald-700",
+    PARTIAL_FAILED: "bg-amber-50 text-amber-700",
+    FAILED: "bg-red-50 text-red-700",
+  };
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tones[job.status]}`}>
+      {labels[job.status]}
+    </span>
   );
 }
 
@@ -936,6 +972,23 @@ function ConnectionSettingsModal({
     absenceMessage: "",
     notes: "",
   });
+  const { data: importJobs = [] } = useQuery({
+    queryKey: ["trixus", "messaging-connection-imports", connection?.id],
+    queryFn: () => connectionsApi.importStatus(connection!.id),
+    enabled: Boolean(connection),
+    refetchInterval: connection ? 3_000 : false,
+  });
+  const retryImport = useMutation({
+    mutationFn: (kind?: ApiMessagingHistoryImport["kind"]) =>
+      connectionsApi.retryImport(connection!.id, kind),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: ["trixus", "messaging-connection-imports", connection?.id],
+      });
+      toast.success("Importação agendada para nova tentativa.");
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
 
   const initializedConnection = React.useRef<string | null>(null);
   React.useEffect(() => {
@@ -1103,7 +1156,7 @@ function ConnectionSettingsModal({
           {tab === "general" && (
             <div className="space-y-5">
               <div className="grid gap-5 lg:grid-cols-[170px_minmax(0,1fr)]">
-                <div className="relative flex justify-center lg:justify-start">
+                <div className="relative flex items-center justify-center">
                   <button
                     ref={logoButtonRef}
                     type="button"
@@ -1183,95 +1236,90 @@ function ConnectionSettingsModal({
                   />
                 </div>
 
-                <div className="grid grid-cols-[minmax(7rem,1fr)_10.5rem] gap-4 sm:grid-cols-[minmax(0,1.25fr)_minmax(11rem,0.85fr)] md:grid-cols-2">
-                  <Field label="Telefone *">
-                    <Input
-                      value={connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""}
-                      readOnly
-                    />
-                  </Field>
-                  <Field label="Status">
-                    <div className="flex h-10 items-center">
-                      {connection ? (
-                        <Badge tone={STATUS_TONE[connection.status]}>
-                          {statusIcon(connection.status)}
-                          {statusLabel(connection.status)}
-                        </Badge>
-                      ) : null}
-                    </div>
-                  </Field>
-                  <Field label="Nome *">
-                    <Input
-                      value={form.name}
-                      onChange={(event) => setForm({ ...form, name: event.target.value })}
-                    />
-                  </Field>
-                  <Field label="Cor">
-                    <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
-                      <input
-                        type="color"
-                        value={completeHexColor(form.color, "#22c55e")}
-                        onChange={(event) =>
-                          setForm({
-                            ...form,
-                            color: normalizeHexColor(event.target.value, "#22c55e"),
-                          })
-                        }
-                        className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
-                      />
-                      <input
-                        type="text"
-                        value={form.color || ""}
-                        onChange={(event) =>
-                          setForm({
-                            ...form,
-                            color: normalizeHexColor(event.target.value, "#22c55e"),
-                          })
-                        }
-                        placeholder={completeHexColor("#22c55e")}
-                        maxLength={7}
-                        className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
-                      />
-                    </div>
-                  </Field>
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Provedor">
-                  <Select value="evolution" disabled>
-                    <option value="evolution">Evolution API</option>
-                  </Select>
-                </Field>
-                <Field label="Referência">
-                  <Input
-                    value={connection?.externalReference ?? "sem referência externa"}
-                    readOnly
-                  />
-                </Field>
-                <Field label="Time Zone">
-                  <Select value={timezone} onChange={(event) => setTimezone(event.target.value)}>
-                    {TIMEZONE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <div>
-                  <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <label htmlFor="instance-ai-agent">Agentes de IA</label>
-                    <InfoTooltip label="agentes de IA">
-                      Será preenchido pelos agentes cadastrados no módulo de IA.
-                    </InfoTooltip>
+                <div className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Status">
+                      <div className="flex h-10 items-center">
+                        {connection ? (
+                          <Badge tone={STATUS_TONE[connection.status]}>
+                            {statusIcon(connection.status)}
+                            {statusLabel(connection.status)}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </Field>
+                    <Field label="Cor">
+                      <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
+                        <input
+                          type="color"
+                          value={completeHexColor(form.color, "#22c55e")}
+                          onChange={(event) =>
+                            setForm({
+                              ...form,
+                              color: normalizeHexColor(event.target.value, "#22c55e"),
+                            })
+                          }
+                          className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                        />
+                        <input
+                          type="text"
+                          value={form.color || ""}
+                          onChange={(event) =>
+                            setForm({
+                              ...form,
+                              color: normalizeHexColor(event.target.value, "#22c55e"),
+                            })
+                          }
+                          placeholder={completeHexColor("#22c55e")}
+                          maxLength={7}
+                          className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+                        />
+                      </div>
+                    </Field>
                   </div>
-                  <Select
-                    id="instance-ai-agent"
-                    value={aiAgentId}
-                    onChange={(event) => setAiAgentId(event.target.value)}
-                  >
-                    <option value="">- Selecione um agente -</option>
-                  </Select>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Nome *">
+                      <Input
+                        value={form.name}
+                        onChange={(event) => setForm({ ...form, name: event.target.value })}
+                      />
+                    </Field>
+                    <Field label="Telefone *">
+                      <Input
+                        value={connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""}
+                        readOnly
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                        <label htmlFor="instance-ai-agent">Agentes de IA</label>
+                        <InfoTooltip label="agentes de IA">
+                          Será preenchido pelos agentes cadastrados no módulo de IA.
+                        </InfoTooltip>
+                      </div>
+                      <Select
+                        id="instance-ai-agent"
+                        value={aiAgentId}
+                        onChange={(event) => setAiAgentId(event.target.value)}
+                      >
+                        <option value="">- Selecione um agente -</option>
+                      </Select>
+                    </div>
+                    <Field label="Time Zone">
+                      <Select
+                        value={timezone}
+                        onChange={(event) => setTimezone(event.target.value)}
+                      >
+                        {TIMEZONE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  </div>
                 </div>
               </div>
               <section
@@ -1306,6 +1354,43 @@ function ConnectionSettingsModal({
                     onChange={() => undefined}
                     disabled
                   />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(["DIRECT", "GROUP"] as const).map((kind) => {
+                    const job = importJobs.find((item) => item.kind === kind);
+                    const label =
+                      kind === "DIRECT" ? "Histórico de mensagens" : "Mensagens de grupo";
+                    return (
+                      <div
+                        key={kind}
+                        className="rounded-lg border border-border bg-background px-3 py-2 text-xs"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-foreground">{label}</span>
+                          <ImportStatusBadge job={job} />
+                        </div>
+                        {job && (
+                          <p className="mt-1 text-muted-foreground">
+                            {job.chatsProcessed} conversa(s) · {job.messagesImported} mensagem(ns)
+                            importada(s)
+                          </p>
+                        )}
+                        {job?.error && <p className="mt-1 text-destructive">{job.error}</p>}
+                        {job && (job.status === "FAILED" || job.status === "PARTIAL_FAILED") && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="mt-2"
+                            disabled={retryImport.isPending}
+                            onClick={() => retryImport.mutate(kind)}
+                          >
+                            Tentar novamente
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             </div>

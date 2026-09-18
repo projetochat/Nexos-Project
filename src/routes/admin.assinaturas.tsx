@@ -18,7 +18,7 @@ import { fmtDate } from "@/lib/format";
 import { platformApi, type PlatformPlan, type PlatformSubscription } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/assinaturas")({
-  head: () => ({ meta: [{ title: "Assinaturas · Trixus Admin" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: AssinaturasAdmin,
 });
 

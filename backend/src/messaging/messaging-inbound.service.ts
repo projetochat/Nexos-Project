@@ -16,6 +16,9 @@ import { InboundMessageEvent, MessageEditEvent } from "./messaging.contracts";
 import { MessagingMediaStorageService } from "./media/messaging-media-storage.service";
 import { normalizeRemotePhoneCandidates } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
+import { MessagingOutboundService } from "./messaging-outbound.service";
+import { resolveMessageTemplate } from "./message-template";
+import { selectAutomaticReply } from "./automatic-reply";
 
 @Injectable()
 export class MessagingInboundService {
@@ -28,9 +31,13 @@ export class MessagingInboundService {
     private readonly mediaStorage?: MessagingMediaStorageService,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
     @Optional() @Inject(EvolutionClient) private readonly evolution?: EvolutionClient,
+    @Optional()
+    @Inject(MessagingOutboundService)
+    private readonly outbound?: MessagingOutboundService,
   ) {}
 
-  async process(event: InboundMessageEvent) {
+  async process(event: InboundMessageEvent, options: { historical?: boolean } = {}) {
+    const historical = options.historical === true;
     const normalizedPhoneCandidates = uniqueNormalizedPhones([
       ...(event.metadata?.normalizedPhoneCandidates ?? []),
       event.sender.normalizedPhone,
@@ -74,7 +81,9 @@ export class MessagingInboundService {
                 ? groupDisplayName && existingContact.name === "Grupo WhatsApp"
                   ? groupDisplayName
                   : existingContact.name
-                : (event.metadata?.displayName ?? event.sender.displayName ?? undefined),
+                : event.fromMe
+                  ? undefined
+                  : (event.metadata?.displayName ?? event.sender.displayName ?? undefined),
               departmentId: existingContact.departmentId ?? defaultDepartmentId,
               instance: connection.externalReference ?? existingContact.instance,
             },
@@ -89,7 +98,9 @@ export class MessagingInboundService {
             update: {
               name: isGroup
                 ? (groupDisplayName ?? "Grupo WhatsApp")
-                : (event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone),
+                : event.fromMe
+                  ? event.sender.phone
+                  : (event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone),
               phone: isGroup ? event.externalChatId : event.sender.phone,
               departmentId: defaultDepartmentId,
               instance: connection.externalReference,
@@ -174,10 +185,11 @@ export class MessagingInboundService {
           tenantId: event.tenantId,
           conversationId: conversation.id,
           connectionId: event.connectionId,
-          direction: MessageDirection.INBOUND,
+          direction: event.fromMe ? MessageDirection.OUTBOUND : MessageDirection.INBOUND,
           type: event.type,
-          status: MessageStatus.CREATED,
+          status: event.fromMe ? MessageStatus.SENT : MessageStatus.CREATED,
           content: event.content ?? null,
+          interactiveData: event.interactive ?? undefined,
           externalMessageId: event.externalMessageId,
           providerMessageId: event.externalMessageId,
           providerChatId: event.externalChatId,
@@ -199,14 +211,14 @@ export class MessagingInboundService {
           mediaDurationMs: event.media?.durationMs ?? null,
           mediaProviderUrl: event.media?.url ?? null,
           mediaState: resolveInboundMediaState(event, downloadedMedia),
-          providerStatus: "inbound_received",
+          providerStatus: event.fromMe ? "outbound_synced" : "inbound_received",
           createdAt: event.occurredAt,
         },
       });
       const updatedConversation = await tx.conversation.update({
         where: { tenantId_id: { tenantId: event.tenantId, id: conversation.id } },
         data: {
-          unreadCount: { increment: 1 },
+          unreadCount: event.fromMe || historical ? conversation.unreadCount : { increment: 1 },
           lastMessagePreview: truncatePreview(preview),
           lastMessageAt: event.occurredAt,
           inboxArchivedAt: isGroup ? null : conversation.inboxArchivedAt,
@@ -225,7 +237,7 @@ export class MessagingInboundService {
         },
       });
       const lead =
-        createdConversation && !isGroup
+        !historical && createdConversation && !isGroup && !event.fromMe
           ? await tx.lead.upsert({
               where: {
                 tenantId_conversationId: {
@@ -250,7 +262,7 @@ export class MessagingInboundService {
             })
           : null;
       const notifications =
-        createdConversation && lead
+        !historical && createdConversation && lead
           ? await this.notifyLeadCreated(tx, {
               tenantId: event.tenantId,
               leadId: lead.id,
@@ -259,6 +271,37 @@ export class MessagingInboundService {
               contactName: contact.name,
             })
           : [];
+      const automaticReply = historical
+        ? null
+        : selectAutomaticReply({
+            createdConversation,
+            isGroup,
+            fromMe: event.fromMe,
+            welcomeEnabled: connection.welcomeEnabled,
+            welcomeTemplate: existingContact
+              ? connection.welcomeExistingMessage
+              : connection.welcomeNewMessage,
+            absenceEnabled: connection.absenceEnabled,
+            absenceTemplate: connection.absenceMessage,
+            serviceHours: connection.serviceHours,
+            timezone: connection.timezone,
+            at: event.occurredAt,
+          });
+      const reply = automaticReply
+        ? {
+            ...automaticReply,
+            contactExisting: Boolean(existingContact),
+            contact,
+            departmentName: updatedConversation.departmentId
+              ? ((
+                  await tx.department.findFirst({
+                    where: { id: updatedConversation.departmentId, tenantId: event.tenantId },
+                    select: { name: true },
+                  })
+                )?.name ?? null)
+              : null,
+          }
+        : null;
       return {
         message,
         duplicate: false,
@@ -269,6 +312,7 @@ export class MessagingInboundService {
         leadId: lead?.id ?? null,
         notifications,
         unreadCount: updatedConversation.unreadCount,
+        automaticReply: reply,
       };
     });
 
@@ -295,7 +339,7 @@ export class MessagingInboundService {
       duplicate: result.duplicate,
       resolutionResult: result.duplicate ? "ignored_duplicate" : "persisted",
     });
-    if (!result.duplicate) {
+    if (!result.duplicate && !historical) {
       this.realtime?.publishMessageCreated({
         tenantId: event.tenantId,
         conversationId: result.message.conversationId,
@@ -303,18 +347,19 @@ export class MessagingInboundService {
         connectionId: event.connectionId,
         message: {
           id: result.message.id,
-          direction: "inbound",
-          status: result.message.status.toLowerCase(),
-          createdAt: result.message.createdAt,
+          direction:
+            result.message.direction?.toLowerCase() ?? (event.fromMe ? "outbound" : "inbound"),
+          status: result.message.status?.toLowerCase() ?? (event.fromMe ? "sent" : "created"),
+          createdAt: result.message.createdAt ?? event.occurredAt,
         },
       });
       this.realtime?.publishConversationUpdated({
         tenantId: event.tenantId,
         conversationId: result.message.conversationId,
-        reason: result.createdConversation
-          ? "inbound.created"
-          : profilePictureUpdated
-            ? "contact.profile_picture.updated"
+        reason: event.fromMe
+          ? "outbound.synced"
+          : result.createdConversation
+            ? "inbound.created"
             : "inbound.updated",
       });
       if (profilePictureUpdated && result.contactId) {
@@ -340,11 +385,55 @@ export class MessagingInboundService {
           kind: notification.kind,
         });
       }
-      this.realtime?.publishUnreadUpdated({
-        tenantId: event.tenantId,
-        conversationId: result.message.conversationId,
-        unreadCount: result.unreadCount ?? 0,
-      });
+      if (!event.fromMe) {
+        this.realtime?.publishUnreadUpdated({
+          tenantId: event.tenantId,
+          conversationId: result.message.conversationId,
+          unreadCount: result.unreadCount ?? 0,
+        });
+      }
+      if (result.automaticReply && this.outbound) {
+        try {
+          const customFieldValues = await this.prisma.contactCustomFieldValue.findMany({
+            where: { tenantId: event.tenantId, contactId: result.contactId! },
+            include: { field: { select: { label: true } } },
+          });
+          const content = resolveMessageTemplate(result.automaticReply.template, {
+            contactName: result.automaticReply.contact.name,
+            phone: result.automaticReply.contact.phone,
+            email: result.automaticReply.contact.email,
+            instance: result.providerInstanceName,
+            department: result.automaticReply.departmentName,
+            customFields: Object.fromEntries(
+              customFieldValues.map((item) => [item.field.label, item.value]),
+            ),
+            now: event.occurredAt,
+          });
+          await this.outbound.queueAutomatedText({
+            tenantId: event.tenantId,
+            conversationId: result.conversationId,
+            connectionId: event.connectionId,
+            externalChatId: event.externalChatId,
+            content,
+            kind: result.automaticReply.kind,
+          });
+          this.logger.log({
+            event: `messaging.${result.automaticReply.kind}.queued`,
+            tenantId: event.tenantId,
+            connectionId: event.connectionId,
+            conversationId: result.conversationId,
+            contactKind: result.automaticReply.contactExisting ? "existing" : "new",
+          });
+        } catch (error) {
+          this.logger.error({
+            event: `messaging.${result.automaticReply.kind}.queue_failed`,
+            tenantId: event.tenantId,
+            connectionId: event.connectionId,
+            conversationId: result.conversationId,
+            error: error instanceof Error ? error.message : "Automatic reply dispatch failed.",
+          });
+        }
+      }
     }
     return result;
   }
@@ -357,7 +446,7 @@ export class MessagingInboundService {
       providerInstanceName?: string | null;
     },
   ) {
-    if (result.duplicate || event.conversationType === "GROUP") return false;
+    if (result.duplicate || event.fromMe || event.conversationType === "GROUP") return false;
     if (!result.contactId || !result.providerInstanceName) return false;
     const avatarUrl = event.metadata?.profilePictureUrl;
     if (!avatarUrl) return false;

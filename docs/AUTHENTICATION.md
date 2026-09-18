@@ -267,13 +267,13 @@ Defaults de email/senha sao permitidos apenas fora de producao. O seed imprime m
 
 Erros canonicos de auth:
 
-| Cenario              | HTTP | Code                             | Mensagem UI                                                                     |
-| -------------------- | ---: | -------------------------------- | ------------------------------------------------------------------------------- |
-| Credencial invalida  |  401 | `INVALID_CREDENTIALS`            | E-mail ou senha inválidos.                                                      |
-| Usuario inativo      |  403 | `USER_INACTIVE`                  | Seu usuario nao possui permissao para acessar este ambiente.                    |
-| Sem membership ativa |  403 | `USER_WITHOUT_ACTIVE_MEMBERSHIP` | Seu usuario nao possui acesso a nenhuma organizacao ativa.                      |
-| Muitas tentativas    |  429 | `TOO_MANY_LOGIN_ATTEMPTS`        | Muitas tentativas de acesso. Aguarde e tente novamente.                         |
-| Erro interno         |  500 | n/a                              | Ocorreu um erro interno ao autenticar.                                          |
+| Cenario              | HTTP | Code                             | Mensagem UI                                                                      |
+| -------------------- | ---: | -------------------------------- | -------------------------------------------------------------------------------- |
+| Credencial invalida  |  401 | `INVALID_CREDENTIALS`            | E-mail ou senha inválidos.                                                       |
+| Usuario inativo      |  403 | `USER_INACTIVE`                  | Seu usuario nao possui permissao para acessar este ambiente.                     |
+| Sem membership ativa |  403 | `USER_WITHOUT_ACTIVE_MEMBERSHIP` | Seu usuario nao possui acesso a nenhuma organizacao ativa.                       |
+| Muitas tentativas    |  429 | `TOO_MANY_LOGIN_ATTEMPTS`        | Muitas tentativas de acesso. Aguarde e tente novamente.                          |
+| Erro interno         |  500 | n/a                              | Ocorreu um erro interno ao autenticar.                                           |
 | API offline          |  n/a | n/a                              | Nao foi possivel conectar a API Trixus. Verifique se o backend esta em execucao. |
 
 Health pre-login:
@@ -317,8 +317,8 @@ derivados server-side; valores enviados pelo cliente nao sao confiaveis.
 
 O seed `homologation` cria dois acessos locais:
 
-| E-mail             | Role         | Departamento |
-| ------------------ | ------------ | ------------ |
+| E-mail               | Role         | Departamento |
+| -------------------- | ------------ | ------------ |
 | admin@trixus.app     | tenant_admin | Atendimento  |
 | atendente@trixus.app | agent        | Atendimento  |
 

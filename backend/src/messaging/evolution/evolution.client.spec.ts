@@ -137,6 +137,26 @@ describe("EvolutionClient", () => {
     );
   });
 
+  it("reads the webhook from Evolution's dedicated endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({
+        enabled: true,
+        url: "http://host.docker.internal:3001/api/webhooks/evolution",
+        events: ["MESSAGES_UPSERT"],
+      }),
+    );
+    globalThis.fetch = fetchMock;
+
+    await expect(new EvolutionClient().findWebhook("instance-a")).resolves.toMatchObject({
+      enabled: true,
+      events: ["MESSAGES_UPSERT"],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://evolution.local/webhook/find/instance-a",
+      expect.objectContaining({ headers: expect.objectContaining({ apikey: "test-key" }) }),
+    );
+  });
+
   it("downloads inbound media through Evolution getBase64FromMediaMessage", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       response({

@@ -102,6 +102,14 @@ export type InboundMessageEvent = {
   sender: CanonicalRecipient;
   type: Extract<MessageType, "TEXT" | "IMAGE" | "AUDIO" | "VOICE" | "VIDEO" | "DOCUMENT">;
   content?: string | null;
+  interactive?: {
+    kind: "list";
+    buttonText: string;
+    sections: Array<{
+      title?: string | null;
+      options: Array<{ title: string; description?: string | null }>;
+    }>;
+  } | null;
   media?: {
     url?: string | null;
     mimetype?: string | null;

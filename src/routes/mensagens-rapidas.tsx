@@ -29,7 +29,7 @@ export const Route = createFileRoute("/mensagens-rapidas")({
   component: QuickRepliesPage,
   head: () => ({
     meta: [
-      { title: "Mensagens Rápidas · Trixus" },
+      { title: "Trixus" },
       {
         name: "description",
         content: "Atalhos de mensagens rápidas para agilizar respostas no atendimento.",
@@ -586,10 +586,10 @@ export function QuickReplyEditor({
               <span className="flex items-center gap-1 font-medium">
                 Encerrar conversa
                 <InfoTooltip label="encerrar conversa">
-                  Ao enviar este atalho no chat, a conversa será encerrada após o envio de todas as mensagens.
+                  Ao enviar este atalho no chat, a conversa será encerrada após o envio de todas as
+                  mensagens.
                 </InfoTooltip>
               </span>
-
             </span>
           </label>
         </div>

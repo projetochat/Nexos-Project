@@ -1,7 +1,16 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { ArrowDown, ArrowUp, RotateCcw, Save, Play, PauseCircle, Clock, UserPlus } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  RotateCcw,
+  Save,
+  Play,
+  PauseCircle,
+  Clock,
+  UserPlus,
+} from "lucide-react";
 import { Button, Card, Input } from "@/components/ui-kit";
 import {
   DEFAULT_QUEUE_PREFS,
@@ -78,8 +87,8 @@ function GeralPage() {
       <div className="mb-4">
         <h2 className="text-base font-semibold">Filas do chat</h2>
         <p className="text-sm text-muted-foreground">
-          Renomeie, reordene ou desative as filas exibidas na tela de conversas. O padrão do sistema pode ser
-          restaurado a qualquer momento.
+          Renomeie, reordene ou desative as filas exibidas na tela de conversas. O padrão do sistema
+          pode ser restaurado a qualquer momento.
         </p>
       </div>
 
@@ -114,10 +123,22 @@ function GeralPage() {
                 Ativa
               </label>
               <div className="flex shrink-0 items-center gap-1">
-                <Button variant="outline" size="icon" aria-label="Mover para cima" onClick={() => move(index, -1)} disabled={index === 0}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Mover para cima"
+                  onClick={() => move(index, -1)}
+                  disabled={index === 0}
+                >
                   <ArrowUp className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" size="icon" aria-label="Mover para baixo" onClick={() => move(index, 1)} disabled={index === prefs.length - 1}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Mover para baixo"
+                  onClick={() => move(index, 1)}
+                  disabled={index === prefs.length - 1}
+                >
                   <ArrowDown className="h-4 w-4" />
                 </Button>
               </div>

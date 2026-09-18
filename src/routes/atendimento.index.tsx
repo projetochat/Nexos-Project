@@ -5,4 +5,3 @@ export const Route = createFileRoute("/atendimento/")({
     throw redirect({ to: "/inbox" });
   },
 });
-

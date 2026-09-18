@@ -391,13 +391,13 @@ Atualizados:
 | M06  | branch Sprint 08 resume             | Criada                    | `sprint/08-redis-bullmq-resume`                    | PASS    |
 | M07  | worktree inicial clean              | Confirmado                | `git status` inicial limpo                         | PASS    |
 | M08  | Bun status                          | OK                        | `1.3.14`                                           | PASS    |
-| M09  | verify inicial                      | PASS                      | Baseline em `trixus_0800`                           | PASS    |
-| M10  | banco limpo Sprint 08               | Criado                    | `trixus_0800`                                       | PASS    |
+| M09  | verify inicial                      | PASS                      | Baseline em `trixus_0800`                          | PASS    |
+| M10  | banco limpo Sprint 08               | Criado                    | `trixus_0800`                                      | PASS    |
 | M11  | migrations ate 07.03                | Aplicadas                 | Inclui owner identity                              | PASS    |
 | M12  | Prisma Client correto               | Gerado                    | `bun run backend:prisma:generate` apos liberar DLL | PASS    |
-| M13  | seed                                | Executado                 | Seed em `trixus_0800`                               | PASS    |
-| M14  | trixus-redis                         | Adicionado                | `docker-compose.yml`                               | PASS    |
-| M15  | Redis independente                  | Separado                  | `trixus-redis` != `evolution-redis`                 | PASS    |
+| M13  | seed                                | Executado                 | Seed em `trixus_0800`                              | PASS    |
+| M14  | trixus-redis                        | Adicionado                | `docker-compose.yml`                               | PASS    |
+| M15  | Redis independente                  | Separado                  | `trixus-redis` != `evolution-redis`                | PASS    |
 | M16  | Redis health                        | Implementado              | `/health` + smoke                                  | PASS    |
 | M17  | BullMQ dependencies                 | Adicionadas               | `bullmq`, `ioredis`                                | PASS    |
 | M18  | Queue module                        | Criado                    | `backend/src/queue`                                | PASS    |

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { currentRoleHome, signIn, useSession, type Role } from "@/lib/session";
 
 export const Route = createFileRoute("/login")({
-  head: () => ({ meta: [{ title: "Entrar - Trixus" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: LoginPage,
 });
 
@@ -155,11 +155,22 @@ function LoginPage() {
 }
 
 function normalizeLoginError(error: unknown) {
-  if (error instanceof TypeError) {
-    return "Não foi possível conectar ao sistema. Verifique sua internet e tente novamente.";
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (
+    error instanceof TypeError ||
+    /não foi possível conectar ao sistema|network error|failed to fetch/i.test(message)
+  ) {
+    return "Não foi possível conectar ao sistema. Verifique suas credenciais e tente novamente.";
   }
+  if (/e-mail ou senha inválidos/i.test(message))
+    return "E-mail ou senha incorretos. Tente novamente.";
+  if (/muitas tentativas/i.test(message))
+    return "Muitas tentativas de acesso. Aguarde alguns minutos antes de tentar novamente.";
+  if (/organização.*inativa/i.test(message))
+    return "Sua organização está inativa. Entre em contato com o administrador.";
+  if (/nenhuma organização ativa/i.test(message))
+    return "Seu usuário não possui acesso a uma organização ativa.";
   return (
-    (error as Error).message ||
-    "Não foi possível concluir a autenticação. Tente novamente em alguns instantes."
+    message || "Não foi possível concluir o acesso agora. Tente novamente em alguns instantes."
   );
 }

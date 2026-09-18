@@ -2,6 +2,11 @@ import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/lib/session";
 import {
+  isInboundConversationUpdate,
+  playInboxNotificationSound,
+  prepareInboxNotificationSound,
+} from "@/lib/inbox-notification-sound";
+import {
   connectRealtime,
   disconnectRealtime,
   heartbeatRealtime,
@@ -53,7 +58,18 @@ export function useRealtimeInbox(conversationId?: string | null) {
   }, [conversationId, realtime.status]);
 
   React.useEffect(() => {
+    const enableSound = () => prepareInboxNotificationSound();
+    window.addEventListener("pointerdown", enableSound, { once: true });
+    window.addEventListener("keydown", enableSound, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", enableSound);
+      window.removeEventListener("keydown", enableSound);
+    };
+  }, []);
+
+  React.useEffect(() => {
     return onRealtimeEvent((event) => {
+      if (isInboundConversationUpdate(event)) playInboxNotificationSound();
       if (
         event.event === "message.created" ||
         event.event === "message.status.updated" ||

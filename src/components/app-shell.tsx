@@ -398,9 +398,7 @@ function SidebarBottomActions({
         collapsed ? "flex-col items-center gap-1" : "flex-row items-center justify-around gap-1"
       }`}
     >
-      {!toggleOnly && (
-        <NotificationsButton compact />
-      )}
+      {!toggleOnly && <NotificationsButton compact />}
       <button
         onClick={onToggle}
         className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"

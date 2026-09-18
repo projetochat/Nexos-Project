@@ -319,7 +319,10 @@ export class MessagesService {
       sender: message.direction === MessageDirection.INBOUND ? "contact" : "agent",
       author_id: message.authorMembership?.user.id ?? null,
       author_membership_id: message.authorMembershipId,
+      author_name:
+        message.authorMembership?.presentationName ?? message.authorMembership?.user.name ?? null,
       content: message.content ?? "",
+      interactive_data: message.interactiveData ?? null,
       created_at: message.createdAt,
       updated_at: message.updatedAt,
       read_at: message.readAt,

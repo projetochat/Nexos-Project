@@ -21,13 +21,13 @@ O frontend Lovable/TanStack foi preservado. Supabase continua ativo como legado 
 
 ## 3. Ambiente
 
-| Item             | Resultado                           |
-| ---------------- | ----------------------------------- |
-| Node.js          | `v24.14.0`                          |
-| Git              | `2.51.0.windows.2`                  |
-| Bun              | `1.3.14`                            |
-| Docker           | `29.1.3`                            |
-| Docker Compose   | `v2.40.3-desktop.1`                 |
+| Item             | Resultado                            |
+| ---------------- | ------------------------------------ |
+| Node.js          | `v24.14.0`                           |
+| Git              | `2.51.0.windows.2`                   |
+| Bun              | `1.3.14`                             |
+| Docker           | `29.1.3`                             |
+| Docker Compose   | `v2.40.3-desktop.1`                  |
 | PostgreSQL local | Container `trixus-postgres`, healthy |
 
 ## 4. Entregas funcionais

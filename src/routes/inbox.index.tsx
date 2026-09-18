@@ -68,9 +68,20 @@ const STATUS_LABEL: Record<ConvStatus, string> = {
   fechada: "fechada",
 };
 
-const inboxListMemory: { tab: TabId; source: SourceId } = {
+const inboxListMemory: {
+  tab: TabId;
+  source: SourceId;
+  onlyUnread: boolean;
+  query: string;
+  selectedInstancias: string[];
+  selectedClientes: string[];
+} = {
   tab: "ativas",
   source: "todos",
+  onlyUnread: false,
+  query: "",
+  selectedInstancias: [],
+  selectedClientes: [],
 };
 
 export function InboxLayout({ children }: { children: React.ReactNode }) {
@@ -100,10 +111,20 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
     inboxListMemory.source = next;
     setSourceState(next);
   }, []);
-  const [onlyUnread, setOnlyUnread] = React.useState(false);
-  const [query, setQuery] = React.useState("");
-  const [selectedInstancias, setSelectedInstancias] = React.useState<Set<string>>(new Set());
-  const [selectedClientes, setSelectedClientes] = React.useState<Set<string>>(new Set());
+  const [onlyUnread, setOnlyUnread] = React.useState(inboxListMemory.onlyUnread);
+  const [query, setQuery] = React.useState(inboxListMemory.query);
+  const [selectedInstancias, setSelectedInstancias] = React.useState<Set<string>>(
+    () => new Set(inboxListMemory.selectedInstancias),
+  );
+  const [selectedClientes, setSelectedClientes] = React.useState<Set<string>>(
+    () => new Set(inboxListMemory.selectedClientes),
+  );
+  React.useEffect(() => {
+    inboxListMemory.onlyUnread = onlyUnread;
+    inboxListMemory.query = query;
+    inboxListMemory.selectedInstancias = [...selectedInstancias];
+    inboxListMemory.selectedClientes = [...selectedClientes];
+  }, [onlyUnread, query, selectedClientes, selectedInstancias]);
   const selectedCliente = selectedClientes.size === 1 ? [...selectedClientes][0] : undefined;
   const selectedInstancia = selectedInstancias.size === 1 ? [...selectedInstancias][0] : undefined;
   const realtime = useRealtimeInbox(activeId);
@@ -122,6 +143,8 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
         q: query,
         customerId: selectedCliente,
         instance: selectedInstancia,
+        sort: "lastMessageAt",
+        direction: "desc",
         pageSize: 100,
       }),
     refetchInterval: realtime.status === "connected" ? false : 30_000,

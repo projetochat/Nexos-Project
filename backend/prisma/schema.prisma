@@ -97,6 +97,19 @@ enum ConversationType {
   GROUP
 }
 
+enum MessagingHistoryImportKind {
+  DIRECT
+  GROUP
+}
+
+enum MessagingHistoryImportStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  PARTIAL_FAILED
+  FAILED
+}
+
 enum MessageDirection {
   INBOUND
   OUTBOUND
@@ -330,6 +343,7 @@ model Tenant {
   messages                    Message[]
   messageReactions            MessageReaction[]
   messagingConnections        MessagingConnection[]
+  historyImports              MessagingHistoryImport[]
   outboxEvents                OutboxEvent[]
   conversationProtocolCounter ConversationProtocolCounter?
   ticketProtocolCounter       TicketProtocolCounter?
@@ -553,6 +567,7 @@ model TenantMembership {
   tenantId           String
   userId             String
   roleId             String
+  presentationName   String?                @map("presentation_name")
   status             MembershipStatus       @default(ACTIVE)
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
@@ -910,6 +925,7 @@ model Message {
   status               MessageStatus        @default(CREATED)
   authorMembershipId   String?
   content              String?
+  interactiveData      Json?
   clientMessageId      String?
   providerMessageId    String?
   providerChatId       String?
@@ -1072,6 +1088,7 @@ model MessagingConnection {
   importHistoryStartDate DateTime?
   importGroupsEnabled  Boolean                   @default(false)
   importGroupsStartDate DateTime?
+  historyImports       MessagingHistoryImport[]
   archivedAt           DateTime?
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
@@ -1087,6 +1104,30 @@ model MessagingConnection {
   @@index([tenantId, archivedAt])
   @@index([tenantId, ownerPhoneNormalized])
   @@map("messaging_connections")
+}
+
+model MessagingHistoryImport {
+  id                    String                        @id @default(uuid())
+  tenantId              String
+  connectionId          String
+  kind                  MessagingHistoryImportKind
+  status                MessagingHistoryImportStatus @default(PENDING)
+  startDate             DateTime
+  chatsProcessed        Int                           @default(0)
+  messagesImported      Int                           @default(0)
+  messagesSkipped       Int                           @default(0)
+  error                 String?
+  startedAt             DateTime?
+  finishedAt            DateTime?
+  createdAt             DateTime                      @default(now())
+  updatedAt             DateTime                      @updatedAt
+  tenant                Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection            MessagingConnection           @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([connectionId, kind])
+  @@index([tenantId, status])
+  @@index([tenantId, connectionId])
+  @@map("messaging_history_imports")
 }
 
 model QuickReply {

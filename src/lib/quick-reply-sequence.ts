@@ -48,10 +48,14 @@ export type SequenceDraft = {
   intervalSeconds: number;
   closeAfter: boolean;
 };
-export function createSequence(reply: ApiQuickReply): SequenceDraft {
+export function createSequence(
+  reply: ApiQuickReply,
+  resolveText: (text: string) => string = (text) => text,
+): SequenceDraft {
   return {
     items: quickReplyMessages(reply).map((item) => ({
       ...item,
+      text: resolveText(item.text),
       clientMessageId: crypto.randomUUID(),
     })),
     next: 0,

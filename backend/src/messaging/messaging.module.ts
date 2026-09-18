@@ -17,11 +17,13 @@ import { MessagingMediaStorageService } from "./media/messaging-media-storage.se
 import { MessagingConnectionsController } from "./messaging-connections.controller";
 import { MessagingConnectionsService } from "./messaging-connections.service";
 import { MessagingInboundService } from "./messaging-inbound.service";
+import { MessagingHistoryImportService } from "./messaging-history-import.service";
 import { MessagingOutboundService } from "./messaging-outbound.service";
 import { MessagingOutboundWorker } from "./messaging-outbound.worker";
 import { MessagingProviderRegistry } from "./messaging-provider.registry";
 import { MessagingReactionService } from "./messaging-reaction.service";
 import { MessagingStatusService } from "./messaging-status.service";
+import { SenderDisplayNameService } from "./sender-display-name.service";
 
 @Module({
   imports: [
@@ -43,8 +45,10 @@ import { MessagingStatusService } from "./messaging-status.service";
     MessagingProviderRegistry,
     MessagingMediaStorageService,
     MessagingOutboundService,
+    SenderDisplayNameService,
     MessagingOutboundWorker,
     MessagingInboundService,
+    MessagingHistoryImportService,
     ContactProfilePictureSyncService,
     MessagingReactionService,
     MessagingStatusService,
@@ -53,6 +57,7 @@ import { MessagingStatusService } from "./messaging-status.service";
   exports: [
     MessagingOutboundService,
     MessagingInboundService,
+    MessagingHistoryImportService,
     MessagingReactionService,
     MessagingStatusService,
     MessagingConnectionsService,

@@ -42,13 +42,33 @@ const MercadoLivreIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 const OlxIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg viewBox="0 0 24 24" className={className} aria-hidden>
-    <text x="12" y="17" textAnchor="middle" fontSize="11" fontWeight="900" fill="currentColor" fontFamily="ui-sans-serif, system-ui">OLX</text>
+    <text
+      x="12"
+      y="17"
+      textAnchor="middle"
+      fontSize="11"
+      fontWeight="900"
+      fill="currentColor"
+      fontFamily="ui-sans-serif, system-ui"
+    >
+      OLX
+    </text>
   </svg>
 );
 
 const MagaluIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg viewBox="0 0 24 24" className={className} aria-hidden>
-    <text x="12" y="17" textAnchor="middle" fontSize="11" fontWeight="900" fill="currentColor" fontFamily="ui-sans-serif, system-ui">ML</text>
+    <text
+      x="12"
+      y="17"
+      textAnchor="middle"
+      fontSize="11"
+      fontWeight="900"
+      fill="currentColor"
+      fontFamily="ui-sans-serif, system-ui"
+    >
+      ML
+    </text>
   </svg>
 );
 
@@ -78,7 +98,12 @@ export function TipoBadge({ tipo, size = 40 }: { tipo?: string | null; size?: nu
   return (
     <div
       className="flex items-center justify-center rounded-lg"
-      style={{ background: info.color, width: size, height: size, color: isYellow ? "#1f2937" : "#ffffff" }}
+      style={{
+        background: info.color,
+        width: size,
+        height: size,
+        color: isYellow ? "#1f2937" : "#ffffff",
+      }}
       title={info.label}
     >
       <info.Icon className="h-5 w-5" />

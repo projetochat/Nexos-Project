@@ -237,70 +237,70 @@ Docs atualizados para refletir que a Sprint 07.02 corrigiu QR/orfa e preservou S
 
 ## 48. M01-M62
 
-| M | Meta | Resultado | Evidencia | Status |
-| --- | --- | --- | --- | --- |
-| M01 | Sprint 08 WIP identificado | WIP Redis/BullMQ/outbox identificado | `git status`, untracked queue/worker/migration | PASS |
-| M02 | backup branch criada | `backup/sprint-08-partial-before-07.02` | `git switch -c` | PASS |
-| M03 | WIP commit criado | Commit local criado | `570cdf2` | PASS |
-| M04 | WIP SHA registrado | SHA completo registrado | `570cdf241191c2d461546c5a3e65d27f374f33ba` | PASS |
-| M05 | backup worktree clean | Backup limpo | `git status` clean | PASS |
-| M06 | baseline 07.01 confirmada | `dca20545...` confirmado | `git show`, branch contains | PASS |
-| M07 | branch 07.02 criada | Branch criada da baseline | `sprint/07.02-real-whatsapp-acceptance` | PASS |
-| M08 | ausencia de codigo Sprint 08 | Sem queue/outbox/BullMQ ativo | `rg` sem matches ativos | PASS |
-| M09 | Bun status | Bun disponivel | `1.3.14` | PASS |
-| M10 | verify inicial | Falhou por ambiente/Prisma Client stale, corrigido | verify posterior PASS | PARTIAL |
-| M11 | env loading | Variaveis presentes | precheck `.env` sem valores | PASS |
-| M12 | database health | `ok=true`, `database=up` | `/api/health` | PASS |
-| M13 | Evolution Docker health | 4 servicos ativos | `docker compose ps` | PASS |
-| M14 | Evolution API health | `configured=true`, `ok=true` | endpoint health autenticado | PASS |
-| M15 | frontend startup | Vite em localhost:5173 | HTTP 200 | PASS |
-| M16 | /instancias sem mocks | Lista vazia no banco limpo | API connections `[]` | PASS |
-| M17 | connection create | Connection/instance criada | API create real | PASS |
-| M18 | webhook registration | Create sem erro e spec de webhook | tests + API | PASS |
-| M19 | QR real | QR inicial e endpoint presentes | `InitialQrPresent=true`, `QrEndpointPresent=true` | PASS |
-| M20 | CONNECTED real | Nao escaneado | requer WhatsApp fisico | N/A |
-| M21 | outbound real | Nao enviado | requer WhatsApp B | N/A |
-| M22 | outbound persistence | Nao executado | depende M21 | N/A |
-| M23 | inbound real | Nao reproduzido nesta sessao | PO relatou anteriormente | PARTIAL |
-| M24 | inbound persistence | Nao executado | depende M23 | N/A |
-| M25 | Contact resolution | Cobertura automatizada preservada | backend tests | PARTIAL |
-| M26 | Conversation resolution | Cobertura automatizada preservada | backend tests | PARTIAL |
-| M27 | lastMessage | Cobertura automatizada preservada | backend tests | PARTIAL |
-| M28 | unread | Cobertura automatizada preservada | backend tests | PARTIAL |
-| M29 | inbound idempotency | Testes passam | backend tests | PASS |
-| M30 | logout/disconnect | Logout nao conectado PASS | API logout 200 | PARTIAL |
-| M31 | status after disconnect | `disconnected` em instance nao conectada | API logout | PARTIAL |
-| M32 | reconnect | QR endpoint funcional | API QR PASS | PARTIAL |
-| M33 | delete | Provider/local removidos | API delete | PASS |
-| M34 | detail 404 after delete | Detail apos delete = 404 | API detail | PASS |
-| M35 | recreate | Nova connection funcional | API recreate | PASS |
-| M36 | orphan detection | `error`, reason canonico | API status | PASS |
-| M37 | QR orphan error | 400 com `INSTANCE_NOT_FOUND` | API QR orfa | PASS |
-| M38 | delivery status | Nao recebido real | sem WhatsApp fisico | N/A |
-| M39 | read status | Nao recebido real | sem WhatsApp fisico | N/A |
-| M40 | bootstrap regression | Nest iniciou | log `Nest application successfully started` | PASS |
-| M41 | connection tests | Specs focados passam | vitest | PASS |
-| M42 | webhook tests | Specs existentes passam | backend tests | PASS |
-| M43 | inbound tests | Specs existentes passam | backend tests | PASS |
-| M44 | tenant isolation | Specs existentes passam | backend tests | PASS |
-| M45 | security | XSS/webhook auth preservados | verify + code audit | PASS |
-| M46 | Supabase no increase | Sem dependencia/fallback novo | diff audit | PASS |
-| M47 | frontend regression | HTTP 200 rotas principais | `/login`, `/instancias`, `/inbox`, `/contatos` | PARTIAL |
-| M48 | CRM regression | `/contatos` 200 | HTTP smoke | PASS |
-| M49 | Inbox regression | `/inbox` 200 | HTTP smoke | PASS |
-| M50 | backend tests | 51 tests PASS | `bun run backend:test` | PASS |
-| M51 | typecheck | PASS | `bun run verify` | PASS |
-| M52 | lint | PASS | lint baseline OK | PASS |
-| M53 | frontend build | PASS | `bun run verify` | PASS |
-| M54 | backend build | PASS | `bun run verify` | PASS |
-| M55 | verify final #1 | PASS | `bun run verify` | PASS |
-| M56 | verify final #2 | PASS | `bun run verify` | PASS |
-| M57 | docs | Atualizados | README/ROADMAP/CHANGELOG/report | PASS |
-| M58 | changelog | Atualizado | `docs/CHANGELOG.md` | PASS |
-| M59 | report | Criado | este arquivo | PASS |
-| M60 | commit | Commit da 07.02 criado | ver secao commits | PASS |
-| M61 | final git clean | Validado apos commit | `git status` | PASS |
-| M62 | gate | Gate fisico incompleto | sem outbound/inbound real | FAIL |
+| M   | Meta                         | Resultado                                          | Evidencia                                         | Status  |
+| --- | ---------------------------- | -------------------------------------------------- | ------------------------------------------------- | ------- |
+| M01 | Sprint 08 WIP identificado   | WIP Redis/BullMQ/outbox identificado               | `git status`, untracked queue/worker/migration    | PASS    |
+| M02 | backup branch criada         | `backup/sprint-08-partial-before-07.02`            | `git switch -c`                                   | PASS    |
+| M03 | WIP commit criado            | Commit local criado                                | `570cdf2`                                         | PASS    |
+| M04 | WIP SHA registrado           | SHA completo registrado                            | `570cdf241191c2d461546c5a3e65d27f374f33ba`        | PASS    |
+| M05 | backup worktree clean        | Backup limpo                                       | `git status` clean                                | PASS    |
+| M06 | baseline 07.01 confirmada    | `dca20545...` confirmado                           | `git show`, branch contains                       | PASS    |
+| M07 | branch 07.02 criada          | Branch criada da baseline                          | `sprint/07.02-real-whatsapp-acceptance`           | PASS    |
+| M08 | ausencia de codigo Sprint 08 | Sem queue/outbox/BullMQ ativo                      | `rg` sem matches ativos                           | PASS    |
+| M09 | Bun status                   | Bun disponivel                                     | `1.3.14`                                          | PASS    |
+| M10 | verify inicial               | Falhou por ambiente/Prisma Client stale, corrigido | verify posterior PASS                             | PARTIAL |
+| M11 | env loading                  | Variaveis presentes                                | precheck `.env` sem valores                       | PASS    |
+| M12 | database health              | `ok=true`, `database=up`                           | `/api/health`                                     | PASS    |
+| M13 | Evolution Docker health      | 4 servicos ativos                                  | `docker compose ps`                               | PASS    |
+| M14 | Evolution API health         | `configured=true`, `ok=true`                       | endpoint health autenticado                       | PASS    |
+| M15 | frontend startup             | Vite em localhost:5173                             | HTTP 200                                          | PASS    |
+| M16 | /instancias sem mocks        | Lista vazia no banco limpo                         | API connections `[]`                              | PASS    |
+| M17 | connection create            | Connection/instance criada                         | API create real                                   | PASS    |
+| M18 | webhook registration         | Create sem erro e spec de webhook                  | tests + API                                       | PASS    |
+| M19 | QR real                      | QR inicial e endpoint presentes                    | `InitialQrPresent=true`, `QrEndpointPresent=true` | PASS    |
+| M20 | CONNECTED real               | Nao escaneado                                      | requer WhatsApp fisico                            | N/A     |
+| M21 | outbound real                | Nao enviado                                        | requer WhatsApp B                                 | N/A     |
+| M22 | outbound persistence         | Nao executado                                      | depende M21                                       | N/A     |
+| M23 | inbound real                 | Nao reproduzido nesta sessao                       | PO relatou anteriormente                          | PARTIAL |
+| M24 | inbound persistence          | Nao executado                                      | depende M23                                       | N/A     |
+| M25 | Contact resolution           | Cobertura automatizada preservada                  | backend tests                                     | PARTIAL |
+| M26 | Conversation resolution      | Cobertura automatizada preservada                  | backend tests                                     | PARTIAL |
+| M27 | lastMessage                  | Cobertura automatizada preservada                  | backend tests                                     | PARTIAL |
+| M28 | unread                       | Cobertura automatizada preservada                  | backend tests                                     | PARTIAL |
+| M29 | inbound idempotency          | Testes passam                                      | backend tests                                     | PASS    |
+| M30 | logout/disconnect            | Logout nao conectado PASS                          | API logout 200                                    | PARTIAL |
+| M31 | status after disconnect      | `disconnected` em instance nao conectada           | API logout                                        | PARTIAL |
+| M32 | reconnect                    | QR endpoint funcional                              | API QR PASS                                       | PARTIAL |
+| M33 | delete                       | Provider/local removidos                           | API delete                                        | PASS    |
+| M34 | detail 404 after delete      | Detail apos delete = 404                           | API detail                                        | PASS    |
+| M35 | recreate                     | Nova connection funcional                          | API recreate                                      | PASS    |
+| M36 | orphan detection             | `error`, reason canonico                           | API status                                        | PASS    |
+| M37 | QR orphan error              | 400 com `INSTANCE_NOT_FOUND`                       | API QR orfa                                       | PASS    |
+| M38 | delivery status              | Nao recebido real                                  | sem WhatsApp fisico                               | N/A     |
+| M39 | read status                  | Nao recebido real                                  | sem WhatsApp fisico                               | N/A     |
+| M40 | bootstrap regression         | Nest iniciou                                       | log `Nest application successfully started`       | PASS    |
+| M41 | connection tests             | Specs focados passam                               | vitest                                            | PASS    |
+| M42 | webhook tests                | Specs existentes passam                            | backend tests                                     | PASS    |
+| M43 | inbound tests                | Specs existentes passam                            | backend tests                                     | PASS    |
+| M44 | tenant isolation             | Specs existentes passam                            | backend tests                                     | PASS    |
+| M45 | security                     | XSS/webhook auth preservados                       | verify + code audit                               | PASS    |
+| M46 | Supabase no increase         | Sem dependencia/fallback novo                      | diff audit                                        | PASS    |
+| M47 | frontend regression          | HTTP 200 rotas principais                          | `/login`, `/instancias`, `/inbox`, `/contatos`    | PARTIAL |
+| M48 | CRM regression               | `/contatos` 200                                    | HTTP smoke                                        | PASS    |
+| M49 | Inbox regression             | `/inbox` 200                                       | HTTP smoke                                        | PASS    |
+| M50 | backend tests                | 51 tests PASS                                      | `bun run backend:test`                            | PASS    |
+| M51 | typecheck                    | PASS                                               | `bun run verify`                                  | PASS    |
+| M52 | lint                         | PASS                                               | lint baseline OK                                  | PASS    |
+| M53 | frontend build               | PASS                                               | `bun run verify`                                  | PASS    |
+| M54 | backend build                | PASS                                               | `bun run verify`                                  | PASS    |
+| M55 | verify final #1              | PASS                                               | `bun run verify`                                  | PASS    |
+| M56 | verify final #2              | PASS                                               | `bun run verify`                                  | PASS    |
+| M57 | docs                         | Atualizados                                        | README/ROADMAP/CHANGELOG/report                   | PASS    |
+| M58 | changelog                    | Atualizado                                         | `docs/CHANGELOG.md`                               | PASS    |
+| M59 | report                       | Criado                                             | este arquivo                                      | PASS    |
+| M60 | commit                       | Commit da 07.02 criado                             | ver secao commits                                 | PASS    |
+| M61 | final git clean              | Validado apos commit                               | `git status`                                      | PASS    |
+| M62 | gate                         | Gate fisico incompleto                             | sem outbound/inbound real                         | FAIL    |
 
 ## 49. Technical debt
 

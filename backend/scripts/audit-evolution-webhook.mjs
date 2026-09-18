@@ -55,8 +55,7 @@ if (ensure) {
   await setWebhook(instanceName);
 }
 
-const refreshed = ensure ? await fetchInstance(instanceName) : instance;
-const webhook = refreshed?.Webhook ?? {};
+const webhook = await fetchWebhook(instanceName);
 const headers = webhook.headers ?? {};
 const evolutionSecret = normalizeSecret(headers.jwt_key);
 
@@ -107,6 +106,10 @@ async function setWebhook(name) {
       },
     },
   });
+}
+
+async function fetchWebhook(name) {
+  return request(`/webhook/find/${encodeURIComponent(name)}`);
 }
 
 async function request(path, init = {}) {

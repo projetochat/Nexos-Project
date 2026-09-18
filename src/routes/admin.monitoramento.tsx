@@ -15,7 +15,7 @@ import { Alert, Badge, Button, Card, SectionHeader } from "@/components/ui-kit";
 import { platformApi, type PlatformHealth } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/monitoramento")({
-  head: () => ({ meta: [{ title: "Monitoramento - Trixus Admin" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: Monitoramento,
 });
 

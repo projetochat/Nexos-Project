@@ -456,21 +456,76 @@ describe("EvolutionWebhookTranslator", () => {
     ).toMatchObject({ kind: "ignored", reason: "UNSUPPORTED_EVENT" });
   });
 
-  it("returns canonical ignored reasons for invalid inbound payloads", () => {
+  it("normalizes messages sent from the connected WhatsApp account", () => {
     expect(
       translator.translate(
         {
           event: "MESSAGES_UPSERT",
           instance: "tenant-support",
           data: {
-            key: { remoteJid: "5511999999999@s.whatsapp.net", fromMe: true, id: "FROM-ME-1" },
+            key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: true, id: "FROM-ME-1" },
             message: { conversation: "Outbound echo" },
           },
         },
         connection,
       ),
-    ).toMatchObject({ kind: "ignored", reason: "FROM_ME" });
+    ).toMatchObject({
+      kind: "inbound",
+      event: { externalMessageId: "FROM-ME-1", fromMe: true, content: "Outbound echo" },
+    });
 
+    expect(
+      translator.translate(
+        {
+          event: "MESSAGES_UPSERT",
+          instance: "tenant-support",
+          data: {
+            key: { remoteJid: "5511999999999@s.whatsapp.net", fromMe: false },
+            message: { conversation: "Sem id" },
+          },
+        },
+        connection,
+      ),
+    ).toMatchObject({ kind: "ignored", reason: "MISSING_MESSAGE_ID" });
+  });
+
+  it("preserves WhatsApp list messages sent by an external chatbot", () => {
+    const result = translator.translate(
+      {
+        event: "messages.upsert",
+        instance: "tenant-support",
+        data: {
+          key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: true, id: "LIST-1" },
+          message: {
+            listMessage: {
+              title: "Olá **Flow iD - Douglas**, Tudo bem?",
+              description: "Como deseja o atendimento?",
+              buttonText: "Clique para ver",
+              sections: [{ title: "Atendimento", rows: [{ rowId: "support", title: "Suporte" }] }],
+            },
+          },
+          messageTimestamp: 1_709_550_600,
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        externalMessageId: "LIST-1",
+        fromMe: true,
+        content: "Olá **Flow iD - Douglas**, Tudo bem?\n\nComo deseja o atendimento?",
+        interactive: {
+          kind: "list",
+          buttonText: "Clique para ver",
+          sections: [{ title: "Atendimento", options: [{ title: "Suporte" }] }],
+        },
+      },
+    });
+  });
+
+  it("returns canonical ignored reasons for invalid inbound payloads", () => {
     expect(
       translator.translate(
         {

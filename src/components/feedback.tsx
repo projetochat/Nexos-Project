@@ -161,7 +161,9 @@ export function ConnectionPill({ status }: { status: "live" | "reconnecting" | "
       title="Status da conexão realtime"
     >
       <span className={`relative flex h-1.5 w-1.5 items-center justify-center`}>
-        <span className={`absolute inline-flex h-full w-full rounded-full ${it.c} ${status === "live" ? "animate-pulse-ring" : ""}`} />
+        <span
+          className={`absolute inline-flex h-full w-full rounded-full ${it.c} ${status === "live" ? "animate-pulse-ring" : ""}`}
+        />
         <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${it.c}`} />
       </span>
       {it.label}
@@ -189,7 +191,10 @@ export function OnboardingCard({
   if (dismissed) return null;
   return (
     <Card className="relative overflow-hidden border-primary/25 bg-gradient-to-br from-primary/8 via-transparent to-accent/8 animate-fade-in">
-      <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-primary/20 blur-3xl" aria-hidden />
+      <div
+        className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-primary/20 blur-3xl"
+        aria-hidden
+      />
       <div className="relative flex items-start gap-4">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-brand text-white shadow-glow">
           <Sparkles className="h-4 w-4" />
@@ -227,7 +232,11 @@ export function TableRowsSkeleton({ rows = 6, cols = 5 }: { rows?: number; cols?
   return (
     <div className="divide-y divide-border">
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="grid items-center gap-4 px-4 py-3" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))` }}>
+        <div
+          key={i}
+          className="grid items-center gap-4 px-4 py-3"
+          style={{ gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))` }}
+        >
           {Array.from({ length: cols }).map((__, j) => (
             <Skeleton key={j} h="h-3.5" w={j === 0 ? "w-3/4" : "w-1/2"} />
           ))}

@@ -230,10 +230,11 @@ describe("Trixus API organization and RBAC", () => {
 
   it("allows tenant administration while individual permission switches are paused", async () => {
     const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
+    const departmentName = `Departamento do atendente ${Date.now()}`;
     await request(app.getHttpServer())
       .post("/api/departments")
       .set("Authorization", `Bearer ${agentToken}`)
-      .send({ name: "Departamento do atendente", color: "#111111" })
+      .send({ name: departmentName, color: "#111111" })
       .expect(201);
 
     const adminToken = await login("admin@trixus.app", "demo1234", "acme");
@@ -302,13 +303,15 @@ describe("Trixus API organization and RBAC", () => {
 
   it("allows an active platform-user tenant membership to manage tenant users", async () => {
     const token = await login("platform@trixus.app", "demo1234", "acme");
+    const suffix = Date.now();
+    const email = `tenant-member-platform-${suffix}@trixus.app`;
 
     await request(app.getHttpServer())
       .post("/api/users")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        email: "tenant-member-platform@trixus.app",
-        name: "Tenant Member Platform",
+        email,
+        name: `Tenant Member Platform ${suffix}`,
         password: "demo1234",
       })
       .expect(201);
@@ -820,6 +823,7 @@ describe("Trixus API organization and RBAC", () => {
 
   it("allows agents to read and write CRM while individual permissions are paused", async () => {
     const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
+    const customerName = `Cliente do atendente ${Date.now()}`;
 
     await request(app.getHttpServer())
       .get("/api/crm/contacts?pageSize=5")
@@ -832,7 +836,7 @@ describe("Trixus API organization and RBAC", () => {
     await request(app.getHttpServer())
       .post("/api/crm/customers")
       .set("Authorization", `Bearer ${agentToken}`)
-      .send({ name: "Cliente do atendente" })
+      .send({ name: customerName })
       .expect(201);
   });
 

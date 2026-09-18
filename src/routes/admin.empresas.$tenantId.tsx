@@ -24,7 +24,7 @@ import { fmtDate } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/empresas/$tenantId")({
-  head: () => ({ meta: [{ title: "Tenant - Trixus Admin" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: TenantDetailPage,
 });
 

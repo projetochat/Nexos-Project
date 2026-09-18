@@ -6,4 +6,3 @@
 - `bun run verify`: PASS
 
 Observacao: o verify passou apos aplicar a migration em `trixus_0801`, `trixus_0802` e `trixus_1200`.
-

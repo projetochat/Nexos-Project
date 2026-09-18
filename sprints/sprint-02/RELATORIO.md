@@ -125,15 +125,15 @@ JwtAuthGuard
 
 ## 16. Permission matrix
 
-| Operacao | Platform Admin | Tenant Admin | Supervisor | Agent |
-| --- | ---: | ---: | ---: | ---: |
-| Ver usuarios | Nao automatico | Sim | Sim | Nao |
-| Criar/editar/desativar usuario | Nao automatico | Sim | Nao | Nao |
-| Ver departamentos | Nao automatico | Sim | Sim | Sim |
-| Criar/editar/desativar departamento | Nao automatico | Sim | Sim | Nao |
-| Associar usuario a departamento | Nao automatico | Sim | Sim | Nao |
-| Ver roles/perfis | Nao automatico | Sim | Sim | Nao |
-| Gerenciar roles/perfis | Nao automatico | Sim | Nao | Nao |
+| Operacao                            | Platform Admin | Tenant Admin | Supervisor | Agent |
+| ----------------------------------- | -------------: | -----------: | ---------: | ----: |
+| Ver usuarios                        | Nao automatico |          Sim |        Sim |   Nao |
+| Criar/editar/desativar usuario      | Nao automatico |          Sim |        Nao |   Nao |
+| Ver departamentos                   | Nao automatico |          Sim |        Sim |   Sim |
+| Criar/editar/desativar departamento | Nao automatico |          Sim |        Sim |   Nao |
+| Associar usuario a departamento     | Nao automatico |          Sim |        Sim |   Nao |
+| Ver roles/perfis                    | Nao automatico |          Sim |        Sim |   Nao |
+| Gerenciar roles/perfis              | Nao automatico |          Sim |        Nao |   Nao |
 
 ## 17. APIs
 
@@ -174,13 +174,13 @@ Implementadas:
 
 ## 19. Supabase removal
 
-| Feature | Dependencia anterior | Dependencia atual | Codigo Supabase removido | Status |
-| --- | --- | --- | --- | --- |
-| Auth/session | Supabase Auth + fallback Trixus | Trixus API | `session.ts`, `login.tsx`, `__root.tsx` | MIGRADO |
-| Users/atendentes | Mock store + Supabase perfis | `/api/users`, `/api/roles`, `/api/departments` | `atendentes.tsx` | MIGRADO |
-| Departments | Mock store + Supabase escopos | `/api/departments` | `departamentos.tsx` | MIGRADO |
-| Roles/perfis | Supabase `access_profiles` | `/api/roles`, `/api/permissions` | `perfis.tsx` | MIGRADO |
-| Config users/perms | hardcoded | Trixus API | configs | MIGRADO |
+| Feature            | Dependencia anterior            | Dependencia atual                              | Codigo Supabase removido                | Status  |
+| ------------------ | ------------------------------- | ---------------------------------------------- | --------------------------------------- | ------- |
+| Auth/session       | Supabase Auth + fallback Trixus | Trixus API                                     | `session.ts`, `login.tsx`, `__root.tsx` | MIGRADO |
+| Users/atendentes   | Mock store + Supabase perfis    | `/api/users`, `/api/roles`, `/api/departments` | `atendentes.tsx`                        | MIGRADO |
+| Departments        | Mock store + Supabase escopos   | `/api/departments`                             | `departamentos.tsx`                     | MIGRADO |
+| Roles/perfis       | Supabase `access_profiles`      | `/api/roles`, `/api/permissions`               | `perfis.tsx`                            | MIGRADO |
+| Config users/perms | hardcoded                       | Trixus API                                     | configs                                 | MIGRADO |
 
 ## 20. Tests
 
@@ -344,43 +344,43 @@ bun run verify
 
 ## 37. M01-M35
 
-| M | Meta | Resultado | Evidencia | Status |
-| --- | --- | --- | --- | --- |
-| M01 | verify inicial PASS | PASS | `verify_initial_exit=0` | PASS |
-| M02 | migrations PASS | PASS | `prisma migrate status`: up to date | PASS |
-| M03 | schema atualizado | Implementado | Prisma schema Sprint 02 | PASS |
-| M04 | Tenant preservado | Preservado | `Tenant` mantido | PASS |
-| M05 | User evoluido | `platformRole` adicionado | Prisma schema | PASS |
-| M06 | Membership implementado | `roleId`, `status` | Prisma schema | PASS |
-| M07 | Departments implementados | `Department` | Prisma schema/API | PASS |
-| M08 | DepartmentMembership implementado | FK composta | Prisma schema/API | PASS |
-| M09 | Roles implementadas | `Role` tenant-scoped | Prisma schema/API | PASS |
-| M10 | Permissions implementadas | Catalogo controlado | `permissions.constants.ts` | PASS |
-| M11 | Platform Admin separado | Implementado | e2e test | PASS |
-| M12 | Tenant Admin separado | Implementado | role `tenant_admin` | PASS |
-| M13 | RBAC server-side | Implementado | `PermissionsGuard` | PASS |
-| M14 | cross-tenant user bloqueado | PASS | e2e 404 | PASS |
-| M15 | cross-tenant department bloqueado | PASS | e2e 404/400 | PASS |
-| M16 | cross-tenant role bloqueado | PASS | e2e 400 | PASS |
-| M17 | unauthorized denied | PASS | e2e 401 | PASS |
-| M18 | forbidden denied | PASS | e2e 403 | PASS |
-| M19 | frontend users migrado | PASS | `/atendentes`, config users | PASS |
-| M20 | frontend departments migrado | PASS | `/departamentos` | PASS |
-| M21 | frontend roles/perfis migrado | PASS | `/perfis`, config perms | PASS |
-| M22 | novas dependencias Supabase = 0 | PASS | rg nas superficies migradas | PASS |
-| M23 | Supabase removido das areas migradas | PASS | inventory | PASS |
-| M24 | backend tests PASS | PASS | 10 tests | PASS |
-| M25 | security tests PASS | PASS | 3 XSS tests | PASS |
-| M26 | coverage >= 80% codigo novo | Parcial | Sem medidor formal; cenarios criticos cobertos | WARN |
-| M27 | frontend build PASS | PASS | verify | PASS |
-| M28 | backend build PASS | PASS | verify | PASS |
-| M29 | lint baseline nao aumentou | PASS | 4065/13 dentro baseline | PASS |
-| M30 | verify #1 PASS | PASS | final verify #1 | PASS |
-| M31 | verify #2 PASS | PASS | final verify #2 | PASS |
-| M32 | smoke PASS | PASS | API e rotas HTTP | PASS |
-| M33 | regressoes criticas = 0 | PASS | gates verdes | PASS |
-| M34 | docs atualizados | PASS | docs oficiais | PASS |
-| M35 | relatorio salvo | PASS | este arquivo | PASS |
+| M   | Meta                                 | Resultado                 | Evidencia                                      | Status |
+| --- | ------------------------------------ | ------------------------- | ---------------------------------------------- | ------ |
+| M01 | verify inicial PASS                  | PASS                      | `verify_initial_exit=0`                        | PASS   |
+| M02 | migrations PASS                      | PASS                      | `prisma migrate status`: up to date            | PASS   |
+| M03 | schema atualizado                    | Implementado              | Prisma schema Sprint 02                        | PASS   |
+| M04 | Tenant preservado                    | Preservado                | `Tenant` mantido                               | PASS   |
+| M05 | User evoluido                        | `platformRole` adicionado | Prisma schema                                  | PASS   |
+| M06 | Membership implementado              | `roleId`, `status`        | Prisma schema                                  | PASS   |
+| M07 | Departments implementados            | `Department`              | Prisma schema/API                              | PASS   |
+| M08 | DepartmentMembership implementado    | FK composta               | Prisma schema/API                              | PASS   |
+| M09 | Roles implementadas                  | `Role` tenant-scoped      | Prisma schema/API                              | PASS   |
+| M10 | Permissions implementadas            | Catalogo controlado       | `permissions.constants.ts`                     | PASS   |
+| M11 | Platform Admin separado              | Implementado              | e2e test                                       | PASS   |
+| M12 | Tenant Admin separado                | Implementado              | role `tenant_admin`                            | PASS   |
+| M13 | RBAC server-side                     | Implementado              | `PermissionsGuard`                             | PASS   |
+| M14 | cross-tenant user bloqueado          | PASS                      | e2e 404                                        | PASS   |
+| M15 | cross-tenant department bloqueado    | PASS                      | e2e 404/400                                    | PASS   |
+| M16 | cross-tenant role bloqueado          | PASS                      | e2e 400                                        | PASS   |
+| M17 | unauthorized denied                  | PASS                      | e2e 401                                        | PASS   |
+| M18 | forbidden denied                     | PASS                      | e2e 403                                        | PASS   |
+| M19 | frontend users migrado               | PASS                      | `/atendentes`, config users                    | PASS   |
+| M20 | frontend departments migrado         | PASS                      | `/departamentos`                               | PASS   |
+| M21 | frontend roles/perfis migrado        | PASS                      | `/perfis`, config perms                        | PASS   |
+| M22 | novas dependencias Supabase = 0      | PASS                      | rg nas superficies migradas                    | PASS   |
+| M23 | Supabase removido das areas migradas | PASS                      | inventory                                      | PASS   |
+| M24 | backend tests PASS                   | PASS                      | 10 tests                                       | PASS   |
+| M25 | security tests PASS                  | PASS                      | 3 XSS tests                                    | PASS   |
+| M26 | coverage >= 80% codigo novo          | Parcial                   | Sem medidor formal; cenarios criticos cobertos | WARN   |
+| M27 | frontend build PASS                  | PASS                      | verify                                         | PASS   |
+| M28 | backend build PASS                   | PASS                      | verify                                         | PASS   |
+| M29 | lint baseline nao aumentou           | PASS                      | 4065/13 dentro baseline                        | PASS   |
+| M30 | verify #1 PASS                       | PASS                      | final verify #1                                | PASS   |
+| M31 | verify #2 PASS                       | PASS                      | final verify #2                                | PASS   |
+| M32 | smoke PASS                           | PASS                      | API e rotas HTTP                               | PASS   |
+| M33 | regressoes criticas = 0              | PASS                      | gates verdes                                   | PASS   |
+| M34 | docs atualizados                     | PASS                      | docs oficiais                                  | PASS   |
+| M35 | relatorio salvo                      | PASS                      | este arquivo                                   | PASS   |
 
 ## 38. Technical debt remaining
 

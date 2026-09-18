@@ -9,7 +9,7 @@ import { operationsApi } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 
 export const Route = createFileRoute("/filas")({
-  head: () => ({ meta: [{ title: "Filas - Trixus" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: Page,
 });
 

@@ -24,7 +24,7 @@ import {
 import { onRealtimeEvent } from "@/lib/realtime/client";
 
 export const Route = createFileRoute("/bi")({
-  head: () => ({ meta: [{ title: "BI - Trixus" }] }),
+  head: () => ({ meta: [{ title: "Trixus" }] }),
   component: Page,
 });
 

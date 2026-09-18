@@ -8,6 +8,7 @@ import {
   EvolutionCreateInstanceResponse,
   EvolutionProfilePictureResponse,
   EvolutionInstance,
+  EvolutionWebhook,
   EvolutionSendTextResponse,
 } from "./evolution.types";
 import type { EvolutionMediaKind, EvolutionQuotedKey } from "./evolution-outbound-payload.factory";
@@ -93,6 +94,10 @@ export class EvolutionClient {
         (instance) => instance.name === instanceName || instance.instanceName === instanceName,
       ) ?? null
     );
+  }
+
+  findWebhook(instanceName: string) {
+    return this.request<EvolutionWebhook>(`/webhook/find/${instanceName}`);
   }
 
   setWebhook(input: { instanceName: string; webhookUrl: string; webhookSecret?: string | null }) {
@@ -274,6 +279,41 @@ export class EvolutionClient {
       body: { where: {} },
     });
     return extractContacts(response);
+  }
+
+  /**
+   * Reads the message store kept by Evolution after the WhatsApp session has
+   * synchronized. The API has changed its envelope between v2 releases, so
+   * callers receive the raw records and the normalizer owns the conversion.
+   */
+  async findChats(input: { instanceName: string; page?: number; pageSize?: number }) {
+    const response = await this.request<unknown>(`/chat/findChats/${input.instanceName}`, {
+      method: "POST",
+      body: {
+        where: {},
+        page: input.page ?? 1,
+        offset: input.pageSize ?? 100,
+      },
+    });
+    return extractStoredRecords(response, ["chats", "records"]);
+  }
+
+  async findMessages(input: {
+    instanceName: string;
+    remoteJid: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    const response = await this.request<unknown>(`/chat/findMessages/${input.instanceName}`, {
+      method: "POST",
+      body: {
+        where: { key: { remoteJid: input.remoteJid } },
+        page: input.page ?? 1,
+        offset: input.pageSize ?? 100,
+        additionalFields: { limit: input.pageSize ?? 100 },
+      },
+    });
+    return extractStoredRecords(response, ["messages", "records"]);
   }
 
   async fetchProfilePictureUrl(input: {
@@ -567,6 +607,45 @@ function extractContacts(value: unknown): EvolutionContact[] {
       };
     })
     .filter((item): item is EvolutionContact => Boolean(item));
+}
+
+function extractStoredRecords(value: unknown, preferredPath: string[]) {
+  const candidates: unknown[] = [];
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  if (Array.isArray(value)) candidates.push(value);
+  if (record) {
+    let preferred: unknown = record;
+    for (const key of preferredPath) {
+      if (!preferred || typeof preferred !== "object") break;
+      preferred = (preferred as Record<string, unknown>)[key];
+    }
+    candidates.push(preferred);
+    candidates.push(record.records, record.data, record.value, record.chats, record.messages);
+    const response = record.response;
+    if (response && typeof response === "object") {
+      const nested = response as Record<string, unknown>;
+      candidates.push(nested.records, nested.data, nested.value, nested.chats, nested.messages);
+      for (const key of preferredPath) {
+        const container = nested[key];
+        if (container && typeof container === "object") {
+          candidates.push((container as Record<string, unknown>).records, container);
+        }
+      }
+    }
+  }
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate.filter(isRecord);
+    if (candidate && typeof candidate === "object") {
+      const nested = candidate as Record<string, unknown>;
+      if (Array.isArray(nested.records)) return nested.records.filter(isRecord);
+      if (Array.isArray(nested.data)) return nested.data.filter(isRecord);
+    }
+  }
+  return [] as Record<string, unknown>[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function looksLikeWhatsappPhoneIdentifier(value: string) {

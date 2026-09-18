@@ -93,6 +93,55 @@ const BI_LABELS: Record<DashboardBiId, string> = {
   recent: "Atividade recente",
 };
 
+const DASHBOARD_PERIODS = new Set([
+  "today",
+  "yesterday",
+  "week",
+  "previous_week",
+  "month",
+  "previous_month",
+  "year",
+  "previous_year",
+  "7d",
+  "30d",
+  "custom",
+]);
+
+function defaultDashboardFilters(): OperationalReportFilters {
+  return {
+    ...DEFAULT_OPERATIONAL_FILTERS,
+    period: "today",
+    ...datesForOperationalPeriod("today"),
+  };
+}
+
+function loadDashboardFilters(storageKey: string): OperationalReportFilters {
+  const fallback = defaultDashboardFilters();
+  if (typeof window === "undefined") return fallback;
+
+  try {
+    const stored = window.localStorage.getItem(storageKey);
+    if (!stored) return fallback;
+    const parsed: unknown = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") return fallback;
+    const filters = parsed as Record<string, unknown>;
+    if (typeof filters.period !== "string" || !DASHBOARD_PERIODS.has(filters.period)) {
+      return fallback;
+    }
+    return {
+      period: filters.period as OperationalReportFilters["period"],
+      ...(typeof filters.q === "string" ? { q: filters.q } : {}),
+      ...(typeof filters.departmentId === "string" ? { departmentId: filters.departmentId } : {}),
+      ...(typeof filters.customerId === "string" ? { customerId: filters.customerId } : {}),
+      ...(typeof filters.connectionId === "string" ? { connectionId: filters.connectionId } : {}),
+      ...(typeof filters.start === "string" ? { start: filters.start } : {}),
+      ...(typeof filters.end === "string" ? { end: filters.end } : {}),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 function Dashboard() {
   useInstanceAccessUpdates();
   const queryClient = useQueryClient();
@@ -102,6 +151,7 @@ function Dashboard() {
     user?.role === "super_admin" ||
     user?.permissions?.includes("dashboard.manage");
   const storageKey = `trixus.dashboard.bis.${user?.id ?? "anonymous"}`;
+  const filtersStorageKey = `trixus.dashboard.filters.${user?.id ?? "anonymous"}`;
   const [editingDashboard, setEditingDashboard] = React.useState(false);
   const [visibleBis, setVisibleBis] = React.useState<DashboardBiId[]>(
     () => loadDashboardPreferences(storageKey).visible,
@@ -136,11 +186,15 @@ function Dashboard() {
     setDraftColumns(saved.columns);
     setEditingBiId(null);
   }, [storageKey]);
-  const [filters, setFilters] = React.useState<OperationalReportFilters>({
-    ...DEFAULT_OPERATIONAL_FILTERS,
-    period: "today",
-    ...datesForOperationalPeriod("today"),
-  });
+  const [filters, setFilters] = React.useState<OperationalReportFilters>(() =>
+    loadDashboardFilters(filtersStorageKey),
+  );
+  React.useEffect(() => {
+    setFilters(loadDashboardFilters(filtersStorageKey));
+  }, [filtersStorageKey]);
+  React.useEffect(() => {
+    window.localStorage.setItem(filtersStorageKey, JSON.stringify(filters));
+  }, [filters, filtersStorageKey]);
   const query = useQuery({
     queryKey: ["operations", "dashboard", filters],
     queryFn: () => operationsApi.dashboard(filters),
@@ -298,6 +352,7 @@ function Dashboard() {
         <DashboardFiltersBar
           value={filters}
           onChange={(patch) => setFilters((current) => ({ ...current, ...patch }))}
+          onClear={() => setFilters(defaultDashboardFilters())}
         />
 
         {loadingCards ? (
