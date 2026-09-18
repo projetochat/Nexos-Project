@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Send,
+  SendHorizontal,
   ArrowRightLeft,
   CircleCheckBig,
   Mic,
@@ -756,12 +757,6 @@ function MessageBubble({
         {m.interactive_data?.kind === "list" && (
           <WhatsAppListMessage interactive={m.interactive_data} mine={mine} />
         )}
-        <p
-          className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
-        >
-          {fmtHM(new Date(m.created_at).getTime())}
-          {mine && <MessageStatusIcon status={m.status} />}
-        </p>
         {m.reactions && m.reactions.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {m.reactions.map((reaction) => (
@@ -774,21 +769,29 @@ function MessageBubble({
             ))}
           </div>
         )}
-        <div className={`mt-1 flex gap-1 ${mine ? "justify-end" : "justify-start"}`}>
-          {onReply && (
-            <span className="inline-flex">
-              <button
-                type="button"
-                aria-label="Responder"
-                onClick={() => onReply(m)}
-                title="Responder"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full opacity-70 hover:bg-black/10 hover:opacity-100"
-              >
-                <Reply className="h-3.5 w-3.5" />
-              </button>
-            </span>
-          )}
-          <MessageReactionPicker onReact={react} />
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <div className="flex shrink-0 items-center gap-1">
+            {onReply && (
+              <span className="inline-flex">
+                <button
+                  type="button"
+                  aria-label="Responder"
+                  onClick={() => onReply(m)}
+                  title="Responder"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full opacity-70 hover:bg-black/10 hover:opacity-100"
+                >
+                  <Reply className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            )}
+            <MessageReactionPicker onReact={react} />
+          </div>
+          <p
+            className={`flex shrink-0 items-center whitespace-nowrap font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
+          >
+            {fmtHM(new Date(m.created_at).getTime())}
+            {mine && <MessageStatusIcon status={m.status} />}
+          </p>
         </div>
       </div>
       {mine && (
@@ -1748,16 +1751,25 @@ function Composer({
             ))}
           <Button
             variant="primary"
-            size="sm"
+            size="icon"
             onClick={handleSend}
             disabled={disabled || sequenceSending}
+            aria-label={
+              sequenceSending
+                ? "Enviando…"
+                : sequence && (sequence.next > 0 || sequenceError)
+                  ? "Continuar envio"
+                  : "Enviar mensagem"
+            }
+            title={
+              sequenceSending
+                ? "Enviando…"
+                : sequence && (sequence.next > 0 || sequenceError)
+                  ? "Continuar envio"
+                  : "Enviar mensagem"
+            }
           >
-            <Send className="h-3.5 w-3.5" />{" "}
-            {sequenceSending
-              ? "Enviando…"
-              : sequence && (sequence.next > 0 || sequenceError)
-                ? "Continuar"
-                : "Enviar"}
+            <SendHorizontal className="h-5 w-5" />
           </Button>
         </div>
         {recording && (

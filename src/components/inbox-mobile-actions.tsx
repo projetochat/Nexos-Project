@@ -1,4 +1,4 @@
-import { Camera, ContactRound, Ellipsis, Paperclip, Ticket, Zap } from "lucide-react";
+import { Camera, ContactRound, EllipsisVertical, Paperclip, Ticket, Zap } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -34,7 +34,7 @@ export function InboxMobileActions({
           title="Mais ações"
           className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
-          <Ellipsis className="h-5 w-5" />
+          <EllipsisVertical className="h-5 w-5" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="w-56">
