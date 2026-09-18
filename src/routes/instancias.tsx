@@ -1164,11 +1164,11 @@ function ConnectionSettingsModal({
           {tab === "general" && (
             <div className="space-y-5">
               <div className="grid gap-5 lg:grid-cols-[170px_minmax(0,1fr)]">
-                <div className="relative flex flex-col items-center justify-center gap-3">
+                <div className="relative grid grid-cols-2 items-center gap-3 sm:flex sm:flex-col sm:justify-center">
                   <button
                     ref={logoButtonRef}
                     type="button"
-                    className="group relative flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-sm font-semibold text-muted-foreground"
+                    className="group relative flex h-28 w-28 shrink-0 items-center justify-center justify-self-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-sm font-semibold text-muted-foreground"
                     onClick={() => setLogoMenuOpen((open) => !open)}
                     aria-label="Opções da foto"
                   >
@@ -1185,21 +1185,23 @@ function ConnectionSettingsModal({
                       <Camera className="h-8 w-8" />
                     </span>
                   </button>
-                  <div className="flex flex-col items-center gap-1.5 text-center sm:hidden">
-                    <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                  <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center sm:hidden">
+                    {connection && (
+                      <div className="mb-3">
+                        <Badge tone={STATUS_TONE[connection.status]}>
+                          {statusIcon(connection.status)}
+                          {statusLabel(connection.status)}
+                        </Badge>
+                      </div>
+                    )}
+                    <span className="text-base uppercase tracking-wide text-muted-foreground">
                       WhatsApp
                     </span>
-                    <span className="text-sm text-foreground">
+                    <span className="text-base font-medium text-foreground">
                       {connection?.ownerPhone
                         ? maskBrazilPhone(connection.ownerPhone)
                         : "Sem número conectado"}
                     </span>
-                    {connection && (
-                      <Badge tone={STATUS_TONE[connection.status]}>
-                        {statusIcon(connection.status)}
-                        {statusLabel(connection.status)}
-                      </Badge>
-                    )}
                   </div>
                   <FloatingLogoMenu
                     open={logoMenuOpen}
