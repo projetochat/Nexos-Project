@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Send,
   ArrowRightLeft,
-  CheckCircle2,
+  CircleCheckBig,
   Mic,
   Square,
   Trash2,
@@ -32,7 +32,8 @@ const toast = {
   info: (_?: unknown) => {},
 };
 import { InboxLayout } from "./inbox.index";
-import { Avatar, Badge, Button, Field, Input, Select } from "@/components/ui-kit";
+import { Avatar, Button, Field, Input, Select } from "@/components/ui-kit";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import {
@@ -42,7 +43,6 @@ import {
   organizationApi,
   quickReplyApi,
   ticketApi,
-  type ApiConversationStatus as ConvStatus,
   type ApiMessage,
   type ApiQuickReply as QuickReply,
   type ApiTag as Tag,
@@ -70,13 +70,6 @@ const quickReplyDrafts = new Map<string, SequenceDraft>();
 
 type Message = ApiMessage;
 type MentionOption = { id: string; label: string; phone: string };
-
-const STATUS_TONE: Record<ConvStatus, "warning" | "info" | "success" | "default"> = {
-  aberta: "warning",
-  em_andamento: "info",
-  aguardando: "warning",
-  fechada: "success",
-};
 
 function ConversationPage() {
   const { conversationId } = Route.useParams();
@@ -292,7 +285,6 @@ function ConversationPage() {
                       <span className="ml-1 text-[10px] text-muted-foreground">· grupo</span>
                     )}
                   </p>
-                  <Badge tone={STATUS_TONE[conv.status]}>{conv.status.replace("_", " ")}</Badge>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
                   {perms.visualiza_numero && conv.contact?.telefone && (
@@ -309,8 +301,15 @@ function ConversationPage() {
               ) : (
                 <>
                   {showStart && (
-                    <Button variant="secondary" size="sm" onClick={handleAssume}>
-                      <Play className="h-3.5 w-3.5" /> {startLabel}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleAssume}
+                      aria-label={startLabel}
+                      title={startLabel}
+                    >
+                      <Play className="h-3.5 w-3.5" />{" "}
+                      <span className="hidden md:inline">{startLabel}</span>
                     </Button>
                   )}
                   <Button variant="ghost" size="sm" onClick={transferModal.show}>
@@ -318,8 +317,14 @@ function ConversationPage() {
                     <span className="hidden lg:inline">Transferir</span>
                   </Button>
 
-                  <Button variant="ghost" size="sm" onClick={() => setClosing(true)}>
-                    <CheckCircle2 className="h-3.5 w-3.5" />{" "}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setClosing(true)}
+                    aria-label="Encerrar conversa"
+                    title="Encerrar conversa"
+                  >
+                    <CircleCheckBig className="h-3.5 w-3.5" />{" "}
                     <span className="hidden lg:inline">Encerrar</span>
                   </Button>
                 </>
@@ -456,7 +461,7 @@ function ConversationPage() {
                   search: { conversationId: conv.id, ticketId: undefined },
                 })
               }
-              className="w-full"
+              className="hidden w-full md:inline-flex"
             >
               Ver chamados relacionados
             </Button>
@@ -1078,6 +1083,7 @@ function Composer({
 }) {
   const qc = useQueryClient();
   const [text, setText] = React.useState("");
+  const isMobile = useIsMobile();
 
   const [pendingFile, setPendingFile] = React.useState<{
     file: File;
@@ -1697,7 +1703,9 @@ function Composer({
               if (e.key === "Escape") setShowQR(false);
             }}
             disabled={disabled || sequenceSending || !!sequence}
-            placeholder={
+            aria-label="Mensagem"
+            placeholder={isMobile ? "" : "Digite uma mensagem"}
+            title={
               disabledReason === "closed"
                 ? "Conversa encerrada."
                 : disabledReason === "lead"
@@ -1706,7 +1714,7 @@ function Composer({
                     ? "Clique em Retomar acima para voltar a atender."
                     : disabledReason === "not-mine"
                       ? "Conversa atribuída a outro atendente."
-                      : "Escreva uma resposta…  (digite / para atalhos)"
+                      : undefined
             }
             className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-5 outline-none placeholder:text-muted-foreground disabled:opacity-50"
             style={{ minHeight: 32, maxHeight: 5 * 20 + 12 }}
