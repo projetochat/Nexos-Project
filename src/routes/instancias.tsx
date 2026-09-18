@@ -153,7 +153,14 @@ function Page() {
       }
       novo.hide();
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => {
+      const message = (e as Error).message;
+      toast.error(
+        message === "Já existe um registro com essas informações."
+          ? "Número máximo de conexões excedidas."
+          : message,
+      );
+    },
   });
   const refresh = useMutation({
     mutationFn: async (id: string) => {
@@ -586,7 +593,7 @@ function ConnectionForm({
           </div>
         </fieldset>
 
-        <div className="grid grid-cols-[minmax(0,1fr)_8.5rem] gap-3">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
           <Field label="Nome da instância *">
             <Input
               value={name}
@@ -1238,58 +1245,66 @@ function ConnectionSettingsModal({
 
                 <div className="space-y-4">
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Status">
-                      <div className="flex h-10 items-center">
-                        {connection ? (
-                          <Badge tone={STATUS_TONE[connection.status]}>
-                            {statusIcon(connection.status)}
-                            {statusLabel(connection.status)}
-                          </Badge>
-                        ) : null}
-                      </div>
-                    </Field>
-                    <Field label="Cor">
-                      <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
-                        <input
-                          type="color"
-                          value={completeHexColor(form.color, "#22c55e")}
-                          onChange={(event) =>
-                            setForm({
-                              ...form,
-                              color: normalizeHexColor(event.target.value, "#22c55e"),
-                            })
-                          }
-                          className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                    <div className="sm:col-start-1 sm:row-start-1">
+                      <Field label="Status">
+                        <div className="flex h-10 items-center">
+                          {connection ? (
+                            <Badge tone={STATUS_TONE[connection.status]}>
+                              {statusIcon(connection.status)}
+                              {statusLabel(connection.status)}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </Field>
+                    </div>
+                    <div className="sm:col-start-1 sm:row-start-2">
+                      <Field label="Nome *">
+                        <Input
+                          value={form.name}
+                          onChange={(event) => setForm({ ...form, name: event.target.value })}
                         />
-                        <input
-                          type="text"
-                          value={form.color || ""}
-                          onChange={(event) =>
-                            setForm({
-                              ...form,
-                              color: normalizeHexColor(event.target.value, "#22c55e"),
-                            })
+                      </Field>
+                    </div>
+                    <div className="sm:col-start-2 sm:row-start-1">
+                      <Field label="Cor">
+                        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
+                          <input
+                            type="color"
+                            value={completeHexColor(form.color, "#22c55e")}
+                            onChange={(event) =>
+                              setForm({
+                                ...form,
+                                color: normalizeHexColor(event.target.value, "#22c55e"),
+                              })
+                            }
+                            className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                          />
+                          <input
+                            type="text"
+                            value={form.color || ""}
+                            onChange={(event) =>
+                              setForm({
+                                ...form,
+                                color: normalizeHexColor(event.target.value, "#22c55e"),
+                              })
+                            }
+                            placeholder={completeHexColor("#22c55e")}
+                            maxLength={7}
+                            className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+                          />
+                        </div>
+                      </Field>
+                    </div>
+                    <div className="sm:col-start-2 sm:row-start-2">
+                      <Field label="Telefone *">
+                        <Input
+                          value={
+                            connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""
                           }
-                          placeholder={completeHexColor("#22c55e")}
-                          maxLength={7}
-                          className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+                          readOnly
                         />
-                      </div>
-                    </Field>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Nome *">
-                      <Input
-                        value={form.name}
-                        onChange={(event) => setForm({ ...form, name: event.target.value })}
-                      />
-                    </Field>
-                    <Field label="Telefone *">
-                      <Input
-                        value={connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""}
-                        readOnly
-                      />
-                    </Field>
+                      </Field>
+                    </div>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
