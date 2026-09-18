@@ -38,7 +38,14 @@ export function InboxImageViewer({
 }) {
   const [view, setView] = React.useState(initialView);
   const [dragging, setDragging] = React.useState(false);
-  const drag = React.useRef<{ id: number; x: number; y: number } | null>(null);
+  const drag = React.useRef<{
+    id: number;
+    x: number;
+    y: number;
+    startX: number;
+    startY: number;
+    pan: boolean;
+  } | null>(null);
   const [stage, setStage] = React.useState<HTMLDivElement | null>(null);
   const imageRef = React.useRef<HTMLImageElement>(null);
   const [forwarding, setForwarding] = React.useState(false);
@@ -89,6 +96,8 @@ export function InboxImageViewer({
 
   React.useEffect(() => {
     setView(initialView);
+    drag.current = null;
+    setDragging(false);
   }, [activeMessage.id]);
 
   React.useEffect(() => {
@@ -125,8 +134,8 @@ export function InboxImageViewer({
       return {
         ...current,
         zoom: next,
-        x: point.x - (point.x - current.x) * ratio,
-        y: point.y - (point.y - current.y) * ratio,
+        x: next > 1 ? point.x - (point.x - current.x) * ratio : 0,
+        y: next > 1 ? point.y - (point.y - current.y) * ratio : 0,
       };
     });
   }, []);
@@ -220,7 +229,7 @@ export function InboxImageViewer({
           </Dialog.Title>
           <div className="z-10 flex shrink-0 flex-wrap justify-between gap-2 p-3">
             <div
-              className="flex flex-wrap items-center gap-2"
+              className="hidden flex-wrap items-center gap-2 sm:flex"
               role="group"
               aria-label="Ajustar visualização"
             >
@@ -241,7 +250,11 @@ export function InboxImageViewer({
               {action("Restaurar visualização", RotateCcwSquare, () => setView(initialView))}
               <span className="text-xs tabular-nums">{Math.round(view.zoom * 100)}%</span>
             </div>
-            <div className="flex gap-2" role="group" aria-label="Ações da imagem">
+            <div
+              className="relative flex w-full flex-wrap gap-2 pt-12 sm:w-auto sm:flex-nowrap sm:pt-0"
+              role="group"
+              aria-label="Ações da imagem"
+            >
               {action(
                 "Encaminhar",
                 Forward,
@@ -268,7 +281,9 @@ export function InboxImageViewer({
                 () => void run(() => onDownload(activeMessage)),
                 busy,
               )}
-              {action("Fechar", X, onClose, busy)}
+              <div className="absolute right-0 top-0 sm:static">
+                {action("Fechar", X, onClose, busy)}
+              </div>
             </div>
           </div>
           {error && (
@@ -376,7 +391,7 @@ export function InboxImageViewer({
             <div
               ref={setStage}
               data-testid="image-stage"
-              className={`relative min-h-0 flex-1 touch-none overflow-hidden ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+              className={`relative min-h-0 flex-1 touch-none overflow-hidden ${view.zoom > 1 ? (dragging ? "cursor-grabbing" : "cursor-grab") : gallery.length > 1 ? "cursor-ew-resize" : "cursor-default"}`}
               onDoubleClick={() => setView(initialView)}
               onPointerDown={(event) => {
                 if (event.button !== 0 || drag.current) return;
@@ -395,7 +410,14 @@ export function InboxImageViewer({
                 }
                 event.preventDefault();
                 event.currentTarget.setPointerCapture(event.pointerId);
-                drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+                drag.current = {
+                  id: event.pointerId,
+                  x: event.clientX,
+                  y: event.clientY,
+                  startX: event.clientX,
+                  startY: event.clientY,
+                  pan: view.zoom > 1,
+                };
                 setDragging(true);
               }}
               onPointerMove={(event) => {
@@ -403,12 +425,26 @@ export function InboxImageViewer({
                 if (!previous || previous.id !== event.pointerId) return;
                 const dx = event.clientX - previous.x;
                 const dy = event.clientY - previous.y;
-                drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
-                setView((v) => ({ ...v, x: v.x + dx, y: v.y + dy }));
+                drag.current = { ...previous, x: event.clientX, y: event.clientY };
+                if (previous.pan)
+                  setView((v) => (v.zoom > 1 ? { ...v, x: v.x + dx, y: v.y + dy } : v));
               }}
-              onPointerUp={() => {
+              onPointerUp={(event) => {
+                const gesture = drag.current;
+                if (!gesture || gesture.id !== event.pointerId) return;
+                if (!gesture.pan) {
+                  const dx = event.clientX - gesture.startX;
+                  const dy = event.clientY - gesture.startY;
+                  if (Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+                    setActiveIndex((index) =>
+                      Math.max(0, Math.min(gallery.length - 1, index + (dx < 0 ? 1 : -1))),
+                    );
+                  }
+                }
                 drag.current = null;
                 setDragging(false);
+                if (event.currentTarget.hasPointerCapture(event.pointerId))
+                  event.currentTarget.releasePointerCapture(event.pointerId);
               }}
               onPointerCancel={() => {
                 drag.current = null;
@@ -501,9 +537,6 @@ export function InboxImageViewer({
             {caption && (
               <p className="max-h-20 overflow-auto whitespace-pre-wrap text-sm">{caption}</p>
             )}
-            <p className="mt-1 text-xs text-white/50">
-              Use o scroll para ampliar e arraste para mover. Clique duas vezes para restaurar.
-            </p>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

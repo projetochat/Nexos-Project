@@ -35,7 +35,7 @@ import { InboxLayout } from "./inbox.index";
 import { Avatar, Button, Field, Input, Select } from "@/components/ui-kit";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MessageStatusIcon } from "@/components/message-status-icon";
-import { MessageReactionPicker } from "@/components/message-reaction-picker";
+import { MessageActionsMenu } from "@/components/message-actions-menu";
 import { InboxMobileActions } from "@/components/inbox-mobile-actions";
 import { InboxContactPicker } from "@/components/inbox-contact-picker";
 import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
@@ -648,12 +648,25 @@ function MessageBubble({
         </div>
       )}
       <div
-        className={`min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} rounded-2xl px-3 py-2 text-sm shadow-card md:max-w-[75%] ${
+        tabIndex={0}
+        onClick={(event) => {
+          if (
+            !(event.target as HTMLElement).closest("button, a, input, video, audio, [role=dialog]")
+          )
+            event.currentTarget.focus({ preventScroll: true });
+        }}
+        className={`group/message relative min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} rounded-2xl px-3 py-2 text-sm shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:max-w-[75%] ${
           mine
             ? "rounded-br-sm bg-gradient-brand text-white"
             : "rounded-bl-sm border border-border bg-surface-1"
         }`}
       >
+        <MessageActionsMenu
+          message={m}
+          onReply={onReply ? () => onReply(m) : undefined}
+          onReact={react}
+          onDownload={() => download()}
+        />
         {m.participant?.name && !mine && (
           <p className="mb-1 text-[11px] font-semibold text-primary">{m.participant.name}</p>
         )}
@@ -769,23 +782,7 @@ function MessageBubble({
             ))}
           </div>
         )}
-        <div className="mt-1 flex items-center justify-between gap-3">
-          <div className="flex shrink-0 items-center gap-1">
-            {onReply && (
-              <span className="inline-flex">
-                <button
-                  type="button"
-                  aria-label="Responder"
-                  onClick={() => onReply(m)}
-                  title="Responder"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full opacity-70 hover:bg-black/10 hover:opacity-100"
-                >
-                  <Reply className="h-3.5 w-3.5" />
-                </button>
-              </span>
-            )}
-            <MessageReactionPicker onReact={react} />
-          </div>
+        <div className="mt-1 flex items-center justify-end">
           <p
             className={`flex shrink-0 items-center whitespace-nowrap font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
           >

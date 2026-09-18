@@ -10,6 +10,43 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 
+it("hides the viewing controls on mobile and keeps image actions below the top-right close button", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await React.act(() =>
+      root.render(
+        <InboxImageViewer
+          src="blob:test-image"
+          message={{ id: "image1", media_data: { file_name: "foto.jpg" } } as ApiMessage}
+          onClose={vi.fn()}
+          onDownload={vi.fn().mockResolvedValue(undefined)}
+        />,
+      ),
+    );
+
+    const viewingControls = document.querySelector<HTMLElement>(
+      '[aria-label="Ajustar visualização"]',
+    )!;
+    const imageActions = document.querySelector<HTMLElement>('[aria-label="Ações da imagem"]')!;
+    const closeWrapper = document.querySelector('[aria-label="Fechar"]')!.parentElement!;
+
+    expect(viewingControls.className).toContain("hidden");
+    expect(viewingControls.className).toContain("sm:flex");
+    expect(imageActions.className).toContain("pt-12");
+    expect(imageActions.className).toContain("sm:pt-0");
+    expect(closeWrapper.className).toContain("absolute");
+    expect(closeWrapper.className).toContain("right-0");
+    expect(closeWrapper.className).toContain("top-0");
+    expect(closeWrapper.className).toContain("sm:static");
+  } finally {
+    await React.act(() => root.unmount());
+    container.remove();
+  }
+});
+
 it("zooms with the wheel, drags, transforms and restores the image without changing the source", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const container = document.createElement("div");
@@ -44,6 +81,8 @@ it("zooms with the wheel, drags, transforms and restores the image without chang
       );
     };
     stage.setPointerCapture = vi.fn();
+    stage.hasPointerCapture = vi.fn(() => true);
+    stage.releasePointerCapture = vi.fn();
     const wheel = new WheelEvent("wheel", {
       deltaY: -100,
       clientX: 50,
@@ -175,3 +214,86 @@ it("navigates through the conversation images using arrows and thumbnails", asyn
     container.remove();
   }
 });
+
+it.each(["mouse", "touch"])(
+  "swipes at normal size and only pans after zoom with %s",
+  async (pointerType) => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const images = [1, 2].map(
+      (number) =>
+        ({
+          id: `img${number}`,
+          conversation_id: "c1",
+          type: "image",
+          media_data: { file_name: `${number}.jpg` },
+        }) as ApiMessage,
+    );
+    const download = vi.spyOn(messageApi, "downloadMedia").mockResolvedValue(new Blob(["image"]));
+    const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:next");
+    try {
+      await React.act(() =>
+        root.render(
+          <InboxImageViewer
+            src="blob:first"
+            message={images[0]}
+            images={images}
+            onClose={vi.fn()}
+            onDownload={vi.fn()}
+          />,
+        ),
+      );
+      const stage = document.querySelector<HTMLElement>('[data-testid="image-stage"]')!;
+      stage.setPointerCapture = vi.fn();
+      stage.hasPointerCapture = vi.fn(() => true);
+      stage.releasePointerCapture = vi.fn();
+      const pointer = (type: string, x: number, y: number) => {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        Object.assign(event, { pointerId: 1, pointerType, button: 0, clientX: x, clientY: y });
+        stage.dispatchEvent(event);
+      };
+      const swipe = async (x: number, y = 0) => {
+        await React.act(() => {
+          pointer("pointerdown", 150, 100);
+          pointer("pointermove", 150 + x, 100 + y);
+          pointer("pointerup", 150 + x, 100 + y);
+        });
+      };
+      const active = () => stage.querySelector("img")!;
+      await swipe(-15);
+      expect(active().alt).toBe("1.jpg");
+      await swipe(-70, 100);
+      expect(active().alt).toBe("1.jpg");
+      await swipe(-100);
+      expect(active().alt).toBe("2.jpg");
+      expect(active().style.transform).toContain("translate(0px, 0px)");
+      await swipe(-100);
+      expect(active().alt).toBe("2.jpg");
+      await React.act(() =>
+        (document.querySelector('[aria-label="Aumentar zoom"]') as HTMLButtonElement).click(),
+      );
+      await swipe(100);
+      expect(active().alt).toBe("2.jpg");
+      expect(active().style.transform).toContain("translate(100px, 0px)");
+      await React.act(() =>
+        (document.querySelector('[aria-label="Diminuir zoom"]') as HTMLButtonElement).click(),
+      );
+      expect(active().style.transform).toContain("translate(0px, 0px)");
+      await swipe(100);
+      expect(active().alt).toBe("1.jpg");
+      await React.act(() => {
+        pointer("pointerdown", 150, 100);
+        pointer("pointermove", 20, 100);
+        pointer("pointercancel", 20, 100);
+      });
+      expect(active().alt).toBe("1.jpg");
+    } finally {
+      await React.act(() => root.unmount());
+      host.remove();
+      download.mockRestore();
+      create.mockRestore();
+    }
+  },
+);
