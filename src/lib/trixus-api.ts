@@ -1329,6 +1329,11 @@ export const quickReplyApi = {
 };
 
 export const conversationApi = {
+  bulkClose: (queues: Array<"ativas" | "standby" | "fila" | "leads">) =>
+    apiRequest<{ closed: number }>("/conversations/bulk-close", {
+      method: "POST",
+      body: JSON.stringify({ queues }),
+    }),
   list: (params: ListConversationsParams = {}) =>
     apiRequest<PaginatedResponse<ApiConversation> & { counts: ConversationCounts }>(
       `/conversations${queryString(params)}`,
