@@ -56,11 +56,6 @@ export function BulkCloseConversationsModal({ onClose }: { onClose: () => void }
         </>
       }
     >
-      <p className="mb-4 text-sm text-muted-foreground">
-        Encerra todas as conversas e grupos das filas selecionadas nas instâncias às quais você tem
-        acesso, incluindo os que não aparecem nesta página. Os filtros da busca não são aplicados.
-        Os registros serão enviados ao histórico, com protocolo e notas de início e encerramento.
-      </p>
       <div className="space-y-4">
         <label
           htmlFor={`${prefix}-all`}

@@ -43,7 +43,7 @@ import {
 } from "@/lib/trixus-api";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 import { useSession } from "@/lib/session";
-import { relativeTime } from "@/lib/format";
+import { fmtHM } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 import { useRealtimeInbox } from "@/lib/realtime/hooks";
@@ -425,7 +425,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                           <span
                             className={`shrink-0 font-mono text-[10px] ${u > 0 ? "text-success" : "text-muted-foreground"}`}
                           >
-                            {relativeTime(new Date(c.last_message_at).getTime())}
+                            {fmtHM(new Date(c.last_message_at).getTime())}
                           </span>
                         </div>
                         <p className="mt-0.5 truncate text-xs text-muted-foreground">
