@@ -33,7 +33,8 @@ import {
   SearchInput,
   Select,
 } from "@/components/ui-kit";
-import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
+import { Modal, ConfirmDialog } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";

@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/lib/session";
+import { invalidateConversationQueries } from "./invalidate-conversation";
 import {
   isInboundConversationUpdate,
   playInboxNotificationSound,
@@ -79,23 +80,8 @@ export function useRealtimeInbox(conversationId?: string | null) {
         event.event === "conversation.assignment.updated" ||
         event.event === "conversation.unread.updated"
       ) {
-        void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-      }
-      if (
-        event.event === "message.created" ||
-        event.event === "message.status.updated" ||
-        event.event === "message.reaction.updated" ||
-        event.event === "conversation.unread.updated"
-      ) {
         const data = event.data as { conversationId?: string };
-        if (data.conversationId) {
-          void queryClient.invalidateQueries({
-            queryKey: ["trixus", "messages", data.conversationId],
-          });
-          void queryClient.invalidateQueries({
-            queryKey: ["trixus", "conversations", data.conversationId],
-          });
-        }
+        void invalidateConversationQueries(queryClient, data.conversationId);
       }
       if (event.event === "connection.status.updated") {
         void queryClient.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
@@ -117,12 +103,8 @@ export function useRealtimeInbox(conversationId?: string | null) {
     const previousStatus = previousStatusRef.current;
     previousStatusRef.current = realtime.status;
     if (realtime.status !== "connected" || previousStatus === "connected") return;
-    void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+    void invalidateConversationQueries(queryClient, conversationId);
     void queryClient.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
-    if (conversationId) {
-      void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations", conversationId] });
-      void queryClient.invalidateQueries({ queryKey: ["trixus", "messages", conversationId] });
-    }
   }, [conversationId, queryClient, realtime.status]);
 
   return realtime;

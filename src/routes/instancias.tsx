@@ -15,7 +15,6 @@ import {
   Copy,
   Eye,
   Infinity as InfinityIcon,
-  Info,
   MessageCircle,
   Pencil,
   Plus,
@@ -39,7 +38,8 @@ import {
   Select,
   Textarea,
 } from "@/components/ui-kit";
-import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
+import { ConfirmDialog, Modal } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
@@ -153,7 +153,14 @@ function Page() {
       }
       novo.hide();
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => {
+      const message = (e as Error).message;
+      toast.error(
+        message === "Já existe um registro com essas informações."
+          ? "Número máximo de conexões excedidas."
+          : message,
+      );
+    },
   });
   const refresh = useMutation({
     mutationFn: async (id: string) => {
@@ -332,7 +339,7 @@ function Page() {
                     <div className="flex justify-between gap-3">
                       <span className="text-muted-foreground">Referência</span>
                       <span className="truncate text-right">
-                        {connection.externalReference ?? "sem referencia externa"}
+                        {connection.reference ?? "Aguardando referência"}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -586,7 +593,7 @@ function ConnectionForm({
           </div>
         </fieldset>
 
-        <div className="grid grid-cols-[minmax(0,1fr)_8.5rem] gap-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
           <Field label="Nome da instância *">
             <Input
               value={name}
@@ -651,7 +658,10 @@ function ConnectionForm({
           </div>
           <div className="flex items-stretch gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
             <span className="flex w-6 shrink-0 items-center justify-center">
-              <Info className="h-5 w-5 text-blue-600" aria-hidden="true" />
+              <InfoTooltip label="importação de mensagens">
+                A importação de mensagens começará após ler o QR Code. Pode levar até 5 minutos para
+                iniciar.
+              </InfoTooltip>
             </span>
             <div>
               <p className="font-semibold">
@@ -687,6 +697,7 @@ function ImportOption({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label}
         disabled={disabled}
         onClick={() => onCheckedChange(!checked)}
         className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${checked ? "bg-blue-600" : "bg-slate-300"}`}
@@ -701,7 +712,7 @@ function ImportOption({
 }
 
 function ImportStatusBadge({ job }: { job?: ApiMessagingHistoryImport }) {
-  if (!job) return <span className="text-muted-foreground">Aguardando conexão</span>;
+  if (!job) return <Badge dot={false}>Aguardando conexão</Badge>;
   const labels: Record<ApiMessagingHistoryImport["status"], string> = {
     PENDING: "Na fila",
     RUNNING: "Em andamento",
@@ -709,17 +720,20 @@ function ImportStatusBadge({ job }: { job?: ApiMessagingHistoryImport }) {
     PARTIAL_FAILED: "Concluída com falhas",
     FAILED: "Falhou",
   };
-  const tones: Record<ApiMessagingHistoryImport["status"], string> = {
-    PENDING: "bg-amber-50 text-amber-700",
-    RUNNING: "bg-blue-50 text-blue-700",
-    COMPLETED: "bg-emerald-50 text-emerald-700",
-    PARTIAL_FAILED: "bg-amber-50 text-amber-700",
-    FAILED: "bg-red-50 text-red-700",
+  const tones: Record<
+    ApiMessagingHistoryImport["status"],
+    React.ComponentProps<typeof Badge>["tone"]
+  > = {
+    PENDING: "warning",
+    RUNNING: "info",
+    COMPLETED: "success",
+    PARTIAL_FAILED: "warning",
+    FAILED: "destructive",
   };
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tones[job.status]}`}>
+    <Badge tone={tones[job.status]} dot={false}>
       {labels[job.status]}
-    </span>
+    </Badge>
   );
 }
 
@@ -1156,11 +1170,11 @@ function ConnectionSettingsModal({
           {tab === "general" && (
             <div className="space-y-5">
               <div className="grid gap-5 lg:grid-cols-[170px_minmax(0,1fr)]">
-                <div className="relative flex items-center justify-center">
+                <div className="relative grid grid-cols-2 items-center gap-3 sm:flex sm:flex-col sm:justify-center">
                   <button
                     ref={logoButtonRef}
                     type="button"
-                    className="group relative flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-sm font-semibold text-muted-foreground"
+                    className="group relative flex h-28 w-28 shrink-0 items-center justify-center justify-self-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-sm font-semibold text-muted-foreground"
                     onClick={() => setLogoMenuOpen((open) => !open)}
                     aria-label="Opções da foto"
                   >
@@ -1177,6 +1191,24 @@ function ConnectionSettingsModal({
                       <Camera className="h-8 w-8" />
                     </span>
                   </button>
+                  <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center sm:hidden">
+                    {connection && (
+                      <div className="mb-3">
+                        <Badge tone={STATUS_TONE[connection.status]}>
+                          {statusIcon(connection.status)}
+                          {statusLabel(connection.status)}
+                        </Badge>
+                      </div>
+                    )}
+                    <span className="text-base uppercase tracking-wide text-muted-foreground">
+                      WhatsApp
+                    </span>
+                    <span className="text-base font-medium text-foreground">
+                      {connection?.ownerPhone
+                        ? maskBrazilPhone(connection.ownerPhone)
+                        : "Sem número conectado"}
+                    </span>
+                  </div>
                   <FloatingLogoMenu
                     open={logoMenuOpen}
                     anchorRef={logoButtonRef}
@@ -1237,59 +1269,67 @@ function ConnectionSettingsModal({
                 </div>
 
                 <div className="space-y-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Status">
-                      <div className="flex h-10 items-center">
-                        {connection ? (
-                          <Badge tone={STATUS_TONE[connection.status]}>
-                            {statusIcon(connection.status)}
-                            {statusLabel(connection.status)}
-                          </Badge>
-                        ) : null}
-                      </div>
-                    </Field>
-                    <Field label="Cor">
-                      <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
-                        <input
-                          type="color"
-                          value={completeHexColor(form.color, "#22c55e")}
-                          onChange={(event) =>
-                            setForm({
-                              ...form,
-                              color: normalizeHexColor(event.target.value, "#22c55e"),
-                            })
-                          }
-                          className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                  <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3 sm:grid-cols-2 sm:gap-4">
+                    <div className="hidden sm:col-start-1 sm:row-start-1 sm:block">
+                      <Field label="Status">
+                        <div className="flex h-10 items-center">
+                          {connection ? (
+                            <Badge tone={STATUS_TONE[connection.status]}>
+                              {statusIcon(connection.status)}
+                              {statusLabel(connection.status)}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </Field>
+                    </div>
+                    <div className="min-w-0 sm:col-start-1 sm:row-start-2">
+                      <Field label="Nome *">
+                        <Input
+                          value={form.name}
+                          onChange={(event) => setForm({ ...form, name: event.target.value })}
                         />
-                        <input
-                          type="text"
-                          value={form.color || ""}
-                          onChange={(event) =>
-                            setForm({
-                              ...form,
-                              color: normalizeHexColor(event.target.value, "#22c55e"),
-                            })
+                      </Field>
+                    </div>
+                    <div className="min-w-0 sm:col-start-2 sm:row-start-1">
+                      <Field label="Cor">
+                        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
+                          <input
+                            type="color"
+                            value={completeHexColor(form.color, "#22c55e")}
+                            onChange={(event) =>
+                              setForm({
+                                ...form,
+                                color: normalizeHexColor(event.target.value, "#22c55e"),
+                              })
+                            }
+                            className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                          />
+                          <input
+                            type="text"
+                            value={form.color || ""}
+                            onChange={(event) =>
+                              setForm({
+                                ...form,
+                                color: normalizeHexColor(event.target.value, "#22c55e"),
+                              })
+                            }
+                            placeholder={completeHexColor("#22c55e")}
+                            maxLength={7}
+                            className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+                          />
+                        </div>
+                      </Field>
+                    </div>
+                    <div className="hidden sm:col-start-2 sm:row-start-2 sm:block">
+                      <Field label="Telefone *">
+                        <Input
+                          value={
+                            connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""
                           }
-                          placeholder={completeHexColor("#22c55e")}
-                          maxLength={7}
-                          className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+                          readOnly
                         />
-                      </div>
-                    </Field>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Nome *">
-                      <Input
-                        value={form.name}
-                        onChange={(event) => setForm({ ...form, name: event.target.value })}
-                      />
-                    </Field>
-                    <Field label="Telefone *">
-                      <Input
-                        value={connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""}
-                        readOnly
-                      />
-                    </Field>
+                      </Field>
+                    </div>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
@@ -1328,66 +1368,62 @@ function ConnectionSettingsModal({
               >
                 <h3 className="text-base font-semibold text-foreground">Importação de Mensagens</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <ImportOption
-                    label="Importar histórico de mensagens"
-                    checked={connection?.importHistoryEnabled === true}
-                    onCheckedChange={() => undefined}
-                    disabled
-                  />
-                  <ImportOption
-                    label="Importar mensagens de grupo"
-                    checked={connection?.importGroupsEnabled === true}
-                    onCheckedChange={() => undefined}
-                    disabled
-                  />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <ImportDate
-                    label="Dt. início p/ importação"
-                    value={connection?.importHistoryStartDate ?? ""}
-                    onChange={() => undefined}
-                    disabled
-                  />
-                  <ImportDate
-                    label="Dt. início p/ importação"
-                    value={connection?.importGroupsStartDate ?? ""}
-                    onChange={() => undefined}
-                    disabled
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
                   {(["DIRECT", "GROUP"] as const).map((kind) => {
                     const job = importJobs.find((item) => item.kind === kind);
                     const label =
                       kind === "DIRECT" ? "Histórico de mensagens" : "Mensagens de grupo";
                     return (
-                      <div
-                        key={kind}
-                        className="rounded-lg border border-border bg-background px-3 py-2 text-xs"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-foreground">{label}</span>
-                          <ImportStatusBadge job={job} />
+                      <div key={kind} className="min-w-0 space-y-4">
+                        <ImportOption
+                          label={
+                            kind === "DIRECT"
+                              ? "Importar histórico de mensagens"
+                              : "Importar mensagens de grupo"
+                          }
+                          checked={
+                            kind === "DIRECT"
+                              ? connection?.importHistoryEnabled === true
+                              : connection?.importGroupsEnabled === true
+                          }
+                          onCheckedChange={() => undefined}
+                          disabled
+                        />
+                        <ImportDate
+                          label="Dt. início p/ importação"
+                          value={
+                            (kind === "DIRECT"
+                              ? connection?.importHistoryStartDate
+                              : connection?.importGroupsStartDate) ?? ""
+                          }
+                          onChange={() => undefined}
+                          disabled
+                        />
+                        <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-foreground">{label}</span>
+                            <ImportStatusBadge job={job} />
+                          </div>
+                          {job && (
+                            <p className="mt-1 text-muted-foreground">
+                              {job.chatsProcessed} conversa(s) · {job.messagesImported} mensagem(ns)
+                              importada(s)
+                            </p>
+                          )}
+                          {job?.error && <p className="mt-1 text-destructive">{job.error}</p>}
+                          {job && (job.status === "FAILED" || job.status === "PARTIAL_FAILED") && (
+                            <div className="mt-2 flex justify-end">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={retryImport.isPending}
+                                onClick={() => retryImport.mutate(kind)}
+                              >
+                                Tentar novamente
+                              </Button>
+                            </div>
+                          )}
                         </div>
-                        {job && (
-                          <p className="mt-1 text-muted-foreground">
-                            {job.chatsProcessed} conversa(s) · {job.messagesImported} mensagem(ns)
-                            importada(s)
-                          </p>
-                        )}
-                        {job?.error && <p className="mt-1 text-destructive">{job.error}</p>}
-                        {job && (job.status === "FAILED" || job.status === "PARTIAL_FAILED") && (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            className="mt-2"
-                            disabled={retryImport.isPending}
-                            onClick={() => retryImport.mutate(kind)}
-                          >
-                            Tentar novamente
-                          </Button>
-                        )}
                       </div>
                     );
                   })}
@@ -1398,18 +1434,14 @@ function ConnectionSettingsModal({
 
           {tab === "greeting" && (
             <div className="space-y-4">
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={form.welcomeEnabled}
-                  onChange={(event) => {
-                    setForm({ ...form, welcomeEnabled: event.target.checked });
-                    setShowWelcomeValidation(false);
-                  }}
-                  className="h-4 w-4 accent-primary"
-                />
-                Ativar mensagem de saudação
-              </label>
+              <ImportOption
+                label="Ativar mensagem de saudação"
+                checked={form.welcomeEnabled}
+                onCheckedChange={(checked) => {
+                  setForm({ ...form, welcomeEnabled: checked });
+                  setShowWelcomeValidation(false);
+                }}
+              />
               <Field
                 label={
                   form.welcomeEnabled
@@ -1475,19 +1507,15 @@ function ConnectionSettingsModal({
 
           {tab === "absence" && (
             <div className="space-y-4">
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={absenceEnabled}
-                  onChange={(event) => {
-                    setAbsenceEnabled(event.target.checked);
-                    setShowAbsenceValidation(false);
-                    if (event.target.checked) setAbsenceActivation((current) => current + 1);
-                  }}
-                  className="h-4 w-4 accent-primary"
-                />
-                Ativar mensagem de ausência
-              </label>
+              <ImportOption
+                label="Ativar mensagem de ausência"
+                checked={absenceEnabled}
+                onCheckedChange={(checked) => {
+                  setAbsenceEnabled(checked);
+                  setShowAbsenceValidation(false);
+                  if (checked) setAbsenceActivation((current) => current + 1);
+                }}
+              />
               <Field
                 label={absenceEnabled ? "Mensagem de Ausência *" : "Mensagem de Ausência"}
                 error={

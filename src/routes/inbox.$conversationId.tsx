@@ -3,8 +3,9 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Send,
+  SendHorizontal,
   ArrowRightLeft,
-  CheckCircle2,
+  CircleCheckBig,
   Mic,
   Square,
   Trash2,
@@ -20,7 +21,6 @@ import {
   Ticket,
   Reply,
   Download,
-  SmilePlus,
   List,
 } from "lucide-react";
 import { toast as systemToast } from "sonner";
@@ -32,8 +32,14 @@ const toast = {
   info: (_?: unknown) => {},
 };
 import { InboxLayout } from "./inbox.index";
-import { Avatar, Badge, Button, Field, Input, Select } from "@/components/ui-kit";
-import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
+import { Avatar, Button, Field, Input, Select } from "@/components/ui-kit";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { MessageStatusIcon } from "@/components/message-status-icon";
+import { MessageActionsMenu } from "@/components/message-actions-menu";
+import { InboxMobileActions } from "@/components/inbox-mobile-actions";
+import { InboxContactPicker } from "@/components/inbox-contact-picker";
+import { Modal, ConfirmDialog } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import {
   conversationApi,
@@ -42,7 +48,6 @@ import {
   organizationApi,
   quickReplyApi,
   ticketApi,
-  type ApiConversationStatus as ConvStatus,
   type ApiMessage,
   type ApiQuickReply as QuickReply,
   type ApiTag as Tag,
@@ -59,9 +64,14 @@ import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { resolveMessageVariables, type MessageVariableContext } from "@/lib/message-variables";
+import { invalidateConversationQueries } from "@/lib/realtime/invalidate-conversation";
 import { startTyping, stopTyping } from "@/lib/realtime/client";
 import { ContactFormModal, contactPayload } from "./contatos";
 import { InboxImageViewer } from "@/components/inbox-image-viewer";
+import {
+  CALL_UNAVAILABLE_MESSAGE,
+  ConversationCallButton,
+} from "@/components/conversation-call-button";
 
 export const Route = createFileRoute("/inbox/$conversationId")({ component: ConversationPage });
 
@@ -70,14 +80,8 @@ const quickReplyDrafts = new Map<string, SequenceDraft>();
 type Message = ApiMessage;
 type MentionOption = { id: string; label: string; phone: string };
 
-const STATUS_TONE: Record<ConvStatus, "warning" | "info" | "success" | "default"> = {
-  aberta: "warning",
-  em_andamento: "info",
-  aguardando: "warning",
-  fechada: "success",
-};
-
 function ConversationPage() {
+  const isMobile = useIsMobile();
   const { conversationId } = Route.useParams();
   const user = useSession((s) => s.user);
   const qc = useQueryClient();
@@ -157,9 +161,10 @@ function ConversationPage() {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const messageRefs = React.useRef(new Map<string, HTMLDivElement>());
   const [highlightedMessageId, setHighlightedMessageId] = React.useState<string | null>(null);
+  const latestMessageId = mensagens.at(-1)?.id;
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [mensagens.length]);
+  }, [conversationId, latestMessageId, mensagens.length]);
 
   const scrollToMessage = React.useCallback((messageId: string | null | undefined) => {
     if (!messageId) return;
@@ -210,9 +215,7 @@ function ConversationPage() {
     try {
       const hadProtocolo = !!conv.protocolo;
       await conversationApi.assign(conv.id, { self: true });
-      if (isStandby) await conversationApi.updateStatus(conv.id, "em_andamento");
-      qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-      qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+      void invalidateConversationQueries(qc, conv.id);
       toast.success(
         hadProtocolo || isStandby ? "Conversa retomada" : "Conversa iniciada — protocolo gerado",
       );
@@ -230,7 +233,7 @@ function ConversationPage() {
         assignToSelf: true,
         firstMessagePreview: "Nova conversa iniciada pelo atendimento.",
       });
-      qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+      void invalidateConversationQueries(qc, conversation.id);
       toast.success("Nova conversa iniciada — protocolo gerado");
       navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
     } catch (e) {
@@ -292,7 +295,6 @@ function ConversationPage() {
                       <span className="ml-1 text-[10px] text-muted-foreground">· grupo</span>
                     )}
                   </p>
-                  <Badge tone={STATUS_TONE[conv.status]}>{conv.status.replace("_", " ")}</Badge>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
                   {perms.visualiza_numero && conv.contact?.telefone && (
@@ -302,6 +304,10 @@ function ConversationPage() {
               </div>
             </button>
             <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+              <ConversationCallButton
+                enabled={canSend}
+                onClick={() => systemToast.info(CALL_UNAVAILABLE_MESSAGE)}
+              />
               {conv.status === "fechada" ? (
                 <Button variant="secondary" size="sm" onClick={handleNewConversation}>
                   <Plus className="h-3.5 w-3.5" /> Nova conversa
@@ -309,8 +315,15 @@ function ConversationPage() {
               ) : (
                 <>
                   {showStart && (
-                    <Button variant="secondary" size="sm" onClick={handleAssume}>
-                      <Play className="h-3.5 w-3.5" /> {startLabel}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleAssume}
+                      aria-label={startLabel}
+                      title={startLabel}
+                    >
+                      <Play className="h-3.5 w-3.5" />{" "}
+                      <span className="hidden md:inline">{startLabel}</span>
                     </Button>
                   )}
                   <Button variant="ghost" size="sm" onClick={transferModal.show}>
@@ -318,8 +331,14 @@ function ConversationPage() {
                     <span className="hidden lg:inline">Transferir</span>
                   </Button>
 
-                  <Button variant="ghost" size="sm" onClick={() => setClosing(true)}>
-                    <CheckCircle2 className="h-3.5 w-3.5" />{" "}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setClosing(true)}
+                    aria-label="Encerrar conversa"
+                    title="Encerrar conversa"
+                  >
+                    <CircleCheckBig className="h-3.5 w-3.5" />{" "}
                     <span className="hidden lg:inline">Encerrar</span>
                   </Button>
                 </>
@@ -327,7 +346,7 @@ function ConversationPage() {
             </div>
           </header>
 
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-6">
+          <div ref={scrollRef} className="min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-5 md:py-6">
             <div className="mx-auto max-w-4xl space-y-4">
               {(() => {
                 const isLead = !conv.agent_id && conv.status !== "fechada" && !conv.protocolo;
@@ -364,6 +383,7 @@ function ConversationPage() {
                     onQuotedClick={scrollToMessage}
                     highlighted={highlightedMessageId === m.id}
                     contactName={conv.contact?.nome ?? "Contato"}
+                    isGroup={conv.is_group}
                     contactAvatarUrl={conv.contact?.avatar_url ?? null}
                     galleryImages={galleryImages}
                     setMessageRef={(node) => {
@@ -412,14 +432,14 @@ function ConversationPage() {
               onStart={showStart ? handleAssume : undefined}
               allowQuickReplies={perms.acessa_mensagens_rapidas}
               allowAudio={perms.enviar_audio}
+              onTicket={handleGerarChamado}
+              ticketDisabled={gerando || !conv.protocolo}
               mentionOptions={conv.is_group ? mentionOptions : []}
               replyTo={replyTo}
               onCancelReply={() => setReplyTo(null)}
               onSent={() => {
                 setReplyTo(null);
-                qc.invalidateQueries({ queryKey: ["trixus", "messages", conv.id] });
-                qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-                qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+                void invalidateConversationQueries(qc, conv.id);
               }}
             />
             <div className="pointer-events-none absolute inset-y-0 right-4 hidden items-center xl:flex">
@@ -439,7 +459,7 @@ function ConversationPage() {
               </Button>
             </div>
           </div>
-          <div className="border-t border-border bg-surface-1 px-3 pb-3 xl:hidden">
+          <div className="hidden border-t border-border bg-surface-1 px-3 pb-3 md:block xl:hidden">
             <Button
               variant="secondary"
               size="sm"
@@ -449,19 +469,23 @@ function ConversationPage() {
             >
               <Ticket className="h-3.5 w-3.5" /> {gerando ? "Gerando…" : "Gerar Chamado"}
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                navigate({
-                  to: "/chamados",
-                  search: { conversationId: conv.id, ticketId: undefined },
-                })
-              }
-              className="w-full"
-            >
-              Ver chamados relacionados
-            </Button>
+            {!isMobile && (
+              <div className="hidden md:block">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    navigate({
+                      to: "/chamados",
+                      search: { conversationId: conv.id, ticketId: undefined },
+                    })
+                  }
+                  className="w-full"
+                >
+                  Ver chamados relacionados
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -479,23 +503,20 @@ function ConversationPage() {
         departments={departments.filter((d) => d.id !== conv.department_id)}
         onSubmitAgent={async (id) => {
           await conversationApi.assign(conv.id, { membershipId: id });
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+          void invalidateConversationQueries(qc, conv.id);
           toast.success("Conversa transferida");
           transferModal.hide();
         }}
         onSubmitDepartment={async (id) => {
           await conversationApi.transferDepartment(conv.id, id);
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+          void invalidateConversationQueries(qc, conv.id);
           toast.success("Conversa movida");
           transferModal.hide();
         }}
         onSubmitStatus={async (status) => {
           const label = status === "fila" ? filaLabel : standbyLabel;
           await conversationApi.updateStatus(conv.id, status === "fila" ? "aberta" : "aguardando");
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+          void invalidateConversationQueries(qc, conv.id);
           toast.success(`Conversa movida para ${label}`);
           transferModal.hide();
         }}
@@ -508,8 +529,7 @@ function ConversationPage() {
         onClose={() => setClosing(false)}
         onConfirm={async () => {
           await conversationApi.updateStatus(conv.id, "fechada");
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-          qc.invalidateQueries({ queryKey: ["trixus", "conversations", conv.id] });
+          void invalidateConversationQueries(qc, conv.id);
           toast.success("Conversa encerrada");
         }}
       />
@@ -527,6 +547,7 @@ function MessageBubble({
   highlighted,
   contactName,
   contactAvatarUrl,
+  isGroup = false,
   galleryImages,
   setMessageRef,
 }: {
@@ -538,6 +559,7 @@ function MessageBubble({
   highlighted?: boolean;
   contactName: string;
   contactAvatarUrl?: string | null;
+  isGroup?: boolean;
   galleryImages: Message[];
   setMessageRef?: (node: HTMLDivElement | null) => void;
 }) {
@@ -620,36 +642,40 @@ function MessageBubble({
     <div
       ref={setMessageRef}
       data-message-id={m.id}
-      className={`group flex items-end gap-1.5 scroll-mt-24 transition ${
+      className={`group flex w-full items-end gap-1 scroll-mt-24 transition md:gap-1.5 ${
         mine ? "justify-end" : "justify-start"
       } ${highlighted ? "rounded-xl ring-2 ring-primary/60 ring-offset-2 ring-offset-background" : ""}`}
     >
-      {!mine && onReply && (
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Responder"
-          className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-          onClick={() => onReply(m)}
-        >
-          <Reply className="h-3.5 w-3.5" />
-        </Button>
-      )}
       {!mine && (
-        <Avatar
-          name={avatarName}
-          size={30}
-          src={contactAvatarUrl}
-          className="mb-5 ring-1 ring-border/70"
-        />
+        <div className={isGroup ? "shrink-0" : "hidden shrink-0 md:block"}>
+          <Avatar
+            name={avatarName}
+            size={30}
+            src={contactAvatarUrl}
+            className="mb-5 ring-1 ring-border/70"
+          />
+        </div>
       )}
       <div
-        className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-card ${
+        tabIndex={0}
+        onClick={(event) => {
+          if (
+            !(event.target as HTMLElement).closest("button, a, input, video, audio, [role=dialog]")
+          )
+            event.currentTarget.focus({ preventScroll: true });
+        }}
+        className={`group/message relative min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} rounded-2xl px-3 py-2 text-sm shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:max-w-[75%] ${
           mine
             ? "rounded-br-sm bg-gradient-brand text-white"
             : "rounded-bl-sm border border-border bg-surface-1"
         }`}
       >
+        <MessageActionsMenu
+          message={m}
+          onReply={onReply ? () => onReply(m) : undefined}
+          onReact={react}
+          onDownload={() => download()}
+        />
         {m.participant?.name && !mine && (
           <p className="mb-1 text-[11px] font-semibold text-primary">{m.participant.name}</p>
         )}
@@ -753,12 +779,6 @@ function MessageBubble({
         {m.interactive_data?.kind === "list" && (
           <WhatsAppListMessage interactive={m.interactive_data} mine={mine} />
         )}
-        <p
-          className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
-        >
-          {fmtHM(new Date(m.created_at).getTime())}
-          {mine && <span className="ml-2">{messageStatusLabel(m.status)}</span>}
-        </p>
         {m.reactions && m.reactions.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {m.reactions.map((reaction) => (
@@ -771,45 +791,24 @@ function MessageBubble({
             ))}
           </div>
         )}
-        <div className={`mt-1 flex gap-1 ${mine ? "justify-end" : "justify-start"}`}>
-          {["👍", "❤️", "😂"].map((emoji) => (
-            <button
-              key={emoji}
-              type="button"
-              onClick={() => react(emoji)}
-              className="rounded-full px-1 text-[12px] opacity-70 hover:bg-black/10 hover:opacity-100"
-            >
-              {emoji}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => react(null)}
-            className="rounded-full px-1 text-[12px] opacity-70 hover:bg-black/10 hover:opacity-100"
-            aria-label="Remover reacao"
+        <div className="mt-1 flex items-center justify-end">
+          <p
+            className={`flex shrink-0 items-center whitespace-nowrap font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
           >
-            <SmilePlus className="h-3 w-3" />
-          </button>
+            {fmtHM(new Date(m.created_at).getTime())}
+            {mine && <MessageStatusIcon status={m.status} />}
+          </p>
         </div>
       </div>
       {mine && (
-        <Avatar
-          name={avatarName}
-          src={user?.avatarUrl}
-          size={30}
-          className="mb-5 ring-1 ring-border/70"
-        />
-      )}
-      {mine && onReply && (
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Responder"
-          className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-          onClick={() => onReply(m)}
-        >
-          <Reply className="h-3.5 w-3.5" />
-        </Button>
+        <div className={isGroup ? "shrink-0" : "hidden shrink-0 md:block"}>
+          <Avatar
+            name={avatarName}
+            src={user?.avatarUrl}
+            size={30}
+            className="mb-5 ring-1 ring-border/70"
+          />
+        </div>
       )}
     </div>
   );
@@ -986,20 +985,6 @@ function QuotedPreview({
   );
 }
 
-function messageStatusLabel(status: Message["status"]) {
-  const labels: Record<Message["status"], string> = {
-    pending: "pendente",
-    created: "criada",
-    queued: "fila",
-    sending: "enviando",
-    sent: "enviada",
-    failed: "falhou",
-    delivered: "entregue",
-    read: "lida",
-  };
-  return labels[status];
-}
-
 function messageTypeLabel(type: Message["type"] | null) {
   const labels: Record<Message["type"], string> = {
     text: "Texto",
@@ -1067,6 +1052,8 @@ function Composer({
   onCancelReply,
   allowQuickReplies = true,
   allowAudio = true,
+  onTicket,
+  ticketDisabled,
   mentionOptions = [],
 }: {
   conversationId: string;
@@ -1080,10 +1067,13 @@ function Composer({
   onCancelReply?: () => void;
   allowQuickReplies?: boolean;
   allowAudio?: boolean;
+  onTicket: () => void;
+  ticketDisabled: boolean;
   mentionOptions?: MentionOption[];
 }) {
   const qc = useQueryClient();
   const [text, setText] = React.useState("");
+  const isMobile = useIsMobile();
 
   const [pendingFile, setPendingFile] = React.useState<{
     file: File;
@@ -1111,6 +1101,8 @@ function Composer({
   }, []);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const cameraRef = React.useRef<HTMLInputElement>(null);
+  const [showContacts, setShowContacts] = React.useState(false);
   const typingActiveRef = React.useRef(false);
   const typingStopTimerRef = React.useRef<number | null>(null);
 
@@ -1656,7 +1648,19 @@ function Composer({
 
         <div className="flex items-end gap-2 rounded-xl border border-border bg-card p-2 shadow-card focus-within:border-primary">
           <div className="flex items-center gap-0.5">
-            {allowQuickReplies && (
+            {isMobile && (
+              <InboxMobileActions
+                disabled={disabled || sequenceSending || !!sequence || recording || !!pendingAudio}
+                allowQuickReplies={allowQuickReplies}
+                ticketDisabled={ticketDisabled}
+                onQuickReplies={() => setShowQR((value) => !value)}
+                onAttach={() => fileRef.current?.click()}
+                onCamera={() => cameraRef.current?.click()}
+                onContact={() => setShowContacts(true)}
+                onTicket={onTicket}
+              />
+            )}
+            {!isMobile && allowQuickReplies && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -1667,15 +1671,25 @@ function Composer({
                 <Zap className="h-4 w-4" />
               </Button>
             )}
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Anexar imagem"
-              onClick={() => fileRef.current?.click()}
-              disabled={disabled || sequenceSending || !!sequence}
-            >
-              <Paperclip className="h-4 w-4" />
-            </Button>
+            {!isMobile && (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Anexar imagem"
+                onClick={() => fileRef.current?.click()}
+                disabled={disabled || sequenceSending || !!sequence}
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+            )}
+            <input
+              ref={cameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={onFilePick}
+            />
             <input
               ref={fileRef}
               type="file"
@@ -1703,7 +1717,9 @@ function Composer({
               if (e.key === "Escape") setShowQR(false);
             }}
             disabled={disabled || sequenceSending || !!sequence}
-            placeholder={
+            aria-label="Mensagem"
+            placeholder={isMobile ? "" : "Digite uma mensagem"}
+            title={
               disabledReason === "closed"
                 ? "Conversa encerrada."
                 : disabledReason === "lead"
@@ -1712,7 +1728,7 @@ function Composer({
                     ? "Clique em Retomar acima para voltar a atender."
                     : disabledReason === "not-mine"
                       ? "Conversa atribuída a outro atendente."
-                      : "Escreva uma resposta…  (digite / para atalhos)"
+                      : undefined
             }
             className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-5 outline-none placeholder:text-muted-foreground disabled:opacity-50"
             style={{ minHeight: 32, maxHeight: 5 * 20 + 12 }}
@@ -1741,22 +1757,41 @@ function Composer({
             ))}
           <Button
             variant="primary"
-            size="sm"
+            size="icon"
             onClick={handleSend}
             disabled={disabled || sequenceSending}
+            aria-label={
+              sequenceSending
+                ? "Enviando…"
+                : sequence && (sequence.next > 0 || sequenceError)
+                  ? "Continuar envio"
+                  : "Enviar mensagem"
+            }
+            title={
+              sequenceSending
+                ? "Enviando…"
+                : sequence && (sequence.next > 0 || sequenceError)
+                  ? "Continuar envio"
+                  : "Enviar mensagem"
+            }
           >
-            <Send className="h-3.5 w-3.5" />{" "}
-            {sequenceSending
-              ? "Enviando…"
-              : sequence && (sequence.next > 0 || sequenceError)
-                ? "Continuar"
-                : "Enviar"}
+            <SendHorizontal className="h-5 w-5" />
           </Button>
         </div>
         {recording && (
           <p className="mt-2 text-center text-[11px] text-destructive">
             ● Gravando… clique no quadrado para parar.
           </p>
+        )}
+        {showContacts && (
+          <InboxContactPicker
+            onClose={() => setShowContacts(false)}
+            onSelect={(file) => {
+              if (pendingFile?.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
+              setPendingFile({ file, previewUrl: null, mediaType: "document" });
+              setShowContacts(false);
+            }}
+          />
         )}
       </div>
     </div>

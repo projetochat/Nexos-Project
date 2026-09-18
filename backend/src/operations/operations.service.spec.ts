@@ -36,10 +36,15 @@ describe("dashboard week ranges", () => {
         },
         { period, allowedConnectionIds: ["vocical"] },
       );
-      expect(metrics.chartData).toHaveBeenCalledWith("tenant-a", expect.anything(), {
-        period,
-        allowedConnectionIds: ["vocical"],
-      });
+      expect(metrics.chartData).toHaveBeenCalledWith(
+        "tenant-a",
+        expect.anything(),
+        {
+          period,
+          allowedConnectionIds: ["vocical"],
+        },
+        "America/Sao_Paulo",
+      );
       expect(prisma.conversation.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { tenantId: "tenant-a", archivedAt: null, connectionId: { in: ["vocical"] } },

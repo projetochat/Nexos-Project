@@ -74,12 +74,21 @@ export function DashboardFiltersBar({
   const isCustom = value.period === "custom";
   const start = value.start ?? automaticDates.start;
   const end = value.end ?? automaticDates.end;
+  const showClear = Boolean(
+    onClear &&
+    (search?.value.trim() ||
+      value.q?.trim() ||
+      value.connectionId ||
+      value.customerId ||
+      value.departmentId ||
+      value.period !== "today"),
+  );
   const gridClass =
     search && !showDepartment
-      ? onClear
+      ? showClear
         ? "xl:grid-cols-[minmax(220px,3fr)_1fr_1fr_1.1fr_1fr_1fr_auto]"
         : "xl:grid-cols-[minmax(220px,3fr)_1fr_1fr_1.1fr_1fr_1fr]"
-      : onClear
+      : showClear
         ? "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr_auto]"
         : "lg:grid-cols-[1.1fr_1.1fr_1.1fr_1.15fr_0.82fr_0.82fr]";
 
@@ -161,7 +170,7 @@ export function DashboardFiltersBar({
             onChange={(date) => onChange({ end: date })}
           />
         </FilterField>
-        {onClear && (
+        {showClear && (
           <div className="flex items-end">
             <Button
               type="button"

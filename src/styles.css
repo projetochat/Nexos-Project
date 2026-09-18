@@ -541,7 +541,6 @@ button[aria-label*="Arquivar"]:hover svg {
 /* Acao de lixeira padronizada a partir da listagem de contatos. */
 button.trash-action {
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
   background-color: var(--surface-2);
 }
 

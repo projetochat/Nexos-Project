@@ -56,6 +56,7 @@ function greetingFor(now: Date) {
 export function resolveMessageVariables(text: string, context: MessageVariableContext = {}) {
   const values: Record<string, string> = {
     cumprimento: greetingFor(context.now ?? new Date()),
+    contato: context.contactName?.trim() ?? "",
     nome: context.contactName?.trim() ?? "",
     telefone: context.phone?.trim() ?? "",
     email: context.email?.trim() ?? "",

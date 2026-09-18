@@ -39,7 +39,13 @@ Migrations ficam em `supabase/migrations`. Nova tabela deve receber grants, RLS 
 
 ## CI/CD
 
-Nao foram encontrados arquivos de pipeline como GitHub Actions, GitLab CI ou similares.
+O workflow `.github/workflows/build-production.yml` valida, constroi e empacota as
+imagens Linux/AMD64 do backend, das migrations e do frontend. A publicacao parte
+sempre da `main` e aceita os modos manuais `build`, `plan` e `deploy`.
+
+O procedimento completo, incluindo variaveis do ambiente protegido, simulacao,
+publicacao, rollback e isolamento do GLPI, esta em
+`docs/PRODUCTION-AUTOMATION.md`.
 
 ## Dependencias externas
 

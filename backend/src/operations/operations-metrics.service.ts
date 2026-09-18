@@ -307,7 +307,12 @@ export class OperationsMetricsService {
     };
   }
 
-  async chartData(tenantId: string, range: OperationsRange, filters: OperationsMetricFilters = {}) {
+  async chartData(
+    tenantId: string,
+    range: OperationsRange,
+    filters: OperationsMetricFilters = {},
+    timezone = "America/Sao_Paulo",
+  ) {
     const conversationRange: Prisma.ConversationWhereInput = {
       ...conversationMetricScope(tenantId, filters),
       archivedAt: null,
@@ -348,10 +353,12 @@ export class OperationsMetricsService {
         this.prisma.message.findMany({
           where: {
             tenantId,
+            direction: { in: [MessageDirection.INBOUND, MessageDirection.OUTBOUND] },
+            type: { not: "SYSTEM" },
             createdAt: { gte: range.start, lt: range.end },
             conversation: { ...conversationMetricScope(tenantId, filters), archivedAt: null },
           },
-          select: { createdAt: true, direction: true },
+          select: { createdAt: true, direction: true, type: true },
         }),
       ]);
     const [departments, memberships, connections] = await Promise.all([
@@ -383,18 +390,7 @@ export class OperationsMetricsService {
         tagCounts.set(item.tag.id, current);
       }
     }
-    const messagesByHour = Array.from({ length: 24 }, (_, hour) => ({
-      hora: `${String(hour).padStart(2, "0")}h`,
-      recebidas: 0,
-      enviadas: 0,
-      total: 0,
-    }));
-    for (const message of messages) {
-      const item = messagesByHour[message.createdAt.getHours()];
-      item.total += 1;
-      if (message.direction === MessageDirection.INBOUND) item.recebidas += 1;
-      if (message.direction === MessageDirection.OUTBOUND) item.enviadas += 1;
-    }
+    const messagesByHour = messageTrafficByHour(messages, timezone);
     return {
       byDepartment: byDepartment.map((row) => {
         const department = departments.find((item) => item.id === row.departmentId);
@@ -483,4 +479,29 @@ function averageMinutes(values: number[]) {
   if (values.length === 0) return null;
   const averageMs = values.reduce((sum, value) => sum + value, 0) / values.length;
   return Math.round((averageMs / 60_000) * 100) / 100;
+}
+
+export function messageTrafficByHour(
+  messages: Array<{ createdAt: Date; direction: string; type?: string }>,
+  timezone: string,
+) {
+  const buckets = Array.from({ length: 24 }, (_, hour) => ({
+    hora: String(hour).padStart(2, "0") + "h",
+    recebidas: 0,
+    enviadas: 0,
+    total: 0,
+  }));
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone,
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
+  for (const message of messages) {
+    if (message.type === "SYSTEM" || !["INBOUND", "OUTBOUND"].includes(message.direction)) continue;
+    const bucket = buckets[Number(formatter.format(message.createdAt))];
+    if (message.direction === "INBOUND") bucket.recebidas++;
+    else bucket.enviadas++;
+    bucket.total = bucket.recebidas + bucket.enviadas;
+  }
+  return buckets;
 }

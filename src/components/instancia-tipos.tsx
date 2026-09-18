@@ -78,7 +78,7 @@ const ShopeeIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-export const TIPOS_INSTANCIA: TipoInfo[] = [
+const TIPOS_INSTANCIA: TipoInfo[] = [
   { value: "whatsapp", label: "WhatsApp", color: "#25D366", Icon: WhatsAppIcon },
   { value: "instagram", label: "Instagram", color: "#E4405F", Icon: InstagramIcon },
   { value: "telegram", label: "Telegram", color: "#229ED9", Icon: TelegramIcon },
@@ -88,7 +88,7 @@ export const TIPOS_INSTANCIA: TipoInfo[] = [
   { value: "shopee", label: "Shopee", color: "#EE4D2D", Icon: ShopeeIcon },
 ];
 
-export function getTipoInfo(tipo?: string | null): TipoInfo {
+function getTipoInfo(tipo?: string | null): TipoInfo {
   return TIPOS_INSTANCIA.find((t) => t.value === tipo) ?? TIPOS_INSTANCIA[0];
 }
 

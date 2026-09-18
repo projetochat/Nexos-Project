@@ -19,7 +19,8 @@ import {
   SectionHeader,
   Textarea,
 } from "@/components/ui-kit";
-import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
+import { ConfirmDialog, Modal } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import {
   campaignApi,
@@ -255,6 +256,13 @@ function Page() {
           <div className="space-y-3">
             {listQuery.isLoading ? (
               <Card>Carregando campanhas...</Card>
+            ) : listQuery.isError ? (
+              <Alert tone="destructive" title="Não foi possível carregar as campanhas">
+                {(listQuery.error as Error).message}
+                <Button variant="outline" size="sm" onClick={() => void listQuery.refetch()}>
+                  Tentar novamente
+                </Button>
+              </Alert>
             ) : campaigns.length === 0 ? (
               <EmptyState
                 icon={<Megaphone className="h-5 w-5" />}
@@ -635,17 +643,26 @@ function CampaignEditor({
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       if (form.scheduledAt && preview) {
-        return campaignApi.schedule(campaign.id, {
-          confirm: true,
-          scheduledAt: new Date(form.scheduledAt).toISOString(),
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          expectedEligibleCount: preview.eligibleCount,
-        });
+        try {
+          return await campaignApi.schedule(campaign.id, {
+            confirm: true,
+            scheduledAt: new Date(form.scheduledAt).toISOString(),
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            expectedEligibleCount: preview.eligibleCount,
+          });
+        } catch (error) {
+          toast.warning("Campanha salva em rascunho, mas não foi possível agendar.", {
+            description: (error as Error).message,
+          });
+          return campaign;
+        }
       }
       return campaign;
     },
     onSuccess: (campaign) => {
-      toast.success(form.scheduledAt ? "Campanha agendada" : "Campanha criada em rascunho");
+      toast.success(
+        campaign.status === "SCHEDULED" ? "Campanha agendada" : "Campanha criada em rascunho",
+      );
       onCreated(campaign);
     },
     onError: (error) =>

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ThemeContext, type Theme } from "./theme-context";
 
 /* ============================================================
    Trixus · Theme Provider
@@ -6,17 +7,6 @@ import * as React from "react";
    Aplica classe "dark" ou "light" no <html> — ambos os temas
    estão definidos em src/styles.css via tokens semânticos.
    ============================================================ */
-
-export type Theme = "dark" | "light" | "system";
-
-type ThemeContextValue = {
-  theme: Theme;
-  resolved: "dark" | "light";
-  setTheme: (t: Theme) => void;
-  toggle: () => void;
-};
-
-const ThemeContext = React.createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = "trixus.theme";
 
@@ -85,10 +75,4 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
-}
-
-export function useTheme() {
-  const ctx = React.useContext(ThemeContext);
-  if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
-  return ctx;
 }

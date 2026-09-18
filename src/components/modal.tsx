@@ -169,14 +169,3 @@ export function ConfirmDialog({
     </Modal>
   );
 }
-
-export function useDisclosure(initial = false) {
-  const [open, setOpen] = React.useState(initial);
-  return {
-    open,
-    show: () => setOpen(true),
-    hide: () => setOpen(false),
-    toggle: () => setOpen((v) => !v),
-    set: setOpen,
-  };
-}

@@ -134,8 +134,12 @@ function loadDashboardFilters(storageKey: string): OperationalReportFilters {
       ...(typeof filters.departmentId === "string" ? { departmentId: filters.departmentId } : {}),
       ...(typeof filters.customerId === "string" ? { customerId: filters.customerId } : {}),
       ...(typeof filters.connectionId === "string" ? { connectionId: filters.connectionId } : {}),
-      ...(typeof filters.start === "string" ? { start: filters.start } : {}),
-      ...(typeof filters.end === "string" ? { end: filters.end } : {}),
+      ...(filters.period === "today"
+        ? datesForOperationalPeriod("today")
+        : {
+            ...(typeof filters.start === "string" ? { start: filters.start } : {}),
+            ...(typeof filters.end === "string" ? { end: filters.end } : {}),
+          }),
     };
   } catch {
     return fallback;
@@ -211,7 +215,6 @@ function Dashboard() {
         query.refetch({ throwOnError: true }),
         new Promise((resolve) => window.setTimeout(resolve, 600)),
       ]);
-      toast.success("Dashboard atualizado.");
     } catch {
       toast.error("Não foi possível atualizar o dashboard. Tente novamente.");
     } finally {
@@ -697,7 +700,6 @@ function Dashboard() {
                     setDashboardColumns({ ...draftColumns, counters: 4 });
                     setEditingBiId(null);
                     setEditingDashboard(false);
-                    toast.success("Dashboard atualizado.");
                   }}
                 >
                   <Save className="h-4 w-4" />

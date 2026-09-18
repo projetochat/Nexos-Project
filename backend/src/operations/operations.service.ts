@@ -75,7 +75,12 @@ export class OperationsService {
     const [now, before, charts, recent] = await Promise.all([
       this.metrics.snapshot(current.tenantId, range, scopedQuery),
       this.metrics.snapshot(current.tenantId, previous, scopedQuery),
-      this.metrics.chartData(current.tenantId, range, scopedQuery),
+      this.metrics.chartData(
+        current.tenantId,
+        range,
+        scopedQuery,
+        tenant?.timezone ?? "America/Sao_Paulo",
+      ),
       this.recentConversations(current.tenantId, connectionAccess(current)),
     ]);
     return {

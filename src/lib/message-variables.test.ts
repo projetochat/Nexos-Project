@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { resolveMessageVariables } from "./message-variables";
 
 describe("chat message variables", () => {
+  it("resolves the contato token offered in quick replies", () => {
+    expect(resolveMessageVariables("Olá {{contato}}", { contactName: "Ana" })).toBe("Olá Ana");
+  });
   it("replaces every documented variable using the active conversation", () => {
     expect(
       resolveMessageVariables(

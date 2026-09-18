@@ -1,3 +1,4 @@
+import { customFieldFormat, formatCustomField, customFieldError } from "@/lib/custom-field-formats";
 import { InfoTooltip } from "@/components/info-tooltip";
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -51,7 +52,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { Modal, ConfirmDialog, useDisclosure } from "@/components/modal";
+import { Modal, ConfirmDialog } from "@/components/modal";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   Avatar,
   Badge,
@@ -589,6 +591,9 @@ function ContatosPage() {
     setSelectedIds([]);
     setAllFilteredSelected(false);
   }, [query, instanciaFilter, departamentoFilter, clienteFilter, tagFilter, pageSize]);
+  const hasContactFilters = Boolean(
+    query.trim() || instanciaFilter || departamentoFilter || clienteFilter || tagFilter,
+  );
   const clearContactFilters = () => {
     setQuery("");
     setInstanciaFilter("");
@@ -1270,7 +1275,9 @@ function ContatosPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))_auto]">
+          <div
+            className={`grid grid-cols-2 gap-3 ${hasContactFilters ? "xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))_auto]" : "xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(140px,0.7fr))]"}`}
+          >
             <div className="col-span-2 xl:col-span-1">
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Busca</label>
               <SearchInput
@@ -1345,19 +1352,21 @@ function ContatosPage() {
                 )),
               ]}
             </FilterSelect>
-            <div className="flex items-end">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={clearContactFilters}
-                title="Limpar filtros"
-                aria-label="Limpar filtros"
-                className="min-h-10 w-10 px-0"
-              >
-                <FilterX className="h-4 w-4" />
-              </Button>
-            </div>
+            {hasContactFilters && (
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={clearContactFilters}
+                  title="Limpar filtros"
+                  aria-label="Limpar filtros"
+                  className="min-h-10 w-10 px-0"
+                >
+                  <FilterX className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         </Card>
 
@@ -2891,6 +2900,7 @@ export function ContactFormModal({
   onClose,
   onSubmit,
   initial,
+  defaultInstanceId,
   customers,
   tags,
   departments,
@@ -2924,6 +2934,7 @@ export function ContactFormModal({
     avatarUrl: string | null;
   }) => void | Promise<void>;
   initial?: Contact;
+  defaultInstanceId?: string;
 }) {
   const [nome, setNome] = React.useState("");
   const [telefone, setTelefone] = React.useState("");
@@ -2963,7 +2974,8 @@ export function ContactFormModal({
     setContactProfileId(initial?.contactProfileId ?? "");
     setInstanceIds(
       canonicalContactInstanceIds(
-        initial?.instanceIds ?? (initial?.instancia ? [initial.instancia] : []),
+        initial?.instanceIds ??
+          (initial?.instancia ? [initial.instancia] : defaultInstanceId ? [defaultInstanceId] : []),
         instances,
       ),
     );
@@ -2976,7 +2988,7 @@ export function ContactFormModal({
       .listContactCustomFields()
       .then(setCustomFieldDefinitions)
       .catch(() => setCustomFieldDefinitions([]));
-  }, [initial, instances, open]);
+  }, [defaultInstanceId, initial, instances, open]);
 
   const contactTabs = React.useMemo(
     () => uniqueLabels(["Geral", ...customFieldDefinitions.map(normalizeContactCustomFieldTab)]),
@@ -3015,6 +3027,11 @@ export function ContactFormModal({
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = "E-mail inválido.";
     const normalizedCustomFields = normalizeCustomFieldValues(customFields, customFieldDefinitions);
     for (const field of customFieldDefinitions) {
+      const format = customFieldFormat(field);
+      const formatError = format
+        ? customFieldError(String(normalizedCustomFields[field.id] ?? ""), format)
+        : null;
+      if (formatError) errs[`custom_${field.id}`] = formatError;
       if (field.required && !String(normalizedCustomFields[field.id] ?? "").trim())
         errs[`custom_${field.id}`] = "Campo obrigatório.";
     }
@@ -3249,6 +3266,12 @@ export function ContactFormModal({
               <div className="grid gap-4 md:grid-cols-2">
                 {fields.map((field) => {
                   const isHtmlField = field.type === "text" && contactTextVariant(field) === "html";
+                  const errorKey = `custom_${field.id}`;
+                  const format = customFieldFormat(field);
+                  const liveError = format
+                    ? customFieldError(String(customFields[field.id] ?? ""), format)
+                    : null;
+                  const fieldError = liveError ?? errors[errorKey];
                   return (
                     <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
                       <div>
@@ -3267,14 +3290,21 @@ export function ContactFormModal({
                           <CustomContactFieldInput
                             field={field}
                             value={customFields[field.id]}
-                            onChange={(value) =>
-                              setCustomFields((current) => ({ ...current, [field.id]: value }))
-                            }
+                            error={fieldError}
+                            onChange={(value) => {
+                              setCustomFields((current) => ({ ...current, [field.id]: value }));
+                              setErrors((current) => {
+                                if (!current[errorKey]) return current;
+                                const next = { ...current };
+                                delete next[errorKey];
+                                return next;
+                              });
+                            }}
                           />
                         </div>
-                        {errors[`custom_${field.id}`] && (
+                        {fieldError && (
                           <span className="mt-1 block text-[11px] text-destructive">
-                            {errors[`custom_${field.id}`]}
+                            {fieldError}
                           </span>
                         )}
                       </div>
@@ -4298,11 +4328,33 @@ function CustomContactFieldInput({
   field,
   value,
   onChange,
+  error,
 }: {
   field: ContactCustomField;
   value: string | boolean | undefined;
   onChange: (value: string | boolean) => void;
+  error?: string | null;
 }) {
+  const format = customFieldFormat(field);
+  if (format) {
+    if (format === "phone")
+      return (
+        <CustomContactPhoneInput
+          value={String(value ?? "")}
+          onChange={(next) => onChange(next)}
+          invalid={Boolean(error)}
+        />
+      );
+    return (
+      <Input
+        type={format === "email" ? "email" : "text"}
+        inputMode={format === "email" ? "email" : "numeric"}
+        value={formatCustomField(String(value ?? ""), format)}
+        aria-invalid={Boolean(error)}
+        onChange={(event) => onChange(formatCustomField(event.target.value, format))}
+      />
+    );
+  }
   if (field.type === "checkbox") {
     const description = contactCheckboxDescription(field);
     return (
@@ -4373,10 +4425,82 @@ function CustomContactFieldInput({
       inputMode="decimal"
       className="text-right"
       value={String(value ?? "")}
-      placeholder={numberPlaceholder(numberConfig)}
       onChange={(event) => onChange(maskAdditionalNumber(event.target.value, numberConfig))}
     />
   );
+}
+
+function CustomContactPhoneInput({
+  value,
+  onChange,
+  invalid,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  invalid: boolean;
+}) {
+  const [initial] = React.useState(() => customPhoneParts(value));
+  const [countryCode, setCountryCode] = React.useState(initial.countryCode);
+  const [draft, setDraft] = React.useState(() =>
+    formatPhoneDraftOnBlur(initial.localPhone, initial.countryCode),
+  );
+  const lastEmitted = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (lastEmitted.current === value) {
+      lastEmitted.current = null;
+      return;
+    }
+    const next = customPhoneParts(value);
+    setCountryCode(next.countryCode);
+    setDraft(formatPhoneDraftOnBlur(next.localPhone, next.countryCode));
+  }, [value]);
+
+  const emit = (localPhone: string, code: string) => {
+    const next = localPhone ? formatPhoneForSubmit(localPhone, code) : "";
+    lastEmitted.current = next;
+    onChange(next);
+  };
+
+  return (
+    <div
+      className={`flex h-9 w-full overflow-hidden rounded-md border bg-transparent transition-colors focus-within:border-primary ${
+        invalid ? "border-destructive" : "border-input"
+      }`}
+    >
+      <CountryCodeSelect
+        value={countryCode}
+        onChange={(nextCode) => {
+          const nextDraft = formatPhoneDraftOnBlur(draft, nextCode);
+          setCountryCode(nextCode);
+          setDraft(nextDraft);
+          emit(nextDraft, nextCode);
+        }}
+        compact
+        embedded
+      />
+      <Input
+        type="tel"
+        inputMode="tel"
+        value={draft}
+        aria-invalid={invalid}
+        onChange={(event) => {
+          const parsed = parsePhoneDraftInput(event.target.value, countryCode);
+          const nextDraft = phoneDraftByCountry(parsed.localPhone, parsed.countryCode);
+          setCountryCode(parsed.countryCode);
+          setDraft(nextDraft);
+          emit(nextDraft, parsed.countryCode);
+        }}
+        onBlur={() => setDraft((current) => formatPhoneDraftOnBlur(current, countryCode))}
+        className="!h-9 !min-h-0 rounded-none border-0 !py-0 !pl-0 leading-normal shadow-none focus-visible:ring-0"
+      />
+    </div>
+  );
+}
+
+function customPhoneParts(value: string) {
+  if (value.trim().startsWith("+")) return splitPhoneByCountry(value);
+  return { countryCode: "55", localPhone: onlyDigits(value) };
 }
 
 function CustomListMultiSelect({
@@ -4768,7 +4892,6 @@ function CustomDateInput({
       type="text"
       inputMode="numeric"
       value={draft}
-      placeholder={variant === "datetime" ? "00/00/0000 00:00" : "00/00/0000"}
       data-date-input="true"
       onKeyDown={(event) => {
         if (event.key.toLowerCase() !== "h") return;
@@ -4811,6 +4934,9 @@ function normalizeCustomFieldValues(
 ) {
   const normalized = { ...values };
   for (const field of fields) {
+    const format = customFieldFormat(field);
+    if (format && typeof values[field.id] === "string")
+      normalized[field.id] = formatCustomField(String(values[field.id]), format);
     if (field.type !== "date") continue;
     const value = values[field.id];
     if (typeof value !== "string" || !value.trim()) continue;
@@ -4906,13 +5032,6 @@ function parseDateDraft(value: string, variant: ContactDateVariant) {
     display: variant === "datetime" ? `${displayDate} ${pad(hour)}:${pad(minute)}` : displayDate,
     iso: date.toISOString(),
   };
-}
-
-function numberPlaceholder(config: ReturnType<typeof contactNumberConfig>) {
-  const decimals = config.decimals > 0 ? `,${"0".repeat(config.decimals)}` : "";
-  const base = `0${decimals}`;
-  if (!config.symbol) return base;
-  return config.symbol === "%" ? `${base}%` : `${config.symbol} ${base}`;
 }
 
 function maskAdditionalNumber(value: string, config: ReturnType<typeof contactNumberConfig>) {

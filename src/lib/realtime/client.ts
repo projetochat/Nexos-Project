@@ -62,13 +62,21 @@ export async function connectRealtime() {
     transports: ["websocket", "polling"],
   });
 
-  socket.on("connect", () => setStatus("connected"));
+  // The transport connects before the gateway finishes authentication and joins rooms.
+  socket.on("connect", () => setStatus("connecting"));
+  socket.on("realtime.ready", () => {
+    // Rooms are lost on reconnect, even if React batches the offline/online renders.
+    for (const conversationId of activeConversationIds) {
+      socket?.emit("conversation.subscribe", { conversationId });
+    }
+    setStatus("connected");
+  });
   socket.io.on("reconnect_attempt", () => {
     const token = getTrixusAccessToken();
     if (token && socket) socket.auth = { accessToken: token };
     setStatus("reconnecting");
   });
-  socket.io.on("reconnect", () => setStatus("connected"));
+  socket.io.on("reconnect", () => setStatus("connecting"));
   socket.on("disconnect", () => setStatus("offline"));
   socket.on("connect_error", async () => {
     const token = await refreshTrixusAccessToken();
@@ -86,6 +94,7 @@ export async function connectRealtime() {
   });
 
   const events: RealtimeServerEvent[] = [
+    "schedule.updated",
     "message.created",
     "message.status.updated",
     "message.reaction.updated",
@@ -131,7 +140,8 @@ export function disconnectRealtime() {
 }
 
 export function subscribeConversation(conversationId: string) {
-  if (!socket?.connected || activeConversationIds.has(conversationId)) return;
+  if (!socket?.connected || status !== "connected" || activeConversationIds.has(conversationId))
+    return;
   activeConversationIds.add(conversationId);
   socket?.emit("conversation.subscribe", { conversationId });
 }

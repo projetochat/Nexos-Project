@@ -1,0 +1,23 @@
+type ScheduleType = "message" | "task";
+type ScheduleStatus = "pending" | "completed";
+export type ApiSchedule = {
+  id: string;
+  identifier: string;
+  type: ScheduleType;
+  title: string;
+  destination: string;
+  scheduledAt: string;
+  recurrence: "once" | "weekly" | "monthly";
+  delivery: boolean;
+  status: ScheduleStatus;
+  connectionId: string;
+  departmentId: string;
+  content: string;
+  recipientIds: string[];
+  recipients: Array<{ id: string; name: string }>;
+  recurrenceDays: string[];
+  recurrenceLimit: string;
+  recurrenceUntil: string;
+  assignedMembershipId: string;
+  attachmentName: string | null;
+};
