@@ -4,6 +4,7 @@ export const REALTIME_NAMESPACE = "/realtime";
 export const REALTIME_PATH = "/socket.io";
 
 export type RealtimeServerEvent =
+  | "schedule.updated"
   | "message.created"
   | "message.status.updated"
   | "message.reaction.updated"

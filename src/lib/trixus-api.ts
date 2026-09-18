@@ -1,3 +1,4 @@
+import type { ApiSchedule } from "./schedule-types";
 import type { Role, SessionUser } from "@/lib/session";
 
 const ACCESS_KEY = "trixus.api.accessToken";
@@ -477,6 +478,7 @@ export type ApiAutomationRule = {
 export type ApiServiceHoursRow = { day: string; active: boolean; start: string; end: string };
 
 export type ApiMessagingConnection = {
+  reference?: string;
   serviceHours?: ApiServiceHoursRow[] | null;
   timezone?: string;
   id: string;
@@ -2340,3 +2342,10 @@ function queryString(params: Record<string, string | number | boolean | undefine
   const serialized = search.toString();
   return serialized ? `?${serialized}` : "";
 }
+
+export const schedulesApi = {
+  list: () => apiRequest<ApiSchedule[]>("/schedules"),
+  save: (data: ApiSchedule) =>
+    apiRequest<ApiSchedule>("/schedules", { method: "POST", body: JSON.stringify(data) }),
+  remove: (id: string) => apiRequest<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" }),
+};

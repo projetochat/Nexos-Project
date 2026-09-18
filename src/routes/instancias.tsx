@@ -339,7 +339,7 @@ function Page() {
                     <div className="flex justify-between gap-3">
                       <span className="text-muted-foreground">Referência</span>
                       <span className="truncate text-right">
-                        {connection.externalReference ?? "sem referencia externa"}
+                        {connection.reference ?? "Aguardando referência"}
                       </span>
                     </div>
                     <div className="flex justify-between">

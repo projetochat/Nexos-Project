@@ -1,4 +1,5 @@
 import { validateServiceHours } from "./dto/service-hours.dto";
+import { connectionReference } from "./connection-reference";
 import { connectionIdAccess } from "../auth/connection-access";
 import {
   BadRequestException,
@@ -961,6 +962,7 @@ export class MessagingConnectionsService {
       providerType: connection.providerType.toLowerCase(),
       status: connection.status.toLowerCase(),
       externalReference: connection.externalReference,
+      reference: connectionReference(connection),
       color: connection.color,
       logoUrl: connection.logoUrl,
       welcomeEnabled: connection.welcomeEnabled,

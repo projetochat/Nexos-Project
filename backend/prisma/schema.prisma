@@ -310,6 +310,7 @@ enum AutomationActionType {
 }
 
 model Tenant {
+  schedules Schedule[]
   id                          String                       @id @default(uuid())
   name                        String
   slug                        String                       @unique
@@ -1506,4 +1507,17 @@ model CampaignRecipient {
   @@index([tenantId, messageId])
   @@index([tenantId, externalMessageId])
   @@map("campaign_recipients")
+}
+model Schedule {
+  id           String   @default(uuid())
+  tenantId     String
+  connectionId String?
+  payload      Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, id])
+  @@index([tenantId, createdAt])
+  @@map("schedules")
 }

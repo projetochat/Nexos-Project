@@ -15,6 +15,7 @@ export type RealtimeEnvelope<T = unknown> = {
 };
 
 export type RealtimeServerEvent =
+  | "schedule.updated"
   | "message.created"
   | "message.status.updated"
   | "message.reaction.updated"

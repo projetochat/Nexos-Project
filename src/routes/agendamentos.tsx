@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
+  Alert,
   Badge,
   Button,
   Card,
@@ -33,6 +34,7 @@ import {
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
 import {
+  schedulesApi,
   connectionsApi,
   crmApi,
   organizationApi,
@@ -42,39 +44,43 @@ import {
   type ApiUserMembership,
 } from "@/lib/trixus-api";
 import { num } from "@/lib/format";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/agendamentos")({ component: SchedulingPage });
 
-type ScheduleType = "message" | "task";
-type ScheduleStatus = "pending" | "completed";
-type Schedule = {
-  id: string;
-  identifier: string;
-  type: ScheduleType;
-  title: string;
-  destination: string;
-  scheduledAt: string;
-  recurrence: "once" | "weekly" | "monthly";
-  delivery: boolean;
-  status: ScheduleStatus;
-  connectionId: string;
-  departmentId: string;
-  content: string;
-  recipientIds: string[];
-  recipients: Array<{ id: string; name: string }>;
-  recurrenceDays: string[];
-  recurrenceLimit: string;
-  recurrenceUntil: string;
-  assignedMembershipId: string;
-  attachmentName: string | null;
-};
+import type { ApiSchedule as Schedule } from "@/lib/schedule-types";
+type ScheduleType = Schedule["type"];
+import { useSession } from "@/lib/session";
+import { connectRealtime, onRealtimeEvent } from "@/lib/realtime/client";
 const STORAGE_KEY = "trixus.schedules";
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 function SchedulingPage() {
-  const [items, setItems] = React.useState<Schedule[]>(() => readSchedules());
+  const user = useSession((state) => state.user);
+  const qc = useQueryClient();
+  const schedulesKey = ["trixus", "schedules", user?.empresaId];
+  const {
+    data: items = [],
+    isLoading,
+    error: loadError,
+  } = useQuery({
+    queryKey: schedulesKey,
+    queryFn: schedulesApi.list,
+    enabled: !!user,
+    refetchInterval: 15000,
+    refetchOnWindowFocus: "always",
+  });
+  const [saving, setSaving] = React.useState(false);
+  const [legacyItems, setLegacyItems] = React.useState<Schedule[]>(() => readSchedules());
+  React.useEffect(() => {
+    if (!user) return;
+    void connectRealtime();
+    return onRealtimeEvent((event) => {
+      if (event.event === "schedule.updated")
+        void qc.invalidateQueries({ queryKey: ["trixus", "schedules", user.empresaId] });
+    });
+  }, [qc, user]);
   const [query, setQuery] = React.useState("");
   const [type, setType] = React.useState("");
   const [status, setStatus] = React.useState("");
@@ -92,7 +98,7 @@ function SchedulingPage() {
     queryKey: ["trixus", "departments"],
     queryFn: organizationApi.listDepartments,
   });
-  React.useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(items)), [items]);
+
   const filtered = items.filter(
     (item) =>
       (!query ||
@@ -112,14 +118,37 @@ function SchedulingPage() {
     setPage(1);
   }, [query, type, status, connectionId, departmentId, pageSize]);
 
-  const save = (item: Schedule) => {
-    setItems((current) =>
-      current.some((entry) => entry.id === item.id)
-        ? current.map((entry) => (entry.id === item.id ? item : entry))
-        : [item, ...current],
-    );
-    setEditing(null);
-    toast.success("Agendamento salvo.");
+  const save = async (item: Schedule) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await schedulesApi.save(item);
+      await qc.invalidateQueries({ queryKey: schedulesKey });
+      setEditing(null);
+      toast.success("Agendamento salvo.");
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const importLegacy = async () => {
+    setSaving(true);
+    let remaining = [...legacyItems];
+    try {
+      for (const item of legacyItems) {
+        await schedulesApi.save(item);
+        remaining = remaining.filter((entry) => entry.id !== item.id);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(remaining));
+        setLegacyItems(remaining);
+      }
+      toast.success("Agendamentos importados para a organização atual.");
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      await qc.invalidateQueries({ queryKey: schedulesKey });
+      setSaving(false);
+    }
   };
   return (
     <AppShell>
@@ -133,6 +162,24 @@ function SchedulingPage() {
             </Button>
           }
         />
+        {loadError && (
+          <Alert tone="destructive" title="Não foi possível carregar os agendamentos">
+            {(loadError as Error).message}
+          </Alert>
+        )}
+        {isLoading && <p className="text-sm text-muted-foreground">Carregando agendamentos…</p>}
+        {legacyItems.length > 0 && (
+          <Card className="mb-4 space-y-2 p-4">
+            <p className="text-sm">
+              Existem {legacyItems.length} agendamentos antigos salvos somente neste navegador.
+              Importe os registros que pertencem à organização {user?.empresaNome} para acessá-los
+              em outros dispositivos.
+            </p>
+            <Button disabled={saving} onClick={() => void importLegacy()}>
+              Importar para {user?.empresaNome || "a organização atual"}
+            </Button>
+          </Card>
+        )}
         <Card className="mb-4 p-4">
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-[minmax(16rem,1fr)_10rem_10rem_12rem_12rem]">
             <div className="col-span-2 xl:col-span-1">
@@ -285,6 +332,7 @@ function SchedulingPage() {
           departments={departments}
           onClose={() => setEditing(null)}
           onSave={save}
+          busy={saving}
         />
         <ConfirmDialog
           open={!!removing}
@@ -298,11 +346,16 @@ function SchedulingPage() {
           }
           confirmLabel="Excluir"
           onClose={() => setRemoving(null)}
-          onConfirm={() => {
+          onConfirm={async () => {
             if (!removing) return;
-            setItems((current) => current.filter((item) => item.id !== removing.id));
-            setRemoving(null);
-            toast.success("Agendamento excluído.");
+            try {
+              await schedulesApi.remove(removing.id);
+              await qc.invalidateQueries({ queryKey: schedulesKey });
+              setRemoving(null);
+              toast.success("Agendamento excluído.");
+            } catch (error) {
+              toast.error((error as Error).message);
+            }
           }}
         />
       </PageContainer>
@@ -585,12 +638,14 @@ function ScheduleForm({
   departments,
   onClose,
   onSave,
+  busy,
 }: {
   item: Schedule | null;
   connections: ApiMessagingConnection[];
   departments: ApiDepartment[];
   onClose: () => void;
-  onSave: (item: Schedule) => void;
+  onSave: (item: Schedule) => void | Promise<void>;
+  busy: boolean;
 }) {
   const [form, setForm] = React.useState<Schedule | null>(null);
   const [contactSearch, setContactSearch] = React.useState("");
@@ -661,6 +716,7 @@ function ScheduleForm({
           </Button>
           <Button
             variant="primary"
+            disabled={busy}
             onClick={() => {
               if (!form.identifier.trim() || !form.title.trim() || !form.scheduledAt)
                 return toast.error("Preencha identificador, título e data de agendamento.");

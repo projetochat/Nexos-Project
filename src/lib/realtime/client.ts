@@ -94,6 +94,7 @@ export async function connectRealtime() {
   });
 
   const events: RealtimeServerEvent[] = [
+    "schedule.updated",
     "message.created",
     "message.status.updated",
     "message.reaction.updated",
