@@ -39,6 +39,7 @@ import {
   crmApi,
   type ApiConversation,
   type ApiContact,
+  type ApiContactInstanceOption,
   type ApiConversationStatus as ConvStatus,
 } from "@/lib/trixus-api";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
@@ -527,6 +528,10 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   const [page, setPage] = React.useState(1);
   const [selectedContact, setSelectedContact] = React.useState<ApiContact | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = React.useState("");
+  const [connectionChoice, setConnectionChoice] = React.useState<{
+    contact: ApiContact;
+    instances: ApiContactInstanceOption[];
+  } | null>(null);
   const [contactForm, setContactForm] = React.useState<{ initial?: ApiContact } | null>(null);
   const [busy, setBusy] = React.useState(false);
   const savingContact = React.useRef(false);
@@ -537,15 +542,14 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
     isFetching: loadingContacts,
     error: contactsError,
   } = useQuery({
-    queryKey: ["trixus", "contacts", "conversation-modal", selectedConnectionId, q.trim(), page],
+    queryKey: ["trixus", "contacts", "conversation-modal", q.trim(), page],
     queryFn: () =>
       crmApi.listContacts({
-        instance: selectedConnectionId,
         q: q.trim() || undefined,
         page,
         pageSize: 7,
       }),
-    enabled: open && !!selectedConnectionId,
+    enabled: open,
   });
   const { data: contactOptions, error: optionsError } = useQuery({
     queryKey: ["trixus", "contacts", "conversation-options"],
@@ -565,24 +569,35 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   const formReady = !!contactOptions && !!customersPage;
 
   React.useEffect(() => {
-    if (!open || selectedConnectionId || availableConnections.length === 0) return;
-    setSelectedConnectionId(
-      (
-        availableConnections.find((connection) => connection.status === "connected") ??
-        availableConnections[0]
-      ).id,
-    );
-  }, [availableConnections, open, selectedConnectionId]);
-
-  React.useEffect(() => {
     if (!open) {
       setQ("");
       setPage(1);
       setSelectedContact(null);
       setSelectedConnectionId("");
+      setConnectionChoice(null);
       setContactForm(null);
     }
   }, [open]);
+
+  const selectContact = (contact: ApiContact) => {
+    const connectedInstances = resolveNewConversationInstances(contact, instances);
+    if (connectedInstances.length === 0) {
+      setSelectedContact(null);
+      setSelectedConnectionId("");
+      toast.error("Nenhuma instância conectada", {
+        description: "Vincule uma instância conectada ao contato para iniciar a conversa.",
+      });
+      return;
+    }
+    if (connectedInstances.length === 1) {
+      setSelectedContact(contact);
+      setSelectedConnectionId(connectedInstances[0].id);
+      return;
+    }
+    setSelectedContact(null);
+    setSelectedConnectionId("");
+    setConnectionChoice({ contact, instances: connectedInstances });
+  };
 
   const submit = async () => {
     if (!user) return toast.error("Sessão inválida.");
@@ -638,7 +653,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
             <Button
               variant="primary"
               size="sm"
-              disabled={!formReady || !selectedConnectionId}
+              disabled={!formReady}
               onClick={() => setContactForm({})}
             >
               <Plus className="h-3.5 w-3.5" /> Novo Contato
@@ -649,43 +664,25 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
               Não foi possível carregar o cadastro de contatos. Tente abrir novamente.
             </p>
           )}
-          <Field label="Instância">
-            <Select
-              value={selectedConnectionId}
-              onChange={(e) => {
-                setSelectedConnectionId(e.target.value);
-                setSelectedContact(null);
-                setPage(1);
-              }}
-            >
-              {!selectedConnectionId && <option value="">Selecione uma instância</option>}
-              {availableConnections.map((connection) => (
-                <option key={connection.id} value={connection.id}>
-                  {connectionDisplayLabel(connection)}
-                </option>
-              ))}
-            </Select>
-            {connectionsError ? (
-              <p className="mt-1 text-xs text-destructive">{(connectionsError as Error).message}</p>
-            ) : availableConnections.length === 0 ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Conecte uma instância antes de iniciar uma conversa.
-              </p>
-            ) : null}
-          </Field>
+          {connectionsError ? (
+            <p className="text-xs text-destructive">{(connectionsError as Error).message}</p>
+          ) : availableConnections.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Conecte uma instância antes de iniciar uma conversa.
+            </p>
+          ) : null}
           <Field label="Buscar contato">
-            <Input
+            <SearchInput
               value={q}
-              disabled={!selectedConnectionId}
-              onChange={(e) => {
-                setQ(e.target.value);
+              onChange={(value) => {
+                setQ(value);
                 setPage(1);
               }}
               placeholder="Nome ou telefone…"
             />
           </Field>
           <ul
-            aria-label="Contatos da instância"
+            aria-label="Contatos"
             aria-busy={loadingContacts}
             className="overflow-hidden rounded-lg border border-border"
           >
@@ -700,7 +697,8 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
                 <button
                   type="button"
                   aria-pressed={selectedContact?.id === contact.id}
-                  onClick={() => setSelectedContact(contact)}
+                  disabled={!contactOptions}
+                  onClick={() => selectContact(contact)}
                   className="flex h-full min-w-0 flex-1 items-center gap-3 px-3 text-left text-sm"
                 >
                   <Avatar name={contact.nome} src={contact.avatar_url} size={30} />
@@ -729,13 +727,11 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
             ))}
             {contacts.length === 0 && (
               <li className="p-4 text-center text-xs text-muted-foreground">
-                {!selectedConnectionId
-                  ? "Selecione uma instância para listar os contatos."
-                  : loadingContacts
-                    ? "Buscando contatos…"
-                    : contactsError
-                      ? "Não foi possível carregar os contatos."
-                      : "Nenhum contato encontrado nesta instância."}
+                {loadingContacts
+                  ? "Buscando contatos…"
+                  : contactsError
+                    ? "Não foi possível carregar os contatos."
+                    : "Nenhum contato encontrado."}
               </li>
             )}
           </ul>
@@ -768,11 +764,47 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
           )}
         </div>
       </Modal>
+      <Modal
+        open={!!connectionChoice}
+        onClose={() => setConnectionChoice(null)}
+        title="Escolher Instância"
+        description={
+          connectionChoice
+            ? `Selecione a instância para iniciar a conversa com ${connectionChoice.contact.nome}.`
+            : undefined
+        }
+        size="sm"
+        footer={
+          <Button variant="ghost" size="sm" onClick={() => setConnectionChoice(null)}>
+            Cancelar
+          </Button>
+        }
+      >
+        <div className="space-y-2">
+          {connectionChoice?.instances.map((instance) => (
+            <Button
+              key={instance.id}
+              variant="secondary"
+              className="w-full justify-start"
+              onClick={() => {
+                setSelectedContact(connectionChoice.contact);
+                setSelectedConnectionId(instance.id);
+                setConnectionChoice(null);
+              }}
+            >
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: instance.color ?? "#22c55e" }}
+              />
+              {instance.name}
+            </Button>
+          ))}
+        </div>
+      </Modal>
       {contactForm && formReady && (
         <ContactFormModal
           open={open}
           initial={contactForm.initial}
-          defaultInstanceId={selectedConnectionId}
           onClose={() => setContactForm(null)}
           customers={customersPage.items}
           tags={contactOptions.tags}
@@ -829,13 +861,10 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
               const contact = contactForm.initial
                 ? await crmApi.updateContact(contactForm.initial.id, payload)
                 : await crmApi.createContact(payload);
-              const linked =
-                contact.instanceIds.includes(selectedConnectionId) ||
-                contact.instancia === selectedConnectionId;
-              setSelectedContact(linked ? contact : null);
-              setQ(linked ? contact.nome : "");
+              setQ(contact.nome);
               setPage(1);
               setContactForm(null);
+              selectContact(contact);
               void qc.invalidateQueries({ queryKey: ["trixus", "contacts"] });
               void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
               toast.success(contactForm.initial ? "Contato atualizado" : "Contato criado");
@@ -848,6 +877,32 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
         />
       )}
     </>
+  );
+}
+
+function resolveNewConversationInstances(
+  contact: ApiContact,
+  instances: ApiContactInstanceOption[],
+) {
+  const byKey = new Map<string, ApiContactInstanceOption>();
+  for (const instance of instances) {
+    for (const key of [instance.id, instance.value, instance.externalReference, instance.name]) {
+      if (key) byKey.set(key, instance);
+    }
+  }
+  const values = [...(contact.instanceIds ?? []), contact.instancia].filter(
+    (value): value is string => Boolean(value),
+  );
+  return Array.from(
+    new Map(
+      values
+        .map((value) => byKey.get(value))
+        .filter(
+          (instance): instance is ApiContactInstanceOption =>
+            Boolean(instance) && instance.status?.toUpperCase() === "CONNECTED",
+        )
+        .map((instance) => [instance.id, instance]),
+    ).values(),
   );
 }
 
