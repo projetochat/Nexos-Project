@@ -333,7 +333,7 @@ function ConversationPage() {
             </div>
           </header>
 
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-6">
+          <div ref={scrollRef} className="min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-5 md:py-6">
             <div className="mx-auto max-w-4xl space-y-4">
               {(() => {
                 const isLead = !conv.agent_id && conv.status !== "fechada" && !conv.protocolo;
@@ -624,20 +624,22 @@ function MessageBubble({
     <div
       ref={setMessageRef}
       data-message-id={m.id}
-      className={`group flex items-end gap-1.5 scroll-mt-24 transition ${
+      className={`group flex w-full items-end gap-1 scroll-mt-24 transition md:gap-1.5 ${
         mine ? "justify-end" : "justify-start"
       } ${highlighted ? "rounded-xl ring-2 ring-primary/60 ring-offset-2 ring-offset-background" : ""}`}
     >
       {!mine && onReply && (
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Responder"
-          className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-          onClick={() => onReply(m)}
-        >
-          <Reply className="h-3.5 w-3.5" />
-        </Button>
+        <div className="hidden shrink-0 md:block">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Responder"
+            className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+            onClick={() => onReply(m)}
+          >
+            <Reply className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       )}
       {!mine && (
         <Avatar
@@ -648,7 +650,7 @@ function MessageBubble({
         />
       )}
       <div
-        className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-card ${
+        className={`min-w-0 max-w-[calc(100%-38px)] rounded-2xl px-3 py-2 text-sm shadow-card md:max-w-[75%] ${
           mine
             ? "rounded-br-sm bg-gradient-brand text-white"
             : "rounded-bl-sm border border-border bg-surface-1"
@@ -776,6 +778,18 @@ function MessageBubble({
           </div>
         )}
         <div className={`mt-1 flex gap-1 ${mine ? "justify-end" : "justify-start"}`}>
+          {onReply && (
+            <span className="inline-flex md:hidden">
+              <button
+                type="button"
+                aria-label="Responder"
+                onClick={() => onReply(m)}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full opacity-70 hover:bg-black/10 hover:opacity-100"
+              >
+                <Reply className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          )}
           {["👍", "❤️", "😂"].map((emoji) => (
             <button
               key={emoji}
@@ -805,15 +819,17 @@ function MessageBubble({
         />
       )}
       {mine && onReply && (
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Responder"
-          className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-          onClick={() => onReply(m)}
-        >
-          <Reply className="h-3.5 w-3.5" />
-        </Button>
+        <div className="hidden shrink-0 md:block">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Responder"
+            className="opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+            onClick={() => onReply(m)}
+          >
+            <Reply className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       )}
     </div>
   );
