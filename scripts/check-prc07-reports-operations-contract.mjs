@@ -19,7 +19,9 @@ const service = read("backend/src/operations/operations.service.ts");
 const metrics = read("backend/src/operations/operations-metrics.service.ts");
 const api = read("src/lib/trixus-api.ts");
 const dashboard = read("src/routes/index.tsx");
-const history = read("src/routes/historico.tsx");
+const history = [read("src/routes/historico.tsx"), read("src/routes/-historico-page.tsx")].join(
+  "\n",
+);
 const reports = read("src/routes/relatorios.tsx");
 const queues = read("src/routes/filas.tsx");
 const filters = read("src/components/report-filters.tsx");

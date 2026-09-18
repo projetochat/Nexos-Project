@@ -8,9 +8,13 @@ function source(path: string) {
   return readFileSync(resolve(root, path), "utf8");
 }
 
+function historySource() {
+  return [source("src/routes/historico.tsx"), source("src/routes/-historico-page.tsx")].join("\n");
+}
+
 describe("operational runtime rules", () => {
   it("keeps history rendering closed conversations only", () => {
-    const history = source("src/routes/historico.tsx");
+    const history = historySource();
     expect(history).toContain('status: "fechada"');
     expect(history).not.toContain('value="aberta"');
     expect(history).not.toContain('value="em_andamento"');
@@ -37,7 +41,7 @@ describe("operational runtime rules", () => {
   it("keeps the ghost department out of operational screens", () => {
     const operationalSources = [
       source("src/routes/index.tsx"),
-      source("src/routes/historico.tsx"),
+      historySource(),
       source("src/routes/relatorios.tsx"),
       source("src/routes/filas.tsx"),
     ].join("\n");
