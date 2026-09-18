@@ -1,3 +1,8 @@
+import {
+  CUSTOM_FIELD_FORMATS,
+  customFieldFormat,
+  type CustomFieldFormat,
+} from "@/lib/custom-field-formats";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Copy, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
@@ -36,7 +41,8 @@ type FieldConfig = {
 
 type FieldForm = {
   label: string;
-  type: ApiContactCustomField["type"];
+  type: ApiContactCustomField["type"] | "custom";
+  customFormat: CustomFieldFormat;
   required: boolean;
   tabName: string;
   groupName: string;
@@ -97,7 +103,7 @@ function ContactFieldsSettings() {
   const save = async (data: FieldForm) => {
     const payload = {
       label: data.label.trim(),
-      type: data.type,
+      type: data.type === "custom" ? ("text" as const) : data.type,
       required: data.type === "checkbox" ? false : data.required,
       tabName: data.tabName.trim(),
       groupName: data.groupName.trim(),
@@ -156,7 +162,8 @@ function ContactFieldsSettings() {
         !normalizedQuery ||
         field.label.toLowerCase().includes(normalizedQuery) ||
         (field.note ?? "").toLowerCase().includes(normalizedQuery);
-      const matchesType = !typeFilter || field.type === typeFilter;
+      const matchesType =
+        !typeFilter || (customFieldFormat(field) ? "custom" : field.type) === typeFilter;
       const matchesRequired =
         !requiredFilter || (requiredFilter === "yes" ? field.required : !field.required);
       const matchesTab = !tabFilter || tabName === tabFilter;
@@ -228,6 +235,7 @@ function ContactFieldsSettings() {
               <option value="checkbox">Checkbox</option>
               <option value="list">Lista</option>
               <option value="date">Data</option>
+              <option value="custom">Personalizado</option>
             </Select>
           </Field>
           <Field label="Obrigatório">
@@ -600,6 +608,7 @@ function ContactFieldFormModal({
               <option value="checkbox">Checkbox</option>
               <option value="list">Lista</option>
               <option value="date">Data</option>
+              <option value="custom">Personalizado</option>
             </Select>
           </Field>
           {form.type !== "checkbox" && (
@@ -617,6 +626,22 @@ function ContactFieldFormModal({
             </label>
           )}
         </div>
+        {form.type === "custom" && (
+          <Field label="Formato do Campo *">
+            <Select
+              value={form.customFormat}
+              onChange={(event) =>
+                setForm({ ...form, customFormat: event.target.value as CustomFieldFormat })
+              }
+            >
+              {CUSTOM_FIELD_FORMATS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
         {form.type === "text" && (
           <Field label="Formato do texto *">
             <Select
@@ -762,6 +787,7 @@ function emptyFieldForm(): FieldForm {
   return {
     label: "",
     type: "text",
+    customFormat: "cpf_cnpj",
     required: false,
     tabName: DEFAULT_CONTACT_CUSTOM_TAB,
     groupName: "",
@@ -783,7 +809,8 @@ function fieldToForm(field: ApiContactCustomField, clone = false): FieldForm {
   const groupName = field.groupName || "";
   return {
     label: clone ? `${field.label} - Cópia` : field.label,
-    type: field.type,
+    type: customFieldFormat(field) ? "custom" : field.type,
+    customFormat: customFieldFormat(field) ?? "cpf_cnpj",
     required: field.required,
     tabName: isReservedContactTab(tabName) ? "" : tabName,
     groupName: isReservedContactGroup(groupName) ? "" : groupName,
@@ -800,6 +827,7 @@ function fieldToForm(field: ApiContactCustomField, clone = false): FieldForm {
 }
 
 function buildFieldMask(data: FieldForm) {
+  if (data.type === "custom") return JSON.stringify({ custom: { format: data.customFormat } });
   if (data.type === "text") {
     return JSON.stringify({ text: { variant: data.textVariant } });
   }
@@ -865,6 +893,7 @@ function clampInteger(value: string | number, min: number, max: number) {
 }
 
 function fieldTypeLabel(field: ApiContactCustomField) {
+  if (customFieldFormat(field)) return "Personalizado";
   if (field.type === "text") {
     const variant = parseFieldConfig(field.mask).text?.variant ?? "short";
     return { short: "Texto Curto", long: "Texto Longo", html: "Texto HTML" }[variant];

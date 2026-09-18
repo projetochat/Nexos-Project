@@ -1,8 +1,19 @@
-import { InfoTooltip } from "@/components/info-tooltip";
+import { customFieldVariableKey } from "@/lib/message-variables";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Copy, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Braces,
+  Info,
+  Copy,
+  Paperclip,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -16,6 +27,7 @@ import {
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal, useDisclosure } from "@/components/modal";
 import {
+  crmApi,
   quickReplyApi,
   type ApiQuickReply,
   type QuickReplyAttachment,
@@ -284,6 +296,52 @@ export function QuickReplyEditor({
   const [closeOnSend, setCloseOnSend] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [shortcutError, setShortcutError] = React.useState("");
+  const [variablesOpen, setVariablesOpen] = React.useState(false);
+  const [customVariables, setCustomVariables] = React.useState<string[]>([]);
+  const activeMessage = React.useRef(0);
+  const textareas = React.useRef<Array<HTMLTextAreaElement | null>>([]);
+  React.useEffect(() => {
+    if (!open) return;
+    let active = true;
+    setVariablesOpen(false);
+    activeMessage.current = 0;
+    void crmApi
+      .listContactCustomFields()
+      .then((fields) => {
+        if (active)
+          setCustomVariables(
+            fields.map((field) => customFieldVariableKey(field.label)).filter(Boolean),
+          );
+      })
+      .catch(() => {
+        if (active) setCustomVariables([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open]);
+  const insertVariable = (name: string) => {
+    const index = Math.min(activeMessage.current, messages.length - 1);
+    const input = textareas.current[index];
+    const text = messages[index].text;
+    const start = input?.selectionStart ?? text.length;
+    const end = input?.selectionEnd ?? start;
+    const token = "{{" + name + "}}";
+    if (text.length - (end - start) + token.length > 2000)
+      return toast.error("A mensagem deve ter no máximo 2000 caracteres.");
+    setMessages((items) =>
+      items.map((item, position) =>
+        position === index
+          ? { ...item, text: text.slice(0, start) + token + text.slice(end) }
+          : item,
+      ),
+    );
+    setVariablesOpen(false);
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(start + token.length, start + token.length);
+    });
+  };
 
   const duplicateShortcutError = (value: string) => {
     const shortcut = sanitizeQuickReplyShortcut(value);
@@ -307,6 +365,7 @@ export function QuickReplyEditor({
   }, [clone, open, initial]);
 
   const save = async () => {
+    if (messages.length > 10) return toast.error("Número máximo de mensagens (10).");
     const shortcut = sanitizeQuickReplyShortcut(atalho);
     const content = messages
       .map((message) => message.text.trim() || message.attachment?.fileName || "")
@@ -423,71 +482,86 @@ export function QuickReplyEditor({
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-medium">
-              {messages.length > 1 ? "Mensagens múltiplas" : "Mensagem"}
+              Mensagem <span className="text-destructive">*</span>
             </p>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={busy || messages.length >= 20}
-              onClick={() => setMessages((items) => [...items, { text: "" }])}
-            >
-              <Plus className="h-4 w-4" /> Adicionar mensagem
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Cada item será enviado separadamente, na ordem abaixo. Até 20 mensagens.
-          </p>
-          {messages.map((message, index) => (
-            <div key={index} className="space-y-3 rounded-lg border border-border bg-surface-1 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Mensagem {index + 1}</span>
-                <div className="flex gap-1">
-                  {([-1, 1] as const).map((direction) => (
-                    <Button
-                      key={direction}
-                      variant="ghost"
-                      size="icon"
-                      aria-label={direction < 0 ? "Mover para cima" : "Mover para baixo"}
-                      disabled={
-                        busy || index + direction < 0 || index + direction >= messages.length
-                      }
-                      onClick={() =>
-                        setMessages((items) => {
-                          const next = [...items];
-                          [next[index], next[index + direction]] = [
-                            next[index + direction],
-                            next[index],
-                          ];
-                          return next;
-                        })
-                      }
+            <div className="relative flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                aria-label="Inserir variável"
+                aria-expanded={variablesOpen}
+                disabled={busy}
+                onClick={() => setVariablesOpen((value) => !value)}
+              >
+                <Braces className="h-4 w-4" />
+              </Button>
+              {variablesOpen && (
+                <div
+                  className="absolute right-0 top-full z-20 mt-1 max-h-64 w-60 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-lg"
+                  role="menu"
+                  aria-label="Variáveis disponíveis"
+                >
+                  {[
+                    ...new Set([
+                      "contato",
+                      "cumprimento",
+                      "nome",
+                      "telefone",
+                      "email",
+                      "instancia",
+                      "cliente",
+                      "departamento",
+                      ...customVariables,
+                    ]),
+                  ].map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      role="menuitem"
+                      className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-surface-2"
+                      onClick={() => insertVariable(name)}
                     >
-                      {direction < 0 ? (
-                        <ArrowUp className="h-4 w-4" />
-                      ) : (
-                        <ArrowDown className="h-4 w-4" />
-                      )}
-                    </Button>
+                      {"{{" + name + "}}"}
+                    </button>
                   ))}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Remover mensagem"
-                    disabled={busy || messages.length === 1}
-                    onClick={() =>
-                      setMessages((items) => items.filter((_, position) => position !== index))
-                    }
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
                 </div>
-              </div>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy || messages.length >= 10}
+                onClick={() =>
+                  setMessages((items) => (items.length >= 10 ? items : [...items, { text: "" }]))
+                }
+              >
+                <Plus className="h-4 w-4" /> Adicionar mensagem
+              </Button>
+            </div>
+          </div>
+          {messages.length >= 10 && (
+            <p className="text-xs text-destructive" role="status">
+              Número máximo de mensagens (10).
+            </p>
+          )}
+          {messages.map((message, index) => (
+            <div
+              key={index}
+              className="overflow-hidden rounded-xl border border-border bg-card focus-within:border-primary/50"
+            >
               <textarea
                 rows={3}
                 maxLength={2000}
                 value={message.text}
                 disabled={busy}
+                ref={(element) => {
+                  textareas.current[index] = element;
+                }}
+                onFocus={() => {
+                  activeMessage.current = index;
+                }}
                 aria-label={`Texto da mensagem ${index + 1}`}
+                aria-required={!message.attachment}
                 onChange={(event) =>
                   setMessages((items) =>
                     items.map((item, position) =>
@@ -495,20 +569,15 @@ export function QuickReplyEditor({
                     ),
                   )
                 }
-                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary"
+                className="block min-h-24 w-full resize-y border-0 bg-transparent px-3 py-3 text-sm outline-none"
                 placeholder="Texto da mensagem ou legenda do arquivo"
               />
-              <div className="flex items-center gap-2">
-                <Paperclip className="h-4 w-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                  {message.attachment
-                    ? `${message.attachment.fileName} (${formatFileSize(message.attachment.size)})`
-                    : "Arquivo opcional · imagens até 8 MB; demais arquivos até 10 MB"}
-                </span>
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-surface-1 px-2 py-1.5">
                 {message.attachment && (
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="icon"
+                    className="h-7 w-7"
                     aria-label="Remover arquivo"
                     disabled={busy}
                     onClick={() =>
@@ -519,11 +588,11 @@ export function QuickReplyEditor({
                       )
                     }
                   >
-                    <X className="h-4 w-4" />
+                    <X className="h-3.5 w-3.5" />
                   </Button>
                 )}
-                <label className="cursor-pointer text-xs font-medium text-primary">
-                  Anexar
+                <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs text-primary">
+                  <Paperclip className="h-3.5 w-3.5" /> Anexar mídia
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp,video/mp4,video/3gpp,video/webm,audio/ogg,audio/mpeg,audio/mp4,audio/webm,.pdf,.txt,.doc,.docx,.xls,.xlsx"
@@ -552,6 +621,59 @@ export function QuickReplyEditor({
                     }}
                   />
                 </label>
+                <span
+                  className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+                  title={message.attachment?.fileName}
+                >
+                  {message.attachment ? (
+                    `${message.attachment.fileName} (${formatFileSize(message.attachment.size)})`
+                  ) : (
+                    <i>Imagens até 8 MB; demais arquivos até 10 MB.</i>
+                  )}
+                </span>
+                <div className="ml-auto flex gap-1">
+                  {" "}
+                  {([-1, 1] as const).map((direction) => (
+                    <Button
+                      key={direction}
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      aria-label={direction < 0 ? "Mover para cima" : "Mover para baixo"}
+                      disabled={
+                        busy || index + direction < 0 || index + direction >= messages.length
+                      }
+                      onClick={() =>
+                        setMessages((items) => {
+                          const next = [...items];
+                          [next[index], next[index + direction]] = [
+                            next[index + direction],
+                            next[index],
+                          ];
+                          return next;
+                        })
+                      }
+                    >
+                      {direction < 0 ? (
+                        <ArrowUp className="h-4 w-4" />
+                      ) : (
+                        <ArrowDown className="h-4 w-4" />
+                      )}
+                    </Button>
+                  ))}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    aria-label="Remover mensagem"
+                    disabled={busy || messages.length === 1}
+                    onClick={() =>
+                      setMessages((items) => items.filter((_, position) => position !== index))
+                    }
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </div>
           ))}
@@ -584,11 +706,10 @@ export function QuickReplyEditor({
             />
             <span>
               <span className="flex items-center gap-1 font-medium">
-                Encerrar conversa
-                <InfoTooltip label="encerrar conversa">
-                  Ao enviar este atalho no chat, a conversa será encerrada após o envio de todas as
-                  mensagens.
-                </InfoTooltip>
+                <Info className="h-4 w-4 text-primary" /> Encerrar conversa
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Ao enviar este atalho no chat, a conversa será encerrada automaticamente.
               </span>
             </span>
           </label>

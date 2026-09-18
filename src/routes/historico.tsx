@@ -78,7 +78,7 @@ function loadHistoryFilters(storageKey: string): HistoryFiltersMemory {
   }
 }
 
-function HistoricoPage() {
+export function HistoricoPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const user = useSession((state) => state.user);
@@ -184,11 +184,7 @@ function HistoricoPage() {
       <div className="mx-auto flex h-full min-h-0 w-full max-w-[96rem] flex-col gap-4 px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8 xl:px-10 2xl:px-12">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-lg font-semibold">Histórico de conversas</h1>
-            <p className="text-xs text-muted-foreground">
-              Consulta operacional de conversas encerradas por periodo, protocolo, contato,
-              atendente e departamento.
-            </p>
+            <h1 className="text-lg font-semibold">Histórico de Conversas</h1>
           </div>
         </header>
 
@@ -234,13 +230,12 @@ function HistoricoPage() {
                   <li key={conversation.id}>
                     <button
                       type="button"
-                      onDoubleClick={() => setActiveId(conversation.id)}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter") return;
-                        event.preventDefault();
+                      onClick={() => {
                         setActiveId(conversation.id);
+                        setPanelOpen(false);
                       }}
-                      title="Clique duas vezes para visualizar a conversa"
+                      aria-pressed={selected}
+                      title="Visualizar conversa"
                       className={`flex w-full items-start gap-3 border-b border-border/60 px-3 py-3 text-left transition ${
                         selected ? "bg-surface-2" : "hover:bg-surface-1"
                       }`}

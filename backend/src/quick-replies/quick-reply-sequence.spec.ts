@@ -16,6 +16,12 @@ const validateReply = (extra: object) =>
   );
 
 describe("quick reply sequence validation", () => {
+  it("accepts ten messages and rejects eleven before persistence", async () => {
+    const ten = Array.from({ length: 10 }, (_, index) => ({ text: `Mensagem ${index + 1}` }));
+    expect(await validateReply({ messages: ten })).toEqual([]);
+    expect(normalizeMessages(ten)).toHaveLength(10);
+    expect(() => normalizeMessages([...ten, { text: "Extra" }])).toThrow("1 a 10");
+  });
   it("accepts legacy requests and ordered messages with optional attachments", async () => {
     expect(await validateReply({})).toEqual([]);
     expect(
@@ -40,7 +46,7 @@ describe("quick reply sequence validation", () => {
   it("rejects too many messages, oversized text, invalid attachments and intervals", async () => {
     for (const payload of [
       { messages: [] },
-      { messages: Array.from({ length: 21 }, () => ({ text: "Olá" })) },
+      { messages: Array.from({ length: 11 }, () => ({ text: "Olá" })) },
       { messages: [{ text: "x".repeat(2001) }] },
       {
         messages: [

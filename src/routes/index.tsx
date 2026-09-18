@@ -211,7 +211,6 @@ function Dashboard() {
         query.refetch({ throwOnError: true }),
         new Promise((resolve) => window.setTimeout(resolve, 600)),
       ]);
-      toast.success("Dashboard atualizado.");
     } catch {
       toast.error("Não foi possível atualizar o dashboard. Tente novamente.");
     } finally {
@@ -697,7 +696,6 @@ function Dashboard() {
                     setDashboardColumns({ ...draftColumns, counters: 4 });
                     setEditingBiId(null);
                     setEditingDashboard(false);
-                    toast.success("Dashboard atualizado.");
                   }}
                 >
                   <Save className="h-4 w-4" />

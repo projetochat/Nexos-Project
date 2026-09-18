@@ -36,7 +36,7 @@ export class QuickReplySequenceDto {
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(20)
+  @ArrayMaxSize(10, { message: "Número máximo de mensagens (10)." })
   @ValidateNested({ each: true })
   @Type(() => QuickReplyMessageDto)
   messages?: QuickReplyMessageDto[];

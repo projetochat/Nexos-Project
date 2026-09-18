@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiQuickReply } from "./trixus-api";
 
 const api = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn() }));
-vi.mock("@/lib/trixus-api", () => ({ quickReplyApi: api }));
+vi.mock("@/lib/trixus-api", () => ({
+  quickReplyApi: api,
+  crmApi: { listContactCustomFields: async () => [] },
+}));
 vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
 vi.mock("@/lib/perms", () => ({ useChatPerms: () => ({}) }));
 import { QuickReplyEditor } from "../routes/mensagens-rapidas";
@@ -30,6 +33,49 @@ const button = (text: string) =>
 const texts = () => [...document.querySelectorAll("textarea")].map((element) => element.value);
 
 describe("quick reply editor", () => {
+  it("caps the sequence at ten and re-enables adding after removal", async () => {
+    await act(async () =>
+      root.render(
+        <QuickReplyEditor
+          open
+          initial={initial}
+          existingReplies={[]}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />,
+      ),
+    );
+    for (let i = 0; i < 8; i++) await click(button("Adicionar mensagem"));
+    expect(texts()).toHaveLength(10);
+    expect((button("Adicionar mensagem") as HTMLButtonElement).disabled).toBe(true);
+    expect(document.body.textContent).toContain("Número máximo de mensagens (10).");
+    await click(document.querySelectorAll('[aria-label="Remover mensagem"]')[9]);
+    expect((button("Adicionar mensagem") as HTMLButtonElement).disabled).toBe(false);
+    expect(document.body.textContent).not.toContain("Número máximo de mensagens (10).");
+  });
+
+  it("inserts a variable at the cursor of the active message and defaults to keeping the conversation open", async () => {
+    await act(async () =>
+      root.render(
+        <QuickReplyEditor
+          open
+          initial={null}
+          existingReplies={[]}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />,
+      ),
+    );
+    expect((document.querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(
+      false,
+    );
+    await click(button("Adicionar mensagem"));
+    const second = document.querySelectorAll("textarea")[1];
+    await act(async () => second.focus());
+    await click(document.querySelector('[aria-label="Inserir variável"]')!);
+    await click(button("{{contato}}"));
+    expect(texts()).toEqual(["", "{{contato}}"]);
+  });
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.clearAllMocks();

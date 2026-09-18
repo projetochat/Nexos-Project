@@ -1,3 +1,9 @@
+import {
+  CUSTOM_FIELD_FORMATS,
+  customFieldFormat,
+  formatCustomField,
+  customFieldError,
+} from "@/lib/custom-field-formats";
 import { InfoTooltip } from "@/components/info-tooltip";
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -3018,6 +3024,11 @@ export function ContactFormModal({
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) errs.email = "E-mail inválido.";
     const normalizedCustomFields = normalizeCustomFieldValues(customFields, customFieldDefinitions);
     for (const field of customFieldDefinitions) {
+      const format = customFieldFormat(field);
+      const formatError = format
+        ? customFieldError(String(normalizedCustomFields[field.id] ?? ""), format)
+        : null;
+      if (formatError) errs[`custom_${field.id}`] = formatError;
       if (field.required && !String(normalizedCustomFields[field.id] ?? "").trim())
         errs[`custom_${field.id}`] = "Campo obrigatório.";
     }
@@ -4306,6 +4317,19 @@ function CustomContactFieldInput({
   value: string | boolean | undefined;
   onChange: (value: string | boolean) => void;
 }) {
+  const format = customFieldFormat(field);
+  if (format) {
+    const option = CUSTOM_FIELD_FORMATS.find((option) => option.value === format)!;
+    return (
+      <Input
+        type={format === "email" ? "email" : "text"}
+        inputMode={format === "email" ? "email" : format === "phone" ? "tel" : "numeric"}
+        value={formatCustomField(String(value ?? ""), format)}
+        placeholder={option.placeholder}
+        onChange={(event) => onChange(formatCustomField(event.target.value, format))}
+      />
+    );
+  }
   if (field.type === "checkbox") {
     const description = contactCheckboxDescription(field);
     return (
@@ -4814,6 +4838,9 @@ function normalizeCustomFieldValues(
 ) {
   const normalized = { ...values };
   for (const field of fields) {
+    const format = customFieldFormat(field);
+    if (format && typeof values[field.id] === "string")
+      normalized[field.id] = formatCustomField(String(values[field.id]), format);
     if (field.type !== "date") continue;
     const value = values[field.id];
     if (typeof value !== "string" || !value.trim()) continue;
