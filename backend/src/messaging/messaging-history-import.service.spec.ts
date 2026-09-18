@@ -7,6 +7,10 @@ import {
 } from "../generated/prisma";
 import { MessagingHistoryImportService } from "./messaging-history-import.service";
 
+type HistoryImportRunner = {
+  run(importId: string): Promise<void>;
+};
+
 describe("MessagingHistoryImportService", () => {
   it("puts a direct conversation whose last message was outbound into history", async () => {
     const conversationUpdate = vi.fn().mockResolvedValue({});
@@ -64,7 +68,9 @@ describe("MessagingHistoryImportService", () => {
           sender: { phone: "+5511999999999", normalizedPhone: "+5511999999999" },
           type: "TEXT",
           content: payload.data.key.id,
-          occurredAt: new Date(payload.data.key.id === "out-1" ? 1_789_000_010_000 : 1_789_000_000_000),
+          occurredAt: new Date(
+            payload.data.key.id === "out-1" ? 1_789_000_010_000 : 1_789_000_000_000,
+          ),
         },
       })),
     };
@@ -83,7 +89,7 @@ describe("MessagingHistoryImportService", () => {
       inbound as never,
     );
 
-    await (service as any).run("import-1");
+    await (service as unknown as HistoryImportRunner).run("import-1");
 
     expect(inbound.process).toHaveBeenCalledWith(
       expect.objectContaining({ externalMessageId: "in-1" }),
@@ -140,7 +146,9 @@ describe("MessagingHistoryImportService", () => {
     };
     const evolution = {
       findChats: vi.fn().mockResolvedValue([{ remoteJid: "5511999999999@s.whatsapp.net" }]),
-      findMessages: vi.fn().mockResolvedValue([{ key: { id: "in-1" }, messageTimestamp: 1_789_000_000 }]),
+      findMessages: vi
+        .fn()
+        .mockResolvedValue([{ key: { id: "in-1" }, messageTimestamp: 1_789_000_000 }]),
     };
     const translator = {
       translate: vi.fn(() => ({
@@ -174,7 +182,7 @@ describe("MessagingHistoryImportService", () => {
       inbound as never,
     );
 
-    await (service as any).run("import-2");
+    await (service as unknown as HistoryImportRunner).run("import-2");
 
     expect(leadUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -228,7 +236,9 @@ describe("MessagingHistoryImportService", () => {
     };
     const evolution = {
       findChats: vi.fn().mockResolvedValue([{ remoteJid: "12345-67890@g.us" }]),
-      findMessages: vi.fn().mockResolvedValue([{ key: { id: "group-1" }, messageTimestamp: 1_789_000_000 }]),
+      findMessages: vi
+        .fn()
+        .mockResolvedValue([{ key: { id: "group-1" }, messageTimestamp: 1_789_000_000 }]),
     };
     const translator = {
       translate: vi.fn(() => ({
@@ -262,14 +272,17 @@ describe("MessagingHistoryImportService", () => {
       inbound as never,
     );
 
-    await (service as any).run("import-3");
+    await (service as unknown as HistoryImportRunner).run("import-3");
 
     expect(conversationUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: ConversationStatus.FECHADA }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({ status: ConversationStatus.FECHADA }),
+      }),
     );
     expect(leadDeleteMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { tenantId: "tenant-1", conversationId: "group-conversation-1" } }),
+      expect.objectContaining({
+        where: { tenantId: "tenant-1", conversationId: "group-conversation-1" },
+      }),
     );
   });
 });
-

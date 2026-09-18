@@ -1098,7 +1098,9 @@ function toAtendente(membership: ApiUserMembership): Atendente {
   return {
     id: membership.id,
     nome:
-      membership.presentationName?.trim() || membership.user.presentationName?.trim() || membership.user.name,
+      membership.presentationName?.trim() ||
+      membership.user.presentationName?.trim() ||
+      membership.user.name,
     email: membership.user.email,
     cargo: membership.role.name,
     perfilId: membership.role.id,

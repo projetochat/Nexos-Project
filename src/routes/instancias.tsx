@@ -982,7 +982,9 @@ function ConnectionSettingsModal({
     mutationFn: (kind?: ApiMessagingHistoryImport["kind"]) =>
       connectionsApi.retryImport(connection!.id, kind),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["trixus", "messaging-connection-imports", connection?.id] });
+      qc.invalidateQueries({
+        queryKey: ["trixus", "messaging-connection-imports", connection?.id],
+      });
       toast.success("Importação agendada para nova tentativa.");
     },
     onError: (error) => toast.error((error as Error).message),
@@ -1236,44 +1238,44 @@ function ConnectionSettingsModal({
 
                 <div className="space-y-4">
                   <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Status">
-                    <div className="flex h-10 items-center">
-                      {connection ? (
-                        <Badge tone={STATUS_TONE[connection.status]}>
-                          {statusIcon(connection.status)}
-                          {statusLabel(connection.status)}
-                        </Badge>
-                      ) : null}
-                    </div>
-                  </Field>
-                  <Field label="Cor">
-                    <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
-                      <input
-                        type="color"
-                        value={completeHexColor(form.color, "#22c55e")}
-                        onChange={(event) =>
-                          setForm({
-                            ...form,
-                            color: normalizeHexColor(event.target.value, "#22c55e"),
-                          })
-                        }
-                        className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
-                      />
-                      <input
-                        type="text"
-                        value={form.color || ""}
-                        onChange={(event) =>
-                          setForm({
-                            ...form,
-                            color: normalizeHexColor(event.target.value, "#22c55e"),
-                          })
-                        }
-                        placeholder={completeHexColor("#22c55e")}
-                        maxLength={7}
-                        className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
-                      />
-                    </div>
-                  </Field>
+                    <Field label="Status">
+                      <div className="flex h-10 items-center">
+                        {connection ? (
+                          <Badge tone={STATUS_TONE[connection.status]}>
+                            {statusIcon(connection.status)}
+                            {statusLabel(connection.status)}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </Field>
+                    <Field label="Cor">
+                      <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
+                        <input
+                          type="color"
+                          value={completeHexColor(form.color, "#22c55e")}
+                          onChange={(event) =>
+                            setForm({
+                              ...form,
+                              color: normalizeHexColor(event.target.value, "#22c55e"),
+                            })
+                          }
+                          className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                        />
+                        <input
+                          type="text"
+                          value={form.color || ""}
+                          onChange={(event) =>
+                            setForm({
+                              ...form,
+                              color: normalizeHexColor(event.target.value, "#22c55e"),
+                            })
+                          }
+                          placeholder={completeHexColor("#22c55e")}
+                          maxLength={7}
+                          className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+                        />
+                      </div>
+                    </Field>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="Nome *">
@@ -1306,7 +1308,10 @@ function ConnectionSettingsModal({
                       </Select>
                     </div>
                     <Field label="Time Zone">
-                      <Select value={timezone} onChange={(event) => setTimezone(event.target.value)}>
+                      <Select
+                        value={timezone}
+                        onChange={(event) => setTimezone(event.target.value)}
+                      >
                         {TIMEZONE_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
@@ -1353,16 +1358,21 @@ function ConnectionSettingsModal({
                 <div className="grid gap-3 sm:grid-cols-2">
                   {(["DIRECT", "GROUP"] as const).map((kind) => {
                     const job = importJobs.find((item) => item.kind === kind);
-                    const label = kind === "DIRECT" ? "Histórico de mensagens" : "Mensagens de grupo";
+                    const label =
+                      kind === "DIRECT" ? "Histórico de mensagens" : "Mensagens de grupo";
                     return (
-                      <div key={kind} className="rounded-lg border border-border bg-background px-3 py-2 text-xs">
+                      <div
+                        key={kind}
+                        className="rounded-lg border border-border bg-background px-3 py-2 text-xs"
+                      >
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-medium text-foreground">{label}</span>
                           <ImportStatusBadge job={job} />
                         </div>
                         {job && (
                           <p className="mt-1 text-muted-foreground">
-                            {job.chatsProcessed} conversa(s) · {job.messagesImported} mensagem(ns) importada(s)
+                            {job.chatsProcessed} conversa(s) · {job.messagesImported} mensagem(ns)
+                            importada(s)
                           </p>
                         )}
                         {job?.error && <p className="mt-1 text-destructive">{job.error}</p>}

@@ -162,9 +162,15 @@ function normalizeLoginError(error: unknown) {
   ) {
     return "Não foi possível conectar ao sistema. Verifique suas credenciais e tente novamente.";
   }
-  if (/e-mail ou senha inválidos/i.test(message)) return "E-mail ou senha incorretos. Tente novamente.";
-  if (/muitas tentativas/i.test(message)) return "Muitas tentativas de acesso. Aguarde alguns minutos antes de tentar novamente.";
-  if (/organização.*inativa/i.test(message)) return "Sua organização está inativa. Entre em contato com o administrador.";
-  if (/nenhuma organização ativa/i.test(message)) return "Seu usuário não possui acesso a uma organização ativa.";
-  return message || "Não foi possível concluir o acesso agora. Tente novamente em alguns instantes.";
+  if (/e-mail ou senha inválidos/i.test(message))
+    return "E-mail ou senha incorretos. Tente novamente.";
+  if (/muitas tentativas/i.test(message))
+    return "Muitas tentativas de acesso. Aguarde alguns minutos antes de tentar novamente.";
+  if (/organização.*inativa/i.test(message))
+    return "Sua organização está inativa. Entre em contato com o administrador.";
+  if (/nenhuma organização ativa/i.test(message))
+    return "Seu usuário não possui acesso a uma organização ativa.";
+  return (
+    message || "Não foi possível concluir o acesso agora. Tente novamente em alguns instantes."
+  );
 }

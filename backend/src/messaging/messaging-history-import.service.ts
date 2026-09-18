@@ -47,7 +47,9 @@ export class MessagingHistoryImportService implements OnModuleInit {
   async onModuleInit() {
     const interrupted = await this.prisma.messagingHistoryImport.findMany({
       where: {
-        status: { in: [MessagingHistoryImportStatus.PENDING, MessagingHistoryImportStatus.RUNNING] },
+        status: {
+          in: [MessagingHistoryImportStatus.PENDING, MessagingHistoryImportStatus.RUNNING],
+        },
         connection: { archivedAt: null, status: MessagingConnectionStatus.CONNECTED },
       },
     });
@@ -55,7 +57,10 @@ export class MessagingHistoryImportService implements OnModuleInit {
       if (job.status === MessagingHistoryImportStatus.RUNNING) {
         await this.prisma.messagingHistoryImport.update({
           where: { id: job.id },
-          data: { status: MessagingHistoryImportStatus.PENDING, error: "Importação retomada após reinício." },
+          data: {
+            status: MessagingHistoryImportStatus.PENDING,
+            error: "Importação retomada após reinício.",
+          },
         });
       }
       this.enqueue(job.id);
@@ -81,7 +86,8 @@ export class MessagingHistoryImportService implements OnModuleInit {
   }
 
   async enqueueForConnection(connection: ImportConnection) {
-    if (connection.status !== MessagingConnectionStatus.CONNECTED || !connection.externalReference) return;
+    if (connection.status !== MessagingConnectionStatus.CONNECTED || !connection.externalReference)
+      return;
     await Promise.all([
       this.requestImport(connection, MessagingHistoryImportKind.DIRECT, {
         enabled: connection.importHistoryEnabled,
@@ -169,7 +175,12 @@ export class MessagingHistoryImportService implements OnModuleInit {
     });
     if (!job || job.status === MessagingHistoryImportStatus.COMPLETED) return;
     const connection = job.connection;
-    if (connection.archivedAt || connection.status !== MessagingConnectionStatus.CONNECTED || !connection.externalReference) return;
+    if (
+      connection.archivedAt ||
+      connection.status !== MessagingConnectionStatus.CONNECTED ||
+      !connection.externalReference
+    )
+      return;
 
     await this.prisma.messagingHistoryImport.update({
       where: { id: job.id },
@@ -264,11 +275,18 @@ export class MessagingHistoryImportService implements OnModuleInit {
       await this.prisma.messagingHistoryImport.update({
         where: { id: job.id },
         data: {
-          status: failedChats > 0 ? MessagingHistoryImportStatus.PARTIAL_FAILED : MessagingHistoryImportStatus.COMPLETED,
+          status:
+            failedChats > 0
+              ? MessagingHistoryImportStatus.PARTIAL_FAILED
+              : MessagingHistoryImportStatus.COMPLETED,
           chatsProcessed,
           messagesImported,
           messagesSkipped,
-          error: failedChats > 0 ? String(failedChats) + " conversa(s) não puderam ser importadas. Tente novamente para concluir." : null,
+          error:
+            failedChats > 0
+              ? String(failedChats) +
+                " conversa(s) não puderam ser importadas. Tente novamente para concluir."
+              : null,
           finishedAt: new Date(),
         },
       });
@@ -321,9 +339,10 @@ export class MessagingHistoryImportService implements OnModuleInit {
   }
 
   private translateStoredMessage(record: Record<string, unknown>, connection: ImportConnection) {
-    const data = record.data && typeof record.data === "object"
-      ? (record.data as Record<string, unknown>)
-      : record;
+    const data =
+      record.data && typeof record.data === "object"
+        ? (record.data as Record<string, unknown>)
+        : record;
     return this.translator.translate(
       { event: "MESSAGES_UPSERT", instance: connection.externalReference ?? undefined, data },
       { tenantId: connection.tenantId, id: connection.id },
@@ -341,7 +360,11 @@ export class MessagingHistoryImportService implements OnModuleInit {
         select: { id: true, contactId: true, departmentId: true, isGroup: true },
       });
       if (!conversation) continue;
-      if (job.kind === MessagingHistoryImportKind.GROUP || conversation.isGroup || imported.lastFromMe) {
+      if (
+        job.kind === MessagingHistoryImportKind.GROUP ||
+        conversation.isGroup ||
+        imported.lastFromMe
+      ) {
         await this.prisma.$transaction([
           this.prisma.conversation.update({
             where: { tenantId_id: { tenantId: job.tenantId, id: conversation.id } },
@@ -354,7 +377,9 @@ export class MessagingHistoryImportService implements OnModuleInit {
               inboxArchivedAt: null,
             },
           }),
-          this.prisma.lead.deleteMany({ where: { tenantId: job.tenantId, conversationId: conversation.id } }),
+          this.prisma.lead.deleteMany({
+            where: { tenantId: job.tenantId, conversationId: conversation.id },
+          }),
         ]);
         continue;
       }
@@ -371,7 +396,9 @@ export class MessagingHistoryImportService implements OnModuleInit {
           },
         });
         return tx.lead.upsert({
-          where: { tenantId_conversationId: { tenantId: job.tenantId, conversationId: conversation.id } },
+          where: {
+            tenantId_conversationId: { tenantId: job.tenantId, conversationId: conversation.id },
+          },
           update: {
             contactId: conversation.contactId,
             departmentId: conversation.departmentId,
@@ -397,7 +424,12 @@ export class MessagingHistoryImportService implements OnModuleInit {
     return leads;
   }
 
-  private async persistProgress(id: string, chatsProcessed: number, messagesImported: number, messagesSkipped: number) {
+  private async persistProgress(
+    id: string,
+    chatsProcessed: number,
+    messagesImported: number,
+    messagesSkipped: number,
+  ) {
     await this.prisma.messagingHistoryImport.update({
       where: { id },
       data: { chatsProcessed, messagesImported, messagesSkipped },
@@ -407,7 +439,11 @@ export class MessagingHistoryImportService implements OnModuleInit {
   private async fetchAllChats(instanceName: string) {
     const records: Record<string, unknown>[] = [];
     for (let page = 1; page <= MAX_CHAT_PAGES; page += 1) {
-      const current = await this.evolution.findChats({ instanceName, page, pageSize: PROVIDER_PAGE_SIZE });
+      const current = await this.evolution.findChats({
+        instanceName,
+        page,
+        pageSize: PROVIDER_PAGE_SIZE,
+      });
       records.push(...current);
       if (current.length < PROVIDER_PAGE_SIZE) break;
     }
@@ -418,7 +454,12 @@ export class MessagingHistoryImportService implements OnModuleInit {
     const records: Record<string, unknown>[] = [];
     const seen = new Set<string>();
     for (let page = 1; page <= MAX_MESSAGE_PAGES; page += 1) {
-      const current = await this.evolution.findMessages({ instanceName, remoteJid, page, pageSize: PROVIDER_PAGE_SIZE });
+      const current = await this.evolution.findMessages({
+        instanceName,
+        remoteJid,
+        page,
+        pageSize: PROVIDER_PAGE_SIZE,
+      });
       const uniquePage = current.filter((record) => {
         const id = messageExternalId(record);
         const key = id ? remoteJid + ":" + id : JSON.stringify(record);
@@ -441,20 +482,32 @@ function unique(values: string[]) {
   return [...new Set(values)];
 }
 function chatRemoteJid(record: Record<string, unknown>): string | null {
-  const direct = stringAt(record, ["remoteJid"]) ?? stringAt(record, ["id"]) ?? stringAt(record, ["jid"]);
+  const direct =
+    stringAt(record, ["remoteJid"]) ?? stringAt(record, ["id"]) ?? stringAt(record, ["jid"]);
   if (direct?.includes("@")) return direct;
-  return stringAt(record, ["key", "remoteJid"]) ?? stringAt(record, ["data", "key", "remoteJid"]) ?? null;
+  return (
+    stringAt(record, ["key", "remoteJid"]) ?? stringAt(record, ["data", "key", "remoteJid"]) ?? null
+  );
 }
 function messageExternalId(record: Record<string, unknown>) {
-  return stringAt(record, ["key", "id"]) ?? stringAt(record, ["data", "key", "id"]) ?? stringAt(record, ["id"]) ?? null;
+  return (
+    stringAt(record, ["key", "id"]) ??
+    stringAt(record, ["data", "key", "id"]) ??
+    stringAt(record, ["id"]) ??
+    null
+  );
 }
 function recordTimestamp(record: Record<string, unknown>) {
-  const value = valueAt(record, ["messageTimestamp"]) ?? valueAt(record, ["timestamp"]) ??
-    valueAt(record, ["data", "messageTimestamp"]) ?? valueAt(record, ["data", "timestamp"]);
+  const value =
+    valueAt(record, ["messageTimestamp"]) ??
+    valueAt(record, ["timestamp"]) ??
+    valueAt(record, ["data", "messageTimestamp"]) ??
+    valueAt(record, ["data", "timestamp"]);
   if (typeof value === "number") return new Date(value < 10_000_000_000 ? value * 1_000 : value);
   if (typeof value === "string") {
     const asNumber = Number(value);
-    if (Number.isFinite(asNumber) && asNumber > 0) return new Date(asNumber < 10_000_000_000 ? asNumber * 1_000 : asNumber);
+    if (Number.isFinite(asNumber) && asNumber > 0)
+      return new Date(asNumber < 10_000_000_000 ? asNumber * 1_000 : asNumber);
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? null : date;
   }
@@ -475,4 +528,3 @@ function stringAt(value: unknown, path: string[]) {
 function sanitizeChatId(value: string) {
   return value.length <= 20 ? value : value.slice(0, 8) + "…" + value.slice(-8);
 }
-

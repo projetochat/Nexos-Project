@@ -33,23 +33,23 @@ Escopo nao executado por bloqueio:
 
 ## 3. Baseline inicial do Git
 
-| Item | Resultado |
-| --- | --- |
-| Diretorio | `C:\Users\Rabel\Downloads\Trixus Project` |
-| `git status` | FAIL - `fatal: not a git repository (or any of the parent directories): .git` |
-| Branch | N/A - pasta sem Git |
-| Commit inicial | N/A - pasta sem Git |
-| Arquivos preexistentes modificados | Nao mensuravel por Git |
+| Item                               | Resultado                                                                     |
+| ---------------------------------- | ----------------------------------------------------------------------------- |
+| Diretorio                          | `C:\Users\Rabel\Downloads\Trixus Project`                                     |
+| `git status`                       | FAIL - `fatal: not a git repository (or any of the parent directories): .git` |
+| Branch                             | N/A - pasta sem Git                                                           |
+| Commit inicial                     | N/A - pasta sem Git                                                           |
+| Arquivos preexistentes modificados | Nao mensuravel por Git                                                        |
 
 ## 4. Ambiente e versoes
 
-| Item | Resultado |
-| --- | --- |
-| Node.js | `v24.14.0` registrado na Sprint 00 |
-| Bun | FAIL - comando `bun --version` nao reconhecido |
-| Package manager identificado | Bun, por `bun.lock` |
-| Lockfile | `bun.lock` |
-| Build system | Vite/TanStack Start |
+| Item                         | Resultado                                      |
+| ---------------------------- | ---------------------------------------------- |
+| Node.js                      | `v24.14.0` registrado na Sprint 00             |
+| Bun                          | FAIL - comando `bun --version` nao reconhecido |
+| Package manager identificado | Bun, por `bun.lock`                            |
+| Lockfile                     | `bun.lock`                                     |
+| Build system                 | Vite/TanStack Start                            |
 
 ## 5. Decisoes tecnicas
 
@@ -110,26 +110,26 @@ Nenhuma alteracao de dados foi executada.
 
 ## 11. Comandos executados
 
-| Comando | Resultado |
-| --- | --- |
-| `pwd` / `Get-Location` | PASS - `C:\Users\Rabel\Downloads\Trixus Project` |
-| `git status` | FAIL - pasta sem Git |
-| `git branch --show-current` | FAIL - pasta sem Git |
-| `git rev-parse HEAD` | FAIL - pasta sem Git |
-| `bun --version` | FAIL - Bun nao reconhecido |
-| `bun install --frozen-lockfile` | FAIL - Bun nao reconhecido |
+| Comando                         | Resultado                                        |
+| ------------------------------- | ------------------------------------------------ |
+| `pwd` / `Get-Location`          | PASS - `C:\Users\Rabel\Downloads\Trixus Project` |
+| `git status`                    | FAIL - pasta sem Git                             |
+| `git branch --show-current`     | FAIL - pasta sem Git                             |
+| `git rev-parse HEAD`            | FAIL - pasta sem Git                             |
+| `bun --version`                 | FAIL - Bun nao reconhecido                       |
+| `bun install --frozen-lockfile` | FAIL - Bun nao reconhecido                       |
 
 ## 12. Resultados de instalacao, lint, typecheck, testes e builds
 
-| Validacao | Comando | Resultado | Evidencia |
-| --- | --- | --- | --- |
-| Install | `bun install --frozen-lockfile` | REPROVADA | `bun` nao reconhecido |
-| Lint | `bun run lint` | NAO MEDIDA | bloqueada por Bun indisponivel |
-| Typecheck | N/A | N/A | nao ha script no `package.json` |
-| Testes | N/A | N/A | nao ha script/arquivos de teste conhecidos |
-| Build frontend | `bun run build` | NAO MEDIDA | bloqueada por Bun indisponivel |
-| Build backend | N/A | N/A | backend nao criado por bloqueio |
-| Dev server | `bun run dev` | NAO MEDIDA | bloqueado por Bun indisponivel |
+| Validacao      | Comando                         | Resultado  | Evidencia                                  |
+| -------------- | ------------------------------- | ---------- | ------------------------------------------ |
+| Install        | `bun install --frozen-lockfile` | REPROVADA  | `bun` nao reconhecido                      |
+| Lint           | `bun run lint`                  | NAO MEDIDA | bloqueada por Bun indisponivel             |
+| Typecheck      | N/A                             | N/A        | nao ha script no `package.json`            |
+| Testes         | N/A                             | N/A        | nao ha script/arquivos de teste conhecidos |
+| Build frontend | `bun run build`                 | NAO MEDIDA | bloqueada por Bun indisponivel             |
+| Build backend  | N/A                             | N/A        | backend nao criado por bloqueio            |
+| Dev server     | `bun run dev`                   | NAO MEDIDA | bloqueado por Bun indisponivel             |
 
 ## 13. Cobertura de testes
 
@@ -141,45 +141,45 @@ Nao executado. O dev server nao pode ser iniciado porque Bun nao esta disponivel
 
 ## 15. Quadro M01-M29
 
-| ID | Metrica | Meta | Resultado | Evidencia | Status |
-| --- | --- | --- | --- | --- | --- |
-| M01 | Commit inicial e final registrados | 100% | Sem Git | `git rev-parse HEAD` falhou | REPROVADA |
-| M02 | Arquivos alterados rastreaveis por Git | 100% | Sem Git | `git status` falhou | REPROVADA |
-| M03 | `bun install --frozen-lockfile` | aprovado | Bun indisponivel | comando falhou | REPROVADA |
-| M04 | Mudancas preexistentes preservadas | 100% | Nao mensuravel por Git; nenhum codigo alterado | ausencia de Git | NAO MEDIDA |
-| M05 | Relatorios Sprint 00 e 01 salvos em `sprints/` | 100% | Arquivos criados | `sprints/` | APROVADA |
-| M06 | Segredos privilegiados no bundle cliente | 0 | Nao verificado por build | Bun/Git bloqueados | NAO MEDIDA |
-| M07 | Uso de service role no frontend | 0 | Nao corrigido/verificado | bloqueio | NAO MEDIDA |
-| M08 | HTML nao confiavel sem sanitizacao | 0 | Pendente | bloqueio | REPROVADA |
-| M09 | Payloads XSS bloqueados | 100% | Nao testado | sem test/dev server | REPROVADA |
-| M10 | Segredos em logs/respostas/fixtures/docs | 0 | Nao auditado nesta sprint | bloqueio | NAO MEDIDA |
-| M11 | Rotas privadas novo slice protegidas | 100% | Slice nao criado | bloqueio | REPROVADA |
-| M12 | Tenant scope server-side | 100% | Slice nao criado | bloqueio | REPROVADA |
-| M13 | Cross-tenant bloqueado por testes | 100% | Sem testes | bloqueio | REPROVADA |
-| M14 | Vazamentos cross-tenant conhecidos | 0 | Nao medido | sem slice | NAO MEDIDA |
-| M15 | Cenarios criticos authz cobertos | 100% | Sem testes | bloqueio | REPROVADA |
-| M16 | Enumeracao indevida bloqueada | 0 | Nao medido | sem slice | NAO MEDIDA |
-| M17 | Lint | 0 erros | Nao executado | Bun indisponivel | NAO MEDIDA |
-| M18 | Typecheck | 0 erros | Nao disponivel | sem script | N/A |
-| M19 | Testes automatizados | 100% aprovados | Nao disponivel | sem script/testes | N/A |
-| M20 | Build frontend/backend | 100% aprovado | Nao executado | Bun indisponivel/backend nao criado | REPROVADA |
-| M21 | Cobertura codigo novo >= 80% | minimo 80% | Sem codigo novo | bloqueio | N/A |
-| M22 | Cobertura guards/policies | 100% M15 | Sem guards | bloqueio | REPROVADA |
-| M23 | Smoke tests | 100% aprovados | Nao executado | dev server bloqueado | REPROVADA |
-| M24 | Regressoes conhecidas frontend | 0 | Nao medidas; nenhum codigo alterado | sem dev/build | NAO MEDIDA |
-| M25 | Arquivos listados no relatorio | 100% | Listados | secao 6 | APROVADA |
-| M26 | Comandos e resultados reais registrados | 100% | Registrados | secao 11 | APROVADA |
-| M27 | Decisoes/riscos/pendencias documentados | 100% | Registrados | secoes 5, 16, 17 | APROVADA |
-| M28 | Passos validacao local reproduziveis | 100% | Ja documentados na Sprint 00; bloqueio desta sprint registrado | `docs/README.md`, este relatorio | APROVADA |
-| M29 | M01-M28 com evidencia/status | 100% | Preenchido | esta tabela | APROVADA |
+| ID  | Metrica                                        | Meta           | Resultado                                                      | Evidencia                           | Status     |
+| --- | ---------------------------------------------- | -------------- | -------------------------------------------------------------- | ----------------------------------- | ---------- |
+| M01 | Commit inicial e final registrados             | 100%           | Sem Git                                                        | `git rev-parse HEAD` falhou         | REPROVADA  |
+| M02 | Arquivos alterados rastreaveis por Git         | 100%           | Sem Git                                                        | `git status` falhou                 | REPROVADA  |
+| M03 | `bun install --frozen-lockfile`                | aprovado       | Bun indisponivel                                               | comando falhou                      | REPROVADA  |
+| M04 | Mudancas preexistentes preservadas             | 100%           | Nao mensuravel por Git; nenhum codigo alterado                 | ausencia de Git                     | NAO MEDIDA |
+| M05 | Relatorios Sprint 00 e 01 salvos em `sprints/` | 100%           | Arquivos criados                                               | `sprints/`                          | APROVADA   |
+| M06 | Segredos privilegiados no bundle cliente       | 0              | Nao verificado por build                                       | Bun/Git bloqueados                  | NAO MEDIDA |
+| M07 | Uso de service role no frontend                | 0              | Nao corrigido/verificado                                       | bloqueio                            | NAO MEDIDA |
+| M08 | HTML nao confiavel sem sanitizacao             | 0              | Pendente                                                       | bloqueio                            | REPROVADA  |
+| M09 | Payloads XSS bloqueados                        | 100%           | Nao testado                                                    | sem test/dev server                 | REPROVADA  |
+| M10 | Segredos em logs/respostas/fixtures/docs       | 0              | Nao auditado nesta sprint                                      | bloqueio                            | NAO MEDIDA |
+| M11 | Rotas privadas novo slice protegidas           | 100%           | Slice nao criado                                               | bloqueio                            | REPROVADA  |
+| M12 | Tenant scope server-side                       | 100%           | Slice nao criado                                               | bloqueio                            | REPROVADA  |
+| M13 | Cross-tenant bloqueado por testes              | 100%           | Sem testes                                                     | bloqueio                            | REPROVADA  |
+| M14 | Vazamentos cross-tenant conhecidos             | 0              | Nao medido                                                     | sem slice                           | NAO MEDIDA |
+| M15 | Cenarios criticos authz cobertos               | 100%           | Sem testes                                                     | bloqueio                            | REPROVADA  |
+| M16 | Enumeracao indevida bloqueada                  | 0              | Nao medido                                                     | sem slice                           | NAO MEDIDA |
+| M17 | Lint                                           | 0 erros        | Nao executado                                                  | Bun indisponivel                    | NAO MEDIDA |
+| M18 | Typecheck                                      | 0 erros        | Nao disponivel                                                 | sem script                          | N/A        |
+| M19 | Testes automatizados                           | 100% aprovados | Nao disponivel                                                 | sem script/testes                   | N/A        |
+| M20 | Build frontend/backend                         | 100% aprovado  | Nao executado                                                  | Bun indisponivel/backend nao criado | REPROVADA  |
+| M21 | Cobertura codigo novo >= 80%                   | minimo 80%     | Sem codigo novo                                                | bloqueio                            | N/A        |
+| M22 | Cobertura guards/policies                      | 100% M15       | Sem guards                                                     | bloqueio                            | REPROVADA  |
+| M23 | Smoke tests                                    | 100% aprovados | Nao executado                                                  | dev server bloqueado                | REPROVADA  |
+| M24 | Regressoes conhecidas frontend                 | 0              | Nao medidas; nenhum codigo alterado                            | sem dev/build                       | NAO MEDIDA |
+| M25 | Arquivos listados no relatorio                 | 100%           | Listados                                                       | secao 6                             | APROVADA   |
+| M26 | Comandos e resultados reais registrados        | 100%           | Registrados                                                    | secao 11                            | APROVADA   |
+| M27 | Decisoes/riscos/pendencias documentados        | 100%           | Registrados                                                    | secoes 5, 16, 17                    | APROVADA   |
+| M28 | Passos validacao local reproduziveis           | 100%           | Ja documentados na Sprint 00; bloqueio desta sprint registrado | `docs/README.md`, este relatorio    | APROVADA   |
+| M29 | M01-M28 com evidencia/status                   | 100%           | Preenchido                                                     | esta tabela                         | APROVADA   |
 
 ## 16. Problemas encontrados e solucoes
 
-| Problema | Solucao aplicada |
-| --- | --- |
-| Pasta sem Git | Implementacoes interrompidas; bloqueio registrado |
-| Bun indisponivel | Instalacao/validacoes interrompidas; bloqueio registrado |
-| Relatorios obrigatorios ausentes | Estrutura `sprints/` criada e preenchida |
+| Problema                         | Solucao aplicada                                         |
+| -------------------------------- | -------------------------------------------------------- |
+| Pasta sem Git                    | Implementacoes interrompidas; bloqueio registrado        |
+| Bun indisponivel                 | Instalacao/validacoes interrompidas; bloqueio registrado |
+| Relatorios obrigatorios ausentes | Estrutura `sprints/` criada e preenchida                 |
 
 ## 17. Riscos e pendencias
 

@@ -1052,10 +1052,13 @@ export const organizationApi = {
     presentationName?: string;
     avatarUrl?: string | null;
   }) =>
-    apiRequest<{ ok: true; presentationName?: string | null; avatarUrl?: string | null }>("/company/administrator-credentials", {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
+    apiRequest<{ ok: true; presentationName?: string | null; avatarUrl?: string | null }>(
+      "/company/administrator-credentials",
+      {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      },
+    ),
 };
 
 export const crmApi = {

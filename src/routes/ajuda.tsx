@@ -61,7 +61,9 @@ function AjudaPage() {
                 <p className="mt-4 text-sm font-semibold">{c.title}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{c.desc}</p>
                 <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
-                  <Badge tone="default" dot={false}>{c.articles} artigos</Badge>
+                  <Badge tone="default" dot={false}>
+                    {c.articles} artigos
+                  </Badge>
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </div>
               </Card>

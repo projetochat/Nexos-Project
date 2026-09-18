@@ -1,5 +1,9 @@
 import * as React from "react";
-import { setNativeInputValue, shouldFillTodayFromShortcut, todayValueForInput } from "@/lib/date-shortcuts";
+import {
+  setNativeInputValue,
+  shouldFillTodayFromShortcut,
+  todayValueForInput,
+} from "@/lib/date-shortcuts";
 import { ChevronDown, Search, X } from "lucide-react";
 
 /* ============================================================
@@ -84,7 +88,9 @@ export function InstanceFilterSelect({
           )}
           <span className="truncate">{selected?.label ?? allLabel}</span>
         </span>
-        <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition ${open ? "rotate-180" : ""}`} />
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-muted-foreground transition ${open ? "rotate-180" : ""}`}
+        />
       </button>
       {open && (
         <div
@@ -121,7 +127,9 @@ export function InstanceFilterSelect({
             </button>
           ))}
           {allOptions.length === 0 && (
-            <p className="px-2.5 py-3 text-sm text-muted-foreground">Nenhuma instância disponível.</p>
+            <p className="px-2.5 py-3 text-sm text-muted-foreground">
+              Nenhuma instância disponível.
+            </p>
           )}
         </div>
       )}
@@ -206,7 +214,10 @@ export const Input = React.forwardRef<
         shouldFillTodayFromShortcut(event.nativeEvent)
       ) {
         event.preventDefault();
-        setNativeInputValue(event.currentTarget, todayValueForInput(type, event.currentTarget.value));
+        setNativeInputValue(
+          event.currentTarget,
+          todayValueForInput(type, event.currentTarget.value),
+        );
       }
       onKeyDown?.(event);
     }}
@@ -320,7 +331,11 @@ export function Field({
     </>
   );
 
-  return asLabel ? <label className="block">{content}</label> : <div className="block">{content}</div>;
+  return asLabel ? (
+    <label className="block">{content}</label>
+  ) : (
+    <div className="block">{content}</div>
+  );
 }
 
 export function Avatar({

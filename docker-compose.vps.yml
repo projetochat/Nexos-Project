@@ -109,7 +109,13 @@ services:
     ports:
       - "127.0.0.1:${BACKEND_PORT:-3001}:3001"
     healthcheck:
-      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r => { if (!r.ok) process.exit(1) })"]
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "fetch('http://127.0.0.1:3001/api/health').then(r => { if (!r.ok) process.exit(1) })",
+        ]
       interval: 15s
       timeout: 5s
       retries: 10

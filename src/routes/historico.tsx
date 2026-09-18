@@ -387,14 +387,20 @@ function HistoryBubble({ message }: { message: ApiMessage }) {
   if (message.type === "system" || message.direction === "system") {
     const timestamp = new Date(message.created_at).getTime();
     const content = message.content ?? "Evento do sistema";
-    const normalizedContent = content.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const normalizedContent = content
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
     const isStart = /conversa (iniciada|retomada)|protocolo gerado/.test(normalizedContent);
     const isEnd = /conversa encerrada|encerrada via remocao/.test(normalizedContent);
     const isBoundary = isStart || isEnd;
     const tone = isStart
       ? { line: "bg-success/40", pill: "border-success/40 bg-success/10 text-success" }
       : isEnd
-        ? { line: "bg-destructive/40", pill: "border-destructive/40 bg-destructive/10 text-destructive" }
+        ? {
+            line: "bg-destructive/40",
+            pill: "border-destructive/40 bg-destructive/10 text-destructive",
+          }
         : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
     return (
       <div className="flex items-center gap-3">

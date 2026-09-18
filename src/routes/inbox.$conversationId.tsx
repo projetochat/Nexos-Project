@@ -107,7 +107,10 @@ function ConversationPage() {
         .map((membership) => ({
           id: membership.id,
           userId: membership.user.id,
-          nome: membership.presentationName?.trim() || membership.user.presentationName?.trim() || membership.user.name,
+          nome:
+            membership.presentationName?.trim() ||
+            membership.user.presentationName?.trim() ||
+            membership.user.name,
           email: membership.user.email,
         })),
     [memberships],
@@ -388,7 +391,10 @@ function ConversationPage() {
                 customer: conv.contact?.customer?.nome,
                 department: conv.department?.nome ?? conv.contact?.departamento,
                 customFields: Object.fromEntries(
-                  (conv.contact?.customFieldValues ?? []).map((field) => [field.label, field.value]),
+                  (conv.contact?.customFieldValues ?? []).map((field) => [
+                    field.label,
+                    field.value,
+                  ]),
                 ),
               }}
               disabled={!canSend}

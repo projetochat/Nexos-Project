@@ -2,8 +2,8 @@
 
 ## Rotas reais
 
-| Rota                     | Tela                   | Layout                 | Origem principal dos dados                   |
-| ------------------------ | ---------------------- | ---------------------- | -------------------------------------------- |
+| Rota                     | Tela                   | Layout                 | Origem principal dos dados                    |
+| ------------------------ | ---------------------- | ---------------------- | --------------------------------------------- |
 | `/login`                 | Login                  | Sem shell              | Trixus API                                    |
 | `/`                      | Dashboard              | AppShell               | Trixus API `/operations/dashboard` + realtime |
 | `/inbox`                 | Lista de conversas     | AppShellFull           | Trixus API + realtime/polling                 |
@@ -15,21 +15,21 @@
 | `/relatorios`            | Relatorios             | AppShell               | Trixus API `/operations/reports/*`            |
 | `/chamados`              | Chamados               | AppShell               | Trixus API Tickets                            |
 | `/instancias`            | Instancias             | AppShell               | Trixus API                                    |
-| `/perfis`                | Perfis de acesso       | AppShell               | Supabase                                     |
-| `/atendentes`            | Atendentes             | AppShell               | Mock store + Supabase perfis                 |
-| `/departamentos`         | Departamentos          | AppShell               | Mock store + Supabase escopos                |
+| `/perfis`                | Perfis de acesso       | AppShell               | Supabase                                      |
+| `/atendentes`            | Atendentes             | AppShell               | Mock store + Supabase perfis                  |
+| `/departamentos`         | Departamentos          | AppShell               | Mock store + Supabase escopos                 |
 | `/etiquetas`             | Etiquetas              | AppShell               | Trixus API                                    |
-| `/empresas`              | Empresas legado        | AppShell               | Mock store                                   |
+| `/empresas`              | Empresas legado        | AppShell               | Mock store                                    |
 | `/campanhas`             | Campanhas              | AppShell               | Trixus API Campaigns                          |
 | `/filas`                 | Filas admin            | AppShell               | Trixus API `/operations/queues`               |
-| `/chatbot`               | Fluxo de Bot           | AppShell               | Arrays hardcoded                             |
+| `/chatbot`               | Fluxo de Bot           | AppShell               | Arrays hardcoded                              |
 | `/automacoes`            | Automacoes             | AppShell               | Trixus API Automations                        |
-| `/agente-ia`             | Agente IA              | AppShell               | UI hardcoded                                 |
-| `/ajuda`                 | Ajuda                  | AppShell               | Arrays hardcoded                             |
-| `/perfil`                | Perfil                 | AppShell               | Session store/local UI                       |
-| `/configuracoes/*`       | Configuracoes          | AppShell               | Local UI, localStorage e hardcodes           |
-| `/atendimento/*`         | Rotas legadas operador | OperatorShell/redirect | Mock store/session                           |
-| `/admin/*`               | Super Admin            | AdminShell             | Mock SaaS/hardcodes                          |
+| `/agente-ia`             | Agente IA              | AppShell               | UI hardcoded                                  |
+| `/ajuda`                 | Ajuda                  | AppShell               | Arrays hardcoded                              |
+| `/perfil`                | Perfil                 | AppShell               | Session store/local UI                        |
+| `/configuracoes/*`       | Configuracoes          | AppShell               | Local UI, localStorage e hardcodes            |
+| `/atendimento/*`         | Rotas legadas operador | OperatorShell/redirect | Mock store/session                            |
+| `/admin/*`               | Super Admin            | AdminShell             | Mock SaaS/hardcodes                           |
 
 ## Fluxos principais
 

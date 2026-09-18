@@ -43,7 +43,9 @@ export function normalizeWorkSchedule(value: unknown): WorkSchedule {
 
     if (rawPeriods) {
       const periods = rawPeriods
-        .filter((period): period is Record<string, unknown> => !!period && typeof period === "object")
+        .filter(
+          (period): period is Record<string, unknown> => !!period && typeof period === "object",
+        )
         .map((period) => ({
           id: typeof period.id === "string" && period.id ? period.id : periodId(),
           start: typeof period.start === "string" ? period.start : "",
@@ -71,14 +73,13 @@ export function normalizeWorkSchedule(value: unknown): WorkSchedule {
 
 export function workPeriodError(period: Pick<WorkPeriod, "start" | "end">) {
   const time = /^([01]\d|2[0-3]):[0-5]\d$/;
-  if (!time.test(period.start) || !time.test(period.end)) return "Informe horários válidos (HH:mm).";
+  if (!time.test(period.start) || !time.test(period.end))
+    return "Informe horários válidos (HH:mm).";
   if (period.end <= period.start) return "Hora final deve ser maior que a inicial.";
   return "";
 }
 
-export function workShiftError(
-  shift: Pick<WorkPeriod, "start" | "end"> & { active?: boolean },
-) {
+export function workShiftError(shift: Pick<WorkPeriod, "start" | "end"> & { active?: boolean }) {
   return workPeriodError(shift);
 }
 

@@ -32,28 +32,28 @@ O MVP atual e um frontend React/TanStack Start preservavel, com fluxos reais/par
 
 ## Gaps priorizados
 
-| ID | Funcionalidade | Estado atual | Backend necessario | Persistencia | Realtime | Queue | Media | Auth | Prioridade |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| G1 | Auth/tenant | Supabase/parcial | identidade + tenant | sim | nao | nao | nao | sim | P0 |
-| G2 | Conversas | Supabase MVP | API conversas | sim | sim | talvez | nao | sim | P0 |
-| G3 | Mensagens | Supabase/data URL | API envio/historico | sim | sim | sim | sim | sim | P0 |
-| G4 | CRM | Supabase | API clientes/contatos | sim | nao | nao | nao | sim | P0 |
-| G5 | Instancias/canais | Supabase/simulado | adapters canais | sim | sim | sim | nao | sim | P1 |
-| G6 | Chamados | Supabase/HTML | API chamados/atrixus | sim | talvez | talvez | sim | sim | P1 |
-| G7 | Campanhas | mock | campanhas + jobs | sim | talvez | sim | talvez | sim | P1 |
-| G8 | Super Admin | mock | tenants/planos/faturas | sim | nao | sim | nao | sim | P1 |
-| G9 | Relatorios | agregacao client | reporting backend | sim | talvez | sim | nao | sim | P2 |
+| ID  | Funcionalidade    | Estado atual      | Backend necessario     | Persistencia | Realtime | Queue  | Media  | Auth | Prioridade |
+| --- | ----------------- | ----------------- | ---------------------- | ------------ | -------- | ------ | ------ | ---- | ---------- |
+| G1  | Auth/tenant       | Supabase/parcial  | identidade + tenant    | sim          | nao      | nao    | nao    | sim  | P0         |
+| G2  | Conversas         | Supabase MVP      | API conversas          | sim          | sim      | talvez | nao    | sim  | P0         |
+| G3  | Mensagens         | Supabase/data URL | API envio/historico    | sim          | sim      | sim    | sim    | sim  | P0         |
+| G4  | CRM               | Supabase          | API clientes/contatos  | sim          | nao      | nao    | nao    | sim  | P0         |
+| G5  | Instancias/canais | Supabase/simulado | adapters canais        | sim          | sim      | sim    | nao    | sim  | P1         |
+| G6  | Chamados          | Supabase/HTML     | API chamados/atrixus   | sim          | talvez   | talvez | sim    | sim  | P1         |
+| G7  | Campanhas         | mock              | campanhas + jobs       | sim          | talvez   | sim    | talvez | sim  | P1         |
+| G8  | Super Admin       | mock              | tenants/planos/faturas | sim          | nao      | sim    | nao    | sim  | P1         |
+| G9  | Relatorios        | agregacao client  | reporting backend      | sim          | talvez   | sim    | nao    | sim  | P2         |
 
 ## Validacao automatizada da Sprint 00
 
-| Validacao | Comando real | Resultado | Observacao |
-| --- | --- | --- | --- |
-| Install | `bun install --frozen-lockfile` | FAIL | `bun` nao reconhecido |
-| Lint | `bun run lint` | FAIL | `bun` nao reconhecido |
-| Typecheck | N/A | N/A | sem script |
-| Tests | N/A | N/A | sem script/arquivos teste |
-| Build | `bun run build` | FAIL | `bun` nao reconhecido |
-| Dev server | `bun run dev` | FAIL | `bun` nao reconhecido |
+| Validacao  | Comando real                    | Resultado | Observacao                |
+| ---------- | ------------------------------- | --------- | ------------------------- |
+| Install    | `bun install --frozen-lockfile` | FAIL      | `bun` nao reconhecido     |
+| Lint       | `bun run lint`                  | FAIL      | `bun` nao reconhecido     |
+| Typecheck  | N/A                             | N/A       | sem script                |
+| Tests      | N/A                             | N/A       | sem script/arquivos teste |
+| Build      | `bun run build`                 | FAIL      | `bun` nao reconhecido     |
+| Dev server | `bun run dev`                   | FAIL      | `bun` nao reconhecido     |
 
 ## Estado final declarado na Sprint 00
 

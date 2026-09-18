@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { ConfigModule } from "@nestjs/config";
 import { Test } from "@nestjs/testing";
+import { describe, expect, it, vi } from "vitest";
 import { MessagingProviderType } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { MessagingModule } from "./messaging.module";
@@ -12,7 +13,10 @@ describe("MessagingModule DI", () => {
       imports: [ConfigModule.forRoot({ isGlobal: true }), MessagingModule],
     })
       .overrideProvider(PrismaService)
-      .useValue({})
+      .useValue({
+        messagingHistoryImport: { findMany: vi.fn().mockResolvedValue([]) },
+        messagingConnection: { findMany: vi.fn().mockResolvedValue([]) },
+      })
       .compile();
 
     const app = moduleRef.createNestApplication();

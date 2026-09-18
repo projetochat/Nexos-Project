@@ -1076,15 +1076,16 @@ function WorkScheduleEditor({
           <tbody className="divide-y divide-border">
             {WEEK_DAYS.map((day) => {
               const item = value.days[day];
-              const errors = !value.noSchedule && item.active
-                ? item.periods.map((period) =>
-                    workPeriodError({
-                      ...period,
-                      start: formatWorkHourDraft(period.start),
-                      end: formatWorkHourDraft(period.end),
-                    }),
-                  )
-                : [];
+              const errors =
+                !value.noSchedule && item.active
+                  ? item.periods.map((period) =>
+                      workPeriodError({
+                        ...period,
+                        start: formatWorkHourDraft(period.start),
+                        end: formatWorkHourDraft(period.end),
+                      }),
+                    )
+                  : [];
               return (
                 <tr key={day}>
                   <td className="px-3 py-3 align-top font-medium">
@@ -1124,13 +1125,23 @@ function WorkScheduleEditor({
                             inputMode="numeric"
                             aria-label={`Início do período ${index + 1} de ${day}`}
                             aria-invalid={!!error}
-                            aria-describedby={error ? `${errorPrefix}-${day}-${period.id}` : undefined}
+                            aria-describedby={
+                              error ? `${errorPrefix}-${day}-${period.id}` : undefined
+                            }
                             value={period.start}
                             placeholder="00:00"
                             disabled={value.noSchedule || !item.active}
                             className={`w-full px-2 text-center ${error ? "!border-destructive" : ""}`}
-                            onChange={(event) => updatePeriod(day, period.id, { start: sanitizeWorkHourDraft(event.target.value) })}
-                            onBlur={(event) => updatePeriod(day, period.id, { start: formatWorkHourDraft(event.target.value) })}
+                            onChange={(event) =>
+                              updatePeriod(day, period.id, {
+                                start: sanitizeWorkHourDraft(event.target.value),
+                              })
+                            }
+                            onBlur={(event) =>
+                              updatePeriod(day, period.id, {
+                                start: formatWorkHourDraft(event.target.value),
+                              })
+                            }
                           />
                         );
                       })}
@@ -1147,13 +1158,23 @@ function WorkScheduleEditor({
                             inputMode="numeric"
                             aria-label={`Fim do período ${index + 1} de ${day}`}
                             aria-invalid={!!error}
-                            aria-describedby={error ? `${errorPrefix}-${day}-${period.id}` : undefined}
+                            aria-describedby={
+                              error ? `${errorPrefix}-${day}-${period.id}` : undefined
+                            }
                             value={period.end}
                             placeholder="00:00"
                             disabled={value.noSchedule || !item.active}
                             className={`w-full px-2 text-center ${error ? "!border-destructive" : ""}`}
-                            onChange={(event) => updatePeriod(day, period.id, { end: sanitizeWorkHourDraft(event.target.value) })}
-                            onBlur={(event) => updatePeriod(day, period.id, { end: formatWorkHourDraft(event.target.value) })}
+                            onChange={(event) =>
+                              updatePeriod(day, period.id, {
+                                end: sanitizeWorkHourDraft(event.target.value),
+                              })
+                            }
+                            onBlur={(event) =>
+                              updatePeriod(day, period.id, {
+                                end: formatWorkHourDraft(event.target.value),
+                              })
+                            }
                           />
                         );
                       })}
@@ -1162,7 +1183,10 @@ function WorkScheduleEditor({
                   <td className="px-2 py-2 align-top">
                     <div className="space-y-2">
                       {item.periods.map((period, index) => (
-                        <div key={period.id} className="flex h-10 items-center justify-center gap-1">
+                        <div
+                          key={period.id}
+                          className="flex h-10 items-center justify-center gap-1"
+                        >
                           <Button
                             type="button"
                             variant="ghost"

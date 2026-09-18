@@ -501,9 +501,7 @@ describe("EvolutionWebhookTranslator", () => {
               title: "Olá **Flow iD - Douglas**, Tudo bem?",
               description: "Como deseja o atendimento?",
               buttonText: "Clique para ver",
-              sections: [
-                { title: "Atendimento", rows: [{ rowId: "support", title: "Suporte" }] },
-              ],
+              sections: [{ title: "Atendimento", rows: [{ rowId: "support", title: "Suporte" }] }],
             },
           },
           messageTimestamp: 1_709_550_600,

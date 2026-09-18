@@ -3,6 +3,7 @@
 Nao executados integralmente nesta sessao.
 
 Pendentes para aprovar o hotfix:
+
 - Texto Trixus -> WhatsApp com Evolution disponivel.
 - Evolution offline durante outbound.
 - `/api/health` 200 apos falha de provider.
@@ -14,4 +15,3 @@ Pendentes para aprovar o hotfix:
 - Restart de backend/worker durante retry.
 
 Gate fisico atual: OUTBOUND DISPATCHER HOTFIX REQUIRED.
-

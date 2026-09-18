@@ -11,7 +11,21 @@ export type MessageVariableContext = {
 };
 
 const VARIABLE_NAME_STOP_WORDS = new Set([
-  "de", "do", "dos", "da", "das", "o", "a", "os", "as", "um", "uns", "uma", "umas", "e", "ou",
+  "de",
+  "do",
+  "dos",
+  "da",
+  "das",
+  "o",
+  "a",
+  "os",
+  "as",
+  "um",
+  "uns",
+  "uma",
+  "umas",
+  "e",
+  "ou",
 ]);
 
 /** Uses the same token convention shown in the variable dictionaries. */
@@ -53,7 +67,8 @@ export function resolveMessageVariables(text: string, context: MessageVariableCo
   Object.entries(context.customFields ?? {}).forEach(([label, value]) => {
     const key = customFieldVariableKey(label);
     if (!key) return;
-    const renderedValue = value === true ? "Sim" : value === false ? "Não" : String(value ?? "").trim();
+    const renderedValue =
+      value === true ? "Sim" : value === false ? "Não" : String(value ?? "").trim();
     values[key] = renderedValue;
     // Also accept a manually typed token that preserves connector words from the field label.
     const literalLabelKey = normalizedVariableWords(label).join("_");

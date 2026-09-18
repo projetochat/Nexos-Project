@@ -669,7 +669,10 @@ describe("MessagingConnectionsService", () => {
     };
 
     await expect(
-      new MessagingConnectionsService(prisma as never, evolution as never).reconcileConnectedWebhooks(),
+      new MessagingConnectionsService(
+        prisma as never,
+        evolution as never,
+      ).reconcileConnectedWebhooks(),
     ).resolves.toMatchObject({ scanned: 1, healthy: 0, repaired: 1, failed: 0 });
     expect(evolution.setWebhook).toHaveBeenCalledWith({
       instanceName: "tenant-a-suporte",

@@ -144,7 +144,11 @@ function Page() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
             <div className="col-span-2 md:col-span-1">
               <Field label="Busca">
-                <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
+                <SearchInput
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Buscar departamento..."
+                />
               </Field>
             </div>
             <Field label="Status">

@@ -1,4 +1,4 @@
-import DOMPurify from "dompurify";
+import createDOMPurify from "dompurify";
 
 const allowedTags = [
   "a",
@@ -23,7 +23,9 @@ const allowedTags = [
 const allowedAttrs = ["alt", "href", "rel", "src", "target", "title"];
 
 export function sanitizeRichTextHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
+  if (typeof window === "undefined") return "";
+  const purifier = createDOMPurify(window);
+  return purifier.sanitize(html, {
     ALLOWED_TAGS: allowedTags,
     ALLOWED_ATTR: allowedAttrs,
     ALLOW_DATA_ATTR: false,

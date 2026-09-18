@@ -3,12 +3,14 @@
 The schema now includes `MessageReaction` and `MessageReactionActorType`.
 
 Modeled actor types:
+
 - `TRIXUS_USER`
 - `EXTERNAL_PARTICIPANT`
 - `CONTACT`
 - `SYSTEM`
 
 Current implementation:
+
 - REST endpoint for add/change/remove reaction on a message.
 - Evolution outbound dispatch via `/message/sendReaction/{instanceName}`.
 - Local upsert/deduplication by tenant, message and actor.
@@ -16,8 +18,10 @@ Current implementation:
 - Inbox reaction controls and rendering.
 
 Remaining gap:
+
 - inbound reaction reconciliation from Evolution webhook still needs physical payload evidence.
 - direct/group reaction flow still requires WhatsApp real-device homologation.
+
 # Evolution v2.3.7 reaction contract
 
 Atualizacao RC Sprint 15.2:
@@ -34,6 +38,7 @@ Atualizacao RC Sprint 15.2:
 ```
 
 Regras:
+
 - `key` e `reaction` ficam no root do payload.
 - `reaction=""` remove a reacao.
 - Em grupo, `key.remoteJid` deve ser o grupo `@g.us`; `participant` e enviado apenas quando disponivel/exigido pela mensagem citada.

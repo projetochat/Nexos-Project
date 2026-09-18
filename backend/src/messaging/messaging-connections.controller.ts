@@ -72,10 +72,18 @@ export class MessagingConnectionsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const kind = dto?.kind?.toUpperCase();
-    if (kind && kind !== MessagingHistoryImportKind.DIRECT && kind !== MessagingHistoryImportKind.GROUP) {
+    if (
+      kind &&
+      kind !== MessagingHistoryImportKind.DIRECT &&
+      kind !== MessagingHistoryImportKind.GROUP
+    ) {
       throw new BadRequestException("Tipo de importação inválido.");
     }
-    return this.connections.retryImport(id, current, kind as MessagingHistoryImportKind | undefined);
+    return this.connections.retryImport(
+      id,
+      current,
+      kind as MessagingHistoryImportKind | undefined,
+    );
   }
 
   @Post("evolution")

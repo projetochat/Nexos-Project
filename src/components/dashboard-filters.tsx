@@ -2,7 +2,14 @@ import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, FilterX } from "lucide-react";
-import { Button, Card, Input, InstanceFilterSelect, SearchInput, Select } from "@/components/ui-kit";
+import {
+  Button,
+  Card,
+  Input,
+  InstanceFilterSelect,
+  SearchInput,
+  Select,
+} from "@/components/ui-kit";
 import { connectionsApi, crmApi, organizationApi, type OperationalPeriod } from "@/lib/trixus-api";
 import {
   datesForOperationalPeriod,
@@ -78,9 +85,7 @@ export function DashboardFiltersBar({
 
   return (
     <Card className={`p-4 ${className}`}>
-      <div
-        className={`grid grid-cols-2 gap-3 ${gridClass}`}
-      >
+      <div className={`grid grid-cols-2 gap-3 ${gridClass}`}>
         {search && (
           <FilterField label="Busca" className="col-span-2 min-w-0 xl:col-span-1">
             <SearchInput {...search} />

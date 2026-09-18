@@ -1,7 +1,9 @@
-import DOMPurify from "dompurify";
+import createDOMPurify from "dompurify";
 
 export function sanitizeTicketEditorHtml(value: string): string {
-  return DOMPurify.sanitize(value, {
+  if (typeof window === "undefined") return "";
+  const purifier = createDOMPurify(window);
+  return purifier.sanitize(value, {
     ALLOWED_TAGS: [
       "p",
       "div",

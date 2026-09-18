@@ -90,7 +90,10 @@ export class MessagingConnectionsService {
 
   async webhookStatus(id: string, current: AuthenticatedUser) {
     const connection = await this.findTenantConnection(id, current.tenantId);
-    if (connection.providerType !== MessagingProviderType.EVOLUTION || !connection.externalReference) {
+    if (
+      connection.providerType !== MessagingProviderType.EVOLUTION ||
+      !connection.externalReference
+    ) {
       throw new BadRequestException("Esta instância não usa a integração Evolution.");
     }
     return this.auditWebhookConfiguration(connection.externalReference);
@@ -98,7 +101,10 @@ export class MessagingConnectionsService {
 
   async ensureWebhookForConnection(id: string, current: AuthenticatedUser) {
     const connection = await this.findTenantConnection(id, current.tenantId);
-    if (connection.providerType !== MessagingProviderType.EVOLUTION || !connection.externalReference) {
+    if (
+      connection.providerType !== MessagingProviderType.EVOLUTION ||
+      !connection.externalReference
+    ) {
       throw new BadRequestException("Esta instância não usa a integração Evolution.");
     }
     await this.ensureWebhookConfigured(connection.externalReference);

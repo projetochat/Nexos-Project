@@ -31,7 +31,8 @@ export class SenderDisplayNameService {
     const isAdministrator = current.roleKey === "tenant_admin";
     // Legacy administrators without a configured presentation name receive a neutral label;
     // their immutable system name must never leak into external WhatsApp content.
-    const name = presentationName || (isAdministrator ? "Administrador" : membership?.user.name?.trim());
+    const name =
+      presentationName || (isAdministrator ? "Administrador" : membership?.user.name?.trim());
     const source = presentationName
       ? "presentation_name"
       : isAdministrator

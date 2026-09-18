@@ -35,7 +35,11 @@ export function selectAutomaticReply(input: AutomaticReplyInput): {
   return null;
 }
 
-export function isWithinServiceHours(serviceHours: unknown, timezone: string | null | undefined, at: Date) {
+export function isWithinServiceHours(
+  serviceHours: unknown,
+  timezone: string | null | undefined,
+  at: Date,
+) {
   const local = localDayAndMinutes(at, timezone ?? "America/Sao_Paulo");
   if (!local) return false;
   const rows = Array.isArray(serviceHours) ? serviceHours : [];
@@ -86,7 +90,9 @@ function localDayAndMinutes(at: Date, timezone: string) {
     }).formatToParts(at);
     const hour = Number(parts.find((part) => part.type === "hour")?.value);
     const minute = Number(parts.find((part) => part.type === "minute")?.value);
-    return Number.isInteger(hour) && Number.isInteger(minute) ? { day, minutes: hour * 60 + minute } : null;
+    return Number.isInteger(hour) && Number.isInteger(minute)
+      ? { day, minutes: hour * 60 + minute }
+      : null;
   } catch {
     return null;
   }

@@ -661,7 +661,12 @@ export class ConversationsController {
       where: { id: membershipId, tenantId },
       include: { user: { select: { name: true, email: true } } },
     });
-    return membership?.presentationName?.trim() ?? membership?.user.name ?? membership?.user.email ?? "atendente selecionado";
+    return (
+      membership?.presentationName?.trim() ??
+      membership?.user.name ??
+      membership?.user.email ??
+      "atendente selecionado"
+    );
   }
 
   private serialize(conversation: ConversationWithRelations) {
@@ -715,7 +720,10 @@ export class ConversationsController {
               cor: item.tag.color,
             })),
             customFields: Object.fromEntries(
-              conversation.contact.customFieldValues.map((item) => [item.fieldId, item.value ?? ""]),
+              conversation.contact.customFieldValues.map((item) => [
+                item.fieldId,
+                item.value ?? "",
+              ]),
             ),
             customFieldValues: conversation.contact.customFieldValues.map((item) => ({
               fieldId: item.fieldId,

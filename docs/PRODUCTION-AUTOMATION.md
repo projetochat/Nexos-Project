@@ -8,11 +8,11 @@ exige aprovacao depois da simulacao.
 
 O workflow `build-production.yml` oferece tres modos manuais na main:
 
-| Modo | Efeito |
-| --- | --- |
-| `build` (padrao) | Testa e empacota no GitHub. Nao acessa a VPS. |
-| `plan` | Transfere e valida pacote, recursos e GLPI. Remove temporarios; nao importa imagens, para servicos ou altera banco. |
-| `deploy` | Publica somente se o administrador tambem habilitou o executor na VPS. |
+| Modo             | Efeito                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `build` (padrao) | Testa e empacota no GitHub. Nao acessa a VPS.                                                                       |
+| `plan`           | Transfere e valida pacote, recursos e GLPI. Remove temporarios; nao importa imagens, para servicos ou altera banco. |
+| `deploy`         | Publica somente se o administrador tambem habilitou o executor na VPS.                                              |
 
 Push na main executa testes e build. Apenas a **repository variable**
 `TRIXUS_AUTO_DEPLOY=true` habilita publicacao automatica depois do build.

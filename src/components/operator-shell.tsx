@@ -1,6 +1,17 @@
 import * as React from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Inbox, Users, Clock, Search, Bell, User, LogOut, MessageCircleMore, Moon, Sun } from "lucide-react";
+import {
+  Inbox,
+  Users,
+  Clock,
+  Search,
+  Bell,
+  User,
+  LogOut,
+  MessageCircleMore,
+  Moon,
+  Sun,
+} from "lucide-react";
 import { LogoMark, Avatar } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";

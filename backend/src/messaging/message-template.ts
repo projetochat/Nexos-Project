@@ -1,5 +1,19 @@
 const STOP_WORDS = new Set([
-  "de", "do", "dos", "da", "das", "o", "a", "os", "as", "um", "uns", "uma", "umas", "e", "ou",
+  "de",
+  "do",
+  "dos",
+  "da",
+  "das",
+  "o",
+  "a",
+  "os",
+  "as",
+  "um",
+  "uns",
+  "uma",
+  "umas",
+  "e",
+  "ou",
 ]);
 
 type TemplateContext = {
@@ -23,9 +37,10 @@ export function resolveMessageTemplate(text: string, context: TemplateContext = 
   };
   for (const [label, value] of Object.entries(context.customFields ?? {})) {
     const words = normalizeWords(label);
-    const key = (words.filter((word) => !STOP_WORDS.has(word)).length
-      ? words.filter((word) => !STOP_WORDS.has(word))
-      : words
+    const key = (
+      words.filter((word) => !STOP_WORDS.has(word)).length
+        ? words.filter((word) => !STOP_WORDS.has(word))
+        : words
     ).join("_");
     const rendered = value === true ? "Sim" : value === false ? "Não" : String(value ?? "").trim();
     if (key) values[key] = rendered;

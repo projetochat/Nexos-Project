@@ -247,7 +247,13 @@ export class MessagingOutboundService {
           payload: { tenantId: input.tenantId, messageId: message.id },
         },
       });
-      await this.updateConversationFromMessage(tx, input.conversationId, input.tenantId, content, now);
+      await this.updateConversationFromMessage(
+        tx,
+        input.conversationId,
+        input.tenantId,
+        content,
+        now,
+      );
       return { message, dispatch: true };
     });
 

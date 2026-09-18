@@ -31,7 +31,9 @@ export class MessagingInboundService {
     private readonly mediaStorage?: MessagingMediaStorageService,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
     @Optional() @Inject(EvolutionClient) private readonly evolution?: EvolutionClient,
-    @Optional() @Inject(MessagingOutboundService) private readonly outbound?: MessagingOutboundService,
+    @Optional()
+    @Inject(MessagingOutboundService)
+    private readonly outbound?: MessagingOutboundService,
   ) {}
 
   async process(event: InboundMessageEvent, options: { historical?: boolean } = {}) {
@@ -272,29 +274,33 @@ export class MessagingInboundService {
       const automaticReply = historical
         ? null
         : selectAutomaticReply({
-        createdConversation,
-        isGroup,
-        fromMe: event.fromMe,
-        welcomeEnabled: connection.welcomeEnabled,
-        welcomeTemplate: existingContact ? connection.welcomeExistingMessage : connection.welcomeNewMessage,
-        absenceEnabled: connection.absenceEnabled,
-        absenceTemplate: connection.absenceMessage,
-        serviceHours: connection.serviceHours,
-        timezone: connection.timezone,
-        at: event.occurredAt,
-      });
+            createdConversation,
+            isGroup,
+            fromMe: event.fromMe,
+            welcomeEnabled: connection.welcomeEnabled,
+            welcomeTemplate: existingContact
+              ? connection.welcomeExistingMessage
+              : connection.welcomeNewMessage,
+            absenceEnabled: connection.absenceEnabled,
+            absenceTemplate: connection.absenceMessage,
+            serviceHours: connection.serviceHours,
+            timezone: connection.timezone,
+            at: event.occurredAt,
+          });
       const reply = automaticReply
         ? {
-              ...automaticReply,
-              contactExisting: Boolean(existingContact),
-              contact,
-              departmentName: updatedConversation.departmentId
-                ? (await tx.department.findFirst({
+            ...automaticReply,
+            contactExisting: Boolean(existingContact),
+            contact,
+            departmentName: updatedConversation.departmentId
+              ? ((
+                  await tx.department.findFirst({
                     where: { id: updatedConversation.departmentId, tenantId: event.tenantId },
                     select: { name: true },
-                  }))?.name ?? null
-                : null,
-            }
+                  })
+                )?.name ?? null)
+              : null,
+          }
         : null;
       return {
         message,
@@ -341,7 +347,8 @@ export class MessagingInboundService {
         connectionId: event.connectionId,
         message: {
           id: result.message.id,
-          direction: result.message.direction?.toLowerCase() ?? (event.fromMe ? "outbound" : "inbound"),
+          direction:
+            result.message.direction?.toLowerCase() ?? (event.fromMe ? "outbound" : "inbound"),
           status: result.message.status?.toLowerCase() ?? (event.fromMe ? "sent" : "created"),
           createdAt: result.message.createdAt ?? event.occurredAt,
         },

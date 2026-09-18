@@ -66,8 +66,10 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { isValidEmail, maskBrazilPhone, onlyDigits } from "@/lib/input-masks";
+import { connectionInstanceValue } from "@/lib/connection-options";
 import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 import {
   conversationApi,
   crmApi,
@@ -381,7 +383,21 @@ function ContatosPage() {
   const [tags, setTags] = React.useState<Tag[]>([]);
   const [departments, setDepartments] = React.useState<ContactCatalog[]>([]);
   const [profiles, setProfiles] = React.useState<ContactCatalog[]>([]);
-  const [instances, setInstances] = React.useState<ContactInstanceOption[]>([]);
+  const { allConnections } = useConnectedMessagingConnections();
+  const instances = React.useMemo<ContactInstanceOption[]>(
+    () =>
+      allConnections.map((connection) => ({
+        id: connection.id,
+        value: connectionInstanceValue(connection),
+        name: connection.name,
+        color: connection.color ?? null,
+        externalReference: connection.externalReference,
+        ownerPhone: connection.ownerPhone ?? null,
+        instanceName: connection.name,
+        status: connection.status.toUpperCase(),
+      })),
+    [allConnections],
+  );
   const [customFieldDefinitions, setCustomFieldDefinitions] = React.useState<ContactCustomField[]>(
     [],
   );
@@ -396,7 +412,9 @@ function ContatosPage() {
   const [clienteFilter, setClienteFilter] = React.useState(
     () => loadContactFiltersMemory(filtersStorageKey).customer,
   );
-  const [tagFilter, setTagFilter] = React.useState(() => loadContactFiltersMemory(filtersStorageKey).tag);
+  const [tagFilter, setTagFilter] = React.useState(
+    () => loadContactFiltersMemory(filtersStorageKey).tag,
+  );
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(
     () => loadContactFiltersMemory(filtersStorageKey).pageSize,
@@ -555,12 +573,6 @@ function ContatosPage() {
       setTags(sortByOptionLabel(options.tags, (tag) => tag.nome));
       setDepartments(sortByOptionLabel(options.departments, (department) => department.nome));
       setProfiles(sortByOptionLabel(options.profiles, (profile) => profile.nome));
-      setInstances(
-        sortByOptionLabel(
-          options.instances.filter((instance) => isSelectableInstanceStatus(instance.status)),
-          (instance) => instance.name,
-        ),
-      );
       setCustomFieldDefinitions(customFields);
     } catch (e) {
       toast.error("Falha ao carregar", { description: (e as Error).message });
@@ -1274,7 +1286,9 @@ function ContatosPage() {
               <InstanceFilterSelect
                 value={instanciaFilter}
                 onChange={setInstanciaFilter}
-                extraOptions={[{ value: EMPTY_FILTER_VALUE, label: "- Sem instância -", color: "#9ca3af" }]}
+                extraOptions={[
+                  { value: EMPTY_FILTER_VALUE, label: "- Sem instância -", color: "#9ca3af" },
+                ]}
                 options={visibleInstances.map((option) => ({
                   value: option.value,
                   label: option.name,
@@ -4992,7 +5006,7 @@ const IMPORT_TEMPLATE_ROWS = [
     "Maria Exemplo",
     "+55 (11) 90000-0000",
     "maria@empresa.com",
-    "FLOWID",
+    "Empresa Exemplo",
     "Financeiro",
     "Gerente",
     "SMCLICK",

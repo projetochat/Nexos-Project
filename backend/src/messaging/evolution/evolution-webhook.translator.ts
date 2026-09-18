@@ -269,7 +269,10 @@ function extractMessageContent(message: Record<string, unknown> | null): {
     const interactive = interactiveListData(list);
     return {
       type: MessageType.TEXT,
-      text: joinMessageParts([readString(list, "title"), readString(list, "description") ?? readString(list, "text")]),
+      text: joinMessageParts([
+        readString(list, "title"),
+        readString(list, "description") ?? readString(list, "text"),
+      ]),
       interactive,
     };
   }
@@ -323,7 +326,9 @@ function extractMessageContent(message: Record<string, unknown> | null): {
  * WhatsApp list messages have no `conversation` field. Persisting a readable
  * representation keeps messages sent by third-party bots visible in Trixus.
  */
-function interactiveListData(list: Record<string, unknown>): NonNullable<InboundMessageEvent["interactive"]> {
+function interactiveListData(
+  list: Record<string, unknown>,
+): NonNullable<InboundMessageEvent["interactive"]> {
   const sections = recordArray(list.sections).map((section) => ({
     title: readString(section, "title"),
     options: recordArray(section.rows).map((row) => ({
@@ -340,7 +345,11 @@ function interactiveListData(list: Record<string, unknown>): NonNullable<Inbound
 
 function interactiveButtonsText(buttons: Record<string, unknown>) {
   const options = recordArray(buttons.buttons)
-    .map((button) => readNestedString(button, ["buttonText", "displayText"]) ?? readString(button, "displayText"))
+    .map(
+      (button) =>
+        readNestedString(button, ["buttonText", "displayText"]) ??
+        readString(button, "displayText"),
+    )
     .filter((option): option is string => Boolean(option))
     .map((option) => `• ${option}`);
   return joinMessageParts([
@@ -373,7 +382,9 @@ function nativeFlowButtonLabels(button: Record<string, unknown>) {
     const record = parsed as Record<string, unknown>;
     const direct = stringValue(record.display_text) ?? stringValue(record.title);
     if (direct) return [direct];
-    return rowsFromSections(record.sections).map((row) => stringValue(row.title)).filter((row): row is string => Boolean(row));
+    return rowsFromSections(record.sections)
+      .map((row) => stringValue(row.title))
+      .filter((row): row is string => Boolean(row));
   } catch {
     return [];
   }
@@ -384,15 +395,17 @@ function rowsFromSections(value: unknown) {
 }
 
 function joinMessageParts(parts: Array<string | null | undefined>) {
-  const unique = parts.filter((part): part is string => Boolean(part?.trim())).filter(
-    (part, index, items) => items.indexOf(part) === index,
-  );
+  const unique = parts
+    .filter((part): part is string => Boolean(part?.trim()))
+    .filter((part, index, items) => items.indexOf(part) === index);
   return unique.length ? unique.join("\n\n") : null;
 }
 
 function recordArray(value: unknown) {
   return Array.isArray(value)
-    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    ? value.filter(
+        (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object",
+      )
     : [];
 }
 

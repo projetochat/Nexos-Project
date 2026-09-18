@@ -104,13 +104,7 @@ export const planos: PlanoSaaS[] = [
     preco: 349,
     ciclo: "mensal",
     limites: { operadores: 10, numeros: 3, mensagens: 25000 },
-    recursos: [
-      "Tudo do Starter",
-      "Chatbot",
-      "Automações",
-      "Campanhas",
-      "API pública",
-    ],
+    recursos: ["Tudo do Starter", "Chatbot", "Automações", "Campanhas", "API pública"],
     ativo: true,
     assinantes: 87,
   },
@@ -120,13 +114,7 @@ export const planos: PlanoSaaS[] = [
     preco: 799,
     ciclo: "mensal",
     limites: { operadores: 30, numeros: 10, mensagens: 100000 },
-    recursos: [
-      "Tudo do Pro",
-      "SLA prioritário",
-      "IA generativa",
-      "Integrações premium",
-      "SSO",
-    ],
+    recursos: ["Tudo do Pro", "SLA prioritário", "IA generativa", "Integrações premium", "SSO"],
     ativo: true,
     assinantes: 34,
   },
@@ -149,28 +137,149 @@ export const planos: PlanoSaaS[] = [
 ];
 
 /* ---------- Tenants (empresas contratantes) ---------- */
-const tenantSeeds: Array<Partial<Tenant> & { nome: string; cidade: string; responsavel: string }> = [
-  { nome: "Acme Corp", cidade: "São Paulo, SP", responsavel: "Ana Ribeiro", status: "ativa", planoId: "plan-business" },
-  { nome: "Vitalis Saúde", cidade: "Rio de Janeiro, RJ", responsavel: "Marcos Lima", status: "ativa", planoId: "plan-pro" },
-  { nome: "Northwind Logística", cidade: "Curitiba, PR", responsavel: "Patrícia Souza", status: "ativa", planoId: "plan-pro" },
-  { nome: "Loja Pantone", cidade: "Belo Horizonte, MG", responsavel: "Rafael Duarte", status: "trial", planoId: "plan-starter" },
-  { nome: "Studio Aurora", cidade: "Porto Alegre, RS", responsavel: "Camila Prado", status: "ativa", planoId: "plan-starter" },
-  { nome: "Fintra Payments", cidade: "São Paulo, SP", responsavel: "Diego Ferraz", status: "ativa", planoId: "plan-enterprise" },
-  { nome: "Nimbus Educação", cidade: "Florianópolis, SC", responsavel: "Renata Chagas", status: "inadimplente", planoId: "plan-pro" },
-  { nome: "Casa Bertoli", cidade: "Salvador, BA", responsavel: "Otávio Bertoli", status: "ativa", planoId: "plan-starter" },
-  { nome: "Verdant Alimentos", cidade: "Recife, PE", responsavel: "Lívia Moura", status: "bloqueada", planoId: "plan-starter" },
-  { nome: "TechForge Studios", cidade: "São Paulo, SP", responsavel: "Guilherme Nakata", status: "ativa", planoId: "plan-business" },
-  { nome: "Boreal Turismo", cidade: "Balneário Camboriú, SC", responsavel: "Isabela Rocha", status: "cancelada", planoId: "plan-pro" },
-  { nome: "Farma Prime", cidade: "Brasília, DF", responsavel: "Ricardo Peixoto", status: "ativa", planoId: "plan-pro" },
-  { nome: "Zenit Consultoria", cidade: "Campinas, SP", responsavel: "Aline Toledo", status: "ativa", planoId: "plan-business" },
-  { nome: "Orion Imobiliária", cidade: "Goiânia, GO", responsavel: "Fernando Cotta", status: "trial", planoId: "plan-pro" },
-  { nome: "Lumen Design", cidade: "São Paulo, SP", responsavel: "Beatriz Andrade", status: "ativa", planoId: "plan-starter" },
-  { nome: "Helix Automotive", cidade: "São Bernardo, SP", responsavel: "Thiago Menezes", status: "ativa", planoId: "plan-business" },
-  { nome: "Solaris Energia", cidade: "Fortaleza, CE", responsavel: "Nathália Reis", status: "ativa", planoId: "plan-enterprise" },
-  { nome: "Prisma Advogados", cidade: "Belo Horizonte, MG", responsavel: "Eduardo Vilhena", status: "ativa", planoId: "plan-pro" },
-  { nome: "Delta Móveis", cidade: "Bento Gonçalves, RS", responsavel: "Sabrina Costa", status: "inadimplente", planoId: "plan-starter" },
-  { nome: "Kairós Marketing", cidade: "São Paulo, SP", responsavel: "Vinicius Barros", status: "ativa", planoId: "plan-pro" },
-];
+const tenantSeeds: Array<Partial<Tenant> & { nome: string; cidade: string; responsavel: string }> =
+  [
+    {
+      nome: "Acme Corp",
+      cidade: "São Paulo, SP",
+      responsavel: "Ana Ribeiro",
+      status: "ativa",
+      planoId: "plan-business",
+    },
+    {
+      nome: "Vitalis Saúde",
+      cidade: "Rio de Janeiro, RJ",
+      responsavel: "Marcos Lima",
+      status: "ativa",
+      planoId: "plan-pro",
+    },
+    {
+      nome: "Northwind Logística",
+      cidade: "Curitiba, PR",
+      responsavel: "Patrícia Souza",
+      status: "ativa",
+      planoId: "plan-pro",
+    },
+    {
+      nome: "Loja Pantone",
+      cidade: "Belo Horizonte, MG",
+      responsavel: "Rafael Duarte",
+      status: "trial",
+      planoId: "plan-starter",
+    },
+    {
+      nome: "Studio Aurora",
+      cidade: "Porto Alegre, RS",
+      responsavel: "Camila Prado",
+      status: "ativa",
+      planoId: "plan-starter",
+    },
+    {
+      nome: "Fintra Payments",
+      cidade: "São Paulo, SP",
+      responsavel: "Diego Ferraz",
+      status: "ativa",
+      planoId: "plan-enterprise",
+    },
+    {
+      nome: "Nimbus Educação",
+      cidade: "Florianópolis, SC",
+      responsavel: "Renata Chagas",
+      status: "inadimplente",
+      planoId: "plan-pro",
+    },
+    {
+      nome: "Casa Bertoli",
+      cidade: "Salvador, BA",
+      responsavel: "Otávio Bertoli",
+      status: "ativa",
+      planoId: "plan-starter",
+    },
+    {
+      nome: "Verdant Alimentos",
+      cidade: "Recife, PE",
+      responsavel: "Lívia Moura",
+      status: "bloqueada",
+      planoId: "plan-starter",
+    },
+    {
+      nome: "TechForge Studios",
+      cidade: "São Paulo, SP",
+      responsavel: "Guilherme Nakata",
+      status: "ativa",
+      planoId: "plan-business",
+    },
+    {
+      nome: "Boreal Turismo",
+      cidade: "Balneário Camboriú, SC",
+      responsavel: "Isabela Rocha",
+      status: "cancelada",
+      planoId: "plan-pro",
+    },
+    {
+      nome: "Farma Prime",
+      cidade: "Brasília, DF",
+      responsavel: "Ricardo Peixoto",
+      status: "ativa",
+      planoId: "plan-pro",
+    },
+    {
+      nome: "Zenit Consultoria",
+      cidade: "Campinas, SP",
+      responsavel: "Aline Toledo",
+      status: "ativa",
+      planoId: "plan-business",
+    },
+    {
+      nome: "Orion Imobiliária",
+      cidade: "Goiânia, GO",
+      responsavel: "Fernando Cotta",
+      status: "trial",
+      planoId: "plan-pro",
+    },
+    {
+      nome: "Lumen Design",
+      cidade: "São Paulo, SP",
+      responsavel: "Beatriz Andrade",
+      status: "ativa",
+      planoId: "plan-starter",
+    },
+    {
+      nome: "Helix Automotive",
+      cidade: "São Bernardo, SP",
+      responsavel: "Thiago Menezes",
+      status: "ativa",
+      planoId: "plan-business",
+    },
+    {
+      nome: "Solaris Energia",
+      cidade: "Fortaleza, CE",
+      responsavel: "Nathália Reis",
+      status: "ativa",
+      planoId: "plan-enterprise",
+    },
+    {
+      nome: "Prisma Advogados",
+      cidade: "Belo Horizonte, MG",
+      responsavel: "Eduardo Vilhena",
+      status: "ativa",
+      planoId: "plan-pro",
+    },
+    {
+      nome: "Delta Móveis",
+      cidade: "Bento Gonçalves, RS",
+      responsavel: "Sabrina Costa",
+      status: "inadimplente",
+      planoId: "plan-starter",
+    },
+    {
+      nome: "Kairós Marketing",
+      cidade: "São Paulo, SP",
+      responsavel: "Vinicius Barros",
+      status: "ativa",
+      planoId: "plan-pro",
+    },
+  ];
 
 const rnd = (seed: number) => {
   let x = seed;
@@ -349,7 +458,20 @@ export function computeSaasMetrics() {
 /* ---------- Série histórica MRR (últimos 12 meses) ---------- */
 export function mrrHistory() {
   const base = computeSaasMetrics().mrr;
-  const meses = ["Ago", "Set", "Out", "Nov", "Dez", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul"];
+  const meses = [
+    "Ago",
+    "Set",
+    "Out",
+    "Nov",
+    "Dez",
+    "Jan",
+    "Fev",
+    "Mar",
+    "Abr",
+    "Mai",
+    "Jun",
+    "Jul",
+  ];
   return meses.map((m, i) => {
     const growth = 0.88 + i * 0.011;
     return { mes: m, mrr: Math.round(base * growth), novos: 3 + (i % 5), churn: 1 + (i % 3) };

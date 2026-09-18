@@ -55,7 +55,10 @@ export function InboxImageViewer({
   }, [images, message]);
   const galleryKey = React.useMemo(() => gallery.map((item) => item.id).join(","), [gallery]);
   const [activeIndex, setActiveIndex] = React.useState(() =>
-    Math.max(0, gallery.findIndex((item) => item.id === message.id)),
+    Math.max(
+      0,
+      gallery.findIndex((item) => item.id === message.id),
+    ),
   );
   const [galleryUrls, setGalleryUrls] = React.useState<Map<string, string>>(
     () => new Map([[message.id, src]]),
@@ -259,7 +262,12 @@ export function InboxImageViewer({
                   },
                   busy,
                 )}
-              {action("Baixar imagem", Download, () => void run(() => onDownload(activeMessage)), busy)}
+              {action(
+                "Baixar imagem",
+                Download,
+                () => void run(() => onDownload(activeMessage)),
+                busy,
+              )}
               {action("Fechar", X, onClose, busy)}
             </div>
           </div>

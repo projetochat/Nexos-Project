@@ -79,11 +79,10 @@ describe("MessagingOutboundService", () => {
       senderName as never,
     );
 
-    await service.sendText(
-      "conversation-a",
-      { content: "Teste" },
-      { ...current, permissions: ["chat.agent_name.show"] } as never,
-    );
+    await service.sendText("conversation-a", { content: "Teste" }, {
+      ...current,
+      permissions: ["chat.agent_name.show"],
+    } as never);
 
     expect(prisma.message.create).toHaveBeenCalledWith(
       expect.objectContaining({

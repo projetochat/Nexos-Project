@@ -118,6 +118,7 @@ Nao registrar buffers, chaves ou material de sessao em docs, commits ou tickets.
 O provider Evolution usa a imagem fixa `evoapicloud/evolution-api:v2.3.7`. O hotfix de outbound nao altera payloads funcionais; ele normaliza falhas reais de transporte e HTTP para impedir queda do worker e preservar retries BullMQ.
 
 Classificacao canonica:
+
 - `400` e `422`: `INVALID_RECIPIENT`, permanente.
 - `401` e `403`: `AUTHENTICATION_FAILURE`, permanente.
 - `404`: `PROVIDER_UNAVAILABLE`, permanente.

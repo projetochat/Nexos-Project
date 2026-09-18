@@ -40,8 +40,9 @@ describe("selectAutomaticReply", () => {
   });
 
   it("sends the greeting at any time when absence is disabled", () => {
-    expect(
-      select({ absenceEnabled: false, at: new Date("2026-09-17T22:00:00.000Z") }),
-    ).toEqual({ kind: "welcome", template: "Saudação" });
+    expect(select({ absenceEnabled: false, at: new Date("2026-09-17T22:00:00.000Z") })).toEqual({
+      kind: "welcome",
+      template: "Saudação",
+    });
   });
 });

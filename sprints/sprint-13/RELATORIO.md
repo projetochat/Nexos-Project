@@ -438,9 +438,9 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 | M97     | REST fallback                | implementado                                                             | platformApi                                | PASS    |
 | M98     | platform health              | protegido e sanitizado                                                   | GET `/platform/health`                     | PASS    |
 | M99     | Redis degraded               | readiness degradada sem expor segredo                                    | health/admin monitor                       | PASS    |
-| M100    | migration trixus_1300         | aplicada                                                                 | migrate deploy                             | PASS    |
-| M101    | migration trixus_0802         | aplicada sem reset                                                       | migrate deploy                             | PASS    |
-| M102    | migration trixus_0801         | aplicada sem reset                                                       | migrate deploy                             | PASS    |
+| M100    | migration trixus_1300        | aplicada                                                                 | migrate deploy                             | PASS    |
+| M101    | migration trixus_0802        | aplicada sem reset                                                       | migrate deploy                             | PASS    |
+| M102    | migration trixus_0801        | aplicada sem reset                                                       | migrate deploy                             | PASS    |
 | M103    | backfill tenants             | aplicado                                                                 | migration/seed                             | PASS    |
 | M104    | data preservation            | sem reset em 0801/0802                                                   | migrate deploy                             | PASS    |
 | M105    | orphan audit                 | nao documentado em consulta propria                                      | pendente                                   | PARTIAL |
@@ -460,20 +460,20 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 | M119    | frontend tests               | typecheck/build/guard/client API                                         | verify + vitest focado                     | PASS    |
 | M120    | anti-legacy test             | criado e integrado                                                       | verify                                     | PASS    |
 | M121    | secret audit                 | sem vazamento novo                                                       | guard/testes existentes                    | PASS    |
-| M122    | platform admin physical      | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M123    | tenant create physical       | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M124    | limits physical              | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M125    | upgrade physical             | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M126    | downgrade physical           | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M127    | suspension physical          | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M128    | reactivation physical        | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M129    | impersonation physical       | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M130    | invoice physical             | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M131    | readonly physical            | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M132    | tenant admin denial physical | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M133    | multiuser physical           | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M134    | realtime offline physical    | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
-| M135    | Redis offline physical       | homologado pelo Product Owner                                      | evidencia fisica final                    | PASS    |
+| M122    | platform admin physical      | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M123    | tenant create physical       | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M124    | limits physical              | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M125    | upgrade physical             | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M126    | downgrade physical           | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M127    | suspension physical          | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M128    | reactivation physical        | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M129    | impersonation physical       | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M130    | invoice physical             | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M131    | readonly physical            | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M132    | tenant admin denial physical | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M133    | multiuser physical           | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M134    | realtime offline physical    | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
+| M135    | Redis offline physical       | homologado pelo Product Owner                                            | evidencia fisica final                     | PASS    |
 | M136    | auth regression              | automatizada                                                             | verify                                     | PASS    |
 | M137    | Inbox regression             | automatizada                                                             | verify                                     | PASS    |
 | M138    | Ticket regression            | automatizada                                                             | verify                                     | PASS    |
@@ -499,7 +499,7 @@ Documentacao geral ampla (`docs/README.md`, `docs/ARCHITECTURE.md`, `docs/API.md
 | M158    | report                       | criado                                                                   | este arquivo                               | PASS    |
 | M159    | commit                       | commit principal criado                                                  | `a0fbc57 feat: add saas control plane`     | PASS    |
 | M160    | final git clean              | limpo para escopo rastreado; `.local-storage/` preservado fora do commit | `git status --short`                       | PASS    |
-| M161    | gate                         | liberado para Sprint 14                                           | homologacao fisica final                  | PASS    |
+| M161    | gate                         | liberado para Sprint 14                                                  | homologacao fisica final                   | PASS    |
 
 ## 51. Rework - Control Plane UI Completion & Safe Impersonation
 
@@ -518,40 +518,40 @@ O rework fechou as lacunas funcionais que impediam a homologacao fisica do plano
 
 ## 52. M162-M193 - Rework Metrics
 
-| ID   | Meta                             | Resultado                                          | Evidencia                                                       | Status  |
-| ---- | -------------------------------- | -------------------------------------------------- | --------------------------------------------------------------- | ------- |
-| M162 | tenant create UI                 | wizard real implementado                           | `/admin/empresas`                                               | PASS    |
-| M163 | tenant detail UI                 | rota de detalhe implementada                       | `/admin/empresas/$tenantId`                                     | PASS    |
-| M164 | safe suspension                  | motivo + digitacao obrigatoria                     | detail UI + API                                                 | PASS    |
-| M165 | reactivation UI                  | motivo operacional                                 | detail UI + API                                                 | PASS    |
-| M166 | termination UI                   | somente suspenso, slug e checkbox                  | detail UI + API                                                 | PASS    |
-| M167 | impersonation start UI           | membership + motivo + tokens reais                 | detail UI                                                       | PASS    |
-| M168 | persistent banner                | ator real, tenant e expiracao visiveis             | `AppShell`                                                      | PASS    |
-| M169 | impersonation stop               | restaura token de plataforma e encerra backend     | frontend test                                                   | PASS    |
-| M170 | impersonation expiration/logout  | expiracao local e logout encerram sessao           | frontend test                                                   | PASS    |
-| M171 | high-risk block                  | mutacoes criticas bloqueadas durante impersonacao  | e2e                                                             | PASS    |
-| M172 | plan detail API                  | GET dedicado                                       | `/platform/plans/:id`                                           | PASS    |
-| M173 | subscription detail API          | GET dedicado                                       | `/platform/subscriptions/:id`                                   | PASS    |
-| M174 | invoice detail API               | GET dedicado                                       | `/platform/invoices/:id`                                        | PASS    |
-| M175 | audit detail API                 | GET dedicado                                       | `/platform/audit-logs/:id`                                      | PASS    |
-| M176 | platform health                  | protegido e sanitizado                             | `/platform/health`                                              | PASS    |
-| M177 | polling/refetch                  | estrategia oficial documentada                     | admin monitor + report                                          | PASS    |
-| M178 | Redis degraded                   | health degrada queues sem vazar segredo            | `/platform/health`                                              | PASS    |
-| M179 | Redis recovery                   | retomada coberta pelo smoke de fila                | `verify` queue-smoke                                            | PASS    |
-| M180 | user last-slot concurrency       | uma criacao passa e outra falha 409                | e2e                                                             | PASS    |
-| M181 | department last-slot concurrency | uma criacao passa e outra falha 409                | e2e                                                             | PASS    |
-| M182 | SUPPORT seed/RBAC                | leitura permitida, high-risk negado                | seed + e2e                                                      | PASS    |
-| M183 | READONLY seed/RBAC               | leitura permitida, impersonation negada            | seed + e2e                                                      | PASS    |
-| M184 | tenant admin denial              | sem platform role recebe 403                       | e2e existente                                                   | PASS    |
-| M185 | frontend client tests            | 10 testes passados                                 | `bunx vitest run src/lib/trixus-api.test.ts --environment jsdom` | PASS    |
-| M186 | backend tests                    | 150 testes passados                                | `bun run --cwd backend test`                                    | PASS    |
-| M187 | verify #1                        | passou                                             | `bun run verify`                                                | PASS    |
-| M188 | verify #2                        | passou                                             | `bun run verify`                                                | PASS    |
-| M189 | docs consolidation               | rework registrado e realtime diferido              | este relatorio                                                  | PASS    |
-| M190 | report                           | atualizado                                         | `sprints/sprint-13/RELATORIO.md`                                | PASS    |
-| M191 | commit                           | commit final do rework criado nesta sessao         | git                                                             | PASS    |
-| M192 | git clean                        | limpo para arquivos rastreados apos commit         | git                                                             | PASS    |
-| M193 | gate                             | homologacao fisica concluida; Sprint 14 autorizada | Product Owner final evidence                                | PASS    |
+| ID   | Meta                             | Resultado                                          | Evidencia                                                        | Status |
+| ---- | -------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------- | ------ |
+| M162 | tenant create UI                 | wizard real implementado                           | `/admin/empresas`                                                | PASS   |
+| M163 | tenant detail UI                 | rota de detalhe implementada                       | `/admin/empresas/$tenantId`                                      | PASS   |
+| M164 | safe suspension                  | motivo + digitacao obrigatoria                     | detail UI + API                                                  | PASS   |
+| M165 | reactivation UI                  | motivo operacional                                 | detail UI + API                                                  | PASS   |
+| M166 | termination UI                   | somente suspenso, slug e checkbox                  | detail UI + API                                                  | PASS   |
+| M167 | impersonation start UI           | membership + motivo + tokens reais                 | detail UI                                                        | PASS   |
+| M168 | persistent banner                | ator real, tenant e expiracao visiveis             | `AppShell`                                                       | PASS   |
+| M169 | impersonation stop               | restaura token de plataforma e encerra backend     | frontend test                                                    | PASS   |
+| M170 | impersonation expiration/logout  | expiracao local e logout encerram sessao           | frontend test                                                    | PASS   |
+| M171 | high-risk block                  | mutacoes criticas bloqueadas durante impersonacao  | e2e                                                              | PASS   |
+| M172 | plan detail API                  | GET dedicado                                       | `/platform/plans/:id`                                            | PASS   |
+| M173 | subscription detail API          | GET dedicado                                       | `/platform/subscriptions/:id`                                    | PASS   |
+| M174 | invoice detail API               | GET dedicado                                       | `/platform/invoices/:id`                                         | PASS   |
+| M175 | audit detail API                 | GET dedicado                                       | `/platform/audit-logs/:id`                                       | PASS   |
+| M176 | platform health                  | protegido e sanitizado                             | `/platform/health`                                               | PASS   |
+| M177 | polling/refetch                  | estrategia oficial documentada                     | admin monitor + report                                           | PASS   |
+| M178 | Redis degraded                   | health degrada queues sem vazar segredo            | `/platform/health`                                               | PASS   |
+| M179 | Redis recovery                   | retomada coberta pelo smoke de fila                | `verify` queue-smoke                                             | PASS   |
+| M180 | user last-slot concurrency       | uma criacao passa e outra falha 409                | e2e                                                              | PASS   |
+| M181 | department last-slot concurrency | uma criacao passa e outra falha 409                | e2e                                                              | PASS   |
+| M182 | SUPPORT seed/RBAC                | leitura permitida, high-risk negado                | seed + e2e                                                       | PASS   |
+| M183 | READONLY seed/RBAC               | leitura permitida, impersonation negada            | seed + e2e                                                       | PASS   |
+| M184 | tenant admin denial              | sem platform role recebe 403                       | e2e existente                                                    | PASS   |
+| M185 | frontend client tests            | 10 testes passados                                 | `bunx vitest run src/lib/trixus-api.test.ts --environment jsdom` | PASS   |
+| M186 | backend tests                    | 150 testes passados                                | `bun run --cwd backend test`                                     | PASS   |
+| M187 | verify #1                        | passou                                             | `bun run verify`                                                 | PASS   |
+| M188 | verify #2                        | passou                                             | `bun run verify`                                                 | PASS   |
+| M189 | docs consolidation               | rework registrado e realtime diferido              | este relatorio                                                   | PASS   |
+| M190 | report                           | atualizado                                         | `sprints/sprint-13/RELATORIO.md`                                 | PASS   |
+| M191 | commit                           | commit final do rework criado nesta sessao         | git                                                              | PASS   |
+| M192 | git clean                        | limpo para arquivos rastreados apos commit         | git                                                              | PASS   |
+| M193 | gate                             | homologacao fisica concluida; Sprint 14 autorizada | Product Owner final evidence                                     | PASS   |
 
 ## 53. Automated Evidence
 
@@ -617,35 +617,35 @@ Evidencia fisica sanitizada em `trixus_0802`:
 
 ## 55. M194-M220 - Rework Fisico Metrics
 
-| ID   | Meta                                 | Resultado                                                                  | Evidencia                      | Status  |
-| ---- | ------------------------------------ | -------------------------------------------------------------------------- | ------------------------------ | ------- |
-| M194 | connection delete failure reproduced | reproduzido por auditoria SQL segura                                       | FKs historicas em `trixus_0802` | PASS    |
-| M195 | delete root cause                    | hard delete contra FK restrict de Campaign/historico                       | schema + consulta fisica       | PASS    |
-| M196 | delete lifecycle rule                | remover = archive + provider delete/logout + historico preservado          | service/UI/report              | PASS    |
-| M197 | provider 404 idempotency             | 404 tratado como sucesso                                                   | unit test                      | PASS    |
-| M198 | provider failure mapping             | 5xx/retryable vira 503 canonico                                            | unit test                      | PASS    |
-| M199 | historical relations preserved       | counts antes/depois iguais                                                 | fisico + e2e                   | PASS    |
-| M200 | connection archive                   | `REMOVED`, `archivedAt`, `externalReference=null`                          | migration + fisico             | PASS    |
-| M201 | removed connection outbound block    | status REMOVED falha sem provider fallback                                 | outbound unit test             | PASS    |
-| M202 | removed connection campaign block    | campanha com Connection removida retorna `CAMPAIGN_CONNECTION_UNAVAILABLE` | e2e                            | PASS    |
-| M203 | delete frontend UX                   | confirmacao explicita, impacto e refetch                                   | `/instancias` + frontend test  | PASS    |
-| M204 | delete backend tests                 | 204, 404, 503, duplicado, historico, RBAC                                  | backend tests                  | PASS    |
-| M205 | delete frontend tests                | DELETE correto e mensagens 409/503                                         | vitest jsdom                   | PASS    |
-| M206 | platform credential envs             | variaveis padronizadas por perfil                                          | seed                           | PASS    |
-| M207 | idempotent platform seed             | create/update/unchanged sem senha em log                                   | seed fisico                    | PASS    |
-| M208 | admin credential readiness           | email definido e senha via ambiente                                        | login fisico                   | PASS    |
-| M209 | support credential readiness         | email definido e senha via ambiente                                        | login fisico                   | PASS    |
-| M210 | readonly credential readiness        | email definido e senha via ambiente                                        | login fisico                   | PASS    |
-| M211 | admin physical login                 | HTTP 201, `platformRole=ADMIN`                                             | fisico in-process              | PASS    |
-| M212 | support physical login               | HTTP 201, `platformRole=SUPPORT`                                           | fisico in-process              | PASS    |
-| M213 | readonly physical login              | HTTP 201, `platformRole=READONLY`                                          | fisico in-process              | PASS    |
-| M214 | tenant admin platform denial         | sem tenantSlug nao ganha platform                                          | fisico in-process              | PASS    |
-| M215 | verify #1                            | passou nesta sessao apos report                                            | `bun run verify`               | PASS    |
-| M216 | verify #2                            | passou nesta sessao apos report                                            | `bun run verify`               | PASS    |
-| M217 | report                               | atualizado sem senhas                                                      | este arquivo                   | PASS    |
-| M218 | commit                               | commit final do rework fisico criado nesta sessao                          | git                            | PASS    |
-| M219 | git clean                            | limpo para arquivos rastreados apos commit                                 | git                            | PASS    |
-| M220 | physical gate readiness              | homologacao fisica concluida                                      | Product Owner final evidence    | PASS    |
+| ID   | Meta                                 | Resultado                                                                  | Evidencia                       | Status |
+| ---- | ------------------------------------ | -------------------------------------------------------------------------- | ------------------------------- | ------ |
+| M194 | connection delete failure reproduced | reproduzido por auditoria SQL segura                                       | FKs historicas em `trixus_0802` | PASS   |
+| M195 | delete root cause                    | hard delete contra FK restrict de Campaign/historico                       | schema + consulta fisica        | PASS   |
+| M196 | delete lifecycle rule                | remover = archive + provider delete/logout + historico preservado          | service/UI/report               | PASS   |
+| M197 | provider 404 idempotency             | 404 tratado como sucesso                                                   | unit test                       | PASS   |
+| M198 | provider failure mapping             | 5xx/retryable vira 503 canonico                                            | unit test                       | PASS   |
+| M199 | historical relations preserved       | counts antes/depois iguais                                                 | fisico + e2e                    | PASS   |
+| M200 | connection archive                   | `REMOVED`, `archivedAt`, `externalReference=null`                          | migration + fisico              | PASS   |
+| M201 | removed connection outbound block    | status REMOVED falha sem provider fallback                                 | outbound unit test              | PASS   |
+| M202 | removed connection campaign block    | campanha com Connection removida retorna `CAMPAIGN_CONNECTION_UNAVAILABLE` | e2e                             | PASS   |
+| M203 | delete frontend UX                   | confirmacao explicita, impacto e refetch                                   | `/instancias` + frontend test   | PASS   |
+| M204 | delete backend tests                 | 204, 404, 503, duplicado, historico, RBAC                                  | backend tests                   | PASS   |
+| M205 | delete frontend tests                | DELETE correto e mensagens 409/503                                         | vitest jsdom                    | PASS   |
+| M206 | platform credential envs             | variaveis padronizadas por perfil                                          | seed                            | PASS   |
+| M207 | idempotent platform seed             | create/update/unchanged sem senha em log                                   | seed fisico                     | PASS   |
+| M208 | admin credential readiness           | email definido e senha via ambiente                                        | login fisico                    | PASS   |
+| M209 | support credential readiness         | email definido e senha via ambiente                                        | login fisico                    | PASS   |
+| M210 | readonly credential readiness        | email definido e senha via ambiente                                        | login fisico                    | PASS   |
+| M211 | admin physical login                 | HTTP 201, `platformRole=ADMIN`                                             | fisico in-process               | PASS   |
+| M212 | support physical login               | HTTP 201, `platformRole=SUPPORT`                                           | fisico in-process               | PASS   |
+| M213 | readonly physical login              | HTTP 201, `platformRole=READONLY`                                          | fisico in-process               | PASS   |
+| M214 | tenant admin platform denial         | sem tenantSlug nao ganha platform                                          | fisico in-process               | PASS   |
+| M215 | verify #1                            | passou nesta sessao apos report                                            | `bun run verify`                | PASS   |
+| M216 | verify #2                            | passou nesta sessao apos report                                            | `bun run verify`                | PASS   |
+| M217 | report                               | atualizado sem senhas                                                      | este arquivo                    | PASS   |
+| M218 | commit                               | commit final do rework fisico criado nesta sessao                          | git                             | PASS   |
+| M219 | git clean                            | limpo para arquivos rastreados apos commit                                 | git                             | PASS   |
+| M220 | physical gate readiness              | homologacao fisica concluida                                               | Product Owner final evidence    | PASS   |
 
 ## 56. Physical Homologation Pending
 
@@ -678,8 +678,6 @@ Estado final esperado apos commit:
 ## 59. Gate
 
 A Sprint 13 nao pode liberar Sprint 14 ate que os testes fisicos M122-M135, a validacao do rework M162-M193 e o checklist restante apos M194-M220 sejam executados pelo Product Owner com evidencia e sem regressao.
-
-
 
 ## 60. Rework Final - Platform API Runtime Recovery
 
@@ -761,38 +759,38 @@ Evidencias automatizadas:
 
 ## 61. M221-M250 - Rework Final Metrics
 
-| ID   | Meta                                | Resultado                                | Evidencia                         | Status  |
-| ---- | ----------------------------------- | ---------------------------------------- | --------------------------------- | ------- |
-| M221 | platform tenants failure reproduced | primeiro 500 reproduzido                 | stack `take: "20"`                | PASS    |
-| M222 | platform plans failure reproduced   | 500 fisico antes da correcao             | smoke porta 3001                  | PASS    |
-| M223 | subscriptions failure reproduced    | 500 fisico antes da correcao             | smoke porta 3001                  | PASS    |
-| M224 | backend process audit               | unico listener auditado                  | PID 31996 antes, PID 34228 depois | PASS    |
-| M225 | migration trixus_0802 audit          | schema atualizado                        | migrate status + tabela/coluna    | PASS    |
-| M226 | platform controller DI audit        | `@Inject(PlatformService)` confirmado    | controller                        | PASS    |
-| M227 | platform module audit               | providers/imports resolvidos             | bootstrap e2e                     | PASS    |
-| M228 | platform auth context audit         | `context=platform` e permissoes anexadas | guard + e2e                       | PASS    |
-| M229 | pagination parsing                  | string vira numero antes do Prisma       | helper + testes                   | PASS    |
-| M230 | tenant null relation handling       | tenant sem assinatura retorna null       | e2e                               | PASS    |
-| M231 | plan JSON handling                  | features/limits coercidos                | service + e2e                     | PASS    |
-| M232 | subscription relation handling      | plano arquivado suportado                | e2e                               | PASS    |
-| M233 | canonical error mapping             | 400/403/Prisma mapeados com code seguro  | filter + e2e                      | PASS    |
-| M234 | bootstrap real                      | App/Platform/Services resolvidos         | e2e                               | PASS    |
-| M235 | dashboard physical                  | HTTP 200                                 | porta 3001                        | PASS    |
-| M236 | tenants physical                    | HTTP 200                                 | porta 3001                        | PASS    |
-| M237 | plans physical                      | HTTP 200                                 | porta 3001                        | PASS    |
-| M238 | subscriptions physical              | HTTP 200                                 | porta 3001                        | PASS    |
-| M239 | invoices physical                   | HTTP 200                                 | porta 3001                        | PASS    |
-| M240 | audit physical                      | HTTP 200                                 | porta 3001                        | PASS    |
-| M241 | health physical                     | HTTP 200                                 | porta 3001                        | PASS    |
-| M242 | frontend recovery                   | empty/error preservados no client        | vitest jsdom                      | PASS    |
-| M243 | backend tests                       | 159 testes                               | backend test                      | PASS    |
-| M244 | frontend tests                      | 16 testes focados                        | vitest jsdom                      | PASS    |
-| M245 | verify #1                           | passou                                   | `bun run verify`                  | PASS    |
-| M246 | verify #2                           | passou apos repeticao final                | `bun run verify`                  | PASS    |
-| M247 | report                              | atualizado                               | este arquivo                      | PASS    |
-| M248 | commit                              | commit final do rework criado nesta sessao | git                            | PASS    |
-| M249 | git clean                           | limpo para arquivos rastreados apos commit | git                            | PASS    |
-| M250 | physical gate readiness             | homologacao fisica final concluida       | Product Owner final evidence    | PASS    |
+| ID   | Meta                                | Resultado                                  | Evidencia                         | Status |
+| ---- | ----------------------------------- | ------------------------------------------ | --------------------------------- | ------ |
+| M221 | platform tenants failure reproduced | primeiro 500 reproduzido                   | stack `take: "20"`                | PASS   |
+| M222 | platform plans failure reproduced   | 500 fisico antes da correcao               | smoke porta 3001                  | PASS   |
+| M223 | subscriptions failure reproduced    | 500 fisico antes da correcao               | smoke porta 3001                  | PASS   |
+| M224 | backend process audit               | unico listener auditado                    | PID 31996 antes, PID 34228 depois | PASS   |
+| M225 | migration trixus_0802 audit         | schema atualizado                          | migrate status + tabela/coluna    | PASS   |
+| M226 | platform controller DI audit        | `@Inject(PlatformService)` confirmado      | controller                        | PASS   |
+| M227 | platform module audit               | providers/imports resolvidos               | bootstrap e2e                     | PASS   |
+| M228 | platform auth context audit         | `context=platform` e permissoes anexadas   | guard + e2e                       | PASS   |
+| M229 | pagination parsing                  | string vira numero antes do Prisma         | helper + testes                   | PASS   |
+| M230 | tenant null relation handling       | tenant sem assinatura retorna null         | e2e                               | PASS   |
+| M231 | plan JSON handling                  | features/limits coercidos                  | service + e2e                     | PASS   |
+| M232 | subscription relation handling      | plano arquivado suportado                  | e2e                               | PASS   |
+| M233 | canonical error mapping             | 400/403/Prisma mapeados com code seguro    | filter + e2e                      | PASS   |
+| M234 | bootstrap real                      | App/Platform/Services resolvidos           | e2e                               | PASS   |
+| M235 | dashboard physical                  | HTTP 200                                   | porta 3001                        | PASS   |
+| M236 | tenants physical                    | HTTP 200                                   | porta 3001                        | PASS   |
+| M237 | plans physical                      | HTTP 200                                   | porta 3001                        | PASS   |
+| M238 | subscriptions physical              | HTTP 200                                   | porta 3001                        | PASS   |
+| M239 | invoices physical                   | HTTP 200                                   | porta 3001                        | PASS   |
+| M240 | audit physical                      | HTTP 200                                   | porta 3001                        | PASS   |
+| M241 | health physical                     | HTTP 200                                   | porta 3001                        | PASS   |
+| M242 | frontend recovery                   | empty/error preservados no client          | vitest jsdom                      | PASS   |
+| M243 | backend tests                       | 159 testes                                 | backend test                      | PASS   |
+| M244 | frontend tests                      | 16 testes focados                          | vitest jsdom                      | PASS   |
+| M245 | verify #1                           | passou                                     | `bun run verify`                  | PASS   |
+| M246 | verify #2                           | passou apos repeticao final                | `bun run verify`                  | PASS   |
+| M247 | report                              | atualizado                                 | este arquivo                      | PASS   |
+| M248 | commit                              | commit final do rework criado nesta sessao | git                               | PASS   |
+| M249 | git clean                           | limpo para arquivos rastreados apos commit | git                               | PASS   |
+| M250 | physical gate readiness             | homologacao fisica final concluida         | Product Owner final evidence      | PASS   |
 
 ## 62. Homologacao Fisica Final do Product Owner
 

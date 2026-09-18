@@ -1,4 +1,11 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+} from "@nestjs/common";
 import { assertEvolutionConfigured, evolutionConfigFromEnv } from "./evolution.config";
 import { MessagingConnectionsService } from "../messaging-connections.service";
 

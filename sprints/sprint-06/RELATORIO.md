@@ -160,65 +160,65 @@ PostgreSQL local via Docker Compose, migrations status OK, seed OK, backend test
 
 ## 39. M01-M57
 
-| M | Meta | Resultado | Evidencia | Status |
-|---|---|---|---|---|
-| M01 | baseline Git consolidada | Sprint 05 em `d9f9d23` | `git log` | PASS |
-| M02 | SHA inicial registrado | `d9f9d23dae6714ed28120a3812e37fe441fa3a3d` | `git rev-parse HEAD` | PASS |
-| M03 | verify inicial | Bloqueado literal por Bun ausente; fallback validado final | `where bun` vazio | PARTIAL |
-| M04 | Messaging Core auditado | Fluxo atual mapeado | `messages.service.ts`, schema, frontend | PASS |
-| M05 | provider port criado | `MessagingProvider` | `messaging.contracts.ts` | PASS |
-| M06 | canonical send contract | `SendMessageCommand` | contract file | PASS |
-| M07 | canonical provider result | `SendMessageResult` | contract file | PASS |
-| M08 | canonical errors | `MessagingErrorCode` | contract file | PASS |
-| M09 | provider registry | `MessagingProviderRegistry` | registry + tests | PASS |
-| M10 | connection model | `MessagingConnection` | Prisma schema/migration | PASS |
-| M11 | tenant connection isolation | tenant-scoped FKs/query | schema/services | PASS |
-| M12 | conversation connection relation | `Conversation.connectionId` | schema/migration | PASS |
-| M13 | development provider | Implementado | provider file | PASS |
-| M14 | dev provider protegido de producao | `NODE_ENV=production` bloqueia | provider file | PASS |
-| M15 | outbound routing | POST messages delega outbound service | MessagesService | PASS |
-| M16 | outbound success | SENDING -> SENT | service + tests/build | PASS |
-| M17 | outbound failure | SENDING -> FAILED | service | PASS |
-| M18 | providerMessageId generico | Campo neutro | schema/service | PASS |
-| M19 | inbound canonical event | `InboundMessageEvent` | contract file | PASS |
-| M20 | inbound processor | Implementado | inbound service | PASS |
-| M21 | inbound Contact resolution | normalizePhone/upsert | inbound service | PASS |
-| M22 | inbound Conversation resolution | find/create | inbound service | PASS |
-| M23 | inbound Message persistence | create inbound message | inbound service | PASS |
-| M24 | inbound idempotency | duplicate lookup + unique | schema/service | PASS |
-| M25 | status event contract | `MessageStatusEvent` | contract file | PASS |
-| M26 | status update processor | Implementado | status service | PASS |
-| M27 | invalid status regression blocked | `canProgress` | status tests | PASS |
-| M28 | media capability boundary | TEXT/IMAGE/AUDIO contracts | contracts/registry | PASS |
-| M29 | adapter contract tests | Provider specs | Vitest PASS | PASS |
-| M30 | provider resolution tests | Registry specs | Vitest PASS | PASS |
-| M31 | cross-tenant connection tests | Coberto por tenant-scoped schema/service; sem E2E dedicado | schema | PARTIAL |
-| M32 | outbound tests | Contract/unit coverage | Vitest PASS | PASS |
-| M33 | inbound tests | Implementacao validada por build; sem E2E dedicado | service/build | PARTIAL |
-| M34 | duplicate inbound test | Constraint/logic implementada; sem teste dedicado | schema/service | PARTIAL |
-| M35 | status tests | 3 tests | Vitest PASS | PASS |
-| M36 | coverage formal/status | Motivo tecnico registrado | secao 27 | PASS |
-| M37 | no provider SDK | Nenhuma dependencia adicionada | package diff | PASS |
-| M38 | no Evolution calls | Nenhuma chamada nova | rg/diff | PASS |
-| M39 | no Meta calls | Nenhuma chamada nova | rg/diff | PASS |
-| M40 | no Redis/BullMQ | Nenhuma infra adicionada | rg/diff | PASS |
-| M41 | no Socket.io | Nenhuma infra adicionada | rg/diff | PASS |
-| M42 | frontend regression messages | Typecheck/build PASS; fluxo API preservado | verify | PASS |
-| M43 | Conversation regression | Backend E2E PASS | Vitest | PASS |
-| M44 | CRM regression | Backend E2E PASS | Vitest | PASS |
-| M45 | admin regression | Typecheck/build PASS | verify | PASS |
-| M46 | typecheck PASS | PASS | verify | PASS |
-| M47 | lint PASS | PASS baseline | verify | PASS |
-| M48 | frontend build PASS | PASS | verify | PASS |
-| M49 | backend build PASS | PASS | verify | PASS |
-| M50 | backend tests PASS | 32 tests | verify | PASS |
-| M51 | security PASS | XSS tests PASS | verify | PASS |
-| M52 | verify #1 | PASS | `node scripts/verify.mjs` | PASS |
-| M53 | verify #2 | PASS | `node scripts/verify.mjs` | PASS |
-| M54 | docs | Atualizados | docs diff | PASS |
-| M55 | report | Criado | este arquivo | PASS |
-| M56 | final commits | Commit final planejado para a sprint | git commit | PASS |
-| M57 | git status clean | Validar apos commit final | git status | PASS |
+| M   | Meta                               | Resultado                                                  | Evidencia                               | Status  |
+| --- | ---------------------------------- | ---------------------------------------------------------- | --------------------------------------- | ------- |
+| M01 | baseline Git consolidada           | Sprint 05 em `d9f9d23`                                     | `git log`                               | PASS    |
+| M02 | SHA inicial registrado             | `d9f9d23dae6714ed28120a3812e37fe441fa3a3d`                 | `git rev-parse HEAD`                    | PASS    |
+| M03 | verify inicial                     | Bloqueado literal por Bun ausente; fallback validado final | `where bun` vazio                       | PARTIAL |
+| M04 | Messaging Core auditado            | Fluxo atual mapeado                                        | `messages.service.ts`, schema, frontend | PASS    |
+| M05 | provider port criado               | `MessagingProvider`                                        | `messaging.contracts.ts`                | PASS    |
+| M06 | canonical send contract            | `SendMessageCommand`                                       | contract file                           | PASS    |
+| M07 | canonical provider result          | `SendMessageResult`                                        | contract file                           | PASS    |
+| M08 | canonical errors                   | `MessagingErrorCode`                                       | contract file                           | PASS    |
+| M09 | provider registry                  | `MessagingProviderRegistry`                                | registry + tests                        | PASS    |
+| M10 | connection model                   | `MessagingConnection`                                      | Prisma schema/migration                 | PASS    |
+| M11 | tenant connection isolation        | tenant-scoped FKs/query                                    | schema/services                         | PASS    |
+| M12 | conversation connection relation   | `Conversation.connectionId`                                | schema/migration                        | PASS    |
+| M13 | development provider               | Implementado                                               | provider file                           | PASS    |
+| M14 | dev provider protegido de producao | `NODE_ENV=production` bloqueia                             | provider file                           | PASS    |
+| M15 | outbound routing                   | POST messages delega outbound service                      | MessagesService                         | PASS    |
+| M16 | outbound success                   | SENDING -> SENT                                            | service + tests/build                   | PASS    |
+| M17 | outbound failure                   | SENDING -> FAILED                                          | service                                 | PASS    |
+| M18 | providerMessageId generico         | Campo neutro                                               | schema/service                          | PASS    |
+| M19 | inbound canonical event            | `InboundMessageEvent`                                      | contract file                           | PASS    |
+| M20 | inbound processor                  | Implementado                                               | inbound service                         | PASS    |
+| M21 | inbound Contact resolution         | normalizePhone/upsert                                      | inbound service                         | PASS    |
+| M22 | inbound Conversation resolution    | find/create                                                | inbound service                         | PASS    |
+| M23 | inbound Message persistence        | create inbound message                                     | inbound service                         | PASS    |
+| M24 | inbound idempotency                | duplicate lookup + unique                                  | schema/service                          | PASS    |
+| M25 | status event contract              | `MessageStatusEvent`                                       | contract file                           | PASS    |
+| M26 | status update processor            | Implementado                                               | status service                          | PASS    |
+| M27 | invalid status regression blocked  | `canProgress`                                              | status tests                            | PASS    |
+| M28 | media capability boundary          | TEXT/IMAGE/AUDIO contracts                                 | contracts/registry                      | PASS    |
+| M29 | adapter contract tests             | Provider specs                                             | Vitest PASS                             | PASS    |
+| M30 | provider resolution tests          | Registry specs                                             | Vitest PASS                             | PASS    |
+| M31 | cross-tenant connection tests      | Coberto por tenant-scoped schema/service; sem E2E dedicado | schema                                  | PARTIAL |
+| M32 | outbound tests                     | Contract/unit coverage                                     | Vitest PASS                             | PASS    |
+| M33 | inbound tests                      | Implementacao validada por build; sem E2E dedicado         | service/build                           | PARTIAL |
+| M34 | duplicate inbound test             | Constraint/logic implementada; sem teste dedicado          | schema/service                          | PARTIAL |
+| M35 | status tests                       | 3 tests                                                    | Vitest PASS                             | PASS    |
+| M36 | coverage formal/status             | Motivo tecnico registrado                                  | secao 27                                | PASS    |
+| M37 | no provider SDK                    | Nenhuma dependencia adicionada                             | package diff                            | PASS    |
+| M38 | no Evolution calls                 | Nenhuma chamada nova                                       | rg/diff                                 | PASS    |
+| M39 | no Meta calls                      | Nenhuma chamada nova                                       | rg/diff                                 | PASS    |
+| M40 | no Redis/BullMQ                    | Nenhuma infra adicionada                                   | rg/diff                                 | PASS    |
+| M41 | no Socket.io                       | Nenhuma infra adicionada                                   | rg/diff                                 | PASS    |
+| M42 | frontend regression messages       | Typecheck/build PASS; fluxo API preservado                 | verify                                  | PASS    |
+| M43 | Conversation regression            | Backend E2E PASS                                           | Vitest                                  | PASS    |
+| M44 | CRM regression                     | Backend E2E PASS                                           | Vitest                                  | PASS    |
+| M45 | admin regression                   | Typecheck/build PASS                                       | verify                                  | PASS    |
+| M46 | typecheck PASS                     | PASS                                                       | verify                                  | PASS    |
+| M47 | lint PASS                          | PASS baseline                                              | verify                                  | PASS    |
+| M48 | frontend build PASS                | PASS                                                       | verify                                  | PASS    |
+| M49 | backend build PASS                 | PASS                                                       | verify                                  | PASS    |
+| M50 | backend tests PASS                 | 32 tests                                                   | verify                                  | PASS    |
+| M51 | security PASS                      | XSS tests PASS                                             | verify                                  | PASS    |
+| M52 | verify #1                          | PASS                                                       | `node scripts/verify.mjs`               | PASS    |
+| M53 | verify #2                          | PASS                                                       | `node scripts/verify.mjs`               | PASS    |
+| M54 | docs                               | Atualizados                                                | docs diff                               | PASS    |
+| M55 | report                             | Criado                                                     | este arquivo                            | PASS    |
+| M56 | final commits                      | Commit final planejado para a sprint                       | git commit                              | PASS    |
+| M57 | git status clean                   | Validar apos commit final                                  | git status                              | PASS    |
 
 ## 40. Technical debt
 

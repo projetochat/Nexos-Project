@@ -544,10 +544,13 @@ function secureToken() {
   return randomBytes(32).toString("base64url");
 }
 
-function membershipDisplayName(membership: {
-  presentationName?: string | null;
-  user?: { name: string } | null;
-}, fallbackName?: string) {
+function membershipDisplayName(
+  membership: {
+    presentationName?: string | null;
+    user?: { name: string } | null;
+  },
+  fallbackName?: string,
+) {
   return membership.presentationName?.trim() || membership.user?.name || fallbackName || "";
 }
 

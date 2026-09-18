@@ -7,4 +7,3 @@
 - Logs outbound passam a registrar request, response, retry scheduled e failed final com dados sanitizados.
 - Sucesso de provider sem `providerMessageId` deixa de ser aceito silenciosamente.
 - Adicionado teste de regressao para `unhandledRejection`.
-

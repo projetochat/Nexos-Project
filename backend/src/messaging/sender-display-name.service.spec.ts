@@ -18,9 +18,9 @@ describe("SenderDisplayNameService", () => {
       },
     };
 
-    await expect(new SenderDisplayNameService().resolve(db as never, administrator as never)).resolves.toBe(
-      "Natã Rabelo",
-    );
+    await expect(
+      new SenderDisplayNameService().resolve(db as never, administrator as never),
+    ).resolves.toBe("Natã Rabelo");
   });
 
   it("uses a neutral label for legacy administrators without a presentation name", async () => {
@@ -33,9 +33,9 @@ describe("SenderDisplayNameService", () => {
       },
     };
 
-    await expect(new SenderDisplayNameService().resolve(db as never, administrator as never)).resolves.toBe(
-      "Administrador",
-    );
+    await expect(
+      new SenderDisplayNameService().resolve(db as never, administrator as never),
+    ).resolves.toBe("Administrador");
   });
 
   it("uses the attendant name for non-administrator memberships", async () => {

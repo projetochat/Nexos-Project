@@ -106,7 +106,6 @@ type MembershipWithRelations = {
     status: string;
     platformRole: string;
   };
-  presentationName?: string | null;
   role: {
     id: string;
     key: string;
@@ -274,7 +273,10 @@ export class UsersController {
     return {
       ok: true,
       presentationName: dto.presentationName?.trim() ?? membership.presentationName,
-      avatarUrl: dto.avatarUrl === undefined ? membership.user.avatarUrl ?? null : normalizeAvatarUrl(dto.avatarUrl),
+      avatarUrl:
+        dto.avatarUrl === undefined
+          ? (membership.user.avatarUrl ?? null)
+          : normalizeAvatarUrl(dto.avatarUrl),
     };
   }
 
@@ -311,9 +313,11 @@ export class UsersController {
       accessEmail: current.roleKey === "tenant_admin" ? administratorEmail : null,
       responsibleName: administrator?.user.name ?? null,
       presentationName:
-        current.roleKey === "tenant_admin" ? administrator?.presentationName ?? administrator?.user.name ?? null : null,
+        current.roleKey === "tenant_admin"
+          ? (administrator?.presentationName ?? administrator?.user.name ?? null)
+          : null,
       administratorAvatarUrl:
-        current.roleKey === "tenant_admin" ? administrator?.user.avatarUrl ?? null : null,
+        current.roleKey === "tenant_admin" ? (administrator?.user.avatarUrl ?? null) : null,
       canManageAdministratorCredentials: current.roleKey === "tenant_admin",
     };
   }

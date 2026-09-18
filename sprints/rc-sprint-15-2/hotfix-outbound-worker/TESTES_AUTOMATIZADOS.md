@@ -1,9 +1,11 @@
 # Testes Automatizados
 
 Baseline antes do hotfix:
+
 - `bun run verify`: PASS em `trixus_0801`.
 
 Testes focados:
+
 - `messaging-outbound.worker.spec.ts`
 - `messaging-outbound.service.spec.ts`
 - `evolution-provider-error.classifier.spec.ts`
@@ -11,10 +13,12 @@ Testes focados:
 - Resultado: 4 arquivos, 22 testes PASS.
 
 Backend completo:
+
 - `bun run --cwd backend build`: PASS.
 - `bun run --cwd backend test`: PASS, 25 arquivos, 167 testes.
 
 Verify final apos hotfix:
+
 - `bun run verify`: PASS.
 - Frontend typecheck: PASS.
 - ESLint baseline: PASS, `917 errors and 12 warnings within legacy baseline`.
@@ -25,6 +29,7 @@ Verify final apos hotfix:
 - Security XSS: PASS, 1 arquivo, 3 testes.
 
 Cobertura nova:
+
 - HTTP 500 retryable.
 - HTTP 401 permanente.
 - HTTP 422 permanente.

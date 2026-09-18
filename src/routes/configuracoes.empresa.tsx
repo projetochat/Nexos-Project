@@ -117,7 +117,9 @@ function EmpresaSettings() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      toast.success(isChangingPassword ? "Credenciais atualizadas." : "Nome de apresentação atualizado.");
+      toast.success(
+        isChangingPassword ? "Credenciais atualizadas." : "Nome de apresentação atualizado.",
+      );
     } catch (error) {
       toast.error((error as Error).message || "Não foi possível alterar a senha.");
     } finally {
@@ -189,7 +191,11 @@ function EmpresaSettings() {
                   title="Opções da foto"
                   aria-label="Opções da foto"
                 >
-                  <Avatar name={presentationName || "Administrador"} src={administratorAvatarUrl ?? undefined} size={96} />
+                  <Avatar
+                    name={presentationName || "Administrador"}
+                    src={administratorAvatarUrl ?? undefined}
+                    size={96}
+                  />
                   <span className="absolute inset-0 flex items-center justify-center bg-black/35 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                     <Camera className="h-8 w-8" />
                   </span>
@@ -203,7 +209,8 @@ function EmpresaSettings() {
                     icon={<Eye className="h-4 w-4" />}
                     onClick={() => {
                       setPhotoMenuOpen(false);
-                      if (!administratorAvatarUrl) return toast.info("Nenhuma foto cadastrada para este perfil.");
+                      if (!administratorAvatarUrl)
+                        return toast.info("Nenhuma foto cadastrada para este perfil.");
                       setPhotoPreviewOpen(true);
                     }}
                   >

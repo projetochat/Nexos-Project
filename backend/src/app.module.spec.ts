@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Test } from "@nestjs/testing";
+import { describe, expect, it } from "vitest";
 import { AppModule } from "./app.module";
 import { GroupsController } from "./conversations/groups.controller";
 import { GroupsSyncService } from "./conversations/groups-sync.service";

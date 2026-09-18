@@ -124,7 +124,11 @@ visual completa nao pode ser capturada por automacao. A causa foi reproduzida de
 correcao:
 
 ```json
-{"sameReference":false,"a":{"status":"offline","lastEventId":null},"b":{"status":"offline","lastEventId":null}}
+{
+  "sameReference": false,
+  "a": { "status": "offline", "lastEventId": null },
+  "b": { "status": "offline", "lastEventId": null }
+}
 ```
 
 ### Componente
@@ -188,7 +192,11 @@ pendente para sprint propria, pois exigiria migrar etiquetas/quick replies/custo
 Reproducao minima apos correcao:
 
 ```json
-{"sameReference":true,"a":{"status":"offline","lastEventId":null},"b":{"status":"offline","lastEventId":null}}
+{
+  "sameReference": true,
+  "a": { "status": "offline", "lastEventId": null },
+  "b": { "status": "offline", "lastEventId": null }
+}
 ```
 
 ### Realtime enabled
@@ -232,59 +240,59 @@ Backend preservado:
 
 ### Metricas M157-M207
 
-| Metrica | Meta | Resultado | Evidencia | Status |
-| --- | --- | --- | --- | --- |
-| M157 | Crash fisico reproduzido | Reproducao visual bloqueada; causa reproduzida por snapshot instavel | `sameReference=false` pre-fix | PARTIAL |
-| M158 | Maximum update depth confirmado | Confirmado pelo relato fisico e explicado pelo contrato de `useSyncExternalStore` | Stack reportada em `InboxLayout` | PARTIAL |
-| M159 | InboxLayout auditado | `useRealtimeInbox(activeId)` localizado | `src/routes/inbox.index.tsx` | PASS |
-| M160 | Hook exato identificado | `useRealtimeInbox` / `useRealtimeStatus` | `src/lib/realtime/hooks.ts` | PASS |
-| M161 | Effect exato identificado | `useSyncExternalStore(subscribeRealtime, realtimeSnapshot, realtimeSnapshot)` | `src/lib/realtime/hooks.ts` | PASS |
-| M162 | Dependencia instavel identificada | `realtimeSnapshot()` retornava objeto novo | `src/lib/realtime/client.ts` | PASS |
-| M163 | Ciclo documentado | Snapshot novo -> render -> snapshot novo | Relatorio e docs | PASS |
-| M164 | Correcao do loop | Snapshot cacheado | `sameReference=true` pos-fix | PASS |
-| M165 | Zustand selectors auditados | `InboxLayout` usa selectors primitivos de sessao indiretamente | Sem selector objeto novo no componente | PASS |
-| M166 | Query cache auditado | Invalidacoes realtime localizadas | `useRealtimeInbox` | PASS |
-| M167 | Reconcile auditado | Limitado a transicao para `connected` | `previousStatusRef` | PASS |
-| M168 | Subscriptions auditadas | Set por `conversationId` | `activeConversationIds` | PASS |
-| M169 | Cleanup corrigido | Unsubscribe idempotente | Teste de emit subscribe/unsubscribe unico | PASS |
-| M170 | 401 flow auditado | Fluxo HTTP revisado | `src/lib/trixus-api.ts` | PASS |
-| M171 | Refresh single-flight | Promise compartilhada | Teste concorrente 401 | PASS |
-| M172 | Refresh retry limit | Retry unico por request | Teste concorrente 401 | PASS |
-| M173 | Refresh failure cleanup | Tokens limpos em refresh 401 | Teste refresh failure | PASS |
-| M174 | Socket reconnect limit | Socket singleton preservado | Teste `io` chamado uma vez | PASS |
-| M175 | Supabase legacy audit | Legado identificado | `src/lib/mvp.ts`, detalhe da Inbox | PASS |
-| M176 | Legacy requests removidas | Nao removidas por falta de prova direta no crash | Escopo preservado | N/A |
-| M177 | Inbox official API only | `/inbox` usa Trixus API; detalhe ainda tem legado auxiliar | Auditoria de imports | PARTIAL |
-| M178 | Frontend realtime flag | Criada | `VITE_TRIXUS_REALTIME_ENABLED` | PASS |
-| M179 | Realtime disabled render | Hook estabiliza disabled | `hooks.test.tsx` | PASS |
-| M180 | Realtime enabled render | Singleton/subscription cobertos | `client.test.ts` | PASS |
-| M181 | Render stability test | Adicionado | `hooks.test.tsx` | PASS |
-| M182 | Subscription cleanup test | Adicionado | `client.test.ts` | PASS |
-| M183 | 401 recovery test | Adicionado | `trixus-api.test.ts` | PASS |
-| M184 | Refresh failure test | Adicionado | `trixus-api.test.ts` | PASS |
-| M185 | Navigation test | Nao executado em browser | Browser indisponivel | N/A |
-| M186 | F5 test | Nao executado em browser | Browser indisponivel | N/A |
-| M187 | Conversation switch test | Subscription idempotente testada; UI nao testada | `client.test.ts` | PARTIAL |
-| M188 | Cache events test | Invalidacoes preservadas; eventos end-to-end nao simulados | `useRealtimeInbox` | PARTIAL |
-| M189 | Physical admin Inbox | Nao executado visualmente | Browser indisponivel | N/A |
-| M190 | Physical agent Inbox | Nao executado visualmente | Browser indisponivel | N/A |
-| M191 | Physical disabled mode | HTTP 200 observado; UI nao inspecionada | `Invoke-WebRequest /inbox` | PARTIAL |
-| M192 | Physical inbound | Nao executado | WhatsApp fisico pendente | N/A |
-| M193 | Physical outbound | Nao executado | WhatsApp fisico pendente | N/A |
-| M194 | Physical presence | Nao executado | Browser indisponivel | N/A |
-| M195 | Physical typing | Nao executado | Browser indisponivel | N/A |
-| M196 | Physical reconnect | Nao executado | Browser indisponivel | N/A |
-| M197 | Physical Redis degraded | Nao executado | Redis gate pendente | N/A |
-| M198 | Physical Redis recovery | Nao executado | Redis gate pendente | N/A |
-| M199 | Verify #1 | PASS | `bun run verify` em `trixus_0801` | PASS |
-| M200 | Verify #2 | PASS | `bun run verify` em `trixus_0801` novamente | PASS |
-| M201 | Frontend tests | PASS | 21 testes frontend focados/legados | PASS |
-| M202 | Builds | PASS | frontend/backend build | PASS |
-| M203 | Docs | Atualizados | docs exigidos | PASS |
-| M204 | Report | Atualizado | Este adendo | PASS |
-| M205 | Commit | PASS | Commit final desta execucao registra codigo, testes e docs | PASS |
-| M206 | Final git clean | PASS | Worktree limpa deve ser validada apos commit | PASS |
-| M207 | Gate | Bloqueado | Fisico completo pendente | NOT READY |
+| Metrica | Meta                              | Resultado                                                                         | Evidencia                                                  | Status    |
+| ------- | --------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------- | --------- |
+| M157    | Crash fisico reproduzido          | Reproducao visual bloqueada; causa reproduzida por snapshot instavel              | `sameReference=false` pre-fix                              | PARTIAL   |
+| M158    | Maximum update depth confirmado   | Confirmado pelo relato fisico e explicado pelo contrato de `useSyncExternalStore` | Stack reportada em `InboxLayout`                           | PARTIAL   |
+| M159    | InboxLayout auditado              | `useRealtimeInbox(activeId)` localizado                                           | `src/routes/inbox.index.tsx`                               | PASS      |
+| M160    | Hook exato identificado           | `useRealtimeInbox` / `useRealtimeStatus`                                          | `src/lib/realtime/hooks.ts`                                | PASS      |
+| M161    | Effect exato identificado         | `useSyncExternalStore(subscribeRealtime, realtimeSnapshot, realtimeSnapshot)`     | `src/lib/realtime/hooks.ts`                                | PASS      |
+| M162    | Dependencia instavel identificada | `realtimeSnapshot()` retornava objeto novo                                        | `src/lib/realtime/client.ts`                               | PASS      |
+| M163    | Ciclo documentado                 | Snapshot novo -> render -> snapshot novo                                          | Relatorio e docs                                           | PASS      |
+| M164    | Correcao do loop                  | Snapshot cacheado                                                                 | `sameReference=true` pos-fix                               | PASS      |
+| M165    | Zustand selectors auditados       | `InboxLayout` usa selectors primitivos de sessao indiretamente                    | Sem selector objeto novo no componente                     | PASS      |
+| M166    | Query cache auditado              | Invalidacoes realtime localizadas                                                 | `useRealtimeInbox`                                         | PASS      |
+| M167    | Reconcile auditado                | Limitado a transicao para `connected`                                             | `previousStatusRef`                                        | PASS      |
+| M168    | Subscriptions auditadas           | Set por `conversationId`                                                          | `activeConversationIds`                                    | PASS      |
+| M169    | Cleanup corrigido                 | Unsubscribe idempotente                                                           | Teste de emit subscribe/unsubscribe unico                  | PASS      |
+| M170    | 401 flow auditado                 | Fluxo HTTP revisado                                                               | `src/lib/trixus-api.ts`                                    | PASS      |
+| M171    | Refresh single-flight             | Promise compartilhada                                                             | Teste concorrente 401                                      | PASS      |
+| M172    | Refresh retry limit               | Retry unico por request                                                           | Teste concorrente 401                                      | PASS      |
+| M173    | Refresh failure cleanup           | Tokens limpos em refresh 401                                                      | Teste refresh failure                                      | PASS      |
+| M174    | Socket reconnect limit            | Socket singleton preservado                                                       | Teste `io` chamado uma vez                                 | PASS      |
+| M175    | Supabase legacy audit             | Legado identificado                                                               | `src/lib/mvp.ts`, detalhe da Inbox                         | PASS      |
+| M176    | Legacy requests removidas         | Nao removidas por falta de prova direta no crash                                  | Escopo preservado                                          | N/A       |
+| M177    | Inbox official API only           | `/inbox` usa Trixus API; detalhe ainda tem legado auxiliar                        | Auditoria de imports                                       | PARTIAL   |
+| M178    | Frontend realtime flag            | Criada                                                                            | `VITE_TRIXUS_REALTIME_ENABLED`                             | PASS      |
+| M179    | Realtime disabled render          | Hook estabiliza disabled                                                          | `hooks.test.tsx`                                           | PASS      |
+| M180    | Realtime enabled render           | Singleton/subscription cobertos                                                   | `client.test.ts`                                           | PASS      |
+| M181    | Render stability test             | Adicionado                                                                        | `hooks.test.tsx`                                           | PASS      |
+| M182    | Subscription cleanup test         | Adicionado                                                                        | `client.test.ts`                                           | PASS      |
+| M183    | 401 recovery test                 | Adicionado                                                                        | `trixus-api.test.ts`                                       | PASS      |
+| M184    | Refresh failure test              | Adicionado                                                                        | `trixus-api.test.ts`                                       | PASS      |
+| M185    | Navigation test                   | Nao executado em browser                                                          | Browser indisponivel                                       | N/A       |
+| M186    | F5 test                           | Nao executado em browser                                                          | Browser indisponivel                                       | N/A       |
+| M187    | Conversation switch test          | Subscription idempotente testada; UI nao testada                                  | `client.test.ts`                                           | PARTIAL   |
+| M188    | Cache events test                 | Invalidacoes preservadas; eventos end-to-end nao simulados                        | `useRealtimeInbox`                                         | PARTIAL   |
+| M189    | Physical admin Inbox              | Nao executado visualmente                                                         | Browser indisponivel                                       | N/A       |
+| M190    | Physical agent Inbox              | Nao executado visualmente                                                         | Browser indisponivel                                       | N/A       |
+| M191    | Physical disabled mode            | HTTP 200 observado; UI nao inspecionada                                           | `Invoke-WebRequest /inbox`                                 | PARTIAL   |
+| M192    | Physical inbound                  | Nao executado                                                                     | WhatsApp fisico pendente                                   | N/A       |
+| M193    | Physical outbound                 | Nao executado                                                                     | WhatsApp fisico pendente                                   | N/A       |
+| M194    | Physical presence                 | Nao executado                                                                     | Browser indisponivel                                       | N/A       |
+| M195    | Physical typing                   | Nao executado                                                                     | Browser indisponivel                                       | N/A       |
+| M196    | Physical reconnect                | Nao executado                                                                     | Browser indisponivel                                       | N/A       |
+| M197    | Physical Redis degraded           | Nao executado                                                                     | Redis gate pendente                                        | N/A       |
+| M198    | Physical Redis recovery           | Nao executado                                                                     | Redis gate pendente                                        | N/A       |
+| M199    | Verify #1                         | PASS                                                                              | `bun run verify` em `trixus_0801`                          | PASS      |
+| M200    | Verify #2                         | PASS                                                                              | `bun run verify` em `trixus_0801` novamente                | PASS      |
+| M201    | Frontend tests                    | PASS                                                                              | 21 testes frontend focados/legados                         | PASS      |
+| M202    | Builds                            | PASS                                                                              | frontend/backend build                                     | PASS      |
+| M203    | Docs                              | Atualizados                                                                       | docs exigidos                                              | PASS      |
+| M204    | Report                            | Atualizado                                                                        | Este adendo                                                | PASS      |
+| M205    | Commit                            | PASS                                                                              | Commit final desta execucao registra codigo, testes e docs | PASS      |
+| M206    | Final git clean                   | PASS                                                                              | Worktree limpa deve ser validada apos commit               | PASS      |
+| M207    | Gate                              | Bloqueado                                                                         | Fisico completo pendente                                   | NOT READY |
 
 ### Commit
 
@@ -386,7 +394,18 @@ PASS:
 PASS em `trixus_0802`:
 
 ```json
-{"ok":true,"port":"3019","health":{"ok":true,"database":"up","redis":"up","queue":"up","realtime":"up","realtimeAdapter":"redis"}}
+{
+  "ok": true,
+  "port": "3019",
+  "health": {
+    "ok": true,
+    "database": "up",
+    "redis": "up",
+    "queue": "up",
+    "realtime": "up",
+    "realtimeAdapter": "redis"
+  }
+}
 ```
 
 ### Socket admin
@@ -439,38 +458,38 @@ Verify final observado:
 
 ### Matriz M127-M156
 
-| Metrica | Status | Evidencia |
-| --- | --- | --- |
-| M127 | PARTIAL | Falha reportada pelo operador; `backend:dev` local nao capturou stack antes do timeout. |
-| M128 | PASS | Dependencia indice 1 identificada como `MessagesService`. |
-| M129 | PASS | `MessagesService` confirmado como import runtime e classe DI. |
-| M130 | PASS | `@Inject(MessagesService)` aplicado no controller. |
-| M131 | PASS | Provider existe em `ConversationsModule`. |
-| M132 | PASS | `RealtimePublisher` preservado e exportado pelo modulo realtime. |
-| M133 | PASS | `AppModule` compila em teste. |
-| M134 | PASS | Metadata `design:paramtypes` validada. |
-| M135 | PASS | Teste de bootstrap adicionado. |
-| M136 | PASS | Build backend aprovado. |
-| M137 | PASS | Testes backend aprovados. |
-| M138 | PASS | Smoke startup criado. |
-| M139 | PASS | Startup fisico em `trixus_0802` aprovado via health. |
-| M140 | PASS | Redis adapter corrigido para namespace Socket.io. |
-| M141 | PASS | Health `realtime=up`. |
-| M142 | PASS | Health `realtimeAdapter=redis`. |
-| M143 | NOT RUN | Inbound WhatsApp visual sem F5 nao executado. |
-| M144 | NOT RUN | Outbound/status visual sem F5 nao executado. |
-| M145 | NOT RUN | Presence visual nao executada. |
-| M146 | NOT RUN | Typing visual nao executado. |
-| M147 | NOT RUN | Reconnect/F5 com reconcile REST nao executado. |
-| M148 | NOT RUN | Redis down/recovery nao executado. |
-| M149 | NOT RUN | Matriz browser multiusuario completa nao executada. |
-| M150 | PASS | `bun run verify` aprovado. |
-| M151 | PASS | Segundo `bun run verify` aprovado. |
-| M152 | PASS | Documentacao atualizada. |
-| M153 | PASS | `public/favicon.ico` nao foi alterado neste rework. |
-| M154 | PASS | Commit final desta execucao registra codigo, testes e documentacao do rework. |
-| M155 | PASS | Worktree limpa deve ser validada apos o commit de fechamento. |
-| M156 | NOT READY | Gate fisico completo ainda pendente. |
+| Metrica | Status    | Evidencia                                                                               |
+| ------- | --------- | --------------------------------------------------------------------------------------- |
+| M127    | PARTIAL   | Falha reportada pelo operador; `backend:dev` local nao capturou stack antes do timeout. |
+| M128    | PASS      | Dependencia indice 1 identificada como `MessagesService`.                               |
+| M129    | PASS      | `MessagesService` confirmado como import runtime e classe DI.                           |
+| M130    | PASS      | `@Inject(MessagesService)` aplicado no controller.                                      |
+| M131    | PASS      | Provider existe em `ConversationsModule`.                                               |
+| M132    | PASS      | `RealtimePublisher` preservado e exportado pelo modulo realtime.                        |
+| M133    | PASS      | `AppModule` compila em teste.                                                           |
+| M134    | PASS      | Metadata `design:paramtypes` validada.                                                  |
+| M135    | PASS      | Teste de bootstrap adicionado.                                                          |
+| M136    | PASS      | Build backend aprovado.                                                                 |
+| M137    | PASS      | Testes backend aprovados.                                                               |
+| M138    | PASS      | Smoke startup criado.                                                                   |
+| M139    | PASS      | Startup fisico em `trixus_0802` aprovado via health.                                    |
+| M140    | PASS      | Redis adapter corrigido para namespace Socket.io.                                       |
+| M141    | PASS      | Health `realtime=up`.                                                                   |
+| M142    | PASS      | Health `realtimeAdapter=redis`.                                                         |
+| M143    | NOT RUN   | Inbound WhatsApp visual sem F5 nao executado.                                           |
+| M144    | NOT RUN   | Outbound/status visual sem F5 nao executado.                                            |
+| M145    | NOT RUN   | Presence visual nao executada.                                                          |
+| M146    | NOT RUN   | Typing visual nao executado.                                                            |
+| M147    | NOT RUN   | Reconnect/F5 com reconcile REST nao executado.                                          |
+| M148    | NOT RUN   | Redis down/recovery nao executado.                                                      |
+| M149    | NOT RUN   | Matriz browser multiusuario completa nao executada.                                     |
+| M150    | PASS      | `bun run verify` aprovado.                                                              |
+| M151    | PASS      | Segundo `bun run verify` aprovado.                                                      |
+| M152    | PASS      | Documentacao atualizada.                                                                |
+| M153    | PASS      | `public/favicon.ico` nao foi alterado neste rework.                                     |
+| M154    | PASS      | Commit final desta execucao registra codigo, testes e documentacao do rework.           |
+| M155    | PASS      | Worktree limpa deve ser validada apos o commit de fechamento.                           |
+| M156    | NOT READY | Gate fisico completo ainda pendente.                                                    |
 
 ### Decisao do Rework
 

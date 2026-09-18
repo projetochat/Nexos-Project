@@ -27,7 +27,9 @@ describe("MessagingInboundService", () => {
       status: MessageStatus.CREATED,
       createdAt: new Date(),
     });
-    prisma.conversation.update.mockResolvedValue(conversation({ id: "conversation-new", unreadCount: 1 }));
+    prisma.conversation.update.mockResolvedValue(
+      conversation({ id: "conversation-new", unreadCount: 1 }),
+    );
     const outbound = { queueAutomatedText: vi.fn().mockResolvedValue({ created: true }) };
 
     await new MessagingInboundService(

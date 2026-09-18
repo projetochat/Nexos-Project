@@ -26,7 +26,10 @@ function sanitize(input: unknown): QueuePref[] {
     if (!def) continue;
     byId.set(def.id, {
       id: def.id,
-      label: typeof item.label === "string" && item.label.trim() ? item.label.trim().slice(0, 24) : def.label,
+      label:
+        typeof item.label === "string" && item.label.trim()
+          ? item.label.trim().slice(0, 24)
+          : def.label,
       enabled: typeof item.enabled === "boolean" ? item.enabled : def.enabled,
     });
   }

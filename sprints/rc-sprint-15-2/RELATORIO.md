@@ -1,12 +1,15 @@
 # RC Sprint 15.2 - FINAL REWORK REPORT
 
 ## Status
+
 MESSAGING CORE REWORK REQUIRED
 
 ## Root Cause
+
 O rework anterior criou a estrutura de dados do core, mas deixou caminhos reais incompletos entre Inbox, Outbox, Evolution e WhatsApp para midia, reactions e homologacao fisica. O outbound aceitava apenas TEXT, o frontend bloqueava atrixus/audio, o Evolution client usava payload textual legado, e nao havia endpoint privado de download de midia.
 
 ## Implementado Neste Rework
+
 - Reply texto segue validando `quotedMessageId`, tenant, conversa e provider id.
 - `EvolutionClient.sendText` usa o contrato v2.x documentado com `textMessage.text` e `quoted`.
 - `EvolutionClient.sendMedia` usa `POST /message/sendMedia/{instanceName}` multipart com `number`, `mediatype`, `media`, `caption` e `fileName`.
@@ -25,6 +28,7 @@ O rework anterior criou a estrutura de dados do core, mas deixou caminhos reais 
 - Realtime ganhou `message.reaction.updated`; status e message.created continuam propagando mensagens com metadados.
 
 ## Arquivos Principais
+
 - `backend/src/messaging/evolution/evolution.client.ts`
 - `backend/src/messaging/evolution/evolution-messaging.provider.ts`
 - `backend/src/messaging/evolution/evolution-webhook.translator.ts`
@@ -37,15 +41,19 @@ O rework anterior criou a estrutura de dados do core, mas deixou caminhos reais 
 - `src/routes/inbox.$conversationId.tsx`
 
 ## Migrations
+
 Criada anteriormente nesta sprint:
+
 - `backend/prisma/migrations/20260806120000_messaging_core_completion/migration.sql`
 
 Aplicada com sucesso em:
+
 - `trixus_0801`
 - `trixus_0802`
 - `trixus_1200`
 
 ## Testes Automatizados
+
 - `bun run --cwd backend build`: PASS
 - `bun run typecheck`: PASS
 - `bun run --cwd backend test`: PASS, 24 arquivos, 161 testes
@@ -54,10 +62,13 @@ Aplicada com sucesso em:
 - Security XSS dentro do verify: PASS
 
 ## Auditoria Evolution v2.3.7
+
 Container local confirmado:
+
 - `evoapicloud/evolution-api:v2.3.7`
 
 Contratos usados:
+
 - `POST /message/sendText/{instanceName}`
 - `POST /message/sendMedia/{instanceName}`
 - `POST /message/sendReaction/{instanceName}`
@@ -66,27 +77,32 @@ Contratos usados:
 - `POST /chat/markMessageAsRead/{instanceName}`
 
 Estado local em 2026-08-06:
+
 - Evolution API local possui uma instancia `open`.
 - Banco `trixus_0801` usado no verify nao possui connection Evolution.
 - Banco `trixus` possui connections Trixus `CONNECTED`, mas os `externalReference` cadastrados nao correspondem a instancia Evolution `open` atual.
 
 ## Homologacao Fisica
+
 Nao executada com evidencia completa.
 
 Bloqueio concreto:
+
 - Sem connection Trixus alinhada a instancia Evolution `open` no banco de homologacao automatizado.
 - Sem numero/grupo de destino controlado informado para validar ida e volta WhatsApp real -> Evolution -> Trixus -> WhatsApp.
 - Nao foram anexadas evidencias fisicas de texto, grupo, reply, imagem, documento, audio, receipts, reaction, realtime, reconexao, download e idempotencia.
 
 ## Regression
+
 Nenhum modulo proibido foi alterado intencionalmente. A alteracao em `backend/src/operations/operations.service.ts` ja existia antes deste trabalho e permaneceu intocada.
 
 ## Pendencias
+
 - Homologacao fisica completa com WhatsApp real.
 - Storage externo R2/S3 real; local privado foi implementado, R2/S3 seguem como configuracao futura.
 - Workers BullMQ separados por Media Upload, Media Download, Receipt Update, Reaction Sync e Group Metadata nao foram criados; o rework reutiliza o outbox/worker outbound existente.
 - Sincronizacao automatica de metadata completa de grupos depende de job/provider dedicado.
 
 ## Gate
-MESSAGING CORE REWORK REQUIRED
 
+MESSAGING CORE REWORK REQUIRED
