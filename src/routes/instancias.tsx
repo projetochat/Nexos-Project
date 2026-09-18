@@ -593,7 +593,7 @@ function ConnectionForm({
           </div>
         </fieldset>
 
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
+        <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
           <Field label="Nome da instância *">
             <Input
               value={name}
@@ -1164,7 +1164,7 @@ function ConnectionSettingsModal({
           {tab === "general" && (
             <div className="space-y-5">
               <div className="grid gap-5 lg:grid-cols-[170px_minmax(0,1fr)]">
-                <div className="relative flex items-center justify-center">
+                <div className="relative flex flex-col items-center justify-center gap-3">
                   <button
                     ref={logoButtonRef}
                     type="button"
@@ -1185,6 +1185,22 @@ function ConnectionSettingsModal({
                       <Camera className="h-8 w-8" />
                     </span>
                   </button>
+                  <div className="flex flex-col items-center gap-1.5 text-center sm:hidden">
+                    <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                      WhatsApp
+                    </span>
+                    <span className="text-sm text-foreground">
+                      {connection?.ownerPhone
+                        ? maskBrazilPhone(connection.ownerPhone)
+                        : "Sem número conectado"}
+                    </span>
+                    {connection && (
+                      <Badge tone={STATUS_TONE[connection.status]}>
+                        {statusIcon(connection.status)}
+                        {statusLabel(connection.status)}
+                      </Badge>
+                    )}
+                  </div>
                   <FloatingLogoMenu
                     open={logoMenuOpen}
                     anchorRef={logoButtonRef}
@@ -1245,8 +1261,8 @@ function ConnectionSettingsModal({
                 </div>
 
                 <div className="space-y-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="sm:col-start-1 sm:row-start-1">
+                  <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3 sm:grid-cols-2 sm:gap-4">
+                    <div className="hidden sm:col-start-1 sm:row-start-1 sm:block">
                       <Field label="Status">
                         <div className="flex h-10 items-center">
                           {connection ? (
@@ -1258,7 +1274,7 @@ function ConnectionSettingsModal({
                         </div>
                       </Field>
                     </div>
-                    <div className="sm:col-start-1 sm:row-start-2">
+                    <div className="min-w-0 sm:col-start-1 sm:row-start-2">
                       <Field label="Nome *">
                         <Input
                           value={form.name}
@@ -1266,7 +1282,7 @@ function ConnectionSettingsModal({
                         />
                       </Field>
                     </div>
-                    <div className="sm:col-start-2 sm:row-start-1">
+                    <div className="min-w-0 sm:col-start-2 sm:row-start-1">
                       <Field label="Cor">
                         <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
                           <input
@@ -1296,7 +1312,7 @@ function ConnectionSettingsModal({
                         </div>
                       </Field>
                     </div>
-                    <div className="sm:col-start-2 sm:row-start-2">
+                    <div className="hidden sm:col-start-2 sm:row-start-2 sm:block">
                       <Field label="Telefone *">
                         <Input
                           value={
