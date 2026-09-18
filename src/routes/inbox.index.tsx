@@ -49,6 +49,7 @@ import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 import { useRealtimeInbox } from "@/lib/realtime/hooks";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
+import { resolveConnectedContactInstances } from "@/lib/contact-instance-selection";
 
 type TabId = "ativas" | "standby" | "fila" | "leads";
 type SourceId = "todos" | "humano" | "bots";
@@ -580,7 +581,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   }, [open]);
 
   const selectContact = (contact: ApiContact) => {
-    const connectedInstances = resolveNewConversationInstances(contact, instances);
+    const connectedInstances = resolveConnectedContactInstances(contact, instances);
     if (connectedInstances.length === 0) {
       setSelectedContact(null);
       setSelectedConnectionId("");
@@ -877,32 +878,6 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
         />
       )}
     </>
-  );
-}
-
-function resolveNewConversationInstances(
-  contact: ApiContact,
-  instances: ApiContactInstanceOption[],
-) {
-  const byKey = new Map<string, ApiContactInstanceOption>();
-  for (const instance of instances) {
-    for (const key of [instance.id, instance.value, instance.externalReference, instance.name]) {
-      if (key) byKey.set(key, instance);
-    }
-  }
-  const values = [...(contact.instanceIds ?? []), contact.instancia].filter(
-    (value): value is string => Boolean(value),
-  );
-  return Array.from(
-    new Map(
-      values
-        .map((value) => byKey.get(value))
-        .filter(
-          (instance): instance is ApiContactInstanceOption =>
-            Boolean(instance) && instance.status?.toUpperCase() === "CONNECTED",
-        )
-        .map((instance) => [instance.id, instance]),
-    ).values(),
   );
 }
 

@@ -41,7 +41,15 @@ vi.mock("../routes/contatos", () => ({
 vi.mock("@/lib/trixus-api", () => ({
   crmApi: {
     listContacts: (...args: unknown[]) => mocks.list(...args),
-    contactOptions: async () => ({ instances: [], tags: [], departments: [], profiles: [] }),
+    contactOptions: async () => ({
+      instances: [
+        { id: "a", value: "a", name: "Instância A", color: "#22c55e", status: "CONNECTED" },
+        { id: "b", value: "b", name: "Instância B", color: "#a8325a", status: "CONNECTED" },
+      ],
+      tags: [],
+      departments: [],
+      profiles: [],
+    }),
     listCustomers: async () => ({ items: [] }),
   },
   conversationApi: { create: (...args: unknown[]) => mocks.create(...args) },
@@ -55,7 +63,7 @@ const records = Array.from({ length: 121 }, (_, i) => ({
   id: String(i),
   nome: i === 120 ? "Douglas" : `Contato ${String(i).padStart(3, "0")}`,
   telefone: "5566999999999",
-  instanceIds: ["a"],
+  instanceIds: i === 1 ? ["a", "b"] : ["a"],
 }));
 const button = (text: string) =>
   Array.from(document.querySelectorAll("button")).find((el) => el.textContent?.trim() === text)!;
@@ -81,11 +89,8 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  mocks.list.mockImplementation(async ({ instance, q, page, pageSize }) => {
-    const filtered =
-      instance === "a"
-        ? records.filter((c) => !q || c.nome.toLowerCase().includes(q.toLowerCase()))
-        : [];
+  mocks.list.mockImplementation(async ({ q, page, pageSize }) => {
+    const filtered = records.filter((c) => !q || c.nome.toLowerCase().includes(q.toLowerCase()));
     return {
       items: filtered.slice((page - 1) * pageSize, page * pageSize),
       total: filtered.length,
@@ -103,7 +108,7 @@ afterEach(async () => {
 });
 
 describe("new conversation contact picker", () => {
-  it("shows seven contacts per page and searches the full instance, including contacts beyond the first 100", async () => {
+  it("shows all contacts, searches beyond the first 100 and clears the search", async () => {
     await mount();
     expect(document.querySelectorAll("ul li")).toHaveLength(7);
     await act(async () =>
@@ -123,40 +128,47 @@ describe("new conversation contact picker", () => {
     });
     await flush();
     expect(mocks.list).toHaveBeenLastCalledWith({
-      instance: "a",
       q: "douglas",
       page: 1,
       pageSize: 7,
     });
     expect(document.querySelectorAll("ul li")).toHaveLength(1);
     expect(document.body.textContent).toContain("Douglas");
-  });
-  it("clears the selected contact when changing instances and does not reuse another instance's list", async () => {
-    await mount();
-    await act(async () => (document.querySelector("ul li button") as HTMLButtonElement).click());
-    expect(button("Iniciar conversa").disabled).toBe(false);
-    await act(async () => {
-      const select = document.querySelector("select")!;
-      select.value = "b";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    expect(document.querySelector('[aria-label="Limpar busca"]')).not.toBeNull();
+    await act(async () =>
+      (document.querySelector('[aria-label="Limpar busca"]') as HTMLButtonElement).click(),
+    );
     await flush();
+    expect(input.value).toBe("");
+    expect(document.body.textContent).toContain("Contato 000");
+  });
+  it("removes the instance field and asks which connected instance to use for a multi-instance contact", async () => {
+    await mount();
+    expect(document.body.textContent).not.toContain("Selecione uma instância para listar");
+    expect(document.querySelector("select")).toBeNull();
+    const contactButtons = document.querySelectorAll<HTMLButtonElement>(
+      "ul li > button[aria-pressed]",
+    );
+    await act(async () => contactButtons[1].click());
+    expect(document.body.textContent).toContain("Escolher Instância");
+    expect(document.body.textContent).toContain("Instância A");
+    expect(document.body.textContent).toContain("Instância B");
     expect(button("Iniciar conversa").disabled).toBe(true);
-    expect(document.body.textContent).not.toContain("Contato 000");
-    expect(mocks.list).toHaveBeenLastCalledWith({
-      instance: "b",
-      q: undefined,
-      page: 1,
-      pageSize: 7,
+    await act(async () => button("Instância B").click());
+    expect(document.body.textContent).not.toContain("Escolher Instância");
+    expect(button("Iniciar conversa").disabled).toBe(false);
+    await act(async () => button("Iniciar conversa").click());
+    expect(mocks.create).toHaveBeenCalledWith({
+      contactId: "1",
+      connectionId: "b",
+      assignToSelf: true,
     });
   });
   it("opens the existing contact form for creation and editing without selecting the edit target", async () => {
     await mount();
     await act(async () => button("Novo Contato").click());
-    expect(mocks.form.mock.lastCall?.[0]).toMatchObject({
-      defaultInstanceId: "a",
-      initial: undefined,
-    });
+    expect(mocks.form.mock.lastCall?.[0].defaultInstanceId).toBeUndefined();
+    expect(mocks.form.mock.lastCall?.[0].initial).toBeUndefined();
     await act(async () => mocks.form.mock.lastCall?.[0].onClose());
     await act(async () =>
       (
