@@ -93,9 +93,10 @@ export class MessagesService {
 
     const hasMore = items.length > limit;
     const page = items.slice(0, limit);
+    const nextCursor = hasMore ? (page[page.length - 1]?.id ?? null) : null;
     return {
       items: page.reverse().map((message) => this.serialize(message)),
-      nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
+      nextCursor,
     };
   }
 

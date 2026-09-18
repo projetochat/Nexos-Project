@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
@@ -16,6 +16,7 @@ import { useSession } from "@/lib/session";
 import { conversationApi, messageApi, operationsApi, type ApiMessage } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { ContactPanel } from "./inbox.$conversationId";
+import { orderHistoryMessages } from "@/lib/history-message-order";
 
 export const Route = createFileRoute("/historico")({ component: HistoricoPage });
 
@@ -142,7 +143,7 @@ export function HistoricoPage() {
           queryClient.invalidateQueries({ queryKey: ["operations", "history"] });
           if (activeId) {
             queryClient.invalidateQueries({ queryKey: ["operations", "timeline", activeId] });
-            queryClient.invalidateQueries({ queryKey: ["messages", activeId] });
+            queryClient.invalidateQueries({ queryKey: ["history-messages", activeId] });
           }
         }
       }),
@@ -155,11 +156,18 @@ export function HistoricoPage() {
     queryFn: () => operationsApi.timeline(activeId ?? ""),
     enabled: !!activeId,
   });
-  const messages = useQuery({
-    queryKey: ["messages", activeId],
-    queryFn: () => (activeId ? messageApi.list(activeId, { limit: 100 }) : null),
+  const messages = useInfiniteQuery({
+    queryKey: ["history-messages", activeId],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      messageApi.list(activeId!, { limit: 100, ...(pageParam ? { cursor: pageParam } : {}) }),
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: !!activeId,
   });
+  const orderedMessages = React.useMemo(
+    () => orderHistoryMessages(messages.data?.pages.flatMap((page) => page.items) ?? []),
+    [messages.data],
+  );
 
   const handleNewConversation = async () => {
     if (!active?.contact_id) return;
@@ -326,10 +334,22 @@ export function HistoricoPage() {
                   <div className="min-h-0 flex-1 overflow-y-auto bg-surface-1/40 px-4 py-6">
                     <div className="mx-auto grid w-full max-w-5xl gap-6 xl:grid-cols-[1fr_280px]">
                       <div className="space-y-3">
-                        {(messages.data?.items ?? []).map((message) => (
+                        {messages.hasNextPage && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={messages.isFetchingNextPage}
+                            onClick={() => messages.fetchNextPage()}
+                          >
+                            {messages.isFetchingNextPage
+                              ? "Carregando…"
+                              : "Carregar mensagens anteriores"}
+                          </Button>
+                        )}
+                        {orderedMessages.map((message) => (
                           <HistoryBubble key={message.id} message={message} />
                         ))}
-                        {!messages.isLoading && (messages.data?.items ?? []).length === 0 && (
+                        {!messages.isLoading && orderedMessages.length === 0 && (
                           <p className="pt-8 text-center text-xs text-muted-foreground">
                             Nenhuma mensagem registrada.
                           </p>
