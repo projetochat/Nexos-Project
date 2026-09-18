@@ -1764,6 +1764,8 @@ describe("Trixus API organization and RBAC", () => {
 
   it("processes Evolution inbound webhook idempotently", async () => {
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const inboundPhone = uniqueBrazilianMobilePhone().replace(/\D/g, "");
+    const externalMessageId = `EXT-DUP-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const connection = await prisma.messagingConnection.create({
       data: {
         tenantId: tenant.id,
@@ -1779,9 +1781,9 @@ describe("Trixus API organization and RBAC", () => {
       instance: connection.externalReference,
       data: {
         key: {
-          remoteJid: "551198887777@s.whatsapp.net",
+          remoteJid: `${inboundPhone}@s.whatsapp.net`,
           fromMe: false,
-          id: "EXT-DUP-1",
+          id: externalMessageId,
         },
         message: { conversation: "Webhook inbound duplicate" },
         messageTimestamp: Math.floor(Date.now() / 1000),
@@ -1805,7 +1807,7 @@ describe("Trixus API organization and RBAC", () => {
         where: {
           tenantId: tenant.id,
           connectionId: connection.id,
-          externalMessageId: "EXT-DUP-1",
+          externalMessageId,
         },
       }),
     ).resolves.toBe(1);
@@ -1813,7 +1815,7 @@ describe("Trixus API organization and RBAC", () => {
       where: {
         tenantId: tenant.id,
         connectionId: connection.id,
-        messages: { some: { externalMessageId: "EXT-DUP-1" } },
+        messages: { some: { externalMessageId } },
       },
     });
     const lead = await prisma.lead.findFirstOrThrow({
