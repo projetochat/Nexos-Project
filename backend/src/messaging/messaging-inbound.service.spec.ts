@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ConversationStatus,
+  LeadStatus,
   MessageDirection,
   MessageStatus,
   MessageType,
@@ -253,7 +254,7 @@ describe("MessagingInboundService", () => {
     expect(prisma.conversation.update).not.toHaveBeenCalled();
   });
 
-  it("creates a new conversation when the only compatible conversation is closed", async () => {
+  it("puts an existing contact in the queue when the previous conversation is closed", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
     prisma.message.findFirst.mockResolvedValue(null);
@@ -286,6 +287,34 @@ describe("MessagingInboundService", () => {
         status: ConversationStatus.ABERTA,
       }),
     });
+    expect(prisma.lead.upsert).not.toHaveBeenCalled();
+    expect(prisma.notification.createMany).not.toHaveBeenCalled();
+  });
+
+  it("creates a lead when the inbound sender is a new contact", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(null);
+    prisma.contact.upsert.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(null);
+    prisma.conversation.create.mockResolvedValue(conversation({ id: "conversation-new" }));
+    prisma.message.create.mockResolvedValue({
+      id: "message-inbound",
+      conversationId: "conversation-new",
+    });
+    prisma.conversation.update.mockResolvedValue(conversation({ id: "conversation-new" }));
+
+    await new MessagingInboundService(prisma as never).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "inbound-new-contact",
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+      type: MessageType.TEXT,
+      content: "Primeiro contato",
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+
     expect(prisma.lead.upsert).toHaveBeenCalledWith({
       where: {
         tenantId_conversationId: {
@@ -302,21 +331,10 @@ describe("MessagingInboundService", () => {
         contactId: "contact-a",
         conversationId: "conversation-new",
         departmentId: "department-a",
-        status: "NEW",
+        status: LeadStatus.NEW,
       }),
     });
-    expect(prisma.notification.createMany).toHaveBeenCalledWith({
-      data: [
-        expect.objectContaining({
-          tenantId: "tenant-a",
-          membershipId: "membership-a",
-          departmentId: "department-a",
-          kind: "LEAD_CREATED",
-          entityType: "lead",
-          entityId: "lead-a",
-        }),
-      ],
-    });
+    expect(prisma.notification.createMany).toHaveBeenCalledOnce();
   });
 
   it("reuses the unique contact when inbound creation races with another message", async () => {

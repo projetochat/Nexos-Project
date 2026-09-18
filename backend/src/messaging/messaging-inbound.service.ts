@@ -237,7 +237,7 @@ export class MessagingInboundService {
         },
       });
       const lead =
-        !historical && createdConversation && !isGroup && !event.fromMe
+        !historical && createdConversation && !existingContact && !isGroup && !event.fromMe
           ? await tx.lead.upsert({
               where: {
                 tenantId_conversationId: {

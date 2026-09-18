@@ -60,7 +60,15 @@ describe("bulk closing conversations", () => {
         AND: [
           { tenantId: "tenant-a", archivedAt: null, status: { not: "FECHADA" } },
           { connectionId: { in: ["allowed"] } },
-          { OR: [{ status: "ABERTA", assignedMembershipId: null, protocol: null }] },
+          {
+            OR: [
+              {
+                status: "ABERTA",
+                assignedMembershipId: null,
+                lead: { is: { status: { in: ["NEW", "QUEUED"] } } },
+              },
+            ],
+          },
         ],
       },
       select: { id: true, protocol: true },

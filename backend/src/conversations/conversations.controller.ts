@@ -20,6 +20,7 @@ import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import {
   ConversationStatus,
+  LeadStatus,
   MembershipStatus,
   MessagingConnectionStatus,
   MessagingProviderType,
@@ -56,6 +57,7 @@ const conversationInclude = {
       departments: { select: { departmentId: true } },
     },
   },
+  lead: true,
 } satisfies Prisma.ConversationInclude;
 
 type ConversationWithRelations = Prisma.ConversationGetPayload<{
@@ -792,7 +794,8 @@ export class ConversationsController {
         !conversation.isGroup &&
         !conversation.assignedMembershipId &&
         conversation.status !== ConversationStatus.FECHADA &&
-        !conversation.protocol,
+        !!conversation.lead &&
+        ([LeadStatus.NEW, LeadStatus.QUEUED] as LeadStatus[]).includes(conversation.lead.status),
       contact: conversation.contact
         ? {
             id: conversation.contact.id,
