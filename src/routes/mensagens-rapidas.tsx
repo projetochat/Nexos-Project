@@ -2,20 +2,10 @@ import { customFieldVariableKey } from "@/lib/message-variables";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowDown,
-  ArrowUp,
-  Braces,
-  Info,
-  Copy,
-  Paperclip,
-  Pencil,
-  Plus,
-  Trash2,
-  X,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Braces, Copy, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
+import { InfoTooltip } from "@/components/info-tooltip";
 import {
   Button,
   Card,
@@ -706,7 +696,10 @@ export function QuickReplyEditor({
             />
             <span>
               <span className="flex items-center gap-1 font-medium">
-                <Info className="h-4 w-4 text-primary" /> Encerrar conversa
+                <InfoTooltip label="encerrar conversa">
+                  Ao enviar este atalho no chat, a conversa será encerrada automaticamente.
+                </InfoTooltip>
+                Encerrar conversa
               </span>
               <span className="mt-1 block text-xs text-muted-foreground">
                 Ao enviar este atalho no chat, a conversa será encerrada automaticamente.

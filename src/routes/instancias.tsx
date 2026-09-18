@@ -15,7 +15,6 @@ import {
   Copy,
   Eye,
   Infinity as InfinityIcon,
-  Info,
   MessageCircle,
   Pencil,
   Plus,
@@ -658,7 +657,10 @@ function ConnectionForm({
           </div>
           <div className="flex items-stretch gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
             <span className="flex w-6 shrink-0 items-center justify-center">
-              <Info className="h-5 w-5 text-blue-600" aria-hidden="true" />
+              <InfoTooltip label="importação de mensagens">
+                A importação de mensagens começará após ler o QR Code. Pode levar até 5 minutos para
+                iniciar.
+              </InfoTooltip>
             </span>
             <div>
               <p className="font-semibold">
