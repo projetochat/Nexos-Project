@@ -2,6 +2,8 @@ import { hash } from "bcryptjs";
 import {
   ContactCompanyRole,
   ConversationStatus,
+  LeadSource,
+  LeadStatus,
   MessageDirection,
   MessageType,
   MessagingConnectionStatus,
@@ -1138,6 +1140,29 @@ async function seedConversations(tenantId: string, departments: { id: string; na
       connectionId: connection.id,
     }),
   ]);
+
+  await prisma.lead.upsert({
+    where: { tenantId_conversationId: { tenantId, conversationId: palette.lead } },
+    update: {
+      contactId: palette.contactB,
+      departmentId: support.id,
+      source: LeadSource.WHATSAPP,
+      status: LeadStatus.NEW,
+      firstMessagePreview: "Lead recebido pelo canal digital.",
+      assignedMembershipId: null,
+      convertedAt: null,
+      discardedAt: null,
+    },
+    create: {
+      tenantId,
+      contactId: palette.contactB,
+      conversationId: palette.lead,
+      departmentId: support.id,
+      source: LeadSource.WHATSAPP,
+      status: LeadStatus.NEW,
+      firstMessagePreview: "Lead recebido pelo canal digital.",
+    },
+  });
 
   if (!isOrbit) {
     const closedId = palette.closed;
