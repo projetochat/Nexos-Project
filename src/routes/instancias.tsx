@@ -709,7 +709,7 @@ function ImportOption({
 }
 
 function ImportStatusBadge({ job }: { job?: ApiMessagingHistoryImport }) {
-  if (!job) return <span className="text-muted-foreground">Aguardando conexão</span>;
+  if (!job) return <Badge dot={false}>Aguardando conexão</Badge>;
   const labels: Record<ApiMessagingHistoryImport["status"], string> = {
     PENDING: "Na fila",
     RUNNING: "Em andamento",
@@ -717,17 +717,20 @@ function ImportStatusBadge({ job }: { job?: ApiMessagingHistoryImport }) {
     PARTIAL_FAILED: "Concluída com falhas",
     FAILED: "Falhou",
   };
-  const tones: Record<ApiMessagingHistoryImport["status"], string> = {
-    PENDING: "bg-amber-50 text-amber-700",
-    RUNNING: "bg-blue-50 text-blue-700",
-    COMPLETED: "bg-emerald-50 text-emerald-700",
-    PARTIAL_FAILED: "bg-amber-50 text-amber-700",
-    FAILED: "bg-red-50 text-red-700",
+  const tones: Record<
+    ApiMessagingHistoryImport["status"],
+    React.ComponentProps<typeof Badge>["tone"]
+  > = {
+    PENDING: "warning",
+    RUNNING: "info",
+    COMPLETED: "success",
+    PARTIAL_FAILED: "warning",
+    FAILED: "destructive",
   };
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tones[job.status]}`}>
+    <Badge tone={tones[job.status]} dot={false}>
       {labels[job.status]}
-    </span>
+    </Badge>
   );
 }
 
@@ -1405,16 +1408,17 @@ function ConnectionSettingsModal({
                           )}
                           {job?.error && <p className="mt-1 text-destructive">{job.error}</p>}
                           {job && (job.status === "FAILED" || job.status === "PARTIAL_FAILED") && (
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              className="mt-2"
-                              disabled={retryImport.isPending}
-                              onClick={() => retryImport.mutate(kind)}
-                            >
-                              Tentar novamente
-                            </Button>
+                            <div className="mt-2 flex justify-end">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={retryImport.isPending}
+                                onClick={() => retryImport.mutate(kind)}
+                              >
+                                Tentar novamente
+                              </Button>
+                            </div>
                           )}
                         </div>
                       </div>
