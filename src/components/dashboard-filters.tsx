@@ -74,7 +74,6 @@ export function DashboardFiltersBar({
   const isCustom = value.period === "custom";
   const start = value.start ?? automaticDates.start;
   const end = value.end ?? automaticDates.end;
-  const defaultDates = datesForOperationalPeriod("today");
   const showClear = Boolean(
     onClear &&
     (search?.value.trim() ||
@@ -82,9 +81,7 @@ export function DashboardFiltersBar({
       value.connectionId ||
       value.customerId ||
       value.departmentId ||
-      value.period !== "today" ||
-      start !== defaultDates.start ||
-      end !== defaultDates.end),
+      value.period !== "today"),
   );
   const gridClass =
     search && !showDepartment

@@ -134,8 +134,12 @@ function loadDashboardFilters(storageKey: string): OperationalReportFilters {
       ...(typeof filters.departmentId === "string" ? { departmentId: filters.departmentId } : {}),
       ...(typeof filters.customerId === "string" ? { customerId: filters.customerId } : {}),
       ...(typeof filters.connectionId === "string" ? { connectionId: filters.connectionId } : {}),
-      ...(typeof filters.start === "string" ? { start: filters.start } : {}),
-      ...(typeof filters.end === "string" ? { end: filters.end } : {}),
+      ...(filters.period === "today"
+        ? datesForOperationalPeriod("today")
+        : {
+            ...(typeof filters.start === "string" ? { start: filters.start } : {}),
+            ...(typeof filters.end === "string" ? { end: filters.end } : {}),
+          }),
     };
   } catch {
     return fallback;
