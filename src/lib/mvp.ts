@@ -516,6 +516,21 @@ export const DEFAULT_REPORT_FILTERS: ReportFilters = {
   departamentoId: "all",
 };
 
+type ReportConversation = {
+  id: string;
+  status: ConvStatus;
+  department_id: string | null;
+  agent_id: string | null;
+  contact_id: string;
+  created_at: string;
+  last_message_at: string;
+  contact: Pick<Contact, "id" | "customer_id" | "instancia"> | null;
+};
+
+type ContactTagQueryResult = {
+  data: { contact_id: string; tag_id: string }[] | null;
+};
+
 export function periodRange(p: PeriodKey): { from: Date | null; to: Date | null } {
   const now = new Date();
   const s = new Date(now);
@@ -570,7 +585,7 @@ export const REPORTS = {
     if (f.instancia !== "all") q = q.eq("contact.instancia", f.instancia);
     if (f.clienteId !== "all") q = q.eq("contact.customer_id", f.clienteId);
     const { data: convsRaw } = await q;
-    const convs = (convsRaw ?? []) as any[];
+    const convs = (convsRaw ?? []) as unknown as ReportConversation[];
 
     const ids = convs.map((c) => c.id as string);
     let totalMsg = 0;
@@ -608,7 +623,7 @@ export const REPORTS = {
           ? supabase.from("contact_tags").select("contact_id, tag_id").in("contact_id", contactIds)
           : Promise.resolve({ data: [] as { contact_id: string; tag_id: string }[] }),
       ]);
-    const ct = (ctRes as any).data ?? [];
+    const ct = (ctRes as ContactTagQueryResult).data ?? [];
     const tagCounts = new Map<string, number>();
     for (const row of ct as { contact_id: string; tag_id: string }[]) {
       const nConvs = convs.filter((c) => c.contact_id === row.contact_id).length;

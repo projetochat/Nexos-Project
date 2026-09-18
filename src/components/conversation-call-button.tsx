@@ -1,8 +1,7 @@
 import { Phone } from "lucide-react";
 import { Button } from "@/components/ui-kit";
 
-export const CALL_UNAVAILABLE_MESSAGE =
-  "Ligações disponíveis apenas p/ API Oficial do Whastapp";
+export const CALL_UNAVAILABLE_MESSAGE = "Ligações disponíveis apenas p/ API Oficial do Whastapp";
 
 export function ConversationCallButton({
   enabled,
