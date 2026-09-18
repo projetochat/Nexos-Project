@@ -36,6 +36,8 @@ import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.
 import { UpdateMessagingConnectionDto } from "./dto/update-messaging-connection.dto";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 import { MessagingHistoryImportService } from "./messaging-history-import.service";
+import { resolveMessageType, validatePolicy } from "./media/messaging-media-storage.service";
+import type { QuickReplyAttachmentDto } from "../quick-replies/dto/quick-reply-message.dto";
 
 @Injectable()
 export class MessagingConnectionsService {
@@ -315,6 +317,14 @@ export class MessagingConnectionsService {
       dto.welcomeExistingMessage === undefined
         ? connection.welcomeExistingMessage
         : cleanOptionalText(dto.welcomeExistingMessage);
+    const welcomeNewAttachment = normalizeWelcomeAttachment(
+      dto.welcomeNewAttachment,
+      connection.welcomeNewAttachment,
+    );
+    const welcomeExistingAttachment = normalizeWelcomeAttachment(
+      dto.welcomeExistingAttachment,
+      connection.welcomeExistingAttachment,
+    );
     if (welcomeEnabled && (!welcomeNewMessage || !welcomeExistingMessage)) {
       throw new BadRequestException(
         "Preencha as mensagens para novo contato e contato existente antes de ativar a saudação.",
@@ -345,6 +355,8 @@ export class MessagingConnectionsService {
         welcomeEnabled,
         welcomeNewMessage,
         welcomeExistingMessage,
+        welcomeNewAttachment,
+        welcomeExistingAttachment,
         absenceEnabled,
         absenceMessage,
         serviceHours,
@@ -968,6 +980,8 @@ export class MessagingConnectionsService {
       welcomeEnabled: connection.welcomeEnabled,
       welcomeNewMessage: connection.welcomeNewMessage,
       welcomeExistingMessage: connection.welcomeExistingMessage,
+      welcomeNewAttachment: connection.welcomeNewAttachment,
+      welcomeExistingAttachment: connection.welcomeExistingAttachment,
       absenceEnabled: connection.absenceEnabled,
       absenceMessage: connection.absenceMessage,
       serviceHours: connection.serviceHours,
@@ -985,6 +999,22 @@ export class MessagingConnectionsService {
       updatedAt: connection.updatedAt,
     };
   }
+}
+
+function normalizeWelcomeAttachment(
+  value: QuickReplyAttachmentDto | null | undefined,
+  current: Prisma.JsonValue | null,
+) {
+  if (value === undefined)
+    return current === null ? Prisma.DbNull : (current as Prisma.InputJsonValue);
+  if (value === null) return Prisma.DbNull;
+  const [metadata, encoded] = value.dataUrl.split(",");
+  const size = Buffer.from(encoded ?? "", "base64").byteLength;
+  if (metadata !== `data:${value.mimeType};base64` || size !== value.size) {
+    throw new BadRequestException("Os dados do arquivo da saudação são inválidos.");
+  }
+  validatePolicy(resolveMessageType(value.mimeType, ""), value.mimeType, size);
+  return { ...value } satisfies Prisma.InputJsonObject;
 }
 
 const INSTANCE_REMOVAL_CLOSE_MESSAGE = "Conversa encerrada via remoção da instância";

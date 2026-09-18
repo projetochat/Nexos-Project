@@ -70,7 +70,7 @@ export function useRealtimeInbox(conversationId?: string | null) {
 
   React.useEffect(() => {
     return onRealtimeEvent((event) => {
-      if (isInboundConversationUpdate(event)) playInboxNotificationSound();
+      if (isInboundConversationUpdate(event)) playInboxNotificationSound(user?.id);
       if (
         event.event === "message.created" ||
         event.event === "message.status.updated" ||
@@ -97,7 +97,7 @@ export function useRealtimeInbox(conversationId?: string | null) {
         }
       }
     });
-  }, [queryClient]);
+  }, [queryClient, user?.id]);
 
   React.useEffect(() => {
     const previousStatus = previousStatusRef.current;

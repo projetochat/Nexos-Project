@@ -101,6 +101,7 @@ const inboxListMemory: {
 export function InboxLayout({ children }: { children: React.ReactNode }) {
   const params = useParams({ strict: false }) as { conversationId?: string };
   const activeId = params.conversationId;
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const newConv = useDisclosure();
   const bulkClose = useDisclosure();
@@ -251,11 +252,35 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                 size="icon"
                 aria-label="Atualizar"
                 title="Atualizar"
+                disabled={refreshing}
                 onClick={async () => {
                   setRefreshing(true);
-                  await qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-                  await qc.invalidateQueries({ queryKey: ["trixus", "customers", "all"] });
-                  setRefreshing(false);
+                  try {
+                    await Promise.all([
+                      qc.refetchQueries({ queryKey: ["trixus", "conversations"], type: "all" }),
+                      qc.refetchQueries({ queryKey: ["trixus", "customers", "all"], type: "all" }),
+                      ...(activeId
+                        ? [
+                            qc.refetchQueries({
+                              queryKey: ["trixus", "messages", activeId],
+                              type: "all",
+                            }),
+                          ]
+                        : []),
+                    ]);
+                    const activeConversation = activeId
+                      ? qc.getQueryData<ApiConversation>(["trixus", "conversations", activeId])
+                      : null;
+                    if (activeConversation?.status === "fechada") {
+                      await navigate({ to: "/inbox" });
+                    }
+                  } catch (error) {
+                    toast.error(
+                      (error as Error).message || "Não foi possível atualizar as conversas.",
+                    );
+                  } finally {
+                    setRefreshing(false);
+                  }
                 }}
               >
                 <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />

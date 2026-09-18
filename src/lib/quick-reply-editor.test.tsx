@@ -48,10 +48,10 @@ describe("quick reply editor", () => {
     for (let i = 0; i < 8; i++) await click(button("Adicionar mensagem"));
     expect(texts()).toHaveLength(10);
     expect((button("Adicionar mensagem") as HTMLButtonElement).disabled).toBe(true);
-    expect(document.body.textContent).toContain("Número máximo de mensagens (10).");
+    expect(document.body.textContent).toContain("Número máximo de mensagens atingido");
     await click(document.querySelectorAll('[aria-label="Remover mensagem"]')[9]);
     expect((button("Adicionar mensagem") as HTMLButtonElement).disabled).toBe(false);
-    expect(document.body.textContent).not.toContain("Número máximo de mensagens (10).");
+    expect(document.body.textContent).not.toContain("Número máximo de mensagens atingido");
   });
 
   it("inserts a variable at the cursor of the active message and defaults to keeping the conversation open", async () => {

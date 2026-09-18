@@ -60,6 +60,70 @@ describe("MessagingInboundService", () => {
     );
   });
 
+  it("queues configured welcome media with the resolved text as its caption", async () => {
+    const prisma = prismaMock();
+    const attachment = {
+      fileName: "boas-vindas.png",
+      mimeType: "image/png",
+      size: 8,
+      dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+    };
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      welcomeEnabled: true,
+      welcomeNewMessage: "Olá {{nome}}!",
+      welcomeExistingMessage: "Olá novamente {{nome}}!",
+      welcomeExistingAttachment: attachment,
+    });
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(null);
+    prisma.conversation.create.mockResolvedValue(conversation({ id: "conversation-media" }));
+    prisma.message.create.mockResolvedValue({
+      id: "message-inbound",
+      conversationId: "conversation-media",
+      status: MessageStatus.CREATED,
+      createdAt: new Date(),
+    });
+    prisma.conversation.update.mockResolvedValue(
+      conversation({ id: "conversation-media", unreadCount: 1 }),
+    );
+    const outbound = {
+      queueAutomatedText: vi.fn(),
+      queueAutomatedMedia: vi.fn().mockResolvedValue({ created: true }),
+    };
+
+    await new MessagingInboundService(
+      prisma as never,
+      undefined,
+      undefined,
+      undefined,
+      outbound as never,
+    ).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "inbound-welcome-media",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+      type: MessageType.TEXT,
+      content: "Oi",
+      occurredAt: new Date("2026-09-18T19:44:00"),
+    });
+
+    expect(outbound.queueAutomatedMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "welcome",
+        conversationId: "conversation-media",
+        content: "Olá novamente Cliente!",
+        attachment,
+      }),
+    );
+    expect(outbound.queueAutomatedText).not.toHaveBeenCalled();
+  });
+
   it("does not create leads, unread messages or automatic replies while importing history", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue({

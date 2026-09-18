@@ -1073,6 +1073,8 @@ model MessagingConnection {
   welcomeEnabled       Boolean                   @default(false)
   welcomeNewMessage    String?
   welcomeExistingMessage String?
+  welcomeNewAttachment Json?
+  welcomeExistingAttachment Json?
   absenceEnabled       Boolean                   @default(false)
   absenceMessage       String?
   notes                String?

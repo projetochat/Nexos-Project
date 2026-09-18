@@ -10,12 +10,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  Braces,
   CalendarDays,
   Camera,
   Copy,
   Eye,
   Infinity as InfinityIcon,
   MessageCircle,
+  Paperclip,
   Pencil,
   Plus,
   Power,
@@ -25,6 +27,7 @@ import {
   Upload,
   Wifi,
   WifiOff,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
@@ -52,7 +55,13 @@ import {
   type ApiContactCustomField,
   type ApiMessagingHistoryImport,
   type ApiMessagingConnection,
+  type QuickReplyAttachment,
 } from "@/lib/trixus-api";
+import {
+  formatMessageAttachmentSize,
+  readMessageAttachment,
+  validateMessageAttachment,
+} from "@/lib/message-attachment";
 
 export const Route = createFileRoute("/instancias")({ component: Page });
 
@@ -157,7 +166,7 @@ function Page() {
       const message = (e as Error).message;
       toast.error(
         message === "Já existe um registro com essas informações."
-          ? "Número máximo de conexões excedidas."
+          ? "Número máximo de conexões atingidas"
           : message,
       );
     },
@@ -875,6 +884,8 @@ type ConnectionSettingsFormData = {
   welcomeEnabled: boolean;
   welcomeNewMessage: string | null;
   welcomeExistingMessage: string | null;
+  welcomeNewAttachment: QuickReplyAttachment | null;
+  welcomeExistingAttachment: QuickReplyAttachment | null;
   absenceEnabled: boolean;
   absenceMessage: string | null;
   notes: string | null;
@@ -982,6 +993,8 @@ function ConnectionSettingsModal({
     welcomeEnabled: false,
     welcomeNewMessage: "",
     welcomeExistingMessage: "",
+    welcomeNewAttachment: null,
+    welcomeExistingAttachment: null,
     absenceEnabled: false,
     absenceMessage: "",
     notes: "",
@@ -1035,6 +1048,8 @@ function ConnectionSettingsModal({
       welcomeEnabled: connection.welcomeEnabled ?? false,
       welcomeNewMessage: connection.welcomeNewMessage ?? "",
       welcomeExistingMessage: connection.welcomeExistingMessage ?? "",
+      welcomeNewAttachment: connection.welcomeNewAttachment ?? null,
+      welcomeExistingAttachment: connection.welcomeExistingAttachment ?? null,
       absenceEnabled: connection.absenceEnabled ?? false,
       absenceMessage: connection.absenceMessage ?? "",
       notes: connection.notes || "",
@@ -1121,6 +1136,8 @@ function ConnectionSettingsModal({
       color: completeHexColor(form.color, "#22c55e"),
       welcomeNewMessage: form.welcomeNewMessage?.trim() || null,
       welcomeExistingMessage: form.welcomeExistingMessage?.trim() || null,
+      welcomeNewAttachment: form.welcomeNewAttachment,
+      welcomeExistingAttachment: form.welcomeExistingAttachment,
       absenceEnabled,
       absenceMessage: absenceMessage.trim() || null,
       notes: form.notes?.trim() || null,
@@ -1454,22 +1471,22 @@ function ConnectionSettingsModal({
                     : undefined
                 }
               >
-                <div>
-                  <Textarea
-                    rows={6}
-                    value={form.welcomeNewMessage ?? ""}
-                    onChange={(event) =>
-                      setForm({ ...form, welcomeNewMessage: event.target.value })
-                    }
-                    disabled={!form.welcomeEnabled}
-                    aria-invalid={
-                      showWelcomeValidation &&
-                      form.welcomeEnabled &&
-                      !form.welcomeNewMessage?.trim()
-                    }
-                    placeholder={NEW_CONTACT_MESSAGE_PLACEHOLDER}
-                  />
-                </div>
+                <GreetingMessageEditor
+                  value={form.welcomeNewMessage ?? ""}
+                  attachment={form.welcomeNewAttachment}
+                  variables={mergeMessageVariables(
+                    CONNECTION_MESSAGE_VARIABLES,
+                    contactCustomFields,
+                  )}
+                  disabled={!form.welcomeEnabled}
+                  invalid={
+                    showWelcomeValidation && form.welcomeEnabled && !form.welcomeNewMessage?.trim()
+                  }
+                  placeholder={NEW_CONTACT_MESSAGE_PLACEHOLDER}
+                  onChange={(welcomeNewMessage, welcomeNewAttachment) =>
+                    setForm({ ...form, welcomeNewMessage, welcomeNewAttachment })
+                  }
+                />
               </Field>
               <Field
                 label={
@@ -1485,22 +1502,24 @@ function ConnectionSettingsModal({
                     : undefined
                 }
               >
-                <div>
-                  <Textarea
-                    rows={6}
-                    value={form.welcomeExistingMessage ?? ""}
-                    onChange={(event) =>
-                      setForm({ ...form, welcomeExistingMessage: event.target.value })
-                    }
-                    disabled={!form.welcomeEnabled}
-                    aria-invalid={
-                      showWelcomeValidation &&
-                      form.welcomeEnabled &&
-                      !form.welcomeExistingMessage?.trim()
-                    }
-                    placeholder={EXISTING_CONTACT_MESSAGE_PLACEHOLDER}
-                  />
-                </div>
+                <GreetingMessageEditor
+                  value={form.welcomeExistingMessage ?? ""}
+                  attachment={form.welcomeExistingAttachment}
+                  variables={mergeMessageVariables(
+                    CONNECTION_MESSAGE_VARIABLES,
+                    contactCustomFields,
+                  )}
+                  disabled={!form.welcomeEnabled}
+                  invalid={
+                    showWelcomeValidation &&
+                    form.welcomeEnabled &&
+                    !form.welcomeExistingMessage?.trim()
+                  }
+                  placeholder={EXISTING_CONTACT_MESSAGE_PLACEHOLDER}
+                  onChange={(welcomeExistingMessage, welcomeExistingAttachment) =>
+                    setForm({ ...form, welcomeExistingMessage, welcomeExistingAttachment })
+                  }
+                />
               </Field>
             </div>
           )}
@@ -1588,6 +1607,145 @@ function TabButton({
     >
       {children}
     </button>
+  );
+}
+
+function GreetingMessageEditor({
+  value,
+  attachment,
+  variables,
+  disabled,
+  invalid,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  attachment: QuickReplyAttachment | null;
+  variables: Array<{ token: string; description: string }>;
+  disabled: boolean;
+  invalid: boolean;
+  placeholder: string;
+  onChange: (value: string, attachment: QuickReplyAttachment | null) => void;
+}) {
+  const [variablesOpen, setVariablesOpen] = React.useState(false);
+  const [loadingAttachment, setLoadingAttachment] = React.useState(false);
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+
+  const insertVariable = (token: string) => {
+    const input = textareaRef.current;
+    const start = input?.selectionStart ?? value.length;
+    const end = input?.selectionEnd ?? start;
+    if (value.length - (end - start) + token.length > 1000) {
+      toast.error("A mensagem deve ter no máximo 1000 caracteres.");
+      return;
+    }
+    const next = value.slice(0, start) + token + value.slice(end);
+    onChange(next, attachment);
+    setVariablesOpen(false);
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(start + token.length, start + token.length);
+    });
+  };
+
+  const attach = async (file?: File) => {
+    if (!file) return;
+    const validationError = validateMessageAttachment(file);
+    if (validationError) return toast.error(validationError);
+    setLoadingAttachment(true);
+    try {
+      onChange(value, await readMessageAttachment(file));
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setLoadingAttachment(false);
+    }
+  };
+
+  return (
+    <div className="overflow-visible rounded-lg border border-border bg-card focus-within:border-primary">
+      <textarea
+        ref={textareaRef}
+        rows={6}
+        maxLength={1000}
+        value={value}
+        onChange={(event) => onChange(event.target.value, attachment)}
+        disabled={disabled}
+        aria-invalid={invalid}
+        placeholder={placeholder}
+        className="block min-h-32 w-full resize-y rounded-t-lg border-0 bg-transparent px-3 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
+      />
+      <div className="relative flex flex-wrap items-center gap-1.5 border-t border-border bg-surface-1 px-2 py-1.5">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-7 w-7"
+          disabled={disabled}
+          aria-label="Inserir variável"
+          aria-expanded={variablesOpen}
+          onClick={() => setVariablesOpen((open) => !open)}
+        >
+          <Braces className="h-3.5 w-3.5" />
+        </Button>
+        {variablesOpen && (
+          <div
+            className="absolute bottom-full left-2 z-30 mb-1 max-h-64 w-64 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-lg"
+            role="menu"
+            aria-label="Variáveis disponíveis"
+          >
+            {variables.map(({ token, description }) => (
+              <div key={token} className="group relative">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full rounded px-3 py-2 text-left font-mono text-xs hover:bg-surface-2"
+                  onClick={() => insertVariable(token)}
+                  title={description}
+                >
+                  {token}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {attachment && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            disabled={disabled || loadingAttachment}
+            aria-label="Remover arquivo"
+            onClick={() => onChange(value, null)}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        )}
+        <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs text-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+          <Paperclip className="h-3.5 w-3.5" /> Anexar mídia
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,video/mp4,video/3gpp,video/webm,audio/ogg,audio/mpeg,audio/mp4,audio/webm,.pdf,.txt,.doc,.docx,.xls,.xlsx"
+            className="sr-only"
+            disabled={disabled || loadingAttachment}
+            aria-label="Anexar arquivo à mensagem de saudação"
+            onChange={(event) => {
+              void attach(event.target.files?.[0]);
+              event.target.value = "";
+            }}
+          />
+        </label>
+        <span
+          className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+          title={attachment?.fileName}
+        >
+          {attachment
+            ? `${attachment.fileName} (${formatMessageAttachmentSize(attachment.size)})`
+            : "Imagens até 8 MB; demais arquivos até 10 MB."}
+        </span>
+      </div>
+    </div>
   );
 }
 
