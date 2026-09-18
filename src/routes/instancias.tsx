@@ -694,6 +694,7 @@ function ImportOption({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label}
         disabled={disabled}
         onClick={() => onCheckedChange(!checked)}
         className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${checked ? "bg-blue-600" : "bg-slate-300"}`}
@@ -1413,18 +1414,14 @@ function ConnectionSettingsModal({
 
           {tab === "greeting" && (
             <div className="space-y-4">
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={form.welcomeEnabled}
-                  onChange={(event) => {
-                    setForm({ ...form, welcomeEnabled: event.target.checked });
-                    setShowWelcomeValidation(false);
-                  }}
-                  className="h-4 w-4 accent-primary"
-                />
-                Ativar mensagem de saudação
-              </label>
+              <ImportOption
+                label="Ativar mensagem de saudação"
+                checked={form.welcomeEnabled}
+                onCheckedChange={(checked) => {
+                  setForm({ ...form, welcomeEnabled: checked });
+                  setShowWelcomeValidation(false);
+                }}
+              />
               <Field
                 label={
                   form.welcomeEnabled
@@ -1490,19 +1487,15 @@ function ConnectionSettingsModal({
 
           {tab === "absence" && (
             <div className="space-y-4">
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={absenceEnabled}
-                  onChange={(event) => {
-                    setAbsenceEnabled(event.target.checked);
-                    setShowAbsenceValidation(false);
-                    if (event.target.checked) setAbsenceActivation((current) => current + 1);
-                  }}
-                  className="h-4 w-4 accent-primary"
-                />
-                Ativar mensagem de ausência
-              </label>
+              <ImportOption
+                label="Ativar mensagem de ausência"
+                checked={absenceEnabled}
+                onCheckedChange={(checked) => {
+                  setAbsenceEnabled(checked);
+                  setShowAbsenceValidation(false);
+                  if (checked) setAbsenceActivation((current) => current + 1);
+                }}
+              />
               <Field
                 label={absenceEnabled ? "Mensagem de Ausência *" : "Mensagem de Ausência"}
                 error={
