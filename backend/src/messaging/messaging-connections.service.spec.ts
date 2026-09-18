@@ -53,6 +53,50 @@ describe("MessagingConnectionsService", () => {
     },
   );
 
+  it("validates and saves media configured for welcome messages", async () => {
+    const prisma = prismaMock();
+    const currentConnection = {
+      ...connection(),
+      status: MessagingConnectionStatus.CONNECTED,
+      ownerPhoneNormalized: "5511999999999",
+      welcomeEnabled: false,
+      welcomeNewMessage: null,
+      welcomeExistingMessage: null,
+      welcomeNewAttachment: null,
+      welcomeExistingAttachment: null,
+      absenceEnabled: false,
+      absenceMessage: null,
+    };
+    const attachment = {
+      fileName: "boas-vindas.png",
+      mimeType: "image/png",
+      size: 8,
+      dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+    };
+    prisma.messagingConnection.findFirst.mockResolvedValue(currentConnection);
+    prisma.messagingConnection.update.mockImplementation(async ({ data }) => ({
+      ...currentConnection,
+      ...data,
+    }));
+
+    await new MessagingConnectionsService(prisma as never, {} as never).update(
+      "connection-a",
+      {
+        welcomeEnabled: true,
+        welcomeNewMessage: "Olá!",
+        welcomeExistingMessage: "Olá novamente!",
+        welcomeNewAttachment: attachment,
+      },
+      current as never,
+    );
+
+    expect(prisma.messagingConnection.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ welcomeNewAttachment: attachment }),
+      }),
+    );
+  });
+
   beforeEach(() => {
     process.env.EVOLUTION_BASE_URL = "http://evolution.local";
     process.env.EVOLUTION_API_KEY = "key";

@@ -268,8 +268,11 @@ function clean(value: string) {
 
 export function normalizeMessages(messages?: QuickReplyMessageDto[]) {
   if (messages === undefined) return undefined;
-  if (!Array.isArray(messages) || messages.length < 1 || messages.length > 10) {
-    throw new BadRequestException("Cadastre de 1 a 10 mensagens.");
+  if (!Array.isArray(messages) || messages.length < 1) {
+    throw new BadRequestException("Cadastre ao menos uma mensagem.");
+  }
+  if (messages.length > 10) {
+    throw new BadRequestException("Número máximo de mensagens atingido");
   }
   if (messages.some((message) => !message.text.trim() && !message.attachment)) {
     throw new BadRequestException("Cada mensagem precisa de texto ou arquivo.");

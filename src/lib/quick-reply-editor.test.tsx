@@ -69,10 +69,16 @@ describe("quick reply editor", () => {
     expect((document.querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(
       false,
     );
+    expect(document.querySelector('[aria-label="Gravar áudio"]')).not.toBeNull();
     await click(button("Adicionar mensagem"));
     const second = document.querySelectorAll("textarea")[1];
     await act(async () => second.focus());
     await click(document.querySelector('[aria-label="Inserir variável"]')!);
+    expect(
+      document
+        .querySelector('[aria-label^="Inserir variável contato:"]')
+        ?.getAttribute("aria-label"),
+    ).toContain("Nome do contato");
     await click(button("{{contato}}"));
     expect(texts()).toEqual(["", "{{contato}}"]);
   });

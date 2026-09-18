@@ -51,6 +51,7 @@ import { useChatPerms } from "@/lib/perms";
 import { useRealtimeInbox } from "@/lib/realtime/hooks";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 import { resolveConnectedContactInstances } from "@/lib/contact-instance-selection";
+import { refreshInboxData } from "@/lib/refresh-inbox";
 
 type TabId = "ativas" | "standby" | "fila" | "leads";
 type SourceId = "todos" | "humano" | "bots";
@@ -256,21 +257,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                 onClick={async () => {
                   setRefreshing(true);
                   try {
-                    await Promise.all([
-                      qc.refetchQueries({ queryKey: ["trixus", "conversations"], type: "all" }),
-                      qc.refetchQueries({ queryKey: ["trixus", "customers", "all"], type: "all" }),
-                      ...(activeId
-                        ? [
-                            qc.refetchQueries({
-                              queryKey: ["trixus", "messages", activeId],
-                              type: "all",
-                            }),
-                          ]
-                        : []),
-                    ]);
-                    const activeConversation = activeId
-                      ? qc.getQueryData<ApiConversation>(["trixus", "conversations", activeId])
-                      : null;
+                    const activeConversation = await refreshInboxData(qc, activeId);
                     if (activeConversation?.status === "fechada") {
                       await navigate({ to: "/inbox" });
                     }
