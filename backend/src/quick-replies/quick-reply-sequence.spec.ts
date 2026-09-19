@@ -20,7 +20,9 @@ describe("quick reply sequence validation", () => {
     const ten = Array.from({ length: 10 }, (_, index) => ({ text: `Mensagem ${index + 1}` }));
     expect(await validateReply({ messages: ten })).toEqual([]);
     expect(normalizeMessages(ten)).toHaveLength(10);
-    expect(() => normalizeMessages([...ten, { text: "Extra" }])).toThrow("1 a 10");
+    expect(() => normalizeMessages([...ten, { text: "Extra" }])).toThrow(
+      "Número máximo de mensagens atingido",
+    );
   });
   it("accepts legacy requests and ordered messages with optional attachments", async () => {
     expect(await validateReply({})).toEqual([]);
@@ -100,5 +102,17 @@ describe("quick reply sequence validation", () => {
         },
       ]),
     ).toThrow();
+  });
+
+  it("accepts recorded WebM audio with the browser codec parameter", () => {
+    const attachment = {
+      fileName: "audio.webm",
+      mimeType: "audio/webm;codecs=opus",
+      size: 1,
+      dataUrl: "data:audio/webm;codecs=opus;base64,YQ==",
+    };
+    expect(normalizeMessages([{ text: "Bom dia", attachment }])).toEqual([
+      { text: "Bom dia", attachment },
+    ]);
   });
 });

@@ -32,7 +32,10 @@ import {
 import { OutboxDispatcherService } from "../queue/outbox-dispatcher.service";
 import { MessagingProviderRegistry } from "./messaging-provider.registry";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
-import { MessagingMediaStorageService } from "./media/messaging-media-storage.service";
+import {
+  MessagingMediaStorageService,
+  resolveMessageType,
+} from "./media/messaging-media-storage.service";
 import { EvolutionClient } from "./evolution/evolution.client";
 import { EvolutionOutboundPayloadFactory } from "./evolution/evolution-outbound-payload.factory";
 import { normalizeEvolutionRecipient } from "./evolution/evolution-recipient.normalizer";
@@ -278,6 +281,108 @@ export class MessagingOutboundService {
       });
     });
     return { created: true, message: this.serialize(prepared.message) };
+  }
+
+  /** Queues a welcome message with its configured media as the message caption. */
+  async queueAutomatedMedia(input: {
+    tenantId: string;
+    conversationId: string;
+    connectionId: string;
+    externalChatId: string;
+    content: string;
+    kind: "welcome";
+    attachment: { fileName: string; mimeType: string; size: number; dataUrl: string };
+  }) {
+    if (!this.mediaStorage) throw new BadRequestException("Storage de mensagens indisponivel.");
+    const clientMessageId = `automatic:${input.kind}`;
+    const existing = await this.prisma.message.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        conversationId: input.conversationId,
+        clientMessageId,
+      },
+      include: messageInclude,
+    });
+    if (existing) return { created: false, message: this.serialize(existing) };
+
+    const [, encoded = ""] = input.attachment.dataUrl.split(",");
+    const body = Buffer.from(encoded, "base64");
+    const messageType = resolveMessageType(input.attachment.mimeType, "");
+    const stored = await this.mediaStorage.storeDownloaded({
+      tenantId: input.tenantId,
+      conversationId: input.conversationId,
+      body,
+      mimeType: input.attachment.mimeType,
+      fileName: input.attachment.fileName,
+      messageType,
+    });
+    const caption = cleanMessageContent(input.content);
+    const now = new Date();
+    const preview = mediaPreview(messageType, caption, stored.fileName);
+    const message = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.message.create({
+        data: {
+          tenantId: input.tenantId,
+          conversationId: input.conversationId,
+          connectionId: input.connectionId,
+          direction: MessageDirection.OUTBOUND,
+          type: messageType,
+          status: MessageStatus.QUEUED,
+          content: caption,
+          providerChatId: input.externalChatId,
+          clientMessageId,
+          providerStatus: `${input.kind}_queued`,
+          mediaStorageKey: stored.objectKey,
+          mediaMimeType: stored.mimeType,
+          mediaFileName: stored.fileName,
+          mediaSize: stored.sizeBytes,
+          mediaCaption: caption,
+          mediaChecksum: stored.checksum,
+          mediaSha256: stored.checksum,
+          mediaState: MessageMediaState.READY,
+          queuedAt: now,
+          createdAt: now,
+        },
+        include: messageInclude,
+      });
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          type: OUTBOX_MESSAGING_OUTBOUND_REQUESTED,
+          aggregateId: created.id,
+          payload: { tenantId: input.tenantId, messageId: created.id },
+        },
+      });
+      await this.updateConversationFromMessage(
+        tx,
+        input.conversationId,
+        input.tenantId,
+        preview,
+        now,
+      );
+      return created;
+    });
+
+    this.realtime?.publishMessageCreated({
+      tenantId: message.tenantId,
+      conversationId: message.conversationId,
+      connectionId: message.connectionId,
+      message: this.serialize(message),
+    });
+    this.realtime?.publishConversationUpdated({
+      tenantId: message.tenantId,
+      conversationId: message.conversationId,
+      reason: `${input.kind}.queued`,
+    });
+    void this.outboxDispatcher.dispatchMessage(message.id).catch((error) => {
+      this.logger.warn({
+        event: `messaging.${input.kind}.immediate_dispatch_failed`,
+        tenantId: input.tenantId,
+        messageId: message.id,
+        error: error instanceof Error ? error.message : "Outbox dispatch failed.",
+      });
+    });
+    return { created: true, message: this.serialize(message) };
   }
 
   async sendMedia(conversationId: string, req: Request, current: AuthenticatedUser) {

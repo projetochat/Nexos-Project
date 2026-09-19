@@ -1,4 +1,4 @@
-import { ConversationStatus } from "../generated/prisma";
+import { ConversationStatus, LeadStatus } from "../generated/prisma";
 import { describe, expect, it } from "vitest";
 import { conversationQueueScope } from "./conversation-queue-scope";
 
@@ -12,12 +12,21 @@ describe("conversationQueueScope", () => {
     expect(conversationQueueScope("fila")).toEqual({
       status: ConversationStatus.ABERTA,
       assignedMembershipId: null,
-      protocol: { not: null },
+      OR: [
+        { lead: { is: null } },
+        {
+          lead: {
+            is: { status: { notIn: [LeadStatus.NEW, LeadStatus.QUEUED] } },
+          },
+        },
+      ],
     });
     expect(conversationQueueScope("leads")).toEqual({
       status: ConversationStatus.ABERTA,
       assignedMembershipId: null,
-      protocol: null,
+      lead: {
+        is: { status: { in: [LeadStatus.NEW, LeadStatus.QUEUED] } },
+      },
     });
   });
 

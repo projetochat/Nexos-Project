@@ -492,6 +492,8 @@ export type ApiMessagingConnection = {
   welcomeEnabled?: boolean;
   welcomeNewMessage?: string | null;
   welcomeExistingMessage?: string | null;
+  welcomeNewAttachment?: QuickReplyAttachment | null;
+  welcomeExistingAttachment?: QuickReplyAttachment | null;
   absenceEnabled?: boolean;
   absenceMessage?: string | null;
   notes?: string | null;
@@ -1558,6 +1560,8 @@ export const connectionsApi = {
       welcomeEnabled?: boolean;
       welcomeNewMessage?: string | null;
       welcomeExistingMessage?: string | null;
+      welcomeNewAttachment?: QuickReplyAttachment | null;
+      welcomeExistingAttachment?: QuickReplyAttachment | null;
       serviceHours?: ApiServiceHoursRow[];
       timezone?: string;
       absenceEnabled?: boolean;
@@ -2220,7 +2224,7 @@ async function authErrorFromResponse(response: Response) {
 
 function trixusMessageFromCode(code?: string) {
   if (code === "PLAN_LIMIT_CONNECTIONS_REACHED") {
-    return "Número máximo de conexões excedidas.";
+    return "Número máximo de conexões atingidas";
   }
   if (code === "PLAN_FEATURE_NOT_AVAILABLE") {
     return "Recurso não disponível para o plano atual.";

@@ -1,4 +1,4 @@
-import { ConversationStatus, Prisma } from "../generated/prisma";
+import { ConversationStatus, LeadStatus, Prisma } from "../generated/prisma";
 
 export type ConversationQueueTab = "ativas" | "standby" | "fila" | "leads";
 
@@ -21,14 +21,23 @@ export function conversationQueueScope(
     return {
       status: ConversationStatus.ABERTA,
       assignedMembershipId: null,
-      protocol: { not: null },
+      OR: [
+        { lead: { is: null } },
+        {
+          lead: {
+            is: { status: { notIn: [LeadStatus.NEW, LeadStatus.QUEUED] } },
+          },
+        },
+      ],
     };
   }
   if (tab === "leads") {
     return {
       status: ConversationStatus.ABERTA,
       assignedMembershipId: null,
-      protocol: null,
+      lead: {
+        is: { status: { in: [LeadStatus.NEW, LeadStatus.QUEUED] } },
+      },
     };
   }
   return {};

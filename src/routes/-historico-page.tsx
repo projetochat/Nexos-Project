@@ -186,14 +186,16 @@ export function HistoricoPage() {
   return (
     <AppShellFull>
       <div className="mx-auto flex h-full min-h-0 w-full max-w-[96rem] flex-col gap-4 px-3 py-4 sm:px-4 md:px-6 md:py-6 lg:px-8 xl:px-10 2xl:px-12">
-        <header className="flex flex-wrap items-center justify-between gap-3">
+        <header
+          className={`${selectedId ? "hidden lg:flex" : "flex"} flex-wrap items-center justify-between gap-3`}
+        >
           <div>
             <h1 className="text-lg font-semibold">Histórico de Conversas</h1>
           </div>
         </header>
 
         <DashboardFiltersBar
-          className="shrink-0"
+          className={`${selectedId ? "hidden lg:flex" : ""} shrink-0`}
           value={reportFilters}
           onChange={(patch) => {
             setReportFilters((current) => ({ ...current, ...patch }));
@@ -216,7 +218,10 @@ export function HistoricoPage() {
         />
 
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[380px_1fr]">
-          <aside className="flex min-h-0 flex-col rounded-xl border border-border bg-card shadow-card">
+          <aside
+            aria-label="Lista de conversas do histórico"
+            className={`${selectedId ? "hidden lg:flex" : "flex"} min-h-0 flex-col rounded-xl border border-border bg-card shadow-card`}
+          >
             <ul className="min-h-0 flex-1 overflow-y-auto">
               {history.isLoading && (
                 <li className="px-4 py-8 text-center text-xs text-muted-foreground">
@@ -294,11 +299,27 @@ export function HistoricoPage() {
             </footer>
           </aside>
 
-          <section className="flex min-h-0 overflow-hidden rounded-xl border border-border bg-card shadow-card">
+          <section
+            aria-label="Conversa do histórico"
+            className={`${selectedId ? "flex" : "hidden lg:flex"} min-h-0 overflow-hidden rounded-xl border border-border bg-card shadow-card`}
+          >
             {active ? (
               <>
                 <div className="flex min-w-0 flex-1 flex-col">
                   <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="lg:hidden"
+                      aria-label="Voltar para a lista do histórico"
+                      onClick={() => {
+                        setActiveId(null);
+                        setPanelOpen(false);
+                      }}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
                     <button
                       type="button"
                       onClick={() => active.contact && setPanelOpen((current) => !current)}

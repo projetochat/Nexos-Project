@@ -2,6 +2,23 @@ import type { RealtimeEnvelope } from "@/lib/realtime/events";
 
 let audioContext: AudioContext | null = null;
 let lastPlayedAt = 0;
+const SOUND_PREFERENCE_PREFIX = "trixus:inbox-notification-sound:";
+
+export function inboxNotificationSoundEnabled(userId?: string | null) {
+  if (typeof window === "undefined" || !userId) return true;
+  return window.localStorage.getItem(`${SOUND_PREFERENCE_PREFIX}${userId}`) !== "disabled";
+}
+
+export function setInboxNotificationSoundEnabled(userId: string, enabled: boolean) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(
+    `${SOUND_PREFERENCE_PREFIX}${userId}`,
+    enabled ? "enabled" : "disabled",
+  );
+  window.dispatchEvent(
+    new CustomEvent("trixus:inbox-notification-sound-changed", { detail: { userId, enabled } }),
+  );
+}
 
 export function isInboundConversationUpdate(event: RealtimeEnvelope) {
   if (event.event !== "conversation.updated") return false;
@@ -16,7 +33,8 @@ export function prepareInboxNotificationSound() {
 }
 
 /** Plays a short, unobtrusive notification for a received WhatsApp message. */
-export function playInboxNotificationSound() {
+export function playInboxNotificationSound(userId?: string | null) {
+  if (!inboxNotificationSoundEnabled(userId)) return;
   const context = getAudioContext();
   if (!context || context.state !== "running") return;
 

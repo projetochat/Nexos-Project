@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Braces, Copy, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
+import { AudioRecorderButton } from "@/components/audio-recorder-button";
 import { InfoTooltip } from "@/components/info-tooltip";
 import {
   Button,
@@ -16,17 +17,22 @@ import {
   SectionHeader,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   crmApi,
   quickReplyApi,
   type ApiQuickReply,
-  type QuickReplyAttachment,
   type QuickReplyMessage,
 } from "@/lib/trixus-api";
 import { assertQuickReplySaved, quickReplyMessages } from "@/lib/quick-reply-sequence";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import {
+  formatMessageAttachmentSize,
+  readMessageAttachment,
+  validateMessageAttachment,
+} from "@/lib/message-attachment";
 
 export const Route = createFileRoute("/mensagens-rapidas")({
   component: QuickRepliesPage,
@@ -43,6 +49,7 @@ export const Route = createFileRoute("/mensagens-rapidas")({
 
 const quickRepliesQueryKey = ["trixus", "quick-replies"] as const;
 const MESSAGE_VARIABLES = [
+  ["{{contato}}", "Nome do contato."],
   ["{{cumprimento}}", "Bom dia, Boa tarde e Boa noite. Será apresentado conforme a hora do dia."],
   ["{{nome}}", "Nome do Contato."],
   ["{{telefone}}", "Telefone do Contato."],
@@ -288,7 +295,9 @@ export function QuickReplyEditor({
   const [busy, setBusy] = React.useState(false);
   const [shortcutError, setShortcutError] = React.useState("");
   const [variablesOpen, setVariablesOpen] = React.useState(false);
-  const [customVariables, setCustomVariables] = React.useState<string[]>([]);
+  const [customVariables, setCustomVariables] = React.useState<
+    Array<{ name: string; description: string }>
+  >([]);
   const activeMessage = React.useRef(0);
   const textareas = React.useRef<Array<HTMLTextAreaElement | null>>([]);
   React.useEffect(() => {
@@ -301,7 +310,10 @@ export function QuickReplyEditor({
       .then((fields) => {
         if (active)
           setCustomVariables(
-            fields.map((field) => customFieldVariableKey(field.label)).filter(Boolean),
+            fields.flatMap((field) => {
+              const name = customFieldVariableKey(field.label);
+              return name ? [{ name, description: `Campo adicional: ${field.label}.` }] : [];
+            }),
           );
       })
       .catch(() => {
@@ -356,7 +368,7 @@ export function QuickReplyEditor({
   }, [clone, open, initial]);
 
   const save = async () => {
-    if (messages.length > 10) return toast.error("Número máximo de mensagens (10).");
+    if (messages.length > 10) return toast.error("Número máximo de mensagens atingido");
     const shortcut = sanitizeQuickReplyShortcut(atalho);
     const content = messages
       .map((message) => message.text.trim() || message.attachment?.fileName || "")
@@ -493,29 +505,32 @@ export function QuickReplyEditor({
                   role="menu"
                   aria-label="Variáveis disponíveis"
                 >
-                  {[
-                    ...new Set([
-                      "contato",
-                      "cumprimento",
-                      "nome",
-                      "telefone",
-                      "email",
-                      "instancia",
-                      "cliente",
-                      "departamento",
+                  <TooltipProvider delayDuration={150}>
+                    {[
+                      ...MESSAGE_VARIABLES.map(([token, description]) => ({
+                        name: token.slice(2, -2),
+                        description,
+                      })),
                       ...customVariables,
-                    ]),
-                  ].map((name) => (
-                    <button
-                      key={name}
-                      type="button"
-                      role="menuitem"
-                      className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-surface-2"
-                      onClick={() => insertVariable(name)}
-                    >
-                      {"{{" + name + "}}"}
-                    </button>
-                  ))}
+                    ].map(({ name, description }) => (
+                      <Tooltip key={name}>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="block w-full rounded px-3 py-2 text-left text-xs transition-colors hover:bg-surface-2 hover:text-blue-600 focus-visible:text-blue-600"
+                            onClick={() => insertVariable(name)}
+                            aria-label={`Inserir variável ${name}: ${description}`}
+                          >
+                            {"{{" + name + "}}"}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="left" className="max-w-64">
+                          {description}
+                        </TooltipContent>
+                      </Tooltip>
+                    ))}
+                  </TooltipProvider>
                 </div>
               )}
               <Button
@@ -532,7 +547,7 @@ export function QuickReplyEditor({
           </div>
           {messages.length >= 10 && (
             <p className="text-xs text-destructive" role="status">
-              Número máximo de mensagens (10).
+              Número máximo de mensagens atingido
             </p>
           )}
           {messages.map((message, index) => (
@@ -594,13 +609,11 @@ export function QuickReplyEditor({
                       const file = event.target.files?.[0];
                       event.target.value = "";
                       if (!file) return;
-                      if (file.size > 10 * 1024 * 1024)
-                        return toast.error("O arquivo deve ter no máximo 10 MB.");
-                      if (file.type.startsWith("image/") && file.size > 8 * 1024 * 1024)
-                        return toast.error("A imagem deve ter no máximo 8 MB.");
+                      const validationError = validateMessageAttachment(file);
+                      if (validationError) return toast.error(validationError);
                       setBusy(true);
                       try {
-                        const attachment = await readAttachment(file);
+                        const attachment = await readMessageAttachment(file);
                         setMessages((items) =>
                           items.map((item) => (item === message ? { ...item, attachment } : item)),
                         );
@@ -612,12 +625,33 @@ export function QuickReplyEditor({
                     }}
                   />
                 </label>
+                <AudioRecorderButton
+                  disabled={busy}
+                  onRecorded={async (file) => {
+                    const validationError = validateMessageAttachment(file);
+                    if (validationError) {
+                      toast.error(validationError);
+                      return;
+                    }
+                    setBusy(true);
+                    try {
+                      const attachment = await readMessageAttachment(file);
+                      setMessages((items) =>
+                        items.map((item, position) =>
+                          position === index ? { ...item, attachment } : item,
+                        ),
+                      );
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                />
                 <span
                   className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
                   title={message.attachment?.fileName}
                 >
                   {message.attachment ? (
-                    `${message.attachment.fileName} (${formatFileSize(message.attachment.size)})`
+                    `${message.attachment.fileName} (${formatMessageAttachmentSize(message.attachment.size)})`
                   ) : (
                     <i>Imagens até 8 MB; demais arquivos até 10 MB.</i>
                   )}
@@ -728,32 +762,6 @@ function previewQuickReplyText(value: string) {
   const maxLength = 170;
   if (value.length <= maxLength) return value;
   return `${value.slice(0, maxLength).trimEnd()}...`;
-}
-
-function readAttachment(file: File): Promise<QuickReplyAttachment> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== "string") {
-        reject(new Error("Não foi possível carregar o arquivo."));
-        return;
-      }
-      resolve({
-        fileName: file.name,
-        mimeType: file.type || "application/octet-stream",
-        size: file.size,
-        dataUrl: reader.result,
-      });
-    };
-    reader.onerror = () => reject(new Error("Não foi possível carregar o arquivo."));
-    reader.readAsDataURL(file);
-  });
-}
-
-function formatFileSize(size: number) {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function QuickReplyFormLog({

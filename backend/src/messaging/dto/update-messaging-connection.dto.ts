@@ -11,6 +11,7 @@ import {
 } from "class-validator";
 import { Type } from "class-transformer";
 import { ServiceHoursDto } from "./service-hours.dto";
+import { QuickReplyAttachmentDto } from "../../quick-replies/dto/quick-reply-message.dto";
 
 export class UpdateMessagingConnectionDto {
   @IsOptional()
@@ -49,6 +50,16 @@ export class UpdateMessagingConnectionDto {
   @IsString()
   @MaxLength(1000)
   welcomeExistingMessage?: string | null;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuickReplyAttachmentDto)
+  welcomeNewAttachment?: QuickReplyAttachmentDto | null;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuickReplyAttachmentDto)
+  welcomeExistingAttachment?: QuickReplyAttachmentDto | null;
 
   @IsOptional()
   @IsBoolean()

@@ -237,7 +237,7 @@ export class MessagingInboundService {
         },
       });
       const lead =
-        !historical && createdConversation && !isGroup && !event.fromMe
+        !historical && createdConversation && !existingContact && !isGroup && !event.fromMe
           ? await tx.lead.upsert({
               where: {
                 tenantId_conversationId: {
@@ -290,6 +290,14 @@ export class MessagingInboundService {
       const reply = automaticReply
         ? {
             ...automaticReply,
+            attachment:
+              automaticReply.kind === "welcome"
+                ? storedWelcomeAttachment(
+                    existingContact
+                      ? connection.welcomeExistingAttachment
+                      : connection.welcomeNewAttachment,
+                  )
+                : null,
             contactExisting: Boolean(existingContact),
             contact,
             departmentName: updatedConversation.departmentId
@@ -409,14 +417,26 @@ export class MessagingInboundService {
             ),
             now: event.occurredAt,
           });
-          await this.outbound.queueAutomatedText({
-            tenantId: event.tenantId,
-            conversationId: result.conversationId,
-            connectionId: event.connectionId,
-            externalChatId: event.externalChatId,
-            content,
-            kind: result.automaticReply.kind,
-          });
+          if (result.automaticReply.kind === "welcome" && result.automaticReply.attachment) {
+            await this.outbound.queueAutomatedMedia({
+              tenantId: event.tenantId,
+              conversationId: result.conversationId,
+              connectionId: event.connectionId,
+              externalChatId: event.externalChatId,
+              content,
+              kind: "welcome",
+              attachment: result.automaticReply.attachment,
+            });
+          } else {
+            await this.outbound.queueAutomatedText({
+              tenantId: event.tenantId,
+              conversationId: result.conversationId,
+              connectionId: event.connectionId,
+              externalChatId: event.externalChatId,
+              content,
+              kind: result.automaticReply.kind,
+            });
+          }
           this.logger.log({
             event: `messaging.${result.automaticReply.kind}.queued`,
             tenantId: event.tenantId,
@@ -718,6 +738,25 @@ export class MessagingInboundService {
       messageType: event.type,
     });
   }
+}
+
+function storedWelcomeAttachment(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const attachment = value as Record<string, unknown>;
+  if (
+    typeof attachment.fileName !== "string" ||
+    typeof attachment.mimeType !== "string" ||
+    typeof attachment.size !== "number" ||
+    typeof attachment.dataUrl !== "string"
+  ) {
+    return null;
+  }
+  return {
+    fileName: attachment.fileName,
+    mimeType: attachment.mimeType,
+    size: attachment.size,
+    dataUrl: attachment.dataUrl,
+  };
 }
 
 function resolveInboundMediaState(

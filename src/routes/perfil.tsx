@@ -2,13 +2,18 @@ import { usePhotoCropper } from "@/hooks/use-photo-cropper";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { createFileRoute } from "@tanstack/react-router";
-import { Camera, Eye, EyeOff, Trash2, Upload } from "lucide-react";
+import { Bell, Camera, Eye, EyeOff, Trash2, Upload, Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Modal } from "@/components/modal";
 import { SectionHeader, Card, Button, Field, Input, Avatar, Badge } from "@/components/ui-kit";
 import { organizationApi } from "@/lib/trixus-api";
 import { ROLE_META, useSession } from "@/lib/session";
+import {
+  inboxNotificationSoundEnabled,
+  setInboxNotificationSoundEnabled,
+} from "@/lib/inbox-notification-sound";
+import { Switch } from "@/components/ui/switch";
 
 export const Route = createFileRoute("/perfil")({
   component: PerfilPage,
@@ -16,6 +21,10 @@ export const Route = createFileRoute("/perfil")({
 
 function PerfilPage() {
   const user = useSession((state) => state.user);
+  const [tab, setTab] = React.useState<"general" | "notifications">("general");
+  const [soundEnabled, setSoundEnabled] = React.useState(() =>
+    inboxNotificationSoundEnabled(useSession.getState().user?.id),
+  );
   const [savingAvatar, setSavingAvatar] = React.useState(false);
   const [photoMenuOpen, setPhotoMenuOpen] = React.useState(false);
   const [cameraOpen, setCameraOpen] = React.useState(false);
@@ -39,6 +48,17 @@ function PerfilPage() {
     Boolean(newPassword) && Boolean(confirmPassword) && newPassword !== confirmPassword;
   const passwordReuseError = "A nova senha deve ser diferente da senha atual.";
   const passwordConfirmationError = "A confirmação da senha não confere.";
+
+  React.useEffect(() => {
+    setSoundEnabled(inboxNotificationSoundEnabled(user?.id));
+  }, [user?.id]);
+
+  const changeSoundPreference = (enabled: boolean) => {
+    if (!user) return;
+    setInboxNotificationSoundEnabled(user.id, enabled);
+    setSoundEnabled(enabled);
+    toast.success(enabled ? "Aviso sonoro ativado." : "Aviso sonoro desativado.");
+  };
 
   const saveAvatarUrl = async (avatarUrl: string | null) => {
     if (!user) return;
@@ -205,67 +225,116 @@ function PerfilPage() {
           </Card>
 
           <Card className="h-full">
-            <p className="text-sm font-semibold">Dados Pessoais</p>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <Field label="Nome">
-                <Input value={displayName} readOnly />
-              </Field>
-              <Field label="Perfil">
-                <Input value={roleMeta?.label ?? "Usuário"} readOnly />
-              </Field>
-              <Field label="E-mail">
-                <Input value={user?.email ?? ""} readOnly />
-              </Field>
-              <Field label="Empresa">
-                <Input value={user?.empresaNome ?? ""} readOnly />
-              </Field>
+            <div className="mb-5 flex border-b border-border text-sm">
+              <ProfileTabButton active={tab === "general"} onClick={() => setTab("general")}>
+                Dados pessoais
+              </ProfileTabButton>
+              <ProfileTabButton
+                active={tab === "notifications"}
+                onClick={() => setTab("notifications")}
+              >
+                <Bell className="h-4 w-4" /> Notificações
+              </ProfileTabButton>
             </div>
-            <section className="mt-5">
-              <p className="text-sm font-semibold">Alterar senha</p>
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <Field label="Senha atual *">
-                  <Input
-                    type="password"
-                    autoComplete="current-password"
-                    value={currentPassword}
-                    onChange={(event) => setCurrentPassword(event.target.value)}
+            {tab === "general" ? (
+              <>
+                <p className="text-sm font-semibold">Dados Pessoais</p>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <Field label="Nome">
+                    <Input value={displayName} readOnly />
+                  </Field>
+                  <Field label="Perfil">
+                    <Input value={roleMeta?.label ?? "Usuário"} readOnly />
+                  </Field>
+                  <Field label="E-mail">
+                    <Input value={user?.email ?? ""} readOnly />
+                  </Field>
+                  <Field label="Empresa">
+                    <Input value={user?.empresaNome ?? ""} readOnly />
+                  </Field>
+                </div>
+                <section className="mt-5">
+                  <p className="text-sm font-semibold">Alterar senha</p>
+                  <div className="mt-4 grid gap-4 md:grid-cols-3">
+                    <Field label="Senha atual *">
+                      <Input
+                        type="password"
+                        autoComplete="current-password"
+                        value={currentPassword}
+                        onChange={(event) => setCurrentPassword(event.target.value)}
+                      />
+                    </Field>
+                    <Field label="Nova senha *">
+                      <PasswordInput
+                        value={newPassword}
+                        visible={showNewPassword}
+                        autoComplete="new-password"
+                        onChange={setNewPassword}
+                        onToggle={() => setShowNewPassword((value) => !value)}
+                        error={newPasswordMatchesCurrent ? passwordReuseError : undefined}
+                        errorId="profile-new-password-reuse-error"
+                      />
+                    </Field>
+                    <Field label="Confirmar senha *">
+                      <PasswordInput
+                        value={confirmPassword}
+                        visible={showConfirmPassword}
+                        autoComplete="new-password"
+                        onChange={setConfirmPassword}
+                        onToggle={() => setShowConfirmPassword((value) => !value)}
+                        error={
+                          passwordsDoNotMatch
+                            ? passwordConfirmationError
+                            : confirmPasswordMatchesCurrent
+                              ? passwordReuseError
+                              : undefined
+                        }
+                        errorId="profile-confirm-password-reuse-error"
+                      />
+                    </Field>
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <Button variant="primary" onClick={savePassword} disabled={savingPassword}>
+                      Salvar senha
+                    </Button>
+                  </div>
+                </section>
+              </>
+            ) : (
+              <section aria-labelledby="notification-preferences-title">
+                <p id="notification-preferences-title" className="text-sm font-semibold">
+                  Notificações
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Escolha como deseja receber avisos durante o atendimento.
+                </p>
+                <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-border bg-surface-1 p-4">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="mt-0.5 rounded-lg bg-primary/10 p-2 text-primary">
+                      {soundEnabled ? (
+                        <Volume2 className="h-4 w-4" />
+                      ) : (
+                        <VolumeX className="h-4 w-4" />
+                      )}
+                    </span>
+                    <div>
+                      <label htmlFor="profile-notification-sound" className="text-sm font-medium">
+                        Aviso sonoro de novas mensagens
+                      </label>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Reproduz um som quando uma nova mensagem é recebida no atendimento.
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    id="profile-notification-sound"
+                    checked={soundEnabled}
+                    onCheckedChange={changeSoundPreference}
+                    aria-label="Aviso sonoro de novas mensagens"
                   />
-                </Field>
-                <Field label="Nova senha *">
-                  <PasswordInput
-                    value={newPassword}
-                    visible={showNewPassword}
-                    autoComplete="new-password"
-                    onChange={setNewPassword}
-                    onToggle={() => setShowNewPassword((value) => !value)}
-                    error={newPasswordMatchesCurrent ? passwordReuseError : undefined}
-                    errorId="profile-new-password-reuse-error"
-                  />
-                </Field>
-                <Field label="Confirmar senha *">
-                  <PasswordInput
-                    value={confirmPassword}
-                    visible={showConfirmPassword}
-                    autoComplete="new-password"
-                    onChange={setConfirmPassword}
-                    onToggle={() => setShowConfirmPassword((value) => !value)}
-                    error={
-                      passwordsDoNotMatch
-                        ? passwordConfirmationError
-                        : confirmPasswordMatchesCurrent
-                          ? passwordReuseError
-                          : undefined
-                    }
-                    errorId="profile-confirm-password-reuse-error"
-                  />
-                </Field>
-              </div>
-              <div className="mt-4 flex justify-end">
-                <Button variant="primary" onClick={savePassword} disabled={savingPassword}>
-                  Salvar senha
-                </Button>
-              </div>
-            </section>
+                </div>
+              </section>
+            )}
           </Card>
         </div>
         {photoCrop.dialog}
@@ -284,6 +353,30 @@ function PerfilPage() {
         />
       </PageContainer>
     </AppShell>
+  );
+}
+
+function ProfileTabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-1.5 border-b-2 px-4 py-2.5 font-medium transition ${
+        active
+          ? "border-primary text-primary"
+          : "border-transparent text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 

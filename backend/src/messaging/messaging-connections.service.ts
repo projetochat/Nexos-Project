@@ -36,6 +36,8 @@ import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.
 import { UpdateMessagingConnectionDto } from "./dto/update-messaging-connection.dto";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 import { MessagingHistoryImportService } from "./messaging-history-import.service";
+import { resolveMessageType, validatePolicy } from "./media/messaging-media-storage.service";
+import type { QuickReplyAttachmentDto } from "../quick-replies/dto/quick-reply-message.dto";
 
 @Injectable()
 export class MessagingConnectionsService {
@@ -113,6 +115,11 @@ export class MessagingConnectionsService {
   }
 
   async createEvolution(dto: CreateEvolutionConnectionDto, current: AuthenticatedUser) {
+    const displayName = dto.name.trim();
+    if (displayName.length < 2) {
+      throw new BadRequestException("Informe um nome válido para a instância.");
+    }
+    await this.assertNameAvailable(current.tenantId, displayName);
     const importHistoryEnabled = dto.importHistoryEnabled === true;
     const importHistoryStartDate = parseImportStartDate(dto.importHistoryStartDate);
     const importGroupsEnabled = dto.importGroupsEnabled === true;
@@ -144,7 +151,7 @@ export class MessagingConnectionsService {
       throw new BadRequestException("Evolution API não configurada.");
     }
 
-    const instanceName = cleanInstanceName(dto.name, current.tenantId, { unique: true });
+    const instanceName = cleanInstanceName(displayName, current.tenantId, { unique: true });
     let response: Awaited<ReturnType<EvolutionClient["createInstance"]>>;
     try {
       response = await this.evolution.createInstance({
@@ -170,7 +177,7 @@ export class MessagingConnectionsService {
       connection = await this.prisma.messagingConnection.create({
         data: {
           tenantId: current.tenantId,
-          name: dto.name.trim(),
+          name: displayName,
           color: normalizeColor(dto.color),
           providerType: MessagingProviderType.EVOLUTION,
           status: translateInitialStatus(
@@ -192,6 +199,7 @@ export class MessagingConnectionsService {
           providerError: sanitizeProviderError(cleanupError),
         });
       });
+      if (isUniqueConstraintError(error)) throw duplicateConnectionNameError();
       throw error;
     }
     this.realtime?.publishConnectionStatusUpdated({
@@ -306,6 +314,13 @@ export class MessagingConnectionsService {
           : "Conecte a instância ao WhatsApp para cadastrar o número antes de editá-la.",
       );
     }
+    const displayName = dto.name?.trim();
+    if (dto.name !== undefined) {
+      if (!displayName || displayName.length < 2) {
+        throw new BadRequestException("Informe um nome válido para a instância.");
+      }
+      await this.assertNameAvailable(current.tenantId, displayName, connection.id);
+    }
     const welcomeEnabled = dto.welcomeEnabled ?? connection.welcomeEnabled;
     const welcomeNewMessage =
       dto.welcomeNewMessage === undefined
@@ -315,6 +330,14 @@ export class MessagingConnectionsService {
       dto.welcomeExistingMessage === undefined
         ? connection.welcomeExistingMessage
         : cleanOptionalText(dto.welcomeExistingMessage);
+    const welcomeNewAttachment = normalizeWelcomeAttachment(
+      dto.welcomeNewAttachment,
+      connection.welcomeNewAttachment,
+    );
+    const welcomeExistingAttachment = normalizeWelcomeAttachment(
+      dto.welcomeExistingAttachment,
+      connection.welcomeExistingAttachment,
+    );
     if (welcomeEnabled && (!welcomeNewMessage || !welcomeExistingMessage)) {
       throw new BadRequestException(
         "Preencha as mensagens para novo contato e contato existente antes de ativar a saudação.",
@@ -337,21 +360,29 @@ export class MessagingConnectionsService {
     if (absenceEnabled && !absenceMessage) {
       throw new BadRequestException("Preencha a mensagem de ausência antes de ativá-la.");
     }
-    const updated = await this.prisma.messagingConnection.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id: connection.id } },
-      data: {
-        name: dto.name?.trim(),
-        color: normalizeColor(dto.color),
-        welcomeEnabled,
-        welcomeNewMessage,
-        welcomeExistingMessage,
-        absenceEnabled,
-        absenceMessage,
-        serviceHours,
-        timezone: dto.timezone,
-        notes: cleanOptionalText(dto.notes),
-      },
-    });
+    let updated: Awaited<ReturnType<PrismaService["messagingConnection"]["update"]>>;
+    try {
+      updated = await this.prisma.messagingConnection.update({
+        where: { tenantId_id: { tenantId: current.tenantId, id: connection.id } },
+        data: {
+          name: displayName,
+          color: normalizeColor(dto.color),
+          welcomeEnabled,
+          welcomeNewMessage,
+          welcomeExistingMessage,
+          welcomeNewAttachment,
+          welcomeExistingAttachment,
+          absenceEnabled,
+          absenceMessage,
+          serviceHours,
+          timezone: dto.timezone,
+          notes: cleanOptionalText(dto.notes),
+        },
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) throw duplicateConnectionNameError();
+      throw error;
+    }
     this.realtime?.publishConnectionStatusUpdated({
       tenantId: updated.tenantId,
       connectionId: updated.id,
@@ -359,6 +390,19 @@ export class MessagingConnectionsService {
       updatedAt: updated.updatedAt,
     });
     return this.serialize(updated);
+  }
+
+  private async assertNameAvailable(tenantId: string, name: string, excludeId?: string) {
+    const duplicate = await this.prisma.messagingConnection.findFirst({
+      where: {
+        tenantId,
+        archivedAt: null,
+        id: excludeId ? { not: excludeId } : undefined,
+        name: { equals: name, mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+    if (duplicate) throw duplicateConnectionNameError();
   }
 
   async refreshProfilePicture(id: string, current: AuthenticatedUser) {
@@ -968,6 +1012,8 @@ export class MessagingConnectionsService {
       welcomeEnabled: connection.welcomeEnabled,
       welcomeNewMessage: connection.welcomeNewMessage,
       welcomeExistingMessage: connection.welcomeExistingMessage,
+      welcomeNewAttachment: connection.welcomeNewAttachment,
+      welcomeExistingAttachment: connection.welcomeExistingAttachment,
       absenceEnabled: connection.absenceEnabled,
       absenceMessage: connection.absenceMessage,
       serviceHours: connection.serviceHours,
@@ -985,6 +1031,22 @@ export class MessagingConnectionsService {
       updatedAt: connection.updatedAt,
     };
   }
+}
+
+function normalizeWelcomeAttachment(
+  value: QuickReplyAttachmentDto | null | undefined,
+  current: Prisma.JsonValue | null,
+) {
+  if (value === undefined)
+    return current === null ? Prisma.DbNull : (current as Prisma.InputJsonValue);
+  if (value === null) return Prisma.DbNull;
+  const [metadata, encoded] = value.dataUrl.split(",");
+  const size = Buffer.from(encoded ?? "", "base64").byteLength;
+  if (metadata !== `data:${value.mimeType};base64` || size !== value.size) {
+    throw new BadRequestException("Os dados do arquivo da saudação são inválidos.");
+  }
+  validatePolicy(resolveMessageType(value.mimeType, ""), value.mimeType, size);
+  return { ...value } satisfies Prisma.InputJsonObject;
 }
 
 const INSTANCE_REMOVAL_CLOSE_MESSAGE = "Conversa encerrada via remoção da instância";
@@ -1093,6 +1155,17 @@ function normalizeColor(value: string | null | undefined) {
   const trimmed = value?.trim();
   if (!trimmed) return "#22c55e";
   return /^#[0-9a-f]{6}$/i.test(trimmed) ? trimmed : "#22c55e";
+}
+
+function duplicateConnectionNameError() {
+  return new BadRequestException({
+    code: "CONNECTION_NAME_ALREADY_EXISTS",
+    message: "Já existe uma instância com este nome.",
+  });
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
 function cleanOptionalText(value: string | null | undefined) {

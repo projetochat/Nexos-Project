@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest";
-import { isInboundConversationUpdate } from "./inbox-notification-sound";
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  inboxNotificationSoundEnabled,
+  isInboundConversationUpdate,
+  setInboxNotificationSoundEnabled,
+} from "./inbox-notification-sound";
 
 describe("isInboundConversationUpdate", () => {
+  beforeEach(() => window.localStorage.clear());
+
   it("identifies only conversation updates caused by received messages", () => {
     expect(
       isInboundConversationUpdate({
@@ -30,5 +37,14 @@ describe("isInboundConversationUpdate", () => {
         data: {},
       }),
     ).toBe(false);
+  });
+
+  it("stores the sound preference independently for each user", () => {
+    expect(inboxNotificationSoundEnabled("user-a")).toBe(true);
+    setInboxNotificationSoundEnabled("user-a", false);
+    expect(inboxNotificationSoundEnabled("user-a")).toBe(false);
+    expect(inboxNotificationSoundEnabled("user-b")).toBe(true);
+    setInboxNotificationSoundEnabled("user-a", true);
+    expect(inboxNotificationSoundEnabled("user-a")).toBe(true);
   });
 });

@@ -282,6 +282,15 @@ function Dashboard() {
     id === "counters" ? 4 : (dashboardColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id]);
   const messagesColumns = dashboardColumns.messages ?? DEFAULT_DASHBOARD_COLUMNS.messages;
   const compactMessagesChart = messagesColumns <= 2;
+  const messageTraffic = data?.charts.messagesByHour ?? [];
+  const messageTrafficTotals = messageTraffic.reduce(
+    (totals, item) => ({
+      recebidas: totals.recebidas + item.recebidas,
+      enviadas: totals.enviadas + item.enviadas,
+    }),
+    { recebidas: 0, enviadas: 0 },
+  );
+  const totalMessages = messageTrafficTotals.recebidas + messageTrafficTotals.enviadas;
 
   const beginEditingBiTitle = (id: DashboardBiId) => {
     setEditingBiId(id);
@@ -430,15 +439,35 @@ function Dashboard() {
               className={`${dashboardColumnClass("messages")} ${hasBi("messages") ? "" : "hidden"}`}
             >
               <Card className="h-full">
-                <div className="mb-4">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-xs uppercase tracking-widest text-muted-foreground">
                       {biLabel("messages")}
                     </p>
                   </div>
+                  <table
+                    aria-label="Totais do tráfego de mensagens no período"
+                    className="w-full border-collapse text-xs sm:w-auto sm:min-w-64"
+                  >
+                    <tbody>
+                      <MessageTrafficTotalRow
+                        label="Mensagens recebidas"
+                        value={messageTrafficTotals.recebidas}
+                      />
+                      <MessageTrafficTotalRow
+                        label="Mensagens enviadas"
+                        value={messageTrafficTotals.enviadas}
+                      />
+                      <MessageTrafficTotalRow
+                        label="Total de mensagens recebidas e enviadas"
+                        value={totalMessages}
+                        emphasized
+                      />
+                    </tbody>
+                  </table>
                 </div>
                 <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={data?.charts.messagesByHour ?? []}>
+                  <LineChart data={messageTraffic}>
                     <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
                     <XAxis
                       dataKey="hora"
@@ -838,6 +867,30 @@ function Dashboard() {
         </Modal>
       </PageContainer>
     </AppShell>
+  );
+}
+
+function MessageTrafficTotalRow({
+  label,
+  value,
+  emphasized = false,
+}: {
+  label: string;
+  value: number;
+  emphasized?: boolean;
+}) {
+  return (
+    <tr className={emphasized ? "bg-surface-1 font-semibold" : undefined}>
+      <th
+        scope="row"
+        className="border border-border px-2 py-1 text-left font-medium text-muted-foreground"
+      >
+        {label}
+      </th>
+      <td className="border border-border px-2 py-1 text-right font-mono text-foreground">
+        {num(value)}
+      </td>
+    </tr>
   );
 }
 

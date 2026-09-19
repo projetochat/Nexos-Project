@@ -48,10 +48,10 @@ describe("quick reply editor", () => {
     for (let i = 0; i < 8; i++) await click(button("Adicionar mensagem"));
     expect(texts()).toHaveLength(10);
     expect((button("Adicionar mensagem") as HTMLButtonElement).disabled).toBe(true);
-    expect(document.body.textContent).toContain("Número máximo de mensagens (10).");
+    expect(document.body.textContent).toContain("Número máximo de mensagens atingido");
     await click(document.querySelectorAll('[aria-label="Remover mensagem"]')[9]);
     expect((button("Adicionar mensagem") as HTMLButtonElement).disabled).toBe(false);
-    expect(document.body.textContent).not.toContain("Número máximo de mensagens (10).");
+    expect(document.body.textContent).not.toContain("Número máximo de mensagens atingido");
   });
 
   it("inserts a variable at the cursor of the active message and defaults to keeping the conversation open", async () => {
@@ -69,10 +69,16 @@ describe("quick reply editor", () => {
     expect((document.querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(
       false,
     );
+    expect(document.querySelector('[aria-label="Gravar áudio"]')).not.toBeNull();
     await click(button("Adicionar mensagem"));
     const second = document.querySelectorAll("textarea")[1];
     await act(async () => second.focus());
     await click(document.querySelector('[aria-label="Inserir variável"]')!);
+    expect(
+      document
+        .querySelector('[aria-label^="Inserir variável contato:"]')
+        ?.getAttribute("aria-label"),
+    ).toContain("Nome do contato");
     await click(button("{{contato}}"));
     expect(texts()).toEqual(["", "{{contato}}"]);
   });

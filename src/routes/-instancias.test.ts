@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { TrixusApiError } from "@/lib/trixus-api";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
-import { canEditInstance, instanceEditUnavailableReason } from "@/lib/instance-validation";
+import {
+  canEditInstance,
+  instanceEditUnavailableReason,
+  instanceNameAlreadyExists,
+} from "@/lib/instance-validation";
 import type { ApiMessagingConnection } from "@/lib/trixus-api";
 
 function connection(overrides: Partial<ApiMessagingConnection>): ApiMessagingConnection {
@@ -53,5 +57,18 @@ describe("instâncias editáveis", () => {
     expect(instanceEditUnavailableReason(connection({ status: "connected" }))).toContain(
       "cadastrar o número",
     );
+  });
+});
+
+describe("nomes de instâncias", () => {
+  it("detecta duplicidade ignorando maiúsculas e espaços nas extremidades", () => {
+    const connections = [connection({ id: "a", name: "Comercial" })];
+    expect(instanceNameAlreadyExists("  COMERCIAL ", connections)).toBe(true);
+    expect(instanceNameAlreadyExists("Suporte", connections)).toBe(false);
+  });
+
+  it("ignora a própria instância durante a edição", () => {
+    const connections = [connection({ id: "a", name: "Comercial" })];
+    expect(instanceNameAlreadyExists("Comercial", connections, "a")).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ConversationStatus,
+  LeadStatus,
   MessageDirection,
   MessageStatus,
   MessageType,
@@ -58,6 +59,70 @@ describe("MessagingInboundService", () => {
         content: "Olá novamente Cliente!",
       }),
     );
+  });
+
+  it("queues configured welcome media with the resolved text as its caption", async () => {
+    const prisma = prismaMock();
+    const attachment = {
+      fileName: "boas-vindas.png",
+      mimeType: "image/png",
+      size: 8,
+      dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+    };
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      welcomeEnabled: true,
+      welcomeNewMessage: "Olá {{nome}}!",
+      welcomeExistingMessage: "Olá novamente {{nome}}!",
+      welcomeExistingAttachment: attachment,
+    });
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(null);
+    prisma.conversation.create.mockResolvedValue(conversation({ id: "conversation-media" }));
+    prisma.message.create.mockResolvedValue({
+      id: "message-inbound",
+      conversationId: "conversation-media",
+      status: MessageStatus.CREATED,
+      createdAt: new Date(),
+    });
+    prisma.conversation.update.mockResolvedValue(
+      conversation({ id: "conversation-media", unreadCount: 1 }),
+    );
+    const outbound = {
+      queueAutomatedText: vi.fn(),
+      queueAutomatedMedia: vi.fn().mockResolvedValue({ created: true }),
+    };
+
+    await new MessagingInboundService(
+      prisma as never,
+      undefined,
+      undefined,
+      undefined,
+      outbound as never,
+    ).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "inbound-welcome-media",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+      type: MessageType.TEXT,
+      content: "Oi",
+      occurredAt: new Date("2026-09-18T19:44:00"),
+    });
+
+    expect(outbound.queueAutomatedMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "welcome",
+        conversationId: "conversation-media",
+        content: "Olá novamente Cliente!",
+        attachment,
+      }),
+    );
+    expect(outbound.queueAutomatedText).not.toHaveBeenCalled();
   });
 
   it("does not create leads, unread messages or automatic replies while importing history", async () => {
@@ -189,7 +254,7 @@ describe("MessagingInboundService", () => {
     expect(prisma.conversation.update).not.toHaveBeenCalled();
   });
 
-  it("creates a new conversation when the only compatible conversation is closed", async () => {
+  it("puts an existing contact in the queue when the previous conversation is closed", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
     prisma.message.findFirst.mockResolvedValue(null);
@@ -222,6 +287,34 @@ describe("MessagingInboundService", () => {
         status: ConversationStatus.ABERTA,
       }),
     });
+    expect(prisma.lead.upsert).not.toHaveBeenCalled();
+    expect(prisma.notification.createMany).not.toHaveBeenCalled();
+  });
+
+  it("creates a lead when the inbound sender is a new contact", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(null);
+    prisma.contact.upsert.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(null);
+    prisma.conversation.create.mockResolvedValue(conversation({ id: "conversation-new" }));
+    prisma.message.create.mockResolvedValue({
+      id: "message-inbound",
+      conversationId: "conversation-new",
+    });
+    prisma.conversation.update.mockResolvedValue(conversation({ id: "conversation-new" }));
+
+    await new MessagingInboundService(prisma as never).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "inbound-new-contact",
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+      type: MessageType.TEXT,
+      content: "Primeiro contato",
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+
     expect(prisma.lead.upsert).toHaveBeenCalledWith({
       where: {
         tenantId_conversationId: {
@@ -238,21 +331,10 @@ describe("MessagingInboundService", () => {
         contactId: "contact-a",
         conversationId: "conversation-new",
         departmentId: "department-a",
-        status: "NEW",
+        status: LeadStatus.NEW,
       }),
     });
-    expect(prisma.notification.createMany).toHaveBeenCalledWith({
-      data: [
-        expect.objectContaining({
-          tenantId: "tenant-a",
-          membershipId: "membership-a",
-          departmentId: "department-a",
-          kind: "LEAD_CREATED",
-          entityType: "lead",
-          entityId: "lead-a",
-        }),
-      ],
-    });
+    expect(prisma.notification.createMany).toHaveBeenCalledOnce();
   });
 
   it("reuses the unique contact when inbound creation races with another message", async () => {

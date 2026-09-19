@@ -51,6 +51,7 @@ import { useChatPerms } from "@/lib/perms";
 import { useRealtimeInbox } from "@/lib/realtime/hooks";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 import { resolveConnectedContactInstances } from "@/lib/contact-instance-selection";
+import { refreshInboxData } from "@/lib/refresh-inbox";
 
 type TabId = "ativas" | "standby" | "fila" | "leads";
 type SourceId = "todos" | "humano" | "bots";
@@ -101,6 +102,7 @@ const inboxListMemory: {
 export function InboxLayout({ children }: { children: React.ReactNode }) {
   const params = useParams({ strict: false }) as { conversationId?: string };
   const activeId = params.conversationId;
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const newConv = useDisclosure();
   const bulkClose = useDisclosure();
@@ -251,11 +253,21 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                 size="icon"
                 aria-label="Atualizar"
                 title="Atualizar"
+                disabled={refreshing}
                 onClick={async () => {
                   setRefreshing(true);
-                  await qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-                  await qc.invalidateQueries({ queryKey: ["trixus", "customers", "all"] });
-                  setRefreshing(false);
+                  try {
+                    const activeConversation = await refreshInboxData(qc, activeId);
+                    if (activeConversation?.status === "fechada") {
+                      await navigate({ to: "/inbox" });
+                    }
+                  } catch (error) {
+                    toast.error(
+                      (error as Error).message || "Não foi possível atualizar as conversas.",
+                    );
+                  } finally {
+                    setRefreshing(false);
+                  }
                 }}
               >
                 <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
@@ -466,7 +478,9 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
           </ul>
         </aside>
 
-        <section className="min-w-0 flex-1">{children}</section>
+        <section className={`${activeId ? "flex" : "hidden md:flex"} min-w-0 flex-1`}>
+          {children}
+        </section>
       </div>
 
       <NewConversationModal open={newConv.open} onClose={newConv.hide} />
