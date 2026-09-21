@@ -195,6 +195,63 @@ describe("MessagingInboundService", () => {
     );
   });
 
+  it("keeps a closed conversation closed when importing more of its history", async () => {
+    const prisma = prismaMock();
+    const closedAt = new Date("2026-09-10T15:00:00.000Z");
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(
+      conversation({
+        status: ConversationStatus.FECHADA,
+        protocol: "000138",
+        closedAt,
+        lastMessageAt: closedAt,
+        lastMessagePreview: "Conversa encerrada - protocolo 000138.",
+      }),
+    );
+    prisma.message.create.mockResolvedValue({
+      id: "older-message",
+      conversationId: "conversation-a",
+      status: MessageStatus.CREATED,
+      createdAt: new Date("2026-09-01T12:00:00.000Z"),
+    });
+    prisma.conversation.update.mockResolvedValue(
+      conversation({ status: ConversationStatus.FECHADA, protocol: "000138", closedAt }),
+    );
+
+    await new MessagingInboundService(prisma as never).process(
+      {
+        tenantId: "tenant-a",
+        connectionId: "connection-a",
+        externalMessageId: "older-message",
+        externalChatId: "5511987654321@s.whatsapp.net",
+        conversationType: "DIRECT",
+        fromMe: false,
+        sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+        type: MessageType.TEXT,
+        content: "Mensagem antiga",
+        occurredAt: new Date("2026-09-01T12:00:00.000Z"),
+      },
+      { historical: true },
+    );
+
+    expect(prisma.conversation.create).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: ConversationStatus.FECHADA,
+          protocol: "000138",
+          closedAt,
+          lastMessageAt: closedAt,
+          lastMessagePreview: "Conversa encerrada - protocolo 000138.",
+        }),
+      }),
+    );
+    expect(prisma.lead.upsert).not.toHaveBeenCalled();
+  });
+
   it("reuses an existing contact and open conversation for inbound replies", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());

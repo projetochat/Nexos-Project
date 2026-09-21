@@ -609,7 +609,7 @@ export class MessagingInboundService {
         contactId: contact.id,
         connectionId: event.connectionId,
         archivedAt: null,
-        status: { not: ConversationStatus.FECHADA },
+        ...(historical ? {} : { status: { not: ConversationStatus.FECHADA } }),
       },
       orderBy: { updatedAt: "desc" },
     });
@@ -621,7 +621,7 @@ export class MessagingInboundService {
           tenantId: event.tenantId,
           contactId: contact.id,
           archivedAt: null,
-          status: { not: ConversationStatus.FECHADA },
+          ...(historical ? {} : { status: { not: ConversationStatus.FECHADA } }),
           connection: { is: { ownerPhoneNormalized: connection.ownerPhoneNormalized } },
         },
         orderBy: { updatedAt: "desc" },
