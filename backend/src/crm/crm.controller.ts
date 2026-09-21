@@ -882,6 +882,9 @@ export class CrmController {
   ): Promise<Prisma.ContactWhereInput> {
     const q = query.q?.trim();
     const qDigits = q?.replace(/\D/g, "") ?? "";
+    const accentInsensitiveContactIds = q
+      ? await this.findContactsByAccentInsensitiveText(tenantId, q)
+      : [];
     const instanceKeys = query.instance
       ? await this.resolveInstanceFilterKeys(query.instance, tenantId)
       : [];
@@ -940,6 +943,7 @@ export class CrmController {
       ...(q
         ? {
             OR: [
+              { id: { in: accentInsensitiveContactIds } },
               { name: { contains: q, mode: "insensitive" } },
               { phone: { contains: q, mode: "insensitive" } },
               ...(qDigits
@@ -951,6 +955,27 @@ export class CrmController {
           }
         : {}),
     };
+  }
+
+  private async findContactsByAccentInsensitiveText(tenantId: string, query: string) {
+    const normalizedQuery = normalizeSearchText(query);
+    if (!normalizedQuery) return [];
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT contact.id
+      FROM "contacts" AS contact
+      LEFT JOIN "customers" AS customer ON customer.id = contact."customerId"
+      WHERE contact."tenantId" = ${tenantId}
+        AND contact."archivedAt" IS NULL
+        AND strpos(
+          translate(
+            lower(concat_ws(' ', contact.name, contact.email, customer.name)),
+            'áàâãäåéèêëíìîïóòôõöúùûüçñýÿ',
+            'aaaaaaeeeeiiiiooooouuuucnyy'
+          ),
+          ${normalizedQuery}
+        ) > 0
+    `);
+    return rows.map((row) => row.id);
   }
 
   @Get("contact-departments")
@@ -2164,10 +2189,7 @@ function compareContactsByDisplayName<T extends { name: string; createdAt: Date 
 }
 
 function contactNameSortKey(name: string) {
-  const value = name
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("pt-BR");
+  const value = normalizeSearchText(name);
   const lettersOnly = value
     .replace(/[^\p{L}\s]+/gu, " ")
     .replace(/\s+/g, " ")
@@ -2176,6 +2198,14 @@ function contactNameSortKey(name: string) {
     symbolOnly: !/\p{L}/u.test(lettersOnly),
     value: lettersOnly,
   };
+}
+
+function normalizeSearchText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .trim();
 }
 
 function importedEvolutionContactPhone(item: {
