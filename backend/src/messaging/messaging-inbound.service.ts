@@ -19,6 +19,7 @@ import { EvolutionClient } from "./evolution/evolution.client";
 import { MessagingOutboundService } from "./messaging-outbound.service";
 import { resolveMessageTemplate } from "./message-template";
 import { selectAutomaticReply } from "./automatic-reply";
+import { conversationQueueForNotification } from "../conversations/conversation-queue-scope";
 
 @Injectable()
 export class MessagingInboundService {
@@ -217,6 +218,7 @@ export class MessagingInboundService {
       });
       const updatedConversation = await tx.conversation.update({
         where: { tenantId_id: { tenantId: event.tenantId, id: conversation.id } },
+        include: { lead: { select: { status: true } } },
         data: {
           unreadCount: event.fromMe || historical ? conversation.unreadCount : { increment: 1 },
           lastMessagePreview: truncatePreview(preview),
@@ -318,6 +320,11 @@ export class MessagingInboundService {
         providerInstanceName: event.metadata?.providerInstanceName ?? connection.externalReference,
         createdConversation,
         leadId: lead?.id ?? null,
+        notificationQueue: conversationQueueForNotification({
+          status: updatedConversation.status,
+          assignedMembershipId: updatedConversation.assignedMembershipId,
+          leadStatus: lead?.status ?? updatedConversation.lead?.status,
+        }),
         notifications,
         unreadCount: updatedConversation.unreadCount,
         automaticReply: reply,
@@ -369,6 +376,7 @@ export class MessagingInboundService {
           : result.createdConversation
             ? "inbound.created"
             : "inbound.updated",
+        notificationQueue: result.notificationQueue,
       });
       if (profilePictureUpdated && result.contactId) {
         this.realtime?.publishContactUpdated({

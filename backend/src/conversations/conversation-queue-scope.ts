@@ -2,6 +2,20 @@ import { ConversationStatus, LeadStatus, Prisma } from "../generated/prisma";
 
 export type ConversationQueueTab = "ativas" | "standby" | "fila" | "leads";
 
+export function conversationQueueForNotification(conversation: {
+  status: ConversationStatus;
+  assignedMembershipId: string | null;
+  leadStatus?: LeadStatus | null;
+}): ConversationQueueTab | null {
+  if (conversation.status === ConversationStatus.FECHADA) return null;
+  if (conversation.status === ConversationStatus.AGUARDANDO) return "standby";
+  if (conversation.assignedMembershipId) return "ativas";
+  if (conversation.status !== ConversationStatus.ABERTA) return null;
+  return conversation.leadStatus === LeadStatus.NEW || conversation.leadStatus === LeadStatus.QUEUED
+    ? "leads"
+    : "fila";
+}
+
 /**
  * Defines the mutually exclusive Inbox queues. Keeping this in one place makes
  * the Inbox counters and the Dashboard describe the same conversations.

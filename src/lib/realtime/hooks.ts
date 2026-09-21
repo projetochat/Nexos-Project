@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/lib/session";
 import { invalidateConversationQueries } from "./invalidate-conversation";
 import {
-  isInboundConversationUpdate,
+  shouldNotifyInboxUpdate,
   playInboxNotificationSound,
   prepareInboxNotificationSound,
 } from "@/lib/inbox-notification-sound";
@@ -70,7 +70,7 @@ export function useRealtimeInbox(conversationId?: string | null) {
 
   React.useEffect(() => {
     return onRealtimeEvent((event) => {
-      if (isInboundConversationUpdate(event)) playInboxNotificationSound(user?.id);
+      if (shouldNotifyInboxUpdate(event, user?.id)) playInboxNotificationSound(user?.id);
       if (
         event.event === "message.created" ||
         event.event === "message.status.updated" ||

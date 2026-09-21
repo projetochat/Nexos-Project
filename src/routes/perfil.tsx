@@ -12,8 +12,13 @@ import { ROLE_META, useSession } from "@/lib/session";
 import {
   inboxNotificationSoundEnabled,
   setInboxNotificationSoundEnabled,
+  NOTIFICATION_QUEUES,
+  inboxNotificationQueues,
+  setInboxNotificationQueues,
 } from "@/lib/inbox-notification-sound";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import type { QueueId } from "@/lib/queue-prefs";
 
 export const Route = createFileRoute("/perfil")({
   component: PerfilPage,
@@ -26,6 +31,9 @@ function PerfilPage() {
     inboxNotificationSoundEnabled(useSession.getState().user?.id),
   );
   const [savingAvatar, setSavingAvatar] = React.useState(false);
+  const [notificationQueues, setNotificationQueues] = React.useState(() =>
+    inboxNotificationQueues(useSession.getState().user?.id),
+  );
   const [photoMenuOpen, setPhotoMenuOpen] = React.useState(false);
   const [cameraOpen, setCameraOpen] = React.useState(false);
   const [photoPreviewOpen, setPhotoPreviewOpen] = React.useState(false);
@@ -51,7 +59,14 @@ function PerfilPage() {
 
   React.useEffect(() => {
     setSoundEnabled(inboxNotificationSoundEnabled(user?.id));
+    setNotificationQueues(inboxNotificationQueues(user?.id));
   }, [user?.id]);
+
+  const changeNotificationQueues = (queues: QueueId[]) => {
+    if (!user) return;
+    setInboxNotificationQueues(user.id, queues);
+    setNotificationQueues(queues);
+  };
 
   const changeSoundPreference = (enabled: boolean) => {
     if (!user) return;
@@ -333,6 +348,52 @@ function PerfilPage() {
                     aria-label="Aviso sonoro de novas mensagens"
                   />
                 </div>
+                <fieldset className="mt-4" disabled={!soundEnabled}>
+                  <legend className="text-sm font-medium">Receber avisos nas abas</legend>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Selecione as abas que devem emitir um aviso sonoro. As preferências são salvas
+                    automaticamente neste navegador.
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {NOTIFICATION_QUEUES.map(({ id, label }) => (
+                      <label
+                        key={id}
+                        className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50"
+                      >
+                        <Checkbox
+                          checked={notificationQueues.includes(id)}
+                          disabled={!soundEnabled}
+                          onCheckedChange={(checked) =>
+                            changeNotificationQueues(
+                              checked === true
+                                ? [...notificationQueues, id]
+                                : notificationQueues.filter((queue) => queue !== id),
+                            )
+                          }
+                        />
+                        <span className="text-sm">{label}</span>
+                      </label>
+                    ))}
+                    <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50 sm:col-span-2">
+                      <Checkbox
+                        checked={
+                          notificationQueues.length === NOTIFICATION_QUEUES.length
+                            ? true
+                            : notificationQueues.length > 0
+                              ? "indeterminate"
+                              : false
+                        }
+                        disabled={!soundEnabled}
+                        onCheckedChange={(checked) =>
+                          changeNotificationQueues(
+                            checked === true ? NOTIFICATION_QUEUES.map(({ id }) => id) : [],
+                          )
+                        }
+                      />
+                      <span className="text-sm font-medium">Todas</span>
+                    </label>
+                  </div>
+                </fieldset>
               </section>
             )}
           </Card>
