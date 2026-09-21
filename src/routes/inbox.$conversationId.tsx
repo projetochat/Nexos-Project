@@ -81,6 +81,30 @@ const quickReplyDrafts = new Map<string, SequenceDraft>();
 type Message = ApiMessage;
 type MentionOption = { id: string; label: string; phone: string };
 
+function preferredRecordingMimeType() {
+  const candidates = [
+    "audio/ogg;codecs=opus",
+    "audio/webm;codecs=opus",
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/mp4",
+  ];
+  return candidates.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
+}
+
+function audioExtension(mimeType: string) {
+  const normalized = mimeType.toLowerCase();
+  if (normalized.includes("ogg")) return "ogg";
+  if (normalized.includes("mp4") || normalized.includes("m4a")) return "m4a";
+  if (normalized.includes("mpeg") || normalized.includes("mp3")) return "mp3";
+  return "webm";
+}
+
+function formatRecordingDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function ConversationPage() {
   const isMobile = useIsMobile();
   const { conversationId } = Route.useParams();
@@ -1422,53 +1446,130 @@ function Composer({
 
   /* --- audio recording --- */
   const [recording, setRecording] = React.useState(false);
+  const [recordingSeconds, setRecordingSeconds] = React.useState(0);
+  const [recordingError, setRecordingError] = React.useState("");
+  const [audioSending, setAudioSending] = React.useState(false);
   const [pendingAudio, setPendingAudio] = React.useState<{
     blob: Blob;
     url: string;
     duration: number;
     mimeType: string;
   } | null>(null);
-  const recRef = React.useRef<{ rec: MediaRecorder; chunks: Blob[]; startedAt: number } | null>(
-    null,
+  const recRef = React.useRef<{
+    rec: MediaRecorder;
+    chunks: Blob[];
+    startedAt: number;
+    stream: MediaStream;
+  } | null>(null);
+  const discardRecordingRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!recording) return;
+    const timer = window.setInterval(() => {
+      const startedAt = recRef.current?.startedAt;
+      if (startedAt) setRecordingSeconds(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [recording]);
+
+  React.useEffect(
+    () => () => {
+      const active = recRef.current;
+      discardRecordingRef.current = true;
+      if (active?.rec.state !== "inactive") active?.rec.stop();
+      active?.stream.getTracks().forEach((track) => track.stop());
+    },
+    [],
   );
 
   const startRecording = async () => {
+    setRecordingError("");
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setRecordingError("Este navegador não oferece suporte à gravação de áudio.");
+      return;
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      const mimeType = preferredRecordingMimeType();
+      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       const chunks: Blob[] = [];
+      discardRecordingRef.current = false;
       rec.ondataavailable = (ev) => {
         if (ev.data.size > 0) chunks.push(ev.data);
       };
       rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
+        const startedAt = recRef.current?.startedAt ?? Date.now();
+        const duration = Date.now() - startedAt;
+        recRef.current = null;
+        setRecording(false);
+        setRecordingSeconds(0);
+        if (discardRecordingRef.current) {
+          discardRecordingRef.current = false;
+          return;
+        }
         const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
-        const dur = Date.now() - (recRef.current?.startedAt ?? Date.now());
+        if (!blob.size || duration < 500) {
+          setRecordingError(
+            "O áudio ficou curto demais. Grave novamente por pelo menos 1 segundo.",
+          );
+          return;
+        }
         setPendingAudio({
           blob,
           url: URL.createObjectURL(blob),
-          duration: dur,
+          duration,
           mimeType: blob.type || "audio/webm",
         });
       };
-      rec.start();
-      recRef.current = { rec, chunks, startedAt: Date.now() };
+      rec.onerror = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        setRecording(false);
+        setRecordingError("A gravação foi interrompida pelo navegador. Tente novamente.");
+      };
+      rec.start(1_000);
+      recRef.current = { rec, chunks, startedAt: Date.now(), stream };
+      setRecordingSeconds(0);
       setRecording(true);
-    } catch {
-      toast.error("Não foi possível acessar o microfone.");
+    } catch (error) {
+      const name = error instanceof DOMException ? error.name : "";
+      setRecordingError(
+        name === "NotAllowedError" || name === "SecurityError"
+          ? "Acesso ao microfone bloqueado. Libere o microfone nas permissões deste site e tente novamente."
+          : name === "NotFoundError"
+            ? "Nenhum microfone foi encontrado neste aparelho."
+            : name === "NotReadableError"
+              ? "O microfone está sendo usado por outro aplicativo. Feche-o e tente novamente."
+              : "Não foi possível acessar o microfone. Verifique a permissão do navegador.",
+      );
     }
   };
 
   const stopRecording = () => {
-    recRef.current?.rec.stop();
-    setRecording(false);
+    const recorder = recRef.current?.rec;
+    if (!recorder || recorder.state === "inactive") return;
+    try {
+      recorder.requestData();
+    } catch {
+      // Some WebKit versions flush the final chunk only from stop().
+    }
+    recorder.stop();
+  };
+
+  const discardRecording = () => {
+    discardRecordingRef.current = true;
+    stopRecording();
   };
 
   const sendAudio = async () => {
     if (!pendingAudio || !authorId) return;
+    setAudioSending(true);
+    setRecordingError("");
     try {
       await messageApi.sendMedia(conversationId, pendingAudio.blob, {
-        fileName: `audio-${Date.now()}.webm`,
+        fileName: `audio-${Date.now()}.${audioExtension(pendingAudio.mimeType)}`,
         mimeType: pendingAudio.mimeType,
         mediaType: "voice",
         durationMs: pendingAudio.duration,
@@ -1481,7 +1582,9 @@ function Composer({
         .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
       onSent();
     } catch (e) {
-      toast.error((e as Error).message);
+      setRecordingError((e as Error).message);
+    } finally {
+      setAudioSending(false);
     }
   };
 
@@ -1572,15 +1675,49 @@ function Composer({
           </div>
         )}
 
+        {recording && (
+          <div
+            className="mb-2 flex items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 shadow-card"
+            aria-live="polite"
+          >
+            <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <span className="absolute h-2 w-2 animate-ping rounded-full bg-destructive opacity-60" />
+              <Mic className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Gravando áudio</p>
+              <p className="font-mono text-xs text-muted-foreground">
+                {formatRecordingDuration(recordingSeconds)}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={discardRecording}
+              aria-label="Descartar gravação"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Descartar</span>
+            </Button>
+            <Button variant="destructive" size="sm" onClick={stopRecording}>
+              <Square className="h-3.5 w-3.5 fill-current" />
+              Concluir
+            </Button>
+          </div>
+        )}
+
         {pendingAudio && (
           <div className="mb-2 flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
-            <audio src={pendingAudio.url} controls className="h-8" />
-            <p className="flex-1 text-xs text-muted-foreground">Áudio pronto. Envie ou descarte.</p>
+            <audio src={pendingAudio.url} controls className="h-9 min-w-0 flex-1" />
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              {formatRecordingDuration(Math.round(pendingAudio.duration / 1000))}
+            </span>
             <Button
               variant="ghost"
               size="sm"
               className="trash-action"
               aria-label="Descartar"
+              disabled={audioSending}
               onClick={() => {
                 URL.revokeObjectURL(pendingAudio.url);
                 setPendingAudio(null);
@@ -1588,10 +1725,19 @@ function Composer({
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
-            <Button variant="primary" size="sm" onClick={sendAudio}>
-              <Send className="h-3.5 w-3.5" /> Enviar áudio
+            <Button variant="primary" size="sm" disabled={audioSending} onClick={sendAudio}>
+              <Send className="h-3.5 w-3.5" /> {audioSending ? "Enviando…" : "Enviar"}
             </Button>
           </div>
+        )}
+
+        {recordingError && (
+          <p
+            role="alert"
+            className="mb-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            {recordingError}
+          </p>
         )}
 
         {showQR && filteredQR.length > 0 && (
@@ -1727,7 +1873,7 @@ function Composer({
               }
               if (e.key === "Escape") setShowQR(false);
             }}
-            disabled={disabled || sequenceSending || !!sequence}
+            disabled={disabled || sequenceSending || !!sequence || recording || !!pendingAudio}
             aria-label="Mensagem"
             placeholder={isMobile ? "" : "Digite uma mensagem"}
             title={
@@ -1745,32 +1891,22 @@ function Composer({
             style={{ minHeight: 32, maxHeight: 5 * 20 + 12 }}
           />
 
-          {allowAudio &&
-            (!recording ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Gravar áudio"
-                onClick={startRecording}
-                disabled={disabled || sequenceSending || !!sequence || !!pendingAudio}
-              >
-                <Mic className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button
-                variant="destructive"
-                size="icon"
-                aria-label="Parar gravação"
-                onClick={stopRecording}
-              >
-                <Square className="h-4 w-4" />
-              </Button>
-            ))}
+          {allowAudio && !recording && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Gravar áudio"
+              onClick={() => void startRecording()}
+              disabled={disabled || sequenceSending || !!sequence || !!pendingAudio}
+            >
+              <Mic className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="primary"
             size="icon"
             onClick={handleSend}
-            disabled={disabled || sequenceSending}
+            disabled={disabled || sequenceSending || recording || !!pendingAudio}
             aria-label={
               sequenceSending
                 ? "Enviando…"
@@ -1789,11 +1925,6 @@ function Composer({
             <SendHorizontal className="h-5 w-5" />
           </Button>
         </div>
-        {recording && (
-          <p className="mt-2 text-center text-[11px] text-destructive">
-            ● Gravando… clique no quadrado para parar.
-          </p>
-        )}
         {showContacts && (
           <InboxContactPicker
             onClose={() => setShowContacts(false)}

@@ -21,6 +21,8 @@ FROM oven/bun:1.3.14-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
+RUN apk add --no-cache ffmpeg
+
 COPY package.json bun.lock ./
 COPY backend/package.json backend/package.json
 RUN bun install --frozen-lockfile --production

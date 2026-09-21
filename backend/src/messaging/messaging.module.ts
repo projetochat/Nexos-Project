@@ -14,6 +14,7 @@ import { EvolutionStartupService } from "./evolution/evolution-startup.service";
 import { EvolutionWebhookController } from "./evolution/evolution-webhook.controller";
 import { EvolutionWebhookTranslator } from "./evolution/evolution-webhook.translator";
 import { MessagingMediaStorageService } from "./media/messaging-media-storage.service";
+import { VoiceAudioTranscoderService } from "./media/voice-audio-transcoder.service";
 import { MessagingConnectionsController } from "./messaging-connections.controller";
 import { MessagingConnectionsService } from "./messaging-connections.service";
 import { MessagingInboundService } from "./messaging-inbound.service";
@@ -44,6 +45,7 @@ import { SenderDisplayNameService } from "./sender-display-name.service";
     MessagingConnectionsService,
     MessagingProviderRegistry,
     MessagingMediaStorageService,
+    VoiceAudioTranscoderService,
     MessagingOutboundService,
     SenderDisplayNameService,
     MessagingOutboundWorker,

@@ -14,6 +14,7 @@ import {
   evolutionMediaKind,
 } from "./evolution-outbound-payload.factory";
 import { normalizeEvolutionRecipient } from "./evolution-recipient.normalizer";
+import { VoiceAudioTranscoderService } from "../media/voice-audio-transcoder.service";
 
 @Injectable()
 export class EvolutionMessagingProvider implements MessagingProvider {
@@ -28,7 +29,11 @@ export class EvolutionMessagingProvider implements MessagingProvider {
 
   private readonly payloads = new EvolutionOutboundPayloadFactory();
 
-  constructor(@Inject(EvolutionClient) private readonly client: EvolutionClient) {}
+  constructor(
+    @Inject(EvolutionClient) private readonly client: EvolutionClient,
+    @Inject(VoiceAudioTranscoderService)
+    private readonly voiceTranscoder: VoiceAudioTranscoderService = new VoiceAudioTranscoderService(),
+  ) {}
 
   async send(command: SendMessageCommand): Promise<SendMessageResult> {
     if (!command.providerConnectionRef) {
@@ -94,12 +99,17 @@ export class EvolutionMessagingProvider implements MessagingProvider {
     const mimeType = command.content.mimeType ?? "application/octet-stream";
     const fileName = command.content.fileName ?? "media";
     if (command.content.type === MessageType.AUDIO || command.content.type === MessageType.VOICE) {
+      const audio = await this.voiceTranscoder.transcode(
+        command.content.mediaBuffer,
+        fileName,
+        mimeType,
+      );
       return this.client.sendAudio({
         instanceName: command.providerConnectionRef ?? "",
         payload: this.payloads.audio({ recipient, quoted }),
-        media: command.content.mediaBuffer,
-        mimeType,
-        fileName,
+        media: audio.buffer,
+        mimeType: audio.mimeType,
+        fileName: audio.fileName,
       });
     }
     return this.client.sendMedia({
