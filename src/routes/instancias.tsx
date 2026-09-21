@@ -542,7 +542,7 @@ function ConnectionForm({
     <Modal
       open={open}
       onClose={onClose}
-      title="Nova Instância WhatsApp"
+      title="Nova Instância"
       size="md"
       className="lg:max-w-[40.25rem]"
       footer={
@@ -1375,7 +1375,7 @@ function ConnectionSettingsModal({
                       </Select>
                     </div>
                     <Field label="Time Zone">
-                      <TimezoneSelect value={timezone} onChange={setTimezone} />
+                      <TimezoneSelect value={timezone} onChange={setTimezone} className="text-xs" />
                     </Field>
                   </div>
                 </div>
