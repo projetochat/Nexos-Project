@@ -978,6 +978,11 @@ export async function healthCheck() {
 
 export const organizationApi = {
   getCompany: () => apiRequest<ApiCompanyProfile>("/company"),
+  updateCompany: (data: { timezone: string }) =>
+    apiRequest<{ timezone: string }>("/company", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   listFinancialPayments: () => apiRequest<ApiFinancialPayment[]>("/company/financial"),
   listDepartments: () => apiRequest<ApiDepartment[]>("/departments"),
   createDepartment: (data: { name: string; description?: string | null; color?: string }) =>

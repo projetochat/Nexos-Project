@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Badge, Button, Card, Field, Input, SectionHeader, Select } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
+import { TimezoneSelect } from "@/components/timezone-select";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
@@ -904,15 +905,6 @@ type ServiceHoursRow = {
   end: string;
 };
 
-const TIMEZONE_OPTIONS = [
-  { value: "America/Sao_Paulo", label: "Fuso horário de São Paulo (GMT-3)" },
-  { value: "America/Manaus", label: "Fuso horário de Manaus (GMT-4)" },
-  { value: "America/Rio_Branco", label: "Fuso horário do Acre (GMT-5)" },
-  { value: "America/Fortaleza", label: "Fuso horário de Fortaleza (GMT-3)" },
-  { value: "America/Noronha", label: "Fuso horário de Fernando de Noronha (GMT-2)" },
-  { value: "UTC", label: "UTC (GMT+0)" },
-];
-
 const CONNECTION_MESSAGE_VARIABLES = [
   "{{cumprimento}}",
   "{{nome}}",
@@ -1383,16 +1375,7 @@ function ConnectionSettingsModal({
                       </Select>
                     </div>
                     <Field label="Time Zone">
-                      <Select
-                        value={timezone}
-                        onChange={(event) => setTimezone(event.target.value)}
-                      >
-                        {TIMEZONE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
+                      <TimezoneSelect value={timezone} onChange={setTimezone} />
                     </Field>
                   </div>
                 </div>

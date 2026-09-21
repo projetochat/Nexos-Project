@@ -13,7 +13,15 @@ import {
 } from "@nestjs/common";
 import { createHash, randomBytes } from "crypto";
 import { compare, hash } from "bcryptjs";
-import { IsArray, IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import {
+  IsArray,
+  IsEmail,
+  IsOptional,
+  IsString,
+  IsTimeZone,
+  MaxLength,
+  MinLength,
+} from "class-validator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -87,6 +95,11 @@ class UpdateAdministratorCredentialsDto {
   @IsString()
   @MaxLength(3_000_000)
   avatarUrl?: string | null;
+}
+
+class UpdateCompanySettingsDto {
+  @IsTimeZone()
+  timezone!: string;
 }
 
 type MembershipWithRelations = {
@@ -320,6 +333,21 @@ export class UsersController {
         current.roleKey === "tenant_admin" ? (administrator?.user.avatarUrl ?? null) : null,
       canManageAdministratorCredentials: current.roleKey === "tenant_admin",
     };
+  }
+
+  @Patch("company")
+  async updateCompany(
+    @Body() dto: UpdateCompanySettingsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    if (current.roleKey !== "tenant_admin" || current.impersonationSessionId) {
+      throw new ForbiddenException("Somente o Administrador pode alterar os dados da empresa.");
+    }
+    return this.prisma.tenant.update({
+      where: { id: current.tenantId },
+      data: { timezone: dto.timezone },
+      select: { timezone: true },
+    });
   }
 
   @Get("company/financial")
