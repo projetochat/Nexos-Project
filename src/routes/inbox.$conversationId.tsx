@@ -301,7 +301,7 @@ function ConversationPage() {
 
   return (
     <InboxLayout>
-      <div className="relative flex h-full min-h-0">
+      <div className="relative flex h-full min-h-0 w-full min-w-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-surface-1 px-5 py-3">
             <Button
@@ -525,7 +525,7 @@ function ConversationPage() {
         </div>
 
         {conv.contact && panelOpen && (
-          <div className="absolute inset-y-0 right-0 z-20 flex max-w-full">
+          <div className="absolute inset-y-0 right-0 z-20 flex max-w-full 2xl:relative 2xl:inset-auto 2xl:z-auto 2xl:shrink-0">
             <ContactPanel contactId={conv.contact.id} onClose={() => setPanelOpen(false)} />
           </div>
         )}
