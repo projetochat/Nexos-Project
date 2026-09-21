@@ -125,6 +125,7 @@ export class MessagingInboundService {
         contact,
         connection,
         groupDisplayName,
+        historical,
       );
       const conversation = conversationResult.conversation;
       const createdConversation = conversationResult.created;
@@ -216,26 +217,40 @@ export class MessagingInboundService {
           createdAt: event.occurredAt,
         },
       });
+      const historicalMessageIsOlder =
+        historical &&
+        conversation.lastMessageAt instanceof Date &&
+        conversation.lastMessageAt > event.occurredAt;
       const updatedConversation = await tx.conversation.update({
         where: { tenantId_id: { tenantId: event.tenantId, id: conversation.id } },
         include: { lead: { select: { status: true } } },
         data: {
           unreadCount: event.fromMe || historical ? conversation.unreadCount : { increment: 1 },
-          lastMessagePreview: truncatePreview(preview),
-          lastMessageAt: event.occurredAt,
-          inboxArchivedAt: isGroup ? null : conversation.inboxArchivedAt,
+          lastMessagePreview: historicalMessageIsOlder
+            ? conversation.lastMessagePreview
+            : truncatePreview(preview),
+          lastMessageAt: historicalMessageIsOlder ? conversation.lastMessageAt : event.occurredAt,
+          inboxArchivedAt: historical
+            ? conversation.inboxArchivedAt
+            : isGroup
+              ? null
+              : conversation.inboxArchivedAt,
           assignedMembershipId:
-            conversation.status === ConversationStatus.FECHADA
+            !historical && conversation.status === ConversationStatus.FECHADA
               ? null
               : conversation.assignedMembershipId,
           status:
-            conversation.status === ConversationStatus.FECHADA
+            !historical && conversation.status === ConversationStatus.FECHADA
               ? ConversationStatus.ABERTA
               : conversation.status,
           protocol:
-            conversation.status === ConversationStatus.FECHADA ? null : conversation.protocol,
+            !historical && conversation.status === ConversationStatus.FECHADA
+              ? null
+              : conversation.protocol,
           closedAt:
-            conversation.status === ConversationStatus.FECHADA ? null : conversation.closedAt,
+            !historical && conversation.status === ConversationStatus.FECHADA
+              ? null
+              : conversation.closedAt,
         },
       });
       const lead =
@@ -543,6 +558,7 @@ export class MessagingInboundService {
     contact: { id: string; departmentId?: string | null },
     connection: { ownerPhoneNormalized: string | null },
     groupDisplayName?: string | null,
+    historical = false,
   ) {
     if (event.conversationType === "GROUP") {
       const existing = await tx.conversation.findFirst({
@@ -572,7 +588,8 @@ export class MessagingInboundService {
           contactId: contact.id,
           connectionId: event.connectionId,
           departmentId: contact.departmentId ?? null,
-          status: ConversationStatus.ABERTA,
+          status: historical ? ConversationStatus.FECHADA : ConversationStatus.ABERTA,
+          closedAt: historical ? event.occurredAt : null,
           isGroup: true,
           conversationType: ConversationType.GROUP,
           externalChatId: event.externalChatId,
@@ -620,7 +637,8 @@ export class MessagingInboundService {
         conversationType: ConversationType.DIRECT,
         externalChatId: event.externalChatId,
         departmentId: contact.departmentId ?? null,
-        status: ConversationStatus.ABERTA,
+        status: historical ? ConversationStatus.FECHADA : ConversationStatus.ABERTA,
+        closedAt: historical ? event.occurredAt : null,
         unreadCount: 0,
         lastMessagePreview: null,
         lastMessageAt: null,

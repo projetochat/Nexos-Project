@@ -137,7 +137,13 @@ describe("MessagingInboundService", () => {
     prisma.contact.findFirst.mockResolvedValue(contact());
     prisma.contact.update.mockResolvedValue(contact());
     prisma.conversation.findFirst.mockResolvedValue(null);
-    prisma.conversation.create.mockResolvedValue(conversation({ id: "conversation-imported" }));
+    prisma.conversation.create.mockResolvedValue(
+      conversation({
+        id: "conversation-imported",
+        status: ConversationStatus.FECHADA,
+        closedAt: new Date("2026-09-01T12:00:00.000Z"),
+      }),
+    );
     prisma.message.create.mockResolvedValue({
       id: "message-imported",
       conversationId: "conversation-imported",
@@ -173,8 +179,19 @@ describe("MessagingInboundService", () => {
 
     expect(prisma.lead.upsert).not.toHaveBeenCalled();
     expect(outbound.queueAutomatedText).not.toHaveBeenCalled();
+    expect(prisma.conversation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        status: ConversationStatus.FECHADA,
+        closedAt: new Date("2026-09-01T12:00:00.000Z"),
+      }),
+    });
     expect(prisma.conversation.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ unreadCount: 0 }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          unreadCount: 0,
+          status: ConversationStatus.FECHADA,
+        }),
+      }),
     );
   });
 

@@ -77,6 +77,7 @@ describe("MessagingHistoryImportService", () => {
     const inbound = {
       process: vi.fn().mockResolvedValue({
         duplicate: false,
+        createdConversation: true,
         message: { conversationId: "conversation-1" },
         conversationId: "conversation-1",
       }),
@@ -109,7 +110,7 @@ describe("MessagingHistoryImportService", () => {
     });
   });
 
-  it("turns an imported direct conversation ending in a contact message into a lead", async () => {
+  it("stores an imported direct conversation ending in a contact message in history", async () => {
     const leadUpsert = vi.fn().mockResolvedValue({ id: "lead-1" });
     const conversationUpdate = vi.fn().mockResolvedValue({});
     const prisma = {
@@ -170,6 +171,7 @@ describe("MessagingHistoryImportService", () => {
     const inbound = {
       process: vi.fn().mockResolvedValue({
         duplicate: false,
+        createdConversation: true,
         message: { conversationId: "conversation-1" },
         conversationId: "conversation-1",
       }),
@@ -184,17 +186,10 @@ describe("MessagingHistoryImportService", () => {
 
     await (service as unknown as HistoryImportRunner).run("import-2");
 
-    expect(leadUpsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({
-          conversationId: "conversation-1",
-          firstMessagePreview: "Olá",
-        }),
-      }),
-    );
+    expect(leadUpsert).not.toHaveBeenCalled();
     expect(conversationUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: ConversationStatus.ABERTA, protocol: null }),
+        data: expect.objectContaining({ status: ConversationStatus.FECHADA, protocol: null }),
       }),
     );
   });
@@ -260,6 +255,7 @@ describe("MessagingHistoryImportService", () => {
     const inbound = {
       process: vi.fn().mockResolvedValue({
         duplicate: false,
+        createdConversation: true,
         message: { conversationId: "group-conversation-1" },
         conversationId: "group-conversation-1",
       }),
@@ -284,5 +280,72 @@ describe("MessagingHistoryImportService", () => {
         where: { tenantId: "tenant-1", conversationId: "group-conversation-1" },
       }),
     );
+  });
+
+  it("does not reopen a previously closed conversation when retrying imported duplicates", async () => {
+    const conversationUpdate = vi.fn().mockResolvedValue({});
+    const leadUpsert = vi.fn();
+    const prisma = {
+      messagingHistoryImport: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "import-retry",
+          tenantId: "tenant-1",
+          kind: MessagingHistoryImportKind.DIRECT,
+          startDate: new Date("2026-09-01T03:00:00.000Z"),
+          status: MessagingHistoryImportStatus.PENDING,
+          connection: {
+            id: "connection-1",
+            tenantId: "tenant-1",
+            externalReference: "instance-1",
+            status: MessagingConnectionStatus.CONNECTED,
+            archivedAt: null,
+          },
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      conversation: { findFirst: vi.fn(), update: conversationUpdate },
+      lead: { deleteMany: vi.fn(), upsert: leadUpsert },
+      $transaction: vi.fn(),
+    };
+    const evolution = {
+      findChats: vi.fn().mockResolvedValue([{ remoteJid: "5511999999999@s.whatsapp.net" }]),
+      findMessages: vi
+        .fn()
+        .mockResolvedValue([{ key: { id: "duplicate-1" }, messageTimestamp: 1_789_000_000 }]),
+    };
+    const translator = {
+      translate: vi.fn(() => ({
+        kind: "inbound",
+        event: {
+          tenantId: "tenant-1",
+          connectionId: "connection-1",
+          externalMessageId: "duplicate-1",
+          externalChatId: "5511999999999@s.whatsapp.net",
+          conversationType: "DIRECT",
+          fromMe: false,
+          sender: { phone: "+5511999999999", normalizedPhone: "+5511999999999" },
+          type: "TEXT",
+          content: "Mensagem antiga",
+          occurredAt: new Date(1_789_000_000_000),
+        },
+      })),
+    };
+    const inbound = {
+      process: vi.fn().mockResolvedValue({
+        duplicate: true,
+        message: { conversationId: "closed-conversation" },
+      }),
+    };
+    const service = new MessagingHistoryImportService(
+      prisma as never,
+      evolution as never,
+      translator as never,
+      inbound as never,
+    );
+
+    await (service as unknown as HistoryImportRunner).run("import-retry");
+
+    expect(conversationUpdate).not.toHaveBeenCalled();
+    expect(leadUpsert).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleInit, Optional } from "@nestjs/common";
 import {
   ConversationStatus,
-  LeadSource,
-  LeadStatus,
   MessagingConnectionStatus,
   MessagingHistoryImportKind,
   MessagingHistoryImportStatus,
@@ -26,9 +24,8 @@ type ImportConnection = {
 };
 type ImportedConversation = {
   conversationId: string;
+  createdByImport: boolean;
   lastAt: Date;
-  lastFromMe: boolean;
-  lastPreview: string | null;
 };
 
 @Injectable()
@@ -244,9 +241,10 @@ export class MessagingHistoryImportService implements OnModuleInit {
             }
             conversations.set(conversationId, {
               conversationId,
+              createdByImport:
+                (conversations.get(conversationId)?.createdByImport ?? false) ||
+                stored.createdConversation === true,
               lastAt: translation.event.occurredAt,
-              lastFromMe: translation.event.fromMe,
-              lastPreview: translation.event.content ?? null,
             });
             if (stored.duplicate) {
               messagesSkipped += 1;
@@ -271,7 +269,7 @@ export class MessagingHistoryImportService implements OnModuleInit {
         }
       }
 
-      const leads = await this.finalizeConversations(job, conversations);
+      await this.finalizeConversations(job, conversations);
       await this.prisma.messagingHistoryImport.update({
         where: { id: job.id },
         data: {
@@ -295,13 +293,6 @@ export class MessagingHistoryImportService implements OnModuleInit {
           tenantId: job.tenantId,
           conversationId: conversation.conversationId,
           reason: "history.imported",
-        });
-      }
-      for (const lead of leads) {
-        this.realtime?.publishLeadCreated({
-          tenantId: job.tenantId,
-          leadId: lead.id,
-          conversationId: lead.conversationId,
         });
       }
       this.logger.log({
@@ -353,75 +344,33 @@ export class MessagingHistoryImportService implements OnModuleInit {
     job: { tenantId: string; kind: MessagingHistoryImportKind },
     conversations: Map<string, ImportedConversation>,
   ) {
-    const leads: Array<{ id: string; conversationId: string }> = [];
     for (const imported of conversations.values()) {
+      // A history retry can return messages that already belong to a live or
+      // previously closed conversation. Never change that conversation's
+      // lifecycle. Only conversations created by this import belong in history.
+      if (!imported.createdByImport) continue;
       const conversation = await this.prisma.conversation.findFirst({
         where: { tenantId: job.tenantId, id: imported.conversationId },
-        select: { id: true, contactId: true, departmentId: true, isGroup: true },
+        select: { id: true },
       });
       if (!conversation) continue;
-      if (
-        job.kind === MessagingHistoryImportKind.GROUP ||
-        conversation.isGroup ||
-        imported.lastFromMe
-      ) {
-        await this.prisma.$transaction([
-          this.prisma.conversation.update({
-            where: { tenantId_id: { tenantId: job.tenantId, id: conversation.id } },
-            data: {
-              status: ConversationStatus.FECHADA,
-              closedAt: imported.lastAt,
-              assignedMembershipId: null,
-              protocol: null,
-              unreadCount: 0,
-              inboxArchivedAt: null,
-            },
-          }),
-          this.prisma.lead.deleteMany({
-            where: { tenantId: job.tenantId, conversationId: conversation.id },
-          }),
-        ]);
-        continue;
-      }
-      const lead = await this.prisma.$transaction(async (tx) => {
-        await tx.conversation.update({
+      await this.prisma.$transaction([
+        this.prisma.conversation.update({
           where: { tenantId_id: { tenantId: job.tenantId, id: conversation.id } },
           data: {
-            status: ConversationStatus.ABERTA,
-            closedAt: null,
+            status: ConversationStatus.FECHADA,
+            closedAt: imported.lastAt,
             assignedMembershipId: null,
             protocol: null,
             unreadCount: 0,
             inboxArchivedAt: null,
           },
-        });
-        return tx.lead.upsert({
-          where: {
-            tenantId_conversationId: { tenantId: job.tenantId, conversationId: conversation.id },
-          },
-          update: {
-            contactId: conversation.contactId,
-            departmentId: conversation.departmentId,
-            source: LeadSource.WHATSAPP,
-            status: LeadStatus.NEW,
-            firstMessagePreview: imported.lastPreview,
-            convertedAt: null,
-            discardedAt: null,
-          },
-          create: {
-            tenantId: job.tenantId,
-            contactId: conversation.contactId,
-            conversationId: conversation.id,
-            departmentId: conversation.departmentId,
-            source: LeadSource.WHATSAPP,
-            status: LeadStatus.NEW,
-            firstMessagePreview: imported.lastPreview,
-          },
-        });
-      });
-      leads.push({ id: lead.id, conversationId: conversation.id });
+        }),
+        this.prisma.lead.deleteMany({
+          where: { tenantId: job.tenantId, conversationId: conversation.id },
+        }),
+      ]);
     }
-    return leads;
   }
 
   private async persistProgress(
