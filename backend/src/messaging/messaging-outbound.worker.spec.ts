@@ -1,9 +1,49 @@
 import { describe, expect, it, vi } from "vitest";
+import { DelayedError } from "bullmq";
 import { MessagingErrorCode } from "./messaging.contracts";
 import { OutboundDispatchError } from "./messaging-outbound.service";
 import { MessagingOutboundWorker } from "./messaging-outbound.worker";
 
 describe("MessagingOutboundWorker ordering", () => {
+  it("moves paused jobs to delayed and throws BullMQ's control error even on the final attempt", async () => {
+    const updateMany = vi.fn();
+    const dispatchQueuedMessage = vi
+      .fn()
+      .mockResolvedValue({ skipped: true, status: "QUEUED", reason: "SERVICE_PAUSED" });
+    const worker = new MessagingOutboundWorker(
+      { get: vi.fn() } as never,
+      {
+        message: { findFirst: vi.fn().mockResolvedValue({ conversationId: "conversation-a" }) },
+        outboxEvent: { updateMany },
+      } as never,
+      { enabled: vi.fn().mockReturnValue(false) } as never,
+      { dispatchQueuedMessage } as never,
+    );
+    const moveToDelayed = vi.fn().mockResolvedValue(undefined);
+    const job = {
+      id: "stable-job",
+      data: { tenantId: "tenant-a", messageId: "message-a" },
+      attemptsMade: 4,
+      opts: { attempts: 5 },
+      token: "lock-token",
+      moveToDelayed,
+    };
+    const started = Date.now();
+    await expect(worker["process"](job as never)).rejects.toBeInstanceOf(DelayedError);
+    expect(moveToDelayed).toHaveBeenCalledOnce();
+    expect(moveToDelayed.mock.calls[0][0]).toBeGreaterThanOrEqual(started + 5000);
+    expect(moveToDelayed.mock.calls[0][1]).toBe("lock-token");
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(job.attemptsMade).toBe(4);
+    expect(dispatchQueuedMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ finalAttempt: true }),
+    );
+
+    dispatchQueuedMessage.mockResolvedValue({ status: "SENT" });
+    await expect(worker["process"](job as never)).resolves.toEqual({ status: "SENT" });
+    expect(moveToDelayed).toHaveBeenCalledOnce();
+  });
+
   it("processes jobs from the same conversation in submission order", async () => {
     const processed: string[] = [];
     const worker = workerWith({

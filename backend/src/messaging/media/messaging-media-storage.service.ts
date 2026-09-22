@@ -168,7 +168,7 @@ function allowedMimeTypes(type: MessageType) {
   );
 }
 
-function maxSizeBytes(type: MessageType) {
+export function maxSizeBytes(type: MessageType) {
   const key =
     type === MessageType.IMAGE
       ? "TRIXUS_MESSAGE_MAX_IMAGE_SIZE_MB"

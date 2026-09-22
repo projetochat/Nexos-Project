@@ -376,6 +376,7 @@ export class MessagingConnectionsService {
           absenceMessage,
           serviceHours,
           timezone: dto.timezone,
+          serviceEnabled: dto.serviceEnabled,
           notes: cleanOptionalText(dto.notes),
         },
       });
@@ -707,13 +708,23 @@ export class MessagingConnectionsService {
       if (!instanceName) continue;
       try {
         const audit = await this.auditWebhookConfiguration(instanceName);
-        if (audit.urlCorrect && audit.messagesUpsertPresent && audit.secretMatch) {
+        if (
+          audit.urlCorrect &&
+          audit.messagesUpsertPresent &&
+          audit.messagesDeletePresent &&
+          audit.secretMatch
+        ) {
           healthy += 1;
           continue;
         }
         await this.ensureWebhookConfigured(instanceName);
         const verified = await this.auditWebhookConfiguration(instanceName);
-        if (verified.urlCorrect && verified.messagesUpsertPresent && verified.secretMatch) {
+        if (
+          verified.urlCorrect &&
+          verified.messagesUpsertPresent &&
+          verified.messagesDeletePresent &&
+          verified.secretMatch
+        ) {
           repaired += 1;
           this.logger.log({
             event: "evolution.webhook.reconciled",
@@ -763,6 +774,7 @@ export class MessagingConnectionsService {
       instanceName,
       urlCorrect: webhook?.url === config.webhookPublicUrl,
       messagesUpsertPresent: !!webhook?.events?.includes("MESSAGES_UPSERT"),
+      messagesDeletePresent: !!webhook?.events?.includes("MESSAGES_DELETE"),
       secretBackendConfigured: !!config.webhookSecret,
       secretEvolutionConfigured: !!evolutionSecret,
       secretMatch:
@@ -1003,6 +1015,7 @@ export class MessagingConnectionsService {
       id: connection.id,
       tenantId: connection.tenantId,
       name: connection.name,
+      serviceEnabled: connection.serviceEnabled,
       providerType: connection.providerType.toLowerCase(),
       status: connection.status.toLowerCase(),
       externalReference: connection.externalReference,

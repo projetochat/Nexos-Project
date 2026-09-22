@@ -447,22 +447,18 @@ function Dashboard() {
                   </div>
                   <table
                     aria-label="Totais do tráfego de mensagens no período"
-                    className="w-full border-collapse text-xs sm:w-auto sm:min-w-64"
+                    className="w-auto shrink-0 self-start border-collapse whitespace-nowrap text-xs"
                   >
                     <tbody>
                       <MessageTrafficTotalRow
-                        label="Mensagens recebidas"
+                        label="Recebidos"
                         value={messageTrafficTotals.recebidas}
                       />
                       <MessageTrafficTotalRow
-                        label="Mensagens enviadas"
+                        label="Enviados"
                         value={messageTrafficTotals.enviadas}
                       />
-                      <MessageTrafficTotalRow
-                        label="Total de mensagens recebidas e enviadas"
-                        value={totalMessages}
-                        emphasized
-                      />
+                      <MessageTrafficTotalRow label="Total" value={totalMessages} emphasized />
                     </tbody>
                   </table>
                 </div>
@@ -498,7 +494,7 @@ function Dashboard() {
                     <Line
                       type="monotone"
                       dataKey="recebidas"
-                      name="Recebidas"
+                      name="Recebidos"
                       stroke="#2563eb"
                       strokeWidth={2}
                       dot={false}
@@ -506,7 +502,7 @@ function Dashboard() {
                     <Line
                       type="monotone"
                       dataKey="enviadas"
-                      name="Enviadas"
+                      name="Enviados"
                       stroke="#16a34a"
                       strokeWidth={2}
                       dot={false}
@@ -883,7 +879,7 @@ function MessageTrafficTotalRow({
     <tr className={emphasized ? "bg-surface-1 font-semibold" : undefined}>
       <th
         scope="row"
-        className="border border-border px-2 py-1 text-left font-medium text-muted-foreground"
+        className="border border-border px-2 py-1 text-left font-normal text-muted-foreground"
       >
         {label}
       </th>

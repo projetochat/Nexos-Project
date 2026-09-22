@@ -100,7 +100,7 @@ export class SchedulesController {
       })) !== ids.length
     )
       throw new BadRequestException("Contato inválido para esta organização.");
-    if (dto.type === "message" && !dto.recipientIds.length)
+    if (dto.type === "message" && !dto.recipientIds.length && !dto.conversationId)
       throw new BadRequestException("Selecione um destinatário.");
     const data = {
       connectionId: dto.connectionId || null,

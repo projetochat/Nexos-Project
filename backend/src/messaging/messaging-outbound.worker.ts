@@ -6,7 +6,7 @@ import {
   OnModuleDestroy,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Job, MetricsTime, UnrecoverableError, Worker } from "bullmq";
+import { DelayedError, Job, MetricsTime, UnrecoverableError, Worker } from "bullmq";
 import { OutboxEventStatus } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -77,12 +77,17 @@ export class MessagingOutboundWorker implements OnApplicationBootstrap, OnModule
     });
     return await this.withConversationLock(message.conversationId, async () => {
       try {
-        return await this.outbound.dispatchQueuedMessage({
+        const result = await this.outbound.dispatchQueuedMessage({
           tenantId: job.data.tenantId,
           messageId: job.data.messageId,
           attempt: job.attemptsMade + 1,
           finalAttempt,
         });
+        if (result && "reason" in result && result.reason === "SERVICE_PAUSED") {
+          await job.moveToDelayed(Date.now() + 5000, job.token);
+          throw new DelayedError();
+        }
+        return result;
       } catch (error) {
         if (error instanceof OutboundDispatchError && !error.retryable) {
           await this.markOutboxFinalFailure(job, error).catch((handlerError) => {

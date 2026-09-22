@@ -5,10 +5,16 @@
 node_modules
 backend/node_modules
 backend/dist
+backend/src/generated/prisma
 backend/.trixus-storage
 .local-storage
 .output
 dist
 coverage
 backups
+.continuity
+**/.continuity
+.trixus-storage
+tmp
+temp
 *.log

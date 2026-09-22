@@ -140,7 +140,7 @@ function mapMessagingProviderError(error: MessagingProviderError): ApiError {
     status: HttpStatus.SERVICE_UNAVAILABLE,
     code: error.code,
     message:
-      "Não foi possível confirmar a criação do grupo no WhatsApp neste momento. Verifique a conexão da instância e tente novamente.",
+      "Não foi possível concluir esta ação no WhatsApp neste momento. Verifique a conexão da instância e tente novamente.",
   };
 }
 

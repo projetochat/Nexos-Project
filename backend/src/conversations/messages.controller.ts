@@ -56,6 +56,36 @@ export class MessagesController {
     return this.messages.get(conversationId, messageId, current);
   }
 
+  @Patch("read")
+  @RequirePermissions("conversations.read")
+  markRead(
+    @Param("conversationId") conversationId: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.messages.markRead(conversationId, current);
+  }
+
+  @Patch(":messageId")
+  @RequirePermissions("chat.messages.edit")
+  edit(
+    @Param("conversationId") conversationId: string,
+    @Param("messageId") messageId: string,
+    @Body() dto: { content?: string },
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.messages.edit(conversationId, messageId, dto?.content ?? "", current);
+  }
+
+  @Post(":messageId/delete")
+  @RequirePermissions("chat.messages.delete")
+  delete(
+    @Param("conversationId") conversationId: string,
+    @Param("messageId") messageId: string,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.messages.delete(conversationId, messageId, current);
+  }
+
   @Post("media")
   @RequirePermissions("messages.send")
   sendMedia(
@@ -99,15 +129,6 @@ export class MessagesController {
   ) {
     const media = await this.messages.downloadMedia(conversationId, messageId, current);
     this.sendMediaResponse(res, media, "inline");
-  }
-
-  @Patch("read")
-  @RequirePermissions("conversations.read")
-  markRead(
-    @Param("conversationId") conversationId: string,
-    @CurrentUser() current: AuthenticatedUser,
-  ) {
-    return this.messages.markRead(conversationId, current);
   }
 
   private sendMediaResponse(

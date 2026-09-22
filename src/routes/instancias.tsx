@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { Badge, Button, Card, Field, Input, SectionHeader, Select } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
+import { TimezoneSelect } from "@/components/timezone-select";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
@@ -541,7 +542,7 @@ function ConnectionForm({
     <Modal
       open={open}
       onClose={onClose}
-      title="Nova Instância WhatsApp"
+      title="Nova Instância"
       size="md"
       className="lg:max-w-[40.25rem]"
       footer={
@@ -599,7 +600,7 @@ function ConnectionForm({
           </div>
         </fieldset>
 
-        <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
           <Field label="Nome da instância *">
             <Input
               value={name}
@@ -881,6 +882,7 @@ type RemoveConnectionOptions = {
 };
 
 type ConnectionSettingsFormData = {
+  serviceEnabled?: boolean;
   timezone?: string;
   serviceHours?: ServiceHoursRow[];
   name: string;
@@ -903,15 +905,6 @@ type ServiceHoursRow = {
   start: string;
   end: string;
 };
-
-const TIMEZONE_OPTIONS = [
-  { value: "America/Sao_Paulo", label: "Fuso horário de São Paulo (GMT-3)" },
-  { value: "America/Manaus", label: "Fuso horário de Manaus (GMT-4)" },
-  { value: "America/Rio_Branco", label: "Fuso horário do Acre (GMT-5)" },
-  { value: "America/Fortaleza", label: "Fuso horário de Fortaleza (GMT-3)" },
-  { value: "America/Noronha", label: "Fuso horário de Fernando de Noronha (GMT-2)" },
-  { value: "UTC", label: "UTC (GMT+0)" },
-];
 
 const CONNECTION_MESSAGE_VARIABLES = [
   "{{cumprimento}}",
@@ -985,6 +978,7 @@ function ConnectionSettingsModal({
   const [logoPreview, setLogoPreview] = React.useState<string | null>(null);
   const [cameraOpen, setCameraOpen] = React.useState(false);
   const [logoPreviewOpen, setLogoPreviewOpen] = React.useState(false);
+  const [serviceEnabled, setServiceEnabled] = React.useState(true);
   const [timezone, setTimezone] = React.useState("America/Sao_Paulo");
   const [aiAgentId, setAiAgentId] = React.useState("");
   const [absenceEnabled, setAbsenceEnabled] = React.useState(false);
@@ -1037,6 +1031,7 @@ function ConnectionSettingsModal({
     setLogoPreview(connection.logoUrl ?? null);
     setCameraOpen(false);
     setLogoPreviewOpen(false);
+    setServiceEnabled(connection.serviceEnabled ?? true);
     setTimezone(connection.timezone ?? "America/Sao_Paulo");
     setAiAgentId("");
     setAbsenceEnabled(connection.absenceEnabled ?? false);
@@ -1136,6 +1131,7 @@ function ConnectionSettingsModal({
       return;
     }
     onSubmit(connection, {
+      serviceEnabled,
       timezone,
       serviceHours: normalizedHours,
       ...form,
@@ -1293,7 +1289,7 @@ function ConnectionSettingsModal({
                 </div>
 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3 sm:grid-cols-2 sm:gap-4">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4">
                     <div className="hidden sm:col-start-1 sm:row-start-1 sm:block">
                       <Field label="Status">
                         <div className="flex h-10 items-center">
@@ -1383,19 +1379,26 @@ function ConnectionSettingsModal({
                       </Select>
                     </div>
                     <Field label="Time Zone">
-                      <Select
-                        value={timezone}
-                        onChange={(event) => setTimezone(event.target.value)}
-                      >
-                        {TIMEZONE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
+                      <TimezoneSelect value={timezone} onChange={setTimezone} className="text-xs" />
                     </Field>
                   </div>
                 </div>
+              </div>
+              <div className="rounded-xl border border-border bg-surface-1 p-4">
+                <label className="flex items-center justify-between gap-3 text-sm font-medium">
+                  Atendimento ativo
+                  <input
+                    type="checkbox"
+                    checked={serviceEnabled}
+                    disabled={busy}
+                    onChange={(event) => setServiceEnabled(event.target.checked)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                </label>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Ao desativar, mantém o WhatsApp conectado e pausa o recebimento e envio de
+                  mensagens no Trixus. Ao reativar, as mensagens do período serão importadas.
+                </p>
               </div>
               <section
                 className="space-y-4 rounded-xl border border-border bg-surface-1 p-4"

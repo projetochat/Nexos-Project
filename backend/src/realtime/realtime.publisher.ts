@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { MessageStatus } from "../generated/prisma";
 import type { RealtimeServerEvent } from "./realtime-events";
 import { RealtimeService } from "./realtime.service";
+import type { ConversationQueueTab } from "../conversations/conversation-queue-scope";
 
 @Injectable()
 export class RealtimePublisher {
@@ -61,6 +62,7 @@ export class RealtimePublisher {
     tenantId: string;
     conversationId: string;
     conversation?: unknown;
+    notificationQueue?: ConversationQueueTab | null;
     reason: string;
   }) {
     this.realtime.publish({ tenantId: input.tenantId }, "conversation.updated", input);

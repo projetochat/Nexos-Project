@@ -1,4 +1,40 @@
 import type { RealtimeEnvelope } from "@/lib/realtime/events";
+import type { QueueId } from "@/lib/queue-prefs";
+
+export const NOTIFICATION_QUEUES: { id: QueueId; label: string }[] = [
+  { id: "leads", label: "Lead" },
+  { id: "fila", label: "Fila" },
+  { id: "standby", label: "Stand by" },
+  { id: "ativas", label: "Ativo" },
+];
+const QUEUE_PREFERENCE_PREFIX = "trixus:inbox-notification-queues:";
+
+export function inboxNotificationQueues(userId?: string | null): QueueId[] {
+  const defaults = NOTIFICATION_QUEUES.map(({ id }) => id);
+  if (typeof window === "undefined" || !userId) return defaults;
+  try {
+    const raw = window.localStorage.getItem(`${QUEUE_PREFERENCE_PREFIX}${userId}`);
+    const saved: unknown = raw === null ? null : JSON.parse(raw);
+    return Array.isArray(saved) ? defaults.filter((id) => saved.includes(id)) : defaults;
+  } catch {
+    return defaults;
+  }
+}
+
+export function setInboxNotificationQueues(userId: string, queues: QueueId[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(`${QUEUE_PREFERENCE_PREFIX}${userId}`, JSON.stringify(queues));
+}
+
+export function shouldNotifyInboxUpdate(event: RealtimeEnvelope, userId?: string | null) {
+  if (!isInboundConversationUpdate(event) || !inboxNotificationSoundEnabled(userId)) return false;
+  const queue = (event.data as { notificationQueue?: QueueId | null }).notificationQueue;
+  const selected = inboxNotificationQueues(userId);
+  // Older servers do not include the queue; only allow their alerts when all are selected.
+  return queue === undefined
+    ? selected.length === NOTIFICATION_QUEUES.length
+    : queue !== null && selected.includes(queue);
+}
 
 let audioContext: AudioContext | null = null;
 let lastPlayedAt = 0;

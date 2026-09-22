@@ -27,7 +27,6 @@ export class PermissionsGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-    if (!required?.length) return true;
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const current = request.user;
@@ -75,7 +74,7 @@ export class PermissionsGuard implements CanActivate {
 
     // Individual permission switches are paused; instance scope remains enforced.
     const granted = new Set<string>(PERMISSIONS);
-    const allowed = required.every((permission) => granted.has(permission));
+    const allowed = (required ?? []).every((permission) => granted.has(permission));
     if (!allowed) throw new ForbiddenException("Permissão insuficiente.");
 
     request.user.roleId = membership.roleId;

@@ -110,14 +110,14 @@ afterEach(async () => {
 describe("new conversation contact picker", () => {
   it("shows all contacts, searches beyond the first 100 and clears the search", async () => {
     await mount();
-    expect(document.querySelectorAll("ul li")).toHaveLength(7);
+    expect(document.querySelectorAll("ul li")).toHaveLength(10);
     await act(async () =>
       (
         document.querySelector('[aria-label="Próxima página de contatos"]') as HTMLButtonElement
       ).click(),
     );
     await flush();
-    expect(document.body.textContent).toContain("Contato 007");
+    expect(document.body.textContent).toContain("Contato 010");
     const input = document.querySelector("input")!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -130,7 +130,7 @@ describe("new conversation contact picker", () => {
     expect(mocks.list).toHaveBeenLastCalledWith({
       q: "douglas",
       page: 1,
-      pageSize: 7,
+      pageSize: 10,
     });
     expect(document.querySelectorAll("ul li")).toHaveLength(1);
     expect(document.body.textContent).toContain("Douglas");

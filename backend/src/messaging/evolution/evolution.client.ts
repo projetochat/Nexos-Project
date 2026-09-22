@@ -113,6 +113,7 @@ export class EvolutionClient {
           events: [
             "MESSAGES_UPSERT",
             "MESSAGES_UPDATE",
+            "MESSAGES_DELETE",
             "SEND_MESSAGE_UPDATE",
             "QRCODE_UPDATED",
             "CONNECTION_UPDATE",
@@ -131,6 +132,23 @@ export class EvolutionClient {
     };
   }) {
     return this.request<EvolutionSendTextResponse>(`/message/sendText/${input.instanceName}`, {
+      method: "POST",
+      body: input.payload,
+    });
+  }
+
+  sendContact(input: {
+    instanceName: string;
+    payload: {
+      number?: string;
+      contact: Array<{
+        fullName: string;
+        wuid: string;
+        phoneNumber: string;
+      }>;
+    };
+  }) {
+    return this.request<EvolutionSendTextResponse>(`/message/sendContact/${input.instanceName}`, {
       method: "POST",
       body: input.payload,
     });
@@ -189,6 +207,32 @@ export class EvolutionClient {
       method: "POST",
       body: input.payload,
     });
+  }
+
+  updateMessage(input: { instanceName: string; chat: string; messageId: string; message: string }) {
+    const key = { remoteJid: input.chat, fromMe: true, id: input.messageId };
+    return this.request<unknown>(`/chat/updateMessage/${input.instanceName}`, {
+      method: "POST",
+      body: { number: input.chat, key, text: input.message },
+    }).catch(() =>
+      this.request<unknown>(`/message/edit/${input.instanceName}`, {
+        method: "POST",
+        body: { chat: input.chat, messageId: input.messageId, message: input.message },
+      }),
+    );
+  }
+
+  deleteMessage(input: { instanceName: string; remoteJid: string; messageId: string }) {
+    const key = { remoteJid: input.remoteJid, fromMe: true, id: input.messageId };
+    return this.request<unknown>(`/chat/deleteMessageForEveryone/${input.instanceName}`, {
+      method: "DELETE",
+      body: key,
+    }).catch(() =>
+      this.request<unknown>(`/message/delete/${input.instanceName}`, {
+        method: "POST",
+        body: { key },
+      }),
+    );
   }
 
   async createGroup(input: { instanceName: string; subject: string; participants: string[] }) {

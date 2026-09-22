@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Eye, EyeOff, Lock, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, Button, Card, Field, Input } from "@/components/ui-kit";
@@ -11,7 +11,8 @@ import {
   ProfilePhotoPreviewModal,
 } from "@/components/profile-photo-controls";
 import { usePhotoCropper } from "@/hooks/use-photo-cropper";
-import { organizationApi } from "@/lib/trixus-api";
+import { TimezoneSelect } from "@/components/timezone-select";
+import { organizationApi, type ApiCompanyProfile } from "@/lib/trixus-api";
 import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/configuracoes/empresa")({
@@ -26,6 +27,7 @@ function EmpresaSettings() {
     queryFn: organizationApi.getCompany,
   });
   const [savingPassword, setSavingPassword] = React.useState(false);
+  const [companyTimezone, setCompanyTimezone] = React.useState("America/Sao_Paulo");
   const [savingAvatar, setSavingAvatar] = React.useState(false);
   const [photoMenuOpen, setPhotoMenuOpen] = React.useState(false);
   const [cameraOpen, setCameraOpen] = React.useState(false);
@@ -37,6 +39,7 @@ function EmpresaSettings() {
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = React.useState(false);
   const [showNewPassword, setShowNewPassword] = React.useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
   const newPasswordMatchesCurrent =
@@ -53,8 +56,25 @@ function EmpresaSettings() {
   }, [company?.presentationName, company?.responsibleName]);
 
   React.useEffect(() => {
+    if (company?.timezone) setCompanyTimezone(company.timezone);
+  }, [company?.timezone]);
+
+  React.useEffect(() => {
     setAdministratorAvatarUrl(company?.administratorAvatarUrl ?? sessionUser?.avatarUrl ?? null);
   }, [company?.administratorAvatarUrl, sessionUser?.avatarUrl]);
+
+  const updateCompany = useMutation({
+    mutationFn: () => organizationApi.updateCompany({ timezone: companyTimezone }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<ApiCompanyProfile>(["trixus", "company"], (current) =>
+        current ? { ...current, timezone: updated.timezone } : current,
+      );
+      toast.success("Fuso horário atualizado.");
+    },
+    onError: (error) => {
+      toast.error((error as Error).message || "Não foi possível atualizar o fuso horário.");
+    },
+  });
 
   const saveAvatarUrl = async (avatarUrl: string | null) => {
     setSavingAvatar(true);
@@ -115,6 +135,7 @@ function EmpresaSettings() {
       }));
       await queryClient.invalidateQueries({ queryKey: ["trixus", "company"] });
       setCurrentPassword("");
+      setShowCurrentPassword(false);
       setNewPassword("");
       setConfirmPassword("");
       toast.success(
@@ -132,7 +153,7 @@ function EmpresaSettings() {
       <Card>
         <p className="text-sm font-semibold">Perfil da empresa</p>
         <p className="text-xs text-muted-foreground">
-          Dados cadastrais fixos vinculados ao cadastro da empresa.
+          Dados cadastrais e configurações vinculados ao cadastro da empresa.
         </p>
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <Field label="Nome da empresa">
@@ -148,12 +169,29 @@ function EmpresaSettings() {
             <Input value={company?.document ?? ""} readOnly disabled={isLoadingCompany} />
           </Field>
           <Field label="Fuso horário">
-            <Input value={company?.timezone ?? ""} readOnly disabled={isLoadingCompany} />
+            <TimezoneSelect
+              value={companyTimezone}
+              onChange={setCompanyTimezone}
+              disabled={isLoadingCompany || !company?.canManageAdministratorCredentials}
+            />
           </Field>
           <Field label="Idioma padrão">
             <Input value={company?.locale ?? ""} readOnly disabled={isLoadingCompany} />
           </Field>
         </div>
+        {company?.canManageAdministratorCredentials && (
+          <div className="mt-4 flex justify-end border-t border-border pt-4">
+            <Button
+              variant="primary"
+              onClick={() => updateCompany.mutate()}
+              disabled={
+                isLoadingCompany || updateCompany.isPending || companyTimezone === company.timezone
+              }
+            >
+              {updateCompany.isPending ? "Salvando..." : "Salvar fuso horário"}
+            </Button>
+          </div>
+        )}
       </Card>
 
       {sessionUser?.role === "admin" && company?.canManageAdministratorCredentials && (
@@ -282,10 +320,13 @@ function EmpresaSettings() {
                 <Field label="Senha atual *">
                   <PasswordInput
                     value={currentPassword}
-                    onChange={setCurrentPassword}
-                    visible={false}
-                    canToggle={false}
-                    onToggle={() => undefined}
+                    onChange={(value) => {
+                      setCurrentPassword(value);
+                      if (!value) setShowCurrentPassword(false);
+                    }}
+                    visible={showCurrentPassword}
+                    canToggle={Boolean(currentPassword)}
+                    onToggle={() => setShowCurrentPassword((value) => !value)}
                     autoComplete="current-password"
                   />
                 </Field>

@@ -10,12 +10,12 @@ import {
   datesForOperationalPeriod,
   type OperationalReportFilters,
 } from "@/lib/operational-filters";
-import { fmtDate, fmtHM, num } from "@/lib/format";
+import { fmtDate, num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import { useSession } from "@/lib/session";
-import { conversationApi, messageApi, operationsApi, type ApiMessage } from "@/lib/trixus-api";
+import { conversationApi, messageApi, operationsApi } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
-import { ContactPanel } from "./inbox.$conversationId";
+import { ContactPanel, MessageBubble } from "./inbox.$conversationId";
 import { orderHistoryMessages } from "@/lib/history-message-order";
 
 const PAGE_SIZE = 20;
@@ -137,10 +137,13 @@ export function HistoricoPage() {
   React.useEffect(
     () =>
       onRealtimeEvent((event) => {
-        if (event.event.startsWith("message.") || event.event.startsWith("conversation.")) {
+        if (
+          event.event.startsWith("message.") ||
+          event.event.startsWith("conversation.") ||
+          event.event === "contact.updated"
+        ) {
           queryClient.invalidateQueries({ queryKey: ["operations", "history"] });
           if (activeId) {
-            queryClient.invalidateQueries({ queryKey: ["operations", "timeline", activeId] });
             queryClient.invalidateQueries({ queryKey: ["history-messages", activeId] });
           }
         }
@@ -149,11 +152,6 @@ export function HistoricoPage() {
   );
 
   const active = conversations.find((conversation) => conversation.id === activeId) ?? null;
-  const timeline = useQuery({
-    queryKey: ["operations", "timeline", activeId],
-    queryFn: () => operationsApi.timeline(activeId ?? ""),
-    enabled: !!activeId,
-  });
   const messages = useInfiniteQuery({
     queryKey: ["history-messages", activeId],
     initialPageParam: undefined as string | undefined,
@@ -350,9 +348,9 @@ export function HistoricoPage() {
                     </Button>
                   </header>
 
-                  <div className="min-h-0 flex-1 overflow-y-auto bg-surface-1/40 px-4 py-6">
-                    <div className="mx-auto grid w-full max-w-5xl gap-6 xl:grid-cols-[1fr_280px]">
-                      <div className="space-y-3">
+                  <div className="min-h-0 flex-1 overflow-y-auto bg-surface-1/40 px-2 py-6">
+                    <div className="w-full">
+                      <div className="space-y-4">
                         {messages.hasNextPage && (
                           <Button
                             variant="secondary"
@@ -366,33 +364,24 @@ export function HistoricoPage() {
                           </Button>
                         )}
                         {orderedMessages.map((message) => (
-                          <HistoryBubble key={message.id} message={message} />
+                          <MessageBubble
+                            key={message.id}
+                            m={message}
+                            agents={[]}
+                            contactName={active.contact?.nome ?? "Contato"}
+                            contactAvatarUrl={active.contact?.avatar_url}
+                            isGroup={active.is_group}
+                            galleryImages={orderedMessages.filter(
+                              (item) => item.type === "image" && !item.deleted_for_everyone,
+                            )}
+                            readOnly
+                          />
                         ))}
                         {!messages.isLoading && orderedMessages.length === 0 && (
                           <p className="pt-8 text-center text-xs text-muted-foreground">
                             Nenhuma mensagem registrada.
                           </p>
                         )}
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                          Timeline
-                        </p>
-                        {(timeline.data?.items ?? []).map((item) => (
-                          <div
-                            key={`${item.event}-${item.at}`}
-                            className="rounded-md border border-border bg-card p-3"
-                          >
-                            <p className="text-xs font-medium">{item.description}</p>
-                            <p className="mt-1 font-mono text-[10px] text-muted-foreground">
-                              {fmtDate(new Date(item.at).getTime())}{" "}
-                              {fmtHM(new Date(item.at).getTime())}
-                            </p>
-                            {item.user && (
-                              <p className="mt-1 text-[11px] text-muted-foreground">{item.user}</p>
-                            )}
-                          </div>
-                        ))}
                       </div>
                     </div>
                   </div>
@@ -411,62 +400,5 @@ export function HistoricoPage() {
         </div>
       </div>
     </AppShellFull>
-  );
-}
-
-function HistoryBubble({ message }: { message: ApiMessage }) {
-  if (message.type === "system" || message.direction === "system") {
-    const timestamp = new Date(message.created_at).getTime();
-    const content = message.content ?? "Evento do sistema";
-    const normalizedContent = content
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase();
-    const isStart = /conversa (iniciada|retomada)|protocolo gerado/.test(normalizedContent);
-    const isEnd = /conversa encerrada|encerrada via remocao/.test(normalizedContent);
-    const isBoundary = isStart || isEnd;
-    const tone = isStart
-      ? { line: "bg-success/40", pill: "border-success/40 bg-success/10 text-success" }
-      : isEnd
-        ? {
-            line: "bg-destructive/40",
-            pill: "border-destructive/40 bg-destructive/10 text-destructive",
-          }
-        : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
-    return (
-      <div className="flex items-center gap-3">
-        {isBoundary && <span className={`h-0.5 flex-1 ${tone.line}`} />}
-        <span
-          className={`rounded-full border px-3 py-1 text-center text-[10px] uppercase tracking-widest ${tone.pill} ${
-            isBoundary ? "" : "mx-auto"
-          }`}
-        >
-          {content.toUpperCase()}
-          <span className="ml-2 opacity-80">
-            - {fmtDate(timestamp)} {fmtHM(timestamp)}
-          </span>
-        </span>
-        {isBoundary && <span className={`h-0.5 flex-1 ${tone.line}`} />}
-      </div>
-    );
-  }
-  const mine = message.sender === "agent";
-  return (
-    <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-      <div
-        className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-card ${
-          mine
-            ? "rounded-br-sm bg-primary text-primary-foreground"
-            : "rounded-bl-sm border border-border bg-surface-1"
-        }`}
-      >
-        <span className="break-words">{(message.content ?? "").replace(/\s+/g, " ").trim()}</span>
-        <p
-          className={`mt-1 text-right font-mono text-[10px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}
-        >
-          {fmtHM(new Date(message.created_at).getTime())}
-        </p>
-      </div>
-    </div>
   );
 }

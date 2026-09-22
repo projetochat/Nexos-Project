@@ -14,6 +14,7 @@ import {
   evolutionMediaKind,
 } from "./evolution-outbound-payload.factory";
 import { normalizeEvolutionRecipient } from "./evolution-recipient.normalizer";
+import { VoiceAudioTranscoderService } from "../media/voice-audio-transcoder.service";
 
 @Injectable()
 export class EvolutionMessagingProvider implements MessagingProvider {
@@ -28,7 +29,11 @@ export class EvolutionMessagingProvider implements MessagingProvider {
 
   private readonly payloads = new EvolutionOutboundPayloadFactory();
 
-  constructor(@Inject(EvolutionClient) private readonly client: EvolutionClient) {}
+  constructor(
+    @Inject(EvolutionClient) private readonly client: EvolutionClient,
+    @Inject(VoiceAudioTranscoderService)
+    private readonly voiceTranscoder: VoiceAudioTranscoderService = new VoiceAudioTranscoderService(),
+  ) {}
 
   async send(command: SendMessageCommand): Promise<SendMessageResult> {
     if (!command.providerConnectionRef) {
@@ -93,13 +98,29 @@ export class EvolutionMessagingProvider implements MessagingProvider {
     }
     const mimeType = command.content.mimeType ?? "application/octet-stream";
     const fileName = command.content.fileName ?? "media";
+    if (mimeType.toLowerCase() === "text/vcard" || /\.vcf$/i.test(fileName)) {
+      const contact = parseVCard(command.content.mediaBuffer);
+      return this.client.sendContact({
+        instanceName: command.providerConnectionRef ?? "",
+        payload: this.payloads.contact({
+          recipient,
+          fullName: contact.name,
+          phoneNumber: contact.phone,
+        }),
+      });
+    }
     if (command.content.type === MessageType.AUDIO || command.content.type === MessageType.VOICE) {
+      const audio = await this.voiceTranscoder.transcode(
+        command.content.mediaBuffer,
+        fileName,
+        mimeType,
+      );
       return this.client.sendAudio({
         instanceName: command.providerConnectionRef ?? "",
         payload: this.payloads.audio({ recipient, quoted }),
-        media: command.content.mediaBuffer,
-        mimeType,
-        fileName,
+        media: audio.buffer,
+        mimeType: audio.mimeType,
+        fileName: audio.fileName,
       });
     }
     return this.client.sendMedia({
@@ -118,6 +139,18 @@ export class EvolutionMessagingProvider implements MessagingProvider {
       fileName,
     });
   }
+}
+
+function parseVCard(buffer: Buffer) {
+  const card = buffer.toString("utf8").replace(/\r?\n[ \t]/g, "");
+  const name = card.match(/^FN(?:;[^:]*)?:(.*)$/im)?.[1]?.trim() ?? "Contato";
+  const phone = card.match(/^TEL(?:;[^:]*)?:(.*)$/im)?.[1]?.trim() ?? "";
+  const unescape = (value: string) =>
+    value
+      .replace(/\\n/gi, " ")
+      .replace(/\\([\\,;:])/g, "$1")
+      .trim();
+  return { name: unescape(name) || "Contato", phone: unescape(phone) };
 }
 
 function parseProviderTimestamp(value: string | number | undefined) {

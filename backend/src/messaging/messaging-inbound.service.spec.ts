@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ConversationStatus,
   LeadStatus,
@@ -8,7 +8,127 @@ import {
 } from "../generated/prisma";
 import { MessagingInboundService } from "./messaging-inbound.service";
 
+beforeEach(() =>
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network disabled in inbound tests"))),
+);
+afterEach(() => vi.unstubAllGlobals());
+
 describe("MessagingInboundService", () => {
+  it("rejects required retained media failures before the transaction can commit a message", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    const committed = vi.fn();
+    prisma.$transaction.mockImplementation(async (callback) => {
+      const result = await callback(prisma);
+      committed();
+      return result;
+    });
+    const storeDownloaded = vi.fn().mockRejectedValue(new Error("isolated storage failure"));
+    await expect(
+      new MessagingInboundService(prisma as never, { storeDownloaded } as never).process(
+        retainedContact(),
+        { requireMediaReady: true, suppressAutomaticReply: true },
+      ),
+    ).rejects.toThrow("isolated storage failure");
+    expect(committed).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "stored/failed.vcf"])(
+    "repairs missing or failed stored media %s before acknowledging retained delivery",
+    async (mediaStorageKey) => {
+      const prisma = prismaMock();
+      prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+      const existing = {
+        id: "message-existing",
+        conversationId: "conversation-a",
+        mediaStorageKey,
+        mediaState: "FAILED",
+      };
+      prisma.message.findFirst.mockResolvedValue(existing);
+      const stored = {
+        objectKey: "isolated/contact.vcf",
+        mimeType: "text/vcard",
+        fileName: "contato.vcf",
+        sizeBytes: 32,
+        checksum: "test-checksum",
+      };
+      prisma.message.update.mockResolvedValue({ ...existing, mediaStorageKey: stored.objectKey });
+      const storeDownloaded = vi.fn().mockResolvedValue(stored);
+      const realtime = { publishConversationUpdated: vi.fn() };
+      const result = await new MessagingInboundService(
+        prisma as never,
+        { storeDownloaded } as never,
+        realtime as never,
+      ).process(retainedContact(), { requireMediaReady: true });
+      expect(realtime.publishConversationUpdated).toHaveBeenCalledWith({
+        tenantId: "tenant-a",
+        conversationId: "conversation-a",
+        reason: "message.media_ready",
+      });
+      expect(result.duplicate).toBe(true);
+      expect(prisma.message.update).toHaveBeenCalledWith({
+        where: { id: "message-existing" },
+        data: {
+          mediaStorageKey: stored.objectKey,
+          mediaMimeType: stored.mimeType,
+          mediaFileName: stored.fileName,
+          mediaSize: stored.sizeBytes,
+          mediaChecksum: stored.checksum,
+          mediaState: "READY",
+        },
+      });
+      expect(prisma.message.create).not.toHaveBeenCalled();
+      expect(prisma.contact.update).not.toHaveBeenCalled();
+      expect(storeDownloaded).toHaveBeenCalledWith(
+        expect.objectContaining({ body: retainedContact().media.inlineBody }),
+      );
+    },
+  );
+
+  it("leaves failed duplicate-media repair pending and does not overwrite the existing message", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue({
+      id: "message-existing",
+      conversationId: "conversation-a",
+      mediaStorageKey: null,
+    });
+    await expect(
+      new MessagingInboundService(prisma as never).process(retainedContact(), {
+        requireMediaReady: true,
+      }),
+    ).rejects.toThrow("Mídia retida ainda não disponível");
+    expect(prisma.message.update).not.toHaveBeenCalled();
+  });
+
+  it("does not download an already stored duplicate again", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue({
+      id: "message-existing",
+      conversationId: "conversation-a",
+      mediaStorageKey: "stored/card.vcf",
+      mediaState: "READY",
+    });
+    const storeDownloaded = vi.fn();
+    expect(
+      (
+        await new MessagingInboundService(prisma as never, { storeDownloaded } as never).process(
+          retainedContact(),
+          { requireMediaReady: true },
+        )
+      ).duplicate,
+    ).toBe(true);
+    expect(storeDownloaded).not.toHaveBeenCalled();
+  });
+
   it("queues the configured welcome message when a direct conversation starts", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue({
@@ -137,7 +257,13 @@ describe("MessagingInboundService", () => {
     prisma.contact.findFirst.mockResolvedValue(contact());
     prisma.contact.update.mockResolvedValue(contact());
     prisma.conversation.findFirst.mockResolvedValue(null);
-    prisma.conversation.create.mockResolvedValue(conversation({ id: "conversation-imported" }));
+    prisma.conversation.create.mockResolvedValue(
+      conversation({
+        id: "conversation-imported",
+        status: ConversationStatus.FECHADA,
+        closedAt: new Date("2026-09-01T12:00:00.000Z"),
+      }),
+    );
     prisma.message.create.mockResolvedValue({
       id: "message-imported",
       conversationId: "conversation-imported",
@@ -173,8 +299,175 @@ describe("MessagingInboundService", () => {
 
     expect(prisma.lead.upsert).not.toHaveBeenCalled();
     expect(outbound.queueAutomatedText).not.toHaveBeenCalled();
+    expect(prisma.conversation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        status: ConversationStatus.FECHADA,
+        closedAt: new Date("2026-09-01T12:00:00.000Z"),
+      }),
+    });
     expect(prisma.conversation.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ unreadCount: 0 }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          unreadCount: 0,
+          status: ConversationStatus.FECHADA,
+        }),
+      }),
+    );
+  });
+
+  it("keeps a closed conversation closed when importing more of its history", async () => {
+    const prisma = prismaMock();
+    const closedAt = new Date("2026-09-10T15:00:00.000Z");
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(
+      conversation({
+        status: ConversationStatus.FECHADA,
+        protocol: "000138",
+        closedAt,
+        lastMessageAt: closedAt,
+        lastMessagePreview: "Conversa encerrada - protocolo 000138.",
+      }),
+    );
+    prisma.message.create.mockResolvedValue({
+      id: "older-message",
+      conversationId: "conversation-a",
+      status: MessageStatus.CREATED,
+      createdAt: new Date("2026-09-01T12:00:00.000Z"),
+    });
+    prisma.conversation.update.mockResolvedValue(
+      conversation({ status: ConversationStatus.FECHADA, protocol: "000138", closedAt }),
+    );
+
+    await new MessagingInboundService(prisma as never).process(
+      {
+        tenantId: "tenant-a",
+        connectionId: "connection-a",
+        externalMessageId: "older-message",
+        externalChatId: "5511987654321@s.whatsapp.net",
+        conversationType: "DIRECT",
+        fromMe: false,
+        sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+        type: MessageType.TEXT,
+        content: "Mensagem antiga",
+        occurredAt: new Date("2026-09-01T12:00:00.000Z"),
+      },
+      { historical: true },
+    );
+
+    expect(prisma.conversation.create).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: ConversationStatus.FECHADA,
+          protocol: "000138",
+          closedAt,
+          lastMessageAt: closedAt,
+          lastMessagePreview: "Conversa encerrada - protocolo 000138.",
+        }),
+      }),
+    );
+    expect(prisma.lead.upsert).not.toHaveBeenCalled();
+  });
+
+  it("preserves newer preview and timestamp while counting a retained older message as unread", async () => {
+    const prisma = prismaMock();
+    const latestAt = new Date("2026-09-22T14:00:00.000Z");
+    const latest = conversation({
+      unreadCount: 2,
+      lastMessageAt: latestAt,
+      lastMessagePreview: "Mensagem mais recente",
+    });
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(latest);
+    prisma.message.create.mockResolvedValue({
+      id: "retained-old",
+      conversationId: "conversation-a",
+      status: MessageStatus.CREATED,
+    });
+    prisma.conversation.update.mockResolvedValue({ ...latest, unreadCount: 3 });
+    const automaticReply = { queueText: vi.fn() };
+    await new MessagingInboundService(
+      prisma as never,
+      undefined,
+      undefined,
+      undefined,
+      automaticReply as never,
+    ).process(
+      {
+        tenantId: "tenant-a",
+        connectionId: "connection-a",
+        externalMessageId: "retained-old",
+        externalChatId: "5511987654321@s.whatsapp.net",
+        conversationType: "DIRECT",
+        fromMe: false,
+        sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+        type: MessageType.TEXT,
+        content: "Mensagem retida antiga",
+        occurredAt: new Date("2026-09-22T12:00:00.000Z"),
+      },
+      { suppressAutomaticReply: true },
+    );
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lastMessageAt: latestAt,
+          lastMessagePreview: "Mensagem mais recente",
+          unreadCount: { increment: 1 },
+        }),
+      }),
+    );
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: "Mensagem retida antiga" }),
+      }),
+    );
+    expect(automaticReply.queueText).not.toHaveBeenCalled();
+  });
+
+  it("does not replace the latest preview while replaying an edit to an older message", async () => {
+    const prisma = prismaMock();
+    prisma.message.findFirst
+      .mockResolvedValueOnce({ id: "older", conversationId: "conversation-a", content: "Antes" })
+      .mockResolvedValueOnce({ id: "latest" });
+    await new MessagingInboundService(prisma as never).processEdit(
+      {
+        tenantId: "tenant-a",
+        connectionId: "connection-a",
+        providerMessageId: "provider-older",
+        content: "Texto editado",
+        occurredAt: new Date("2026-09-22T12:00:00.000Z"),
+      },
+      { preserveLatestPreview: true },
+    );
+    expect(prisma.message.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ content: "Texto editado" }) }),
+    );
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
+  });
+
+  it("refreshes the last message preview without moving its date for a retained edit", async () => {
+    const prisma = prismaMock();
+    prisma.message.findFirst
+      .mockResolvedValueOnce({ id: "latest", conversationId: "conversation-a", content: "Antes" })
+      .mockResolvedValueOnce({ id: "latest" });
+    await new MessagingInboundService(prisma as never).processEdit(
+      {
+        tenantId: "tenant-a",
+        connectionId: "connection-a",
+        providerMessageId: "provider-latest",
+        content: "Texto editado",
+        occurredAt: new Date("2026-09-22T12:00:00.000Z"),
+      },
+      { preserveLatestPreview: true },
+    );
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { lastMessagePreview: "Texto editado" } }),
     );
   });
 
@@ -197,6 +490,9 @@ describe("MessagingInboundService", () => {
       tenantId: "tenant-a",
       connectionId: "connection-a",
       externalMessageId: "inbound-1",
+      externalChatId: "551187654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
       sender: {
         phone: "551187654321@s.whatsapp.net",
         normalizedPhone: "+551187654321",
@@ -243,6 +539,9 @@ describe("MessagingInboundService", () => {
       tenantId: "tenant-a",
       connectionId: "connection-a",
       externalMessageId: "inbound-1",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
       sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
       type: MessageType.TEXT,
       content: "Replay",
@@ -272,6 +571,9 @@ describe("MessagingInboundService", () => {
       tenantId: "tenant-a",
       connectionId: "connection-a",
       externalMessageId: "inbound-new",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
       sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
       type: MessageType.TEXT,
       content: "Nova conversa apos fechamento",
@@ -309,6 +611,9 @@ describe("MessagingInboundService", () => {
       tenantId: "tenant-a",
       connectionId: "connection-a",
       externalMessageId: "inbound-new-contact",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
       sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
       type: MessageType.TEXT,
       content: "Primeiro contato",
@@ -661,8 +966,9 @@ function conversation(overrides: Record<string, unknown> = {}) {
 
 function prismaMock() {
   const prisma = {
+    $queryRaw: vi.fn().mockResolvedValue([{ serviceEnabled: true }]),
     messagingConnection: { findFirst: vi.fn() },
-    message: { findFirst: vi.fn(), create: vi.fn() },
+    message: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     contact: {
       findFirst: vi.fn(),
       update: vi.fn(),
@@ -689,4 +995,24 @@ function prismaMock() {
     $transaction: vi.fn(async (callback) => callback(prisma)),
   };
   return prisma;
+}
+
+function retainedContact() {
+  return {
+    tenantId: "tenant-a",
+    connectionId: "connection-a",
+    externalMessageId: "retained-contact",
+    externalChatId: "5511987654321@s.whatsapp.net",
+    conversationType: "DIRECT" as const,
+    fromMe: false,
+    sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+    type: MessageType.DOCUMENT,
+    content: "[contato] Teste",
+    occurredAt: new Date("2026-09-22T12:00:00Z"),
+    media: {
+      inlineBody: Buffer.from("BEGIN:VCARD\r\nFN:Teste\r\nEND:VCARD"),
+      mimetype: "text/vcard",
+      fileName: "contato.vcf",
+    },
+  };
 }

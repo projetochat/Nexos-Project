@@ -14,6 +14,7 @@ import { EvolutionStartupService } from "./evolution/evolution-startup.service";
 import { EvolutionWebhookController } from "./evolution/evolution-webhook.controller";
 import { EvolutionWebhookTranslator } from "./evolution/evolution-webhook.translator";
 import { MessagingMediaStorageService } from "./media/messaging-media-storage.service";
+import { VoiceAudioTranscoderService } from "./media/voice-audio-transcoder.service";
 import { MessagingConnectionsController } from "./messaging-connections.controller";
 import { MessagingConnectionsService } from "./messaging-connections.service";
 import { MessagingInboundService } from "./messaging-inbound.service";
@@ -24,6 +25,7 @@ import { MessagingProviderRegistry } from "./messaging-provider.registry";
 import { MessagingReactionService } from "./messaging-reaction.service";
 import { MessagingStatusService } from "./messaging-status.service";
 import { SenderDisplayNameService } from "./sender-display-name.service";
+import { MessagingServicePauseService } from "./messaging-service-pause.service";
 
 @Module({
   imports: [
@@ -42,8 +44,10 @@ import { SenderDisplayNameService } from "./sender-display-name.service";
     EvolutionMessagingProvider,
     EvolutionWebhookTranslator,
     MessagingConnectionsService,
+    MessagingServicePauseService,
     MessagingProviderRegistry,
     MessagingMediaStorageService,
+    VoiceAudioTranscoderService,
     MessagingOutboundService,
     SenderDisplayNameService,
     MessagingOutboundWorker,

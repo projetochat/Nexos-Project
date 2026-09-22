@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ContactRound } from "lucide-react";
 import { crmApi } from "@/lib/trixus-api";
@@ -9,16 +9,30 @@ import { Button, Input } from "./ui-kit";
 export function InboxContactPicker({
   onClose,
   onSelect,
+  priorityInstances = [],
 }: {
   onClose: () => void;
   onSelect: (file: File) => void;
+  /** Identifiers/names of the conversation instance, ordered by preference. */
+  priorityInstances?: string[];
 }) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const { data, isFetching, error, refetch } = useQuery({
-    queryKey: ["trixus", "contacts", "share", search.trim(), page],
-    queryFn: () => crmApi.listContacts({ q: search.trim() || undefined, page, pageSize: 10 }),
+    queryKey: ["trixus", "contacts", "share", search.trim(), page, priorityInstances],
+    queryFn: () => crmApi.listContacts({ q: search.trim() || undefined, page, pageSize: 100 }),
   });
+  const sortedContacts = useMemo(() => {
+    const priorities = new Set(priorityInstances.filter(Boolean));
+    if (!priorities.size) return data?.items ?? [];
+    return [...(data?.items ?? [])].sort((a, b) => {
+      const aPriority =
+        priorities.has(a.instancia ?? "") || a.instanceIds.some((id) => priorities.has(id));
+      const bPriority =
+        priorities.has(b.instancia ?? "") || b.instanceIds.some((id) => priorities.has(id));
+      return Number(bPriority) - Number(aPriority);
+    });
+  }, [data?.items, priorityInstances]);
   return (
     <Modal
       open
@@ -52,22 +66,35 @@ export function InboxContactPicker({
               Tentar novamente
             </Button>
           </div>
-        ) : data?.items.length ? (
-          data.items.map((contact) => (
-            <button
-              key={contact.id}
-              type="button"
-              disabled={!contact.telefone}
-              onClick={() => onSelect(contactCardFile(contact))}
-              className="flex w-full items-center gap-3 rounded-lg p-3 text-left hover:bg-surface-2 disabled:opacity-50"
-            >
-              <ContactRound className="h-5 w-5 shrink-0" />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium">{contact.nome}</span>
-                <span className="block text-xs text-muted-foreground">{contact.telefone}</span>
-              </span>
-            </button>
-          ))
+        ) : sortedContacts.length ? (
+          sortedContacts.map((contact, index) => {
+            const isCurrentInstance = priorityInstances.some(
+              (instance) =>
+                instance === contact.instancia || contact.instanceIds.includes(instance),
+            );
+            return (
+              <button
+                key={contact.id}
+                type="button"
+                disabled={!contact.telefone}
+                onClick={() => onSelect(contactCardFile(contact))}
+                className="flex w-full items-center gap-3 rounded-lg p-3 text-left hover:bg-surface-2 disabled:opacity-50"
+              >
+                <ContactRound className="h-5 w-5 shrink-0" />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 truncate text-sm font-medium">
+                    <span className="truncate">{contact.nome}</span>
+                    {isCurrentInstance && index === 0 && (
+                      <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                        Da instância atual
+                      </span>
+                    )}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">{contact.telefone}</span>
+                </span>
+              </button>
+            );
+          })
         ) : (
           <p className="py-3 text-sm">Nenhum contato encontrado.</p>
         )}

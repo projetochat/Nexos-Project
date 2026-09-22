@@ -125,7 +125,11 @@ function prismaMock() {
   };
 }
 
-function contact(overrides: Partial<ReturnType<typeof baseContact>> = {}) {
+function contact(
+  overrides: Partial<Omit<ReturnType<typeof baseContact>, "avatarUrl">> & {
+    avatarUrl?: string | null;
+  } = {},
+) {
   return { ...baseContact(), ...overrides };
 }
 

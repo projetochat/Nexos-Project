@@ -18,6 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Modal, ConfirmDialog } from "./modal";
 import { MessageReactionPicker } from "./message-reaction-picker";
 import { MessageForwardDialog } from "./message-forward-dialog";
+import { schedulesApi } from "@/lib/trixus-api";
 
 export function MessageActionsMenu({
   message,
@@ -35,6 +36,11 @@ export function MessageActionsMenu({
   const [info, setInfo] = useState(false);
   const [forward, setForward] = useState(false);
   const [resend, setResend] = useState(false);
+  const [edit, setEdit] = useState(false);
+  const [editText, setEditText] = useState(message.content);
+  const [remove, setRemove] = useState(false);
+  const [schedule, setSchedule] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const running = useRef(false);
@@ -134,19 +140,42 @@ export function MessageActionsMenu({
             <div className="my-1 border-t border-border" />
             <button
               className={itemClass}
-              disabled
-              title="A integração atual não permite apagar mensagens no WhatsApp."
+              disabled={busy || message.sender !== "agent" || !!message.deleted_for_everyone}
+              onClick={() => {
+                setOpen(false);
+                setRemove(true);
+              }}
             >
               <Trash2 className="h-4 w-4" />
               Apagar
             </button>
             <button
               className={itemClass}
-              disabled
-              title="A integração atual não permite editar mensagens no WhatsApp."
+              disabled={
+                busy ||
+                message.sender !== "agent" ||
+                message.type !== "text" ||
+                !!message.deleted_for_everyone
+              }
+              onClick={() => {
+                setEditText(message.content);
+                setOpen(false);
+                setEdit(true);
+              }}
             >
               <Pencil className="h-4 w-4" />
               Editar
+            </button>
+            <button
+              className={itemClass}
+              disabled={busy || message.sender !== "agent"}
+              onClick={() => {
+                setOpen(false);
+                setSchedule(true);
+              }}
+            >
+              <span className="text-base">◷</span>
+              Agendar mensagem
             </button>
             <button
               className={itemClass}
@@ -242,6 +271,130 @@ export function MessageActionsMenu({
           })
         }
       />
+      <Modal open={edit} onClose={() => !busy && setEdit(false)} title="Editar mensagem">
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void run(async () => {
+              await messageApi.edit(message.conversation_id, message.id, editText);
+              await invalidateConversationQueries(qc, message.conversation_id);
+              setEdit(false);
+            });
+          }}
+        >
+          <textarea
+            value={editText}
+            onChange={(event) => setEditText(event.target.value)}
+            className="min-h-24 w-full rounded-lg border border-border bg-card p-3 text-sm"
+            maxLength={4000}
+            autoFocus
+          />
+          {error && (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-border px-3 py-2 text-sm"
+              onClick={() => setEdit(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
+              disabled={busy || !editText.trim()}
+            >
+              Salvar
+            </button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmDialog
+        open={remove}
+        onClose={() => !busy && setRemove(false)}
+        title="Apagar mensagem"
+        description="A mensagem será sinalizada como apagada para todos."
+        onConfirm={() =>
+          run(async () => {
+            await messageApi.delete(message.conversation_id, message.id);
+            await invalidateConversationQueries(qc, message.conversation_id);
+            setRemove(false);
+          })
+        }
+      />
+      <Modal open={schedule} onClose={() => !busy && setSchedule(false)} title="Agendar mensagem">
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void run(async () => {
+              if (!scheduleAt) throw new Error("Escolha data e horário.");
+              const date = new Date(scheduleAt);
+              if (date <= new Date()) throw new Error("Escolha um horário futuro.");
+              await schedulesApi.save({
+                id: crypto.randomUUID(),
+                identifier: `msg-${message.id}`,
+                type: "message",
+                title: "Mensagem agendada",
+                destination: "Conversa atual",
+                scheduledAt: date.toISOString(),
+                recurrence: "once",
+                delivery: true,
+                status: "pending",
+                connectionId: "",
+                departmentId: "",
+                content: message.content,
+                recipientIds: [],
+                recipients: [],
+                recurrenceDays: [],
+                recurrenceLimit: "",
+                recurrenceUntil: "",
+                assignedMembershipId: "",
+                attachmentName: null,
+                conversationId: message.conversation_id,
+              } as never);
+              await invalidateConversationQueries(qc, message.conversation_id);
+              setSchedule(false);
+            });
+          }}
+        >
+          <label className="block text-sm">
+            <span className="mb-1 block text-muted-foreground">Data e horário</span>
+            <input
+              type="datetime-local"
+              value={scheduleAt}
+              onChange={(event) => setScheduleAt(event.target.value)}
+              className="w-full rounded-lg border border-border bg-card p-2"
+              required
+            />
+          </label>
+          {error && (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-border px-3 py-2 text-sm"
+              onClick={() => setSchedule(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
+              disabled={busy}
+            >
+              Agendar
+            </button>
+          </div>
+        </form>
+      </Modal>
     </>
   );
 }

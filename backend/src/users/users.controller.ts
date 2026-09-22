@@ -13,7 +13,15 @@ import {
 } from "@nestjs/common";
 import { createHash, randomBytes } from "crypto";
 import { compare, hash } from "bcryptjs";
-import { IsArray, IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import {
+  IsArray,
+  IsEmail,
+  IsOptional,
+  IsString,
+  IsTimeZone,
+  MaxLength,
+  MinLength,
+} from "class-validator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
@@ -24,6 +32,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
+import { ActivateUserDto } from "./dto/activate-user.dto";
 
 class CreateInvitationDto {
   @IsEmail()
@@ -89,6 +98,11 @@ class UpdateAdministratorCredentialsDto {
   avatarUrl?: string | null;
 }
 
+class UpdateCompanySettingsDto {
+  @IsTimeZone()
+  timezone!: string;
+}
+
 type MembershipWithRelations = {
   id: string;
   tenantId: string;
@@ -131,6 +145,7 @@ export class UsersController {
   ) {}
 
   @Get("me")
+  @UseGuards(PermissionsGuard)
   async me(@CurrentUser() current: AuthenticatedUser) {
     const membership = await this.prisma.tenantMembership.findUniqueOrThrow({
       where: { id: current.membershipId },
@@ -169,6 +184,7 @@ export class UsersController {
   }
 
   @Patch("me/profile")
+  @UseGuards(PermissionsGuard)
   async updateMyProfile(
     @Body() dto: UpdateMyProfileDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -214,6 +230,7 @@ export class UsersController {
   }
 
   @Patch("company/administrator-credentials")
+  @UseGuards(PermissionsGuard)
   async updateAdministratorCredentials(
     @Body() dto: UpdateAdministratorCredentialsDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -281,6 +298,7 @@ export class UsersController {
   }
 
   @Get("company")
+  @UseGuards(PermissionsGuard)
   async company(@CurrentUser() current: AuthenticatedUser) {
     const tenant = await this.prisma.tenant.findUniqueOrThrow({
       where: { id: current.tenantId },
@@ -322,7 +340,24 @@ export class UsersController {
     };
   }
 
+  @Patch("company")
+  @UseGuards(PermissionsGuard)
+  async updateCompany(
+    @Body() dto: UpdateCompanySettingsDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    if (current.roleKey !== "tenant_admin" || current.impersonationSessionId) {
+      throw new ForbiddenException("Somente o Administrador pode alterar os dados da empresa.");
+    }
+    return this.prisma.tenant.update({
+      where: { id: current.tenantId },
+      data: { timezone: dto.timezone },
+      select: { timezone: true },
+    });
+  }
+
   @Get("company/financial")
+  @UseGuards(PermissionsGuard)
   async financial(@CurrentUser() current: AuthenticatedUser) {
     const invoices = await this.prisma.invoice.findMany({
       where: { tenantId: current.tenantId },
@@ -404,15 +439,9 @@ export class UsersController {
           where: { tenantId_userId: { tenantId: current.tenantId, userId: user.id } },
         });
         if (existing) throw new BadRequestException("Usuário já pertence a este tenant.");
-        user = await tx.user.update({
-          where: { id: user.id },
-          data: {
-            name: dto.name.trim(),
-            passwordHash,
-            status: "ACTIVE",
-            ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
-          },
-        });
+        throw new BadRequestException(
+          "E-mail já vinculado a uma conta existente. Utilize o fluxo de convite ou vínculo.",
+        );
       } else {
         user = await tx.user.create({
           data: {
@@ -445,6 +474,15 @@ export class UsersController {
     @Body() dto: UpdateUserDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
+    return this.updateMembership(id, dto, current);
+  }
+
+  private async updateMembership(
+    id: string,
+    dto: UpdateUserDto,
+    current: AuthenticatedUser,
+    reactivationOnly = false,
+  ) {
     const existing = await this.findMembershipOrThrow(id, current.tenantId);
     this.assertMasterMembershipProtected(existing);
     if (dto.roleId) await this.assertAssignableRole(dto.roleId, current.tenantId);
@@ -456,6 +494,20 @@ export class UsersController {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
       );
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "users" WHERE id = ${existing.userId} FOR UPDATE`,
+      );
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "tenant_memberships" WHERE id = ${existing.id} AND "tenantId" = ${current.tenantId} FOR UPDATE`,
+      );
+      const latest = await this.findMembershipOrThrow(id, current.tenantId, tx);
+      this.assertMasterMembershipProtected(latest);
+      const reactivating =
+        (latest.status !== "ACTIVE" && dto.membershipStatus === "ACTIVE") ||
+        (latest.user.status === "DISABLED" && dto.status === "ACTIVE");
+      if (reactivationOnly && !reactivating) return latest;
+      if (reactivating)
+        await this.assertReactivationPassword(tx, latest, current.tenantId, dto.password);
       if (dto.name !== undefined) {
         await this.assertNameAvailable(tx, current.tenantId, dto.name, existing.id);
       }
@@ -488,8 +540,17 @@ export class UsersController {
   @Patch("users/:id/activate")
   @UseGuards(PermissionsGuard)
   @RequirePermissions("users.manage")
-  activate(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    return this.setMembershipStatus(id, current.tenantId, "ACTIVE");
+  activate(
+    @Param("id") id: string,
+    @Body() dto: ActivateUserDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.updateMembership(
+      id,
+      { password: dto.password, membershipStatus: "ACTIVE", status: "ACTIVE" },
+      current,
+      true,
+    );
   }
 
   @Patch("users/:id/deactivate")
@@ -637,8 +698,37 @@ export class UsersController {
     }
   }
 
-  private async findMembershipOrThrow(id: string, tenantId: string) {
-    const membership = await this.prisma.tenantMembership.findFirst({
+  private async assertReactivationPassword(
+    tx: Prisma.TransactionClient,
+    membership: { userId: string; user: { passwordHash: string } },
+    tenantId: string,
+    password?: string,
+  ) {
+    if (typeof password !== "string" || password.length < 6 || !password.trim()) {
+      throw new BadRequestException(
+        "Informe uma nova senha com pelo menos 6 caracteres para desbloquear o atendente.",
+      );
+    }
+    const otherMembership = await tx.tenantMembership.findFirst({
+      where: { userId: membership.userId, tenantId: { not: tenantId } },
+      select: { id: true },
+    });
+    if (otherMembership) {
+      throw new BadRequestException(
+        "Esta conta possui vínculo com outra empresa. A reativação exige recuperação explícita da conta global pelo titular.",
+      );
+    }
+    if (await compare(password, membership.user.passwordHash)) {
+      throw new BadRequestException("A nova senha deve ser diferente da senha anterior.");
+    }
+  }
+
+  private async findMembershipOrThrow(
+    id: string,
+    tenantId: string,
+    db: Pick<PrismaService, "tenantMembership"> = this.prisma,
+  ) {
+    const membership = await db.tenantMembership.findFirst({
       where: { id, tenantId },
       include: { user: true, role: true, departments: { include: { department: true } } },
     });

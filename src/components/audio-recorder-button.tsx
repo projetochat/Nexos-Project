@@ -5,9 +5,11 @@ import { Button } from "@/components/ui-kit";
 
 export function AudioRecorderButton({
   disabled,
+  showLabel = false,
   onRecorded,
 }: {
   disabled?: boolean;
+  showLabel?: boolean;
   onRecorded: (file: File) => void | Promise<void>;
 }) {
   const [recording, setRecording] = React.useState(false);
@@ -73,8 +75,8 @@ export function AudioRecorderButton({
     <Button
       type="button"
       variant={recording ? "primary" : "outline"}
-      size="icon"
-      className="h-7 w-7"
+      size={showLabel ? "sm" : "icon"}
+      className={showLabel ? "h-8 justify-start text-xs" : "h-7 w-7"}
       disabled={disabled}
       onClick={() => void toggleRecording()}
       aria-label={recording ? "Parar gravação de áudio" : "Gravar áudio"}
@@ -85,6 +87,7 @@ export function AudioRecorderButton({
       ) : (
         <Mic className="h-3.5 w-3.5" />
       )}
+      {showLabel && (recording ? "Parar gravação" : "Gravar Áudio")}
     </Button>
   );
 }

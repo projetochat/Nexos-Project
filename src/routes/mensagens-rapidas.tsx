@@ -2,7 +2,7 @@ import { customFieldVariableKey } from "@/lib/message-variables";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Braces, Copy, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, Braces, Copy, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { AudioRecorderButton } from "@/components/audio-recorder-button";
@@ -597,55 +597,66 @@ export function QuickReplyEditor({
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 )}
-                <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs text-primary">
-                  <Paperclip className="h-3.5 w-3.5" /> Anexar mídia
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,video/mp4,video/3gpp,video/webm,audio/ogg,audio/mpeg,audio/mp4,audio/webm,.pdf,.txt,.doc,.docx,.xls,.xlsx"
-                    className="sr-only"
-                    disabled={busy}
-                    aria-label={`Anexar arquivo à mensagem ${index + 1}`}
-                    onChange={async (event) => {
-                      const file = event.target.files?.[0];
-                      event.target.value = "";
-                      if (!file) return;
-                      const validationError = validateMessageAttachment(file);
-                      if (validationError) return toast.error(validationError);
-                      setBusy(true);
-                      try {
-                        const attachment = await readMessageAttachment(file);
-                        setMessages((items) =>
-                          items.map((item) => (item === message ? { ...item, attachment } : item)),
-                        );
-                      } catch (error) {
-                        toast.error((error as Error).message);
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
-                  />
-                </label>
-                <AudioRecorderButton
-                  disabled={busy}
-                  onRecorded={async (file) => {
-                    const validationError = validateMessageAttachment(file);
-                    if (validationError) {
-                      toast.error(validationError);
-                      return;
-                    }
-                    setBusy(true);
-                    try {
-                      const attachment = await readMessageAttachment(file);
-                      setMessages((items) =>
-                        items.map((item, position) =>
-                          position === index ? { ...item, attachment } : item,
-                        ),
-                      );
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                />
+                <details className="min-w-44 rounded-lg border border-border bg-surface-2 p-1">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-2 py-1 text-xs">
+                    <span>Anexo</span>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </summary>
+                  <div className="mt-1 flex flex-col gap-1">
+                    <AudioRecorderButton
+                      showLabel
+                      disabled={busy}
+                      onRecorded={async (file) => {
+                        const validationError = validateMessageAttachment(file);
+                        if (validationError) {
+                          toast.error(validationError);
+                          return;
+                        }
+                        setBusy(true);
+                        try {
+                          const attachment = await readMessageAttachment(file);
+                          setMessages((items) =>
+                            items.map((item, position) =>
+                              position === index ? { ...item, attachment } : item,
+                            ),
+                          );
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    />
+                    <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs text-primary">
+                      <Paperclip className="h-3.5 w-3.5" /> Anexar mídia
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,video/mp4,video/3gpp,video/webm,audio/ogg,audio/mpeg,audio/mp4,audio/webm,.pdf,.txt,.doc,.docx,.xls,.xlsx"
+                        className="sr-only"
+                        disabled={busy}
+                        aria-label={`Anexar arquivo à mensagem ${index + 1}`}
+                        onChange={async (event) => {
+                          const file = event.target.files?.[0];
+                          event.target.value = "";
+                          if (!file) return;
+                          const validationError = validateMessageAttachment(file);
+                          if (validationError) return toast.error(validationError);
+                          setBusy(true);
+                          try {
+                            const attachment = await readMessageAttachment(file);
+                            setMessages((items) =>
+                              items.map((item) =>
+                                item === message ? { ...item, attachment } : item,
+                              ),
+                            );
+                          } catch (error) {
+                            toast.error((error as Error).message);
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </details>
                 <span
                   className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
                   title={message.attachment?.fileName}
@@ -657,35 +668,6 @@ export function QuickReplyEditor({
                   )}
                 </span>
                 <div className="ml-auto flex gap-1">
-                  {" "}
-                  {([-1, 1] as const).map((direction) => (
-                    <Button
-                      key={direction}
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      aria-label={direction < 0 ? "Mover para cima" : "Mover para baixo"}
-                      disabled={
-                        busy || index + direction < 0 || index + direction >= messages.length
-                      }
-                      onClick={() =>
-                        setMessages((items) => {
-                          const next = [...items];
-                          [next[index], next[index + direction]] = [
-                            next[index + direction],
-                            next[index],
-                          ];
-                          return next;
-                        })
-                      }
-                    >
-                      {direction < 0 ? (
-                        <ArrowUp className="h-4 w-4" />
-                      ) : (
-                        <ArrowDown className="h-4 w-4" />
-                      )}
-                    </Button>
-                  ))}
                   <Button
                     variant="ghost"
                     size="icon"

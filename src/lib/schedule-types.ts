@@ -6,6 +6,7 @@ export type ApiSchedule = {
   type: ScheduleType;
   title: string;
   destination: string;
+  conversationId?: string;
   scheduledAt: string;
   recurrence: "once" | "weekly" | "monthly";
   delivery: boolean;

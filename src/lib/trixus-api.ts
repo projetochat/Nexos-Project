@@ -357,6 +357,9 @@ export type ApiMessage = {
   } | null;
   created_at: string;
   updated_at: string;
+  edited_at?: string | null;
+  deleted_at?: string | null;
+  deleted_for_everyone?: boolean;
   read_at: string | null;
   type: "text" | "image" | "audio" | "voice" | "video" | "document" | "system";
   status: "pending" | "created" | "queued" | "sending" | "sent" | "failed" | "delivered" | "read";
@@ -478,6 +481,7 @@ export type ApiAutomationRule = {
 export type ApiServiceHoursRow = { day: string; active: boolean; start: string; end: string };
 
 export type ApiMessagingConnection = {
+  serviceEnabled?: boolean;
   reference?: string;
   serviceHours?: ApiServiceHoursRow[] | null;
   timezone?: string;
@@ -978,6 +982,11 @@ export async function healthCheck() {
 
 export const organizationApi = {
   getCompany: () => apiRequest<ApiCompanyProfile>("/company"),
+  updateCompany: (data: { timezone: string }) =>
+    apiRequest<{ timezone: string }>("/company", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   listFinancialPayments: () => apiRequest<ApiFinancialPayment[]>("/company/financial"),
   listDepartments: () => apiRequest<ApiDepartment[]>("/departments"),
   createDepartment: (data: { name: string; description?: string | null; color?: string }) =>
@@ -1035,8 +1044,11 @@ export const organizationApi = {
     },
   ) =>
     apiRequest<ApiUserMembership>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  activateUser: (id: string) =>
-    apiRequest<ApiUserMembership>(`/users/${id}/activate`, { method: "PATCH" }),
+  activateUser: (id: string, data: { password: string }) =>
+    apiRequest<ApiUserMembership>(`/users/${id}/activate`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   deactivateUser: (id: string) =>
     apiRequest<ApiUserMembership>(`/users/${id}/deactivate`, { method: "PATCH" }),
   updateMyProfile: (data: {
@@ -1483,6 +1495,15 @@ export const messageApi = {
       method: "POST",
       body: JSON.stringify({ emoji }),
     }),
+  edit: (conversationId: string, messageId: string, content: string) =>
+    apiRequest<ApiMessage>(`/conversations/${conversationId}/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content }),
+    }),
+  delete: (conversationId: string, messageId: string) =>
+    apiRequest<ApiMessage>(`/conversations/${conversationId}/messages/${messageId}/delete`, {
+      method: "POST",
+    }),
   downloadMedia: async (conversationId: string, messageId: string, inline = false) => {
     const suffix = inline ? "inline" : "download";
     let response = await fetchTrixus(
@@ -1563,6 +1584,7 @@ export const connectionsApi = {
       welcomeNewAttachment?: QuickReplyAttachment | null;
       welcomeExistingAttachment?: QuickReplyAttachment | null;
       serviceHours?: ApiServiceHoursRow[];
+      serviceEnabled?: boolean;
       timezone?: string;
       absenceEnabled?: boolean;
       absenceMessage?: string | null;

@@ -4,6 +4,10 @@ import {
   inboxNotificationSoundEnabled,
   isInboundConversationUpdate,
   setInboxNotificationSoundEnabled,
+  inboxNotificationQueues,
+  setInboxNotificationQueues,
+  shouldNotifyInboxUpdate,
+  NOTIFICATION_QUEUES,
 } from "./inbox-notification-sound";
 
 describe("isInboundConversationUpdate", () => {
@@ -46,5 +50,50 @@ describe("isInboundConversationUpdate", () => {
     expect(inboxNotificationSoundEnabled("user-b")).toBe(true);
     setInboxNotificationSoundEnabled("user-a", true);
     expect(inboxNotificationSoundEnabled("user-a")).toBe(true);
+  });
+
+  it("filters incoming alerts by the conversation queue and preserves user preferences", () => {
+    setInboxNotificationQueues("user-a", ["leads", "standby"]);
+    expect(inboxNotificationQueues("user-a")).toEqual(["leads", "standby"]);
+    expect(inboxNotificationQueues("user-b")).toHaveLength(4);
+    for (const { id } of NOTIFICATION_QUEUES) {
+      const event = {
+        eventId: id,
+        event: "conversation.updated" as const,
+        version: 1 as const,
+        occurredAt: "2026-09-21T20:00:00Z",
+        data: { reason: "inbound.updated", notificationQueue: id },
+      };
+      expect(shouldNotifyInboxUpdate(event, "user-a")).toBe(["leads", "standby"].includes(id));
+      expect(shouldNotifyInboxUpdate(event, "user-b")).toBe(true);
+      expect(
+        shouldNotifyInboxUpdate(
+          { ...event, data: { ...event.data, reason: "outbound.synced" } },
+          "user-b",
+        ),
+      ).toBe(false);
+      setInboxNotificationSoundEnabled("user-a", false);
+      expect(shouldNotifyInboxUpdate(event, "user-a")).toBe(false);
+      setInboxNotificationSoundEnabled("user-a", true);
+    }
+  });
+
+  it("supports selecting all or none and safely handles events from older servers", () => {
+    const event = {
+      eventId: "legacy",
+      event: "conversation.updated" as const,
+      version: 1 as const,
+      occurredAt: "2026-09-21T20:00:00Z",
+      data: { reason: "inbound.created" },
+    };
+    expect(shouldNotifyInboxUpdate(event, "user-a")).toBe(true);
+    setInboxNotificationQueues("user-a", []);
+    expect(inboxNotificationQueues("user-a")).toEqual([]);
+    expect(shouldNotifyInboxUpdate(event, "user-a")).toBe(false);
+    setInboxNotificationQueues(
+      "user-a",
+      NOTIFICATION_QUEUES.map(({ id }) => id),
+    );
+    expect(shouldNotifyInboxUpdate(event, "user-a")).toBe(true);
   });
 });

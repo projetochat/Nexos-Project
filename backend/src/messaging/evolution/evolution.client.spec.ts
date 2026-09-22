@@ -127,6 +127,7 @@ describe("EvolutionClient", () => {
             events: [
               "MESSAGES_UPSERT",
               "MESSAGES_UPDATE",
+              "MESSAGES_DELETE",
               "SEND_MESSAGE_UPDATE",
               "QRCODE_UPDATED",
               "CONNECTION_UPDATE",

@@ -2,7 +2,6 @@ import * as React from "react";
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Send,
   SendHorizontal,
   ArrowRightLeft,
   CircleCheckBig,
@@ -11,7 +10,6 @@ import {
   Trash2,
   Play,
   Pause,
-  Zap,
   Paperclip,
   X,
   Link as LinkIcon,
@@ -23,6 +21,8 @@ import {
   Download,
   List,
   ArrowLeft,
+  ContactRound,
+  Phone,
 } from "lucide-react";
 import { toast as systemToast } from "sonner";
 // Notificações desativadas nesta tela — nenhum toast deve aparecer no chat.
@@ -39,6 +39,7 @@ import { MessageStatusIcon } from "@/components/message-status-icon";
 import { MessageActionsMenu } from "@/components/message-actions-menu";
 import { InboxMobileActions } from "@/components/inbox-mobile-actions";
 import { InboxContactPicker } from "@/components/inbox-contact-picker";
+import { ProfileCameraModal } from "@/components/profile-photo-controls";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { maskBrazilPhone } from "@/lib/input-masks";
@@ -48,6 +49,7 @@ import {
   messageApi,
   organizationApi,
   quickReplyApi,
+  schedulesApi,
   ticketApi,
   type ApiMessage,
   type ApiQuickReply as QuickReply,
@@ -80,6 +82,215 @@ const quickReplyDrafts = new Map<string, SequenceDraft>();
 
 type Message = ApiMessage;
 type MentionOption = { id: string; label: string; phone: string };
+
+function preferredRecordingMimeType() {
+  const candidates = [
+    "audio/ogg;codecs=opus",
+    "audio/webm;codecs=opus",
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/mp4",
+  ];
+  return candidates.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
+}
+
+function audioExtension(mimeType: string) {
+  const normalized = mimeType.toLowerCase();
+  if (normalized.includes("ogg")) return "ogg";
+  if (normalized.includes("mp4") || normalized.includes("m4a")) return "m4a";
+  if (normalized.includes("mpeg") || normalized.includes("mp3")) return "mp3";
+  return "webm";
+}
+
+function formatRecordingDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function AudioWaveform({ active = false, progress = 0 }: { active?: boolean; progress?: number }) {
+  const bars = [4, 8, 14, 9, 18, 11, 22, 15, 8, 19, 12, 24, 15, 9, 18, 12, 21, 8, 15, 11, 19, 7];
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-0.5" aria-hidden="true">
+      {bars.map((height, index) => (
+        <span
+          key={index}
+          className={`w-1 shrink-0 rounded-full transition-colors ${
+            index / bars.length <= progress ? "bg-primary" : "bg-muted-foreground/40"
+          } ${active ? "animate-pulse" : ""}`}
+          style={{ height: `${height}px`, animationDelay: `${index * 35}ms` }}
+        />
+      ))}
+    </span>
+  );
+}
+
+function AudioPreview({
+  src,
+  duration,
+  disabled,
+  onDiscard,
+  onSend,
+  sending,
+}: {
+  src: string;
+  duration: string;
+  disabled: boolean;
+  onDiscard: () => void;
+  onSend: () => void;
+  sending: boolean;
+}) {
+  const audioRef = React.useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = React.useState(false);
+  const [progress, setProgress] = React.useState(0);
+
+  const togglePlayback = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      try {
+        await audio.play();
+        setPlaying(true);
+      } catch {
+        setPlaying(false);
+      }
+    } else {
+      audio.pause();
+      setPlaying(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-14 w-full items-center gap-2 rounded-xl border border-border bg-card px-2 py-2 shadow-card">
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        className="sr-only"
+        onTimeUpdate={(event) => {
+          const audio = event.currentTarget;
+          setProgress(audio.duration ? audio.currentTime / audio.duration : 0);
+        }}
+        onEnded={() => {
+          setPlaying(false);
+          setProgress(0);
+        }}
+      />
+      <Button
+        variant="secondary"
+        size="icon"
+        className="h-9 w-9 shrink-0 rounded-full"
+        onClick={() => void togglePlayback()}
+        disabled={disabled}
+        aria-label={playing ? "Pausar áudio" : "Reproduzir áudio"}
+      >
+        {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+      </Button>
+      <AudioWaveform progress={progress} />
+      <span className="shrink-0 font-mono text-xs text-muted-foreground">{duration}</span>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9 shrink-0"
+        aria-label="Descartar áudio"
+        disabled={disabled}
+        onClick={onDiscard}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="primary"
+        size="icon"
+        className="h-9 w-9 shrink-0 rounded-full"
+        aria-label={sending ? "Enviando áudio" : "Enviar áudio"}
+        disabled={disabled}
+        onClick={onSend}
+      >
+        <SendHorizontal className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
+
+function isContactCardMessage(message: Message) {
+  const fileName = message.media_data?.file_name ?? "";
+  const mimeType = message.media_data?.mime_type ?? "";
+  return message.type === "document" && (mimeType === "text/vcard" || /\.vcf$/i.test(fileName));
+}
+
+function ContactCardMessage({
+  message,
+  mine,
+  mediaReady,
+}: {
+  message: Message;
+  mine: boolean;
+  mediaReady: boolean;
+}) {
+  const [contact, setContact] = React.useState<{ name: string; phone: string } | null>(null);
+  React.useEffect(() => {
+    if (!mediaReady) return;
+    let alive = true;
+    void messageApi
+      .downloadMedia(message.conversation_id, message.id, true)
+      .then((blob) => blob.text())
+      .then((card) => {
+        if (!alive) return;
+        const unfolded = card.replace(/\r?\n[ \t]/g, "");
+        const name = unfolded.match(/^FN:(.*)$/im)?.[1]?.trim() || "Contato compartilhado";
+        const phone = unfolded.match(/^TEL(?:;[^:]*)?:(.*)$/im)?.[1]?.trim() || "";
+        setContact({ name: unescapeVCard(name), phone: unescapeVCard(phone) });
+      })
+      .catch(() => {
+        if (alive) setContact({ name: "Contato compartilhado", phone: "" });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [mediaReady, message.conversation_id, message.id]);
+
+  const name = contact?.name ?? "Contato compartilhado";
+  const phone = contact?.phone ?? "";
+  return (
+    <div
+      className={`w-64 overflow-hidden rounded-xl ${
+        mine ? "bg-emerald-950/35 text-white" : "border border-border bg-surface-2"
+      }`}
+    >
+      <div className="flex items-center gap-3 px-3 py-3">
+        <Avatar name={name} size={42} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold">{name}</p>
+          {phone && (
+            <p
+              className={`mt-0.5 flex items-center gap-1 text-xs ${mine ? "text-white/70" : "text-muted-foreground"}`}
+            >
+              <Phone className="h-3 w-3" />
+              {phone}
+            </p>
+          )}
+        </div>
+      </div>
+      <button
+        type="button"
+        className={`flex w-full items-center justify-center gap-2 border-t px-3 py-2 text-sm font-semibold transition hover:brightness-110 ${
+          mine ? "border-white/15 text-emerald-300" : "border-border text-primary"
+        }`}
+        aria-label={`Conversar com ${name}`}
+        title="Contato compartilhado"
+      >
+        <ContactRound className="h-4 w-4" />
+        Conversar
+      </button>
+    </div>
+  );
+}
+
+function unescapeVCard(value: string) {
+  return value
+    .replace(/\\n/gi, "\n")
+    .replace(/\\([\\,;:])/g, "$1")
+    .trim();
+}
 
 function ConversationPage() {
   const isMobile = useIsMobile();
@@ -277,7 +488,7 @@ function ConversationPage() {
 
   return (
     <InboxLayout>
-      <div className="relative flex h-full min-h-0">
+      <div className="relative flex h-full min-h-0 w-full min-w-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-surface-1 px-5 py-3">
             <Button
@@ -315,10 +526,12 @@ function ConversationPage() {
               </div>
             </button>
             <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-              <ConversationCallButton
-                enabled={canSend}
-                onClick={() => systemToast.info(CALL_UNAVAILABLE_MESSAGE)}
-              />
+              {canSend && (
+                <ConversationCallButton
+                  enabled
+                  onClick={() => systemToast.info(CALL_UNAVAILABLE_MESSAGE)}
+                />
+              )}
               {conv.status === "fechada" ? (
                 <Button variant="secondary" size="sm" onClick={handleNewConversation}>
                   <Plus className="h-3.5 w-3.5" /> Nova conversa
@@ -357,8 +570,8 @@ function ConversationPage() {
             </div>
           </header>
 
-          <div ref={scrollRef} className="min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-5 md:py-6">
-            <div className="mx-auto max-w-4xl space-y-4">
+          <div ref={scrollRef} className="min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-2 md:py-6">
+            <div className="w-full space-y-4">
               {(() => {
                 const isLead = !conv.agent_id && conv.status !== "fechada" && !conv.protocolo;
                 const line = isLead ? "bg-info/40" : "bg-success/40";
@@ -414,6 +627,11 @@ function ConversationPage() {
               key={conversationId}
               conversationId={conv.id}
               authorId={user?.id ?? null}
+              priorityInstances={[
+                conv.connection?.id,
+                conv.connection?.externalReference,
+                conv.connection?.name,
+              ].filter((value): value is string => Boolean(value))}
               variableContext={{
                 contactName: conv.contact?.nome,
                 phone: conv.contact?.telefone,
@@ -453,22 +671,6 @@ function ConversationPage() {
                 void invalidateConversationQueries(qc, conv.id);
               }}
             />
-            <div className="pointer-events-none absolute inset-y-0 right-4 hidden items-center xl:flex">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleGerarChamado}
-                disabled={gerando || !conv.protocolo}
-                title={
-                  conv.protocolo
-                    ? "Gerar chamado a partir desta conversa"
-                    : "Inicie a conversa para gerar o chamado"
-                }
-                className="pointer-events-auto"
-              >
-                <Ticket className="h-3.5 w-3.5" /> {gerando ? "Gerando…" : "Gerar Chamado"}
-              </Button>
-            </div>
           </div>
           <div className="hidden border-t border-border bg-surface-1 px-3 pb-3 md:block xl:hidden">
             <Button
@@ -501,7 +703,7 @@ function ConversationPage() {
         </div>
 
         {conv.contact && panelOpen && (
-          <div className="absolute inset-y-0 right-0 z-20 flex max-w-full">
+          <div className="absolute inset-y-0 right-0 z-20 flex max-w-full 2xl:relative 2xl:inset-auto 2xl:z-auto 2xl:shrink-0">
             <ContactPanel contactId={conv.contact.id} onClose={() => setPanelOpen(false)} />
           </div>
         )}
@@ -549,10 +751,11 @@ function ConversationPage() {
 }
 
 /* -------- Message bubble -------- */
-function MessageBubble({
+export function MessageBubble({
   m,
   agents,
   showAgentName = true,
+  readOnly = false,
   onReply,
   onQuotedClick,
   highlighted,
@@ -565,6 +768,7 @@ function MessageBubble({
   m: Message;
   agents: { id: string; nome: string }[];
   showAgentName?: boolean;
+  readOnly?: boolean;
   onReply?: (message: Message) => void;
   onQuotedClick?: (messageId: string | null | undefined) => void;
   highlighted?: boolean;
@@ -643,6 +847,11 @@ function MessageBubble({
       </div>
     );
   }
+  const reactionCounts = new Map<string, number>();
+  for (const reaction of m.reactions ?? []) {
+    reactionCounts.set(reaction.emoji, (reactionCounts.get(reaction.emoji) ?? 0) + 1);
+  }
+  const reactionGroups = [...reactionCounts.entries()];
   const mine = m.sender === "agent";
   const authorName =
     showAgentName && mine && m.author_id
@@ -681,12 +890,14 @@ function MessageBubble({
             : "rounded-bl-sm border border-border bg-surface-1"
         }`}
       >
-        <MessageActionsMenu
-          message={m}
-          onReply={onReply ? () => onReply(m) : undefined}
-          onReact={react}
-          onDownload={() => download()}
-        />
+        {!readOnly && (
+          <MessageActionsMenu
+            message={m}
+            onReply={onReply ? () => onReply(m) : undefined}
+            onReact={react}
+            onDownload={() => download()}
+          />
+        )}
         {m.participant?.name && !mine && (
           <p className="mb-1 text-[11px] font-semibold text-primary">{m.participant.name}</p>
         )}
@@ -701,106 +912,136 @@ function MessageBubble({
         {m.type === "image" && mediaUrl && imagePreviewOpen && (
           <InboxImageViewer
             src={mediaUrl}
+            readOnly={readOnly}
             message={m}
             images={galleryImages}
             onClose={() => setImagePreviewOpen(false)}
-            onReply={(image) => {
-              setImagePreviewOpen(false);
-              onReply?.(image as Message);
-            }}
+            onReply={
+              onReply
+                ? (image) => {
+                    setImagePreviewOpen(false);
+                    onReply(image as Message);
+                  }
+                : undefined
+            }
             onDownload={(image) => download(image as Message)}
           />
         )}
-        {m.type === "image" && m.media_data && (
-          <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
-            {mediaUrl ? (
+        {m.deleted_for_everyone ? (
+          <p className="italic text-muted-foreground">Esta mensagem foi apagada</p>
+        ) : (
+          <>
+            {m.type === "image" && m.media_data && (
+              <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
+                {mediaUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => setImagePreviewOpen(true)}
+                    aria-label="Ampliar imagem"
+                    className="block cursor-zoom-in"
+                  >
+                    <img
+                      src={mediaUrl}
+                      alt={m.media_data.file_name ?? "imagem"}
+                      className="max-h-72 max-w-full object-contain"
+                    />
+                  </button>
+                ) : mediaError || mediaState === "failed" ? (
+                  <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>
+                ) : mediaReady ? (
+                  <div className="px-3 py-2 text-xs opacity-80">Carregando imagem...</div>
+                ) : (
+                  <div className="px-3 py-2 text-xs opacity-80">Imagem em processamento...</div>
+                )}
+              </div>
+            )}
+            {m.type === "video" && m.media_data && (
+              <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
+                {mediaUrl ? (
+                  <video src={mediaUrl} controls className="max-h-72 max-w-full" />
+                ) : mediaError || mediaState === "failed" ? (
+                  <div className="px-3 py-2 text-xs opacity-80">Video indisponivel.</div>
+                ) : mediaReady ? (
+                  <div className="px-3 py-2 text-xs opacity-80">Carregando video...</div>
+                ) : (
+                  <div className="px-3 py-2 text-xs opacity-80">Video em processamento...</div>
+                )}
+              </div>
+            )}
+            {(m.type === "audio" || m.type === "voice") &&
+              m.media_data &&
+              (mediaUrl ? (
+                <AudioPlayer src={mediaUrl} durationMs={m.duration_ms} mine={mine} />
+              ) : (
+                <div
+                  className={`mb-2 rounded-lg px-3 py-2 text-xs ${
+                    mine ? "bg-white/15" : "bg-surface-2"
+                  }`}
+                >
+                  {mediaError || mediaState === "failed"
+                    ? "Audio indisponivel."
+                    : mediaReady
+                      ? "Carregando audio..."
+                      : "Audio em processamento..."}
+                </div>
+              ))}
+            {isContactCardMessage(m) && m.media_data && (
+              <ContactCardMessage message={m} mine={mine} mediaReady={mediaReady} />
+            )}
+            {m.type === "document" && !isContactCardMessage(m) && m.media_data && (
               <button
                 type="button"
-                onClick={() => setImagePreviewOpen(true)}
-                aria-label="Ampliar imagem"
-                className="block cursor-zoom-in"
+                onClick={mediaReady ? () => void download() : undefined}
+                disabled={!mediaReady}
+                className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
+                  mine ? "border-white/30 bg-white/10" : "border-border/60 bg-surface-2"
+                } ${mediaReady ? "" : "opacity-70"}`}
               >
-                <img
-                  src={mediaUrl}
-                  alt={m.media_data.file_name ?? "imagem"}
-                  className="max-h-72 max-w-full object-contain"
-                />
+                <Download className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">
+                  {mediaState === "failed"
+                    ? "Documento indisponivel"
+                    : mediaReady
+                      ? (m.media_data.file_name ?? "Documento")
+                      : "Documento em processamento..."}
+                </span>
               </button>
-            ) : mediaError || mediaState === "failed" ? (
-              <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>
-            ) : mediaReady ? (
-              <div className="px-3 py-2 text-xs opacity-80">Carregando imagem...</div>
-            ) : (
-              <div className="px-3 py-2 text-xs opacity-80">Imagem em processamento...</div>
             )}
-          </div>
-        )}
-        {m.type === "video" && m.media_data && (
-          <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
-            {mediaUrl ? (
-              <video src={mediaUrl} controls className="max-h-72 max-w-full" />
-            ) : mediaError || mediaState === "failed" ? (
-              <div className="px-3 py-2 text-xs opacity-80">Video indisponivel.</div>
-            ) : mediaReady ? (
-              <div className="px-3 py-2 text-xs opacity-80">Carregando video...</div>
-            ) : (
-              <div className="px-3 py-2 text-xs opacity-80">Video em processamento...</div>
+            {m.content && m.content !== "[áudio]" && m.content !== "[imagem]" && (
+              <>
+                <MessageText content={m.content} />
+                {m.edited_at && <span className="ml-1 text-[10px] opacity-70">(editada)</span>}
+              </>
             )}
-          </div>
-        )}
-        {(m.type === "audio" || m.type === "voice") &&
-          m.media_data &&
-          (mediaUrl ? (
-            <AudioPlayer src={mediaUrl} durationMs={m.duration_ms} mine={mine} />
-          ) : (
-            <div
-              className={`mb-2 rounded-lg px-3 py-2 text-xs ${
-                mine ? "bg-white/15" : "bg-surface-2"
-              }`}
-            >
-              {mediaError || mediaState === "failed"
-                ? "Audio indisponivel."
-                : mediaReady
-                  ? "Carregando audio..."
-                  : "Audio em processamento..."}
-            </div>
-          ))}
-        {m.type === "document" && m.media_data && (
-          <button
-            type="button"
-            onClick={mediaReady ? () => void download() : undefined}
-            disabled={!mediaReady}
-            className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
-              mine ? "border-white/30 bg-white/10" : "border-border/60 bg-surface-2"
-            } ${mediaReady ? "" : "opacity-70"}`}
-          >
-            <Download className="h-4 w-4 shrink-0" />
-            <span className="min-w-0 flex-1 truncate">
-              {mediaState === "failed"
-                ? "Documento indisponivel"
-                : mediaReady
-                  ? (m.media_data.file_name ?? "Documento")
-                  : "Documento em processamento..."}
-            </span>
-          </button>
-        )}
-        {m.content && m.content !== "[áudio]" && m.content !== "[imagem]" && (
-          <MessageText content={m.content} />
-        )}
-        {m.interactive_data?.kind === "list" && (
-          <WhatsAppListMessage interactive={m.interactive_data} mine={mine} />
-        )}
-        {m.reactions && m.reactions.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1">
-            {m.reactions.map((reaction) => (
-              <span
-                key={reaction.id}
-                className="rounded-full bg-black/10 px-1.5 py-0.5 text-[11px]"
+            {m.interactive_data?.kind === "list" && (
+              <WhatsAppListMessage interactive={m.interactive_data} mine={mine} />
+            )}
+            {m.reactions && m.reactions.length > 0 && (
+              <div
+                aria-label="Reações da mensagem"
+                title={reactionGroups.map(([emoji, count]) => `${emoji} ${count}`).join(", ")}
+                className={`absolute -bottom-3 ${mine ? "right-2" : "left-2"} z-10 flex max-w-32 items-center gap-0.5 overflow-hidden whitespace-nowrap rounded-full border border-border bg-card px-1 py-0.5 text-foreground shadow-sm`}
               >
-                {reaction.emoji}
-              </span>
-            ))}
-          </div>
+                {reactionGroups.slice(0, 3).map(([emoji, count]) => (
+                  <span
+                    key={emoji}
+                    aria-label={`${emoji}: ${count}`}
+                    className="shrink-0 text-sm leading-4"
+                  >
+                    {emoji}
+                  </span>
+                ))}
+                {m.reactions.length > 1 && (
+                  <span
+                    aria-label={`${m.reactions.length} reações no total`}
+                    className="min-w-0 truncate px-0.5 text-[10px] leading-4"
+                  >
+                    {m.reactions.length}
+                  </span>
+                )}
+              </div>
+            )}
+          </>
         )}
         <div className="mt-1 flex items-center justify-end">
           <p
@@ -1054,6 +1295,7 @@ type DisabledReason = "closed" | "standby" | "lead" | "not-mine" | null;
 function Composer({
   conversationId,
   authorId,
+  priorityInstances = [],
   variableContext,
   disabled,
   disabledReason,
@@ -1069,6 +1311,7 @@ function Composer({
 }: {
   conversationId: string;
   authorId: string | null;
+  priorityInstances?: string[];
   variableContext: MessageVariableContext;
   disabled: boolean;
   disabledReason?: DisabledReason;
@@ -1085,6 +1328,9 @@ function Composer({
   const qc = useQueryClient();
   const [text, setText] = React.useState("");
   const isMobile = useIsMobile();
+  const composerProtected =
+    disabled &&
+    (disabledReason === "lead" || disabledReason === "standby" || disabledReason === "not-mine");
 
   const [pendingFile, setPendingFile] = React.useState<{
     file: File;
@@ -1112,8 +1358,10 @@ function Composer({
   }, []);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
-  const cameraRef = React.useRef<HTMLInputElement>(null);
+  const [showCamera, setShowCamera] = React.useState(false);
   const [showContacts, setShowContacts] = React.useState(false);
+  const [showSchedule, setShowSchedule] = React.useState(false);
+  const [scheduleAt, setScheduleAt] = React.useState("");
   const typingActiveRef = React.useRef(false);
   const typingStopTimerRef = React.useRef<number | null>(null);
 
@@ -1420,55 +1668,169 @@ function Composer({
     e.target.value = "";
   };
 
+  const onCameraCapture = (dataUrl: string) => {
+    const [header, encoded] = dataUrl.split(",", 2);
+    if (!encoded) return;
+    const mimeType = header.match(/^data:([^;]+)/i)?.[1] ?? "image/jpeg";
+    const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+    const file = new File([bytes], `camera-${Date.now()}.jpg`, { type: mimeType });
+    setPendingFile({ file, previewUrl: dataUrl, mediaType: "image" });
+    setShowCamera(false);
+  };
+
   /* --- audio recording --- */
   const [recording, setRecording] = React.useState(false);
+  const [recordingPaused, setRecordingPaused] = React.useState(false);
+  const [recordingSeconds, setRecordingSeconds] = React.useState(0);
+  const [recordingError, setRecordingError] = React.useState("");
+  const [audioSending, setAudioSending] = React.useState(false);
   const [pendingAudio, setPendingAudio] = React.useState<{
     blob: Blob;
     url: string;
     duration: number;
     mimeType: string;
   } | null>(null);
-  const recRef = React.useRef<{ rec: MediaRecorder; chunks: Blob[]; startedAt: number } | null>(
-    null,
+  const recRef = React.useRef<{
+    rec: MediaRecorder;
+    chunks: Blob[];
+    startedAt: number;
+    pausedAt: number | null;
+    stream: MediaStream;
+  } | null>(null);
+  const discardRecordingRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!recording || recordingPaused) return;
+    const timer = window.setInterval(() => {
+      const startedAt = recRef.current?.startedAt;
+      if (startedAt) setRecordingSeconds(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [recording, recordingPaused]);
+
+  React.useEffect(
+    () => () => {
+      const active = recRef.current;
+      discardRecordingRef.current = true;
+      if (active?.rec.state !== "inactive") active?.rec.stop();
+      active?.stream.getTracks().forEach((track) => track.stop());
+    },
+    [],
   );
 
   const startRecording = async () => {
+    setRecordingError("");
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setRecordingError("Este navegador não oferece suporte à gravação de áudio.");
+      return;
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      const mimeType = preferredRecordingMimeType();
+      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       const chunks: Blob[] = [];
+      discardRecordingRef.current = false;
       rec.ondataavailable = (ev) => {
         if (ev.data.size > 0) chunks.push(ev.data);
       };
       rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
+        const startedAt = recRef.current?.startedAt ?? Date.now();
+        const duration = Date.now() - startedAt;
+        recRef.current = null;
+        setRecording(false);
+        setRecordingPaused(false);
+        setRecordingSeconds(0);
+        if (discardRecordingRef.current) {
+          discardRecordingRef.current = false;
+          return;
+        }
         const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
-        const dur = Date.now() - (recRef.current?.startedAt ?? Date.now());
+        if (!blob.size || duration < 500) {
+          setRecordingError(
+            "O áudio ficou curto demais. Grave novamente por pelo menos 1 segundo.",
+          );
+          return;
+        }
         setPendingAudio({
           blob,
           url: URL.createObjectURL(blob),
-          duration: dur,
+          duration,
           mimeType: blob.type || "audio/webm",
         });
       };
-      rec.start();
-      recRef.current = { rec, chunks, startedAt: Date.now() };
+      rec.onerror = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        setRecording(false);
+        setRecordingPaused(false);
+        setRecordingError("A gravação foi interrompida pelo navegador. Tente novamente.");
+      };
+      rec.start(1_000);
+      recRef.current = { rec, chunks, startedAt: Date.now(), pausedAt: null, stream };
+      setRecordingSeconds(0);
+      setRecordingPaused(false);
       setRecording(true);
-    } catch {
-      toast.error("Não foi possível acessar o microfone.");
+    } catch (error) {
+      const name = error instanceof DOMException ? error.name : "";
+      setRecordingError(
+        name === "NotAllowedError" || name === "SecurityError"
+          ? "Acesso ao microfone bloqueado. Libere o microfone nas permissões deste site e tente novamente."
+          : name === "NotFoundError"
+            ? "Nenhum microfone foi encontrado neste aparelho."
+            : name === "NotReadableError"
+              ? "O microfone está sendo usado por outro aplicativo. Feche-o e tente novamente."
+              : "Não foi possível acessar o microfone. Verifique a permissão do navegador.",
+      );
     }
   };
 
   const stopRecording = () => {
-    recRef.current?.rec.stop();
-    setRecording(false);
+    const recorder = recRef.current?.rec;
+    if (!recorder || recorder.state === "inactive") return;
+    const active = recRef.current;
+    if (active?.pausedAt) {
+      active.startedAt += Date.now() - active.pausedAt;
+      active.pausedAt = null;
+    }
+    try {
+      recorder.requestData();
+    } catch {
+      // Some WebKit versions flush the final chunk only from stop().
+    }
+    recorder.stop();
+  };
+
+  const toggleRecordingPause = () => {
+    const recorder = recRef.current?.rec;
+    if (!recorder) return;
+    if (recorder.state === "recording") {
+      recorder.pause();
+      if (recRef.current) recRef.current.pausedAt = Date.now();
+      setRecordingPaused(true);
+    } else if (recorder.state === "paused") {
+      if (recRef.current?.pausedAt) {
+        recRef.current.startedAt += Date.now() - recRef.current.pausedAt;
+        recRef.current.pausedAt = null;
+      }
+      recorder.resume();
+      setRecordingPaused(false);
+    }
+  };
+
+  const discardRecording = () => {
+    discardRecordingRef.current = true;
+    stopRecording();
   };
 
   const sendAudio = async () => {
     if (!pendingAudio || !authorId) return;
+    setAudioSending(true);
+    setRecordingError("");
     try {
       await messageApi.sendMedia(conversationId, pendingAudio.blob, {
-        fileName: `audio-${Date.now()}.webm`,
+        fileName: `audio-${Date.now()}.${audioExtension(pendingAudio.mimeType)}`,
         mimeType: pendingAudio.mimeType,
         mediaType: "voice",
         durationMs: pendingAudio.duration,
@@ -1481,13 +1843,15 @@ function Composer({
         .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
       onSent();
     } catch (e) {
-      toast.error((e as Error).message);
+      setRecordingError((e as Error).message);
+    } finally {
+      setAudioSending(false);
     }
   };
 
   return (
     <div className="border-t border-border bg-surface-1 p-3">
-      <div className="mx-auto max-w-3xl">
+      <div className="w-full">
         {sequence && (
           <div
             className="mb-2 space-y-2 rounded-lg border border-primary/30 bg-card p-3"
@@ -1572,26 +1936,13 @@ function Composer({
           </div>
         )}
 
-        {pendingAudio && (
-          <div className="mb-2 flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
-            <audio src={pendingAudio.url} controls className="h-8" />
-            <p className="flex-1 text-xs text-muted-foreground">Áudio pronto. Envie ou descarte.</p>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="trash-action"
-              aria-label="Descartar"
-              onClick={() => {
-                URL.revokeObjectURL(pendingAudio.url);
-                setPendingAudio(null);
-              }}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="primary" size="sm" onClick={sendAudio}>
-              <Send className="h-3.5 w-3.5" /> Enviar áudio
-            </Button>
-          </div>
+        {recordingError && (
+          <p
+            role="alert"
+            className="mb-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            {recordingError}
+          </p>
         )}
 
         {showQR && filteredQR.length > 0 && (
@@ -1657,145 +2008,164 @@ function Composer({
           </div>
         )}
 
-        <div className="flex items-end gap-2 rounded-xl border border-border bg-card p-2 shadow-card focus-within:border-primary">
-          <div className="flex items-center gap-0.5">
-            {isMobile && (
+        {recording && (
+          <div
+            className="flex min-h-14 items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-2 py-2 shadow-card"
+            aria-live="polite"
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 shrink-0 text-destructive"
+              onClick={discardRecording}
+              aria-label="Descartar gravação"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+            <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <span className="absolute h-2 w-2 animate-ping rounded-full bg-destructive opacity-60" />
+              <Mic className="h-4 w-4" />
+            </span>
+            <div className="min-w-24 shrink-0">
+              <p className="text-xs font-medium">
+                {recordingPaused ? "Áudio pausado" : "Gravando áudio"}
+              </p>
+              <p className="font-mono text-xs text-muted-foreground">
+                {formatRecordingDuration(recordingSeconds)}
+              </p>
+            </div>
+            <AudioWaveform active={!recordingPaused} />
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-9 w-9 shrink-0 rounded-full"
+              onClick={toggleRecordingPause}
+              aria-label={recordingPaused ? "Continuar gravação" : "Pausar gravação"}
+            >
+              {recordingPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+            </Button>
+            <Button
+              variant="destructive"
+              size="icon"
+              className="h-9 w-9 shrink-0 rounded-full"
+              onClick={stopRecording}
+              aria-label="Concluir gravação"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" />
+            </Button>
+          </div>
+        )}
+        {pendingAudio && !recording && (
+          <AudioPreview
+            src={pendingAudio.url}
+            duration={formatRecordingDuration(Math.round(pendingAudio.duration / 1000))}
+            disabled={audioSending}
+            onDiscard={() => {
+              URL.revokeObjectURL(pendingAudio.url);
+              setPendingAudio(null);
+            }}
+            onSend={() => void sendAudio()}
+            sending={audioSending}
+          />
+        )}
+        {!recording && !pendingAudio && (
+          <div
+            className={`flex items-end gap-2 rounded-xl border border-border p-2 shadow-card focus-within:border-primary ${composerProtected ? "cursor-not-allowed bg-surface-2" : "bg-card"}`}
+          >
+            <div className="flex items-center gap-0.5">
               <InboxMobileActions
                 disabled={disabled || sequenceSending || !!sequence || recording || !!pendingAudio}
                 allowQuickReplies={allowQuickReplies}
                 ticketDisabled={ticketDisabled}
                 onQuickReplies={() => setShowQR((value) => !value)}
                 onAttach={() => fileRef.current?.click()}
-                onCamera={() => cameraRef.current?.click()}
+                onCamera={() => setShowCamera(true)}
                 onContact={() => setShowContacts(true)}
                 onTicket={onTicket}
+                onSchedule={() => setShowSchedule(true)}
               />
-            )}
-            {!isMobile && allowQuickReplies && (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Mensagens rápidas"
-                onClick={() => setShowQR((v) => !v)}
-                disabled={disabled || sequenceSending || !!sequence}
-              >
-                <Zap className="h-4 w-4" />
-              </Button>
-            )}
-            {!isMobile && (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Anexar imagem"
-                onClick={() => fileRef.current?.click()}
-                disabled={disabled || sequenceSending || !!sequence}
-              >
-                <Paperclip className="h-4 w-4" />
-              </Button>
-            )}
-            <input
-              ref={cameraRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={onFilePick}
-            />
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
-              className="hidden"
-              onChange={onFilePick}
-            />
-          </div>
-          <textarea
-            ref={textareaRef}
-            rows={1}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              emitTypingStart();
-              if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
-              typingStopTimerRef.current = window.setTimeout(emitTypingStop, 2500);
-            }}
-            onPaste={handlePaste}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                className="hidden"
+                onChange={onFilePick}
+              />
+            </div>
+            <textarea
+              ref={textareaRef}
+              rows={1}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                emitTypingStart();
+                if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
+                typingStopTimerRef.current = window.setTimeout(emitTypingStop, 2500);
+              }}
+              onPaste={handlePaste}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+                if (e.key === "Escape") setShowQR(false);
+              }}
+              disabled={disabled || sequenceSending || !!sequence || recording || !!pendingAudio}
+              aria-label="Mensagem"
+              placeholder={isMobile ? "" : "Digite uma mensagem"}
+              title={
+                disabledReason === "closed"
+                  ? "Conversa encerrada."
+                  : disabledReason === "lead"
+                    ? "Clique em Iniciar acima para responder este lead."
+                    : disabledReason === "standby"
+                      ? "Clique em Retomar acima para voltar a atender."
+                      : disabledReason === "not-mine"
+                        ? "Conversa atribuída a outro atendente."
+                        : undefined
               }
-              if (e.key === "Escape") setShowQR(false);
-            }}
-            disabled={disabled || sequenceSending || !!sequence}
-            aria-label="Mensagem"
-            placeholder={isMobile ? "" : "Digite uma mensagem"}
-            title={
-              disabledReason === "closed"
-                ? "Conversa encerrada."
-                : disabledReason === "lead"
-                  ? "Clique em Iniciar acima para responder este lead."
-                  : disabledReason === "standby"
-                    ? "Clique em Retomar acima para voltar a atender."
-                    : disabledReason === "not-mine"
-                      ? "Conversa atribuída a outro atendente."
-                      : undefined
-            }
-            className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-5 outline-none placeholder:text-muted-foreground disabled:opacity-50"
-            style={{ minHeight: 32, maxHeight: 5 * 20 + 12 }}
-          />
+              className="flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-sm leading-5 outline-none placeholder:text-muted-foreground disabled:opacity-50"
+              style={{ minHeight: 32, maxHeight: 5 * 20 + 12 }}
+            />
 
-          {allowAudio &&
-            (!recording ? (
+            {allowAudio && !recording && (
               <Button
                 variant="ghost"
                 size="icon"
                 aria-label="Gravar áudio"
-                onClick={startRecording}
+                onClick={() => void startRecording()}
                 disabled={disabled || sequenceSending || !!sequence || !!pendingAudio}
               >
                 <Mic className="h-4 w-4" />
               </Button>
-            ) : (
-              <Button
-                variant="destructive"
-                size="icon"
-                aria-label="Parar gravação"
-                onClick={stopRecording}
-              >
-                <Square className="h-4 w-4" />
-              </Button>
-            ))}
-          <Button
-            variant="primary"
-            size="icon"
-            onClick={handleSend}
-            disabled={disabled || sequenceSending}
-            aria-label={
-              sequenceSending
-                ? "Enviando…"
-                : sequence && (sequence.next > 0 || sequenceError)
-                  ? "Continuar envio"
-                  : "Enviar mensagem"
-            }
-            title={
-              sequenceSending
-                ? "Enviando…"
-                : sequence && (sequence.next > 0 || sequenceError)
-                  ? "Continuar envio"
-                  : "Enviar mensagem"
-            }
-          >
-            <SendHorizontal className="h-5 w-5" />
-          </Button>
-        </div>
-        {recording && (
-          <p className="mt-2 text-center text-[11px] text-destructive">
-            ● Gravando… clique no quadrado para parar.
-          </p>
+            )}
+            <Button
+              variant="primary"
+              size="icon"
+              onClick={handleSend}
+              disabled={disabled || sequenceSending || recording || !!pendingAudio}
+              aria-label={
+                sequenceSending
+                  ? "Enviando…"
+                  : sequence && (sequence.next > 0 || sequenceError)
+                    ? "Continuar envio"
+                    : "Enviar mensagem"
+              }
+              title={
+                sequenceSending
+                  ? "Enviando…"
+                  : sequence && (sequence.next > 0 || sequenceError)
+                    ? "Continuar envio"
+                    : "Enviar mensagem"
+              }
+            >
+              <SendHorizontal className="h-5 w-5" />
+            </Button>
+          </div>
         )}
         {showContacts && (
           <InboxContactPicker
+            priorityInstances={priorityInstances}
             onClose={() => setShowContacts(false)}
             onSelect={(file) => {
               if (pendingFile?.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
@@ -1804,7 +2174,90 @@ function Composer({
             }}
           />
         )}
+        <Modal open={showSchedule} onClose={() => setShowSchedule(false)} title="Agendar mensagem">
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void (async () => {
+                if (!text.trim() || !scheduleAt) return;
+                await schedulesApi.save({
+                  id: crypto.randomUUID(),
+                  identifier: `composer-${conversationId}-${Date.now()}`,
+                  type: "message",
+                  title: "Mensagem agendada",
+                  destination: "Conversa atual",
+                  scheduledAt: new Date(scheduleAt).toISOString(),
+                  recurrence: "once",
+                  delivery: true,
+                  status: "pending",
+                  connectionId: "",
+                  departmentId: "",
+                  content: text.trim(),
+                  recipientIds: [],
+                  recipients: [],
+                  recurrenceDays: [],
+                  recurrenceLimit: "",
+                  recurrenceUntil: "",
+                  assignedMembershipId: "",
+                  attachmentName: null,
+                  conversationId,
+                } as never);
+                setText("");
+                setScheduleAt("");
+                setShowSchedule(false);
+              })();
+            }}
+          >
+            <label className="block text-sm">
+              <span className="mb-1 block text-muted-foreground">Mensagem</span>
+              <textarea
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                rows={4}
+                className="w-full resize-y rounded-lg border border-border bg-card p-2"
+                placeholder="Escreva a mensagem"
+                required
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block text-muted-foreground">Data e horário</span>
+              <input
+                type="datetime-local"
+                value={scheduleAt}
+                onChange={(event) => setScheduleAt(event.target.value)}
+                className="w-full rounded-lg border border-border bg-card p-2"
+                required
+              />
+            </label>
+            <p className="text-xs text-muted-foreground">
+              A mensagem digitada será enviada na data escolhida.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-border px-3 py-2 text-sm"
+                onClick={() => setShowSchedule(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
+                disabled={!text.trim() || !scheduleAt}
+              >
+                Agendar
+              </button>
+            </div>
+          </form>
+        </Modal>
       </div>
+      <ProfileCameraModal
+        open={showCamera}
+        facingMode="environment"
+        onClose={() => setShowCamera(false)}
+        onCapture={onCameraCapture}
+      />
     </div>
   );
 }
@@ -1829,7 +2282,6 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
   const { data: contactOptions } = useQuery({
     queryKey: ["trixus", "contacts", "options", "contact-panel"],
     queryFn: crmApi.contactOptions,
-    enabled: editModal.open,
   });
   const customerId = contact?.customer_id ?? null;
   const customer = contact?.customer ?? null;
@@ -1846,6 +2298,7 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
       });
       return page.items
         .filter((conversation) => conversation.protocolo)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         .map((conversation) => ({
           id: conversation.id,
           protocolo: conversation.protocolo!,
@@ -1901,7 +2354,18 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
         <dl className="mt-3 space-y-1 text-[11px]">
           <div className="flex items-start justify-between gap-2">
             <dt className="uppercase tracking-wide text-muted-foreground">Instância</dt>
-            <dd className="truncate text-right text-foreground/90">{contact?.instancia ?? "—"}</dd>
+            <dd className="truncate text-right text-foreground/90">
+              {(contactOptions?.instances ?? [])
+                .filter(
+                  (instance) =>
+                    contact?.instanceIds?.includes(instance.id) ||
+                    (!!contact?.instancia &&
+                      (instance.value === contact.instancia ||
+                        instance.externalReference === contact.instancia)),
+                )
+                .map((instance) => instance.name)
+                .join(", ") || "—"}
+            </dd>
           </div>
           <div className="flex items-start justify-between gap-2">
             <dt className="uppercase tracking-wide text-muted-foreground">Cliente</dt>
@@ -2051,6 +2515,7 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
             qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] });
             qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
             qc.invalidateQueries({ queryKey: ["trixus", "contact_protocols", contactId] });
+            qc.invalidateQueries({ queryKey: ["operations", "history"] });
             editModal.hide();
           }}
         />

@@ -21,6 +21,7 @@ export class SaveScheduleDto {
   @IsIn(["message", "task"]) type!: "message" | "task";
   @IsString() @MinLength(1) @MaxLength(200) title!: string;
   @IsString() @MaxLength(500) destination!: string;
+  @IsOptional() @IsString() @MaxLength(100) conversationId?: string;
   @IsString() @MinLength(1) @MaxLength(40) scheduledAt!: string;
   @IsIn(["once", "weekly", "monthly"]) recurrence!: string;
   @IsBoolean() delivery!: boolean;

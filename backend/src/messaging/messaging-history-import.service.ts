@@ -1,11 +1,17 @@
-import { Inject, Injectable, Logger, OnModuleInit, Optional } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+  Optional,
+} from "@nestjs/common";
 import {
   ConversationStatus,
-  LeadSource,
-  LeadStatus,
   MessagingConnectionStatus,
   MessagingHistoryImportKind,
   MessagingHistoryImportStatus,
+  OutboxEventStatus,
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
@@ -14,7 +20,13 @@ import { EvolutionWebhookTranslator } from "./evolution/evolution-webhook.transl
 import { isGroupRemoteIdentity } from "./messaging-identity";
 import { MessagingInboundService } from "./messaging-inbound.service";
 
+import { DEFERRED_MESSAGING_EVENT } from "./messaging-service-pause.service";
+import { MessagingServicePausedError } from "./service-availability";
+
+class HistoryImportDeferredError extends Error {}
+
 type ImportConnection = {
+  serviceEnabled?: boolean;
   id: string;
   tenantId: string;
   externalReference: string | null;
@@ -26,15 +38,19 @@ type ImportConnection = {
 };
 type ImportedConversation = {
   conversationId: string;
+  createdByImport: boolean;
   lastAt: Date;
-  lastFromMe: boolean;
-  lastPreview: string | null;
 };
 
 @Injectable()
-export class MessagingHistoryImportService implements OnModuleInit {
+export class MessagingHistoryImportService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MessagingHistoryImportService.name);
   private readonly queued = new Set<string>();
+  private readonly scheduled = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly running = new Map<string, Promise<void>>();
+  private timer?: ReturnType<typeof setInterval>;
+  private scanning?: Promise<void>;
+  private stopping = false;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -63,7 +79,6 @@ export class MessagingHistoryImportService implements OnModuleInit {
           },
         });
       }
-      this.enqueue(job.id);
     }
 
     // Existing connected instances may have been configured before this
@@ -83,6 +98,9 @@ export class MessagingHistoryImportService implements OnModuleInit {
     for (const connection of eligibleConnections) {
       await this.enqueueForConnection(connection);
     }
+    for (const job of interrupted) this.enqueue(job.id);
+    this.timer = setInterval(() => this.schedulePending(), 5000);
+    this.timer.unref();
   }
 
   async enqueueForConnection(connection: ImportConnection) {
@@ -160,12 +178,101 @@ export class MessagingHistoryImportService implements OnModuleInit {
     if (job.status === MessagingHistoryImportStatus.PENDING) this.enqueue(job.id);
   }
 
+  async onModuleDestroy() {
+    this.stopping = true;
+    clearInterval(this.timer);
+    for (const timeout of this.scheduled.values()) clearTimeout(timeout);
+    this.scheduled.clear();
+    await this.scanning;
+    await Promise.all(this.running.values());
+    this.queued.clear();
+  }
+
+  private schedulePending() {
+    if (this.stopping || this.scanning) return;
+    this.scanning = this.resumePendingImports()
+      .catch(() =>
+        this.logger.warn("Importações pendentes aguardam uma nova tentativa de consulta."),
+      )
+      .finally(() => {
+        this.scanning = undefined;
+      });
+  }
+
+  private async resumePendingImports() {
+    const jobs = await this.prisma.messagingHistoryImport.findMany({
+      where: {
+        status: MessagingHistoryImportStatus.PENDING,
+        connection: {
+          archivedAt: null,
+          status: MessagingConnectionStatus.CONNECTED,
+          serviceEnabled: true,
+        },
+      },
+      select: { id: true },
+    });
+    for (const job of jobs) this.enqueue(job.id);
+  }
+
   private enqueue(jobId: string) {
-    if (this.queued.has(jobId)) return;
+    if (this.stopping || this.queued.has(jobId)) return;
     this.queued.add(jobId);
-    setTimeout(() => {
-      void this.run(jobId).finally(() => this.queued.delete(jobId));
+    const timeout = setTimeout(() => {
+      this.scheduled.delete(jobId);
+      const task = this.run(jobId)
+        .catch(async () => {
+          // Includes failures before run's try block (e.g. schema unavailable).
+          this.logger.warn({
+            event: "messaging.history_import.start_failed",
+            importId: jobId,
+            message: "Importação aguarda consulta/armazenamento disponível.",
+          });
+          await this.prisma.messagingHistoryImport
+            .update({
+              where: { id: jobId },
+              data: {
+                status: MessagingHistoryImportStatus.PENDING,
+                error: "Importação aguarda consulta/armazenamento disponível.",
+                finishedAt: null,
+              },
+            })
+            .catch(() => undefined);
+        })
+        .finally(() => {
+          this.queued.delete(jobId);
+          this.running.delete(jobId);
+        });
+      this.running.set(jobId, task);
     }, 250);
+    timeout.unref();
+    this.scheduled.set(jobId, timeout);
+  }
+
+  private async assertReadyForHistory(connection: { id: string; tenantId: string }) {
+    const current = await this.prisma.messagingConnection.findFirst({
+      where: {
+        id: connection.id,
+        tenantId: connection.tenantId,
+        archivedAt: null,
+        serviceEnabled: true,
+      },
+      select: { id: true },
+    });
+    const pending =
+      current &&
+      (await this.prisma.outboxEvent.findFirst({
+        where: {
+          tenantId: connection.tenantId,
+          type: DEFERRED_MESSAGING_EVENT,
+          aggregateId: { startsWith: connection.id + ":" },
+          status: OutboxEventStatus.PENDING,
+        },
+        select: { id: true },
+      }));
+    if (!current || pending)
+      throw new HistoryImportDeferredError(
+        "Importação aguarda atendimento ativo e mensagens retidas processadas.",
+      );
   }
 
   private async run(jobId: string) {
@@ -177,11 +284,18 @@ export class MessagingHistoryImportService implements OnModuleInit {
     const connection = job.connection;
     if (
       connection.archivedAt ||
+      connection.serviceEnabled === false ||
       connection.status !== MessagingConnectionStatus.CONNECTED ||
       !connection.externalReference
     )
       return;
 
+    try {
+      await this.assertReadyForHistory(connection);
+    } catch (error) {
+      if (error instanceof HistoryImportDeferredError) return;
+      throw error;
+    }
     await this.prisma.messagingHistoryImport.update({
       where: { id: job.id },
       data: {
@@ -236,6 +350,7 @@ export class MessagingHistoryImportService implements OnModuleInit {
               messagesSkipped += 1;
               continue;
             }
+            await this.assertReadyForHistory(connection);
             const stored = await this.inbound.process(translation.event, { historical: true });
             const conversationId = stored.message.conversationId ?? stored.conversationId;
             if (!conversationId) {
@@ -244,9 +359,10 @@ export class MessagingHistoryImportService implements OnModuleInit {
             }
             conversations.set(conversationId, {
               conversationId,
+              createdByImport:
+                (conversations.get(conversationId)?.createdByImport ?? false) ||
+                stored.createdConversation === true,
               lastAt: translation.event.occurredAt,
-              lastFromMe: translation.event.fromMe,
-              lastPreview: translation.event.content ?? null,
             });
             if (stored.duplicate) {
               messagesSkipped += 1;
@@ -257,6 +373,11 @@ export class MessagingHistoryImportService implements OnModuleInit {
           chatsProcessed += 1;
           await this.persistProgress(job.id, chatsProcessed, messagesImported, messagesSkipped);
         } catch (error) {
+          if (
+            error instanceof HistoryImportDeferredError ||
+            error instanceof MessagingServicePausedError
+          )
+            throw error;
           failedChats += 1;
           chatsProcessed += 1;
           this.logger.warn({
@@ -271,7 +392,8 @@ export class MessagingHistoryImportService implements OnModuleInit {
         }
       }
 
-      const leads = await this.finalizeConversations(job, conversations);
+      await this.assertReadyForHistory(connection);
+      await this.finalizeConversations(job, conversations);
       await this.prisma.messagingHistoryImport.update({
         where: { id: job.id },
         data: {
@@ -297,13 +419,6 @@ export class MessagingHistoryImportService implements OnModuleInit {
           reason: "history.imported",
         });
       }
-      for (const lead of leads) {
-        this.realtime?.publishLeadCreated({
-          tenantId: job.tenantId,
-          leadId: lead.id,
-          conversationId: lead.conversationId,
-        });
-      }
       this.logger.log({
         event: "messaging.history_import.completed",
         importId: job.id,
@@ -316,17 +431,22 @@ export class MessagingHistoryImportService implements OnModuleInit {
         failedChats,
       });
     } catch (error) {
+      const deferred =
+        error instanceof HistoryImportDeferredError || error instanceof MessagingServicePausedError;
       await this.prisma.messagingHistoryImport.update({
         where: { id: job.id },
         data: {
-          status: MessagingHistoryImportStatus.FAILED,
+          status: deferred
+            ? MessagingHistoryImportStatus.PENDING
+            : MessagingHistoryImportStatus.FAILED,
           chatsProcessed,
           messagesImported,
           messagesSkipped,
           error: error instanceof Error ? error.message : "Não foi possível iniciar a importação.",
-          finishedAt: new Date(),
+          finishedAt: deferred ? null : new Date(),
         },
       });
+      if (deferred) return;
       this.logger.error({
         event: "messaging.history_import.failed",
         importId: job.id,
@@ -353,75 +473,33 @@ export class MessagingHistoryImportService implements OnModuleInit {
     job: { tenantId: string; kind: MessagingHistoryImportKind },
     conversations: Map<string, ImportedConversation>,
   ) {
-    const leads: Array<{ id: string; conversationId: string }> = [];
     for (const imported of conversations.values()) {
+      // A history retry can return messages that already belong to a live or
+      // previously closed conversation. Never change that conversation's
+      // lifecycle. Only conversations created by this import belong in history.
+      if (!imported.createdByImport) continue;
       const conversation = await this.prisma.conversation.findFirst({
         where: { tenantId: job.tenantId, id: imported.conversationId },
-        select: { id: true, contactId: true, departmentId: true, isGroup: true },
+        select: { id: true },
       });
       if (!conversation) continue;
-      if (
-        job.kind === MessagingHistoryImportKind.GROUP ||
-        conversation.isGroup ||
-        imported.lastFromMe
-      ) {
-        await this.prisma.$transaction([
-          this.prisma.conversation.update({
-            where: { tenantId_id: { tenantId: job.tenantId, id: conversation.id } },
-            data: {
-              status: ConversationStatus.FECHADA,
-              closedAt: imported.lastAt,
-              assignedMembershipId: null,
-              protocol: null,
-              unreadCount: 0,
-              inboxArchivedAt: null,
-            },
-          }),
-          this.prisma.lead.deleteMany({
-            where: { tenantId: job.tenantId, conversationId: conversation.id },
-          }),
-        ]);
-        continue;
-      }
-      const lead = await this.prisma.$transaction(async (tx) => {
-        await tx.conversation.update({
+      await this.prisma.$transaction([
+        this.prisma.conversation.update({
           where: { tenantId_id: { tenantId: job.tenantId, id: conversation.id } },
           data: {
-            status: ConversationStatus.ABERTA,
-            closedAt: null,
+            status: ConversationStatus.FECHADA,
+            closedAt: imported.lastAt,
             assignedMembershipId: null,
             protocol: null,
             unreadCount: 0,
             inboxArchivedAt: null,
           },
-        });
-        return tx.lead.upsert({
-          where: {
-            tenantId_conversationId: { tenantId: job.tenantId, conversationId: conversation.id },
-          },
-          update: {
-            contactId: conversation.contactId,
-            departmentId: conversation.departmentId,
-            source: LeadSource.WHATSAPP,
-            status: LeadStatus.NEW,
-            firstMessagePreview: imported.lastPreview,
-            convertedAt: null,
-            discardedAt: null,
-          },
-          create: {
-            tenantId: job.tenantId,
-            contactId: conversation.contactId,
-            conversationId: conversation.id,
-            departmentId: conversation.departmentId,
-            source: LeadSource.WHATSAPP,
-            status: LeadStatus.NEW,
-            firstMessagePreview: imported.lastPreview,
-          },
-        });
-      });
-      leads.push({ id: lead.id, conversationId: conversation.id });
+        }),
+        this.prisma.lead.deleteMany({
+          where: { tenantId: job.tenantId, conversationId: conversation.id },
+        }),
+      ]);
     }
-    return leads;
   }
 
   private async persistProgress(

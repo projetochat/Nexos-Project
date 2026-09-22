@@ -20,6 +20,108 @@ const current = {
 };
 
 describe("MessagingOutboundService", () => {
+  it("does not send if pause commits between the fresh snapshot and the admission lock", async () => {
+    const prisma = prismaMock();
+    prisma.message.findFirst.mockResolvedValueOnce(message()).mockResolvedValueOnce(null);
+    prisma.$queryRaw.mockResolvedValue([{ serviceEnabled: false }]);
+    const provider = { send: vi.fn() };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock(provider) as never,
+      dispatcherMock() as never,
+    );
+    await expect(
+      service.dispatchQueuedMessage({
+        tenantId: "tenant-a",
+        messageId: "message-a",
+        attempt: 1,
+        finalAttempt: false,
+      }),
+    ).resolves.toMatchObject({
+      skipped: true,
+      status: MessageStatus.QUEUED,
+      reason: "SERVICE_PAUSED",
+    });
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(prisma.message.updateMany).toHaveBeenLastCalledWith({
+      where: { id: "message-a", tenantId: "tenant-a", status: MessageStatus.SENDING },
+      data: { status: MessageStatus.QUEUED, sendAttempts: { decrement: 1 } },
+    });
+  });
+
+  it("keeps a paused queued message untouched without resolving or calling its provider", async () => {
+    const prisma = prismaMock();
+    prisma.message.findFirst.mockResolvedValue(
+      message({ connection: connection({ serviceEnabled: false }) }),
+    );
+    const provider = { send: vi.fn() };
+    const registry = registryMock(provider);
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registry as never,
+      dispatcherMock() as never,
+    );
+    await expect(
+      service.dispatchQueuedMessage({
+        tenantId: "tenant-a",
+        messageId: "message-a",
+        attempt: 5,
+        finalAttempt: true,
+      }),
+    ).resolves.toMatchObject({
+      skipped: true,
+      status: MessageStatus.QUEUED,
+      reason: "SERVICE_PAUSED",
+    });
+    expect(prisma.message.updateMany).not.toHaveBeenCalled();
+    expect(registry.resolve).not.toHaveBeenCalled();
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
+  it("restores QUEUED and its attempt count if service pauses after the initial snapshot", async () => {
+    const prisma = prismaMock();
+    prisma.message.findFirst
+      .mockResolvedValueOnce(message({ connection: connection({ serviceEnabled: true }) }))
+      .mockResolvedValueOnce(null);
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection({ serviceEnabled: false }));
+    const provider = { send: vi.fn() };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock(provider) as never,
+      dispatcherMock() as never,
+    );
+    await expect(
+      service.dispatchQueuedMessage({
+        tenantId: "tenant-a",
+        messageId: "message-a",
+        attempt: 1,
+        finalAttempt: false,
+      }),
+    ).resolves.toMatchObject({
+      skipped: true,
+      status: MessageStatus.QUEUED,
+      reason: "SERVICE_PAUSED",
+    });
+    expect(prisma.message.updateMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: MessageStatus.SENDING,
+          sendAttempts: { increment: 1 },
+        }),
+      }),
+    );
+    expect(prisma.message.updateMany).toHaveBeenNthCalledWith(2, {
+      where: { id: "message-a", tenantId: "tenant-a", status: MessageStatus.SENDING },
+      data: { status: MessageStatus.QUEUED, sendAttempts: { decrement: 1 } },
+    });
+    expect(prisma.messagingConnection.findFirst).toHaveBeenCalledWith({
+      where: { id: "connection-a", tenantId: "tenant-a" },
+      select: { serviceEnabled: true },
+    });
+    expect(provider.send).not.toHaveBeenCalled();
+  });
+
   it("creates outbound messages as QUEUED and writes a minimal outbox event", async () => {
     const prisma = prismaMock();
     const dispatcher = { dispatchMessage: vi.fn().mockResolvedValue(true) };
@@ -312,7 +414,7 @@ function prismaMock() {
   const prisma = {
     conversation: { findFirst: vi.fn(), update: vi.fn() },
     departmentMembership: { findMany: vi.fn() },
-    messagingConnection: { findFirst: vi.fn() },
+    messagingConnection: { findFirst: vi.fn().mockResolvedValue(connection()) },
     message: {
       findFirst: vi.fn(),
       create: vi.fn(),
@@ -321,6 +423,7 @@ function prismaMock() {
     },
     outboxEvent: { create: vi.fn() },
     $transaction: vi.fn(async (callback) => callback(prisma)),
+    $queryRaw: vi.fn().mockResolvedValue([{ serviceEnabled: true }]),
   };
   return prisma;
 }
