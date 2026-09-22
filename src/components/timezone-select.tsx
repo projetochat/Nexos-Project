@@ -16,38 +16,38 @@ export type TimezoneOption = {
   gmt: string;
 };
 
-export const TIMEZONE_OPTIONS: TimezoneOption[] = [
+const TIMEZONE_OPTIONS: TimezoneOption[] = [
   {
     value: "America/Sao_Paulo",
-    displayName: "America/São Paulo",
+    displayName: "América/São Paulo",
     abbreviation: "BRT",
     offset: "-03:00",
     gmt: "GMT-3",
   },
   {
     value: "America/Manaus",
-    displayName: "America/Manaus",
+    displayName: "América/Manaus",
     abbreviation: "AMT",
     offset: "-04:00",
     gmt: "GMT-4",
   },
   {
     value: "America/Rio_Branco",
-    displayName: "America/Rio Branco",
+    displayName: "América/Rio Branco",
     abbreviation: "ACT",
     offset: "-05:00",
     gmt: "GMT-5",
   },
   {
     value: "America/Fortaleza",
-    displayName: "America/Fortaleza",
+    displayName: "América/Fortaleza",
     abbreviation: "BRT",
     offset: "-03:00",
     gmt: "GMT-3",
   },
   {
     value: "America/Noronha",
-    displayName: "America/Fernando de Noronha",
+    displayName: "América/Fernando de Noronha",
     abbreviation: "FNT",
     offset: "-02:00",
     gmt: "GMT-2",
@@ -61,7 +61,7 @@ export const TIMEZONE_OPTIONS: TimezoneOption[] = [
   },
 ];
 
-export function timezoneDisplayLabel(value: string) {
+function timezoneDisplayLabel(value: string) {
   const option = TIMEZONE_OPTIONS.find((item) => item.value === value);
   return option ? `${option.displayName} (${option.gmt})` : value;
 }
@@ -77,6 +77,7 @@ export function TimezoneSelect({
   disabled?: boolean;
   className?: string;
 }) {
+  const [open, setOpen] = React.useState(false);
   const [now, setNow] = React.useState<Date | null>(null);
 
   React.useEffect(() => {
@@ -86,7 +87,7 @@ export function TimezoneSelect({
   }, []);
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild disabled={disabled}>
         <button
           type="button"
@@ -102,7 +103,12 @@ export function TimezoneSelect({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[18rem] max-w-[calc(100vw-2rem)] p-1.5"
+        onEscapeKeyDown={(event) => {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          setOpen(false);
+        }}
+        className="z-[250] w-[var(--radix-dropdown-menu-trigger-width)] min-w-[18rem] max-w-[calc(100vw-2rem)] p-1.5"
       >
         {TIMEZONE_OPTIONS.map((option) => {
           const selected = option.value === value;

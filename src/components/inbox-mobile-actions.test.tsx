@@ -6,12 +6,12 @@ import { expect, it, vi } from "vitest";
 import { InboxMobileActions } from "./inbox-mobile-actions";
 import { contactCardFile } from "@/lib/contact-card";
 
-it("opens the five actions in order and executes each selected action", async () => {
+it("opens the six actions in order and executes each selected action", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  const callbacks = Array.from({ length: 5 }, () => vi.fn());
+  const callbacks = Array.from({ length: 6 }, () => vi.fn());
   try {
     await act(async () =>
       root.render(
@@ -24,6 +24,7 @@ it("opens the five actions in order and executes each selected action", async ()
           onCamera={callbacks[2]}
           onContact={callbacks[3]}
           onTicket={callbacks[4]}
+          onSchedule={callbacks[5]}
         />,
       ),
     );
@@ -40,6 +41,7 @@ it("opens the five actions in order and executes each selected action", async ()
         "Câmera",
         "Contato",
         "Gerar Chamado",
+        "Agendar mensagem",
       ]);
       await act(async () => items[index].click());
       expect(callbacks[index]).toHaveBeenCalledTimes(1);

@@ -123,11 +123,20 @@ function AtendentesPage() {
   });
 
   const update = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Atendente> }) =>
+    mutationFn: ({
+      id,
+      data,
+      reactivating,
+    }: {
+      id: string;
+      data: Partial<Atendente>;
+      reactivating: boolean;
+    }) =>
       organizationApi.updateUser(id, {
         email: data.email,
         name: data.nome,
         password: data.senha || undefined,
+        ...(reactivating ? { status: "ACTIVE" as const } : {}),
         roleId: data.perfilId,
         avatarUrl: data.avatarUrl ?? null,
         membershipStatus: data.ativo === false ? "DISABLED" : "ACTIVE",
@@ -142,11 +151,11 @@ function AtendentesPage() {
   });
 
   const remove = useMutation({
-    mutationFn: (atendente: Atendente) =>
+    mutationFn: ({ atendente, password }: { atendente: Atendente; password?: string }) =>
       atendente.ativo
         ? organizationApi.deactivateUser(atendente.id)
-        : organizationApi.activateUser(atendente.id),
-    onSuccess: (_membership, atendente) => {
+        : organizationApi.activateUser(atendente.id, { password: password ?? "" }),
+    onSuccess: (_membership, { atendente }) => {
       qc.invalidateQueries({ queryKey: ["trixus", "users"] });
       toast.success(atendente.ativo ? "Atendente bloqueado" : "Atendente desbloqueado");
       setDeleting(null);
@@ -438,7 +447,14 @@ function AtendentesPage() {
           }))}
           initial={editing ?? undefined}
           onClose={() => setEditing(null)}
-          onSubmit={(data) => editing && update.mutate({ id: editing.id, data })}
+          onSubmit={(data) =>
+            editing &&
+            update.mutate({
+              id: editing.id,
+              data,
+              reactivating: !editing.ativo && data.ativo === true,
+            })
+          }
         />
         <AtendenteForm
           open={!!duplicating}
@@ -453,7 +469,7 @@ function AtendentesPage() {
           onSubmit={(data) => create.mutate(data)}
         />
         <ConfirmDialog
-          open={!!deleting}
+          open={!!deleting?.ativo}
           title={deleting?.ativo ? "Bloquear Atendente?" : "Desbloquear Atendente?"}
           destructive
           accent={deleting?.ativo ? "destructive" : "primary"}
@@ -465,14 +481,82 @@ function AtendentesPage() {
           }
           confirmLabel={deleting?.ativo ? "Bloquear" : "Desbloquear"}
           onClose={() => setDeleting(null)}
-          onConfirm={() => deleting && remove.mutate(deleting)}
+          onConfirm={() => deleting && remove.mutate({ atendente: deleting })}
+        />
+        <ReactivateAttendantModal
+          key={deleting?.id ?? "closed"}
+          open={!!deleting && !deleting.ativo}
+          name={deleting?.nome ?? ""}
+          busy={remove.isPending}
+          onClose={() => setDeleting(null)}
+          onSubmit={(password) => deleting && remove.mutate({ atendente: deleting, password })}
         />
       </PageContainer>
     </AppShell>
   );
 }
 
-function AtendenteForm({
+export function ReactivateAttendantModal({
+  open,
+  name,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  name: string;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (password: string) => void;
+}) {
+  const [password, setPassword] = React.useState("");
+  return (
+    <Modal
+      open={open}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+      title="Desbloquear Atendente?"
+      size="sm"
+    >
+      <form
+        className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!busy && password.trim() && password.length >= 6) onSubmit(password);
+        }}
+      >
+        <p className="text-sm text-muted-foreground">
+          Defina uma nova senha para desbloquear <strong>{name}</strong>.
+        </p>
+        <label className="block text-sm">
+          Nova senha <span className="text-destructive">*</span>
+          <Input
+            aria-label="Nova senha do atendente"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={6}
+            value={password}
+            disabled={busy}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </label>
+        <p className="text-xs text-muted-foreground">Senha mínima de 6 caracteres.</p>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={busy || !password.trim() || password.length < 6}>
+            Desbloquear
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export function AtendenteForm({
   open,
   onClose,
   onSubmit,
@@ -494,7 +578,9 @@ function AtendenteForm({
   const [showPassword, setShowPassword] = React.useState(false);
   const [passwordUnlocked, setPasswordUnlocked] = React.useState(false);
   const isEditing = Boolean(initial && !clone);
-  const passwordLocked = isEditing && !passwordUnlocked;
+  const reactivating = isEditing && initial?.ativo === false && form.ativo === true;
+  const passwordRequired = !isEditing || reactivating;
+  const passwordLocked = isEditing && !reactivating && !passwordUnlocked;
   const passwordRef = React.useRef<HTMLInputElement>(null);
   const [photoMenuOpen, setPhotoMenuOpen] = React.useState(false);
   const [cameraOpen, setCameraOpen] = React.useState(false);
@@ -566,7 +652,7 @@ function AtendenteForm({
     if (!form.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email))
       errs.email = "E-mail inválido.";
     else if (duplicateEmail(form.email)) errs.email = "Já existe um atendente com este e-mail.";
-    if ((!initial || clone) && (!form.senha || form.senha.length < 6))
+    if (passwordRequired && (!form.senha?.trim() || form.senha.length < 6))
       errs.senha = "Senha mínima de 6 caracteres.";
     if (form.senha && form.senha.length > 0 && form.senha.length < 6)
       errs.senha = "Senha mínima de 6 caracteres.";
@@ -740,7 +826,7 @@ function AtendenteForm({
                   <span className="mt-1 block text-[11px] text-destructive">{errors.email}</span>
                 )}
               </Field>
-              <Field label={isEditing ? "Senha" : "Senha *"} asLabel={false}>
+              <Field label={passwordRequired ? "Senha *" : "Senha"} asLabel={false}>
                 <div className="relative">
                   <Input
                     ref={passwordRef}
@@ -748,6 +834,7 @@ function AtendenteForm({
                     autoComplete="new-password"
                     aria-label="Senha do atendente"
                     disabled={passwordLocked}
+                    aria-required={passwordRequired}
                     placeholder={
                       passwordLocked ? "Senha protegida" : isEditing ? "Digite a nova senha" : ""
                     }
@@ -758,7 +845,7 @@ function AtendenteForm({
                     }}
                     className={isEditing ? "pr-20" : "pr-10"}
                   />
-                  {isEditing && (
+                  {isEditing && !reactivating && (
                     <button
                       type="button"
                       aria-label={

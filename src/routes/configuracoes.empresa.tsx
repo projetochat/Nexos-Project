@@ -39,6 +39,7 @@ function EmpresaSettings() {
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = React.useState(false);
   const [showNewPassword, setShowNewPassword] = React.useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
   const newPasswordMatchesCurrent =
@@ -134,6 +135,7 @@ function EmpresaSettings() {
       }));
       await queryClient.invalidateQueries({ queryKey: ["trixus", "company"] });
       setCurrentPassword("");
+      setShowCurrentPassword(false);
       setNewPassword("");
       setConfirmPassword("");
       toast.success(
@@ -318,10 +320,13 @@ function EmpresaSettings() {
                 <Field label="Senha atual *">
                   <PasswordInput
                     value={currentPassword}
-                    onChange={setCurrentPassword}
-                    visible={false}
-                    canToggle={false}
-                    onToggle={() => undefined}
+                    onChange={(value) => {
+                      setCurrentPassword(value);
+                      if (!value) setShowCurrentPassword(false);
+                    }}
+                    visible={showCurrentPassword}
+                    canToggle={Boolean(currentPassword)}
+                    onToggle={() => setShowCurrentPassword((value) => !value)}
                     autoComplete="current-password"
                   />
                 </Field>

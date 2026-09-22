@@ -28,8 +28,10 @@ export function InboxImageViewer({
   onClose,
   onReply,
   onDownload,
+  readOnly = false,
 }: {
   src: string;
+  readOnly?: boolean;
   message: ApiMessage;
   images?: ApiMessage[];
   onClose: () => void;
@@ -255,16 +257,17 @@ export function InboxImageViewer({
               role="group"
               aria-label="Ações da imagem"
             >
-              {action(
-                "Encaminhar",
-                Forward,
-                () => {
-                  setForwarding(true);
-                  setNotice("");
-                  setError("");
-                },
-                busy,
-              )}
+              {!readOnly &&
+                action(
+                  "Encaminhar",
+                  Forward,
+                  () => {
+                    setForwarding(true);
+                    setNotice("");
+                    setError("");
+                  },
+                  busy,
+                )}
               {onReply &&
                 action(
                   "Responder",

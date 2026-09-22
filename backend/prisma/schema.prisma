@@ -515,7 +515,7 @@ model TenantUsageSnapshot {
   updatedAt   DateTime @updatedAt
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, periodStart, periodEnd, metric])
+  @@unique([tenantId, periodStart, periodEnd, metric], map: "tenant_usage_snapshots_tenantId_periodStart_periodEnd_metric_ke")
   @@index([tenantId, periodStart, periodEnd])
   @@map("tenant_usage_snapshots")
 }
@@ -841,6 +841,7 @@ model Tag {
 
   @@unique([tenantId, id])
   @@unique([tenantId, normalizedName])
+  @@index([tenantId])
   @@index([tenantId, archivedAt])
   @@map("tags")
 }
@@ -984,6 +985,7 @@ model Message {
   @@index([tenantId, connectionId])
   @@index([tenantId, providerMessageId])
   @@index([tenantId, providerChatId])
+  @@index([tenantId, mediaState])
   @@index([tenantId, conversationId, status])
   @@index([tenantId, quotedMessageId])
   @@index([tenantId, campaignId])
@@ -1011,7 +1013,7 @@ model ConversationParticipant {
   tenant                Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   conversation          Conversation @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
 
-  @@unique([tenantId, conversationId, externalParticipantId])
+  @@unique([tenantId, conversationId, externalParticipantId], map: "conversation_participants_tenantId_conversationId_externalParti")
   @@index([tenantId, conversationId])
   @@index([tenantId, phone])
   @@index([tenantId, lid])
@@ -1035,7 +1037,7 @@ model MessageReaction {
   message                    Message                  @relation(fields: [tenantId, messageId], references: [tenantId, id], onDelete: Cascade)
   actorMembership            TenantMembership?        @relation(fields: [actorMembershipId], references: [id], onDelete: SetNull)
 
-  @@unique([tenantId, messageId, actorType, actorMembershipId, externalParticipantId])
+  @@unique([tenantId, messageId, actorType, actorMembershipId, externalParticipantId], map: "message_reactions_tenantId_messageId_actorType_actorMembershipI")
   @@index([tenantId, messageId, removedAt])
   @@index([tenantId, providerReactionId])
   @@map("message_reactions")
@@ -1063,6 +1065,7 @@ model OutboxEvent {
 }
 
 model MessagingConnection {
+  serviceEnabled       Boolean                   @default(true)
   serviceHours         Json?
   timezone             String                    @default("America/Sao_Paulo")
   id                   String                    @id @default(uuid())
@@ -1101,7 +1104,7 @@ model MessagingConnection {
   campaigns            Campaign[]
 
   @@unique([tenantId, id])
-  @@unique([tenantId, providerType, externalReference])
+  @@unique([tenantId, providerType, externalReference], map: "messaging_connections_tenantId_providerType_externalReference_k")
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([tenantId, archivedAt])

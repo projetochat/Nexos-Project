@@ -12,7 +12,7 @@ describe("mapApiError", () => {
     expect(mapped.message).toContain("limitando temporariamente");
   });
 
-  it("returns a recoverable message when group creation cannot be confirmed", () => {
+  it("returns a recoverable message when a WhatsApp action cannot be confirmed", () => {
     const mapped = mapApiError(
       new MessagingProviderError(
         MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
@@ -26,6 +26,6 @@ describe("mapApiError", () => {
       status: 503,
       code: MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
     });
-    expect(mapped.message).toContain("criação do grupo");
+    expect(mapped.message).toContain("concluir esta ação");
   });
 });

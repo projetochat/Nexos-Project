@@ -1,4 +1,5 @@
 import { connectionAccess } from "../auth/connection-access";
+import { withMessagingServiceEnabled } from "../messaging/service-availability";
 import {
   BadRequestException,
   Inject,
@@ -23,6 +24,7 @@ import { ListMessagesQueryDto } from "./dto/list-messages-query.dto";
 import { SendMessageDto } from "./dto/send-message.dto";
 import { MessagingOutboundService } from "../messaging/messaging-outbound.service";
 import { MessagingMediaStorageService } from "../messaging/media/messaging-media-storage.service";
+import { EvolutionClient } from "../messaging/evolution/evolution.client";
 
 const messageInclude = {
   authorMembership: {
@@ -60,6 +62,7 @@ export class MessagesService {
     @Inject(MessagingMediaStorageService)
     private readonly mediaStorage: MessagingMediaStorageService,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
+    @Optional() @Inject(EvolutionClient) private readonly evolution?: EvolutionClient,
   ) {}
 
   async list(conversationId: string, query: ListMessagesQueryDto, current: AuthenticatedUser) {
@@ -126,6 +129,122 @@ export class MessagesService {
   ) {
     await this.findVisibleConversation(this.prisma, conversationId, current);
     return this.outbound.react(conversationId, messageId, emoji, current);
+  }
+
+  async edit(
+    conversationId: string,
+    messageId: string,
+    content: string,
+    current: AuthenticatedUser,
+  ) {
+    await this.findVisibleConversation(this.prisma, conversationId, current);
+    const clean = cleanMessageContent(content);
+    const message = await this.prisma.message.findFirst({
+      where: {
+        id: messageId,
+        conversationId,
+        tenantId: current.tenantId,
+        direction: MessageDirection.OUTBOUND,
+      },
+    });
+    if (!message) throw new NotFoundException("Mensagem não encontrada ou não pode ser editada.");
+    if (isDeleted(message.interactiveData))
+      throw new BadRequestException("Mensagem apagada não pode ser editada.");
+    const context = await this.prisma.conversation.findFirst({
+      where: { id: conversationId, tenantId: current.tenantId },
+      include: { connection: true },
+    });
+    if (context?.connection?.serviceEnabled === false) {
+      throw new BadRequestException("O atendimento desta instância está desativado.");
+    }
+    const providerChatId = message.providerChatId ?? context?.externalChatId;
+    if (
+      this.evolution &&
+      message.providerMessageId &&
+      context?.connection?.externalReference &&
+      providerChatId
+    ) {
+      await withMessagingServiceEnabled(this.prisma, current.tenantId, context.connection.id, () =>
+        this.evolution!.updateMessage({
+          instanceName: context.connection!.externalReference!,
+          chat: providerChatId,
+          messageId: message.providerMessageId!,
+          message: clean,
+        }),
+      );
+    }
+    await this.prisma.message.update({
+      where: { tenantId_id: { tenantId: current.tenantId, id: messageId } },
+      data: {
+        content: clean,
+        interactiveData: {
+          ...asObject(message.interactiveData),
+          editedAt: new Date().toISOString(),
+        },
+      },
+    });
+    await this.prisma.conversation.update({
+      where: { tenantId_id: { tenantId: current.tenantId, id: conversationId } },
+      data: { lastMessagePreview: truncatePreview(clean), lastMessageAt: new Date() },
+    });
+    this.realtime?.publishConversationUpdated({
+      tenantId: current.tenantId,
+      conversationId,
+      reason: "message.edited",
+    });
+    return this.get(conversationId, messageId, current);
+  }
+
+  async delete(conversationId: string, messageId: string, current: AuthenticatedUser) {
+    await this.findVisibleConversation(this.prisma, conversationId, current);
+    const message = await this.prisma.message.findFirst({
+      where: {
+        id: messageId,
+        conversationId,
+        tenantId: current.tenantId,
+        direction: MessageDirection.OUTBOUND,
+      },
+    });
+    if (!message) throw new NotFoundException("Mensagem não encontrada ou não pode ser apagada.");
+    const context = await this.prisma.conversation.findFirst({
+      where: { id: conversationId, tenantId: current.tenantId },
+      include: { connection: true },
+    });
+    if (context?.connection?.serviceEnabled === false) {
+      throw new BadRequestException("O atendimento desta instância está desativado.");
+    }
+    const providerChatId = message.providerChatId ?? context?.externalChatId;
+    if (
+      this.evolution &&
+      message.providerMessageId &&
+      context?.connection?.externalReference &&
+      providerChatId
+    ) {
+      await withMessagingServiceEnabled(this.prisma, current.tenantId, context.connection.id, () =>
+        this.evolution!.deleteMessage({
+          instanceName: context.connection!.externalReference!,
+          remoteJid: providerChatId,
+          messageId: message.providerMessageId!,
+        }),
+      );
+    }
+    await this.prisma.message.update({
+      where: { tenantId_id: { tenantId: current.tenantId, id: messageId } },
+      data: {
+        content: "Esta mensagem foi apagada",
+        interactiveData: {
+          ...asObject(message.interactiveData),
+          deletedForEveryone: true,
+          deletedAt: new Date().toISOString(),
+        },
+      },
+    });
+    this.realtime?.publishConversationUpdated({
+      tenantId: current.tenantId,
+      conversationId,
+      reason: "message.deleted",
+    });
+    return this.get(conversationId, messageId, current);
   }
 
   async downloadMedia(conversationId: string, messageId: string, current: AuthenticatedUser) {
@@ -326,6 +445,9 @@ export class MessagesService {
       interactive_data: message.interactiveData ?? null,
       created_at: message.createdAt,
       updated_at: message.updatedAt,
+      edited_at: asObject(message.interactiveData)?.editedAt ?? null,
+      deleted_at: asObject(message.interactiveData)?.deletedAt ?? null,
+      deleted_for_everyone: asObject(message.interactiveData)?.deletedForEveryone === true,
       read_at: message.readAt,
       type: serializeType(message.type),
       status: message.status.toLowerCase(),
@@ -417,6 +539,16 @@ function cleanSystemContent(value: string) {
 
 function truncatePreview(content: string) {
   return content.length > 500 ? `${content.slice(0, 497)}...` : content;
+}
+
+function asObject(value: Prisma.JsonValue | null | undefined): Record<string, Prisma.JsonValue> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, Prisma.JsonValue>)
+    : {};
+}
+
+function isDeleted(value: Prisma.JsonValue | null | undefined) {
+  return asObject(value).deletedForEveryone === true;
 }
 
 function serializeDirection(direction: MessageDirection) {

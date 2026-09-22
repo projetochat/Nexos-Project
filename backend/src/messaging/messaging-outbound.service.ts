@@ -1,5 +1,10 @@
 import { connectionAccess } from "../auth/connection-access";
 import {
+  assertMessagingServiceEnabled,
+  MessagingServicePausedError,
+  withMessagingServiceEnabled,
+} from "./service-availability";
+import {
   BadRequestException,
   Inject,
   Injectable,
@@ -540,6 +545,30 @@ export class MessagingOutboundService {
         false,
       );
     }
+    if (connection.serviceEnabled === false) {
+      return { skipped: true, status: message.status, reason: "SERVICE_PAUSED" };
+    }
+    if (
+      connection.status !== MessagingConnectionStatus.CONNECTED &&
+      this.evolution &&
+      connection.externalReference
+    ) {
+      try {
+        const state = await this.evolution.connectionState(connection.externalReference);
+        const providerState = String(
+          state.instance?.state ?? state.instance?.status ?? "",
+        ).toLowerCase();
+        if (providerState === "open" || providerState === "connected") {
+          await this.prisma.messagingConnection.update({
+            where: { id: connection.id },
+            data: { status: MessagingConnectionStatus.CONNECTED },
+          });
+          connection.status = MessagingConnectionStatus.CONNECTED;
+        }
+      } catch {
+        // Keep the persisted status and return the normal connection error below.
+      }
+    }
     if (connection.status !== MessagingConnectionStatus.CONNECTED) {
       const failed = await this.failMessage(message.id, input.tenantId, {
         code: MessagingErrorCode.PROVIDER_UNAVAILABLE,
@@ -624,47 +653,66 @@ export class MessagingOutboundService {
           ? (message.content ?? "")
           : (message.mediaCaption ?? message.content ?? ""),
       );
-      const result = await provider.send({
-        tenantId: input.tenantId,
-        conversationId: message.conversationId,
-        messageId: message.id,
-        connectionId: connection.id,
-        providerConnectionRef: connection.externalReference,
-        providerType: connection.providerType,
-        recipient: {
-          phone: message.conversation.contact.phone,
-          normalizedPhone: message.conversation.contact.normalizedPhone,
-          displayName: message.conversation.contact.name,
-        },
-        externalChatId:
-          message.conversation.conversationType === ConversationType.GROUP
-            ? message.conversation.externalChatId
-            : null,
-        content:
-          message.type === MessageType.TEXT
-            ? { type: MessageType.TEXT, text: message.content ?? "" }
-            : {
-                type: message.type as Extract<
-                  MessageType,
-                  "IMAGE" | "AUDIO" | "VOICE" | "VIDEO" | "DOCUMENT"
-                >,
-                text: message.content,
-                mediaRef: message.mediaStorageKey,
-                mediaBuffer,
-                mimeType: message.mediaMimeType,
-                fileName: message.mediaFileName,
-                caption: message.mediaCaption,
-              },
-        clientMessageId: message.clientMessageId,
-        quotedProviderMessageId: message.quotedProviderMessageId,
-        quotedProviderChatId: message.quotedMessage?.providerChatId ?? null,
-        quotedFromMe:
-          message.quotedMessage?.direction === undefined
-            ? null
-            : message.quotedMessage.direction === MessageDirection.OUTBOUND,
-        quotedParticipant: message.quotedMessage?.providerParticipantId ?? null,
-        mentions,
+      const currentConnection = await this.prisma.messagingConnection.findFirst({
+        where: { id: connection.id, tenantId: input.tenantId },
+        select: { serviceEnabled: true },
       });
+      if (!currentConnection) throw new Error("Messaging connection no longer exists.");
+      if (currentConnection.serviceEnabled === false) {
+        await this.prisma.message.updateMany({
+          where: { id: message.id, tenantId: input.tenantId, status: MessageStatus.SENDING },
+          data: { status: MessageStatus.QUEUED, sendAttempts: { decrement: 1 } },
+        });
+        this.publishStatus(message, MessageStatus.QUEUED, MessageStatus.SENDING, new Date());
+        return { skipped: true, status: MessageStatus.QUEUED, reason: "SERVICE_PAUSED" };
+      }
+      const result = await withMessagingServiceEnabled(
+        this.prisma,
+        input.tenantId,
+        connection.id,
+        () =>
+          provider.send({
+            tenantId: input.tenantId,
+            conversationId: message.conversationId,
+            messageId: message.id,
+            connectionId: connection.id,
+            providerConnectionRef: connection.externalReference,
+            providerType: connection.providerType,
+            recipient: {
+              phone: message.conversation.contact.phone,
+              normalizedPhone: message.conversation.contact.normalizedPhone,
+              displayName: message.conversation.contact.name,
+            },
+            externalChatId:
+              message.conversation.conversationType === ConversationType.GROUP
+                ? message.conversation.externalChatId
+                : null,
+            content:
+              message.type === MessageType.TEXT
+                ? { type: MessageType.TEXT, text: message.content ?? "" }
+                : {
+                    type: message.type as Extract<
+                      MessageType,
+                      "IMAGE" | "AUDIO" | "VOICE" | "VIDEO" | "DOCUMENT"
+                    >,
+                    text: message.content,
+                    mediaRef: message.mediaStorageKey,
+                    mediaBuffer,
+                    mimeType: message.mediaMimeType,
+                    fileName: message.mediaFileName,
+                    caption: message.mediaCaption,
+                  },
+            clientMessageId: message.clientMessageId,
+            quotedProviderMessageId: message.quotedProviderMessageId,
+            quotedProviderChatId: message.quotedMessage?.providerChatId ?? null,
+            quotedFromMe:
+              message.quotedMessage?.direction === undefined
+                ? null
+                : message.quotedMessage.direction === MessageDirection.OUTBOUND,
+            quotedParticipant: message.quotedMessage?.providerParticipantId ?? null,
+            mentions,
+          }),
+      );
       if (result.accepted && !result.providerMessageId) {
         throw new MessagingProviderError(
           MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
@@ -716,6 +764,14 @@ export class MessagingOutboundService {
       });
       return { skipped: false, status: updated.status };
     } catch (error) {
+      if (error instanceof MessagingServicePausedError) {
+        await this.prisma.message.updateMany({
+          where: { id: message.id, tenantId: input.tenantId, status: MessageStatus.SENDING },
+          data: { status: MessageStatus.QUEUED, sendAttempts: { decrement: 1 } },
+        });
+        this.publishStatus(message, MessageStatus.QUEUED, MessageStatus.SENDING, new Date());
+        return { skipped: true, status: MessageStatus.QUEUED, reason: "SERVICE_PAUSED" };
+      }
       const canonical = canonicalProviderError(error);
       if (!canonical.retryable || input.finalAttempt) {
         const failed = await this.failMessage(message.id, input.tenantId, canonical);
@@ -802,6 +858,7 @@ export class MessagingOutboundService {
       });
     }
     const connection = message.conversation.connection;
+    assertMessagingServiceEnabled(connection);
     if (
       !connection?.externalReference ||
       connection.status !== MessagingConnectionStatus.CONNECTED
@@ -810,24 +867,26 @@ export class MessagingOutboundService {
     }
 
     if (!this.evolution) throw new BadRequestException("Provider de reactions indisponivel.");
-    await this.evolution.sendReaction({
-      instanceName: connection.externalReference,
-      payload: this.evolutionPayloads.reaction({
-        key: this.evolutionPayloads.quotedKey({
-          remoteJid:
-            message.providerChatId ??
-            normalizeEvolutionRecipient({
-              conversationType: message.conversation.conversationType,
-              externalChatId: message.conversation.externalChatId,
-              normalizedPhone: message.conversation.contact.normalizedPhone,
-            }).remoteJid,
-          fromMe: message.direction === MessageDirection.OUTBOUND,
-          id: message.providerMessageId,
-          participant: message.providerParticipantId,
+    await withMessagingServiceEnabled(this.prisma, current.tenantId, connection.id, () =>
+      this.evolution!.sendReaction({
+        instanceName: connection.externalReference!,
+        payload: this.evolutionPayloads.reaction({
+          key: this.evolutionPayloads.quotedKey({
+            remoteJid:
+              message.providerChatId ??
+              normalizeEvolutionRecipient({
+                conversationType: message.conversation.conversationType,
+                externalChatId: message.conversation.externalChatId,
+                normalizedPhone: message.conversation.contact.normalizedPhone,
+              }).remoteJid,
+            fromMe: message.direction === MessageDirection.OUTBOUND,
+            id: message.providerMessageId,
+            participant: message.providerParticipantId,
+          }),
+          reaction: cleanEmoji ?? "",
         }),
-        reaction: cleanEmoji ?? "",
       }),
-    });
+    );
     const reaction = await this.prisma.messageReaction.upsert({
       where: {
         tenantId_messageId_actorType_actorMembershipId_externalParticipantId: {
@@ -911,6 +970,7 @@ export class MessagingOutboundService {
       if (!connection) {
         throw new BadRequestException("Connection da conversa não pertence a este tenant.");
       }
+      assertMessagingServiceEnabled(connection);
       return connection;
     }
 

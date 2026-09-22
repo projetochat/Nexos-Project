@@ -95,10 +95,20 @@ check(
   ]) &&
     dashboard.includes("operationsApi.dashboard") &&
     history.includes("operationsApi.history") &&
-    history.includes("operationsApi.timeline") &&
     reports.includes("operationsApi.report") &&
     reports.includes("operationsApi.exportAttendance") &&
     queues.includes("operationsApi.queues"),
+);
+
+check(
+  "history uses paginated message data and the shared read-only Inbox presentation without the removed log panel",
+  includesAll(history, [
+    "messageApi.list",
+    "getNextPageParam",
+    "orderHistoryMessages",
+    "<MessageBubble",
+    "readOnly",
+  ]) && !history.includes("operationsApi.timeline"),
 );
 
 check(

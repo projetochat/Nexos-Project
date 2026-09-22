@@ -32,6 +32,34 @@ describe("EvolutionWebhookTranslator", () => {
     });
   });
 
+  it("translates WhatsApp contact cards into stored vCard media", () => {
+    const vcard = "BEGIN:VCARD\nVERSION:3.0\nFN:Ana Silva\nTEL;TYPE=CELL:+5562999991234\nEND:VCARD";
+    const result = translator.translate(
+      {
+        event: "messages.upsert",
+        instance: "tenant-support",
+        data: {
+          key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: false, id: "CONTACT1" },
+          message: { contactMessage: { displayName: "Ana Silva", vcard } },
+          pushName: "Cliente",
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        type: "DOCUMENT",
+        content: "[contato] Ana Silva",
+        media: { mimetype: "text/vcard", fileName: "contato.vcf", sizeBytes: vcard.length },
+      },
+    });
+    if (result.kind === "inbound") {
+      expect(result.event.media?.inlineBody?.toString("utf8")).toBe(vcard);
+    }
+  });
+
   it("preserves contact profile picture URLs from inbound webhook payloads", () => {
     const result = translator.translate(
       {

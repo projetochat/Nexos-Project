@@ -87,10 +87,12 @@ export function ProfileCameraModal({
   open,
   onClose,
   onCapture,
+  facingMode = "user",
 }: {
   open: boolean;
   onClose: () => void;
   onCapture: (dataUrl: string) => void;
+  facingMode?: "user" | "environment";
 }) {
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
@@ -104,8 +106,12 @@ export function ProfileCameraModal({
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     };
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError("Este navegador não oferece acesso à câmera.");
+      return stopCamera;
+    }
     navigator.mediaDevices
-      ?.getUserMedia({ video: { facingMode: "user" }, audio: false })
+      .getUserMedia({ video: { facingMode }, audio: false })
       .then((stream) => {
         if (cancelled) return stream.getTracks().forEach((track) => track.stop());
         streamRef.current = stream;
@@ -119,7 +125,7 @@ export function ProfileCameraModal({
       cancelled = true;
       stopCamera();
     };
-  }, [open]);
+  }, [facingMode, open]);
 
   const capture = () => {
     const video = videoRef.current;

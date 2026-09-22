@@ -3,6 +3,7 @@ import { MessageStatus, MessageType, MessagingConnectionStatus } from "../../gen
 import {
   InboundMessageEvent,
   MessageEditEvent,
+  MessageDeletionEvent,
   MessageReactionEvent,
   MessageStatusEvent,
 } from "../messaging.contracts";
@@ -16,6 +17,7 @@ import type { EvolutionWebhookPayload } from "./evolution.types";
 export type EvolutionWebhookTranslation =
   | { kind: "inbound"; event: InboundMessageEvent }
   | { kind: "edit"; event: MessageEditEvent }
+  | { kind: "delete"; event: MessageDeletionEvent }
   | { kind: "status"; event: MessageStatusEvent }
   | { kind: "reaction"; event: MessageReactionEvent }
   | {
@@ -35,14 +37,23 @@ export class EvolutionWebhookTranslator {
     if (!payload.instance) return { kind: "ignored", reason: "MISSING_INSTANCE" } as const;
 
     if (event === "messages.upsert") {
+      const deletion = this.translateDeletion(payload, connection);
+      if (deletion.kind === "delete") return deletion;
       return this.translateInbound(payload, connection);
     }
+    if (event === "messages.delete") return this.translateDeletion(payload, connection);
     if (event === "messages.update") {
+      const deletion = this.translateDeletion(payload, connection);
+      if (deletion.kind === "delete") return deletion;
       const edit = this.translateEdit(payload, connection);
       if (edit.kind === "edit") return edit;
       return this.translateStatus(payload, connection);
     }
     if (event === "send.message.update") {
+      const deletion = this.translateDeletion(payload, connection);
+      if (deletion.kind === "delete") return deletion;
+      const edit = this.translateEdit(payload, connection);
+      if (edit.kind === "edit") return edit;
       return this.translateStatus(payload, connection);
     }
     if (event === "connection.update") {
@@ -64,6 +75,33 @@ export class EvolutionWebhookTranslator {
       } as const;
     }
     return { kind: "ignored", reason: "UNSUPPORTED_EVENT" } as const;
+  }
+
+  private translateDeletion(
+    payload: EvolutionWebhookPayload,
+    connection: { tenantId: string; id: string },
+  ): EvolutionWebhookTranslation {
+    const data = payload.data ?? {};
+    const protocol =
+      readRecord(data, "protocolMessage") ??
+      readRecord(unwrapMessage(readRecord(data, "message")) ?? {}, "protocolMessage") ??
+      readNestedRecord(data, ["update", "message", "protocolMessage"]);
+    const type = String(protocol?.type ?? "").toUpperCase();
+    const key = readRecord(protocol ?? {}, "key") ?? readRecord(data, "key");
+    const isDeleteEvent = normalizeEvent(payload.event) === "messages.delete";
+    const providerMessageId =
+      stringValue(key?.id) ?? (isDeleteEvent ? readString(data, "id") : null);
+    if (!providerMessageId || !(isDeleteEvent || type === "REVOKE" || type === "0"))
+      return { kind: "ignored", reason: "NOT_DELETED" };
+    return {
+      kind: "delete",
+      event: {
+        tenantId: connection.tenantId,
+        connectionId: connection.id,
+        providerMessageId,
+        occurredAt: timestamp(payload),
+      },
+    };
   }
 
   private translateInbound(
@@ -211,11 +249,15 @@ export class EvolutionWebhookTranslator {
   ): EvolutionWebhookTranslation {
     const data = payload.data ?? {};
     const key = readRecord(data, "key");
-    const providerMessageId = stringValue(key?.id) ?? readString(data, "id");
-    const rawMessage =
+    const envelope =
       readRecord(data, "message") ??
       readNestedRecord(data, ["update", "message"]) ??
       readRecord(data, "editedMessage");
+    const protocol = readRecord(envelope ?? {}, "protocolMessage");
+    const protocolKey = readRecord(protocol ?? {}, "key");
+    const providerMessageId =
+      stringValue(protocolKey?.id) ?? stringValue(key?.id) ?? readString(data, "id");
+    const rawMessage = readRecord(protocol ?? {}, "editedMessage") ?? envelope;
     const message = unwrapMessage(rawMessage);
     const content = extractMessageContent(message);
     const text = content.text ?? content.caption;
@@ -261,6 +303,34 @@ function extractMessageContent(message: Record<string, unknown> | null): {
   if (!message) return { type: MessageType.TEXT };
   const conversation = stringValue(message.conversation);
   if (conversation) return { type: MessageType.TEXT, text: conversation };
+  const contact = readRecord(message, "contactMessage");
+  const contactsArray = readRecord(message, "contactsArrayMessage");
+  if (contact || contactsArray) {
+    const contacts = contact ? [contact] : recordArray(contactsArray?.contacts);
+    const vcard = contacts
+      .map((item) => readString(item, "vcard"))
+      .filter(Boolean)
+      .join("\r\n");
+    const displayName = contacts
+      .map(
+        (item) =>
+          readString(item, "displayName") ?? contactDisplayName(readString(item, "vcard") ?? ""),
+      )
+      .filter(Boolean)
+      .join(", ");
+    return {
+      type: MessageType.DOCUMENT,
+      text: displayName ? `[contato] ${displayName}` : "[contato]",
+      media: vcard
+        ? {
+            mimetype: "text/vcard",
+            fileName: contacts.length > 1 ? "contatos.vcf" : "contato.vcf",
+            sizeBytes: Buffer.byteLength(vcard, "utf8"),
+            inlineBody: Buffer.from(vcard, "utf8"),
+          }
+        : null,
+    };
+  }
   const extended = readRecord(message, "extendedTextMessage");
   const extendedText = readString(extended ?? undefined, "text");
   if (extendedText) return { type: MessageType.TEXT, text: extendedText };
@@ -320,6 +390,18 @@ function extractMessageContent(message: Record<string, unknown> | null): {
     };
   }
   return { type: MessageType.TEXT };
+}
+
+function contactDisplayName(vcard: string) {
+  const name = vcard.match(/^FN(?:;[^:]*)?:(.*)$/im)?.[1];
+  return name ? unescapeVCardValue(name) : null;
+}
+
+function unescapeVCardValue(value: string) {
+  return value
+    .replace(/\\n/gi, " ")
+    .replace(/\\([\\,;:])/g, "$1")
+    .trim();
 }
 
 /**

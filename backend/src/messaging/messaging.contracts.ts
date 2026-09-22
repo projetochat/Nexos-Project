@@ -118,6 +118,8 @@ export type InboundMessageEvent = {
     durationMs?: number | null;
     sha256?: string | null;
     rawMessage?: unknown;
+    /** Inline media supplied directly by the webhook, such as a vCard contact. */
+    inlineBody?: Buffer;
   } | null;
   quotedProviderMessageId?: string | null;
   quotedContentPreview?: string | null;
@@ -149,6 +151,12 @@ export type MessageEditEvent = {
   connectionId: string;
   providerMessageId: string;
   content: string;
+  occurredAt: Date;
+};
+export type MessageDeletionEvent = {
+  tenantId: string;
+  connectionId: string;
+  providerMessageId: string;
   occurredAt: Date;
 };
 

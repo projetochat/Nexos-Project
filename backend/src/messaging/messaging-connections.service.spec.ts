@@ -730,6 +730,7 @@ describe("MessagingConnectionsService", () => {
       instanceName: "tenant-a-suporte",
       urlCorrect: true,
       messagesUpsertPresent: true,
+      messagesDeletePresent: false,
       secretBackendConfigured: true,
       secretEvolutionConfigured: true,
       secretMatch: true,
@@ -737,7 +738,7 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
-  it("repairs a connected instance whose outgoing-message webhook is missing", async () => {
+  it("repairs a connected instance whose deletion webhook is missing", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findMany.mockResolvedValue([
       { id: "connection-a", tenantId: "tenant-a", externalReference: "tenant-a-suporte" },
@@ -745,12 +746,19 @@ describe("MessagingConnectionsService", () => {
     const evolution = {
       findInstance: vi
         .fn()
-        .mockResolvedValueOnce({ name: "tenant-a-suporte", Webhook: { events: [] } })
         .mockResolvedValueOnce({
           name: "tenant-a-suporte",
           Webhook: {
             url: "http://host.docker.internal:3001/api/webhooks/evolution",
+            headers: { jwt_key: "secret" },
             events: ["MESSAGES_UPSERT"],
+          },
+        })
+        .mockResolvedValueOnce({
+          name: "tenant-a-suporte",
+          Webhook: {
+            url: "http://host.docker.internal:3001/api/webhooks/evolution",
+            events: ["MESSAGES_UPSERT", "MESSAGES_DELETE"],
             headers: { jwt_key: "secret" },
           },
         }),

@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
+import { lockMessagingServiceState, MessagingServicePausedError } from "./service-availability";
 import {
   ConversationType,
   ConversationStatus,
@@ -12,7 +13,7 @@ import {
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
-import { InboundMessageEvent, MessageEditEvent } from "./messaging.contracts";
+import { InboundMessageEvent, MessageEditEvent, MessageDeletionEvent } from "./messaging.contracts";
 import { MessagingMediaStorageService } from "./media/messaging-media-storage.service";
 import { normalizeRemotePhoneCandidates } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
@@ -37,7 +38,14 @@ export class MessagingInboundService {
     private readonly outbound?: MessagingOutboundService,
   ) {}
 
-  async process(event: InboundMessageEvent, options: { historical?: boolean } = {}) {
+  async process(
+    event: InboundMessageEvent,
+    options: {
+      historical?: boolean;
+      suppressAutomaticReply?: boolean;
+      requireMediaReady?: boolean;
+    } = {},
+  ) {
     const historical = options.historical === true;
     const normalizedPhoneCandidates = uniqueNormalizedPhones([
       ...(event.metadata?.normalizedPhoneCandidates ?? []),
@@ -49,10 +57,12 @@ export class MessagingInboundService {
     const canonicalPhone = isGroup ? groupContactIdentity : normalizedPhoneCandidates[0];
 
     const result = await this.prisma.$transaction(async (tx) => {
+      await lockMessagingServiceState(tx, event.tenantId, event.connectionId);
       const connection = await tx.messagingConnection.findFirst({
         where: { id: event.connectionId, tenantId: event.tenantId },
       });
       if (!connection) throw new Error("Messaging connection not found for tenant.");
+      if (connection.serviceEnabled === false) throw new MessagingServicePausedError();
       const groupDisplayName = isGroup
         ? await this.resolveGroupDisplayName(event, connection.externalReference)
         : null;
@@ -61,7 +71,33 @@ export class MessagingInboundService {
       const duplicate = await tx.message.findFirst({
         where: duplicateWhere,
       });
-      if (duplicate) return { message: duplicate, duplicate: true };
+      if (duplicate) {
+        if (
+          options.requireMediaReady &&
+          event.media &&
+          (!duplicate.mediaStorageKey || duplicate.mediaState !== MessageMediaState.READY)
+        ) {
+          const stored = await this.downloadInboundMedia(
+            event,
+            duplicate.conversationId,
+            connection.externalReference,
+          );
+          if (!stored) throw new Error("Mídia retida ainda não disponível para importação.");
+          const repaired = await tx.message.update({
+            where: { id: duplicate.id },
+            data: {
+              mediaStorageKey: stored.objectKey,
+              mediaMimeType: stored.mimeType,
+              mediaFileName: stored.fileName,
+              mediaSize: stored.sizeBytes,
+              mediaChecksum: stored.checksum,
+              mediaState: MessageMediaState.READY,
+            },
+          });
+          return { message: repaired, duplicate: true, mediaRepaired: true };
+        }
+        return { message: duplicate, duplicate: true };
+      }
 
       const existingContact = await tx.contact.findFirst({
         where: {
@@ -173,6 +209,7 @@ export class MessagingInboundService {
         conversation.id,
         event.metadata?.providerInstanceName ?? connection.externalReference,
       ).catch((error) => {
+        if (options.requireMediaReady) throw error;
         this.logger.warn({
           event: "messaging.media.inbound_download_failed",
           tenantId: event.tenantId,
@@ -182,6 +219,9 @@ export class MessagingInboundService {
         });
         return null;
       });
+      if (options.requireMediaReady && event.media && !downloadedMedia) {
+        throw new Error("Mídia retida ainda não disponível para importação.");
+      }
       const message = await tx.message.create({
         data: {
           tenantId: event.tenantId,
@@ -218,7 +258,7 @@ export class MessagingInboundService {
         },
       });
       const historicalMessageIsOlder =
-        historical &&
+        (historical || options.suppressAutomaticReply) &&
         conversation.lastMessageAt instanceof Date &&
         conversation.lastMessageAt > event.occurredAt;
       const updatedConversation = await tx.conversation.update({
@@ -288,22 +328,23 @@ export class MessagingInboundService {
               contactName: contact.name,
             })
           : [];
-      const automaticReply = historical
-        ? null
-        : selectAutomaticReply({
-            createdConversation,
-            isGroup,
-            fromMe: event.fromMe,
-            welcomeEnabled: connection.welcomeEnabled,
-            welcomeTemplate: existingContact
-              ? connection.welcomeExistingMessage
-              : connection.welcomeNewMessage,
-            absenceEnabled: connection.absenceEnabled,
-            absenceTemplate: connection.absenceMessage,
-            serviceHours: connection.serviceHours,
-            timezone: connection.timezone,
-            at: event.occurredAt,
-          });
+      const automaticReply =
+        historical || options.suppressAutomaticReply
+          ? null
+          : selectAutomaticReply({
+              createdConversation,
+              isGroup,
+              fromMe: event.fromMe,
+              welcomeEnabled: connection.welcomeEnabled,
+              welcomeTemplate: existingContact
+                ? connection.welcomeExistingMessage
+                : connection.welcomeNewMessage,
+              absenceEnabled: connection.absenceEnabled,
+              absenceTemplate: connection.absenceMessage,
+              serviceHours: connection.serviceHours,
+              timezone: connection.timezone,
+              at: event.occurredAt,
+            });
       const reply = automaticReply
         ? {
             ...automaticReply,
@@ -346,6 +387,13 @@ export class MessagingInboundService {
       };
     });
 
+    if ("mediaRepaired" in result && result.mediaRepaired) {
+      this.realtime?.publishConversationUpdated({
+        tenantId: event.tenantId,
+        conversationId: result.message.conversationId,
+        reason: "message.media_ready",
+      });
+    }
     const profilePictureUpdated = await this.syncContactProfilePicture(event, result).catch(
       (error) => {
         this.logger.warn({
@@ -505,7 +553,7 @@ export class MessagingInboundService {
     return updated.count > 0;
   }
 
-  async processEdit(event: MessageEditEvent) {
+  async processEdit(event: MessageEditEvent, options: { preserveLatestPreview?: boolean } = {}) {
     const message = await this.prisma.message.findFirst({
       where: {
         tenantId: event.tenantId,
@@ -520,17 +568,62 @@ export class MessagingInboundService {
       where: { tenantId_id: { tenantId: event.tenantId, id: message.id } },
       data: { content: event.content, updatedAt: event.occurredAt },
     });
-    await this.prisma.conversation.update({
-      where: { tenantId_id: { tenantId: event.tenantId, id: message.conversationId } },
+    const latestMessage = options.preserveLatestPreview
+      ? await this.prisma.message.findFirst({
+          where: { tenantId: event.tenantId, conversationId: message.conversationId },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          select: { id: true },
+        })
+      : null;
+    if (!options.preserveLatestPreview || latestMessage?.id === message.id) {
+      await this.prisma.conversation.update({
+        where: { tenantId_id: { tenantId: event.tenantId, id: message.conversationId } },
+        data: {
+          lastMessagePreview: truncatePreview(event.content),
+          ...(!options.preserveLatestPreview ? { lastMessageAt: event.occurredAt } : {}),
+        },
+      });
+    }
+    this.realtime?.publishConversationUpdated({
+      tenantId: event.tenantId,
+      conversationId: message.conversationId,
+      reason: "message.edited",
+    });
+    return { updated: true, messageId: message.id, conversationId: message.conversationId };
+  }
+
+  async processDeletion(event: MessageDeletionEvent) {
+    const message = await this.prisma.message.findFirst({
+      where: {
+        tenantId: event.tenantId,
+        connectionId: event.connectionId,
+        providerMessageId: event.providerMessageId,
+      },
+      select: { id: true, conversationId: true, interactiveData: true },
+    });
+    if (!message) return { updated: false, reason: "MESSAGE_NOT_FOUND" };
+    const meta =
+      message.interactiveData &&
+      typeof message.interactiveData === "object" &&
+      !Array.isArray(message.interactiveData)
+        ? (message.interactiveData as Record<string, unknown>)
+        : {};
+    await this.prisma.message.update({
+      where: { tenantId_id: { tenantId: event.tenantId, id: message.id } },
       data: {
-        lastMessagePreview: truncatePreview(event.content),
-        lastMessageAt: event.occurredAt,
+        content: "Esta mensagem foi apagada",
+        interactiveData: {
+          ...meta,
+          deletedForEveryone: true,
+          deletedAt: event.occurredAt.toISOString(),
+        },
+        updatedAt: event.occurredAt,
       },
     });
     this.realtime?.publishConversationUpdated({
       tenantId: event.tenantId,
       conversationId: message.conversationId,
-      reason: "message.edited",
+      reason: "message.deleted",
     });
     return { updated: true, messageId: message.id, conversationId: message.conversationId };
   }
@@ -738,10 +831,10 @@ export class MessagingInboundService {
     providerConnectionRef?: string | null,
   ) {
     if (!this.mediaStorage || !event.media) return null;
-    let body: Buffer | null = null;
+    let body: Buffer | null = event.media.inlineBody ?? null;
     let mimeType = event.media.mimetype ?? null;
     let fileName = event.media.fileName ?? null;
-    if (this.evolution && providerConnectionRef && event.media.rawMessage) {
+    if (!body && this.evolution && providerConnectionRef && event.media.rawMessage) {
       const downloaded = await this.evolution.getBase64FromMediaMessage({
         instanceName: providerConnectionRef,
         message: event.media.rawMessage,
@@ -749,7 +842,7 @@ export class MessagingInboundService {
       body = downloaded.body;
       mimeType = mimeType ?? downloaded.mimeType ?? null;
       fileName = fileName ?? downloaded.fileName ?? null;
-    } else if (event.media.url?.startsWith("http")) {
+    } else if (!body && event.media.url?.startsWith("http")) {
       const response = await fetch(event.media.url);
       if (!response.ok) throw new Error(`Evolution media download failed: ${response.status}`);
       body = Buffer.from(await response.arrayBuffer());

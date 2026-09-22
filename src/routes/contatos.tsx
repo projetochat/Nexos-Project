@@ -1,6 +1,7 @@
 import { customFieldFormat, formatCustomField, customFieldError } from "@/lib/custom-field-formats";
 import { InfoTooltip } from "@/components/info-tooltip";
 import * as React from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { createPortal } from "react-dom";
 import {
@@ -39,7 +40,6 @@ import {
   Phone,
   Plus,
   Search,
-  ShieldCheck,
   Star,
   Strikethrough,
   Tag,
@@ -377,6 +377,7 @@ type AgendaImportPreviewState = {
 };
 
 function ContatosPage() {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const user = useSession((state) => state.user);
   const filtersStorageKey = `trixus.contacts.filters.${user?.id ?? "anonymous"}`;
@@ -1993,6 +1994,11 @@ function ContatosPage() {
             if (!editing) return;
             try {
               await crmApi.updateContact(editing.id, contactPayload(data));
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["operations", "history"] }),
+                queryClient.invalidateQueries({ queryKey: ["trixus", "contacts"] }),
+                queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] }),
+              ]);
               toast.success("Contato atualizado");
               setEditing(null);
               await load();
@@ -3932,7 +3938,23 @@ function ContactProfilesManagerModal({
                   className="flex h-9 w-9 items-center justify-center rounded-lg text-white"
                   style={{ backgroundColor: profile.cor }}
                 >
-                  <ShieldCheck className="h-4 w-4" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                  >
+                    <path d="M10 15H6a4 4 0 0 0-4 4v2" />
+                    <path d="M22 17.5c0 2.499-1.75 3.749-3.83 4.474a.5.5 0 0 1-.335-.005c-2.085-.72-3.835-1.97-3.835-4.47V14a.5.5 0 0 1 .5-.499c1 0 2.25-.6 3.12-1.36a.6.6 0 0 1 .76-.001c.875.765 2.12 1.36 3.12 1.36a.5.5 0 0 1 .5.5z" />
+                    <circle cx="9" cy="7" r="4" />
+                  </svg>
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{profile.nome}</p>

@@ -15,6 +15,10 @@ import { QuickReplyAttachmentDto } from "../../quick-replies/dto/quick-reply-mes
 
 export class UpdateMessagingConnectionDto {
   @IsOptional()
+  @IsBoolean()
+  serviceEnabled?: boolean;
+
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(7)
   @ArrayMaxSize(7)

@@ -1,4 +1,12 @@
-import { Camera, ContactRound, EllipsisVertical, Paperclip, Ticket, Zap } from "lucide-react";
+import {
+  CalendarClock,
+  Camera,
+  ContactRound,
+  EllipsisVertical,
+  Paperclip,
+  Ticket,
+  Zap,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -15,6 +23,7 @@ export function InboxMobileActions({
   onCamera,
   onContact,
   onTicket,
+  onSchedule,
 }: {
   disabled: boolean;
   allowQuickReplies: boolean;
@@ -24,6 +33,7 @@ export function InboxMobileActions({
   onCamera: () => void;
   onContact: () => void;
   onTicket: () => void;
+  onSchedule?: () => void;
 }) {
   return (
     <DropdownMenu modal={false}>
@@ -59,6 +69,10 @@ export function InboxMobileActions({
         <DropdownMenuItem className="min-h-11" disabled={ticketDisabled} onSelect={onTicket}>
           <Ticket />
           Gerar Chamado
+        </DropdownMenuItem>
+        <DropdownMenuItem className="min-h-11" disabled={disabled} onSelect={() => onSchedule?.()}>
+          <CalendarClock />
+          Agendar mensagem
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

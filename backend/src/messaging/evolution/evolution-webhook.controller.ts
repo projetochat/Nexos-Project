@@ -5,6 +5,7 @@ import {
   HttpCode,
   Inject,
   Logger,
+  Optional,
   Post,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -17,6 +18,9 @@ import { MessagingConnectionsService } from "../messaging-connections.service";
 import { MessagingInboundService } from "../messaging-inbound.service";
 import { MessagingReactionService } from "../messaging-reaction.service";
 import { MessagingStatusService } from "../messaging-status.service";
+import { MessagingServicePauseService } from "../messaging-service-pause.service";
+import { MessagingServicePausedError, withMessagingServiceEnabled } from "../service-availability";
+import { PrismaService } from "../../prisma/prisma.service";
 
 @Controller("webhooks/evolution")
 export class EvolutionWebhookController {
@@ -35,6 +39,11 @@ export class EvolutionWebhookController {
     private readonly reactions: MessagingReactionService,
     @Inject(MessagingStatusService)
     private readonly status: MessagingStatusService,
+    @Inject(PrismaService)
+    private readonly prisma: PrismaService,
+    @Optional()
+    @Inject(MessagingServicePauseService)
+    private readonly pause?: MessagingServicePauseService,
   ) {}
 
   @Post()
@@ -100,8 +109,18 @@ export class EvolutionWebhookController {
       ignoredReason: translated.kind === "ignored" ? translated.reason : null,
       httpResult: 200,
     });
+    if (await this.pause?.deferIfPaused(connection, translated)) {
+      return { ok: true, kind: translated.kind, deferred: true };
+    }
     if (translated.kind === "inbound") {
-      const result = await this.inbound.process(translated.event);
+      const result = await this.inbound.process(translated.event).catch(async (error: unknown) => {
+        if (error instanceof MessagingServicePausedError && this.pause) {
+          await this.pause.deferIfPaused(connection, translated, true);
+          return null;
+        }
+        throw error;
+      });
+      if (!result) return { ok: true, kind: translated.kind, deferred: true };
       this.logger.log({
         event: "evolution.webhook.inbound_persisted",
         requestId,
@@ -113,12 +132,32 @@ export class EvolutionWebhookController {
         resolutionResult: result.duplicate ? "ignored_duplicate" : "persisted",
         duplicate: result.duplicate,
       });
-    } else if (translated.kind === "status") {
-      await this.status.process(translated.event);
-    } else if (translated.kind === "edit") {
-      await this.inbound.processEdit(translated.event);
-    } else if (translated.kind === "reaction") {
-      await this.reactions.process(translated.event);
+    } else if (
+      translated.kind === "status" ||
+      translated.kind === "edit" ||
+      translated.kind === "delete" ||
+      translated.kind === "reaction"
+    ) {
+      try {
+        await withMessagingServiceEnabled(
+          this.prisma,
+          connection.tenantId,
+          connection.id,
+          async () => {
+            if (translated.kind === "status") await this.status.process(translated.event);
+            else if (translated.kind === "edit") await this.inbound.processEdit(translated.event);
+            else if (translated.kind === "delete")
+              await this.inbound.processDeletion(translated.event);
+            else if (translated.kind === "reaction") await this.reactions.process(translated.event);
+          },
+        );
+      } catch (error) {
+        if (error instanceof MessagingServicePausedError && this.pause) {
+          await this.pause.deferIfPaused(connection, translated, true);
+          return { ok: true, kind: translated.kind, deferred: true };
+        }
+        throw error;
+      }
     } else if (translated.kind === "connection") {
       await this.connections.updateConnectionStatus(connection.id, translated.status, {
         ownerExternalId: translated.ownerExternalId,
@@ -198,7 +237,15 @@ export class EvolutionWebhookController {
         throw new Error("Invalid claims.");
       }
       return "authenticated";
-    } catch {
+    } catch (error) {
+      const verificationReason =
+        error instanceof Error && error.name === "TokenExpiredError"
+          ? "expired"
+          : error instanceof Error && error.name === "NotBeforeError"
+            ? "not_yet_valid"
+            : error instanceof Error && error.message === "invalid signature"
+              ? "invalid_signature"
+              : "invalid_token_or_claims";
       this.logger.warn({
         event: "evolution.webhook.auth_failed",
         requestId,
@@ -206,6 +253,7 @@ export class EvolutionWebhookController {
         eventType: payload.event ?? null,
         authStrategy: "bearer_jwt",
         authResult: "invalid_token",
+        verificationReason,
         httpResult: 401,
       });
       throw new UnauthorizedException("Webhook token inválido.");

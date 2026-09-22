@@ -96,7 +96,7 @@ describe("quick reply editor", () => {
     document.body.innerHTML = "";
   });
 
-  it("adds, removes and reorders messages, then saves the resulting sequence", async () => {
+  it("adds and removes messages while preserving sequence order", async () => {
     await act(async () =>
       root.render(
         <QuickReplyEditor
@@ -112,13 +112,15 @@ describe("quick reply editor", () => {
     await click(button("Adicionar mensagem"));
     expect(texts()).toEqual(["Primeira", "Segunda", ""]);
     await click(document.querySelectorAll('[aria-label="Remover mensagem"]')[2]);
-    await click(document.querySelectorAll('[aria-label="Mover para cima"]')[1]);
-    expect(texts()).toEqual(["Segunda", "Primeira"]);
+    expect(document.querySelector('[aria-label="Mover para cima"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Mover para baixo"]')).toBeNull();
+    expect(texts()).toEqual(["Primeira", "Segunda"]);
+    expect(document.querySelector("details summary")?.textContent).toContain("Anexo");
     await click(button("Salvar"));
     expect(api.update).toHaveBeenCalledWith(
       "reply",
       expect.objectContaining({
-        messages: [{ text: "Segunda" }, { text: "Primeira" }],
+        messages: [{ text: "Primeira" }, { text: "Segunda" }],
         intervalSeconds: 3,
         closeOnSend: true,
       }),

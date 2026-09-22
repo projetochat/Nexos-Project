@@ -153,12 +153,15 @@ export class TicketsService {
     ) {
       Object.assign(data, await this.resolveRelations(dto, current));
     }
-    const updated = await this.prisma.ticket.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
-      data,
-      include: ticketInclude,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.ticket.update({
+        where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
+        data,
+        include: ticketInclude,
+      });
+      await this.recordHistory(updated.id, current, "ticket.updated", undefined, undefined, tx);
+      return updated;
     });
-    await this.recordHistory(updated.id, current, "ticket.updated");
     this.realtime.publishTicketUpdated({
       tenantId: current.tenantId,
       ticketId: updated.id,
@@ -174,22 +177,26 @@ export class TicketsService {
     }
     const closing = status === TicketStatus.FECHADO;
     const reopening = existing.closedAt && status === TicketStatus.ABERTO;
-    const updated = await this.prisma.ticket.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
-      data: {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.ticket.update({
+        where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
+        data: {
+          status,
+          closedAt: closing ? new Date() : reopening ? null : undefined,
+          closedByMembershipId: closing ? current.membershipId : reopening ? null : undefined,
+        },
+        include: ticketInclude,
+      });
+      await this.recordHistory(
+        updated.id,
+        current,
+        closing ? "ticket.closed" : reopening ? "ticket.reopened" : "ticket.status.changed",
+        existing.status,
         status,
-        closedAt: closing ? new Date() : reopening ? null : undefined,
-        closedByMembershipId: closing ? current.membershipId : reopening ? null : undefined,
-      },
-      include: ticketInclude,
+        tx,
+      );
+      return updated;
     });
-    await this.recordHistory(
-      updated.id,
-      current,
-      closing ? "ticket.closed" : reopening ? "ticket.reopened" : "ticket.status.changed",
-      existing.status,
-      status,
-    );
     this.realtime.publishTicketStatusUpdated({
       tenantId: current.tenantId,
       ticketId: updated.id,
@@ -208,18 +215,22 @@ export class TicketsService {
     const next = assignedMembershipId
       ? await this.resolveAssignee(assignedMembershipId, existing.departmentId, current)
       : null;
-    const updated = await this.prisma.ticket.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
-      data: { assignedMembershipId: next },
-      include: ticketInclude,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.ticket.update({
+        where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
+        data: { assignedMembershipId: next },
+        include: ticketInclude,
+      });
+      await this.recordHistory(
+        updated.id,
+        current,
+        "ticket.assigned",
+        existing.assignedMembershipId,
+        next,
+        tx,
+      );
+      return updated;
     });
-    await this.recordHistory(
-      updated.id,
-      current,
-      "ticket.assigned",
-      existing.assignedMembershipId,
-      next,
-    );
     this.realtime.publishTicketAssignmentUpdated({
       tenantId: current.tenantId,
       ticketId: updated.id,
@@ -232,18 +243,22 @@ export class TicketsService {
   async updateDepartment(id: string, departmentId: string, current: AuthenticatedUser) {
     const existing = await this.findVisibleTicket(id, current);
     const next = await this.resolveDepartment(departmentId, current);
-    const updated = await this.prisma.ticket.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
-      data: { departmentId: next, assignedMembershipId: null },
-      include: ticketInclude,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.ticket.update({
+        where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
+        data: { departmentId: next, assignedMembershipId: null },
+        include: ticketInclude,
+      });
+      await this.recordHistory(
+        updated.id,
+        current,
+        "ticket.department.changed",
+        existing.departmentId,
+        next,
+        tx,
+      );
+      return updated;
     });
-    await this.recordHistory(
-      updated.id,
-      current,
-      "ticket.department.changed",
-      existing.departmentId,
-      next,
-    );
     this.realtime.publishTicketUpdated({
       tenantId: current.tenantId,
       ticketId: updated.id,
@@ -254,12 +269,15 @@ export class TicketsService {
 
   async archive(id: string, current: AuthenticatedUser) {
     const existing = await this.findVisibleTicket(id, current);
-    const updated = await this.prisma.ticket.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
-      data: { archivedAt: new Date() },
-      include: ticketInclude,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.ticket.update({
+        where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
+        data: { archivedAt: new Date() },
+        include: ticketInclude,
+      });
+      await this.recordHistory(updated.id, current, "ticket.archived", undefined, undefined, tx);
+      return updated;
     });
-    await this.recordHistory(updated.id, current, "ticket.archived");
     return serializeTicket(updated);
   }
 
@@ -280,20 +298,25 @@ export class TicketsService {
     const html = sanitizeTicketHtml(dto.bodyHtml);
     const bodyText = htmlToText(html);
     if (!bodyText) throw new BadRequestException("Comentário obrigatório.");
-    const comment = await this.prisma.ticketComment.create({
-      data: {
-        tenantId: current.tenantId,
-        ticketId: ticket.id,
-        authorMembershipId: current.membershipId,
-        bodyText,
-        bodyHtmlSanitized: html,
-        internal: dto.internal ?? true,
-      },
-      include: {
-        authorMembership: { include: { user: { select: { id: true, name: true, email: true } } } },
-      },
+    const comment = await this.prisma.$transaction(async (tx) => {
+      const comment = await tx.ticketComment.create({
+        data: {
+          tenantId: current.tenantId,
+          ticketId: ticket.id,
+          authorMembershipId: current.membershipId,
+          bodyText,
+          bodyHtmlSanitized: html,
+          internal: dto.internal ?? true,
+        },
+        include: {
+          authorMembership: {
+            include: { user: { select: { id: true, name: true, email: true } } },
+          },
+        },
+      });
+      await this.recordHistory(ticket.id, current, "comment.created", null, comment.id, tx);
+      return comment;
     });
-    await this.recordHistory(ticket.id, current, "comment.created", null, comment.id);
     this.realtime.publishTicketCommentCreated({
       tenantId: current.tenantId,
       ticketId: ticket.id,
@@ -359,11 +382,14 @@ export class TicketsService {
         throw new Error("ATTACHMENT_OBJECT_MISSING");
       }
       const scanStatus = await this.scanner.scan();
-      const updated = await this.prisma.ticketAttachment.update({
-        where: { tenantId_id: { tenantId: current.tenantId, id: created.id } },
-        data: { status: TicketAttachmentStatus.READY, scanStatus },
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.ticketAttachment.update({
+          where: { tenantId_id: { tenantId: current.tenantId, id: created.id } },
+          data: { status: TicketAttachmentStatus.READY, scanStatus },
+        });
+        await this.recordHistory(ticket.id, current, "attachment.created", null, updated.id, tx);
+        return updated;
       });
-      await this.recordHistory(ticket.id, current, "attachment.created", null, updated.id);
       this.realtime.publishTicketAttachmentCreated({
         tenantId: current.tenantId,
         ticketId: ticket.id,
@@ -421,12 +447,15 @@ export class TicketsService {
   async deleteAttachment(id: string, attachmentId: string, current: AuthenticatedUser) {
     const ticket = await this.findVisibleTicket(id, current);
     const attachment = await this.findAttachment(ticket.id, attachmentId, current);
-    await this.storage.deleteObject(attachment.objectKey).catch(() => undefined);
-    const updated = await this.prisma.ticketAttachment.update({
-      where: { tenantId_id: { tenantId: current.tenantId, id: attachment.id } },
-      data: { status: TicketAttachmentStatus.DELETED, deletedAt: new Date() },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.ticketAttachment.update({
+        where: { tenantId_id: { tenantId: current.tenantId, id: attachment.id } },
+        data: { status: TicketAttachmentStatus.DELETED, deletedAt: new Date() },
+      });
+      await this.recordHistory(ticket.id, current, "attachment.removed", attachment.id, null, tx);
+      return updated;
     });
-    await this.recordHistory(ticket.id, current, "attachment.removed", attachment.id, null);
+    await this.storage.deleteObject(attachment.objectKey).catch(() => undefined);
     this.realtime.publishTicketAttachmentRemoved({
       tenantId: current.tenantId,
       ticketId: ticket.id,
@@ -602,8 +631,9 @@ export class TicketsService {
     event: string,
     fromValue?: unknown,
     toValue?: unknown,
+    tx: Prisma.TransactionClient = this.prisma,
   ) {
-    await this.prisma.ticketHistory.create({
+    await tx.ticketHistory.create({
       data: {
         tenantId: current.tenantId,
         ticketId,

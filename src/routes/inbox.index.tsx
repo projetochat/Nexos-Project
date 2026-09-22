@@ -563,7 +563,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
       crmApi.listContacts({
         q: q.trim() || undefined,
         page,
-        pageSize: 7,
+        pageSize: 10,
       }),
     enabled: open,
   });

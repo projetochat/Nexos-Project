@@ -600,7 +600,7 @@ function ConnectionForm({
           </div>
         </fieldset>
 
-        <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
           <Field label="Nome da instância *">
             <Input
               value={name}
@@ -882,6 +882,7 @@ type RemoveConnectionOptions = {
 };
 
 type ConnectionSettingsFormData = {
+  serviceEnabled?: boolean;
   timezone?: string;
   serviceHours?: ServiceHoursRow[];
   name: string;
@@ -977,6 +978,7 @@ function ConnectionSettingsModal({
   const [logoPreview, setLogoPreview] = React.useState<string | null>(null);
   const [cameraOpen, setCameraOpen] = React.useState(false);
   const [logoPreviewOpen, setLogoPreviewOpen] = React.useState(false);
+  const [serviceEnabled, setServiceEnabled] = React.useState(true);
   const [timezone, setTimezone] = React.useState("America/Sao_Paulo");
   const [aiAgentId, setAiAgentId] = React.useState("");
   const [absenceEnabled, setAbsenceEnabled] = React.useState(false);
@@ -1029,6 +1031,7 @@ function ConnectionSettingsModal({
     setLogoPreview(connection.logoUrl ?? null);
     setCameraOpen(false);
     setLogoPreviewOpen(false);
+    setServiceEnabled(connection.serviceEnabled ?? true);
     setTimezone(connection.timezone ?? "America/Sao_Paulo");
     setAiAgentId("");
     setAbsenceEnabled(connection.absenceEnabled ?? false);
@@ -1128,6 +1131,7 @@ function ConnectionSettingsModal({
       return;
     }
     onSubmit(connection, {
+      serviceEnabled,
       timezone,
       serviceHours: normalizedHours,
       ...form,
@@ -1285,7 +1289,7 @@ function ConnectionSettingsModal({
                 </div>
 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3 sm:grid-cols-2 sm:gap-4">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4">
                     <div className="hidden sm:col-start-1 sm:row-start-1 sm:block">
                       <Field label="Status">
                         <div className="flex h-10 items-center">
@@ -1379,6 +1383,22 @@ function ConnectionSettingsModal({
                     </Field>
                   </div>
                 </div>
+              </div>
+              <div className="rounded-xl border border-border bg-surface-1 p-4">
+                <label className="flex items-center justify-between gap-3 text-sm font-medium">
+                  Atendimento ativo
+                  <input
+                    type="checkbox"
+                    checked={serviceEnabled}
+                    disabled={busy}
+                    onChange={(event) => setServiceEnabled(event.target.checked)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                </label>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Ao desativar, mantém o WhatsApp conectado e pausa o recebimento e envio de
+                  mensagens no Trixus. Ao reativar, as mensagens do período serão importadas.
+                </p>
               </div>
               <section
                 className="space-y-4 rounded-xl border border-border bg-surface-1 p-4"

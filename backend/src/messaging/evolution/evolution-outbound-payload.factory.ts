@@ -65,6 +65,33 @@ export class EvolutionOutboundPayloadFactory {
     };
   }
 
+  contact(input: { recipient: EvolutionRecipient; fullName: string; phoneNumber: string }) {
+    const phoneNumber = input.phoneNumber.trim();
+    const fullName = input.fullName.trim();
+    const payload = compact({
+      number: input.recipient.number,
+      contact: [
+        {
+          fullName,
+          wuid: digitsOnly(phoneNumber),
+          phoneNumber,
+        },
+      ],
+    });
+    requireString(payload.number, "number", MessagingErrorCode.INVALID_RECIPIENT);
+    if (!fullName || !phoneNumber || !digitsOnly(phoneNumber)) {
+      throw new MessagingProviderError(
+        MessagingErrorCode.INVALID_PROVIDER_PAYLOAD,
+        "Evolution contact requires a name and phone number.",
+        false,
+      );
+    }
+    return payload as {
+      number: string;
+      contact: Array<{ fullName: string; wuid: string; phoneNumber: string }>;
+    };
+  }
+
   audio(input: { recipient: EvolutionRecipient; quoted?: EvolutionQuotedKey | null }) {
     const payload = compact({
       number: input.recipient.number,
@@ -158,6 +185,10 @@ function compact<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(
     Object.entries(value).filter(([, entry]) => entry !== undefined),
   ) as Partial<T>;
+}
+
+function digitsOnly(value: string) {
+  return value.replace(/\D/g, "");
 }
 
 function requireString(value: unknown, field: string, code: MessagingErrorCode) {

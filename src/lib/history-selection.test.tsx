@@ -4,7 +4,12 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
-const api = vi.hoisted(() => ({ history: vi.fn(), timeline: vi.fn(), messages: vi.fn() }));
+const api = vi.hoisted(() => ({
+  history: vi.fn(),
+  timeline: vi.fn(),
+  messages: vi.fn(),
+  bubble: vi.fn(),
+}));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => ({}),
   lazyRouteComponent: () => () => null,
@@ -16,14 +21,20 @@ vi.mock("@/components/app-shell", () => ({
 vi.mock("@/components/dashboard-filters", () => ({ DashboardFiltersBar: () => null }));
 vi.mock("@/lib/session", () => ({ useSession: () => ({ id: "user" }) }));
 vi.mock("@/lib/realtime/client", () => ({ onRealtimeEvent: () => () => {} }));
-vi.mock("../routes/inbox.$conversationId", () => ({ ContactPanel: () => null }));
+vi.mock("../routes/inbox.$conversationId", () => ({
+  ContactPanel: () => null,
+  MessageBubble: (props: { m: { content: string }; readOnly?: boolean }) => {
+    api.bubble(props);
+    return <div data-testid="shared-message">{props.m.content}</div>;
+  },
+}));
 vi.mock("@/lib/trixus-api", () => ({
   operationsApi: { history: api.history, timeline: api.timeline },
   messageApi: { list: api.messages },
   conversationApi: {},
 }));
 import { HistoricoPage } from "../routes/-historico-page";
-it("selects a different conversation on one click and loads its messages and timeline", async () => {
+it("selects a different conversation on one click and loads its messages without the removed timeline", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   api.history.mockResolvedValue({
     items: ["GANG DA GERALDA", "Natã R"].map((nome, id) => ({
@@ -38,7 +49,17 @@ it("selects a different conversation on one click and loads its messages and tim
   api.timeline.mockImplementation(async (id) => ({
     items: [{ event: "created", at: "2026-09-18", description: "Timeline " + id }],
   }));
-  api.messages.mockResolvedValue({ items: [] });
+  api.messages.mockImplementation(async (id: string) => ({
+    items: [
+      {
+        id: `message-${id}`,
+        conversation_id: id,
+        content: `Mensagem da API ${id}`,
+        type: "text",
+        created_at: "2026-09-18T12:00:00.000Z",
+      },
+    ],
+  }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const host = document.createElement("div");
   document.body.append(host);
@@ -73,7 +94,17 @@ it("selects a different conversation on one click and loads its messages and tim
       host.querySelector('[aria-label="Abrir informações do contato"]')?.textContent,
     ).toContain("Natã R");
     expect(api.messages).toHaveBeenLastCalledWith("1", { limit: 100 });
-    expect(host.textContent).toContain("Timeline 1");
+    expect(api.bubble).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        m: expect.objectContaining({ id: "message-1", content: "Mensagem da API 1" }),
+        readOnly: true,
+      }),
+    );
+    expect(host.querySelector('[data-testid="shared-message"]')?.textContent).toBe(
+      "Mensagem da API 1",
+    );
+    expect(host.textContent).not.toContain("Timeline 1");
+    expect(api.timeline).not.toHaveBeenCalled();
     expect(host.querySelector("h1")?.textContent).toBe("Histórico de Conversas");
     expect(host.textContent).not.toContain("Consulta operacional");
     const historyQuery = client

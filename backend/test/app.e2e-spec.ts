@@ -3,7 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
-import { vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import helmet from "helmet";
 import { hash } from "bcryptjs";
 import { AppModule } from "../src/app.module";

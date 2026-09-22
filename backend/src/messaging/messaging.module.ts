@@ -25,6 +25,7 @@ import { MessagingProviderRegistry } from "./messaging-provider.registry";
 import { MessagingReactionService } from "./messaging-reaction.service";
 import { MessagingStatusService } from "./messaging-status.service";
 import { SenderDisplayNameService } from "./sender-display-name.service";
+import { MessagingServicePauseService } from "./messaging-service-pause.service";
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { SenderDisplayNameService } from "./sender-display-name.service";
     EvolutionMessagingProvider,
     EvolutionWebhookTranslator,
     MessagingConnectionsService,
+    MessagingServicePauseService,
     MessagingProviderRegistry,
     MessagingMediaStorageService,
     VoiceAudioTranscoderService,

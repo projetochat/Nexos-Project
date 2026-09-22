@@ -575,16 +575,24 @@ export class CampaignsService {
     }
     const batchSize = readCampaignRuntimeConfig(this.config).batchSize;
     const recipients = await this.prisma.campaignRecipient.findMany({
-      where: { campaignId: campaign.id, status: CampaignRecipientStatus.PENDING },
+      where: {
+        campaignId: campaign.id,
+        status: { in: [CampaignRecipientStatus.PENDING, CampaignRecipientStatus.QUEUED] },
+      },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: batchSize,
     });
     for (const recipient of recipients) {
       const recipientClaim = await this.prisma.campaignRecipient.updateMany({
-        where: { id: recipient.id, status: CampaignRecipientStatus.PENDING },
+        where: {
+          id: recipient.id,
+          status: { in: [CampaignRecipientStatus.PENDING, CampaignRecipientStatus.QUEUED] },
+        },
         data: { status: CampaignRecipientStatus.QUEUED, queuedAt: new Date() },
       });
       if (recipientClaim.count !== 1) continue;
+      // A previous add may have failed after Redis accepted it. The stable recipient job ID
+      // makes this retry safe, while the claim above leaves active recipients untouched.
       await this.campaignQueue.enqueue({
         kind: "campaign.recipient.send",
         tenantId: campaign.tenantId,
@@ -642,8 +650,10 @@ export class CampaignsService {
       },
     });
     if (claim.count !== 1) return { skipped: true };
+    let createdMessageId: string | undefined;
     try {
       const messageId = await this.createCampaignMessage(recipient, attempt);
+      createdMessageId = messageId;
       await this.prisma.campaignRecipient.update({
         where: { id: recipient.id },
         data: {
@@ -662,6 +672,24 @@ export class CampaignsService {
       });
       return { messageId };
     } catch (error) {
+      // Retry only failures that establish no transaction committed. Connection loss/timeouts
+      // and any failure after message creation keep the existing conservative failure path.
+      if (!createdMessageId && attempt < 3 && isSafeCampaignTransactionRetry(error)) {
+        const persistedMessage = await this.prisma.message.findFirst({
+          where: { tenantId: campaign.tenantId, campaignRecipientId: recipient.id },
+          select: { id: true },
+        });
+        if (!persistedMessage) {
+          await this.prisma.campaignRecipient.updateMany({
+            where: { id: recipient.id, status: CampaignRecipientStatus.PROCESSING },
+            data: {
+              status: CampaignRecipientStatus.QUEUED,
+              lastErrorCode: canonicalErrorCode(error),
+            },
+          });
+          throw error;
+        }
+      }
       await this.prisma.campaignRecipient.update({
         where: { id: recipient.id },
         data: {
@@ -1356,4 +1384,10 @@ function canonicalErrorCode(error: unknown) {
       return String(response.code);
   }
   return "CAMPAIGN_RECIPIENT_SEND_FAILED";
+}
+
+function isSafeCampaignTransactionRetry(error: unknown) {
+  if (!error || typeof error !== "object" || !("code" in error)) return false;
+  // P2034: transaction rolled back; P2024: timed out acquiring a connection.
+  return error.code === "P2034" || error.code === "P2024";
 }

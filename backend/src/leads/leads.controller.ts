@@ -16,6 +16,7 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
+import { connectionAccess } from "../auth/connection-access";
 import { ConversationStatus, LeadStatus, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
@@ -71,6 +72,7 @@ export class LeadsController {
     const pageSize = query.pageSize ?? 25;
     const where: Prisma.LeadWhereInput = {
       tenantId: current.tenantId,
+      conversation: connectionAccess(current),
       ...(query.status ? { status: query.status } : { status: { not: LeadStatus.DISCARDED } }),
     };
     const [items, total] = await this.prisma.$transaction([
@@ -104,7 +106,12 @@ export class LeadsController {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const lead = await tx.lead.findFirst({
-        where: { id, tenantId: current.tenantId, status: { not: LeadStatus.DISCARDED } },
+        where: {
+          id,
+          tenantId: current.tenantId,
+          status: { not: LeadStatus.DISCARDED },
+          conversation: connectionAccess(current),
+        },
         include: { conversation: true },
       });
       if (!lead) throw new BadRequestException("Lead inexistente para este tenant.");
