@@ -184,6 +184,7 @@ export class MessagingConnectionsService {
             response.instance?.status ?? response.instance?.connectionStatus,
           ),
           externalReference: instanceName,
+          serviceEnabled: dto.serviceEnabled ?? true,
           importHistoryEnabled,
           importHistoryStartDate: importHistoryEnabled ? importHistoryStartDate : null,
           importGroupsEnabled,
@@ -857,8 +858,13 @@ export class MessagingConnectionsService {
     id: string;
     tenantId: string;
     status: MessagingConnectionStatus;
+    serviceEnabled?: boolean;
   }) {
-    if (connection.status !== MessagingConnectionStatus.CONNECTED) return;
+    if (
+      connection.status !== MessagingConnectionStatus.CONNECTED ||
+      connection.serviceEnabled === false
+    )
+      return;
     this.groupsSync?.enqueue({
       tenantId: connection.tenantId,
       connectionId: connection.id,

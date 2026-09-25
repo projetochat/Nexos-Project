@@ -25,6 +25,10 @@ export class CreateEvolutionConnectionDto {
 
   @IsOptional()
   @IsBoolean()
+  serviceEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   importHistoryEnabled?: boolean;
 
   @IsOptional()

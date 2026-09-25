@@ -257,6 +257,22 @@ export class MessagingInboundService {
           createdAt: event.occurredAt,
         },
       });
+      if (
+        !historical &&
+        !event.fromMe &&
+        (createdConversation || conversation.status === ConversationStatus.FECHADA)
+      ) {
+        await tx.message.create({
+          data: {
+            tenantId: event.tenantId,
+            conversationId: conversation.id,
+            direction: MessageDirection.SYSTEM,
+            type: MessageType.SYSTEM,
+            content: "Nova conversa (passiva)",
+            createdAt: new Date(event.occurredAt.getTime() - 1),
+          },
+        });
+      }
       const historicalMessageIsOlder =
         (historical || options.suppressAutomaticReply) &&
         conversation.lastMessageAt instanceof Date &&
@@ -611,7 +627,6 @@ export class MessagingInboundService {
     await this.prisma.message.update({
       where: { tenantId_id: { tenantId: event.tenantId, id: message.id } },
       data: {
-        content: "Esta mensagem foi apagada",
         interactiveData: {
           ...meta,
           deletedForEveryone: true,

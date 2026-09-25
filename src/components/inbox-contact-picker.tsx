@@ -20,17 +20,25 @@ export function InboxContactPicker({
   const [page, setPage] = useState(1);
   const { data, isFetching, error, refetch } = useQuery({
     queryKey: ["trixus", "contacts", "share", search.trim(), page, priorityInstances],
-    queryFn: () => crmApi.listContacts({ q: search.trim() || undefined, page, pageSize: 100 }),
+    queryFn: () =>
+      crmApi.listContacts({
+        q: search.trim() || undefined,
+        priorityInstance: priorityInstances.find(Boolean),
+        page,
+        pageSize: 100,
+      }),
   });
   const sortedContacts = useMemo(() => {
     const priorities = new Set(priorityInstances.filter(Boolean));
-    if (!priorities.size) return data?.items ?? [];
     return [...(data?.items ?? [])].sort((a, b) => {
       const aPriority =
         priorities.has(a.instancia ?? "") || a.instanceIds.some((id) => priorities.has(id));
       const bPriority =
         priorities.has(b.instancia ?? "") || b.instanceIds.some((id) => priorities.has(id));
-      return Number(bPriority) - Number(aPriority);
+      return (
+        Number(bPriority) - Number(aPriority) ||
+        a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base", numeric: true })
+      );
     });
   }, [data?.items, priorityInstances]);
   return (

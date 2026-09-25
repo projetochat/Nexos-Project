@@ -125,11 +125,11 @@ describe("contact sharing and WhatsApp deletions", () => {
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          content: "Esta mensagem foi apagada",
           interactiveData: expect.objectContaining({ deletedForEveryone: true }),
         }),
       }),
     );
+    expect(update.mock.calls[0]?.[0]?.data).not.toHaveProperty("content");
     expect(publishConversationUpdated).toHaveBeenCalledWith(
       expect.objectContaining({ reason: "message.deleted" }),
     );

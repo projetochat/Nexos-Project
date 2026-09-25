@@ -107,7 +107,10 @@ function Page() {
   React.useEffect(() => {
     const pending = items.filter(
       (item) =>
-        item.status === "connected" && !item.logoUrl && !profileSyncAttempted.current.has(item.id),
+        item.serviceEnabled !== false &&
+        item.status === "connected" &&
+        !item.logoUrl &&
+        !profileSyncAttempted.current.has(item.id),
     );
     if (pending.length === 0) return;
     pending.forEach((item) => profileSyncAttempted.current.add(item.id));
@@ -232,7 +235,7 @@ function Page() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
       setEditing(null);
-      toast.success("Instancia atualizada");
+      toast.success("Instância atualizada");
     },
     onError: (e) => toast.error((e as Error).message),
   });
@@ -493,6 +496,7 @@ function ConnectionForm({
   onSubmit: (data: {
     name: string;
     color: string;
+    serviceEnabled: boolean;
     importHistoryEnabled: boolean;
     importHistoryStartDate?: string;
     importGroupsEnabled: boolean;
@@ -504,12 +508,13 @@ function ConnectionForm({
   const [name, setName] = React.useState("");
   const [color, setColor] = React.useState("#22c55e");
   const [connectionType, setConnectionType] = React.useState<"qr-code">("qr-code");
+  const [serviceEnabled, setServiceEnabled] = React.useState(true);
   const [importHistory, setImportHistory] = React.useState(false);
   const [importGroups, setImportGroups] = React.useState(false);
   const [historyStartDate, setHistoryStartDate] = React.useState("");
   const [groupStartDate, setGroupStartDate] = React.useState("");
   const missingImportDate =
-    (importHistory && !historyStartDate) || (importGroups && !groupStartDate);
+    serviceEnabled && ((importHistory && !historyStartDate) || (importGroups && !groupStartDate));
   const duplicateName = instanceNameAlreadyExists(name, connections);
   const canCreate = name.trim().length >= 2 && !missingImportDate && !duplicateName;
 
@@ -518,6 +523,7 @@ function ConnectionForm({
       setName("");
       setColor("#22c55e");
       setConnectionType("qr-code");
+      setServiceEnabled(true);
       setImportHistory(false);
       setImportGroups(false);
       setHistoryStartDate("");
@@ -531,10 +537,13 @@ function ConnectionForm({
     onSubmit({
       name: name.trim(),
       color: completeHexColor(color, "#22c55e"),
-      importHistoryEnabled: importHistory,
-      importHistoryStartDate: importHistory ? historyStartDate || undefined : undefined,
-      importGroupsEnabled: importGroups,
-      importGroupsStartDate: importGroups ? groupStartDate || undefined : undefined,
+      serviceEnabled,
+      importHistoryEnabled: serviceEnabled && importHistory,
+      importHistoryStartDate:
+        serviceEnabled && importHistory ? historyStartDate || undefined : undefined,
+      importGroupsEnabled: serviceEnabled && importGroups,
+      importGroupsStartDate:
+        serviceEnabled && importGroups ? groupStartDate || undefined : undefined,
     });
   };
 
@@ -638,6 +647,17 @@ function ConnectionForm({
           </Field>
         </div>
 
+        <div className="rounded-xl border border-border bg-surface-1 p-4">
+          <ImportOption
+            label="Atendimento ativo"
+            checked={serviceEnabled}
+            onCheckedChange={setServiceEnabled}
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Ativa o envio e o recebimento de mensagens nesta instância.
+          </p>
+        </div>
+
         <section className="space-y-4 border-t border-border pt-5" aria-label="Importar mensagens">
           <h3 className="text-base font-semibold">Importar Mensagens</h3>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -646,13 +666,14 @@ function ConnectionForm({
                 label="Importar histórico de mensagens"
                 checked={importHistory}
                 onCheckedChange={setImportHistory}
+                disabled={!serviceEnabled}
               />
               <ImportDate
                 label="Dt. início p/ importação"
                 required={importHistory}
                 value={historyStartDate}
                 onChange={setHistoryStartDate}
-                disabled={!importHistory}
+                disabled={!serviceEnabled || !importHistory}
               />
             </div>
             <div className="space-y-3">
@@ -660,13 +681,14 @@ function ConnectionForm({
                 label="Importar mensagens de grupo"
                 checked={importGroups}
                 onCheckedChange={setImportGroups}
+                disabled={!serviceEnabled}
               />
               <ImportDate
                 label="Dt. início p/ importação"
                 required={importGroups}
                 value={groupStartDate}
                 onChange={setGroupStartDate}
-                disabled={!importGroups}
+                disabled={!serviceEnabled || !importGroups}
               />
             </div>
           </div>
@@ -1365,8 +1387,8 @@ function ConnectionSettingsModal({
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                        <label htmlFor="instance-ai-agent">Agentes de IA</label>
-                        <InfoTooltip label="agentes de IA">
+                        <label htmlFor="instance-ai-agent">Agente de IA</label>
+                        <InfoTooltip label="agente de IA">
                           Será preenchido pelos agentes cadastrados no módulo de IA.
                         </InfoTooltip>
                       </div>
@@ -1385,19 +1407,15 @@ function ConnectionSettingsModal({
                 </div>
               </div>
               <div className="rounded-xl border border-border bg-surface-1 p-4">
-                <label className="flex items-center justify-between gap-3 text-sm font-medium">
-                  Atendimento ativo
-                  <input
-                    type="checkbox"
-                    checked={serviceEnabled}
-                    disabled={busy}
-                    onChange={(event) => setServiceEnabled(event.target.checked)}
-                    className="h-4 w-4 accent-primary"
-                  />
-                </label>
+                <ImportOption
+                  label="Atendimento ativo"
+                  checked={serviceEnabled}
+                  onCheckedChange={setServiceEnabled}
+                  disabled={busy}
+                />
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Ao desativar, mantém o WhatsApp conectado e pausa o recebimento e envio de
-                  mensagens no Trixus. Ao reativar, as mensagens do período serão importadas.
+                  Pausa o envio e recebimento de mensagens da instância, mantendo o WhatsApp
+                  conectado.
                 </p>
               </div>
               <section

@@ -169,15 +169,16 @@ export class GroupsController {
           : {}),
     };
 
-    const [allItems, total] = await this.prisma.$transaction([
+    const [items, total] = await this.prisma.$transaction([
       this.prisma.conversation.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ groupName: "asc" }, { contact: { name: "asc" } }, { createdAt: "desc" }],
+        skip,
+        take: pageSize,
         include: groupInclude,
       }),
       this.prisma.conversation.count({ where }),
     ]);
-    const items = allItems.sort(compareGroupsByName).slice(skip, skip + pageSize);
 
     return paginated(
       items.map((item) => serializeGroup(item)),
@@ -652,20 +653,6 @@ function serializeGroup(group: GroupConversation) {
     lastMessagePreview: group.lastMessagePreview,
     lastMessageAt: group.lastMessageAt,
   };
-}
-
-function compareGroupsByName(a: GroupConversation, b: GroupConversation) {
-  const normalizeName = (group: GroupConversation) =>
-    (group.groupName || group.contact.name || "Grupo WhatsApp")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLocaleLowerCase("pt-BR");
-  const comparison = normalizeName(a).localeCompare(normalizeName(b), "pt-BR", {
-    sensitivity: "base",
-    numeric: true,
-  });
-  if (comparison !== 0) return comparison;
-  return b.createdAt.getTime() - a.createdAt.getTime();
 }
 
 function groupDescription(value: Prisma.JsonValue | null) {

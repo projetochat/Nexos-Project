@@ -92,8 +92,9 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
     } as ApiMessage);
     expect(host.textContent).toContain("relatorio.pdf");
     await render({ ...base, deleted_for_everyone: true });
-    expect(host.textContent).toContain("Esta mensagem foi apagada");
-    expect(host.querySelector("strong")).toBeNull();
+    expect(host.textContent).toContain("Linha 1");
+    expect(host.textContent).toContain("Apagada");
+    expect(host.textContent).not.toContain("Esta mensagem foi apagada");
   } finally {
     await React.act(async () => root.unmount());
     client.clear();

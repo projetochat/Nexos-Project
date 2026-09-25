@@ -365,15 +365,67 @@ export class CrmController {
     const { page, pageSize, skip } = pagination(query);
     const where = await this.buildContactListWhere(query, current.tenantId);
 
-    const [allItems, total] = await this.prisma.$transaction([
+    if (query.priorityInstance?.trim()) {
+      const priorityKeys = await this.resolveInstanceFilterKeys(
+        query.priorityInstance,
+        current.tenantId,
+      );
+      const priorityMatch: Prisma.ContactWhereInput = {
+        OR: [{ instance: { in: priorityKeys } }, { instanceIds: { hasSome: priorityKeys } }],
+      };
+      const priorityWhere: Prisma.ContactWhereInput = { AND: [where, priorityMatch] };
+      const regularWhere: Prisma.ContactWhereInput = {
+        AND: [where, { NOT: priorityMatch }],
+      };
+      const [priorityTotal, total] = await this.prisma.$transaction([
+        this.prisma.contact.count({ where: priorityWhere }),
+        this.prisma.contact.count({ where }),
+      ]);
+      const prioritySkip = Math.min(skip, priorityTotal);
+      const priorityTake = Math.min(pageSize, Math.max(0, priorityTotal - prioritySkip));
+      const regularSkip = Math.max(0, skip - priorityTotal);
+      const regularTake = pageSize - priorityTake;
+      const [priorityItems, regularItems] = await this.prisma.$transaction([
+        this.prisma.contact.findMany({
+          where: priorityWhere,
+          orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+          skip: prioritySkip,
+          take: priorityTake,
+          include: contactInclude,
+        }),
+        this.prisma.contact.findMany({
+          where: regularWhere,
+          orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+          skip: regularSkip,
+          take: regularTake,
+          include: contactInclude,
+        }),
+      ]);
+      const items = [...priorityItems, ...regularItems];
+
+      this.profilePictures.enqueueMissing({
+        tenantId: current.tenantId,
+        contacts: items,
+      });
+
+      return paginated(
+        items.map((contact) => this.serializeContact(contact)),
+        total,
+        page,
+        pageSize,
+      );
+    }
+
+    const [items, total] = await this.prisma.$transaction([
       this.prisma.contact.findMany({
         where,
-        orderBy: [{ createdAt: "desc" }],
+        orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+        skip,
+        take: pageSize,
         include: contactInclude,
       }),
       this.prisma.contact.count({ where }),
     ]);
-    const items = allItems.sort(compareContactsByDisplayName).slice(skip, skip + pageSize);
 
     this.profilePictures.enqueueMissing({
       tenantId: current.tenantId,
@@ -2174,30 +2226,6 @@ function paginated<T>(items: T[], total: number, page: number, pageSize: number)
 function cleanNullable(value?: string | null) {
   if (value === undefined || value === null) return null;
   return value.trim() || null;
-}
-
-function compareContactsByDisplayName<T extends { name: string; createdAt: Date }>(a: T, b: T) {
-  const aKey = contactNameSortKey(a.name);
-  const bKey = contactNameSortKey(b.name);
-  if (aKey.symbolOnly !== bKey.symbolOnly) return aKey.symbolOnly ? 1 : -1;
-  const nameCompare = aKey.value.localeCompare(bKey.value, "pt-BR", {
-    sensitivity: "base",
-    numeric: true,
-  });
-  if (nameCompare !== 0) return nameCompare;
-  return b.createdAt.getTime() - a.createdAt.getTime();
-}
-
-function contactNameSortKey(name: string) {
-  const value = normalizeSearchText(name);
-  const lettersOnly = value
-    .replace(/[^\p{L}\s]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return {
-    symbolOnly: !/\p{L}/u.test(lettersOnly),
-    value: lettersOnly,
-  };
 }
 
 function normalizeSearchText(value: string) {

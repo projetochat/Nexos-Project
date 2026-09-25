@@ -93,7 +93,11 @@ export class OperationsService {
   }
 
   async history(current: AuthenticatedUser, query: OperationalQuery) {
-    const range = periodRange(query, "30d");
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: current.tenantId },
+      select: { timezone: true },
+    });
+    const range = periodRange(query, "30d", tenant?.timezone ?? "America/Sao_Paulo");
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
     const where = {

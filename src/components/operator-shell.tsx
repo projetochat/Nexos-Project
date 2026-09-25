@@ -120,7 +120,7 @@ function Topbar() {
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-xl md:gap-3 md:px-6">
       <div className="flex min-w-0 items-center gap-2">
-        <LogoMark size={22} />
+        <LogoMark size={33} />
         <div className="hidden min-w-0 md:block">
           <div className="text-sm font-semibold tracking-tight">Trixus</div>
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">

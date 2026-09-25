@@ -4,13 +4,13 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
-import { Avatar, Badge, Button } from "@/components/ui-kit";
+import { Avatar, Button } from "@/components/ui-kit";
 import { DashboardFiltersBar } from "@/components/dashboard-filters";
 import {
   datesForOperationalPeriod,
   type OperationalReportFilters,
 } from "@/lib/operational-filters";
-import { fmtDate, num } from "@/lib/format";
+import { conversationTimestamp, num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import { useSession } from "@/lib/session";
 import { conversationApi, messageApi, operationsApi } from "@/lib/trixus-api";
@@ -252,9 +252,7 @@ export function HistoricoPage() {
                           <p className="truncate text-sm font-medium">
                             {conversation.contact?.nome ?? "Contato"}
                           </p>
-                          <span className="shrink-0 text-[10px] text-muted-foreground">
-                            {fmtDate(new Date(conversation.last_message_at).getTime())}
-                          </span>
+                          <ConversationListTimestamp value={conversation.last_message_at} />
                         </div>
                         <p className="truncate text-[11px] text-muted-foreground">
                           {conversation.contact?.telefone
@@ -331,9 +329,6 @@ export function HistoricoPage() {
                           <p className="truncate text-sm font-semibold">
                             {active.contact?.nome ?? "Contato"}
                           </p>
-                          <Badge tone={active.status === "fechada" ? "success" : "warning"}>
-                            {active.status.replace("_", " ")}
-                          </Badge>
                         </div>
                         <p className="truncate text-[11px] text-muted-foreground">
                           {active.contact?.telefone ? maskBrazilPhone(active.contact.telefone) : ""}
@@ -343,7 +338,12 @@ export function HistoricoPage() {
                         </p>
                       </div>
                     </button>
-                    <Button variant="secondary" size="sm" onClick={handleNewConversation}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="hover:!bg-secondary hover:!text-blue-500"
+                      onClick={handleNewConversation}
+                    >
                       <Plus className="h-3.5 w-3.5" /> Nova conversa
                     </Button>
                   </header>
@@ -400,5 +400,15 @@ export function HistoricoPage() {
         </div>
       </div>
     </AppShellFull>
+  );
+}
+
+function ConversationListTimestamp({ value }: { value: string }) {
+  const timestamp = conversationTimestamp(new Date(value).getTime());
+  return (
+    <span className="shrink-0 text-right font-mono text-[10px] leading-4 text-muted-foreground">
+      {timestamp.day && <span className="block">{timestamp.day}</span>}
+      <span className="block">{timestamp.time}</span>
+    </span>
   );
 }

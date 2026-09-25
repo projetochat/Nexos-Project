@@ -2,7 +2,10 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-vi.mock("@tanstack/react-router", () => ({ createFileRoute: () => () => ({}) }));
+vi.mock("@tanstack/react-router", () => ({
+  createFileRoute: () => () => ({}),
+  lazyRouteComponent: () => () => null,
+}));
 import { AtendenteForm, ReactivateAttendantModal } from "./atendentes";
 const initial = {
   id: "blocked",
@@ -139,5 +142,45 @@ it("sends the required password in the activation API body", async () => {
     );
   } finally {
     mockedFetch.mockRestore();
+  }
+});
+
+it("requires a password after unlocking password editing", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const submit = vi.fn();
+  const active = { ...initial, ativo: true };
+  try {
+    await React.act(async () =>
+      root.render(
+        <AtendenteForm
+          open
+          initial={active}
+          atendentes={[active]}
+          perfis={profiles}
+          onClose={vi.fn()}
+          onSubmit={submit}
+        />,
+      ),
+    );
+    await React.act(async () =>
+      document
+        .querySelector<HTMLButtonElement>('[aria-label="Desbloquear alteração de senha"]')!
+        .click(),
+    );
+    const password = document.querySelector<HTMLInputElement>('[aria-label="Senha do atendente"]')!;
+    expect(password.disabled).toBe(false);
+    expect(password.getAttribute("aria-required")).toBe("true");
+    const save = [...document.querySelectorAll("button")].find(
+      (item) => item.textContent === "Salvar",
+    )!;
+    await React.act(async () => save.click());
+    expect(submit).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Senha mínima de 6 caracteres.");
+  } finally {
+    await React.act(async () => root.unmount());
+    host.remove();
   }
 });
