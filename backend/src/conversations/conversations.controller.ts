@@ -24,6 +24,7 @@ import {
   MembershipStatus,
   MessagingConnectionStatus,
   MessagingProviderType,
+  MessageType,
   Prisma,
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
@@ -182,6 +183,15 @@ export class ConversationsController {
           },
           include: conversationInclude,
         });
+        const passive = await hasPassiveStartLog(tx, current.tenantId, existing.id);
+        await this.messages.createSystemMessage(
+          tx,
+          existing.id,
+          current,
+          startSystemNote(updated.protocol, passive ? "passivo" : "ativa"),
+          now,
+          { updateConversation: false },
+        );
         return { conversation: updated, created: false, updated: true };
       }
 
@@ -201,6 +211,16 @@ export class ConversationsController {
         },
         include: conversationInclude,
       });
+      if (assignToSelf) {
+        await this.messages.createSystemMessage(
+          tx,
+          created.id,
+          current,
+          startSystemNote(protocol, "ativa"),
+          now,
+          { updateConversation: false },
+        );
+      }
       const firstMessage = cleanNullable(dto.firstMessagePreview);
       if (firstMessage) {
         await this.messages.createInitialOutboundMessage(
@@ -278,11 +298,12 @@ export class ConversationsController {
       const targetName = targetMembershipId
         ? await this.membershipDisplayName(tx, targetMembershipId, current.tenantId)
         : null;
+      const passive = await hasPassiveStartLog(tx, current.tenantId, conversation.id);
       await this.messages.createSystemMessage(
         tx,
         conversation.id,
         current,
-        assignmentSystemNote(conversation, updated, targetName),
+        assignmentSystemNote(conversation, updated, targetName, passive),
       );
       return tx.conversation.findUniqueOrThrow({
         where: { id: conversation.id },
@@ -558,6 +579,8 @@ export class ConversationsController {
     if (!options.omitTab) filters.push(tabWhere(query.tab, current));
     if (query.source === "humano") filters.push({ assignedMembershipId: { not: null } });
     if (query.source === "bots") filters.push({ assignedMembershipId: null });
+    if (query.source === "privado") filters.push({ isGroup: false });
+    if (query.source === "grupos") filters.push({ isGroup: true });
     if (query.onlyUnread === "true") filters.push({ unreadCount: { gt: 0 } });
     if (query.customerId) filters.push({ contact: { customerId: query.customerId } });
     if (query.instance) {
@@ -926,7 +949,7 @@ function serializeStatus(status: ConversationStatus) {
   return map[status];
 }
 
-function assignmentSystemNote(
+export function assignmentSystemNote(
   before: {
     assignedMembershipId: string | null;
     protocol: string | null;
@@ -938,24 +961,50 @@ function assignmentSystemNote(
     status: ConversationStatus;
   },
   targetName: string | null,
+  passive: boolean,
 ) {
-  if (!after.assignedMembershipId) return "Conversa movida para fila.";
+  if (!after.assignedMembershipId) return "Conversa movida para fila";
   if (!before.protocol && after.protocol) {
-    return `Conversa iniciada - protocolo ${after.protocol}.`;
+    return startSystemNote(after.protocol, passive ? "passivo" : "ativa");
   }
-  if (before.status === ConversationStatus.AGUARDANDO) return "Conversa retomada.";
-  if (targetName) return `Conversa transferida para ${targetName}.`;
-  return "Responsável pela conversa atualizado.";
+  if (!before.assignedMembershipId && targetName) return `Conversa retomada (${targetName})`;
+  if (before.assignedMembershipId !== after.assignedMembershipId && targetName) {
+    return `Conversa transferida para ${targetName}`;
+  }
+  if (before.status === ConversationStatus.AGUARDANDO) return "Conversa retomada";
+  return "Responsável pela conversa atualizado";
 }
 
 function statusSystemNote(status: ConversationStatus) {
   const map: Record<ConversationStatus, string> = {
-    ABERTA: "Conversa movida para fila.",
-    EM_ANDAMENTO: "Conversa retomada.",
-    AGUARDANDO: "Conversa movida para stand by.",
-    FECHADA: "Conversa encerrada.",
+    ABERTA: "Conversa movida para fila",
+    EM_ANDAMENTO: "Conversa retomada",
+    AGUARDANDO: "Conversa movida para stand by",
+    FECHADA: "Conversa encerrada",
   };
   return map[status];
+}
+
+function startSystemNote(protocol: string | null, origin: "passivo" | "ativa") {
+  return `Atendimento iniciado (${origin})${protocol ? ` - protocolo: ${protocol}` : ""}`;
+}
+
+async function hasPassiveStartLog(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  conversationId: string,
+) {
+  return Boolean(
+    await tx.message.findFirst({
+      where: {
+        tenantId,
+        conversationId,
+        type: MessageType.SYSTEM,
+        content: { startsWith: "Nova conversa (passiva)", mode: "insensitive" },
+      },
+      select: { id: true },
+    }),
+  );
 }
 
 function cleanNullable(value?: string | null) {

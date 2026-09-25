@@ -42,6 +42,17 @@ export function fmtHM(ts: number) {
   return new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+export function conversationTimestamp(ts: number, now = new Date()) {
+  const date = new Date(ts);
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const days = Math.round((startToday - startDate) / 86_400_000);
+  return {
+    day: days <= 0 ? null : days === 1 ? "Ontem" : date.toLocaleDateString("pt-BR"),
+    time: fmtHM(ts),
+  };
+}
+
 export function fmtLogStamp(ts: number) {
   const d = new Date(ts);
   const pad = (n: number) => String(n).padStart(2, "0");

@@ -579,7 +579,7 @@ export function AtendenteForm({
   const [passwordUnlocked, setPasswordUnlocked] = React.useState(false);
   const isEditing = Boolean(initial && !clone);
   const reactivating = isEditing && initial?.ativo === false && form.ativo === true;
-  const passwordRequired = !isEditing || reactivating;
+  const passwordRequired = !isEditing || reactivating || passwordUnlocked;
   const passwordLocked = isEditing && !reactivating && !passwordUnlocked;
   const passwordRef = React.useRef<HTMLInputElement>(null);
   const [photoMenuOpen, setPhotoMenuOpen] = React.useState(false);

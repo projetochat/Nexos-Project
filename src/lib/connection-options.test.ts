@@ -22,6 +22,13 @@ describe("connection options", () => {
     expect(connectedEvolutionConnections([])).toEqual([]);
   });
 
+  it("hides paused instances from operational selectors but keeps an administrative option", () => {
+    const paused = connection({ id: "paused", serviceEnabled: false });
+    expect(selectableConnections([paused])).toEqual([]);
+    expect(selectableConnections([paused], { includePaused: true })).toEqual([paused]);
+    expect(connectedEvolutionConnections([paused])).toEqual([]);
+  });
+
   it("keeps one connected Evolution connection with its real display name", () => {
     const result = connectedEvolutionConnections([
       connection({ id: "real-1", name: "Suporte real", ownerPhoneMasked: "******1234" }),

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   Copy,
@@ -25,11 +25,13 @@ export function MessageActionsMenu({
   onReply,
   onReact,
   onDownload,
+  resendRequest = 0,
 }: {
   message: ApiMessage;
   onReply?: () => void;
   onReact: (emoji: string | null) => Promise<void>;
   onDownload: () => Promise<void>;
+  resendRequest?: number;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -45,6 +47,13 @@ export function MessageActionsMenu({
   const [error, setError] = useState("");
   const running = useRef(false);
   const resendId = useRef<string | null>(null);
+  const handledResendRequest = useRef(0);
+  useEffect(() => {
+    if (!resendRequest || resendRequest === handledResendRequest.current) return;
+    handledResendRequest.current = resendRequest;
+    setError("");
+    setResend(true);
+  }, [resendRequest]);
   const run = async (action: () => Promise<unknown>) => {
     if (running.current) return;
     running.current = true;

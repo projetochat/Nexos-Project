@@ -1345,7 +1345,7 @@ describe("Trixus API organization and RBAC", () => {
         where: {
           conversationId: created.body.id,
           direction: MessageDirection.SYSTEM,
-          content: "Conversa movida para fila.",
+          content: "Conversa movida para fila",
         },
       }),
     ).resolves.toBeTruthy();

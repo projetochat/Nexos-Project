@@ -12,6 +12,10 @@ export class ListContactsQueryDto extends PaginationDto {
 
   @IsOptional()
   @IsString()
+  priorityInstance?: string;
+
+  @IsOptional()
+  @IsString()
   department?: string;
 
   @IsOptional()

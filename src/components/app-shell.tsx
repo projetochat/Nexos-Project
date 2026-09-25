@@ -525,7 +525,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         }`}
       >
         <Link to={isOperator ? "/inbox" : "/"} className="flex items-center gap-2">
-          <LogoMark size={24} />
+          <LogoMark size={36} />
           {!collapsed && <span className="text-sm font-semibold tracking-tight">Trixus</span>}
         </Link>
       </div>
@@ -744,7 +744,7 @@ function Topbar({
         >
           <Menu className="h-4 w-4" />
         </button>
-        <LogoMark size={22} />
+        <LogoMark size={33} />
         <span className="truncate text-sm font-semibold">Trixus</span>
       </div>
 
@@ -909,7 +909,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
             className="flex items-center gap-2"
             onClick={onClose}
           >
-            <LogoMark size={24} />
+            <LogoMark size={36} />
             <span className="text-sm font-semibold tracking-tight">Trixus</span>
           </Link>
           <button

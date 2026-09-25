@@ -283,6 +283,7 @@ function Dashboard() {
   const messagesColumns = dashboardColumns.messages ?? DEFAULT_DASHBOARD_COLUMNS.messages;
   const compactMessagesChart = messagesColumns <= 2;
   const messageTraffic = data?.charts.messagesByHour ?? [];
+  const mobileMessageTicks = ["00h", "05h", "10h", "15h", "20h"];
   const messageTrafficTotals = messageTraffic.reduce(
     (totals, item) => ({
       recebidas: totals.recebidas + item.recebidas,
@@ -447,7 +448,7 @@ function Dashboard() {
                   </div>
                   <table
                     aria-label="Totais do tráfego de mensagens no período"
-                    className="w-auto shrink-0 self-start border-collapse whitespace-nowrap text-xs"
+                    className="hidden w-auto shrink-0 self-start border-collapse whitespace-nowrap text-xs sm:table"
                   >
                     <tbody>
                       <MessageTrafficTotalRow
@@ -458,7 +459,7 @@ function Dashboard() {
                         label="Enviados"
                         value={messageTrafficTotals.enviadas}
                       />
-                      <MessageTrafficTotalRow label="Total" value={totalMessages} emphasized />
+                      <MessageTrafficTotalRow label="Todos" value={totalMessages} emphasized />
                     </tbody>
                   </table>
                 </div>
@@ -469,8 +470,9 @@ function Dashboard() {
                       dataKey="hora"
                       stroke="hsl(var(--muted-foreground))"
                       fontSize={11}
+                      ticks={compactMessagesChart ? mobileMessageTicks : undefined}
                       interval={
-                        messagesColumns === 1 ? 3 : compactMessagesChart ? 0 : "preserveEnd"
+                        messagesColumns === 1 ? 0 : compactMessagesChart ? 0 : "preserveEnd"
                       }
                       angle={compactMessagesChart ? -45 : 0}
                       textAnchor={compactMessagesChart ? "end" : "middle"}
@@ -517,6 +519,24 @@ function Dashboard() {
                     />
                   </LineChart>
                 </ResponsiveContainer>
+                <table
+                  aria-label="Totais do tráfego de mensagens no período"
+                  className="mx-auto mt-1 w-full max-w-72 table-fixed border-collapse whitespace-nowrap text-xs sm:hidden"
+                >
+                  <tbody>
+                    <tr>
+                      <MessageTrafficMobileTotal
+                        label="Recebidos"
+                        value={messageTrafficTotals.recebidas}
+                      />
+                      <MessageTrafficMobileTotal
+                        label="Enviados"
+                        value={messageTrafficTotals.enviadas}
+                      />
+                      <MessageTrafficMobileTotal label="Total" value={totalMessages} emphasized />
+                    </tr>
+                  </tbody>
+                </table>
               </Card>
             </div>
 
@@ -688,11 +708,23 @@ function Dashboard() {
               <Button
                 variant="ghost"
                 onClick={() => {
-                  setDraftBis([...DASHBOARD_BIS]);
-                  setDraftOrder([...DASHBOARD_BIS]);
-                  setDraftLabels({});
-                  setDraftColumns(DEFAULT_DASHBOARD_COLUMNS);
+                  const preferences: DashboardPreferences = {
+                    visible: [...DASHBOARD_BIS],
+                    order: [...DASHBOARD_BIS],
+                    labels: {},
+                    columns: { ...DEFAULT_DASHBOARD_COLUMNS },
+                  };
+                  window.localStorage.setItem(storageKey, JSON.stringify(preferences));
+                  setVisibleBis(preferences.visible);
+                  setDashboardOrder(preferences.order);
+                  setDashboardLabels(preferences.labels);
+                  setDashboardColumns(preferences.columns);
+                  setDraftBis(preferences.visible);
+                  setDraftOrder(preferences.order);
+                  setDraftLabels(preferences.labels);
+                  setDraftColumns(preferences.columns);
                   setEditingBiId(null);
+                  setEditingDashboard(false);
                   toast.success("Configurações restauradas para o padrão do sistema.");
                 }}
               >
@@ -890,6 +922,25 @@ function MessageTrafficTotalRow({
   );
 }
 
+function MessageTrafficMobileTotal({
+  label,
+  value,
+  emphasized = false,
+}: {
+  label: string;
+  value: number;
+  emphasized?: boolean;
+}) {
+  return (
+    <td
+      className={`border border-border px-2 py-1 text-center font-mono text-foreground ${emphasized ? "bg-surface-1 font-semibold" : ""}`}
+    >
+      <span className="sr-only">{label}: </span>
+      {num(value)}
+    </td>
+  );
+}
+
 function Snapshot({
   icon,
   label,
@@ -929,9 +980,10 @@ function compactDashboardChartData(data: DashboardChartDatum[], columns: Dashboa
     4: 20,
   };
   const maxItems = maxItemsByColumn[columns];
-  if (data.length <= maxItems) return data;
-
-  const sorted = [...data].sort((first, second) => second.total - first.total);
+  const sorted = [...data].sort(
+    (first, second) => second.total - first.total || first.nome.localeCompare(second.nome, "pt-BR"),
+  );
+  if (sorted.length <= maxItems) return sorted;
   const visible = sorted.slice(0, maxItems - 1);
   const detalhes = sorted.slice(maxItems - 1);
   return [

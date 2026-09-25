@@ -231,7 +231,6 @@ export class MessagesService {
     await this.prisma.message.update({
       where: { tenantId_id: { tenantId: current.tenantId, id: messageId } },
       data: {
-        content: "Esta mensagem foi apagada",
         interactiveData: {
           ...asObject(message.interactiveData),
           deletedForEveryone: true,

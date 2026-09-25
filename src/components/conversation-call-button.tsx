@@ -19,8 +19,9 @@ export function ConversationCallButton({
       onClick={onClick}
       aria-label="Ligação"
       title={enabled ? "Ligação" : "Disponível apenas em conversas ativas"}
+      className="group"
     >
-      <Phone className="h-3.5 w-3.5" />
+      <Phone className="h-3.5 w-3.5 transition-colors group-hover:text-blue-500" />
       <span className="hidden lg:inline">Ligação</span>
     </Button>
   );

@@ -809,6 +809,7 @@ type ListParams = {
 type ListContactsParams = ListParams & {
   linked?: "all" | "linked" | "unlinked";
   instance?: string;
+  priorityInstance?: string;
   department?: string;
   customerId?: string;
   tagId?: string;
@@ -842,7 +843,7 @@ type ContactPayload = {
 
 type ListConversationsParams = ListParams & {
   tab?: "ativas" | "standby" | "fila" | "leads";
-  source?: "todos" | "humano" | "bots";
+  source?: "todos" | "privado" | "grupos" | "humano" | "bots";
   onlyUnread?: boolean;
   customerId?: string;
   instance?: string;
@@ -1564,6 +1565,7 @@ export const connectionsApi = {
     name: string;
     color?: string;
     instanceName?: string;
+    serviceEnabled?: boolean;
     importHistoryEnabled?: boolean;
     importHistoryStartDate?: string;
     importGroupsEnabled?: boolean;

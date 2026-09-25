@@ -848,7 +848,7 @@ function PermissionSettings({
   ) => void;
 }) {
   const sortedConnections = sortByOptionLabel(
-    selectableConnections(connections),
+    selectableConnections(connections, { includePaused: true }),
     (connection) => connection.name,
   );
   const connectionIds = sortedConnections.map((connection) => connection.id);

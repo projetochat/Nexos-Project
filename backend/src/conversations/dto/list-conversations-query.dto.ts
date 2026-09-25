@@ -33,8 +33,8 @@ export class ListConversationsQueryDto {
   tab?: "ativas" | "standby" | "fila" | "leads";
 
   @IsOptional()
-  @IsIn(["todos", "humano", "bots"])
-  source?: "todos" | "humano" | "bots";
+  @IsIn(["todos", "privado", "grupos", "humano", "bots"])
+  source?: "todos" | "privado" | "grupos" | "humano" | "bots";
 
   @IsOptional()
   @IsBooleanString()

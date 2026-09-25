@@ -62,7 +62,7 @@ import {
   type SequenceDraft,
 } from "@/lib/quick-reply-sequence";
 import { useSession } from "@/lib/session";
-import { fmtHM, fmtDate, fmtLogStamp } from "@/lib/format";
+import { conversationTimestamp, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
@@ -253,7 +253,7 @@ function ContactCardMessage({
   return (
     <div
       className={`w-64 overflow-hidden rounded-xl ${
-        mine ? "bg-emerald-950/35 text-white" : "border border-border bg-surface-2"
+        mine ? "bg-emerald-950/35 text-white" : "bg-surface-2"
       }`}
     >
       <div className="flex items-center gap-3 px-3 py-3">
@@ -273,7 +273,7 @@ function ContactCardMessage({
       <button
         type="button"
         className={`flex w-full items-center justify-center gap-2 border-t px-3 py-2 text-sm font-semibold transition hover:brightness-110 ${
-          mine ? "border-white/15 text-emerald-300" : "border-border text-primary"
+          mine ? "border-white/15 text-emerald-300" : "border-transparent text-primary"
         }`}
         aria-label={`Conversar com ${name}`}
         title="Contato compartilhado"
@@ -542,16 +542,24 @@ function ConversationPage() {
                     <Button
                       variant="secondary"
                       size="sm"
+                      className="group"
                       onClick={handleAssume}
-                      aria-label={startLabel}
-                      title={startLabel}
+                      aria-label={`${startLabel} Atendimento`}
+                      title={`${startLabel} Atendimento`}
                     >
-                      <Play className="h-3.5 w-3.5" />{" "}
+                      <Play className="h-3.5 w-3.5 transition-colors group-hover:text-green-500" />{" "}
                       <span className="hidden md:inline">{startLabel}</span>
                     </Button>
                   )}
-                  <Button variant="ghost" size="sm" onClick={transferModal.show}>
-                    <ArrowRightLeft className="h-3.5 w-3.5" />{" "}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="group"
+                    onClick={transferModal.show}
+                    aria-label="Transferir Atendimento"
+                    title="Transferir Atendimento"
+                  >
+                    <ArrowRightLeft className="h-3.5 w-3.5 transition-colors group-hover:text-amber-500" />{" "}
                     <span className="hidden lg:inline">Transferir</span>
                   </Button>
 
@@ -559,8 +567,8 @@ function ConversationPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setClosing(true)}
-                    aria-label="Encerrar conversa"
-                    title="Encerrar conversa"
+                    aria-label="Encerrar Atendimento"
+                    title="Encerrar Atendimento"
                   >
                     <CircleCheckBig className="h-3.5 w-3.5" />{" "}
                     <span className="hidden lg:inline">Encerrar</span>
@@ -573,14 +581,22 @@ function ConversationPage() {
           <div ref={scrollRef} className="min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-2 md:py-6">
             <div className="w-full space-y-4">
               {(() => {
+                const hasLifecycleLog = mensagens.some(
+                  (message) =>
+                    message.type === "system" &&
+                    /nova conversa|atendimento iniciado|conversa iniciada|novo lead/i.test(
+                      message.content,
+                    ),
+                );
+                if (hasLifecycleLog) return null;
                 const isLead = !conv.agent_id && conv.status !== "fechada" && !conv.protocolo;
                 const line = isLead ? "bg-info/40" : "bg-success/40";
                 const pill = isLead
                   ? "border-info/40 bg-info/10 text-info"
                   : "border-success/40 bg-success/10 text-success";
                 const label = isLead
-                  ? `Novo Lead ${fmtLogStamp(new Date(conv.created_at).getTime())}`
-                  : `Iniciada ${fmtLogStamp(new Date(conv.created_at).getTime())}${conv.protocolo ? ` — Protocolo: ${conv.protocolo}` : ""}`;
+                  ? `NOVA CONVERSA (PASSIVA) — ${fmtLogStamp(new Date(conv.created_at).getTime())}`
+                  : `ATENDIMENTO INICIADO${conv.protocolo ? ` - PROTOCOLO: ${conv.protocolo}` : ""} — ${fmtLogStamp(new Date(conv.created_at).getTime())}`;
                 return (
                   <div className="flex items-center gap-3">
                     <span className={`h-0.5 flex-1 ${line}`} />
@@ -783,6 +799,7 @@ export function MessageBubble({
   const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
   const [imagePreviewOpen, setImagePreviewOpen] = React.useState(false);
   const [mediaError, setMediaError] = React.useState(false);
+  const [resendRequest, setResendRequest] = React.useState(0);
   const mediaState = m.media_data?.state ?? null;
   const mediaReady = !!m.media_data && (!mediaState || mediaState === "ready");
   React.useEffect(() => {
@@ -822,8 +839,13 @@ export function MessageBubble({
 
   if (m.type === "system") {
     const ts = new Date(m.created_at).getTime();
-    const isClosing = /encerra/i.test(m.content);
-    const isLead = /novo lead/i.test(m.content);
+    const normalizedContent = normalizeSystemLogLabel(m.content);
+    const isClosing = /encerra/i.test(normalizedContent);
+    const isLead = /novo lead|nova conversa.*passiva/i.test(normalizedContent);
+    const isStarted = /atendimento iniciado|conversa iniciada/i.test(normalizedContent);
+    const startedParts = normalizedContent.match(
+      /^(Atendimento iniciado \((?:passivo|ativa)\))\s*-\s*protocolo:\s*(.+)$/i,
+    );
     const tone = isClosing
       ? {
           line: "bg-destructive/40",
@@ -831,9 +853,11 @@ export function MessageBubble({
         }
       : isLead
         ? { line: "bg-primary/40", pill: "border-primary/40 bg-primary/10 text-primary" }
-        : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
-    const withLines = isClosing || isLead;
-    const label = isLead ? "NOVO LEAD" : m.content.toUpperCase();
+        : isStarted
+          ? { line: "bg-success/40", pill: "border-success/40 bg-success/10 text-success" }
+          : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
+    const withLines = isClosing || isLead || isStarted;
+    const label = (startedParts?.[1] ?? normalizedContent).toUpperCase();
     return (
       <div className="flex items-center gap-3">
         <span className={`h-0.5 flex-1 ${withLines ? tone.line : "opacity-0"}`} />
@@ -841,7 +865,10 @@ export function MessageBubble({
           className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${tone.pill}`}
         >
           {label}
-          <span className="ml-2 opacity-80">— {fmtLogStamp(ts)}</span>
+          <span className="ml-2 opacity-80">
+            {startedParts ? "-" : "—"} {fmtLogStamp(ts)}
+            {startedParts ? ` - PROTOCOLO: ${startedParts[2]}` : ""}
+          </span>
         </span>
         <span className={`h-0.5 flex-1 ${withLines ? tone.line : "opacity-0"}`} />
       </div>
@@ -858,6 +885,8 @@ export function MessageBubble({
       ? (m.author_name ?? agents.find((a) => a.id === m.author_id)?.nome ?? null)
       : null;
   const avatarName = mine ? (authorName ?? "Atendente") : (m.participant?.name ?? contactName);
+  const contactCard = isContactCardMessage(m);
+  const timestamp = conversationTimestamp(new Date(m.created_at).getTime());
   return (
     <div
       ref={setMessageRef}
@@ -884,10 +913,10 @@ export function MessageBubble({
           )
             event.currentTarget.focus({ preventScroll: true });
         }}
-        className={`group/message relative min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} rounded-2xl px-3 py-2 text-sm shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:max-w-[75%] ${
-          mine
-            ? "rounded-br-sm bg-gradient-brand text-white"
-            : "rounded-bl-sm border border-border bg-surface-1"
+        className={`group/message relative min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:max-w-[75%] ${
+          contactCard
+            ? "rounded-xl bg-transparent p-0 shadow-none"
+            : `rounded-2xl px-3 py-2 shadow-card ${mine ? "rounded-br-sm bg-gradient-brand text-white" : "rounded-bl-sm border border-border bg-surface-1"}`
         }`}
       >
         {!readOnly && (
@@ -896,6 +925,7 @@ export function MessageBubble({
             onReply={onReply ? () => onReply(m) : undefined}
             onReact={react}
             onDownload={() => download()}
+            resendRequest={resendRequest}
           />
         )}
         {m.participant?.name && !mine && (
@@ -927,129 +957,142 @@ export function MessageBubble({
             onDownload={(image) => download(image as Message)}
           />
         )}
-        {m.deleted_for_everyone ? (
-          <p className="italic text-muted-foreground">Esta mensagem foi apagada</p>
-        ) : (
-          <>
-            {m.type === "image" && m.media_data && (
-              <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
-                {mediaUrl ? (
-                  <button
-                    type="button"
-                    onClick={() => setImagePreviewOpen(true)}
-                    aria-label="Ampliar imagem"
-                    className="block cursor-zoom-in"
-                  >
-                    <img
-                      src={mediaUrl}
-                      alt={m.media_data.file_name ?? "imagem"}
-                      className="max-h-72 max-w-full object-contain"
-                    />
-                  </button>
-                ) : mediaError || mediaState === "failed" ? (
-                  <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>
-                ) : mediaReady ? (
-                  <div className="px-3 py-2 text-xs opacity-80">Carregando imagem...</div>
-                ) : (
-                  <div className="px-3 py-2 text-xs opacity-80">Imagem em processamento...</div>
-                )}
-              </div>
-            )}
-            {m.type === "video" && m.media_data && (
-              <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
-                {mediaUrl ? (
-                  <video src={mediaUrl} controls className="max-h-72 max-w-full" />
-                ) : mediaError || mediaState === "failed" ? (
-                  <div className="px-3 py-2 text-xs opacity-80">Video indisponivel.</div>
-                ) : mediaReady ? (
-                  <div className="px-3 py-2 text-xs opacity-80">Carregando video...</div>
-                ) : (
-                  <div className="px-3 py-2 text-xs opacity-80">Video em processamento...</div>
-                )}
-              </div>
-            )}
-            {(m.type === "audio" || m.type === "voice") &&
-              m.media_data &&
-              (mediaUrl ? (
-                <AudioPlayer src={mediaUrl} durationMs={m.duration_ms} mine={mine} />
-              ) : (
-                <div
-                  className={`mb-2 rounded-lg px-3 py-2 text-xs ${
-                    mine ? "bg-white/15" : "bg-surface-2"
-                  }`}
+        <div className={m.deleted_for_everyone ? "opacity-50" : undefined}>
+          {m.type === "image" && m.media_data && (
+            <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
+              {mediaUrl ? (
+                <button
+                  type="button"
+                  onClick={() => setImagePreviewOpen(true)}
+                  aria-label="Ampliar imagem"
+                  className="block cursor-zoom-in"
                 >
-                  {mediaError || mediaState === "failed"
-                    ? "Audio indisponivel."
-                    : mediaReady
-                      ? "Carregando audio..."
-                      : "Audio em processamento..."}
-                </div>
-              ))}
-            {isContactCardMessage(m) && m.media_data && (
-              <ContactCardMessage message={m} mine={mine} mediaReady={mediaReady} />
-            )}
-            {m.type === "document" && !isContactCardMessage(m) && m.media_data && (
-              <button
-                type="button"
-                onClick={mediaReady ? () => void download() : undefined}
-                disabled={!mediaReady}
-                className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
-                  mine ? "border-white/30 bg-white/10" : "border-border/60 bg-surface-2"
-                } ${mediaReady ? "" : "opacity-70"}`}
-              >
-                <Download className="h-4 w-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">
-                  {mediaState === "failed"
-                    ? "Documento indisponivel"
-                    : mediaReady
-                      ? (m.media_data.file_name ?? "Documento")
-                      : "Documento em processamento..."}
-                </span>
-              </button>
-            )}
-            {m.content && m.content !== "[áudio]" && m.content !== "[imagem]" && (
-              <>
-                <MessageText content={m.content} />
-                {m.edited_at && <span className="ml-1 text-[10px] opacity-70">(editada)</span>}
-              </>
-            )}
-            {m.interactive_data?.kind === "list" && (
-              <WhatsAppListMessage interactive={m.interactive_data} mine={mine} />
-            )}
-            {m.reactions && m.reactions.length > 0 && (
+                  <img
+                    src={mediaUrl}
+                    alt={m.media_data.file_name ?? "imagem"}
+                    className="max-h-72 max-w-full object-contain"
+                  />
+                </button>
+              ) : mediaError || mediaState === "failed" ? (
+                <div className="px-3 py-2 text-xs opacity-80">Imagem indisponivel.</div>
+              ) : mediaReady ? (
+                <div className="px-3 py-2 text-xs opacity-80">Carregando imagem...</div>
+              ) : (
+                <div className="px-3 py-2 text-xs opacity-80">Imagem em processamento...</div>
+              )}
+            </div>
+          )}
+          {m.type === "video" && m.media_data && (
+            <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
+              {mediaUrl ? (
+                <video src={mediaUrl} controls className="max-h-72 max-w-full" />
+              ) : mediaError || mediaState === "failed" ? (
+                <div className="px-3 py-2 text-xs opacity-80">Video indisponivel.</div>
+              ) : mediaReady ? (
+                <div className="px-3 py-2 text-xs opacity-80">Carregando video...</div>
+              ) : (
+                <div className="px-3 py-2 text-xs opacity-80">Video em processamento...</div>
+              )}
+            </div>
+          )}
+          {(m.type === "audio" || m.type === "voice") &&
+            m.media_data &&
+            (mediaUrl ? (
+              <AudioPlayer src={mediaUrl} durationMs={m.duration_ms} mine={mine} />
+            ) : (
               <div
-                aria-label="Reações da mensagem"
-                title={reactionGroups.map(([emoji, count]) => `${emoji} ${count}`).join(", ")}
-                className={`absolute -bottom-3 ${mine ? "right-2" : "left-2"} z-10 flex max-w-32 items-center gap-0.5 overflow-hidden whitespace-nowrap rounded-full border border-border bg-card px-1 py-0.5 text-foreground shadow-sm`}
+                className={`mb-2 rounded-lg px-3 py-2 text-xs ${
+                  mine ? "bg-white/15" : "bg-surface-2"
+                }`}
               >
-                {reactionGroups.slice(0, 3).map(([emoji, count]) => (
-                  <span
-                    key={emoji}
-                    aria-label={`${emoji}: ${count}`}
-                    className="shrink-0 text-sm leading-4"
-                  >
-                    {emoji}
-                  </span>
-                ))}
-                {m.reactions.length > 1 && (
-                  <span
-                    aria-label={`${m.reactions.length} reações no total`}
-                    className="min-w-0 truncate px-0.5 text-[10px] leading-4"
-                  >
-                    {m.reactions.length}
-                  </span>
-                )}
+                {mediaError || mediaState === "failed"
+                  ? "Audio indisponivel."
+                  : mediaReady
+                    ? "Carregando audio..."
+                    : "Audio em processamento..."}
               </div>
-            )}
-          </>
+            ))}
+          {isContactCardMessage(m) && m.media_data && (
+            <ContactCardMessage message={m} mine={mine} mediaReady={mediaReady} />
+          )}
+          {m.type === "document" && !isContactCardMessage(m) && m.media_data && (
+            <button
+              type="button"
+              onClick={mediaReady ? () => void download() : undefined}
+              disabled={!mediaReady}
+              className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
+                mine ? "border-white/30 bg-white/10" : "border-border/60 bg-surface-2"
+              } ${mediaReady ? "" : "opacity-70"}`}
+            >
+              <Download className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">
+                {mediaState === "failed"
+                  ? "Documento indisponivel"
+                  : mediaReady
+                    ? (m.media_data.file_name ?? "Documento")
+                    : "Documento em processamento..."}
+              </span>
+            </button>
+          )}
+          {m.content && !contactCard && m.content !== "[áudio]" && m.content !== "[imagem]" && (
+            <>
+              <MessageText content={m.content} />
+              {m.edited_at && <span className="ml-1 text-[10px] opacity-70">(editada)</span>}
+            </>
+          )}
+          {m.interactive_data?.kind === "list" && (
+            <WhatsAppListMessage interactive={m.interactive_data} mine={mine} />
+          )}
+          {m.reactions && m.reactions.length > 0 && (
+            <div
+              aria-label="Reações da mensagem"
+              title={reactionGroups.map(([emoji, count]) => `${emoji} ${count}`).join(", ")}
+              className={`absolute -bottom-3 ${mine ? "right-2" : "left-2"} z-10 flex max-w-32 items-center gap-0.5 overflow-hidden whitespace-nowrap rounded-full border border-border bg-card px-1 py-0.5 text-foreground shadow-sm`}
+            >
+              {reactionGroups.slice(0, 3).map(([emoji, count]) => (
+                <span
+                  key={emoji}
+                  aria-label={`${emoji}: ${count}`}
+                  className="shrink-0 text-sm leading-4"
+                >
+                  {emoji}
+                </span>
+              ))}
+              {m.reactions.length > 1 && (
+                <span
+                  aria-label={`${m.reactions.length} reações no total`}
+                  className="min-w-0 truncate px-0.5 text-[10px] leading-4"
+                >
+                  {m.reactions.length}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        {m.deleted_for_everyone && (
+          <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide opacity-70">
+            Apagada
+          </p>
         )}
         <div className="mt-1 flex items-center justify-end">
-          <p
-            className={`flex shrink-0 items-center whitespace-nowrap font-mono text-[10px] ${mine ? "text-white/70" : "text-muted-foreground"}`}
+          <div
+            className={`shrink-0 text-right font-mono text-[10px] leading-4 ${mine ? "text-white/70" : "text-muted-foreground"}`}
           >
-            {fmtHM(new Date(m.created_at).getTime())}
-            {mine && <MessageStatusIcon status={m.status} />}
-          </p>
+            {timestamp.day && <span className="block">{timestamp.day}</span>}
+            <span className="flex items-center justify-end whitespace-nowrap">
+              {timestamp.time}
+              {mine && (
+                <MessageStatusIcon
+                  status={m.status}
+                  onRetry={
+                    !readOnly && m.status === "failed"
+                      ? () => setResendRequest((value) => value + 1)
+                      : undefined
+                  }
+                />
+              )}
+            </span>
+          </div>
         </div>
       </div>
       {mine && (
@@ -1064,6 +1107,10 @@ export function MessageBubble({
       )}
     </div>
   );
+}
+
+function normalizeSystemLogLabel(content: string) {
+  return content.trim().replace(/[.\s]+$/g, "");
 }
 
 function WhatsAppListMessage({

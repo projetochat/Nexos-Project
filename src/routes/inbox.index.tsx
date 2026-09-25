@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   MoreVertical,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
@@ -45,16 +46,17 @@ import {
 } from "@/lib/trixus-api";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 import { useSession } from "@/lib/session";
-import { fmtHM } from "@/lib/format";
+import { conversationTimestamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
 import { useRealtimeInbox } from "@/lib/realtime/hooks";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 import { resolveConnectedContactInstances } from "@/lib/contact-instance-selection";
 import { refreshInboxData } from "@/lib/refresh-inbox";
+import { connectRealtime } from "@/lib/realtime/client";
 
 type TabId = "ativas" | "standby" | "fila" | "leads";
-type SourceId = "todos" | "humano" | "bots";
+type SourceId = "todos" | "privado" | "grupos" | "humano" | "bots";
 
 const TAB_ICONS: Record<TabId, React.ComponentType<{ className?: string }>> = {
   ativas: Play,
@@ -65,6 +67,8 @@ const TAB_ICONS: Record<TabId, React.ComponentType<{ className?: string }>> = {
 
 const SOURCES: { id: SourceId; label: string; hint: string }[] = [
   { id: "todos", label: "Todos", hint: "Todos os chats" },
+  { id: "privado", label: "Privado", hint: "Conversas individuais" },
+  { id: "grupos", label: "Grupos", hint: "Conversas em grupo" },
   { id: "humano", label: "Humano", hint: "Atendimento feito por atendentes" },
   { id: "bots", label: "Agente IA", hint: "Atendimento feito por Agente IA" },
 ];
@@ -118,7 +122,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
     setTabState(next);
   }, []);
   React.useEffect(() => {
-    if (activeTabs.length && !activeTabs.find((t) => t.id === tab)) {
+    if (!activeTabs.some((item) => item.id === tab) && activeTabs[0]) {
       setTab(activeTabs[0].id);
     }
   }, [activeTabs, setTab, tab]);
@@ -298,13 +302,22 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
               </DropdownMenu>
             </div>
 
-            {/* Instância + Cliente (multi-select, mesma linha) */}
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>{realtimeLabel(realtime.status)}</span>
-              <span className={realtime.status === "connected" ? "text-success" : "text-warning"}>
-                {realtime.status}
-              </span>
-            </div>
+            {realtime.status !== "connected" && realtime.status !== "disabled" && (
+              <div className="flex items-center gap-3 rounded-xl bg-amber-50 px-4 py-3 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
+                <AlertTriangle className="h-7 w-7 shrink-0 text-amber-500" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">Computador desconectado</p>
+                  <p className="text-xs">Confira se o computador está conectado à internet.</p>
+                  <button
+                    type="button"
+                    className="mt-1 text-xs font-semibold text-emerald-700 hover:underline dark:text-emerald-400"
+                    onClick={() => void connectRealtime()}
+                  >
+                    Reconectar
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               <MultiSelect
@@ -437,11 +450,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                               </span>
                             )}
                           </p>
-                          <span
-                            className={`shrink-0 font-mono text-[10px] ${u > 0 ? "text-success" : "text-muted-foreground"}`}
-                          >
-                            {fmtHM(new Date(c.last_message_at).getTime())}
-                          </span>
+                          <ConversationListTimestamp value={c.last_message_at} unread={u > 0} />
                         </div>
                         <p className="mt-0.5 truncate text-xs text-muted-foreground">
                           {[customerName, c.contact?.departamento, c.contact?.nivel_gerencia]
@@ -507,6 +516,18 @@ function messagePreviewLabel(value: string | null | undefined) {
   if (normalized.includes("[documento]") || normalized === "documento") return "Documento";
   if (normalized.includes("[figurinha]") || normalized === "figurinha") return "Figurinha";
   return clean;
+}
+
+function ConversationListTimestamp({ value, unread }: { value: string; unread: boolean }) {
+  const timestamp = conversationTimestamp(new Date(value).getTime());
+  return (
+    <span
+      className={`shrink-0 text-right font-mono text-[10px] leading-4 ${unread ? "text-success" : "text-muted-foreground"}`}
+    >
+      {timestamp.day && <span className="block">{timestamp.day}</span>}
+      <span className="block">{timestamp.time}</span>
+    </span>
+  );
 }
 
 function instanceTipo(conversation: ApiConversation): TipoInstancia {
@@ -1038,10 +1059,4 @@ function MultiSelect({
       )}
     </div>
   );
-}
-
-function realtimeLabel(status: string) {
-  if (status === "connected") return "Tempo real conectado";
-  if (status === "connecting" || status === "reconnecting") return "Reconectando";
-  return "Atualização periódica ativa";
 }

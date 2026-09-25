@@ -559,24 +559,14 @@ function ContatosPage() {
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [contactResponse, customerResponse, options, customFields] = await Promise.all([
-        crmApi.listContacts({
-          ...currentContactFilters,
-          page,
-          pageSize,
-        }),
-        crmApi.listCustomers({ pageSize: 100 }),
-        crmApi.contactOptions(),
-        crmApi.listContactCustomFields(),
-      ]);
+      const contactResponse = await crmApi.listContacts({
+        ...currentContactFilters,
+        page,
+        pageSize,
+      });
       setContacts(contactResponse.items);
       setTotal(contactResponse.total);
       setTotalPages(contactResponse.totalPages);
-      setCustomers(sortByOptionLabel(customerResponse.items, (customer) => customer.nome));
-      setTags(sortByOptionLabel(options.tags, (tag) => tag.nome));
-      setDepartments(sortByOptionLabel(options.departments, (department) => department.nome));
-      setProfiles(sortByOptionLabel(options.profiles, (profile) => profile.nome));
-      setCustomFieldDefinitions(customFields);
     } catch (e) {
       toast.error("Falha ao carregar", { description: (e as Error).message });
     } finally {
@@ -587,6 +577,28 @@ function ContatosPage() {
   React.useEffect(() => {
     void load();
   }, [load]);
+  React.useEffect(() => {
+    let active = true;
+    void Promise.all([
+      crmApi.listCustomers({ pageSize: 100 }),
+      crmApi.contactOptions(),
+      crmApi.listContactCustomFields(),
+    ])
+      .then(([customerResponse, options, customFields]) => {
+        if (!active) return;
+        setCustomers(sortByOptionLabel(customerResponse.items, (customer) => customer.nome));
+        setTags(sortByOptionLabel(options.tags, (tag) => tag.nome));
+        setDepartments(sortByOptionLabel(options.departments, (department) => department.nome));
+        setProfiles(sortByOptionLabel(options.profiles, (profile) => profile.nome));
+        setCustomFieldDefinitions(customFields);
+      })
+      .catch((error) =>
+        toast.error("Falha ao carregar opções", { description: (error as Error).message }),
+      );
+    return () => {
+      active = false;
+    };
+  }, []);
   React.useEffect(() => {
     setPage(1);
     setSelectedIds([]);
@@ -1535,10 +1547,10 @@ function ContatosPage() {
               className="h-5 w-5 shrink-0"
               checked={allVisibleSelected}
               onChange={toggleVisibleSelection}
-              aria-label="Selecionar todos os registros"
+              aria-label="Selecionar registros"
             />
             <span className="min-w-0 flex-1 truncate text-xs font-medium">
-              Selecionar todos os registros
+              Selecionar registros
             </span>
           </label>
           {selectedBulkCount > 0 && (

@@ -165,7 +165,7 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
       >
         <Link to="/admin" className="flex items-center gap-2">
           <div className="relative">
-            <LogoMark size={24} />
+            <LogoMark size={36} />
             <span className="absolute -bottom-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-accent text-[8px] font-bold text-accent-foreground ring-2 ring-surface-1">
               ★
             </span>
@@ -299,7 +299,7 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         })}
       </nav>
       <div className="flex min-w-0 flex-1 items-center gap-2 md:hidden">
-        <LogoMark size={22} />
+        <LogoMark size={33} />
         <span className="truncate text-sm font-semibold">Trixus Admin</span>
       </div>
 
