@@ -2233,7 +2233,7 @@ export function ServiceHoursTable({
               </th>
               <th className="!px-0 py-2 text-center font-semibold sm:!px-2 sm:py-3">Início</th>
               <th className="!px-0 py-2 text-center font-semibold sm:!px-2 sm:py-3">Fim</th>
-              <th className="!px-0 py-2 text-center sm:!px-2 sm:py-3" aria-label="Ações" />
+              <th className="!pl-1 !pr-0 py-2 text-center sm:!px-2 sm:py-3" aria-label="Ações" />
             </tr>
           </thead>
           <tbody>
@@ -2360,7 +2360,7 @@ export function ServiceHoursTable({
                         })}
                       </div>
                     </td>
-                    <td className="!px-0 py-2 align-top text-center sm:!px-2">
+                    <td className="!pl-1 !pr-0 py-2 align-top text-center sm:!px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => (
                           <div
