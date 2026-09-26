@@ -109,7 +109,7 @@ export class EvolutionMessagingProvider implements MessagingProvider {
         }),
       });
     }
-    if (command.content.type === MessageType.AUDIO || command.content.type === MessageType.VOICE) {
+    if (command.content.type === MessageType.VOICE) {
       const audio = await this.voiceTranscoder.transcode(
         command.content.mediaBuffer,
         fileName,

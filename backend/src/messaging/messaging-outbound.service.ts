@@ -1395,12 +1395,8 @@ function maskReference(value: string | null) {
 function providerEndpointPath(providerType: MessagingProviderType, type: MessageType) {
   if (providerType !== MessagingProviderType.EVOLUTION) return "provider.dispatch";
   if (type === MessageType.TEXT) return "/message/sendText/{instanceName}";
-  if (
-    type === MessageType.IMAGE ||
-    type === MessageType.AUDIO ||
-    type === MessageType.VOICE ||
-    type === MessageType.DOCUMENT
-  ) {
+  if (type === MessageType.VOICE) return "/message/sendWhatsAppAudio/{instanceName}";
+  if (type === MessageType.IMAGE || type === MessageType.AUDIO || type === MessageType.DOCUMENT) {
     return "/message/sendMedia/{instanceName}";
   }
   return "/message/send";
