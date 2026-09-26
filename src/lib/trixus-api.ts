@@ -507,6 +507,7 @@ export type ApiMessagingConnection = {
   welcomeExistingAttachment?: QuickReplyAttachment | null;
   absenceEnabled?: boolean;
   absenceMessage?: string | null;
+  absenceAttachment?: QuickReplyAttachment | null;
   notes?: string | null;
   importHistoryEnabled?: boolean;
   importHistoryStartDate?: string | null;
@@ -1597,6 +1598,7 @@ export const connectionsApi = {
       timezone?: string;
       absenceEnabled?: boolean;
       absenceMessage?: string | null;
+      absenceAttachment?: QuickReplyAttachment | null;
       notes?: string | null;
     },
   ) =>

@@ -288,14 +288,14 @@ export class MessagingOutboundService {
     return { created: true, message: this.serialize(prepared.message) };
   }
 
-  /** Queues a welcome message with its configured media as the message caption. */
+  /** Queues an automatic message with its configured media as the message caption. */
   async queueAutomatedMedia(input: {
     tenantId: string;
     conversationId: string;
     connectionId: string;
     externalChatId: string;
     content: string;
-    kind: "welcome";
+    kind: "welcome" | "absence";
     attachment: { fileName: string; mimeType: string; size: number; dataUrl: string };
   }) {
     if (!this.mediaStorage) throw new BadRequestException("Storage de mensagens indisponivel.");

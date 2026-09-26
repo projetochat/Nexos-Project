@@ -163,6 +163,75 @@ describe("MessagingOutboundService", () => {
     expect(dispatcher.dispatchMessage).toHaveBeenCalledWith("message-a");
   });
 
+  it("queues absence media with its own idempotency key and outbox event", async () => {
+    const prisma = prismaMock();
+    const dispatcher = dispatcherMock();
+    const mediaStorage = {
+      storeDownloaded: vi.fn().mockResolvedValue({
+        objectKey: "tenants/tenant-a/messages/absence.ogg",
+        mimeType: "audio/ogg",
+        fileName: "absence.ogg",
+        sizeBytes: 4,
+        checksum: "checksum-a",
+      }),
+    };
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.message.create.mockResolvedValue({
+      ...message(),
+      type: MessageType.VOICE,
+      clientMessageId: "automatic:absence",
+      providerStatus: "absence_queued",
+      mediaStorageKey: "tenants/tenant-a/messages/absence.ogg",
+    });
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcher as never,
+      mediaStorage as never,
+    );
+
+    await expect(
+      service.queueAutomatedMedia({
+        tenantId: "tenant-a",
+        conversationId: "conversation-a",
+        connectionId: "connection-a",
+        externalChatId: "5511999999999@s.whatsapp.net",
+        content: "Voltamos em breve.",
+        kind: "absence",
+        attachment: {
+          fileName: "absence.ogg",
+          mimeType: "audio/ogg",
+          size: 4,
+          dataUrl: "data:audio/ogg;base64,T2dnUw==",
+        },
+      }),
+    ).resolves.toMatchObject({ created: true });
+
+    expect(prisma.message.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ clientMessageId: "automatic:absence" }),
+      }),
+    );
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          clientMessageId: "automatic:absence",
+          providerStatus: "absence_queued",
+          content: "Voltamos em breve.",
+        }),
+      }),
+    );
+    expect(prisma.outboxEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          aggregateId: "message-a",
+          payload: { tenantId: "tenant-a", messageId: "message-a" },
+        }),
+      }),
+    );
+    expect(dispatcher.dispatchMessage).toHaveBeenCalledWith("message-a");
+  });
+
   it("prefixes a new administrator message with the current presentation name", async () => {
     const prisma = prismaMock();
     const dispatcher = { dispatchMessage: vi.fn().mockResolvedValue(true) };

@@ -182,6 +182,14 @@ describe("service hours editor", () => {
       expect(
         host.querySelector<HTMLInputElement>('[aria-label="Fim do período 2 de Segunda"]')!.value,
       ).toBe("");
+      expect(
+        host.querySelector<HTMLInputElement>('[aria-label="Início do período 2 de Segunda"]')!
+          .parentElement?.className,
+      ).toContain("flex-col");
+      expect(
+        host.querySelector<HTMLInputElement>('[aria-label="Fim do período 2 de Segunda"]')!
+          .parentElement?.className,
+      ).toContain("flex-col");
     } finally {
       await act(async () => root.unmount());
       host.remove();

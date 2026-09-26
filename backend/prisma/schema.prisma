@@ -1080,6 +1080,7 @@ model MessagingConnection {
   welcomeExistingAttachment Json?
   absenceEnabled       Boolean                   @default(false)
   absenceMessage       String?
+  absenceAttachment    Json?
   notes                String?
   providerType         MessagingProviderType
   status               MessagingConnectionStatus @default(DISCONNECTED)

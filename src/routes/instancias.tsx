@@ -12,14 +12,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  Braces,
   CalendarDays,
   Camera,
   Copy,
   Eye,
   Infinity as InfinityIcon,
   MessageCircle,
-  Paperclip,
   Pencil,
   Plus,
   Power,
@@ -38,6 +36,8 @@ import { ConfirmDialog, Modal } from "@/components/modal";
 import { TimezoneSelect } from "@/components/timezone-select";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { InfoTooltip } from "@/components/info-tooltip";
+import { MessageAttachmentMenu } from "@/components/message-attachment-menu";
+import { MessageVariablesMenu } from "@/components/message-variables-menu";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
 import { num } from "@/lib/format";
@@ -52,11 +52,7 @@ import {
   type ApiServiceHoursRow,
   type QuickReplyAttachment,
 } from "@/lib/trixus-api";
-import {
-  formatMessageAttachmentSize,
-  readMessageAttachment,
-  validateMessageAttachment,
-} from "@/lib/message-attachment";
+import { formatMessageAttachmentSize } from "@/lib/message-attachment";
 
 export const Route = createFileRoute("/instancias")({ component: Page });
 
@@ -908,6 +904,7 @@ type ConnectionSettingsFormData = {
   welcomeExistingAttachment: QuickReplyAttachment | null;
   absenceEnabled: boolean;
   absenceMessage: string | null;
+  absenceAttachment: QuickReplyAttachment | null;
   notes: string | null;
 };
 
@@ -1034,6 +1031,9 @@ function ConnectionSettingsModal({
   const [absenceEnabled, setAbsenceEnabled] = React.useState(false);
   const [absenceActivation, setAbsenceActivation] = React.useState(0);
   const [absenceMessage, setAbsenceMessage] = React.useState("");
+  const [absenceAttachment, setAbsenceAttachment] = React.useState<QuickReplyAttachment | null>(
+    null,
+  );
   const [serviceHours, setServiceHours] = React.useState<ServiceHoursRow[]>(defaultServiceHours);
   const [showWelcomeValidation, setShowWelcomeValidation] = React.useState(false);
   const [showAbsenceValidation, setShowAbsenceValidation] = React.useState(false);
@@ -1047,6 +1047,7 @@ function ConnectionSettingsModal({
     welcomeExistingAttachment: null,
     absenceEnabled: false,
     absenceMessage: "",
+    absenceAttachment: null,
     notes: "",
   });
   const duplicateName = instanceNameAlreadyExists(form.name, connections, connection?.id);
@@ -1087,6 +1088,7 @@ function ConnectionSettingsModal({
     setAbsenceEnabled(connection.absenceEnabled ?? false);
     setAbsenceActivation(0);
     setAbsenceMessage(connection.absenceMessage ?? "");
+    setAbsenceAttachment(connection.absenceAttachment ?? null);
     setServiceHours(normalizeServiceHours(connection.serviceHours));
     setShowWelcomeValidation(false);
     setShowAbsenceValidation(false);
@@ -1100,6 +1102,7 @@ function ConnectionSettingsModal({
       welcomeExistingAttachment: connection.welcomeExistingAttachment ?? null,
       absenceEnabled: connection.absenceEnabled ?? false,
       absenceMessage: connection.absenceMessage ?? "",
+      absenceAttachment: connection.absenceAttachment ?? null,
       notes: connection.notes || "",
     });
   }, [connection]);
@@ -1185,6 +1188,7 @@ function ConnectionSettingsModal({
       welcomeExistingAttachment: form.welcomeExistingAttachment,
       absenceEnabled,
       absenceMessage: absenceMessage.trim() || null,
+      absenceAttachment,
       notes: form.notes?.trim() || null,
     });
   };
@@ -1612,7 +1616,7 @@ function ConnectionSettingsModal({
               >
                 <GreetingMessageEditor
                   value={absenceMessage}
-                  attachment={null}
+                  attachment={absenceAttachment}
                   variables={mergeMessageVariables(
                     CONNECTION_MESSAGE_VARIABLES,
                     contactCustomFields,
@@ -1620,9 +1624,9 @@ function ConnectionSettingsModal({
                   disabled={!absenceEnabled}
                   invalid={showAbsenceValidation && absenceEnabled && !absenceMessage.trim()}
                   placeholder={ABSENCE_MESSAGE_PLACEHOLDER}
-                  showAttachment={false}
-                  onChange={(value) => {
+                  onChange={(value, attachment) => {
                     setAbsenceMessage(value);
+                    setAbsenceAttachment(attachment);
                     setShowAbsenceValidation(false);
                   }}
                 />
@@ -1699,8 +1703,6 @@ function GreetingMessageEditor({
   showAttachment?: boolean;
   onChange: (value: string, attachment: QuickReplyAttachment | null) => void;
 }) {
-  const [variablesOpen, setVariablesOpen] = React.useState(false);
-  const [loadingAttachment, setLoadingAttachment] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
   const insertVariable = (token: string) => {
@@ -1713,25 +1715,10 @@ function GreetingMessageEditor({
     }
     const next = value.slice(0, start) + token + value.slice(end);
     onChange(next, attachment);
-    setVariablesOpen(false);
     requestAnimationFrame(() => {
       input?.focus();
       input?.setSelectionRange(start + token.length, start + token.length);
     });
-  };
-
-  const attach = async (file?: File) => {
-    if (!file) return;
-    const validationError = validateMessageAttachment(file);
-    if (validationError) return toast.error(validationError);
-    setLoadingAttachment(true);
-    try {
-      onChange(value, await readMessageAttachment(file));
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setLoadingAttachment(false);
-    }
   };
 
   return (
@@ -1747,47 +1734,15 @@ function GreetingMessageEditor({
         placeholder={placeholder}
         className="block min-h-32 w-full resize-y rounded-t-lg border-0 bg-transparent px-3 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
       />
-      <div className="relative flex flex-wrap items-center gap-1.5 border-t border-border bg-surface-1 px-2 py-1.5">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="h-7 w-7"
-          disabled={disabled}
-          aria-label="Inserir variável"
-          aria-expanded={variablesOpen}
-          onClick={() => setVariablesOpen((open) => !open)}
-        >
-          <Braces className="h-3.5 w-3.5" />
-        </Button>
-        {variablesOpen && (
-          <div
-            className="absolute bottom-full left-2 z-30 mb-1 max-h-64 w-64 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-lg"
-            role="menu"
-            aria-label="Variáveis disponíveis"
-          >
-            {variables.map(({ token, description }) => (
-              <div key={token} className="group relative">
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="block w-full rounded px-3 py-2 text-left font-mono text-xs hover:bg-surface-2"
-                  onClick={() => insertVariable(token)}
-                  title={description}
-                >
-                  {token}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="flex flex-wrap items-center gap-1.5 overflow-visible border-t border-border bg-surface-1 px-2 py-1.5">
+        <MessageVariablesMenu disabled={disabled} variables={variables} onSelect={insertVariable} />
         {showAttachment && attachment && (
           <Button
             type="button"
             variant="outline"
             size="icon"
             className="h-7 w-7"
-            disabled={disabled || loadingAttachment}
+            disabled={disabled}
             aria-label="Remover arquivo"
             onClick={() => onChange(value, null)}
           >
@@ -1796,20 +1751,11 @@ function GreetingMessageEditor({
         )}
         {showAttachment && (
           <>
-            <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs text-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
-              <Paperclip className="h-3.5 w-3.5" /> Anexar mídia
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp,video/mp4,video/3gpp,video/webm,audio/ogg,audio/mpeg,audio/mp4,audio/webm,.pdf,.txt,.doc,.docx,.xls,.xlsx"
-                className="sr-only"
-                disabled={disabled || loadingAttachment}
-                aria-label="Anexar arquivo à mensagem de saudação"
-                onChange={(event) => {
-                  void attach(event.target.files?.[0]);
-                  event.target.value = "";
-                }}
-              />
-            </label>
+            <MessageAttachmentMenu
+              disabled={disabled}
+              fileInputLabel="Anexar arquivo à mensagem automática"
+              onAttachment={(nextAttachment) => onChange(value, nextAttachment)}
+            />
             <span
               className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
               title={attachment?.fileName}
@@ -2330,7 +2276,7 @@ export function ServiceHoursTable({
                     />
                   </td>
                   <td className="px-2 py-2 align-top text-center">
-                    <div className="space-y-2">
+                    <div className="flex flex-col gap-2">
                       {row.periods.map((period, periodIndex) => {
                         const error = errors[periodIndex];
                         const errorId = `${errorPrefix}-${index}-${period.id}`;
@@ -2372,7 +2318,7 @@ export function ServiceHoursTable({
                     </div>
                   </td>
                   <td className="px-2 py-2 align-top text-center">
-                    <div className="space-y-2">
+                    <div className="flex flex-col gap-2">
                       {row.periods.map((period, periodIndex) => {
                         const error = errors[periodIndex];
                         const errorId = `${errorPrefix}-${index}-${period.id}`;
@@ -2409,11 +2355,11 @@ export function ServiceHoursTable({
                     </div>
                   </td>
                   <td className="px-2 py-2 align-top text-center">
-                    <div className="space-y-2">
+                    <div className="flex flex-col gap-2">
                       {row.periods.map((period, periodIndex) => (
                         <div
                           key={period.id}
-                          className="flex h-10 items-center justify-center gap-1"
+                          className="flex h-8 items-center justify-center gap-1 sm:h-10"
                         >
                           {enabled && selectedRow === index && row.active && (
                             <>

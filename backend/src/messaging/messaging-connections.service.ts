@@ -331,11 +331,11 @@ export class MessagingConnectionsService {
       dto.welcomeExistingMessage === undefined
         ? connection.welcomeExistingMessage
         : cleanOptionalText(dto.welcomeExistingMessage);
-    const welcomeNewAttachment = normalizeWelcomeAttachment(
+    const welcomeNewAttachment = normalizeAutomaticAttachment(
       dto.welcomeNewAttachment,
       connection.welcomeNewAttachment,
     );
-    const welcomeExistingAttachment = normalizeWelcomeAttachment(
+    const welcomeExistingAttachment = normalizeAutomaticAttachment(
       dto.welcomeExistingAttachment,
       connection.welcomeExistingAttachment,
     );
@@ -358,6 +358,10 @@ export class MessagingConnectionsService {
       dto.absenceMessage === undefined
         ? connection.absenceMessage
         : cleanOptionalText(dto.absenceMessage);
+    const absenceAttachment = normalizeAutomaticAttachment(
+      dto.absenceAttachment,
+      connection.absenceAttachment,
+    );
     if (absenceEnabled && !absenceMessage) {
       throw new BadRequestException("Preencha a mensagem de ausência antes de ativá-la.");
     }
@@ -375,6 +379,7 @@ export class MessagingConnectionsService {
           welcomeExistingAttachment,
           absenceEnabled,
           absenceMessage,
+          absenceAttachment,
           serviceHours,
           timezone: dto.timezone,
           serviceEnabled: dto.serviceEnabled,
@@ -1035,6 +1040,7 @@ export class MessagingConnectionsService {
       welcomeExistingAttachment: connection.welcomeExistingAttachment,
       absenceEnabled: connection.absenceEnabled,
       absenceMessage: connection.absenceMessage,
+      absenceAttachment: connection.absenceAttachment,
       serviceHours: connection.serviceHours,
       timezone: connection.timezone,
       notes: connection.notes,
@@ -1052,7 +1058,7 @@ export class MessagingConnectionsService {
   }
 }
 
-function normalizeWelcomeAttachment(
+function normalizeAutomaticAttachment(
   value: QuickReplyAttachmentDto | null | undefined,
   current: Prisma.JsonValue | null,
 ) {
@@ -1062,7 +1068,7 @@ function normalizeWelcomeAttachment(
   const [metadata, encoded] = value.dataUrl.split(",");
   const size = Buffer.from(encoded ?? "", "base64").byteLength;
   if (metadata !== `data:${value.mimeType};base64` || size !== value.size) {
-    throw new BadRequestException("Os dados do arquivo da saudação são inválidos.");
+    throw new BadRequestException("Os dados do arquivo da mensagem automática são inválidos.");
   }
   validatePolicy(resolveMessageType(value.mimeType, ""), value.mimeType, size);
   return { ...value } satisfies Prisma.InputJsonObject;
