@@ -2231,9 +2231,9 @@ export function ServiceHoursTable({
                 <span className="sm:hidden">Dia</span>
                 <span className="hidden sm:inline">Dia da semana</span>
               </th>
-              <th className="px-0 py-2 text-center font-semibold sm:px-2 sm:py-3">Início</th>
-              <th className="px-0 py-2 text-center font-semibold sm:px-2 sm:py-3">Fim</th>
-              <th className="px-0 py-2 text-center sm:px-2 sm:py-3" aria-label="Ações" />
+              <th className="!px-0 py-2 text-center font-semibold sm:!px-2 sm:py-3">Início</th>
+              <th className="!px-0 py-2 text-center font-semibold sm:!px-2 sm:py-3">Fim</th>
+              <th className="!px-0 py-2 text-center sm:!px-2 sm:py-3" aria-label="Ações" />
             </tr>
           </thead>
           <tbody>
@@ -2283,7 +2283,7 @@ export function ServiceHoursTable({
                         </p>
                       </div>
                     </td>
-                    <td className="px-0 py-2 align-top text-center sm:pl-2 sm:pr-0">
+                    <td className="!px-0 py-2 align-top text-center sm:!px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => {
                           const error = errors[periodIndex];
@@ -2324,7 +2324,7 @@ export function ServiceHoursTable({
                         })}
                       </div>
                     </td>
-                    <td className="px-0 py-2 align-top text-center sm:pl-0 sm:pr-2">
+                    <td className="!px-0 py-2 align-top text-center sm:!px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => {
                           const error = errors[periodIndex];
@@ -2360,7 +2360,7 @@ export function ServiceHoursTable({
                         })}
                       </div>
                     </td>
-                    <td className="px-0 py-2 align-top text-center sm:px-2">
+                    <td className="!px-0 py-2 align-top text-center sm:!px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => (
                           <div
