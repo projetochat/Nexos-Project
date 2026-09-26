@@ -2226,7 +2226,7 @@ export function ServiceHoursTable({
               <th className="w-[116px] px-2 py-2 text-center sm:py-3" aria-label="Ações" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
+          <tbody>
             {rows.map((row, index) => {
               const errors = enabled
                 ? row.periods.map((period) =>
@@ -2244,169 +2244,173 @@ export function ServiceHoursTable({
                     ]),
                   )
                 : [];
+              const dayError = errors.find(Boolean) ?? "";
+              const dayErrorId = `${errorPrefix}-${index}`;
+              const dayBorder = index < rows.length - 1 ? "border-b border-border" : "";
               return (
-                <tr key={row.day} className="transition hover:bg-surface-1/60">
-                  <td className="px-3 py-3 align-top text-xs sm:text-sm">
-                    <p>{row.day}</p>
-                    {errors.map(
-                      (error, periodIndex) =>
-                        error && (
-                          <p
-                            key={row.periods[periodIndex].id}
-                            id={`${errorPrefix}-${index}-${row.periods[periodIndex].id}`}
-                            role="alert"
-                            className="mt-1 block w-full whitespace-normal break-words text-[11px] leading-tight text-destructive [overflow-wrap:anywhere] sm:text-xs"
+                <React.Fragment key={row.day}>
+                  <tr className={`transition hover:bg-surface-1/60 ${dayError ? "" : dayBorder}`}>
+                    <td className="px-3 py-3 align-top text-xs sm:text-sm">
+                      <p>{row.day}</p>
+                    </td>
+                    <td className="px-2 py-3 align-top text-center">
+                      <input
+                        type="checkbox"
+                        checked={row.active}
+                        onChange={(event) => {
+                          setSelectedRow(index);
+                          updateRow(index, { active: event.target.checked });
+                        }}
+                        disabled={!enabled}
+                        className="h-4 w-4 accent-primary"
+                        aria-label={`Ativar atendimento em ${row.day}`}
+                      />
+                    </td>
+                    <td className="px-2 py-2 align-top text-center">
+                      <div className="flex flex-col gap-2">
+                        {row.periods.map((period, periodIndex) => {
+                          const error = errors[periodIndex];
+                          return (
+                            <Input
+                              key={period.id}
+                              ref={
+                                index === rows.findIndex((item) => item.active) && periodIndex === 0
+                                  ? firstActiveStartRef
+                                  : undefined
+                              }
+                              aria-label={
+                                periodIndex === 0
+                                  ? `Início de ${row.day}`
+                                  : `Início do período ${periodIndex + 1} de ${row.day}`
+                              }
+                              aria-invalid={!!error}
+                              aria-describedby={error ? dayErrorId : undefined}
+                              type="text"
+                              inputMode="numeric"
+                              value={period.start}
+                              placeholder="00:00"
+                              disabled={!enabled || !row.active}
+                              onFocus={() => setSelectedRow(index)}
+                              onChange={(event) =>
+                                updatePeriod(index, period.id, {
+                                  start: sanitizeServiceHourDraft(event.target.value),
+                                })
+                              }
+                              onBlur={(event) =>
+                                updatePeriod(index, period.id, {
+                                  start: formatServiceHourDraft(event.target.value),
+                                })
+                              }
+                              className={`!h-9 !min-h-9 w-full min-w-0 px-1 !text-[13px] text-center sm:!h-10 sm:!min-h-10 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="px-2 py-2 align-top text-center">
+                      <div className="flex flex-col gap-2">
+                        {row.periods.map((period, periodIndex) => {
+                          const error = errors[periodIndex];
+                          return (
+                            <Input
+                              key={period.id}
+                              type="text"
+                              inputMode="numeric"
+                              aria-label={
+                                periodIndex === 0
+                                  ? `Fim de ${row.day}`
+                                  : `Fim do período ${periodIndex + 1} de ${row.day}`
+                              }
+                              aria-invalid={!!error}
+                              aria-describedby={error ? dayErrorId : undefined}
+                              value={period.end}
+                              placeholder="00:00"
+                              disabled={!enabled || !row.active}
+                              onFocus={() => setSelectedRow(index)}
+                              onChange={(event) =>
+                                updatePeriod(index, period.id, {
+                                  end: sanitizeServiceHourDraft(event.target.value),
+                                })
+                              }
+                              onBlur={(event) =>
+                                updatePeriod(index, period.id, {
+                                  end: formatServiceHourDraft(event.target.value),
+                                })
+                              }
+                              className={`!h-9 !min-h-9 w-full min-w-0 px-1 !text-[13px] text-center sm:!h-10 sm:!min-h-10 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="px-2 py-2 align-top text-center">
+                      <div className="flex flex-col gap-2">
+                        {row.periods.map((period, periodIndex) => (
+                          <div
+                            key={period.id}
+                            className="flex h-9 items-center justify-center gap-1 sm:h-10"
                           >
-                            {error}
-                          </p>
-                        ),
-                    )}
-                  </td>
-                  <td className="px-2 py-3 align-top text-center">
-                    <input
-                      type="checkbox"
-                      checked={row.active}
-                      onChange={(event) => {
-                        setSelectedRow(index);
-                        updateRow(index, { active: event.target.checked });
-                      }}
-                      disabled={!enabled}
-                      className="h-4 w-4 accent-primary"
-                      aria-label={`Ativar atendimento em ${row.day}`}
-                    />
-                  </td>
-                  <td className="px-2 py-2 align-top text-center">
-                    <div className="flex flex-col gap-2">
-                      {row.periods.map((period, periodIndex) => {
-                        const error = errors[periodIndex];
-                        const errorId = `${errorPrefix}-${index}-${period.id}`;
-                        return (
-                          <Input
-                            key={period.id}
-                            ref={
-                              index === rows.findIndex((item) => item.active) && periodIndex === 0
-                                ? firstActiveStartRef
-                                : undefined
-                            }
-                            aria-label={
-                              periodIndex === 0
-                                ? `Início de ${row.day}`
-                                : `Início do período ${periodIndex + 1} de ${row.day}`
-                            }
-                            aria-invalid={!!error}
-                            aria-describedby={error ? errorId : undefined}
-                            type="text"
-                            inputMode="numeric"
-                            value={period.start}
-                            placeholder="00:00"
-                            disabled={!enabled || !row.active}
-                            onFocus={() => setSelectedRow(index)}
-                            onChange={(event) =>
-                              updatePeriod(index, period.id, {
-                                start: sanitizeServiceHourDraft(event.target.value),
-                              })
-                            }
-                            onBlur={(event) =>
-                              updatePeriod(index, period.id, {
-                                start: formatServiceHourDraft(event.target.value),
-                              })
-                            }
-                            className={`!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
-                          />
-                        );
-                      })}
-                    </div>
-                  </td>
-                  <td className="px-2 py-2 align-top text-center">
-                    <div className="flex flex-col gap-2">
-                      {row.periods.map((period, periodIndex) => {
-                        const error = errors[periodIndex];
-                        const errorId = `${errorPrefix}-${index}-${period.id}`;
-                        return (
-                          <Input
-                            key={period.id}
-                            type="text"
-                            inputMode="numeric"
-                            aria-label={
-                              periodIndex === 0
-                                ? `Fim de ${row.day}`
-                                : `Fim do período ${periodIndex + 1} de ${row.day}`
-                            }
-                            aria-invalid={!!error}
-                            aria-describedby={error ? errorId : undefined}
-                            value={period.end}
-                            placeholder="00:00"
-                            disabled={!enabled || !row.active}
-                            onFocus={() => setSelectedRow(index)}
-                            onChange={(event) =>
-                              updatePeriod(index, period.id, {
-                                end: sanitizeServiceHourDraft(event.target.value),
-                              })
-                            }
-                            onBlur={(event) =>
-                              updatePeriod(index, period.id, {
-                                end: formatServiceHourDraft(event.target.value),
-                              })
-                            }
-                            className={`!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
-                          />
-                        );
-                      })}
-                    </div>
-                  </td>
-                  <td className="px-2 py-2 align-top text-center">
-                    <div className="flex flex-col gap-2">
-                      {row.periods.map((period, periodIndex) => (
-                        <div
-                          key={period.id}
-                          className="flex h-8 items-center justify-center gap-1 sm:h-10"
+                            {enabled && selectedRow === index && row.active && (
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removePeriod(index, period.id)}
+                                  title="Excluir horário"
+                                  aria-label={`Excluir período ${periodIndex + 1} de ${row.day}`}
+                                  className="trash-action h-8 w-8 p-0"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                                {periodIndex === 0 && (
+                                  <>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => copyToAll(index)}
+                                      title="Duplicar horários para todos os dias ativos"
+                                      aria-label={`Duplicar horários de ${row.day} para todos os dias ativos`}
+                                      className="h-8 w-8 p-0"
+                                    >
+                                      <Copy className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => addPeriod(index)}
+                                      title="Incluir novo horário"
+                                      aria-label={`Incluir horário em ${row.day}`}
+                                      className="group h-8 w-8 p-0 hover:text-primary"
+                                    >
+                                      <Plus className="h-3.5 w-3.5 transition-colors group-hover:text-primary" />
+                                    </Button>
+                                  </>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                  {dayError && (
+                    <tr className={dayBorder}>
+                      <td colSpan={2} className="p-0" aria-hidden="true" />
+                      <td colSpan={3} className="px-2 pb-2 pt-0">
+                        <p
+                          id={dayErrorId}
+                          role="alert"
+                          className="block w-full whitespace-normal text-[11px] leading-tight text-destructive sm:text-xs"
                         >
-                          {enabled && selectedRow === index && row.active && (
-                            <>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removePeriod(index, period.id)}
-                                title="Excluir horário"
-                                aria-label={`Excluir período ${periodIndex + 1} de ${row.day}`}
-                                className="trash-action h-8 w-8 p-0"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                              {periodIndex === 0 && (
-                                <>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => copyToAll(index)}
-                                    title="Duplicar horários para todos os dias ativos"
-                                    aria-label={`Duplicar horários de ${row.day} para todos os dias ativos`}
-                                    className="h-8 w-8 p-0"
-                                  >
-                                    <Copy className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => addPeriod(index)}
-                                    title="Incluir novo horário"
-                                    aria-label={`Incluir horário em ${row.day}`}
-                                    className="h-8 w-8 p-0"
-                                  >
-                                    <Plus className="h-3.5 w-3.5" />
-                                  </Button>
-                                </>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
+                          {dayError}
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               );
             })}
           </tbody>

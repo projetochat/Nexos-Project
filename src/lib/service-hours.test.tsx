@@ -40,7 +40,7 @@ describe("service hours editor", () => {
         await type(start, value);
         const alert = host.querySelector('[role="alert"]');
         expect(alert?.textContent).toContain("maior que a inicial");
-        expect(alert?.closest("td")?.textContent).toContain("Terça");
+        expect(alert?.closest("td")?.colSpan).toBe(3);
         expect(start.getAttribute("aria-invalid")).toBe("true");
         expect(end.getAttribute("aria-invalid")).toBe("true");
       }
@@ -53,6 +53,45 @@ describe("service hours editor", () => {
         host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
       );
       expect(host.querySelector('[role="alert"]')).toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
+  it("shows a single validation warning in the footer of a day with multiple invalid periods", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () =>
+        root.render(
+          <ServiceHoursTable
+            rows={[
+              {
+                day: "Segunda",
+                active: true,
+                periods: [
+                  { id: "segunda-1", start: "24:00", end: "18:00" },
+                  { id: "segunda-2", start: "25:00", end: "18:00" },
+                ],
+              },
+            ]}
+            onChange={() => {}}
+            enabled
+            focusStartSignal={0}
+          />,
+        ),
+      );
+      const alerts = host.querySelectorAll('[role="alert"]');
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0].textContent).toContain("Segunda");
+      expect(alerts[0].closest("td")?.colSpan).toBe(3);
+      expect(alerts[0].closest("tr")?.previousElementSibling?.textContent).toContain("Segunda");
+      const describedBy = host
+        .querySelector<HTMLInputElement>('[aria-label="Início de Segunda"]')!
+        .getAttribute("aria-describedby");
+      expect(describedBy).toBe(alerts[0].id);
     } finally {
       await act(async () => root.unmount());
       host.remove();
@@ -172,9 +211,14 @@ describe("service hours editor", () => {
       await act(async () =>
         host.querySelector<HTMLInputElement>('[aria-label="Fim de Segunda"]')!.focus(),
       );
-      await act(async () =>
-        host.querySelector<HTMLButtonElement>('[aria-label="Incluir horário em Segunda"]')!.click(),
+      const addButton = host.querySelector<HTMLButtonElement>(
+        '[aria-label="Incluir horário em Segunda"]',
+      )!;
+      expect(addButton.className).toContain("hover:text-primary");
+      expect(addButton.querySelector("svg")?.getAttribute("class")).toContain(
+        "group-hover:text-primary",
       );
+      await act(async () => addButton.click());
       expect(
         host.querySelector<HTMLInputElement>('[aria-label="Início do período 2 de Segunda"]')!
           .value,
@@ -190,6 +234,10 @@ describe("service hours editor", () => {
         host.querySelector<HTMLInputElement>('[aria-label="Fim do período 2 de Segunda"]')!
           .parentElement?.className,
       ).toContain("flex-col");
+      expect(
+        host.querySelector<HTMLButtonElement>('[aria-label="Excluir período 2 de Segunda"]')!
+          .parentElement?.className,
+      ).toContain("h-9");
     } finally {
       await act(async () => root.unmount());
       host.remove();
