@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import { spawn } from "node:child_process";
 import { MessagingErrorCode, MessagingProviderError } from "../messaging.contracts";
 
@@ -26,7 +27,9 @@ export class VoiceAudioTranscoderService {
 
 function runFfmpeg(input: Buffer) {
   return new Promise<Buffer>((resolve, reject) => {
-    const executable = process.env.TRIXUS_FFMPEG_PATH?.trim() || "ffmpeg";
+    const executable =
+      process.env.TRIXUS_FFMPEG_PATH?.trim() ||
+      (process.platform === "win32" ? ffmpegInstaller.path : "ffmpeg");
     const processHandle = spawn(
       executable,
       [

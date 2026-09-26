@@ -24,6 +24,7 @@
     "sync:staging-plan-limits": "node scripts/sync-staging-plan-limits.mjs"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "1.1.0",
     "@nestjs/common": "^11.1.9",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.9",

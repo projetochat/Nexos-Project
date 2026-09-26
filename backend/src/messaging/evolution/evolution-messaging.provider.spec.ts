@@ -126,7 +126,7 @@ describe("EvolutionMessagingProvider", () => {
     });
   });
 
-  it("sends quick-reply audio as media without requiring voice transcoding", async () => {
+  it("transcodes quick-reply audio and sends it as media with its caption", async () => {
     const client = {
       sendMedia: vi.fn().mockResolvedValue({
         key: { id: "AUDIO1" },
@@ -134,7 +134,13 @@ describe("EvolutionMessagingProvider", () => {
         status: "SENT",
       }),
     } as unknown as EvolutionClient;
-    const transcoder = { transcode: vi.fn() };
+    const transcoder = {
+      transcode: vi.fn().mockResolvedValue({
+        buffer: Buffer.from("ID3-mp3"),
+        mimeType: "audio/mpeg",
+        fileName: "recording.mp3",
+      }),
+    };
     const provider = new EvolutionMessagingProvider(client, transcoder as never);
     const media = Buffer.from("webm-recording");
 
@@ -155,19 +161,19 @@ describe("EvolutionMessagingProvider", () => {
       },
     });
 
-    expect(transcoder.transcode).not.toHaveBeenCalled();
+    expect(transcoder.transcode).toHaveBeenCalledWith(media, "recording.webm", "audio/webm");
     expect(client.sendMedia).toHaveBeenCalledWith({
       instanceName: "tenant-support",
       payload: {
         number: "5511999990000",
         mediatype: "audio",
-        mimetype: "audio/webm",
-        fileName: "recording.webm",
+        mimetype: "audio/mpeg",
+        fileName: "recording.mp3",
         caption: "Bom dia",
       },
-      media,
-      mimeType: "audio/webm",
-      fileName: "recording.webm",
+      media: Buffer.from("ID3-mp3"),
+      mimeType: "audio/mpeg",
+      fileName: "recording.mp3",
     });
   });
 
