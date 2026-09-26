@@ -2214,16 +2214,23 @@ export function ServiceHoursTable({
       <p className="text-xs font-medium text-muted-foreground">Horário de Atendimento</p>
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[580px] table-fixed border-collapse text-sm">
+          <colgroup>
+            <col className="w-[27%]" />
+            <col className="w-[15%]" />
+            <col className="w-[18%]" />
+            <col className="w-[18%]" />
+            <col className="w-[22%]" />
+          </colgroup>
           <thead className="bg-surface-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground sm:text-[11px] sm:tracking-widest">
             <tr>
-              <th className="w-36 px-3 py-2 text-left font-semibold sm:py-3">
+              <th className="px-3 py-2 text-left font-semibold sm:py-3">
                 <span className="sm:hidden">Dia</span>
                 <span className="hidden sm:inline">Dia da semana</span>
               </th>
-              <th className="w-14 px-2 py-2 text-center font-semibold sm:py-3">Ativo</th>
+              <th className="px-2 py-2 text-center font-semibold sm:py-3">Ativo</th>
               <th className="px-2 py-2 text-center font-semibold sm:py-3">Início</th>
               <th className="px-2 py-2 text-center font-semibold sm:py-3">Fim</th>
-              <th className="w-[116px] px-2 py-2 text-center sm:py-3" aria-label="Ações" />
+              <th className="px-2 py-2 text-center sm:py-3" aria-label="Ações" />
             </tr>
           </thead>
           <tbody>

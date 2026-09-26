@@ -25,7 +25,9 @@ describe("service hours editor", () => {
     const root = createRoot(host);
     try {
       await act(async () => root.render(<Editor />));
-      expect(host.querySelector("thead th")?.className).toContain("w-36");
+      expect(
+        Array.from(host.querySelectorAll("colgroup col"), (column) => column.className),
+      ).toEqual(["w-[27%]", "w-[15%]", "w-[18%]", "w-[18%]", "w-[22%]"]);
       const start = host.querySelector<HTMLInputElement>('[aria-label="Início de Terça"]')!;
       const end = host.querySelector<HTMLInputElement>('[aria-label="Fim de Terça"]')!;
       const type = async (input: HTMLInputElement, value: string) => {
