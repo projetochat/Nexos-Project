@@ -28,15 +28,21 @@ describe("service hours editor", () => {
       expect(
         Array.from(host.querySelectorAll("colgroup col"), (column) => column.className),
       ).toEqual([
-        "w-[15%] sm:w-[27%]",
-        "w-[9%] sm:w-[15%]",
-        "w-[20%] sm:w-[18%]",
-        "w-[20%] sm:w-[18%]",
-        "w-[36%] sm:w-[22%]",
+        "w-[20%] sm:w-[42%]",
+        "w-[23%] sm:w-[18%]",
+        "w-[23%] sm:w-[18%]",
+        "w-[34%] sm:w-[22%]",
       ]);
+      expect(host.querySelectorAll("thead th")).toHaveLength(4);
       expect(host.querySelector("table")?.className).toContain("sm:min-w-[580px]");
       expect(host.querySelector("table")?.className).not.toContain(" min-w-[580px]");
       expect(host.querySelector('p[aria-label="Terça"] .sm\\:hidden')?.textContent).toBe("Ter");
+      expect(
+        host
+          .querySelector('[aria-label="Ativar atendimento em Terça"]')
+          ?.closest("td")
+          ?.querySelector('p[aria-label="Terça"]'),
+      ).not.toBeNull();
       const start = host.querySelector<HTMLInputElement>('[aria-label="Início de Terça"]')!;
       const end = host.querySelector<HTMLInputElement>('[aria-label="Fim de Terça"]')!;
       const type = async (input: HTMLInputElement, value: string) => {
@@ -387,10 +393,15 @@ describe("service hours editor", () => {
       await act(async () =>
         host
           .querySelector<HTMLButtonElement>(
-            '[aria-label="Duplicar horários de Segunda para todos os dias ativos"]',
+            '[aria-label="Copiar horários de Segunda para todos os dias ativos"]',
           )!
           .click(),
       );
+      expect(
+        host.querySelector<HTMLButtonElement>(
+          '[aria-label="Copiar horários de Segunda para todos os dias ativos"]',
+        )?.title,
+      ).toBe("Copiar para todos");
       expect(
         host.querySelector<HTMLInputElement>('[aria-label="Início do período 2 de Terça"]')!.value,
       ).toBe("13:00");

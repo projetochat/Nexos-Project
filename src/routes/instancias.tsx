@@ -2220,21 +2220,16 @@ export function ServiceHoursTable({
       <div className="overflow-hidden rounded-lg border border-border sm:overflow-x-auto">
         <table className="w-full table-fixed border-collapse text-sm sm:min-w-[580px]">
           <colgroup>
-            <col className="w-[15%] sm:w-[27%]" />
-            <col className="w-[9%] sm:w-[15%]" />
-            <col className="w-[20%] sm:w-[18%]" />
-            <col className="w-[20%] sm:w-[18%]" />
-            <col className="w-[36%] sm:w-[22%]" />
+            <col className="w-[20%] sm:w-[42%]" />
+            <col className="w-[23%] sm:w-[18%]" />
+            <col className="w-[23%] sm:w-[18%]" />
+            <col className="w-[34%] sm:w-[22%]" />
           </colgroup>
           <thead className="bg-surface-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground sm:text-[11px] sm:tracking-widest">
             <tr>
               <th className="px-1 py-2 text-left font-semibold sm:px-3 sm:py-3">
                 <span className="sm:hidden">Dia</span>
                 <span className="hidden sm:inline">Dia da semana</span>
-              </th>
-              <th className="px-0.5 py-2 text-center font-semibold sm:px-2 sm:py-3">
-                <span className="sm:hidden">At.</span>
-                <span className="hidden sm:inline">Ativo</span>
               </th>
               <th className="px-1 py-2 text-center font-semibold sm:px-2 sm:py-3">Início</th>
               <th className="px-1 py-2 text-center font-semibold sm:px-2 sm:py-3">Fim</th>
@@ -2265,30 +2260,30 @@ export function ServiceHoursTable({
               return (
                 <React.Fragment key={row.day}>
                   <tr className={`transition hover:bg-surface-1/60 ${dayError ? "" : dayBorder}`}>
-                    <td className="px-1.5 py-3 align-top text-xs sm:px-3 sm:text-sm">
-                      <p aria-label={row.day}>
-                        <span aria-hidden="true" className="sm:hidden">
-                          {row.day.slice(0, 3)}
-                        </span>
-                        <span aria-hidden="true" className="hidden sm:inline">
-                          {row.day}
-                        </span>
-                      </p>
+                    <td className="py-3 pl-1 pr-0.5 align-top text-xs sm:px-3 sm:text-sm">
+                      <div className="flex items-center gap-1 sm:gap-2">
+                        <input
+                          type="checkbox"
+                          checked={row.active}
+                          onChange={(event) => {
+                            setSelectedRow(index);
+                            updateRow(index, { active: event.target.checked });
+                          }}
+                          disabled={!enabled}
+                          className="h-4 w-4 shrink-0 accent-primary"
+                          aria-label={`Ativar atendimento em ${row.day}`}
+                        />
+                        <p aria-label={row.day}>
+                          <span aria-hidden="true" className="sm:hidden">
+                            {row.day.slice(0, 3)}
+                          </span>
+                          <span aria-hidden="true" className="hidden sm:inline">
+                            {row.day}
+                          </span>
+                        </p>
+                      </div>
                     </td>
-                    <td className="px-0.5 py-3 align-top text-center sm:px-2">
-                      <input
-                        type="checkbox"
-                        checked={row.active}
-                        onChange={(event) => {
-                          setSelectedRow(index);
-                          updateRow(index, { active: event.target.checked });
-                        }}
-                        disabled={!enabled}
-                        className="h-4 w-4 accent-primary"
-                        aria-label={`Ativar atendimento em ${row.day}`}
-                      />
-                    </td>
-                    <td className="px-1 py-2 align-top text-center sm:px-2">
+                    <td className="px-0.5 py-2 align-top text-center sm:px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => {
                           const error = errors[periodIndex];
@@ -2329,7 +2324,7 @@ export function ServiceHoursTable({
                         })}
                       </div>
                     </td>
-                    <td className="px-1 py-2 align-top text-center sm:px-2">
+                    <td className="px-0.5 py-2 align-top text-center sm:px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => {
                           const error = errors[periodIndex];
@@ -2365,7 +2360,7 @@ export function ServiceHoursTable({
                         })}
                       </div>
                     </td>
-                    <td className="px-1 py-2 align-top text-center sm:px-2">
+                    <td className="px-0.5 py-2 align-top text-center sm:px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => (
                           <div
@@ -2392,8 +2387,8 @@ export function ServiceHoursTable({
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => copyToAll(index)}
-                                      title="Duplicar horários para todos os dias ativos"
-                                      aria-label={`Duplicar horários de ${row.day} para todos os dias ativos`}
+                                      title="Copiar para todos"
+                                      aria-label={`Copiar horários de ${row.day} para todos os dias ativos`}
                                       className="h-7 w-7 p-0 sm:h-8 sm:w-8"
                                     >
                                       <Copy className="h-3.5 w-3.5" />
@@ -2420,7 +2415,7 @@ export function ServiceHoursTable({
                   </tr>
                   {dayError && (
                     <tr className={dayBorder}>
-                      <td colSpan={2} className="p-0" aria-hidden="true" />
+                      <td className="p-0" aria-hidden="true" />
                       <td colSpan={3} className="px-2 pb-2 pt-0">
                         <p
                           id={dayErrorId}
