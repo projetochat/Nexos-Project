@@ -45,6 +45,14 @@ describe("service hours editor", () => {
       ).not.toBeNull();
       const start = host.querySelector<HTMLInputElement>('[aria-label="Início de Terça"]')!;
       const end = host.querySelector<HTMLInputElement>('[aria-label="Fim de Terça"]')!;
+      expect(start.closest("td")?.className).toContain("px-0");
+      expect(end.closest("td")?.className).toContain("px-0");
+      await act(async () => start.focus());
+      const deleteButton = host.querySelector<HTMLButtonElement>(
+        '[aria-label="Excluir período 1 de Terça"]',
+      )!;
+      expect(deleteButton.closest("td")?.className).toContain("px-0");
+      expect(deleteButton.querySelector("svg")?.classList.contains("h-4")).toBe(true);
       const type = async (input: HTMLInputElement, value: string) => {
         await act(async () => {
           Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(

@@ -2231,9 +2231,9 @@ export function ServiceHoursTable({
                 <span className="sm:hidden">Dia</span>
                 <span className="hidden sm:inline">Dia da semana</span>
               </th>
-              <th className="px-1 py-2 text-center font-semibold sm:px-2 sm:py-3">Início</th>
-              <th className="px-1 py-2 text-center font-semibold sm:px-2 sm:py-3">Fim</th>
-              <th className="px-1 py-2 text-center sm:px-2 sm:py-3" aria-label="Ações" />
+              <th className="px-0 py-2 text-center font-semibold sm:px-2 sm:py-3">Início</th>
+              <th className="px-0 py-2 text-center font-semibold sm:px-2 sm:py-3">Fim</th>
+              <th className="px-0 py-2 text-center sm:px-2 sm:py-3" aria-label="Ações" />
             </tr>
           </thead>
           <tbody>
@@ -2283,7 +2283,7 @@ export function ServiceHoursTable({
                         </p>
                       </div>
                     </td>
-                    <td className="px-0.5 py-2 align-top text-center sm:px-2">
+                    <td className="px-0 py-2 align-top text-center sm:px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => {
                           const error = errors[periodIndex];
@@ -2324,7 +2324,7 @@ export function ServiceHoursTable({
                         })}
                       </div>
                     </td>
-                    <td className="px-0.5 py-2 align-top text-center sm:px-2">
+                    <td className="px-0 py-2 align-top text-center sm:px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => {
                           const error = errors[periodIndex];
@@ -2360,7 +2360,7 @@ export function ServiceHoursTable({
                         })}
                       </div>
                     </td>
-                    <td className="px-0.5 py-2 align-top text-center sm:px-2">
+                    <td className="px-0 py-2 align-top text-center sm:px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => (
                           <div
@@ -2378,7 +2378,7 @@ export function ServiceHoursTable({
                                   aria-label={`Excluir período ${periodIndex + 1} de ${row.day}`}
                                   className="trash-action h-7 w-7 p-0 sm:h-8 sm:w-8"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                                 </Button>
                                 {periodIndex === 0 && (
                                   <>
@@ -2391,7 +2391,7 @@ export function ServiceHoursTable({
                                       aria-label={`Copiar horários de ${row.day} para todos os dias ativos`}
                                       className="h-7 w-7 p-0 sm:h-8 sm:w-8"
                                     >
-                                      <Copy className="h-3.5 w-3.5" />
+                                      <Copy className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                                     </Button>
                                     <Button
                                       type="button"
@@ -2402,7 +2402,7 @@ export function ServiceHoursTable({
                                       aria-label={`Incluir horário em ${row.day}`}
                                       className="group h-7 w-7 p-0 hover:text-primary sm:h-8 sm:w-8"
                                     >
-                                      <Plus className="h-3.5 w-3.5 transition-colors group-hover:text-primary" />
+                                      <Plus className="h-4 w-4 transition-colors group-hover:text-primary sm:h-3.5 sm:w-3.5" />
                                     </Button>
                                   </>
                                 )}
