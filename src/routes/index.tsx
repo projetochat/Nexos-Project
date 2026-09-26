@@ -919,7 +919,7 @@ function MessageTrafficTotalCell({
 }) {
   return (
     <td
-      className={`border border-border px-2 py-1 text-center font-mono text-foreground ${emphasized ? "bg-surface-1 font-semibold" : ""}`}
+      className={`border border-border px-2 py-1 text-center font-mono text-foreground ${emphasized ? "bg-surface-1" : ""}`}
     >
       <span className="sr-only">{label}: </span>
       {num(value)}
