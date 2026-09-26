@@ -48,7 +48,11 @@ import { useQueuePrefs, type QueueId } from "@/lib/queue-prefs";
 import { useSession } from "@/lib/session";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { DASHBOARD_CHART_MARGIN, messageHourTicks } from "@/lib/dashboard-chart-layout";
+import {
+  DASHBOARD_CHART_MARGIN,
+  DASHBOARD_CHART_TEXT_COLOR,
+  messageHourTicks,
+} from "@/lib/dashboard-chart-layout";
 
 export const Route = createFileRoute("/")({ component: Dashboard });
 
@@ -449,10 +453,11 @@ function Dashboard() {
                 </p>
                 <ResponsiveContainer width="100%" height={260}>
                   <LineChart data={messageTraffic} margin={DASHBOARD_CHART_MARGIN}>
-                    <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+                    <CartesianGrid stroke="var(--border)" vertical={false} />
                     <XAxis
                       dataKey="hora"
-                      stroke="hsl(var(--muted-foreground))"
+                      stroke="var(--muted-foreground)"
+                      tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
                       fontSize={11}
                       ticks={messageTicks}
                       interval={0}
@@ -462,16 +467,18 @@ function Dashboard() {
                       tickMargin={compactMessagesChart ? 8 : 0}
                     />
                     <YAxis
-                      stroke="hsl(var(--muted-foreground))"
+                      stroke="var(--muted-foreground)"
+                      tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
                       fontSize={11}
                       allowDecimals={false}
                       width={38}
                     />
                     <Tooltip
                       contentStyle={{
-                        background: "hsl(var(--popover))",
-                        border: "1px solid hsl(var(--border))",
+                        background: "var(--popover)",
+                        border: "1px solid var(--border)",
                         borderRadius: 8,
+                        color: "var(--popover-foreground)",
                         fontSize: 12,
                       }}
                     />
@@ -551,9 +558,10 @@ function Dashboard() {
                   <PieChart>
                     <Tooltip
                       contentStyle={{
-                        background: "hsl(var(--popover))",
-                        border: "1px solid hsl(var(--border))",
+                        background: "var(--popover)",
+                        border: "1px solid var(--border)",
                         borderRadius: 8,
+                        color: "var(--popover-foreground)",
                         fontSize: 12,
                       }}
                     />
@@ -622,10 +630,11 @@ function Dashboard() {
                       ) : (
                         <ResponsiveContainer width="100%" height={270}>
                           <BarChart data={chartData} margin={DASHBOARD_CHART_MARGIN}>
-                            <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+                            <CartesianGrid stroke="var(--border)" vertical={false} />
                             <XAxis
                               dataKey="nome"
-                              stroke="hsl(var(--muted-foreground))"
+                              stroke="var(--muted-foreground)"
+                              tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
                               fontSize={11}
                               interval={0}
                               angle={rotateLabels ? -35 : 0}
@@ -634,7 +643,8 @@ function Dashboard() {
                               tickMargin={rotateLabels ? 8 : 0}
                             />
                             <YAxis
-                              stroke="hsl(var(--muted-foreground))"
+                              stroke="var(--muted-foreground)"
+                              tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
                               fontSize={11}
                               allowDecimals={false}
                               width={38}
