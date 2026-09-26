@@ -760,7 +760,7 @@ function GeneralTab({
 }) {
   return (
     <section className="space-y-4">
-      <div className="grid grid-cols-[minmax(7rem,1fr)_9rem] gap-3 md:gap-4 md:grid-cols-[minmax(0,1fr)_9rem]">
+      <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 md:gap-4 md:grid-cols-[minmax(0,1fr)_9rem]">
         <Field label="Nome *" error={error || undefined}>
           <Input
             value={form.name}
