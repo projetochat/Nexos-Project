@@ -598,7 +598,7 @@ function ConnectionForm({
           </div>
         </fieldset>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
+        <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
           <Field label="Nome da instância *">
             <Input
               value={name}
@@ -615,7 +615,7 @@ function ConnectionForm({
             )}
           </Field>
           <Field label="Cor" asLabel={false}>
-            <div className="flex h-10 items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 transition focus-within:border-primary">
+            <div className="flex h-10 items-center gap-1 rounded-lg border border-border bg-surface-1 px-1.5 transition focus-within:border-primary sm:gap-1.5 sm:px-2">
               <input
                 type="color"
                 aria-label="Selecionar cor da instância"
@@ -630,7 +630,7 @@ function ConnectionForm({
                 onChange={(event) => setColor(normalizeHexColor(event.target.value))}
                 placeholder="#22C55E"
                 maxLength={7}
-                className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+                className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 max-sm:p-0"
               />
             </div>
           </Field>
