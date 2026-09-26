@@ -292,6 +292,7 @@ function Dashboard() {
     { recebidas: 0, enviadas: 0 },
   );
   const totalMessages = messageTrafficTotals.recebidas + messageTrafficTotals.enviadas;
+  const messageContactsTotal = data?.charts.messageContactsTotal ?? 0;
 
   const beginEditingBiTitle = (id: DashboardBiId) => {
     setEditingBiId(id);
@@ -440,31 +441,14 @@ function Dashboard() {
               className={`${dashboardColumnClass("messages")} ${hasBi("messages") ? "" : "hidden"}`}
             >
               <Card className="h-full">
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                      {biLabel("messages")}
-                    </p>
-                  </div>
-                  <table
-                    aria-label="Totais do tráfego de mensagens no período"
-                    className="hidden w-auto shrink-0 self-start border-collapse whitespace-nowrap text-xs sm:table"
-                  >
-                    <tbody>
-                      <MessageTrafficTotalRow
-                        label="Recebidos"
-                        value={messageTrafficTotals.recebidas}
-                      />
-                      <MessageTrafficTotalRow
-                        label="Enviados"
-                        value={messageTrafficTotals.enviadas}
-                      />
-                      <MessageTrafficTotalRow label="Todos" value={totalMessages} emphasized />
-                    </tbody>
-                  </table>
-                </div>
+                <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
+                  {biLabel("messages")}
+                </p>
                 <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={messageTraffic}>
+                  <LineChart
+                    data={messageTraffic}
+                    margin={{ top: 4, right: 4, bottom: 0, left: -28 }}
+                  >
                     <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
                     <XAxis
                       dataKey="hora"
@@ -483,6 +467,7 @@ function Dashboard() {
                       stroke="hsl(var(--muted-foreground))"
                       fontSize={11}
                       allowDecimals={false}
+                      width={38}
                     />
                     <Tooltip
                       contentStyle={{
@@ -492,7 +477,6 @@ function Dashboard() {
                         fontSize: 12,
                       }}
                     />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Line
                       type="monotone"
                       dataKey="recebidas"
@@ -517,23 +501,40 @@ function Dashboard() {
                       strokeWidth={2}
                       dot={false}
                     />
+                    <Line
+                      type="monotone"
+                      dataKey="contatosAtendidos"
+                      name="Contatos atendidos"
+                      stroke="#f97316"
+                      strokeWidth={2}
+                      dot={false}
+                    />
                   </LineChart>
                 </ResponsiveContainer>
                 <table
                   aria-label="Totais do tráfego de mensagens no período"
-                  className="mx-auto mt-1 w-full max-w-72 table-fixed border-collapse whitespace-nowrap text-xs sm:hidden"
+                  className="mx-auto mt-1 w-full max-w-md table-fixed border-collapse whitespace-nowrap text-xs"
                 >
+                  <thead>
+                    <tr>
+                      <MessageTrafficLegendHeader label="Recebidos" color="#2563eb" />
+                      <MessageTrafficLegendHeader label="Enviados" color="#16a34a" />
+                      <MessageTrafficLegendHeader label="Total" color="#94a3b8" />
+                      <MessageTrafficLegendHeader label="Contatos atendidos" color="#f97316" />
+                    </tr>
+                  </thead>
                   <tbody>
                     <tr>
-                      <MessageTrafficMobileTotal
+                      <MessageTrafficTotalCell
                         label="Recebidos"
                         value={messageTrafficTotals.recebidas}
                       />
-                      <MessageTrafficMobileTotal
+                      <MessageTrafficTotalCell
                         label="Enviados"
                         value={messageTrafficTotals.enviadas}
                       />
-                      <MessageTrafficMobileTotal label="Total" value={totalMessages} emphasized />
+                      <MessageTrafficTotalCell label="Total" value={totalMessages} emphasized />
+                      <MessageTrafficTotalCell label="Qtd Clientes" value={messageContactsTotal} />
                     </tr>
                   </tbody>
                 </table>
@@ -622,7 +623,10 @@ function Dashboard() {
                         </div>
                       ) : (
                         <ResponsiveContainer width="100%" height={270}>
-                          <BarChart data={chartData}>
+                          <BarChart
+                            data={chartData}
+                            margin={{ top: 4, right: 4, bottom: 0, left: -28 }}
+                          >
                             <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
                             <XAxis
                               dataKey="nome"
@@ -638,6 +642,7 @@ function Dashboard() {
                               stroke="hsl(var(--muted-foreground))"
                               fontSize={11}
                               allowDecimals={false}
+                              width={38}
                             />
                             <Tooltip content={<DashboardBarTooltip />} />
                             <Bar dataKey="total" radius={[6, 6, 0, 0]}>
@@ -898,31 +903,7 @@ function Dashboard() {
   );
 }
 
-function MessageTrafficTotalRow({
-  label,
-  value,
-  emphasized = false,
-}: {
-  label: string;
-  value: number;
-  emphasized?: boolean;
-}) {
-  return (
-    <tr className={emphasized ? "bg-surface-1 font-semibold" : undefined}>
-      <th
-        scope="row"
-        className="border border-border px-2 py-1 text-left font-normal text-muted-foreground"
-      >
-        {label}
-      </th>
-      <td className="border border-border px-2 py-1 text-right font-mono text-foreground">
-        {num(value)}
-      </td>
-    </tr>
-  );
-}
-
-function MessageTrafficMobileTotal({
+function MessageTrafficTotalCell({
   label,
   value,
   emphasized = false,
@@ -938,6 +919,21 @@ function MessageTrafficMobileTotal({
       <span className="sr-only">{label}: </span>
       {num(value)}
     </td>
+  );
+}
+
+function MessageTrafficLegendHeader({ label, color }: { label: string; color: string }) {
+  return (
+    <th className="px-1 pb-1 text-center align-bottom font-normal text-muted-foreground">
+      <span className="inline-flex whitespace-normal text-[10px] leading-tight sm:text-xs">
+        <span
+          className="mr-1 mt-[0.45em] inline-block h-0 w-3 shrink-0 border-t-2"
+          style={{ borderColor: color }}
+          aria-hidden="true"
+        />
+        {label}
+      </span>
+    </th>
   );
 }
 

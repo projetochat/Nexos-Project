@@ -758,6 +758,7 @@ export type ApiOperationsHourlyMessage = {
   recebidas: number;
   enviadas: number;
   total: number;
+  contatosAtendidos: number;
 };
 
 export type ApiOperationsDashboard = {
@@ -770,6 +771,7 @@ export type ApiOperationsDashboard = {
     byConnection: ApiOperationsChartItem[];
     byTag: ApiOperationsChartItem[];
     messagesByHour: ApiOperationsHourlyMessage[];
+    messageContactsTotal: number;
   };
   recent: ApiConversation[];
 };
