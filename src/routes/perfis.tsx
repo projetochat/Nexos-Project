@@ -760,7 +760,7 @@ function GeneralTab({
 }) {
   return (
     <section className="space-y-4">
-      <div className="grid grid-cols-[minmax(7rem,1fr)_10.5rem] gap-3 md:gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+      <div className="grid grid-cols-[minmax(7rem,1fr)_9rem] gap-3 md:gap-4 md:grid-cols-[minmax(0,1fr)_9rem]">
         <Field label="Nome *" error={error || undefined}>
           <Input
             value={form.name}
@@ -769,7 +769,7 @@ function GeneralTab({
           />
         </Field>
         <Field label="Cor">
-          <div className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-2">
+          <div className="flex min-h-10 items-center gap-1 rounded-lg border border-border bg-surface-1 px-1.5">
             <input
               type="color"
               value={form.color}
@@ -780,7 +780,7 @@ function GeneralTab({
             <Input
               value={form.color}
               onChange={(event) => onChange({ color: event.target.value })}
-              className="min-h-0 min-w-0 flex-1 border-0 bg-transparent px-1 py-0 uppercase focus:border-0"
+              className="min-h-0 min-w-0 flex-1 border-0 bg-transparent px-0 py-0 uppercase focus:border-0"
             />
           </div>
         </Field>
