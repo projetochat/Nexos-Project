@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
-import { ServiceHoursTable } from "../routes/instancias";
+import { GreetingMessageEditor, ServiceHoursTable } from "../routes/instancias";
 import { sameServiceHours, serviceHoursError } from "./instance-validation";
 
 describe("service hours editor", () => {
@@ -27,7 +27,16 @@ describe("service hours editor", () => {
       await act(async () => root.render(<Editor />));
       expect(
         Array.from(host.querySelectorAll("colgroup col"), (column) => column.className),
-      ).toEqual(["w-[27%]", "w-[15%]", "w-[18%]", "w-[18%]", "w-[22%]"]);
+      ).toEqual([
+        "w-[15%] sm:w-[27%]",
+        "w-[9%] sm:w-[15%]",
+        "w-[20%] sm:w-[18%]",
+        "w-[20%] sm:w-[18%]",
+        "w-[36%] sm:w-[22%]",
+      ]);
+      expect(host.querySelector("table")?.className).toContain("sm:min-w-[580px]");
+      expect(host.querySelector("table")?.className).not.toContain(" min-w-[580px]");
+      expect(host.querySelector('p[aria-label="Terça"] .sm\\:hidden')?.textContent).toBe("Ter");
       const start = host.querySelector<HTMLInputElement>('[aria-label="Início de Terça"]')!;
       const end = host.querySelector<HTMLInputElement>('[aria-label="Fim de Terça"]')!;
       const type = async (input: HTMLInputElement, value: string) => {
@@ -56,6 +65,57 @@ describe("service hours editor", () => {
         host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
       );
       expect(host.querySelector('[role="alert"]')).toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
+
+  it("inserts an emoji at the cursor before the variables button", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    function Editor() {
+      const [value, setValue] = React.useState("Olá ");
+      return (
+        <GreetingMessageEditor
+          value={value}
+          attachment={null}
+          variables={[{ token: "{{nome}}", description: "Nome" }]}
+          disabled={false}
+          invalid={false}
+          placeholder="Mensagem"
+          showAttachment={false}
+          showEmoji
+          onChange={(nextValue) => setValue(nextValue)}
+        />
+      );
+    }
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<Editor />));
+      const textarea = host.querySelector("textarea")!;
+      await act(async () => {
+        textarea.focus();
+        textarea.setSelectionRange(4, 4);
+      });
+      const emojiButton = host.querySelector<HTMLButtonElement>('[aria-label="Inserir emoji"]')!;
+      const variablesButton = host.querySelector<HTMLButtonElement>(
+        '[aria-label="Inserir variável"]',
+      )!;
+      expect(
+        emojiButton.compareDocumentPosition(variablesButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        emojiButton.querySelector("svg")?.classList.contains("lucide-face-slightly-smiling-plus"),
+      ).toBe(true);
+      await act(async () => emojiButton.click());
+      expect(document.querySelector('[aria-label="Biblioteca de emojis"]')).not.toBeNull();
+      const smilingEmoji = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+        (button) => button.getAttribute("aria-label") === "Inserir emoji 😊",
+      )!;
+      await act(async () => smilingEmoji.click());
+      expect(host.querySelector("textarea")?.value).toBe("Olá 😊");
     } finally {
       await act(async () => root.unmount());
       host.remove();

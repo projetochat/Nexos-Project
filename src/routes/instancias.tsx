@@ -38,6 +38,7 @@ import { useDisclosure } from "@/hooks/use-disclosure";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { MessageAttachmentMenu } from "@/components/message-attachment-menu";
 import { MessageVariablesMenu } from "@/components/message-variables-menu";
+import { MessageEmojiPicker } from "@/components/message-emoji-picker";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
 import { num } from "@/lib/format";
@@ -1617,6 +1618,7 @@ function ConnectionSettingsModal({
                 <GreetingMessageEditor
                   value={absenceMessage}
                   attachment={absenceAttachment}
+                  showEmoji
                   variables={mergeMessageVariables(
                     CONNECTION_MESSAGE_VARIABLES,
                     contactCustomFields,
@@ -1684,7 +1686,7 @@ function TabButton({
   );
 }
 
-function GreetingMessageEditor({
+export function GreetingMessageEditor({
   value,
   attachment,
   variables,
@@ -1692,6 +1694,7 @@ function GreetingMessageEditor({
   invalid,
   placeholder,
   showAttachment = true,
+  showEmoji = false,
   onChange,
 }: {
   value: string;
@@ -1701,23 +1704,24 @@ function GreetingMessageEditor({
   invalid: boolean;
   placeholder: string;
   showAttachment?: boolean;
+  showEmoji?: boolean;
   onChange: (value: string, attachment: QuickReplyAttachment | null) => void;
 }) {
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
-  const insertVariable = (token: string) => {
+  const insertText = (text: string) => {
     const input = textareaRef.current;
     const start = input?.selectionStart ?? value.length;
     const end = input?.selectionEnd ?? start;
-    if (value.length - (end - start) + token.length > 1000) {
+    if (value.length - (end - start) + text.length > 1000) {
       toast.error("A mensagem deve ter no máximo 1000 caracteres.");
       return;
     }
-    const next = value.slice(0, start) + token + value.slice(end);
+    const next = value.slice(0, start) + text + value.slice(end);
     onChange(next, attachment);
     requestAnimationFrame(() => {
       input?.focus();
-      input?.setSelectionRange(start + token.length, start + token.length);
+      input?.setSelectionRange(start + text.length, start + text.length);
     });
   };
 
@@ -1735,7 +1739,8 @@ function GreetingMessageEditor({
         className="block min-h-32 w-full resize-y rounded-t-lg border-0 bg-transparent px-3 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
       />
       <div className="flex flex-wrap items-center gap-1.5 overflow-visible border-t border-border bg-surface-1 px-2 py-1.5">
-        <MessageVariablesMenu disabled={disabled} variables={variables} onSelect={insertVariable} />
+        {showEmoji && <MessageEmojiPicker disabled={disabled} onSelect={insertText} />}
+        <MessageVariablesMenu disabled={disabled} variables={variables} onSelect={insertText} />
         {showAttachment && attachment && (
           <Button
             type="button"
@@ -2212,25 +2217,28 @@ export function ServiceHoursTable({
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium text-muted-foreground">Horário de Atendimento</p>
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[580px] table-fixed border-collapse text-sm">
+      <div className="overflow-hidden rounded-lg border border-border sm:overflow-x-auto">
+        <table className="w-full table-fixed border-collapse text-sm sm:min-w-[580px]">
           <colgroup>
-            <col className="w-[27%]" />
-            <col className="w-[15%]" />
-            <col className="w-[18%]" />
-            <col className="w-[18%]" />
-            <col className="w-[22%]" />
+            <col className="w-[15%] sm:w-[27%]" />
+            <col className="w-[9%] sm:w-[15%]" />
+            <col className="w-[20%] sm:w-[18%]" />
+            <col className="w-[20%] sm:w-[18%]" />
+            <col className="w-[36%] sm:w-[22%]" />
           </colgroup>
           <thead className="bg-surface-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground sm:text-[11px] sm:tracking-widest">
             <tr>
-              <th className="px-3 py-2 text-left font-semibold sm:py-3">
+              <th className="px-1 py-2 text-left font-semibold sm:px-3 sm:py-3">
                 <span className="sm:hidden">Dia</span>
                 <span className="hidden sm:inline">Dia da semana</span>
               </th>
-              <th className="px-2 py-2 text-center font-semibold sm:py-3">Ativo</th>
-              <th className="px-2 py-2 text-center font-semibold sm:py-3">Início</th>
-              <th className="px-2 py-2 text-center font-semibold sm:py-3">Fim</th>
-              <th className="px-2 py-2 text-center sm:py-3" aria-label="Ações" />
+              <th className="px-0.5 py-2 text-center font-semibold sm:px-2 sm:py-3">
+                <span className="sm:hidden">At.</span>
+                <span className="hidden sm:inline">Ativo</span>
+              </th>
+              <th className="px-1 py-2 text-center font-semibold sm:px-2 sm:py-3">Início</th>
+              <th className="px-1 py-2 text-center font-semibold sm:px-2 sm:py-3">Fim</th>
+              <th className="px-1 py-2 text-center sm:px-2 sm:py-3" aria-label="Ações" />
             </tr>
           </thead>
           <tbody>
@@ -2257,10 +2265,17 @@ export function ServiceHoursTable({
               return (
                 <React.Fragment key={row.day}>
                   <tr className={`transition hover:bg-surface-1/60 ${dayError ? "" : dayBorder}`}>
-                    <td className="px-3 py-3 align-top text-xs sm:text-sm">
-                      <p>{row.day}</p>
+                    <td className="px-1.5 py-3 align-top text-xs sm:px-3 sm:text-sm">
+                      <p aria-label={row.day}>
+                        <span aria-hidden="true" className="sm:hidden">
+                          {row.day.slice(0, 3)}
+                        </span>
+                        <span aria-hidden="true" className="hidden sm:inline">
+                          {row.day}
+                        </span>
+                      </p>
                     </td>
-                    <td className="px-2 py-3 align-top text-center">
+                    <td className="px-0.5 py-3 align-top text-center sm:px-2">
                       <input
                         type="checkbox"
                         checked={row.active}
@@ -2273,7 +2288,7 @@ export function ServiceHoursTable({
                         aria-label={`Ativar atendimento em ${row.day}`}
                       />
                     </td>
-                    <td className="px-2 py-2 align-top text-center">
+                    <td className="px-1 py-2 align-top text-center sm:px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => {
                           const error = errors[periodIndex];
@@ -2314,7 +2329,7 @@ export function ServiceHoursTable({
                         })}
                       </div>
                     </td>
-                    <td className="px-2 py-2 align-top text-center">
+                    <td className="px-1 py-2 align-top text-center sm:px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => {
                           const error = errors[periodIndex];
@@ -2350,12 +2365,12 @@ export function ServiceHoursTable({
                         })}
                       </div>
                     </td>
-                    <td className="px-2 py-2 align-top text-center">
+                    <td className="px-1 py-2 align-top text-center sm:px-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => (
                           <div
                             key={period.id}
-                            className="grid h-9 grid-cols-3 items-center gap-1 sm:h-10"
+                            className="grid h-9 grid-cols-3 items-center gap-0.5 sm:h-10 sm:gap-1"
                           >
                             {enabled && selectedRow === index && row.active && (
                               <>
@@ -2366,7 +2381,7 @@ export function ServiceHoursTable({
                                   onClick={() => removePeriod(index, period.id)}
                                   title="Excluir horário"
                                   aria-label={`Excluir período ${periodIndex + 1} de ${row.day}`}
-                                  className="trash-action h-8 w-8 p-0"
+                                  className="trash-action h-7 w-7 p-0 sm:h-8 sm:w-8"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
@@ -2379,7 +2394,7 @@ export function ServiceHoursTable({
                                       onClick={() => copyToAll(index)}
                                       title="Duplicar horários para todos os dias ativos"
                                       aria-label={`Duplicar horários de ${row.day} para todos os dias ativos`}
-                                      className="h-8 w-8 p-0"
+                                      className="h-7 w-7 p-0 sm:h-8 sm:w-8"
                                     >
                                       <Copy className="h-3.5 w-3.5" />
                                     </Button>
@@ -2390,7 +2405,7 @@ export function ServiceHoursTable({
                                       onClick={() => addPeriod(index)}
                                       title="Incluir novo horário"
                                       aria-label={`Incluir horário em ${row.day}`}
-                                      className="group h-8 w-8 p-0 hover:text-primary"
+                                      className="group h-7 w-7 p-0 hover:text-primary sm:h-8 sm:w-8"
                                     >
                                       <Plus className="h-3.5 w-3.5 transition-colors group-hover:text-primary" />
                                     </Button>
