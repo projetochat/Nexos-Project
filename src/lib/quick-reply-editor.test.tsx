@@ -81,6 +81,37 @@ describe("quick reply editor", () => {
     await click(button("{{contato}}"));
     expect(texts()).toEqual(["", "{{contato}}"]);
   });
+
+  it("inserts an emoji at the cursor of the selected message before the variables button", async () => {
+    await act(async () =>
+      root.render(
+        <QuickReplyEditor
+          open
+          initial={initial}
+          existingReplies={[]}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />,
+      ),
+    );
+    const second = document.querySelectorAll("textarea")[1];
+    await act(async () => {
+      second.focus();
+      second.setSelectionRange(3, 3);
+    });
+    const emojiButton = document.querySelectorAll('[aria-label="Inserir emoji"]')[1];
+    const variablesButton = document.querySelectorAll('[aria-label="Inserir variável"]')[1];
+    expect(
+      emojiButton.compareDocumentPosition(variablesButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await click(emojiButton);
+    expect(document.querySelector('[aria-label="Biblioteca de emojis"]')).not.toBeNull();
+    const smilingEmoji = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+      (item) => item.getAttribute("aria-label") === "Inserir emoji 😊",
+    )!;
+    await click(smilingEmoji);
+    expect(texts()).toEqual(["Primeira", "Seg😊unda"]);
+  });
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.clearAllMocks();

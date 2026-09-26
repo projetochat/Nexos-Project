@@ -1538,6 +1538,7 @@ function ConnectionSettingsModal({
                 <GreetingMessageEditor
                   value={form.welcomeNewMessage ?? ""}
                   attachment={form.welcomeNewAttachment}
+                  showEmoji
                   variables={mergeMessageVariables(
                     CONNECTION_MESSAGE_VARIABLES,
                     contactCustomFields,
@@ -1569,6 +1570,7 @@ function ConnectionSettingsModal({
                 <GreetingMessageEditor
                   value={form.welcomeExistingMessage ?? ""}
                   attachment={form.welcomeExistingAttachment}
+                  showEmoji
                   variables={mergeMessageVariables(
                     CONNECTION_MESSAGE_VARIABLES,
                     contactCustomFields,

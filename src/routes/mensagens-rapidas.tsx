@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { MessageAttachmentMenu } from "@/components/message-attachment-menu";
+import { MessageEmojiPicker } from "@/components/message-emoji-picker";
 import { MessageVariablesMenu } from "@/components/message-variables-menu";
 import {
   Button,
@@ -317,26 +318,28 @@ export function QuickReplyEditor({
       active = false;
     };
   }, [open]);
-  const insertVariable = (name: string) => {
-    const index = Math.min(activeMessage.current, messages.length - 1);
+  const insertText = (index: number, insertedText: string) => {
     const input = textareas.current[index];
     const text = messages[index].text;
     const start = input?.selectionStart ?? text.length;
     const end = input?.selectionEnd ?? start;
-    const token = "{{" + name + "}}";
-    if (text.length - (end - start) + token.length > 2000)
+    if (text.length - (end - start) + insertedText.length > 2000)
       return toast.error("A mensagem deve ter no máximo 2000 caracteres.");
     setMessages((items) =>
       items.map((item, position) =>
         position === index
-          ? { ...item, text: text.slice(0, start) + token + text.slice(end) }
+          ? { ...item, text: text.slice(0, start) + insertedText + text.slice(end) }
           : item,
       ),
     );
     requestAnimationFrame(() => {
       input?.focus();
-      input?.setSelectionRange(start + token.length, start + token.length);
+      input?.setSelectionRange(start + insertedText.length, start + insertedText.length);
     });
+  };
+  const insertVariable = (name: string) => {
+    const index = Math.min(activeMessage.current, messages.length - 1);
+    insertText(index, "{{" + name + "}}");
   };
 
   const duplicateShortcutError = (value: string) => {
@@ -527,6 +530,13 @@ export function QuickReplyEditor({
                 placeholder="Texto da mensagem ou legenda do arquivo"
               />
               <div className="flex flex-wrap items-center gap-1.5 overflow-visible border-t border-border bg-surface-1 px-2 py-1.5">
+                <MessageEmojiPicker
+                  disabled={busy}
+                  onSelect={(emoji) => {
+                    activeMessage.current = index;
+                    insertText(index, emoji);
+                  }}
+                />
                 <MessageVariablesMenu
                   disabled={busy}
                   variables={[
