@@ -550,36 +550,38 @@ function Dashboard() {
               style={{ order: dashboardPosition("distribution") }}
               className={`${dashboardColumnClass("distribution")} ${hasBi("distribution") ? "" : "hidden"}`}
             >
-              <Card className="h-full">
+              <Card className="flex h-full flex-col">
                 <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
                   {biLabel("distribution")}
                 </p>
-                <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
-                    <Tooltip
-                      contentStyle={{
-                        background: "var(--popover)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        color: "var(--popover-foreground)",
-                        fontSize: 12,
-                      }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Pie
-                      data={statusSerie}
-                      dataKey="total"
-                      nameKey="nome"
-                      innerRadius={48}
-                      outerRadius={82}
-                      paddingAngle={3}
-                    >
-                      {statusSerie.map((item, index) => (
-                        <Cell key={item.nome} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
+                <div className="min-h-[260px] min-w-0 flex-1">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Tooltip
+                        contentStyle={{
+                          background: "var(--popover)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          color: "var(--popover-foreground)",
+                          fontSize: 12,
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Pie
+                        data={statusSerie}
+                        dataKey="total"
+                        nameKey="nome"
+                        innerRadius="42%"
+                        outerRadius="70%"
+                        paddingAngle={3}
+                      >
+                        {statusSerie.map((item, index) => (
+                          <Cell key={item.nome} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
               </Card>
             </div>
 
@@ -619,47 +621,49 @@ function Dashboard() {
                     style={{ order: dashboardPosition(chart.id as DashboardBiId) }}
                     className={dashboardColumnClass(chart.id as DashboardBiId)}
                   >
-                    <Card className="h-full">
+                    <Card className="flex h-full flex-col">
                       <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
                         {chart.title}
                       </p>
                       {chart.data.length === 0 ? (
-                        <div className="flex h-[270px] items-center justify-center text-xs text-muted-foreground">
+                        <div className="flex min-h-[270px] flex-1 items-center justify-center text-xs text-muted-foreground">
                           Sem dados para o periodo.
                         </div>
                       ) : (
-                        <ResponsiveContainer width="100%" height={270}>
-                          <BarChart data={chartData} margin={DASHBOARD_CHART_MARGIN}>
-                            <CartesianGrid stroke="var(--border)" vertical={false} />
-                            <XAxis
-                              dataKey="nome"
-                              stroke="var(--muted-foreground)"
-                              tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
-                              fontSize={11}
-                              interval={0}
-                              angle={rotateLabels ? -35 : 0}
-                              textAnchor={rotateLabels ? "end" : "middle"}
-                              height={rotateLabels ? 78 : 30}
-                              tickMargin={rotateLabels ? 8 : 0}
-                            />
-                            <YAxis
-                              stroke="var(--muted-foreground)"
-                              tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
-                              fontSize={11}
-                              allowDecimals={false}
-                              width={38}
-                            />
-                            <Tooltip content={<DashboardBarTooltip />} />
-                            <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-                              {chartData.map((item, index) => (
-                                <Cell
-                                  key={`${item.nome}-${index}`}
-                                  fill={item.cor || COLORS[index % COLORS.length]}
-                                />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
+                        <div className="min-h-[270px] min-w-0 flex-1">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} margin={DASHBOARD_CHART_MARGIN}>
+                              <CartesianGrid stroke="var(--border)" vertical={false} />
+                              <XAxis
+                                dataKey="nome"
+                                stroke="var(--muted-foreground)"
+                                tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
+                                fontSize={11}
+                                interval={0}
+                                angle={rotateLabels ? -35 : 0}
+                                textAnchor={rotateLabels ? "end" : "middle"}
+                                height={rotateLabels ? 78 : 30}
+                                tickMargin={rotateLabels ? 8 : 0}
+                              />
+                              <YAxis
+                                stroke="var(--muted-foreground)"
+                                tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
+                                fontSize={11}
+                                allowDecimals={false}
+                                width={38}
+                              />
+                              <Tooltip content={<DashboardBarTooltip />} />
+                              <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                                {chartData.map((item, index) => (
+                                  <Cell
+                                    key={`${item.nome}-${index}`}
+                                    fill={item.cor || COLORS[index % COLORS.length]}
+                                  />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
                       )}
                     </Card>
                   </div>
