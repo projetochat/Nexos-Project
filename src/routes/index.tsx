@@ -47,6 +47,8 @@ import {
 import { useQueuePrefs, type QueueId } from "@/lib/queue-prefs";
 import { useSession } from "@/lib/session";
 import { onRealtimeEvent } from "@/lib/realtime/client";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { DASHBOARD_CHART_MARGIN, messageHourTicks } from "@/lib/dashboard-chart-layout";
 
 export const Route = createFileRoute("/")({ component: Dashboard });
 
@@ -148,6 +150,7 @@ function loadDashboardFilters(storageKey: string): OperationalReportFilters {
 
 function Dashboard() {
   useInstanceAccessUpdates();
+  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const user = useSession((state) => state.user);
   const canEditDashboard =
@@ -281,9 +284,9 @@ function Dashboard() {
   const dashboardColumnCount = (id: DashboardBiId): DashboardColumnCount =>
     id === "counters" ? 4 : (dashboardColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id]);
   const messagesColumns = dashboardColumns.messages ?? DEFAULT_DASHBOARD_COLUMNS.messages;
-  const compactMessagesChart = messagesColumns <= 2;
+  const compactMessagesChart = isMobile || messagesColumns <= 2;
   const messageTraffic = data?.charts.messagesByHour ?? [];
-  const mobileMessageTicks = ["00h", "05h", "10h", "15h", "20h"];
+  const messageTicks = messageHourTicks(isMobile);
   const messageTrafficTotals = messageTraffic.reduce(
     (totals, item) => ({
       recebidas: totals.recebidas + item.recebidas,
@@ -445,19 +448,14 @@ function Dashboard() {
                   {biLabel("messages")}
                 </p>
                 <ResponsiveContainer width="100%" height={260}>
-                  <LineChart
-                    data={messageTraffic}
-                    margin={{ top: 4, right: 4, bottom: 0, left: -28 }}
-                  >
+                  <LineChart data={messageTraffic} margin={DASHBOARD_CHART_MARGIN}>
                     <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
                     <XAxis
                       dataKey="hora"
                       stroke="hsl(var(--muted-foreground))"
                       fontSize={11}
-                      ticks={compactMessagesChart ? mobileMessageTicks : undefined}
-                      interval={
-                        messagesColumns === 1 ? 0 : compactMessagesChart ? 0 : "preserveEnd"
-                      }
+                      ticks={messageTicks}
+                      interval={0}
                       angle={compactMessagesChart ? -45 : 0}
                       textAnchor={compactMessagesChart ? "end" : "middle"}
                       height={compactMessagesChart ? 48 : 30}
@@ -623,10 +621,7 @@ function Dashboard() {
                         </div>
                       ) : (
                         <ResponsiveContainer width="100%" height={270}>
-                          <BarChart
-                            data={chartData}
-                            margin={{ top: 4, right: 4, bottom: 0, left: -28 }}
-                          >
+                          <BarChart data={chartData} margin={DASHBOARD_CHART_MARGIN}>
                             <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
                             <XAxis
                               dataKey="nome"
