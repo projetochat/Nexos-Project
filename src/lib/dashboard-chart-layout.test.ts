@@ -23,7 +23,8 @@ describe("dashboard chart layout", () => {
     );
   });
 
-  it("keeps the reduced set of hour labels on mobile", () => {
-    expect(messageHourTicks(true)).toEqual(MOBILE_MESSAGE_HOUR_TICKS);
+  it("shows every hour from 00h through 23h on mobile", () => {
+    expect(MOBILE_MESSAGE_HOUR_TICKS).toHaveLength(24);
+    expect(messageHourTicks(true)).toEqual(DESKTOP_MESSAGE_HOUR_TICKS);
   });
 });
