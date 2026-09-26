@@ -780,7 +780,7 @@ function GeneralTab({
             <Input
               value={form.color}
               onChange={(event) => onChange({ color: event.target.value })}
-              className="min-h-0 min-w-0 flex-1 border-0 bg-transparent px-0 py-0 uppercase focus:border-0"
+              className="min-w-0 flex-1 border-0 bg-transparent uppercase focus:border-0 max-sm:!min-h-0 max-sm:!p-0"
             />
           </div>
         </Field>
