@@ -2216,7 +2216,7 @@ export function ServiceHoursTable({
         <table className="w-full min-w-[580px] table-fixed border-collapse text-sm">
           <thead className="bg-surface-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground sm:text-[11px] sm:tracking-widest">
             <tr>
-              <th className="w-28 px-3 py-2 text-left font-semibold sm:py-3">
+              <th className="w-36 px-3 py-2 text-left font-semibold sm:py-3">
                 <span className="sm:hidden">Dia</span>
                 <span className="hidden sm:inline">Dia da semana</span>
               </th>
@@ -2348,7 +2348,7 @@ export function ServiceHoursTable({
                         {row.periods.map((period, periodIndex) => (
                           <div
                             key={period.id}
-                            className="flex h-9 items-center justify-center gap-1 sm:h-10"
+                            className="grid h-9 grid-cols-3 items-center gap-1 sm:h-10"
                           >
                             {enabled && selectedRow === index && row.active && (
                               <>
