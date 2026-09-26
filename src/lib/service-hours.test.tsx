@@ -5,14 +5,18 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@/components/app-shell", () => ({ AppShell: () => null }));
 import { ServiceHoursTable } from "../routes/instancias";
-import { serviceHoursError } from "./instance-validation";
+import { sameServiceHours, serviceHoursError } from "./instance-validation";
 
 describe("service hours editor", () => {
   it("shows and clears an inline error while typing, without blur or saving", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     function Editor() {
       const [rows, setRows] = React.useState([
-        { day: "Terça", active: true, start: "08:00", end: "18:00" },
+        {
+          day: "Terça",
+          active: true,
+          periods: [{ id: "terca-1", start: "08:00", end: "18:00" }],
+        },
       ]);
       return <ServiceHoursTable rows={rows} onChange={setRows} enabled focusStartSignal={0} />;
     }
@@ -63,6 +67,40 @@ describe("service hours editor", () => {
         "maior que a inicial",
       );
   });
+  it("compares saved periods by value instead of JSON property order", () => {
+    const expected = [
+      {
+        day: "Segunda",
+        active: true,
+        start: "08:00",
+        end: "12:00",
+        periods: [
+          { start: "08:00", end: "12:00" },
+          { start: "13:00", end: "18:00" },
+        ],
+      },
+    ];
+    const reordered = [
+      {
+        periods: [
+          { end: "12:00", start: "08:00" },
+          { end: "18:00", start: "13:00" },
+        ],
+        end: "12:00",
+        start: "08:00",
+        active: true,
+        day: "Segunda",
+      },
+    ];
+    expect(JSON.stringify(reordered)).not.toBe(JSON.stringify(expected));
+    expect(sameServiceHours(reordered, expected)).toBe(true);
+    expect(
+      sameServiceHours(
+        [{ day: "Segunda", active: true, start: "08:00", end: "12:00" }],
+        [{ day: "Segunda", active: true, start: "08:00", end: "12:00" }],
+      ),
+    ).toBe(true);
+  });
   it("focuses and selects the start of the first available day upon activation", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -76,8 +114,16 @@ describe("service hours editor", () => {
     document.body.append(host);
     const root = createRoot(host);
     const rows = [
-      { day: "Segunda", active: false, start: "08:00", end: "18:00" },
-      { day: "Terça", active: true, start: "09:00", end: "17:00" },
+      {
+        day: "Segunda",
+        active: false,
+        periods: [{ id: "segunda-1", start: "08:00", end: "18:00" }],
+      },
+      {
+        day: "Terça",
+        active: true,
+        periods: [{ id: "terca-1", start: "09:00", end: "17:00" }],
+      },
     ];
     try {
       await act(async () =>
@@ -104,6 +150,138 @@ describe("service hours editor", () => {
       await act(async () => root.unmount());
       host.remove();
       vi.unstubAllGlobals();
+    }
+  });
+  it("appends a period from the previous end and leaves its end blank", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    function Editor() {
+      const [rows, setRows] = React.useState([
+        {
+          day: "Segunda",
+          active: true,
+          periods: [{ id: "segunda-1", start: "08:00", end: "12:00" }],
+        },
+      ]);
+      return <ServiceHoursTable rows={rows} onChange={setRows} enabled focusStartSignal={0} />;
+    }
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<Editor />));
+      await act(async () =>
+        host.querySelector<HTMLInputElement>('[aria-label="Fim de Segunda"]')!.focus(),
+      );
+      await act(async () =>
+        host.querySelector<HTMLButtonElement>('[aria-label="Incluir horário em Segunda"]')!.click(),
+      );
+      expect(
+        host.querySelector<HTMLInputElement>('[aria-label="Início do período 2 de Segunda"]')!
+          .value,
+      ).toBe("12:00");
+      expect(
+        host.querySelector<HTMLInputElement>('[aria-label="Fim do período 2 de Segunda"]')!.value,
+      ).toBe("");
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
+  it("removes one period and restores the default when the last one is removed", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    function Editor() {
+      const [rows, setRows] = React.useState([
+        {
+          day: "Segunda",
+          active: true,
+          periods: [
+            { id: "segunda-1", start: "08:00", end: "12:00" },
+            { id: "segunda-2", start: "13:00", end: "18:00" },
+          ],
+        },
+      ]);
+      return <ServiceHoursTable rows={rows} onChange={setRows} enabled focusStartSignal={0} />;
+    }
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<Editor />));
+      await act(async () =>
+        host.querySelector<HTMLInputElement>('[aria-label="Fim de Segunda"]')!.focus(),
+      );
+      await act(async () =>
+        host
+          .querySelector<HTMLButtonElement>('[aria-label="Excluir período 2 de Segunda"]')!
+          .click(),
+      );
+      expect(host.querySelector('[aria-label="Fim do período 2 de Segunda"]')).toBeNull();
+      await act(async () =>
+        host
+          .querySelector<HTMLButtonElement>('[aria-label="Excluir período 1 de Segunda"]')!
+          .click(),
+      );
+      expect(host.querySelector<HTMLInputElement>('[aria-label="Início de Segunda"]')!.value).toBe(
+        "08:00",
+      );
+      expect(host.querySelector<HTMLInputElement>('[aria-label="Fim de Segunda"]')!.value).toBe(
+        "18:00",
+      );
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
+  it("duplicates every period only to the other active days", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    function Editor() {
+      const [rows, setRows] = React.useState([
+        {
+          day: "Segunda",
+          active: true,
+          periods: [
+            { id: "segunda-1", start: "08:00", end: "12:00" },
+            { id: "segunda-2", start: "13:00", end: "18:00" },
+          ],
+        },
+        {
+          day: "Terça",
+          active: true,
+          periods: [{ id: "terca-1", start: "09:00", end: "17:00" }],
+        },
+        {
+          day: "Quarta",
+          active: false,
+          periods: [{ id: "quarta-1", start: "10:00", end: "16:00" }],
+        },
+      ]);
+      return <ServiceHoursTable rows={rows} onChange={setRows} enabled focusStartSignal={0} />;
+    }
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(<Editor />));
+      await act(async () =>
+        host.querySelector<HTMLInputElement>('[aria-label="Fim de Segunda"]')!.focus(),
+      );
+      await act(async () =>
+        host
+          .querySelector<HTMLButtonElement>(
+            '[aria-label="Duplicar horários de Segunda para todos os dias ativos"]',
+          )!
+          .click(),
+      );
+      expect(
+        host.querySelector<HTMLInputElement>('[aria-label="Início do período 2 de Terça"]')!.value,
+      ).toBe("13:00");
+      expect(host.querySelector('[aria-label="Início do período 2 de Quarta"]')).toBeNull();
+      expect(host.querySelector<HTMLInputElement>('[aria-label="Início de Quarta"]')!.value).toBe(
+        "10:00",
+      );
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
     }
   });
 });

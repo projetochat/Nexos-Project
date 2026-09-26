@@ -2,6 +2,7 @@ import {
   canEditInstance,
   instanceNameAlreadyExists,
   instanceEditUnavailableReason,
+  sameServiceHours,
   serviceHoursError,
 } from "@/lib/instance-validation";
 import { usePhotoCropper } from "@/hooks/use-photo-cropper";
@@ -48,6 +49,7 @@ import {
   type ApiContactCustomField,
   type ApiMessagingHistoryImport,
   type ApiMessagingConnection,
+  type ApiServiceHoursRow,
   type QuickReplyAttachment,
 } from "@/lib/trixus-api";
 import {
@@ -213,17 +215,7 @@ function Page() {
       const saved = await connectionsApi.update(connection.id, data);
       if (
         data.serviceHours &&
-        (saved.serviceHours?.length !== data.serviceHours.length ||
-          data.serviceHours.some((row, index) => {
-            const actual = saved.serviceHours?.[index];
-            return (
-              !actual ||
-              actual.day !== row.day ||
-              actual.active !== row.active ||
-              actual.start !== row.start ||
-              actual.end !== row.end
-            );
-          }) ||
+        (!sameServiceHours(saved.serviceHours, data.serviceHours) ||
           saved.timezone !== data.timezone)
       ) {
         throw new Error(
@@ -906,7 +898,7 @@ type RemoveConnectionOptions = {
 type ConnectionSettingsFormData = {
   serviceEnabled?: boolean;
   timezone?: string;
-  serviceHours?: ServiceHoursRow[];
+  serviceHours?: ApiServiceHoursRow[];
   name: string;
   color: string | null;
   welcomeEnabled: boolean;
@@ -924,6 +916,11 @@ type ConnectionSettingsTab = "general" | "greeting" | "absence";
 type ServiceHoursRow = {
   day: string;
   active: boolean;
+  periods: ServiceHoursPeriod[];
+};
+
+type ServiceHoursPeriod = {
+  id: string;
   start: string;
   end: string;
 };
@@ -972,9 +969,40 @@ function defaultServiceHours(): ServiceHoursRow[] {
   return WEEKDAYS.map((day, index) => ({
     day,
     active: index < 5,
-    start: "08:00",
-    end: "18:00",
+    periods: [createServiceHoursPeriod()],
   }));
+}
+
+function serviceHoursPeriodId() {
+  return `service-period-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createServiceHoursPeriod(start = "08:00", end = "18:00"): ServiceHoursPeriod {
+  return { id: serviceHoursPeriodId(), start, end };
+}
+
+function normalizeServiceHours(rows: ApiServiceHoursRow[] | null | undefined): ServiceHoursRow[] {
+  if (!rows || rows.length !== WEEKDAYS.length) return defaultServiceHours();
+  const byDay = new Map(rows.map((row) => [row.day, row]));
+  if (WEEKDAYS.some((day) => !byDay.has(day))) return defaultServiceHours();
+  return WEEKDAYS.map((day) => {
+    const row = byDay.get(day)!;
+    const periods = row.periods?.length
+      ? row.periods.map((period) => createServiceHoursPeriod(period.start, period.end))
+      : [createServiceHoursPeriod(row.start || "08:00", row.end || "18:00")];
+    return { day, active: row.active, periods };
+  });
+}
+
+function serializeServiceHours(rows: ServiceHoursRow[]): ApiServiceHoursRow[] {
+  return rows.map((row) => {
+    const periods = row.periods.map(({ start, end }) => ({
+      start: formatServiceHourDraft(start),
+      end: formatServiceHourDraft(end),
+    }));
+    const first = periods[0] ?? { start: "08:00", end: "18:00" };
+    return { day: row.day, active: row.active, start: first.start, end: first.end, periods };
+  });
 }
 
 function ConnectionSettingsModal({
@@ -1059,11 +1087,7 @@ function ConnectionSettingsModal({
     setAbsenceEnabled(connection.absenceEnabled ?? false);
     setAbsenceActivation(0);
     setAbsenceMessage(connection.absenceMessage ?? "");
-    setServiceHours(
-      connection.serviceHours?.length === 7
-        ? connection.serviceHours.map((row) => ({ ...row }))
-        : defaultServiceHours(),
-    );
+    setServiceHours(normalizeServiceHours(connection.serviceHours));
     setShowWelcomeValidation(false);
     setShowAbsenceValidation(false);
     setForm({
@@ -1141,11 +1165,7 @@ function ConnectionSettingsModal({
       toast.error("Preencha a mensagem de ausência para salvar.");
       return;
     }
-    const normalizedHours = serviceHours.map((row) => ({
-      ...row,
-      start: formatServiceHourDraft(row.start),
-      end: formatServiceHourDraft(row.end),
-    }));
+    const normalizedHours = serializeServiceHours(serviceHours);
     const hoursError = serviceHoursError(normalizedHours);
     if (hoursError) {
       setTab("absence");
@@ -1571,7 +1591,15 @@ function ConnectionSettingsModal({
                 onCheckedChange={(checked) => {
                   setAbsenceEnabled(checked);
                   setShowAbsenceValidation(false);
-                  if (checked) setAbsenceActivation((current) => current + 1);
+                  if (checked) {
+                    setServiceHours((current) =>
+                      current.map((row) => ({
+                        ...row,
+                        periods: row.periods.length ? row.periods : [createServiceHoursPeriod()],
+                      })),
+                    );
+                    setAbsenceActivation((current) => current + 1);
+                  }
                 }}
               />
               <Field
@@ -2196,12 +2224,40 @@ export function ServiceHoursTable({
     onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
   };
 
+  const updatePeriod = (rowIndex: number, periodId: string, patch: Partial<ServiceHoursPeriod>) => {
+    updateRow(rowIndex, {
+      periods: rows[rowIndex].periods.map((period) =>
+        period.id === periodId ? { ...period, ...patch } : period,
+      ),
+    });
+  };
+
+  const addPeriod = (rowIndex: number) => {
+    const periods = rows[rowIndex].periods;
+    const previous = periods[periods.length - 1];
+    updateRow(rowIndex, {
+      periods: [...periods, createServiceHoursPeriod(previous?.end || "", "")],
+    });
+  };
+
+  const removePeriod = (rowIndex: number, periodId: string) => {
+    const periods = rows[rowIndex].periods.filter((period) => period.id !== periodId);
+    updateRow(rowIndex, {
+      periods: periods.length ? periods : [createServiceHoursPeriod()],
+    });
+  };
+
   const copyToAll = (sourceIndex: number) => {
     const source = rows[sourceIndex];
     onChange(
       rows.map((row, index) =>
         index !== sourceIndex && row.active
-          ? { ...row, start: source.start, end: source.end }
+          ? {
+              ...row,
+              periods: source.periods.map((period) =>
+                createServiceHoursPeriod(period.start, period.end),
+              ),
+            }
           : row,
       ),
     );
@@ -2210,53 +2266,57 @@ export function ServiceHoursTable({
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium text-muted-foreground">Horário de Atendimento</p>
-      <div className="overflow-hidden rounded-lg border border-border">
-        <table className="w-full table-fixed border-collapse text-sm">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full min-w-[580px] table-fixed border-collapse text-sm">
           <thead className="bg-surface-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground sm:text-[11px] sm:tracking-widest">
             <tr>
-              <th className="w-[20%] px-1.5 py-2 text-left font-semibold sm:w-[29%] sm:px-3 sm:py-3">
+              <th className="w-28 px-3 py-2 text-left font-semibold sm:py-3">
                 <span className="sm:hidden">Dia</span>
                 <span className="hidden sm:inline">Dia da semana</span>
               </th>
-              <th className="w-[16%] px-1 py-2 text-center font-semibold sm:w-[23%] sm:px-3 sm:py-3">
-                Ativo
-              </th>
-              <th className="w-[22%] px-0.5 py-2 text-center font-semibold sm:w-[19%] sm:px-3 sm:py-3">
-                Início
-              </th>
-              <th className="w-[22%] px-0.5 py-2 text-center font-semibold sm:w-[19%] sm:px-3 sm:py-3">
-                Fim
-              </th>
-              <th className="w-[20%] px-0 py-2 text-center sm:px-3 sm:py-3" aria-label="Ações" />
+              <th className="w-14 px-2 py-2 text-center font-semibold sm:py-3">Ativo</th>
+              <th className="px-2 py-2 text-center font-semibold sm:py-3">Início</th>
+              <th className="px-2 py-2 text-center font-semibold sm:py-3">Fim</th>
+              <th className="w-[116px] px-2 py-2 text-center sm:py-3" aria-label="Ações" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {rows.map((row, index) => {
-              const error = enabled
-                ? serviceHoursError([
-                    {
-                      ...row,
-                      start: formatServiceHourDraft(row.start),
-                      end: formatServiceHourDraft(row.end),
-                    },
-                  ])
-                : "";
-              const errorId = `${errorPrefix}-${index}`;
+              const errors = enabled
+                ? row.periods.map((period) =>
+                    serviceHoursError([
+                      {
+                        day: row.day,
+                        active: row.active,
+                        periods: [
+                          {
+                            start: formatServiceHourDraft(period.start),
+                            end: formatServiceHourDraft(period.end),
+                          },
+                        ],
+                      },
+                    ]),
+                  )
+                : [];
               return (
                 <tr key={row.day} className="transition hover:bg-surface-1/60">
-                  <td className="px-1.5 py-1.5 align-top text-xs sm:px-3 sm:py-2 sm:text-sm">
+                  <td className="px-3 py-3 align-top text-xs sm:text-sm">
                     <p>{row.day}</p>
-                    {error && (
-                      <p
-                        id={errorId}
-                        role="alert"
-                        className="mt-1 block w-full whitespace-normal break-words text-[11px] leading-tight text-destructive [overflow-wrap:anywhere] sm:text-xs"
-                      >
-                        {error}
-                      </p>
+                    {errors.map(
+                      (error, periodIndex) =>
+                        error && (
+                          <p
+                            key={row.periods[periodIndex].id}
+                            id={`${errorPrefix}-${index}-${row.periods[periodIndex].id}`}
+                            role="alert"
+                            className="mt-1 block w-full whitespace-normal break-words text-[11px] leading-tight text-destructive [overflow-wrap:anywhere] sm:text-xs"
+                          >
+                            {error}
+                          </p>
+                        ),
                     )}
                   </td>
-                  <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
+                  <td className="px-2 py-3 align-top text-center">
                     <input
                       type="checkbox"
                       checked={row.active}
@@ -2269,65 +2329,136 @@ export function ServiceHoursTable({
                       aria-label={`Ativar atendimento em ${row.day}`}
                     />
                   </td>
-                  <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
-                    <Input
-                      ref={
-                        index === rows.findIndex((item) => item.active)
-                          ? firstActiveStartRef
-                          : undefined
-                      }
-                      aria-label={`Início de ${row.day}`}
-                      aria-invalid={!!error}
-                      aria-describedby={error ? errorId : undefined}
-                      type="text"
-                      inputMode="numeric"
-                      value={row.start}
-                      placeholder="00:00"
-                      disabled={!enabled || !row.active}
-                      onFocus={() => setSelectedRow(index)}
-                      onChange={(event) =>
-                        updateRow(index, { start: sanitizeServiceHourDraft(event.target.value) })
-                      }
-                      onBlur={(event) =>
-                        updateRow(index, { start: formatServiceHourDraft(event.target.value) })
-                      }
-                      className={`!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:w-24 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
-                    />
+                  <td className="px-2 py-2 align-top text-center">
+                    <div className="space-y-2">
+                      {row.periods.map((period, periodIndex) => {
+                        const error = errors[periodIndex];
+                        const errorId = `${errorPrefix}-${index}-${period.id}`;
+                        return (
+                          <Input
+                            key={period.id}
+                            ref={
+                              index === rows.findIndex((item) => item.active) && periodIndex === 0
+                                ? firstActiveStartRef
+                                : undefined
+                            }
+                            aria-label={
+                              periodIndex === 0
+                                ? `Início de ${row.day}`
+                                : `Início do período ${periodIndex + 1} de ${row.day}`
+                            }
+                            aria-invalid={!!error}
+                            aria-describedby={error ? errorId : undefined}
+                            type="text"
+                            inputMode="numeric"
+                            value={period.start}
+                            placeholder="00:00"
+                            disabled={!enabled || !row.active}
+                            onFocus={() => setSelectedRow(index)}
+                            onChange={(event) =>
+                              updatePeriod(index, period.id, {
+                                start: sanitizeServiceHourDraft(event.target.value),
+                              })
+                            }
+                            onBlur={(event) =>
+                              updatePeriod(index, period.id, {
+                                start: formatServiceHourDraft(event.target.value),
+                              })
+                            }
+                            className={`!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
+                          />
+                        );
+                      })}
+                    </div>
                   </td>
-                  <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      aria-label={`Fim de ${row.day}`}
-                      aria-invalid={!!error}
-                      aria-describedby={error ? errorId : undefined}
-                      value={row.end}
-                      placeholder="00:00"
-                      disabled={!enabled || !row.active}
-                      onFocus={() => setSelectedRow(index)}
-                      onChange={(event) =>
-                        updateRow(index, { end: sanitizeServiceHourDraft(event.target.value) })
-                      }
-                      onBlur={(event) =>
-                        updateRow(index, { end: formatServiceHourDraft(event.target.value) })
-                      }
-                      className={`!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:w-24 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
-                    />
+                  <td className="px-2 py-2 align-top text-center">
+                    <div className="space-y-2">
+                      {row.periods.map((period, periodIndex) => {
+                        const error = errors[periodIndex];
+                        const errorId = `${errorPrefix}-${index}-${period.id}`;
+                        return (
+                          <Input
+                            key={period.id}
+                            type="text"
+                            inputMode="numeric"
+                            aria-label={
+                              periodIndex === 0
+                                ? `Fim de ${row.day}`
+                                : `Fim do período ${periodIndex + 1} de ${row.day}`
+                            }
+                            aria-invalid={!!error}
+                            aria-describedby={error ? errorId : undefined}
+                            value={period.end}
+                            placeholder="00:00"
+                            disabled={!enabled || !row.active}
+                            onFocus={() => setSelectedRow(index)}
+                            onChange={(event) =>
+                              updatePeriod(index, period.id, {
+                                end: sanitizeServiceHourDraft(event.target.value),
+                              })
+                            }
+                            onBlur={(event) =>
+                              updatePeriod(index, period.id, {
+                                end: formatServiceHourDraft(event.target.value),
+                              })
+                            }
+                            className={`!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
+                          />
+                        );
+                      })}
+                    </div>
                   </td>
-                  <td className="px-0 py-1.5 text-center sm:px-3 sm:py-2">
-                    {enabled && selectedRow === index && row.active && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => copyToAll(index)}
-                        title="Copiar para todos"
-                        aria-label="Copiar para todos"
-                        className="h-8 w-8 min-h-8 px-0 sm:w-auto sm:px-2"
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
+                  <td className="px-2 py-2 align-top text-center">
+                    <div className="space-y-2">
+                      {row.periods.map((period, periodIndex) => (
+                        <div
+                          key={period.id}
+                          className="flex h-10 items-center justify-center gap-1"
+                        >
+                          {enabled && selectedRow === index && row.active && (
+                            <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removePeriod(index, period.id)}
+                                title="Excluir horário"
+                                aria-label={`Excluir período ${periodIndex + 1} de ${row.day}`}
+                                className="trash-action h-8 w-8 p-0"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                              {periodIndex === 0 && (
+                                <>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => copyToAll(index)}
+                                    title="Duplicar horários para todos os dias ativos"
+                                    aria-label={`Duplicar horários de ${row.day} para todos os dias ativos`}
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => addPeriod(index)}
+                                    title="Incluir novo horário"
+                                    aria-label={`Incluir horário em ${row.day}`}
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <Plus className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </td>
                 </tr>
               );
