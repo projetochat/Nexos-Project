@@ -2283,7 +2283,7 @@ export function ServiceHoursTable({
                         </p>
                       </div>
                     </td>
-                    <td className="px-0 py-2 align-top text-center sm:px-2">
+                    <td className="px-0 py-2 align-top text-center sm:pl-2 sm:pr-0">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => {
                           const error = errors[periodIndex];
@@ -2324,7 +2324,7 @@ export function ServiceHoursTable({
                         })}
                       </div>
                     </td>
-                    <td className="px-0 py-2 align-top text-center sm:px-2">
+                    <td className="px-0 py-2 align-top text-center sm:pl-0 sm:pr-2">
                       <div className="flex flex-col gap-2">
                         {row.periods.map((period, periodIndex) => {
                           const error = errors[periodIndex];

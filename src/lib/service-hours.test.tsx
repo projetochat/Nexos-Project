@@ -47,6 +47,8 @@ describe("service hours editor", () => {
       const end = host.querySelector<HTMLInputElement>('[aria-label="Fim de Terça"]')!;
       expect(start.closest("td")?.className).toContain("px-0");
       expect(end.closest("td")?.className).toContain("px-0");
+      expect(start.closest("td")?.className).toContain("sm:pr-0");
+      expect(end.closest("td")?.className).toContain("sm:pl-0");
       await act(async () => start.focus());
       const deleteButton = host.querySelector<HTMLButtonElement>(
         '[aria-label="Excluir período 1 de Terça"]',
