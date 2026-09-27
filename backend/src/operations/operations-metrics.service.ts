@@ -358,7 +358,12 @@ export class OperationsMetricsService {
             createdAt: { gte: range.start, lt: range.end },
             conversation: { ...conversationMetricScope(tenantId, filters), archivedAt: null },
           },
-          select: { createdAt: true, direction: true, type: true },
+          select: {
+            createdAt: true,
+            direction: true,
+            type: true,
+            conversation: { select: { contactId: true } },
+          },
         }),
       ]);
     const [departments, memberships, connections] = await Promise.all([
@@ -391,6 +396,7 @@ export class OperationsMetricsService {
       }
     }
     const messagesByHour = messageTrafficByHour(messages, timezone);
+    const messageContactsTotal = uniqueInboundContacts(messages);
     return {
       byDepartment: byDepartment.map((row) => {
         const department = departments.find((item) => item.id === row.departmentId);
@@ -417,6 +423,7 @@ export class OperationsMetricsService {
             : Math.round((item.total / taggedConversations.length) * 10_000) / 100,
       })),
       messagesByHour,
+      messageContactsTotal,
     };
   }
 
@@ -481,16 +488,14 @@ function averageMinutes(values: number[]) {
   return Math.round((averageMs / 60_000) * 100) / 100;
 }
 
-export function messageTrafficByHour(
-  messages: Array<{ createdAt: Date; direction: string; type?: string }>,
-  timezone: string,
-) {
+export function messageTrafficByHour(messages: MessageTrafficRow[], timezone: string) {
   const buckets = Array.from({ length: 24 }, (_, hour) => ({
     hora: String(hour).padStart(2, "0") + "h",
     recebidas: 0,
     enviadas: 0,
     total: 0,
   }));
+  const contactsByHour = Array.from({ length: 24 }, () => new Set<string>());
   const formatter = new Intl.DateTimeFormat("en-GB", {
     timeZone: timezone,
     hour: "2-digit",
@@ -498,10 +503,36 @@ export function messageTrafficByHour(
   });
   for (const message of messages) {
     if (message.type === "SYSTEM" || !["INBOUND", "OUTBOUND"].includes(message.direction)) continue;
-    const bucket = buckets[Number(formatter.format(message.createdAt))];
-    if (message.direction === "INBOUND") bucket.recebidas++;
-    else bucket.enviadas++;
+    const hour = Number(formatter.format(message.createdAt));
+    const bucket = buckets[hour];
+    if (message.direction === "INBOUND") {
+      bucket.recebidas++;
+      const contactId = message.conversation?.contactId;
+      if (contactId) contactsByHour[hour].add(contactId);
+    } else bucket.enviadas++;
     bucket.total = bucket.recebidas + bucket.enviadas;
   }
-  return buckets;
+  return buckets.map((bucket, hour) => ({
+    ...bucket,
+    contatosAtendidos: contactsByHour[hour].size,
+  }));
 }
+
+export function uniqueInboundContacts(messages: MessageTrafficRow[]) {
+  return new Set(
+    messages.flatMap((message) =>
+      message.type !== "SYSTEM" &&
+      message.direction === "INBOUND" &&
+      message.conversation?.contactId
+        ? [message.conversation.contactId]
+        : [],
+    ),
+  ).size;
+}
+
+type MessageTrafficRow = {
+  createdAt: Date;
+  direction: string;
+  type?: string;
+  conversation?: { contactId: string | null } | null;
+};

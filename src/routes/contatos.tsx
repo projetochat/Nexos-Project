@@ -3814,7 +3814,7 @@ function DepartmentFormModal({
       }
     >
       <div className="space-y-4">
-        <div className="grid grid-cols-[minmax(0,1fr)_10rem] gap-3">
+        <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
           <Field label="Nome *">
             <Input
               value={form.name ?? ""}
@@ -5810,7 +5810,7 @@ function CustomerFormModal({
       }
     >
       <div className="grid gap-4">
-        <div className="grid grid-cols-[minmax(0,1fr)_10rem] gap-3">
+        <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
           <Field label="Nome *">
             <Input
               value={form.nome ?? ""}
@@ -5888,12 +5888,12 @@ function ColorField({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
+    <div className="flex min-h-10 items-center gap-1 rounded-lg border border-border bg-surface-1 px-1.5 transition focus-within:border-primary">
       <input
         type="color"
         value={completeHexColor(value, fallback)}
         onChange={(event) => onChange(normalizeHexColor(event.target.value, fallback))}
-        className="h-7 w-9 cursor-pointer rounded border border-border bg-transparent p-0"
+        className="h-6 w-9 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
         aria-label="Selecionar cor"
       />
       <input
@@ -5902,7 +5902,7 @@ function ColorField({
         onChange={(event) => onChange(normalizeHexColor(event.target.value, fallback))}
         placeholder={completeHexColor(fallback, fallback)}
         maxLength={7}
-        className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+        className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 max-sm:p-0"
       />
     </div>
   );

@@ -96,8 +96,9 @@ export class EvolutionMessagingProvider implements MessagingProvider {
         false,
       );
     }
-    const mimeType = command.content.mimeType ?? "application/octet-stream";
-    const fileName = command.content.fileName ?? "media";
+    let mimeType = command.content.mimeType ?? "application/octet-stream";
+    let fileName = command.content.fileName ?? "media";
+    let mediaBuffer = command.content.mediaBuffer;
     if (mimeType.toLowerCase() === "text/vcard" || /\.vcf$/i.test(fileName)) {
       const contact = parseVCard(command.content.mediaBuffer);
       return this.client.sendContact({
@@ -110,18 +111,19 @@ export class EvolutionMessagingProvider implements MessagingProvider {
       });
     }
     if (command.content.type === MessageType.AUDIO || command.content.type === MessageType.VOICE) {
-      const audio = await this.voiceTranscoder.transcode(
-        command.content.mediaBuffer,
-        fileName,
-        mimeType,
-      );
-      return this.client.sendAudio({
-        instanceName: command.providerConnectionRef ?? "",
-        payload: this.payloads.audio({ recipient, quoted }),
-        media: audio.buffer,
-        mimeType: audio.mimeType,
-        fileName: audio.fileName,
-      });
+      const audio = await this.voiceTranscoder.transcode(mediaBuffer, fileName, mimeType);
+      if (command.content.type === MessageType.VOICE) {
+        return this.client.sendAudio({
+          instanceName: command.providerConnectionRef ?? "",
+          payload: this.payloads.audio({ recipient, quoted }),
+          media: audio.buffer,
+          mimeType: audio.mimeType,
+          fileName: audio.fileName,
+        });
+      }
+      mediaBuffer = audio.buffer;
+      mimeType = audio.mimeType;
+      fileName = audio.fileName;
     }
     return this.client.sendMedia({
       instanceName: command.providerConnectionRef ?? "",
@@ -134,7 +136,7 @@ export class EvolutionMessagingProvider implements MessagingProvider {
         quoted,
         mentions: command.mentions,
       }),
-      media: command.content.mediaBuffer,
+      media: mediaBuffer,
       mimeType,
       fileName,
     });

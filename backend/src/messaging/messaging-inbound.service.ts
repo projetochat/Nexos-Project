@@ -366,12 +366,12 @@ export class MessagingInboundService {
             ...automaticReply,
             attachment:
               automaticReply.kind === "welcome"
-                ? storedWelcomeAttachment(
+                ? storedAutomaticAttachment(
                     existingContact
                       ? connection.welcomeExistingAttachment
                       : connection.welcomeNewAttachment,
                   )
-                : null,
+                : storedAutomaticAttachment(connection.absenceAttachment),
             contactExisting: Boolean(existingContact),
             contact,
             departmentName: updatedConversation.departmentId
@@ -504,14 +504,14 @@ export class MessagingInboundService {
             ),
             now: event.occurredAt,
           });
-          if (result.automaticReply.kind === "welcome" && result.automaticReply.attachment) {
+          if (result.automaticReply.attachment) {
             await this.outbound.queueAutomatedMedia({
               tenantId: event.tenantId,
               conversationId: result.conversationId,
               connectionId: event.connectionId,
               externalChatId: event.externalChatId,
               content,
-              kind: "welcome",
+              kind: result.automaticReply.kind,
               attachment: result.automaticReply.attachment,
             });
           } else {
@@ -874,7 +874,7 @@ export class MessagingInboundService {
   }
 }
 
-function storedWelcomeAttachment(value: unknown) {
+function storedAutomaticAttachment(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const attachment = value as Record<string, unknown>;
   if (

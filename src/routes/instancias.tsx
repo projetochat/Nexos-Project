@@ -2,6 +2,7 @@ import {
   canEditInstance,
   instanceNameAlreadyExists,
   instanceEditUnavailableReason,
+  sameServiceHours,
   serviceHoursError,
 } from "@/lib/instance-validation";
 import { usePhotoCropper } from "@/hooks/use-photo-cropper";
@@ -11,14 +12,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  Braces,
   CalendarDays,
   Camera,
   Copy,
   Eye,
   Infinity as InfinityIcon,
   MessageCircle,
-  Paperclip,
   Pencil,
   Plus,
   Power,
@@ -37,6 +36,9 @@ import { ConfirmDialog, Modal } from "@/components/modal";
 import { TimezoneSelect } from "@/components/timezone-select";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { InfoTooltip } from "@/components/info-tooltip";
+import { MessageAttachmentMenu } from "@/components/message-attachment-menu";
+import { MessageVariablesMenu } from "@/components/message-variables-menu";
+import { MessageEmojiPicker } from "@/components/message-emoji-picker";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
 import { num } from "@/lib/format";
@@ -48,13 +50,10 @@ import {
   type ApiContactCustomField,
   type ApiMessagingHistoryImport,
   type ApiMessagingConnection,
+  type ApiServiceHoursRow,
   type QuickReplyAttachment,
 } from "@/lib/trixus-api";
-import {
-  formatMessageAttachmentSize,
-  readMessageAttachment,
-  validateMessageAttachment,
-} from "@/lib/message-attachment";
+import { formatMessageAttachmentSize } from "@/lib/message-attachment";
 
 export const Route = createFileRoute("/instancias")({ component: Page });
 
@@ -213,17 +212,7 @@ function Page() {
       const saved = await connectionsApi.update(connection.id, data);
       if (
         data.serviceHours &&
-        (saved.serviceHours?.length !== data.serviceHours.length ||
-          data.serviceHours.some((row, index) => {
-            const actual = saved.serviceHours?.[index];
-            return (
-              !actual ||
-              actual.day !== row.day ||
-              actual.active !== row.active ||
-              actual.start !== row.start ||
-              actual.end !== row.end
-            );
-          }) ||
+        (!sameServiceHours(saved.serviceHours, data.serviceHours) ||
           saved.timezone !== data.timezone)
       ) {
         throw new Error(
@@ -609,7 +598,7 @@ function ConnectionForm({
           </div>
         </fieldset>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
+        <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
           <Field label="Nome da instância *">
             <Input
               value={name}
@@ -626,7 +615,7 @@ function ConnectionForm({
             )}
           </Field>
           <Field label="Cor" asLabel={false}>
-            <div className="flex h-10 items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 transition focus-within:border-primary">
+            <div className="flex h-10 items-center gap-1 rounded-lg border border-border bg-surface-1 px-1.5 transition focus-within:border-primary sm:gap-1.5 sm:px-2">
               <input
                 type="color"
                 aria-label="Selecionar cor da instância"
@@ -641,7 +630,7 @@ function ConnectionForm({
                 onChange={(event) => setColor(normalizeHexColor(event.target.value))}
                 placeholder="#22C55E"
                 maxLength={7}
-                className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+                className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 max-sm:p-0"
               />
             </div>
           </Field>
@@ -906,7 +895,7 @@ type RemoveConnectionOptions = {
 type ConnectionSettingsFormData = {
   serviceEnabled?: boolean;
   timezone?: string;
-  serviceHours?: ServiceHoursRow[];
+  serviceHours?: ApiServiceHoursRow[];
   name: string;
   color: string | null;
   welcomeEnabled: boolean;
@@ -916,6 +905,7 @@ type ConnectionSettingsFormData = {
   welcomeExistingAttachment: QuickReplyAttachment | null;
   absenceEnabled: boolean;
   absenceMessage: string | null;
+  absenceAttachment: QuickReplyAttachment | null;
   notes: string | null;
 };
 
@@ -924,6 +914,11 @@ type ConnectionSettingsTab = "general" | "greeting" | "absence";
 type ServiceHoursRow = {
   day: string;
   active: boolean;
+  periods: ServiceHoursPeriod[];
+};
+
+type ServiceHoursPeriod = {
+  id: string;
   start: string;
   end: string;
 };
@@ -972,9 +967,40 @@ function defaultServiceHours(): ServiceHoursRow[] {
   return WEEKDAYS.map((day, index) => ({
     day,
     active: index < 5,
-    start: "08:00",
-    end: "18:00",
+    periods: [createServiceHoursPeriod()],
   }));
+}
+
+function serviceHoursPeriodId() {
+  return `service-period-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createServiceHoursPeriod(start = "08:00", end = "18:00"): ServiceHoursPeriod {
+  return { id: serviceHoursPeriodId(), start, end };
+}
+
+function normalizeServiceHours(rows: ApiServiceHoursRow[] | null | undefined): ServiceHoursRow[] {
+  if (!rows || rows.length !== WEEKDAYS.length) return defaultServiceHours();
+  const byDay = new Map(rows.map((row) => [row.day, row]));
+  if (WEEKDAYS.some((day) => !byDay.has(day))) return defaultServiceHours();
+  return WEEKDAYS.map((day) => {
+    const row = byDay.get(day)!;
+    const periods = row.periods?.length
+      ? row.periods.map((period) => createServiceHoursPeriod(period.start, period.end))
+      : [createServiceHoursPeriod(row.start || "08:00", row.end || "18:00")];
+    return { day, active: row.active, periods };
+  });
+}
+
+function serializeServiceHours(rows: ServiceHoursRow[]): ApiServiceHoursRow[] {
+  return rows.map((row) => {
+    const periods = row.periods.map(({ start, end }) => ({
+      start: formatServiceHourDraft(start),
+      end: formatServiceHourDraft(end),
+    }));
+    const first = periods[0] ?? { start: "08:00", end: "18:00" };
+    return { day: row.day, active: row.active, start: first.start, end: first.end, periods };
+  });
 }
 
 function ConnectionSettingsModal({
@@ -1006,6 +1032,9 @@ function ConnectionSettingsModal({
   const [absenceEnabled, setAbsenceEnabled] = React.useState(false);
   const [absenceActivation, setAbsenceActivation] = React.useState(0);
   const [absenceMessage, setAbsenceMessage] = React.useState("");
+  const [absenceAttachment, setAbsenceAttachment] = React.useState<QuickReplyAttachment | null>(
+    null,
+  );
   const [serviceHours, setServiceHours] = React.useState<ServiceHoursRow[]>(defaultServiceHours);
   const [showWelcomeValidation, setShowWelcomeValidation] = React.useState(false);
   const [showAbsenceValidation, setShowAbsenceValidation] = React.useState(false);
@@ -1019,6 +1048,7 @@ function ConnectionSettingsModal({
     welcomeExistingAttachment: null,
     absenceEnabled: false,
     absenceMessage: "",
+    absenceAttachment: null,
     notes: "",
   });
   const duplicateName = instanceNameAlreadyExists(form.name, connections, connection?.id);
@@ -1059,11 +1089,8 @@ function ConnectionSettingsModal({
     setAbsenceEnabled(connection.absenceEnabled ?? false);
     setAbsenceActivation(0);
     setAbsenceMessage(connection.absenceMessage ?? "");
-    setServiceHours(
-      connection.serviceHours?.length === 7
-        ? connection.serviceHours.map((row) => ({ ...row }))
-        : defaultServiceHours(),
-    );
+    setAbsenceAttachment(connection.absenceAttachment ?? null);
+    setServiceHours(normalizeServiceHours(connection.serviceHours));
     setShowWelcomeValidation(false);
     setShowAbsenceValidation(false);
     setForm({
@@ -1076,6 +1103,7 @@ function ConnectionSettingsModal({
       welcomeExistingAttachment: connection.welcomeExistingAttachment ?? null,
       absenceEnabled: connection.absenceEnabled ?? false,
       absenceMessage: connection.absenceMessage ?? "",
+      absenceAttachment: connection.absenceAttachment ?? null,
       notes: connection.notes || "",
     });
   }, [connection]);
@@ -1141,11 +1169,7 @@ function ConnectionSettingsModal({
       toast.error("Preencha a mensagem de ausência para salvar.");
       return;
     }
-    const normalizedHours = serviceHours.map((row) => ({
-      ...row,
-      start: formatServiceHourDraft(row.start),
-      end: formatServiceHourDraft(row.end),
-    }));
+    const normalizedHours = serializeServiceHours(serviceHours);
     const hoursError = serviceHoursError(normalizedHours);
     if (hoursError) {
       setTab("absence");
@@ -1165,6 +1189,7 @@ function ConnectionSettingsModal({
       welcomeExistingAttachment: form.welcomeExistingAttachment,
       absenceEnabled,
       absenceMessage: absenceMessage.trim() || null,
+      absenceAttachment,
       notes: form.notes?.trim() || null,
     });
   };
@@ -1311,7 +1336,7 @@ function ConnectionSettingsModal({
                 </div>
 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4">
+                  <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-2 sm:gap-4">
                     <div className="hidden sm:col-start-1 sm:row-start-1 sm:block">
                       <Field label="Status">
                         <div className="flex h-10 items-center">
@@ -1345,7 +1370,7 @@ function ConnectionSettingsModal({
                     </div>
                     <div className="min-w-0 sm:col-start-2 sm:row-start-1">
                       <Field label="Cor">
-                        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
+                        <div className="flex min-h-10 items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary max-sm:gap-1 max-sm:px-1.5 max-sm:py-0">
                           <input
                             type="color"
                             value={completeHexColor(form.color, "#22c55e")}
@@ -1355,7 +1380,7 @@ function ConnectionSettingsModal({
                                 color: normalizeHexColor(event.target.value, "#22c55e"),
                               })
                             }
-                            className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                            className="h-7 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0 max-sm:h-6 max-sm:w-9"
                           />
                           <input
                             type="text"
@@ -1368,7 +1393,7 @@ function ConnectionSettingsModal({
                             }
                             placeholder={completeHexColor("#22c55e")}
                             maxLength={7}
-                            className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+                            className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 max-sm:p-0"
                           />
                         </div>
                       </Field>
@@ -1513,6 +1538,7 @@ function ConnectionSettingsModal({
                 <GreetingMessageEditor
                   value={form.welcomeNewMessage ?? ""}
                   attachment={form.welcomeNewAttachment}
+                  showEmoji
                   variables={mergeMessageVariables(
                     CONNECTION_MESSAGE_VARIABLES,
                     contactCustomFields,
@@ -1544,6 +1570,7 @@ function ConnectionSettingsModal({
                 <GreetingMessageEditor
                   value={form.welcomeExistingMessage ?? ""}
                   attachment={form.welcomeExistingAttachment}
+                  showEmoji
                   variables={mergeMessageVariables(
                     CONNECTION_MESSAGE_VARIABLES,
                     contactCustomFields,
@@ -1571,7 +1598,15 @@ function ConnectionSettingsModal({
                 onCheckedChange={(checked) => {
                   setAbsenceEnabled(checked);
                   setShowAbsenceValidation(false);
-                  if (checked) setAbsenceActivation((current) => current + 1);
+                  if (checked) {
+                    setServiceHours((current) =>
+                      current.map((row) => ({
+                        ...row,
+                        periods: row.periods.length ? row.periods : [createServiceHoursPeriod()],
+                      })),
+                    );
+                    setAbsenceActivation((current) => current + 1);
+                  }
                 }}
               />
               <Field
@@ -1584,7 +1619,8 @@ function ConnectionSettingsModal({
               >
                 <GreetingMessageEditor
                   value={absenceMessage}
-                  attachment={null}
+                  attachment={absenceAttachment}
+                  showEmoji
                   variables={mergeMessageVariables(
                     CONNECTION_MESSAGE_VARIABLES,
                     contactCustomFields,
@@ -1592,9 +1628,9 @@ function ConnectionSettingsModal({
                   disabled={!absenceEnabled}
                   invalid={showAbsenceValidation && absenceEnabled && !absenceMessage.trim()}
                   placeholder={ABSENCE_MESSAGE_PLACEHOLDER}
-                  showAttachment={false}
-                  onChange={(value) => {
+                  onChange={(value, attachment) => {
                     setAbsenceMessage(value);
+                    setAbsenceAttachment(attachment);
                     setShowAbsenceValidation(false);
                   }}
                 />
@@ -1652,7 +1688,7 @@ function TabButton({
   );
 }
 
-function GreetingMessageEditor({
+export function GreetingMessageEditor({
   value,
   attachment,
   variables,
@@ -1660,6 +1696,7 @@ function GreetingMessageEditor({
   invalid,
   placeholder,
   showAttachment = true,
+  showEmoji = false,
   onChange,
 }: {
   value: string;
@@ -1669,41 +1706,25 @@ function GreetingMessageEditor({
   invalid: boolean;
   placeholder: string;
   showAttachment?: boolean;
+  showEmoji?: boolean;
   onChange: (value: string, attachment: QuickReplyAttachment | null) => void;
 }) {
-  const [variablesOpen, setVariablesOpen] = React.useState(false);
-  const [loadingAttachment, setLoadingAttachment] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
-  const insertVariable = (token: string) => {
+  const insertText = (text: string) => {
     const input = textareaRef.current;
     const start = input?.selectionStart ?? value.length;
     const end = input?.selectionEnd ?? start;
-    if (value.length - (end - start) + token.length > 1000) {
+    if (value.length - (end - start) + text.length > 1000) {
       toast.error("A mensagem deve ter no máximo 1000 caracteres.");
       return;
     }
-    const next = value.slice(0, start) + token + value.slice(end);
+    const next = value.slice(0, start) + text + value.slice(end);
     onChange(next, attachment);
-    setVariablesOpen(false);
     requestAnimationFrame(() => {
       input?.focus();
-      input?.setSelectionRange(start + token.length, start + token.length);
+      input?.setSelectionRange(start + text.length, start + text.length);
     });
-  };
-
-  const attach = async (file?: File) => {
-    if (!file) return;
-    const validationError = validateMessageAttachment(file);
-    if (validationError) return toast.error(validationError);
-    setLoadingAttachment(true);
-    try {
-      onChange(value, await readMessageAttachment(file));
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setLoadingAttachment(false);
-    }
   };
 
   return (
@@ -1719,47 +1740,16 @@ function GreetingMessageEditor({
         placeholder={placeholder}
         className="block min-h-32 w-full resize-y rounded-t-lg border-0 bg-transparent px-3 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
       />
-      <div className="relative flex flex-wrap items-center gap-1.5 border-t border-border bg-surface-1 px-2 py-1.5">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="h-7 w-7"
-          disabled={disabled}
-          aria-label="Inserir variável"
-          aria-expanded={variablesOpen}
-          onClick={() => setVariablesOpen((open) => !open)}
-        >
-          <Braces className="h-3.5 w-3.5" />
-        </Button>
-        {variablesOpen && (
-          <div
-            className="absolute bottom-full left-2 z-30 mb-1 max-h-64 w-64 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-lg"
-            role="menu"
-            aria-label="Variáveis disponíveis"
-          >
-            {variables.map(({ token, description }) => (
-              <div key={token} className="group relative">
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="block w-full rounded px-3 py-2 text-left font-mono text-xs hover:bg-surface-2"
-                  onClick={() => insertVariable(token)}
-                  title={description}
-                >
-                  {token}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="flex flex-wrap items-center gap-1.5 overflow-visible border-t border-border bg-surface-1 px-2 py-1.5">
+        {showEmoji && <MessageEmojiPicker disabled={disabled} onSelect={insertText} />}
+        <MessageVariablesMenu disabled={disabled} variables={variables} onSelect={insertText} />
         {showAttachment && attachment && (
           <Button
             type="button"
             variant="outline"
             size="icon"
             className="h-7 w-7"
-            disabled={disabled || loadingAttachment}
+            disabled={disabled}
             aria-label="Remover arquivo"
             onClick={() => onChange(value, null)}
           >
@@ -1768,20 +1758,11 @@ function GreetingMessageEditor({
         )}
         {showAttachment && (
           <>
-            <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs text-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
-              <Paperclip className="h-3.5 w-3.5" /> Anexar mídia
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp,video/mp4,video/3gpp,video/webm,audio/ogg,audio/mpeg,audio/mp4,audio/webm,.pdf,.txt,.doc,.docx,.xls,.xlsx"
-                className="sr-only"
-                disabled={disabled || loadingAttachment}
-                aria-label="Anexar arquivo à mensagem de saudação"
-                onChange={(event) => {
-                  void attach(event.target.files?.[0]);
-                  event.target.value = "";
-                }}
-              />
-            </label>
+            <MessageAttachmentMenu
+              disabled={disabled}
+              fileInputLabel="Anexar arquivo à mensagem automática"
+              onAttachment={(nextAttachment) => onChange(value, nextAttachment)}
+            />
             <span
               className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
               title={attachment?.fileName}
@@ -2196,12 +2177,40 @@ export function ServiceHoursTable({
     onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
   };
 
+  const updatePeriod = (rowIndex: number, periodId: string, patch: Partial<ServiceHoursPeriod>) => {
+    updateRow(rowIndex, {
+      periods: rows[rowIndex].periods.map((period) =>
+        period.id === periodId ? { ...period, ...patch } : period,
+      ),
+    });
+  };
+
+  const addPeriod = (rowIndex: number) => {
+    const periods = rows[rowIndex].periods;
+    const previous = periods[periods.length - 1];
+    updateRow(rowIndex, {
+      periods: [...periods, createServiceHoursPeriod(previous?.end || "", "")],
+    });
+  };
+
+  const removePeriod = (rowIndex: number, periodId: string) => {
+    const periods = rows[rowIndex].periods.filter((period) => period.id !== periodId);
+    updateRow(rowIndex, {
+      periods: periods.length ? periods : [createServiceHoursPeriod()],
+    });
+  };
+
   const copyToAll = (sourceIndex: number) => {
     const source = rows[sourceIndex];
     onChange(
       rows.map((row, index) =>
         index !== sourceIndex && row.active
-          ? { ...row, start: source.start, end: source.end }
+          ? {
+              ...row,
+              periods: source.periods.map((period) =>
+                createServiceHoursPeriod(period.start, period.end),
+              ),
+            }
           : row,
       ),
     );
@@ -2210,126 +2219,217 @@ export function ServiceHoursTable({
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium text-muted-foreground">Horário de Atendimento</p>
-      <div className="overflow-hidden rounded-lg border border-border">
-        <table className="w-full table-fixed border-collapse text-sm">
+      <div className="overflow-hidden rounded-lg border border-border sm:overflow-x-auto">
+        <table className="w-full table-fixed border-collapse text-sm sm:min-w-[580px]">
+          <colgroup>
+            <col className="w-[20%] sm:w-[42%]" />
+            <col className="w-[23%] sm:w-[18%]" />
+            <col className="w-[23%] sm:w-[18%]" />
+            <col className="w-[34%] sm:w-[22%]" />
+          </colgroup>
           <thead className="bg-surface-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground sm:text-[11px] sm:tracking-widest">
             <tr>
-              <th className="w-[20%] px-1.5 py-2 text-left font-semibold sm:w-[29%] sm:px-3 sm:py-3">
+              <th className="px-1 py-2 text-left font-semibold sm:px-3 sm:py-3">
                 <span className="sm:hidden">Dia</span>
                 <span className="hidden sm:inline">Dia da semana</span>
               </th>
-              <th className="w-[16%] px-1 py-2 text-center font-semibold sm:w-[23%] sm:px-3 sm:py-3">
-                Ativo
-              </th>
-              <th className="w-[22%] px-0.5 py-2 text-center font-semibold sm:w-[19%] sm:px-3 sm:py-3">
-                Início
-              </th>
-              <th className="w-[22%] px-0.5 py-2 text-center font-semibold sm:w-[19%] sm:px-3 sm:py-3">
-                Fim
-              </th>
-              <th className="w-[20%] px-0 py-2 text-center sm:px-3 sm:py-3" aria-label="Ações" />
+              <th className="!px-0 py-2 text-center font-semibold sm:!px-2 sm:py-3">Início</th>
+              <th className="!px-0 py-2 text-center font-semibold sm:!px-2 sm:py-3">Fim</th>
+              <th className="!pl-1 !pr-0 py-2 text-center sm:!px-2 sm:py-3" aria-label="Ações" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
+          <tbody>
             {rows.map((row, index) => {
-              const error = enabled
-                ? serviceHoursError([
-                    {
-                      ...row,
-                      start: formatServiceHourDraft(row.start),
-                      end: formatServiceHourDraft(row.end),
-                    },
-                  ])
-                : "";
-              const errorId = `${errorPrefix}-${index}`;
+              const errors = enabled
+                ? row.periods.map((period) =>
+                    serviceHoursError([
+                      {
+                        day: row.day,
+                        active: row.active,
+                        periods: [
+                          {
+                            start: formatServiceHourDraft(period.start),
+                            end: formatServiceHourDraft(period.end),
+                          },
+                        ],
+                      },
+                    ]),
+                  )
+                : [];
+              const dayError = errors.find(Boolean) ?? "";
+              const dayErrorId = `${errorPrefix}-${index}`;
+              const dayBorder = index < rows.length - 1 ? "border-b border-border" : "";
               return (
-                <tr key={row.day} className="transition hover:bg-surface-1/60">
-                  <td className="px-1.5 py-1.5 align-top text-xs sm:px-3 sm:py-2 sm:text-sm">
-                    <p>{row.day}</p>
-                    {error && (
-                      <p
-                        id={errorId}
-                        role="alert"
-                        className="mt-1 block w-full whitespace-normal break-words text-[11px] leading-tight text-destructive [overflow-wrap:anywhere] sm:text-xs"
-                      >
-                        {error}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
-                    <input
-                      type="checkbox"
-                      checked={row.active}
-                      onChange={(event) => {
-                        setSelectedRow(index);
-                        updateRow(index, { active: event.target.checked });
-                      }}
-                      disabled={!enabled}
-                      className="h-4 w-4 accent-primary"
-                      aria-label={`Ativar atendimento em ${row.day}`}
-                    />
-                  </td>
-                  <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
-                    <Input
-                      ref={
-                        index === rows.findIndex((item) => item.active)
-                          ? firstActiveStartRef
-                          : undefined
-                      }
-                      aria-label={`Início de ${row.day}`}
-                      aria-invalid={!!error}
-                      aria-describedby={error ? errorId : undefined}
-                      type="text"
-                      inputMode="numeric"
-                      value={row.start}
-                      placeholder="00:00"
-                      disabled={!enabled || !row.active}
-                      onFocus={() => setSelectedRow(index)}
-                      onChange={(event) =>
-                        updateRow(index, { start: sanitizeServiceHourDraft(event.target.value) })
-                      }
-                      onBlur={(event) =>
-                        updateRow(index, { start: formatServiceHourDraft(event.target.value) })
-                      }
-                      className={`!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:w-24 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
-                    />
-                  </td>
-                  <td className="px-1 py-1.5 text-center sm:px-3 sm:py-2">
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      aria-label={`Fim de ${row.day}`}
-                      aria-invalid={!!error}
-                      aria-describedby={error ? errorId : undefined}
-                      value={row.end}
-                      placeholder="00:00"
-                      disabled={!enabled || !row.active}
-                      onFocus={() => setSelectedRow(index)}
-                      onChange={(event) =>
-                        updateRow(index, { end: sanitizeServiceHourDraft(event.target.value) })
-                      }
-                      onBlur={(event) =>
-                        updateRow(index, { end: formatServiceHourDraft(event.target.value) })
-                      }
-                      className={`!min-h-8 w-full min-w-0 px-1 !text-[13px] text-center sm:!min-h-10 sm:w-24 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
-                    />
-                  </td>
-                  <td className="px-0 py-1.5 text-center sm:px-3 sm:py-2">
-                    {enabled && selectedRow === index && row.active && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => copyToAll(index)}
-                        title="Copiar para todos"
-                        aria-label="Copiar para todos"
-                        className="h-8 w-8 min-h-8 px-0 sm:w-auto sm:px-2"
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </td>
-                </tr>
+                <React.Fragment key={row.day}>
+                  <tr className={`transition hover:bg-surface-1/60 ${dayError ? "" : dayBorder}`}>
+                    <td className="py-3 pl-1 pr-0.5 align-top text-xs sm:px-3 sm:text-sm">
+                      <div className="flex items-center gap-1 sm:gap-2">
+                        <input
+                          type="checkbox"
+                          checked={row.active}
+                          onChange={(event) => {
+                            setSelectedRow(index);
+                            updateRow(index, { active: event.target.checked });
+                          }}
+                          disabled={!enabled}
+                          className="h-4 w-4 shrink-0 accent-primary"
+                          aria-label={`Ativar atendimento em ${row.day}`}
+                        />
+                        <p aria-label={row.day}>
+                          <span aria-hidden="true" className="sm:hidden">
+                            {row.day.slice(0, 3)}
+                          </span>
+                          <span aria-hidden="true" className="hidden sm:inline">
+                            {row.day}
+                          </span>
+                        </p>
+                      </div>
+                    </td>
+                    <td className="!px-0 py-2 align-top text-center sm:!px-2">
+                      <div className="flex flex-col gap-2">
+                        {row.periods.map((period, periodIndex) => {
+                          const error = errors[periodIndex];
+                          return (
+                            <Input
+                              key={period.id}
+                              ref={
+                                index === rows.findIndex((item) => item.active) && periodIndex === 0
+                                  ? firstActiveStartRef
+                                  : undefined
+                              }
+                              aria-label={
+                                periodIndex === 0
+                                  ? `Início de ${row.day}`
+                                  : `Início do período ${periodIndex + 1} de ${row.day}`
+                              }
+                              aria-invalid={!!error}
+                              aria-describedby={error ? dayErrorId : undefined}
+                              type="text"
+                              inputMode="numeric"
+                              value={period.start}
+                              placeholder="00:00"
+                              disabled={!enabled || !row.active}
+                              onFocus={() => setSelectedRow(index)}
+                              onChange={(event) =>
+                                updatePeriod(index, period.id, {
+                                  start: sanitizeServiceHourDraft(event.target.value),
+                                })
+                              }
+                              onBlur={(event) =>
+                                updatePeriod(index, period.id, {
+                                  start: formatServiceHourDraft(event.target.value),
+                                })
+                              }
+                              className={`!h-9 !min-h-9 w-full min-w-0 px-1 !text-[13px] text-center sm:!h-10 sm:!min-h-10 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="!px-0 py-2 align-top text-center sm:!px-2">
+                      <div className="flex flex-col gap-2">
+                        {row.periods.map((period, periodIndex) => {
+                          const error = errors[periodIndex];
+                          return (
+                            <Input
+                              key={period.id}
+                              type="text"
+                              inputMode="numeric"
+                              aria-label={
+                                periodIndex === 0
+                                  ? `Fim de ${row.day}`
+                                  : `Fim do período ${periodIndex + 1} de ${row.day}`
+                              }
+                              aria-invalid={!!error}
+                              aria-describedby={error ? dayErrorId : undefined}
+                              value={period.end}
+                              placeholder="00:00"
+                              disabled={!enabled || !row.active}
+                              onFocus={() => setSelectedRow(index)}
+                              onChange={(event) =>
+                                updatePeriod(index, period.id, {
+                                  end: sanitizeServiceHourDraft(event.target.value),
+                                })
+                              }
+                              onBlur={(event) =>
+                                updatePeriod(index, period.id, {
+                                  end: formatServiceHourDraft(event.target.value),
+                                })
+                              }
+                              className={`!h-9 !min-h-9 w-full min-w-0 px-1 !text-[13px] text-center sm:!h-10 sm:!min-h-10 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="!pl-1 !pr-0 py-2 align-top text-center sm:!px-2">
+                      <div className="flex flex-col gap-2">
+                        {row.periods.map((period, periodIndex) => (
+                          <div
+                            key={period.id}
+                            className="grid h-9 grid-cols-3 items-center gap-0.5 sm:h-10 sm:gap-1"
+                          >
+                            {enabled && selectedRow === index && row.active && (
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removePeriod(index, period.id)}
+                                  title="Excluir horário"
+                                  aria-label={`Excluir período ${periodIndex + 1} de ${row.day}`}
+                                  className="trash-action h-7 w-7 p-0 sm:h-8 sm:w-8"
+                                >
+                                  <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                                </Button>
+                                {periodIndex === 0 && (
+                                  <>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => copyToAll(index)}
+                                      title="Copiar para todos"
+                                      aria-label={`Copiar horários de ${row.day} para todos os dias ativos`}
+                                      className="h-7 w-7 p-0 sm:h-8 sm:w-8"
+                                    >
+                                      <Copy className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => addPeriod(index)}
+                                      title="Incluir novo horário"
+                                      aria-label={`Incluir horário em ${row.day}`}
+                                      className="group h-7 w-7 p-0 hover:text-primary sm:h-8 sm:w-8"
+                                    >
+                                      <Plus className="h-4 w-4 transition-colors group-hover:text-primary sm:h-3.5 sm:w-3.5" />
+                                    </Button>
+                                  </>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                  {dayError && (
+                    <tr className={dayBorder}>
+                      <td className="p-0" aria-hidden="true" />
+                      <td colSpan={3} className="px-2 pb-2 pt-0">
+                        <p
+                          id={dayErrorId}
+                          role="alert"
+                          className="block w-full whitespace-normal text-[11px] leading-tight text-destructive sm:text-xs"
+                        >
+                          {dayError}
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               );
             })}
           </tbody>

@@ -126,6 +126,57 @@ describe("EvolutionMessagingProvider", () => {
     });
   });
 
+  it("transcodes quick-reply audio and sends it as media with its caption", async () => {
+    const client = {
+      sendMedia: vi.fn().mockResolvedValue({
+        key: { id: "AUDIO1" },
+        messageTimestamp: 1_709_550_600,
+        status: "SENT",
+      }),
+    } as unknown as EvolutionClient;
+    const transcoder = {
+      transcode: vi.fn().mockResolvedValue({
+        buffer: Buffer.from("ID3-mp3"),
+        mimeType: "audio/mpeg",
+        fileName: "recording.mp3",
+      }),
+    };
+    const provider = new EvolutionMessagingProvider(client, transcoder as never);
+    const media = Buffer.from("webm-recording");
+
+    await provider.send({
+      tenantId: "tenant",
+      conversationId: "conversation",
+      messageId: "message",
+      connectionId: "connection",
+      providerConnectionRef: "tenant-support",
+      providerType: MessagingProviderType.EVOLUTION,
+      recipient: { phone: "(11) 99999-0000", normalizedPhone: "+5511999990000" },
+      content: {
+        type: MessageType.AUDIO,
+        mediaBuffer: media,
+        mimeType: "audio/webm",
+        fileName: "recording.webm",
+        caption: "Bom dia",
+      },
+    });
+
+    expect(transcoder.transcode).toHaveBeenCalledWith(media, "recording.webm", "audio/webm");
+    expect(client.sendMedia).toHaveBeenCalledWith({
+      instanceName: "tenant-support",
+      payload: {
+        number: "5511999990000",
+        mediatype: "audio",
+        mimetype: "audio/mpeg",
+        fileName: "recording.mp3",
+        caption: "Bom dia",
+      },
+      media: Buffer.from("ID3-mp3"),
+      mimeType: "audio/mpeg",
+      fileName: "recording.mp3",
+    });
+  });
+
   it("sends vCards as native WhatsApp contacts", async () => {
     const client = {
       sendContact: vi.fn().mockResolvedValue({

@@ -47,6 +47,12 @@ import {
 import { useQueuePrefs, type QueueId } from "@/lib/queue-prefs";
 import { useSession } from "@/lib/session";
 import { onRealtimeEvent } from "@/lib/realtime/client";
+import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  DASHBOARD_CHART_MARGIN,
+  DASHBOARD_CHART_TEXT_COLOR,
+  messageHourTicks,
+} from "@/lib/dashboard-chart-layout";
 
 export const Route = createFileRoute("/")({ component: Dashboard });
 
@@ -148,6 +154,7 @@ function loadDashboardFilters(storageKey: string): OperationalReportFilters {
 
 function Dashboard() {
   useInstanceAccessUpdates();
+  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const user = useSession((state) => state.user);
   const canEditDashboard =
@@ -281,9 +288,9 @@ function Dashboard() {
   const dashboardColumnCount = (id: DashboardBiId): DashboardColumnCount =>
     id === "counters" ? 4 : (dashboardColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id]);
   const messagesColumns = dashboardColumns.messages ?? DEFAULT_DASHBOARD_COLUMNS.messages;
-  const compactMessagesChart = messagesColumns <= 2;
+  const compactMessagesChart = isMobile || messagesColumns <= 2;
   const messageTraffic = data?.charts.messagesByHour ?? [];
-  const mobileMessageTicks = ["00h", "05h", "10h", "15h", "20h"];
+  const messageTicks = messageHourTicks(isMobile);
   const messageTrafficTotals = messageTraffic.reduce(
     (totals, item) => ({
       recebidas: totals.recebidas + item.recebidas,
@@ -292,6 +299,7 @@ function Dashboard() {
     { recebidas: 0, enviadas: 0 },
   );
   const totalMessages = messageTrafficTotals.recebidas + messageTrafficTotals.enviadas;
+  const messageContactsTotal = data?.charts.messageContactsTotal ?? 0;
 
   const beginEditingBiTitle = (id: DashboardBiId) => {
     setEditingBiId(id);
@@ -440,59 +448,40 @@ function Dashboard() {
               className={`${dashboardColumnClass("messages")} ${hasBi("messages") ? "" : "hidden"}`}
             >
               <Card className="h-full">
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                      {biLabel("messages")}
-                    </p>
-                  </div>
-                  <table
-                    aria-label="Totais do tráfego de mensagens no período"
-                    className="hidden w-auto shrink-0 self-start border-collapse whitespace-nowrap text-xs sm:table"
-                  >
-                    <tbody>
-                      <MessageTrafficTotalRow
-                        label="Recebidos"
-                        value={messageTrafficTotals.recebidas}
-                      />
-                      <MessageTrafficTotalRow
-                        label="Enviados"
-                        value={messageTrafficTotals.enviadas}
-                      />
-                      <MessageTrafficTotalRow label="Todos" value={totalMessages} emphasized />
-                    </tbody>
-                  </table>
-                </div>
+                <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
+                  {biLabel("messages")}
+                </p>
                 <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={messageTraffic}>
-                    <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
+                  <LineChart data={messageTraffic} margin={DASHBOARD_CHART_MARGIN}>
+                    <CartesianGrid stroke="var(--border)" vertical={false} />
                     <XAxis
                       dataKey="hora"
-                      stroke="hsl(var(--muted-foreground))"
+                      stroke="var(--muted-foreground)"
+                      tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
                       fontSize={11}
-                      ticks={compactMessagesChart ? mobileMessageTicks : undefined}
-                      interval={
-                        messagesColumns === 1 ? 0 : compactMessagesChart ? 0 : "preserveEnd"
-                      }
+                      ticks={messageTicks}
+                      interval={0}
                       angle={compactMessagesChart ? -45 : 0}
                       textAnchor={compactMessagesChart ? "end" : "middle"}
                       height={compactMessagesChart ? 48 : 30}
                       tickMargin={compactMessagesChart ? 8 : 0}
                     />
                     <YAxis
-                      stroke="hsl(var(--muted-foreground))"
+                      stroke="var(--muted-foreground)"
+                      tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
                       fontSize={11}
                       allowDecimals={false}
+                      width={38}
                     />
                     <Tooltip
                       contentStyle={{
-                        background: "hsl(var(--popover))",
-                        border: "1px solid hsl(var(--border))",
+                        background: "var(--popover)",
+                        border: "1px solid var(--border)",
                         borderRadius: 8,
+                        color: "var(--popover-foreground)",
                         fontSize: 12,
                       }}
                     />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Line
                       type="monotone"
                       dataKey="recebidas"
@@ -517,23 +506,40 @@ function Dashboard() {
                       strokeWidth={2}
                       dot={false}
                     />
+                    <Line
+                      type="monotone"
+                      dataKey="contatosAtendidos"
+                      name="Qtd Contatos"
+                      stroke="#f97316"
+                      strokeWidth={2}
+                      dot={false}
+                    />
                   </LineChart>
                 </ResponsiveContainer>
                 <table
                   aria-label="Totais do tráfego de mensagens no período"
-                  className="mx-auto mt-1 w-full max-w-72 table-fixed border-collapse whitespace-nowrap text-xs sm:hidden"
+                  className="mx-auto mt-1 w-full max-w-md table-fixed border-collapse whitespace-nowrap text-xs"
                 >
+                  <thead>
+                    <tr>
+                      <MessageTrafficLegendHeader label="Recebidos" color="#2563eb" />
+                      <MessageTrafficLegendHeader label="Enviados" color="#16a34a" />
+                      <MessageTrafficLegendHeader label="Total" color="#94a3b8" />
+                      <MessageTrafficLegendHeader label="Qtd Contatos" color="#f97316" />
+                    </tr>
+                  </thead>
                   <tbody>
                     <tr>
-                      <MessageTrafficMobileTotal
+                      <MessageTrafficTotalCell
                         label="Recebidos"
                         value={messageTrafficTotals.recebidas}
                       />
-                      <MessageTrafficMobileTotal
+                      <MessageTrafficTotalCell
                         label="Enviados"
                         value={messageTrafficTotals.enviadas}
                       />
-                      <MessageTrafficMobileTotal label="Total" value={totalMessages} emphasized />
+                      <MessageTrafficTotalCell label="Total" value={totalMessages} emphasized />
+                      <MessageTrafficTotalCell label="Qtd Clientes" value={messageContactsTotal} />
                     </tr>
                   </tbody>
                 </table>
@@ -544,35 +550,38 @@ function Dashboard() {
               style={{ order: dashboardPosition("distribution") }}
               className={`${dashboardColumnClass("distribution")} ${hasBi("distribution") ? "" : "hidden"}`}
             >
-              <Card className="h-full">
+              <Card className="flex h-full flex-col">
                 <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
                   {biLabel("distribution")}
                 </p>
-                <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
-                    <Tooltip
-                      contentStyle={{
-                        background: "hsl(var(--popover))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Pie
-                      data={statusSerie}
-                      dataKey="total"
-                      nameKey="nome"
-                      innerRadius={48}
-                      outerRadius={82}
-                      paddingAngle={3}
-                    >
-                      {statusSerie.map((item, index) => (
-                        <Cell key={item.nome} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
+                <div className="min-h-[260px] min-w-0 flex-1">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Tooltip
+                        contentStyle={{
+                          background: "var(--popover)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          color: "var(--popover-foreground)",
+                          fontSize: 12,
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Pie
+                        data={statusSerie}
+                        dataKey="total"
+                        nameKey="nome"
+                        innerRadius="42%"
+                        outerRadius="70%"
+                        paddingAngle={3}
+                      >
+                        {statusSerie.map((item, index) => (
+                          <Cell key={item.nome} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
               </Card>
             </div>
 
@@ -612,44 +621,49 @@ function Dashboard() {
                     style={{ order: dashboardPosition(chart.id as DashboardBiId) }}
                     className={dashboardColumnClass(chart.id as DashboardBiId)}
                   >
-                    <Card className="h-full">
+                    <Card className="flex h-full flex-col">
                       <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
                         {chart.title}
                       </p>
                       {chart.data.length === 0 ? (
-                        <div className="flex h-[270px] items-center justify-center text-xs text-muted-foreground">
+                        <div className="flex min-h-[270px] flex-1 items-center justify-center text-xs text-muted-foreground">
                           Sem dados para o periodo.
                         </div>
                       ) : (
-                        <ResponsiveContainer width="100%" height={270}>
-                          <BarChart data={chartData}>
-                            <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
-                            <XAxis
-                              dataKey="nome"
-                              stroke="hsl(var(--muted-foreground))"
-                              fontSize={11}
-                              interval={0}
-                              angle={rotateLabels ? -35 : 0}
-                              textAnchor={rotateLabels ? "end" : "middle"}
-                              height={rotateLabels ? 78 : 30}
-                              tickMargin={rotateLabels ? 8 : 0}
-                            />
-                            <YAxis
-                              stroke="hsl(var(--muted-foreground))"
-                              fontSize={11}
-                              allowDecimals={false}
-                            />
-                            <Tooltip content={<DashboardBarTooltip />} />
-                            <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-                              {chartData.map((item, index) => (
-                                <Cell
-                                  key={`${item.nome}-${index}`}
-                                  fill={item.cor || COLORS[index % COLORS.length]}
-                                />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
+                        <div className="min-h-[270px] min-w-0 flex-1">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} margin={DASHBOARD_CHART_MARGIN}>
+                              <CartesianGrid stroke="var(--border)" vertical={false} />
+                              <XAxis
+                                dataKey="nome"
+                                stroke="var(--muted-foreground)"
+                                tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
+                                fontSize={11}
+                                interval={0}
+                                angle={rotateLabels ? -35 : 0}
+                                textAnchor={rotateLabels ? "end" : "middle"}
+                                height={rotateLabels ? 78 : 30}
+                                tickMargin={rotateLabels ? 8 : 0}
+                              />
+                              <YAxis
+                                stroke="var(--muted-foreground)"
+                                tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
+                                fontSize={11}
+                                allowDecimals={false}
+                                width={38}
+                              />
+                              <Tooltip content={<DashboardBarTooltip />} />
+                              <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                                {chartData.map((item, index) => (
+                                  <Cell
+                                    key={`${item.nome}-${index}`}
+                                    fill={item.cor || COLORS[index % COLORS.length]}
+                                  />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
                       )}
                     </Card>
                   </div>
@@ -898,31 +912,7 @@ function Dashboard() {
   );
 }
 
-function MessageTrafficTotalRow({
-  label,
-  value,
-  emphasized = false,
-}: {
-  label: string;
-  value: number;
-  emphasized?: boolean;
-}) {
-  return (
-    <tr className={emphasized ? "bg-surface-1 font-semibold" : undefined}>
-      <th
-        scope="row"
-        className="border border-border px-2 py-1 text-left font-normal text-muted-foreground"
-      >
-        {label}
-      </th>
-      <td className="border border-border px-2 py-1 text-right font-mono text-foreground">
-        {num(value)}
-      </td>
-    </tr>
-  );
-}
-
-function MessageTrafficMobileTotal({
+function MessageTrafficTotalCell({
   label,
   value,
   emphasized = false,
@@ -933,11 +923,26 @@ function MessageTrafficMobileTotal({
 }) {
   return (
     <td
-      className={`border border-border px-2 py-1 text-center font-mono text-foreground ${emphasized ? "bg-surface-1 font-semibold" : ""}`}
+      className={`border border-border px-2 py-1 text-center font-mono text-foreground ${emphasized ? "bg-surface-1" : ""}`}
     >
       <span className="sr-only">{label}: </span>
       {num(value)}
     </td>
+  );
+}
+
+function MessageTrafficLegendHeader({ label, color }: { label: string; color: string }) {
+  return (
+    <th className="px-1 pb-1 text-center align-bottom font-normal text-muted-foreground">
+      <span className="inline-flex whitespace-normal text-[10px] leading-tight sm:text-xs">
+        <span
+          className="mr-1 mt-[0.45em] inline-block h-0 w-3 shrink-0 border-t-2"
+          style={{ borderColor: color }}
+          aria-hidden="true"
+        />
+        {label}
+      </span>
+    </th>
   );
 }
 

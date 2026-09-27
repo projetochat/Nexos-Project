@@ -2,11 +2,13 @@ import { customFieldVariableKey } from "@/lib/message-variables";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Braces, Copy, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Copy, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
-import { AudioRecorderButton } from "@/components/audio-recorder-button";
 import { InfoTooltip } from "@/components/info-tooltip";
+import { MessageAttachmentMenu } from "@/components/message-attachment-menu";
+import { MessageEmojiPicker } from "@/components/message-emoji-picker";
+import { MessageVariablesMenu } from "@/components/message-variables-menu";
 import {
   Button,
   Card,
@@ -17,7 +19,6 @@ import {
   SectionHeader,
 } from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   crmApi,
@@ -28,11 +29,7 @@ import {
 import { assertQuickReplySaved, quickReplyMessages } from "@/lib/quick-reply-sequence";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
-import {
-  formatMessageAttachmentSize,
-  readMessageAttachment,
-  validateMessageAttachment,
-} from "@/lib/message-attachment";
+import { formatMessageAttachmentSize } from "@/lib/message-attachment";
 
 export const Route = createFileRoute("/mensagens-rapidas")({
   component: QuickRepliesPage,
@@ -294,7 +291,6 @@ export function QuickReplyEditor({
   const [closeOnSend, setCloseOnSend] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [shortcutError, setShortcutError] = React.useState("");
-  const [variablesOpen, setVariablesOpen] = React.useState(false);
   const [customVariables, setCustomVariables] = React.useState<
     Array<{ name: string; description: string }>
   >([]);
@@ -303,7 +299,6 @@ export function QuickReplyEditor({
   React.useEffect(() => {
     if (!open) return;
     let active = true;
-    setVariablesOpen(false);
     activeMessage.current = 0;
     void crmApi
       .listContactCustomFields()
@@ -323,27 +318,28 @@ export function QuickReplyEditor({
       active = false;
     };
   }, [open]);
-  const insertVariable = (name: string) => {
-    const index = Math.min(activeMessage.current, messages.length - 1);
+  const insertText = (index: number, insertedText: string) => {
     const input = textareas.current[index];
     const text = messages[index].text;
     const start = input?.selectionStart ?? text.length;
     const end = input?.selectionEnd ?? start;
-    const token = "{{" + name + "}}";
-    if (text.length - (end - start) + token.length > 2000)
+    if (text.length - (end - start) + insertedText.length > 2000)
       return toast.error("A mensagem deve ter no máximo 2000 caracteres.");
     setMessages((items) =>
       items.map((item, position) =>
         position === index
-          ? { ...item, text: text.slice(0, start) + token + text.slice(end) }
+          ? { ...item, text: text.slice(0, start) + insertedText + text.slice(end) }
           : item,
       ),
     );
-    setVariablesOpen(false);
     requestAnimationFrame(() => {
       input?.focus();
-      input?.setSelectionRange(start + token.length, start + token.length);
+      input?.setSelectionRange(start + insertedText.length, start + insertedText.length);
     });
+  };
+  const insertVariable = (name: string) => {
+    const index = Math.min(activeMessage.current, messages.length - 1);
+    insertText(index, "{{" + name + "}}");
   };
 
   const duplicateShortcutError = (value: string) => {
@@ -487,52 +483,7 @@ export function QuickReplyEditor({
             <p className="text-sm font-medium">
               Mensagem <span className="text-destructive">*</span>
             </p>
-            <div className="relative flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                aria-label="Inserir variável"
-                aria-expanded={variablesOpen}
-                disabled={busy}
-                onClick={() => setVariablesOpen((value) => !value)}
-              >
-                <Braces className="h-4 w-4" />
-              </Button>
-              {variablesOpen && (
-                <div
-                  className="absolute right-0 top-full z-20 mt-1 max-h-64 w-60 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-lg"
-                  role="menu"
-                  aria-label="Variáveis disponíveis"
-                >
-                  <TooltipProvider delayDuration={150}>
-                    {[
-                      ...MESSAGE_VARIABLES.map(([token, description]) => ({
-                        name: token.slice(2, -2),
-                        description,
-                      })),
-                      ...customVariables,
-                    ].map(({ name, description }) => (
-                      <Tooltip key={name}>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            role="menuitem"
-                            className="block w-full rounded px-3 py-2 text-left text-xs transition-colors hover:bg-surface-2 hover:text-blue-600 focus-visible:text-blue-600"
-                            onClick={() => insertVariable(name)}
-                            aria-label={`Inserir variável ${name}: ${description}`}
-                          >
-                            {"{{" + name + "}}"}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="left" className="max-w-64">
-                          {description}
-                        </TooltipContent>
-                      </Tooltip>
-                    ))}
-                  </TooltipProvider>
-                </div>
-              )}
+            <div className="flex items-center gap-1">
               <Button
                 variant="outline"
                 size="sm"
@@ -578,7 +529,28 @@ export function QuickReplyEditor({
                 className="block min-h-24 w-full resize-y border-0 bg-transparent px-3 py-3 text-sm outline-none"
                 placeholder="Texto da mensagem ou legenda do arquivo"
               />
-              <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-surface-1 px-2 py-1.5">
+              <div className="flex flex-wrap items-center gap-1.5 overflow-visible border-t border-border bg-surface-1 px-2 py-1.5">
+                <MessageEmojiPicker
+                  disabled={busy}
+                  onSelect={(emoji) => {
+                    activeMessage.current = index;
+                    insertText(index, emoji);
+                  }}
+                />
+                <MessageVariablesMenu
+                  disabled={busy}
+                  variables={[
+                    ...MESSAGE_VARIABLES.map(([token, description]) => ({ token, description })),
+                    ...customVariables.map(({ name, description }) => ({
+                      token: `{{${name}}}`,
+                      description,
+                    })),
+                  ]}
+                  onSelect={(token) => {
+                    activeMessage.current = index;
+                    insertVariable(token.slice(2, -2));
+                  }}
+                />
                 {message.attachment && (
                   <Button
                     variant="outline"
@@ -597,66 +569,18 @@ export function QuickReplyEditor({
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 )}
-                <details className="min-w-44 rounded-lg border border-border bg-surface-2 p-1">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-2 py-1 text-xs">
-                    <span>Anexo</span>
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  </summary>
-                  <div className="mt-1 flex flex-col gap-1">
-                    <AudioRecorderButton
-                      showLabel
-                      disabled={busy}
-                      onRecorded={async (file) => {
-                        const validationError = validateMessageAttachment(file);
-                        if (validationError) {
-                          toast.error(validationError);
-                          return;
-                        }
-                        setBusy(true);
-                        try {
-                          const attachment = await readMessageAttachment(file);
-                          setMessages((items) =>
-                            items.map((item, position) =>
-                              position === index ? { ...item, attachment } : item,
-                            ),
-                          );
-                        } finally {
-                          setBusy(false);
-                        }
-                      }}
-                    />
-                    <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-surface-2 px-2 py-1 text-xs text-primary">
-                      <Paperclip className="h-3.5 w-3.5" /> Anexar mídia
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,video/mp4,video/3gpp,video/webm,audio/ogg,audio/mpeg,audio/mp4,audio/webm,.pdf,.txt,.doc,.docx,.xls,.xlsx"
-                        className="sr-only"
-                        disabled={busy}
-                        aria-label={`Anexar arquivo à mensagem ${index + 1}`}
-                        onChange={async (event) => {
-                          const file = event.target.files?.[0];
-                          event.target.value = "";
-                          if (!file) return;
-                          const validationError = validateMessageAttachment(file);
-                          if (validationError) return toast.error(validationError);
-                          setBusy(true);
-                          try {
-                            const attachment = await readMessageAttachment(file);
-                            setMessages((items) =>
-                              items.map((item) =>
-                                item === message ? { ...item, attachment } : item,
-                              ),
-                            );
-                          } catch (error) {
-                            toast.error((error as Error).message);
-                          } finally {
-                            setBusy(false);
-                          }
-                        }}
-                      />
-                    </label>
-                  </div>
-                </details>
+                <MessageAttachmentMenu
+                  disabled={busy}
+                  fileInputLabel={`Anexar arquivo à mensagem ${index + 1}`}
+                  onLoadingChange={setBusy}
+                  onAttachment={(attachment) =>
+                    setMessages((items) =>
+                      items.map((item, position) =>
+                        position === index ? { ...item, attachment } : item,
+                      ),
+                    )
+                  }
+                />
                 <span
                   className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
                   title={message.attachment?.fileName}

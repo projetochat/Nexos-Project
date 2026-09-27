@@ -288,14 +288,14 @@ export class MessagingOutboundService {
     return { created: true, message: this.serialize(prepared.message) };
   }
 
-  /** Queues a welcome message with its configured media as the message caption. */
+  /** Queues an automatic message with its configured media as the message caption. */
   async queueAutomatedMedia(input: {
     tenantId: string;
     conversationId: string;
     connectionId: string;
     externalChatId: string;
     content: string;
-    kind: "welcome";
+    kind: "welcome" | "absence";
     attachment: { fileName: string; mimeType: string; size: number; dataUrl: string };
   }) {
     if (!this.mediaStorage) throw new BadRequestException("Storage de mensagens indisponivel.");
@@ -1395,12 +1395,8 @@ function maskReference(value: string | null) {
 function providerEndpointPath(providerType: MessagingProviderType, type: MessageType) {
   if (providerType !== MessagingProviderType.EVOLUTION) return "provider.dispatch";
   if (type === MessageType.TEXT) return "/message/sendText/{instanceName}";
-  if (
-    type === MessageType.IMAGE ||
-    type === MessageType.AUDIO ||
-    type === MessageType.VOICE ||
-    type === MessageType.DOCUMENT
-  ) {
+  if (type === MessageType.VOICE) return "/message/sendWhatsAppAudio/{instanceName}";
+  if (type === MessageType.IMAGE || type === MessageType.AUDIO || type === MessageType.DOCUMENT) {
     return "/message/sendMedia/{instanceName}";
   }
   return "/message/send";

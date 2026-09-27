@@ -66,6 +66,7 @@ describe("MessagingConnectionsService", () => {
       welcomeExistingAttachment: null,
       absenceEnabled: false,
       absenceMessage: null,
+      absenceAttachment: null,
     };
     const attachment = {
       fileName: "boas-vindas.png",
@@ -86,13 +87,19 @@ describe("MessagingConnectionsService", () => {
         welcomeNewMessage: "Olá!",
         welcomeExistingMessage: "Olá novamente!",
         welcomeNewAttachment: attachment,
+        absenceEnabled: true,
+        absenceMessage: "Voltamos em breve!",
+        absenceAttachment: attachment,
       },
       current as never,
     );
 
     expect(prisma.messagingConnection.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ welcomeNewAttachment: attachment }),
+        data: expect.objectContaining({
+          welcomeNewAttachment: attachment,
+          absenceAttachment: attachment,
+        }),
       }),
     );
   });

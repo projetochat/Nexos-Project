@@ -147,7 +147,10 @@ export class RolesController {
     const inUse = await this.prisma.tenantMembership.count({
       where: { tenantId: current.tenantId, roleId: id },
     });
-    if (inUse > 0) throw new BadRequestException("Role em uso por usuários.");
+    if (inUse > 0)
+      throw new BadRequestException(
+        "Perfil de Acesso não pode ser excluído pois possui atendentes vinculados.",
+      );
     await this.prisma.role.delete({ where: { id } });
     return { ok: true };
   }

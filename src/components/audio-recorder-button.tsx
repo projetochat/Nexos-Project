@@ -7,10 +7,12 @@ export function AudioRecorderButton({
   disabled,
   showLabel = false,
   onRecorded,
+  onRecordingChange,
 }: {
   disabled?: boolean;
   showLabel?: boolean;
   onRecorded: (file: File) => void | Promise<void>;
+  onRecordingChange?: (recording: boolean) => void;
 }) {
   const [recording, setRecording] = React.useState(false);
   const recorderRef = React.useRef<MediaRecorder | null>(null);
@@ -57,6 +59,7 @@ export function AudioRecorderButton({
             : "webm";
         const blob = new Blob(chunksRef.current, { type: mimeType });
         setRecording(false);
+        onRecordingChange?.(false);
         stopTracks();
         if (!blob.size) return toast.error("Não foi possível gravar o áudio.");
         void Promise.resolve(
@@ -65,8 +68,10 @@ export function AudioRecorderButton({
       };
       recorder.start();
       setRecording(true);
+      onRecordingChange?.(true);
     } catch {
       stopTracks();
+      onRecordingChange?.(false);
       toast.error("Não foi possível acessar o microfone.");
     }
   };

@@ -75,6 +75,11 @@ export class UpdateMessagingConnectionDto {
   absenceMessage?: string | null;
 
   @IsOptional()
+  @ValidateNested()
+  @Type(() => QuickReplyAttachmentDto)
+  absenceAttachment?: QuickReplyAttachmentDto | null;
+
+  @IsOptional()
   @IsString()
   @MaxLength(1000)
   notes?: string | null;

@@ -45,4 +45,29 @@ describe("selectAutomaticReply", () => {
       template: "Saudação",
     });
   });
+  it("uses every configured period and treats the gap as absence", () => {
+    const multiple = hours.map((row) =>
+      row.day === "Quinta"
+        ? {
+            ...row,
+            periods: [
+              { start: "08:00", end: "12:00" },
+              { start: "13:00", end: "18:00" },
+            ],
+          }
+        : row,
+    );
+    expect(select({ serviceHours: multiple, at: new Date("2026-09-17T14:00:00.000Z") })).toEqual({
+      kind: "welcome",
+      template: "Saudação",
+    });
+    expect(select({ serviceHours: multiple, at: new Date("2026-09-17T15:30:00.000Z") })).toEqual({
+      kind: "absence",
+      template: "Ausência",
+    });
+    expect(select({ serviceHours: multiple, at: new Date("2026-09-17T17:00:00.000Z") })).toEqual({
+      kind: "welcome",
+      template: "Saudação",
+    });
+  });
 });

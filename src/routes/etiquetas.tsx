@@ -307,7 +307,7 @@ function EtiquetaForm({
         </div>
       }
     >
-      <div className="grid grid-cols-[minmax(7rem,1fr)_10.5rem] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_11rem]">
+      <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
         <Field label="Nome *" error={nameError || undefined}>
           <Input
             value={name}
@@ -319,7 +319,7 @@ function EtiquetaForm({
           />
         </Field>
         <Field label="Cor">
-          <div className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-2 transition focus-within:border-primary">
+          <div className="flex min-h-10 items-center gap-1 rounded-lg border border-border bg-surface-1 px-1.5 transition focus-within:border-primary">
             <input
               type="color"
               value={completeHexColor(color)}
@@ -331,7 +331,7 @@ function EtiquetaForm({
               onChange={(event) => setColor(normalizeHexColor(event.target.value))}
               placeholder={completeHexColor("#3B82F6")}
               maxLength={7}
-              className="min-h-0 min-w-0 flex-1 border-0 bg-transparent px-1 py-0 font-mono text-xs uppercase focus:border-0"
+              className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase focus:border-0 max-sm:!min-h-0 max-sm:!p-0"
             />
           </div>
         </Field>

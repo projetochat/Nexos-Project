@@ -69,18 +69,48 @@ describe("quick reply editor", () => {
     expect((document.querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(
       false,
     );
-    expect(document.querySelector('[aria-label="Gravar áudio"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Abrir opções de anexo"]')).not.toBeNull();
     await click(button("Adicionar mensagem"));
     const second = document.querySelectorAll("textarea")[1];
     await act(async () => second.focus());
-    await click(document.querySelector('[aria-label="Inserir variável"]')!);
+    await click(document.querySelectorAll('[aria-label="Inserir variável"]')[1]);
+    expect(document.querySelector('[aria-label="Variáveis disponíveis"]')).not.toBeNull();
     expect(
-      document
-        .querySelector('[aria-label^="Inserir variável contato:"]')
-        ?.getAttribute("aria-label"),
+      document.querySelector('[aria-label*="Nome do contato"]')?.getAttribute("aria-label"),
     ).toContain("Nome do contato");
     await click(button("{{contato}}"));
     expect(texts()).toEqual(["", "{{contato}}"]);
+  });
+
+  it("inserts an emoji at the cursor of the selected message before the variables button", async () => {
+    await act(async () =>
+      root.render(
+        <QuickReplyEditor
+          open
+          initial={initial}
+          existingReplies={[]}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />,
+      ),
+    );
+    const second = document.querySelectorAll("textarea")[1];
+    await act(async () => {
+      second.focus();
+      second.setSelectionRange(3, 3);
+    });
+    const emojiButton = document.querySelectorAll('[aria-label="Inserir emoji"]')[1];
+    const variablesButton = document.querySelectorAll('[aria-label="Inserir variável"]')[1];
+    expect(
+      emojiButton.compareDocumentPosition(variablesButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await click(emojiButton);
+    expect(document.querySelector('[aria-label="Biblioteca de emojis"]')).not.toBeNull();
+    const smilingEmoji = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+      (item) => item.getAttribute("aria-label") === "Inserir emoji 😊",
+    )!;
+    await click(smilingEmoji);
+    expect(texts()).toEqual(["Primeira", "Seg😊unda"]);
   });
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -115,7 +145,11 @@ describe("quick reply editor", () => {
     expect(document.querySelector('[aria-label="Mover para cima"]')).toBeNull();
     expect(document.querySelector('[aria-label="Mover para baixo"]')).toBeNull();
     expect(texts()).toEqual(["Primeira", "Segunda"]);
-    expect(document.querySelector("details summary")?.textContent).toContain("Anexo");
+    expect(document.querySelector("details")).toBeNull();
+    await click(document.querySelector('[aria-label="Abrir opções de anexo"]')!);
+    expect(document.querySelector('[aria-label="Opções de anexo"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Gravar áudio"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Anexar arquivo à mensagem 1"]')).not.toBeNull();
     await click(button("Salvar"));
     expect(api.update).toHaveBeenCalledWith(
       "reply",

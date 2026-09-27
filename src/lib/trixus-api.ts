@@ -478,7 +478,14 @@ export type ApiAutomationRule = {
   updatedAt: string;
 };
 
-export type ApiServiceHoursRow = { day: string; active: boolean; start: string; end: string };
+export type ApiServiceHoursPeriod = { start: string; end: string };
+export type ApiServiceHoursRow = {
+  day: string;
+  active: boolean;
+  start: string;
+  end: string;
+  periods?: ApiServiceHoursPeriod[];
+};
 
 export type ApiMessagingConnection = {
   serviceEnabled?: boolean;
@@ -500,6 +507,7 @@ export type ApiMessagingConnection = {
   welcomeExistingAttachment?: QuickReplyAttachment | null;
   absenceEnabled?: boolean;
   absenceMessage?: string | null;
+  absenceAttachment?: QuickReplyAttachment | null;
   notes?: string | null;
   importHistoryEnabled?: boolean;
   importHistoryStartDate?: string | null;
@@ -750,6 +758,7 @@ export type ApiOperationsHourlyMessage = {
   recebidas: number;
   enviadas: number;
   total: number;
+  contatosAtendidos: number;
 };
 
 export type ApiOperationsDashboard = {
@@ -762,6 +771,7 @@ export type ApiOperationsDashboard = {
     byConnection: ApiOperationsChartItem[];
     byTag: ApiOperationsChartItem[];
     messagesByHour: ApiOperationsHourlyMessage[];
+    messageContactsTotal: number;
   };
   recent: ApiConversation[];
 };
@@ -1590,6 +1600,7 @@ export const connectionsApi = {
       timezone?: string;
       absenceEnabled?: boolean;
       absenceMessage?: string | null;
+      absenceAttachment?: QuickReplyAttachment | null;
       notes?: string | null;
     },
   ) =>
