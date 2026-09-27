@@ -509,7 +509,7 @@ function Dashboard() {
                     <Line
                       type="monotone"
                       dataKey="contatosAtendidos"
-                      name="Contatos atendidos"
+                      name="Qtd Contatos"
                       stroke="#f97316"
                       strokeWidth={2}
                       dot={false}
@@ -525,7 +525,7 @@ function Dashboard() {
                       <MessageTrafficLegendHeader label="Recebidos" color="#2563eb" />
                       <MessageTrafficLegendHeader label="Enviados" color="#16a34a" />
                       <MessageTrafficLegendHeader label="Total" color="#94a3b8" />
-                      <MessageTrafficLegendHeader label="Contatos atendidos" color="#f97316" />
+                      <MessageTrafficLegendHeader label="Qtd Contatos" color="#f97316" />
                     </tr>
                   </thead>
                   <tbody>
