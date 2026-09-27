@@ -1336,7 +1336,7 @@ function ConnectionSettingsModal({
                 </div>
 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4">
+                  <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-2 sm:gap-4">
                     <div className="hidden sm:col-start-1 sm:row-start-1 sm:block">
                       <Field label="Status">
                         <div className="flex h-10 items-center">
@@ -1370,7 +1370,7 @@ function ConnectionSettingsModal({
                     </div>
                     <div className="min-w-0 sm:col-start-2 sm:row-start-1">
                       <Field label="Cor">
-                        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary">
+                        <div className="flex min-h-10 items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary max-sm:gap-1 max-sm:px-1.5 max-sm:py-0">
                           <input
                             type="color"
                             value={completeHexColor(form.color, "#22c55e")}
@@ -1380,7 +1380,7 @@ function ConnectionSettingsModal({
                                 color: normalizeHexColor(event.target.value, "#22c55e"),
                               })
                             }
-                            className="h-7 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                            className="h-7 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0 max-sm:h-6 max-sm:w-9"
                           />
                           <input
                             type="text"
@@ -1393,7 +1393,7 @@ function ConnectionSettingsModal({
                             }
                             placeholder={completeHexColor("#22c55e")}
                             maxLength={7}
-                            className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+                            className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 max-sm:p-0"
                           />
                         </div>
                       </Field>
