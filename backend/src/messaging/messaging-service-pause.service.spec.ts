@@ -166,9 +166,7 @@ describe("service pause retention and replay (isolated mocks)", () => {
       { id: "2", payload: json(deletion) },
     ] as never);
     await service.drain();
-    expect(prisma.outboxEvent.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 1 }),
-    );
+    expect(prisma.outboxEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 1 }));
     expect(tx.outboxEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         orderBy: [{ attempts: "asc" }, { createdAt: "asc" }, { id: "asc" }],
@@ -413,9 +411,7 @@ describe("paused capture pagination and readiness", () => {
       { ...connection, serviceEnabled: false },
     ] as never);
     prisma.outboxEvent.findMany
-      .mockResolvedValueOnce(
-        [{ id: "first", payload: json(inboundEvent()) }] as never,
-      )
+      .mockResolvedValueOnce([{ id: "first", payload: json(inboundEvent()) }] as never)
       .mockResolvedValueOnce([]);
     await service.drain();
     await service.drain();
