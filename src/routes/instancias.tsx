@@ -41,9 +41,12 @@ import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcut
 import { num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { useSession } from "@/lib/session";
 import {
   connectionsApi,
   crmApi,
+  organizationApi,
+  type ApiDepartment,
   type ApiContactCustomField,
   type ApiMessagingHistoryImport,
   type ApiMessagingConnection,
@@ -72,6 +75,9 @@ const STATUS_TONE: Record<
 
 function Page() {
   const qc = useQueryClient();
+  const permissions = useSession((state) => state.user?.permissions ?? []);
+  const canManage = permissions.includes("connections.manage");
+  const canDelete = permissions.includes("connections.delete");
   const novo = useDisclosure();
   const [qr, setQr] = React.useState<{
     connectionId: string;
@@ -90,6 +96,10 @@ function Page() {
   const { data: contactCustomFields = [] } = useQuery({
     queryKey: ["trixus", "contact-custom-fields"],
     queryFn: crmApi.listContactCustomFields,
+  });
+  const { data: departments = [] } = useQuery({
+    queryKey: ["trixus", "departments"],
+    queryFn: organizationApi.listDepartments,
   });
   const visibleItems = sortByOptionLabel(
     items.filter((item) => item.status !== "removed"),
@@ -285,9 +295,11 @@ function Page() {
           title="Instâncias"
           subtitle={`${num(visibleItems.length)} instâncias cadastradas.`}
           actions={
-            <Button variant="primary" size="sm" onClick={novo.show}>
-              <Plus className="h-3.5 w-3.5" /> Nova Instância
-            </Button>
+            canManage ? (
+              <Button variant="primary" size="sm" onClick={novo.show}>
+                <Plus className="h-3.5 w-3.5" /> Nova Instância
+              </Button>
+            ) : null
           }
         />
 
@@ -360,7 +372,7 @@ function Page() {
                     )}
                   </div>
                   <div className="mt-4 flex flex-wrap justify-end gap-2">
-                    {connection.status !== "connected" && (
+                    {canManage && connection.status !== "connected" && (
                       <Button
                         variant="secondary"
                         size="sm"
@@ -373,48 +385,56 @@ function Page() {
                         <QrCode className="h-3.5 w-3.5" /> QR
                       </Button>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => refresh.mutate(connection.id)}
-                      title="Verificar integração do WhatsApp"
-                      aria-label="Verificar integração do WhatsApp"
-                      className="group"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5 transition-transform duration-500 group-hover:rotate-[720deg]" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="hover:!bg-destructive hover:!text-destructive-foreground"
-                      onClick={() => setDisconnecting(connection)}
-                      disabled={!canDisconnect}
-                      title="Desconectar"
-                      aria-label="Desconectar"
-                    >
-                      <Power className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setEditing(connection)}
-                      disabled={!canEdit}
-                      title={canEdit ? "Editar" : instanceEditUnavailableReason(connection)}
-                      aria-label="Editar"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="trash-action"
-                      onClick={() => setRemoving(connection)}
-                      disabled={remove.isPending}
-                      title="Remover"
-                      aria-label="Remover"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => refresh.mutate(connection.id)}
+                        title="Verificar integração do WhatsApp"
+                        aria-label="Verificar integração do WhatsApp"
+                        className="group"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5 transition-transform duration-500 group-hover:rotate-[720deg]" />
+                      </Button>
+                    )}
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="hover:!bg-destructive hover:!text-destructive-foreground"
+                        onClick={() => setDisconnecting(connection)}
+                        disabled={!canDisconnect}
+                        title="Desconectar"
+                        aria-label="Desconectar"
+                      >
+                        <Power className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditing(connection)}
+                        disabled={!canEdit}
+                        title={canEdit ? "Editar" : instanceEditUnavailableReason(connection)}
+                        aria-label="Editar"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="trash-action"
+                        onClick={() => setRemoving(connection)}
+                        disabled={remove.isPending}
+                        title="Remover"
+                        aria-label="Remover"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </Card>
               );
@@ -422,47 +442,56 @@ function Page() {
           </div>
         )}
 
-        <ConnectionForm
-          open={novo.open}
-          busy={create.isPending}
-          connections={visibleItems}
-          onClose={novo.hide}
-          onSubmit={(data) => create.mutate(data)}
-        />
-        <ConnectionSettingsModal
-          connection={editing}
-          connections={visibleItems}
-          contactCustomFields={contactCustomFields}
-          busy={update.isPending}
-          onClose={() => setEditing(null)}
-          onSubmit={(connection, data) => update.mutate({ connection, data })}
-        />
+        {canManage && (
+          <ConnectionForm
+            open={novo.open}
+            busy={create.isPending}
+            connections={visibleItems}
+            onClose={novo.hide}
+            onSubmit={(data) => create.mutate(data)}
+          />
+        )}
+        {canManage && (
+          <ConnectionSettingsModal
+            connection={editing}
+            connections={visibleItems}
+            departments={departments}
+            contactCustomFields={contactCustomFields}
+            busy={update.isPending}
+            onClose={() => setEditing(null)}
+            onSubmit={(connection, data) => update.mutate({ connection, data })}
+          />
+        )}
         <QrModal qr={qr} onClose={() => setQr(null)} />
-        <RemoveConnectionModal
-          connection={removing}
-          busy={remove.isPending}
-          onClose={() => setRemoving(null)}
-          onConfirm={(connection, options) => remove.mutate({ connection, options })}
-        />
-        <ConfirmDialog
-          open={!!disconnecting}
-          title="Desligar Instância?"
-          description={
-            <p>
-              Deseja desligar a instância{" "}
-              <strong className="font-semibold text-foreground">
-                "{disconnecting?.name ?? ""}"
-              </strong>
-              ? Será necessário conectá-la novamente para enviar e receber mensagens.
-            </p>
-          }
-          confirmLabel="Desligar"
-          destructive
-          onClose={() => setDisconnecting(null)}
-          onConfirm={() => {
-            if (disconnecting) logout.mutate(disconnecting.id);
-          }}
-        />
+        {canDelete && (
+          <RemoveConnectionModal
+            connection={removing}
+            busy={remove.isPending}
+            onClose={() => setRemoving(null)}
+            onConfirm={(connection, options) => remove.mutate({ connection, options })}
+          />
+        )}
+        {canManage && (
+          <ConfirmDialog
+            open={!!disconnecting}
+            title="Desligar Instância?"
+            description={
+              <p>
+                Deseja desligar a instância{" "}
+                <strong className="font-semibold text-foreground">
+                  "{disconnecting?.name ?? ""}"
+                </strong>
+                ? Será necessário conectá-la novamente para enviar e receber mensagens.
+              </p>
+            }
+            confirmLabel="Desligar"
+            destructive
+            onClose={() => setDisconnecting(null)}
+            onConfirm={() => {
+              if (disconnecting) logout.mutate(disconnecting.id);
+            }}
+          />
+        )}
       </PageContainer>
     </AppShell>
   );
@@ -929,6 +958,7 @@ type ConnectionSettingsFormData = {
   timezone?: string;
   serviceHours?: ApiServiceHoursRow[];
   name: string;
+  defaultDepartmentId: string | null;
   color: string | null;
   welcomeEnabled: boolean;
   welcomeNewMessage: string | null;
@@ -1018,6 +1048,7 @@ function serializeServiceHours(rows: ServiceHoursRow[]): ApiServiceHoursRow[] {
 function ConnectionSettingsModal({
   connection,
   connections,
+  departments,
   contactCustomFields,
   busy,
   onClose,
@@ -1025,6 +1056,7 @@ function ConnectionSettingsModal({
 }: {
   connection: ApiMessagingConnection | null;
   connections: ApiMessagingConnection[];
+  departments: ApiDepartment[];
   contactCustomFields: ApiContactCustomField[];
   busy: boolean;
   onClose: () => void;
@@ -1052,6 +1084,7 @@ function ConnectionSettingsModal({
   const [showAbsenceValidation, setShowAbsenceValidation] = React.useState(false);
   const [form, setForm] = React.useState<ConnectionSettingsFormData>({
     name: "",
+    defaultDepartmentId: null,
     color: "#22c55e",
     welcomeEnabled: false,
     welcomeNewMessage: "",
@@ -1107,6 +1140,7 @@ function ConnectionSettingsModal({
     setShowAbsenceValidation(false);
     setForm({
       name: connection.name,
+      defaultDepartmentId: connection.defaultDepartmentId ?? null,
       color: connection.color || "#22c55e",
       welcomeEnabled: connection.welcomeEnabled ?? false,
       welcomeNewMessage: connection.welcomeNewMessage ?? "",
@@ -1213,7 +1247,7 @@ function ConnectionSettingsModal({
         onClose={onClose}
         title="Editar Instância"
         size="xl"
-        className="sm:max-w-[44.8rem] lg:max-h-[calc(90dvh-2rem)]"
+        className="sm:max-w-[35.84rem] lg:max-h-[calc(90dvh-2rem)]"
         footer={
           <div className="flex w-full items-center justify-between gap-2">
             <EntityFormLog createdAt={connection?.createdAt} updatedAt={connection?.updatedAt} />
@@ -1249,7 +1283,7 @@ function ConnectionSettingsModal({
           {tab === "general" && (
             <div className="space-y-5">
               <div className="grid gap-5 lg:gap-8">
-                <div className="relative grid max-w-md grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 lg:mx-auto lg:w-full lg:max-w-[32rem] lg:grid-cols-[9rem_minmax(0,1fr)] lg:gap-16">
+                <div className="relative grid max-w-md grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 lg:mx-auto lg:w-full lg:max-w-[32rem] lg:grid-cols-[9rem_minmax(0,1fr)] lg:place-items-center lg:gap-16">
                   <button
                     ref={logoButtonRef}
                     type="button"
@@ -1419,6 +1453,27 @@ function ConnectionSettingsModal({
                       <TimezoneSelect value={timezone} onChange={setTimezone} />
                     </Field>
                   </div>
+                  <Field label="Departamento Padrão">
+                    <Select
+                      value={form.defaultDepartmentId ?? ""}
+                      onChange={(event) =>
+                        setForm({
+                          ...form,
+                          defaultDepartmentId: event.target.value || null,
+                        })
+                      }
+                    >
+                      <option value="">- Selecione um departamento -</option>
+                      {sortByOptionLabel(
+                        departments.filter((department) => department.active),
+                        (department) => department.name,
+                      ).map((department) => (
+                        <option key={department.id} value={department.id}>
+                          {department.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
                 </div>
               </div>
               <div className="space-y-3">

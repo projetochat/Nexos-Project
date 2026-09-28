@@ -4,6 +4,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Inject,
   NotFoundException,
@@ -59,6 +60,9 @@ export class RolesController {
   @RequirePermissions("roles.manage")
   async create(@Body() dto: CreateRoleDto, @CurrentUser() current: AuthenticatedUser) {
     this.assertPermissions(dto.permissionIds);
+    this.assertPermissionDependencies(dto.permissionIds);
+    this.assertCanGrantPermissions(dto.permissionIds, current);
+    await this.assertMetadataScope(dto.metadata, current);
     const name = dto.name.trim();
     const key = (dto.key ?? name)
       .trim()
@@ -106,7 +110,18 @@ export class RolesController {
     if (dto.name !== undefined && normalizeRoleName(dto.name) === "administrador") {
       throw new BadRequestException("O nome Administrador é reservado para gestão do sistema.");
     }
-    if (dto.permissionIds) this.assertPermissions(dto.permissionIds);
+    if (dto.permissionIds) {
+      this.assertPermissions(dto.permissionIds);
+      this.assertPermissionDependencies(dto.permissionIds);
+    }
+    if (dto.permissionIds) {
+      this.assertCanGrantPermissions(
+        dto.permissionIds,
+        current,
+        existing.permissions.map((permission) => permission.permissionId),
+      );
+    }
+    await this.assertMetadataScope(dto.metadata, current, existing.metadata);
     const role = await this.prisma.$transaction(async (tx) => {
       if (dto.name !== undefined) {
         await this.ensureNameAvailable(tx, current.tenantId, dto.name.trim(), existing.id);
@@ -140,7 +155,7 @@ export class RolesController {
   }
 
   @Delete("roles/:id")
-  @RequirePermissions("roles.manage")
+  @RequirePermissions("roles.delete")
   async remove(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const role = await this.findRoleOrThrow(id, current.tenantId);
     this.assertAdministratorRoleProtected(role);
@@ -167,6 +182,85 @@ export class RolesController {
   private assertPermissions(permissionIds: string[]) {
     const invalid = permissionIds.find((permissionId) => !isPermissionKey(permissionId));
     if (invalid) throw new BadRequestException(`Permission invalida: ${invalid}`);
+  }
+
+  private assertCanGrantPermissions(
+    permissionIds: string[],
+    current: AuthenticatedUser,
+    existingPermissionIds: string[] = [],
+  ) {
+    if (current.roleKey === "tenant_admin") return;
+    const granted = new Set<string>(current.permissions ?? []);
+    const requested = new Set(permissionIds);
+    const existing = new Set(existingPermissionIds);
+    const changed = [
+      ...permissionIds.filter((permissionId) => !existing.has(permissionId)),
+      ...existingPermissionIds.filter((permissionId) => !requested.has(permissionId)),
+    ];
+    const forbidden = changed.find((permissionId) => !granted.has(permissionId));
+    if (forbidden) {
+      throw new ForbiddenException(
+        "Você não pode adicionar ou remover uma permissão que não possui.",
+      );
+    }
+  }
+
+  private assertPermissionDependencies(permissionIds: string[]) {
+    const requested = new Set(permissionIds);
+    for (const [readPermission, childPermissions] of Object.entries(PERMISSION_DEPENDENCIES)) {
+      if (requested.has(readPermission)) continue;
+      const child = childPermissions.find((permissionId) => requested.has(permissionId));
+      if (child) {
+        throw new BadRequestException(
+          `A permissão ${readPermission} é obrigatória para habilitar ${child}.`,
+        );
+      }
+    }
+  }
+
+  private async assertMetadataScope(
+    metadata: unknown,
+    current: AuthenticatedUser,
+    existingMetadata?: unknown,
+  ) {
+    if (metadata === undefined) return;
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      throw new BadRequestException("Configuração do perfil inválida.");
+    }
+    const requestedValue = (metadata as { connectionIds?: unknown }).connectionIds;
+    if (requestedValue === undefined) return;
+    if (!Array.isArray(requestedValue) || requestedValue.some((id) => typeof id !== "string")) {
+      throw new BadRequestException("Escopo de instâncias inválido.");
+    }
+    const requested = [...new Set(requestedValue as string[])];
+    if (requested.length) {
+      const count = await this.prisma.messagingConnection.count({
+        where: { tenantId: current.tenantId, id: { in: requested }, archivedAt: null },
+      });
+      if (count !== requested.length) {
+        throw new BadRequestException("Instância inexistente para esta organização.");
+      }
+    }
+    if (current.roleKey === "tenant_admin") return;
+    const existing = new Set(
+      Array.isArray((existingMetadata as { connectionIds?: unknown } | null)?.connectionIds)
+        ? ((existingMetadata as { connectionIds: unknown[] }).connectionIds.filter(
+            (id): id is string => typeof id === "string",
+          ) as string[])
+        : [],
+    );
+    const allowed = new Set(current.connectionIds ?? []);
+    const requestedSet = new Set(requested);
+    const changed = [
+      ...requested.filter((id) => !existing.has(id)),
+      ...[...existing].filter((id) => !requestedSet.has(id)),
+    ];
+    const forbidden = changed.find((id) => !allowed.has(id));
+    if (forbidden) {
+      throw new ForbiddenException(
+        "Você não pode adicionar ou remover uma instância fora do seu escopo.",
+      );
+    }
   }
 
   private assertAdministratorRoleProtected(role: { key: string; name: string }) {
@@ -232,6 +326,66 @@ export class RolesController {
     };
   }
 }
+
+const PERMISSION_DEPENDENCIES: Record<string, readonly string[]> = {
+  "dashboard.read": ["dashboard.manage", "dashboard.delete"],
+  "users.read": ["users.manage", "users.delete"],
+  "departments.read": ["departments.manage", "departments.delete"],
+  "roles.read": ["roles.manage", "roles.delete"],
+  "crm.read": ["crm.manage"],
+  "contacts.read": ["contacts.manage", "contacts.delete"],
+  "conversations.read": [
+    "conversations.assign",
+    "conversations.manage",
+    "messages.send",
+    "chat.contacts.edit",
+    "chat.contacts.create",
+    "chat.contacts.read",
+    "chat.phone.read",
+    "chat.customer_link.edit",
+    "chat.tags.use",
+    "chat.contacts.block",
+    "chat.messages.delete",
+    "chat.messages.edit",
+    "chat.audio.send",
+    "chat.agent_name.show",
+    "chat.conversations.view_all_active",
+    "tickets.create",
+  ],
+  "connections.read": ["connections.manage", "connections.delete"],
+  "groups.read": ["groups.manage"],
+  "chat.tags.read": ["chat.tags.manage", "chat.tags.delete"],
+  "chat.quick_replies.read": ["chat.quick_replies.manage", "chat.quick_replies.delete"],
+  "chat.leads.read": ["leads.manage"],
+  "notifications.read": ["notifications.manage"],
+  "automations.read": ["automations.manage", "automations.delete"],
+  "tickets.read": [
+    "tickets.update",
+    "tickets.assign",
+    "tickets.status.update",
+    "tickets.comment",
+    "tickets.attachments.upload",
+    "tickets.attachments.delete",
+    "tickets.manage",
+    "tickets.delete",
+  ],
+  "campaigns.read": [
+    "campaigns.create",
+    "campaigns.update",
+    "campaigns.schedule",
+    "campaigns.start",
+    "campaigns.pause",
+    "campaigns.cancel",
+    "campaigns.duplicate",
+    "campaigns.recipients.read",
+    "campaigns.manage",
+    "campaigns.delete",
+  ],
+  "schedules.read": ["schedules.manage", "schedules.delete"],
+  "bot_flows.read": ["bot_flows.manage", "bot_flows.delete"],
+  "ai_agents.read": ["ai_agents.manage", "ai_agents.delete"],
+  "settings.read": ["settings.manage", "settings.delete"],
+};
 
 function normalizeRoleName(value: string) {
   return value

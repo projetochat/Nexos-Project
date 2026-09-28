@@ -29,7 +29,7 @@ export class SaveScheduleDto {
   @IsIn(["pending", "completed"]) status!: string;
   @IsString() @MaxLength(100) connectionId!: string;
   @IsString() @MaxLength(100) departmentId!: string;
-  @IsString() @MinLength(1) @MaxLength(10000) content!: string;
+  @IsString() @MaxLength(10000) content!: string;
   @IsArray() @ArrayMaxSize(500) @IsUUID("all", { each: true }) recipientIds!: string[];
   @IsArray()
   @ArrayMaxSize(500)

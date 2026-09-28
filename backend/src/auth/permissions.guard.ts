@@ -9,9 +9,10 @@ import {
 import { Reflector } from "@nestjs/core";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthenticatedRequest } from "./jwt-auth.guard";
-import { PermissionKey, PERMISSIONS } from "./permissions.constants";
+import { PermissionKey } from "./permissions.constants";
+import { effectivePermissions } from "./effective-permissions";
 import { roleConnectionIds } from "./connection-access";
-import { PERMISSIONS_KEY } from "./permissions.decorator";
+import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from "./permissions.decorator";
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -24,6 +25,10 @@ export class PermissionsGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const required = this.reflector.getAllAndOverride<PermissionKey[]>(PERMISSIONS_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    const anyRequired = this.reflector.getAllAndOverride<PermissionKey[]>(ANY_PERMISSIONS_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
@@ -72,15 +77,17 @@ export class PermissionsGuard implements CanActivate {
       if (!session) throw new UnauthorizedException("Sessão de impersonação expirada.");
     }
 
-    // Individual permission switches are paused; instance scope remains enforced.
-    const granted = new Set<string>(PERMISSIONS);
+    const permissions = effectivePermissions(membership.role);
+    const granted = new Set<string>(permissions);
     const allowed = (required ?? []).every((permission) => granted.has(permission));
-    if (!allowed) throw new ForbiddenException("Permissão insuficiente.");
+    const anyAllowed =
+      !anyRequired?.length || anyRequired.some((permission) => granted.has(permission));
+    if (!allowed || !anyAllowed) throw new ForbiddenException("Permissão insuficiente.");
 
     request.user.roleId = membership.roleId;
     request.user.roleKey = membership.role.key;
     request.user.connectionIds = roleConnectionIds(membership.role);
-    request.user.permissions = [...granted] as PermissionKey[];
+    request.user.permissions = permissions;
     const connectionId = /\/messaging\/connections\//.test(request.originalUrl)
       ? request.params.id
       : undefined;

@@ -70,6 +70,15 @@ const maxAttachmentSizeMb = 10;
 
 function ChamadosPage() {
   const qc = useQueryClient();
+  const permissions = useSession((state) => state.user?.permissions ?? []);
+  const canManage = permissions.includes("tickets.manage");
+  const canCreate = canManage || permissions.includes("tickets.create");
+  const canUpdate = canManage || permissions.includes("tickets.update");
+  const canUpdateStatus = canManage || permissions.includes("tickets.status.update");
+  const canComment = canManage || permissions.includes("tickets.comment");
+  const canUploadAttachment = canManage || permissions.includes("tickets.attachments.upload");
+  const canDeleteAttachment = canManage || permissions.includes("tickets.attachments.delete");
+  const canDelete = canManage || permissions.includes("tickets.delete");
   const search = useSearch({ from: "/chamados" });
   const novo = useDisclosure();
   const setNewTicketOpen = novo.set;
@@ -105,8 +114,8 @@ function ChamadosPage() {
   );
 
   React.useEffect(() => {
-    if (search.conversationId) setNewTicketOpen(true);
-  }, [search.conversationId, setNewTicketOpen]);
+    if (search.conversationId && canCreate) setNewTicketOpen(true);
+  }, [canCreate, search.conversationId, setNewTicketOpen]);
 
   React.useEffect(() => {
     if (search.ticketId) setSelectedId(search.ticketId);
@@ -119,9 +128,11 @@ function ChamadosPage() {
           title="Chamados"
           subtitle={`${num(tickets.data?.total ?? 0)} chamado(s) em PostgreSQL.`}
           actions={
-            <Button variant="primary" size="sm" onClick={novo.show}>
-              <Plus className="h-3.5 w-3.5" /> Novo chamado
-            </Button>
+            canCreate ? (
+              <Button variant="primary" size="sm" onClick={novo.show}>
+                <Plus className="h-3.5 w-3.5" /> Novo chamado
+              </Button>
+            ) : null
           }
         />
 
@@ -173,9 +184,11 @@ function ChamadosPage() {
             title="Nenhum chamado"
             description="Crie um chamado com workflow, comentários e atrixus privados."
             action={
-              <Button variant="primary" size="sm" onClick={novo.show}>
-                <Plus className="h-3.5 w-3.5" /> Criar chamado
-              </Button>
+              canCreate ? (
+                <Button variant="primary" size="sm" onClick={novo.show}>
+                  <Plus className="h-3.5 w-3.5" /> Criar chamado
+                </Button>
+              ) : undefined
             }
           />
         ) : (
@@ -223,43 +236,49 @@ function ChamadosPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="Duplicar chamado"
-                            aria-label={`Duplicar chamado ${ticket.protocol}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setDuplicatingTicket(ticket);
-                            }}
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="Editar chamado"
-                            aria-label={`Editar chamado ${ticket.protocol}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setEditingTicket(ticket);
-                            }}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="trash-action"
-                            title="Excluir chamado"
-                            aria-label={`Excluir chamado ${ticket.protocol}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setDeletingTicket(ticket);
-                            }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          {canCreate && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Duplicar chamado"
+                              aria-label={`Duplicar chamado ${ticket.protocol}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setDuplicatingTicket(ticket);
+                              }}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canUpdate && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Editar chamado"
+                              aria-label={`Editar chamado ${ticket.protocol}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setEditingTicket(ticket);
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="trash-action"
+                              title="Excluir chamado"
+                              aria-label={`Excluir chamado ${ticket.protocol}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setDeletingTicket(ticket);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -270,42 +289,53 @@ function ChamadosPage() {
           </Card>
         )}
 
-        <TicketEditor
-          open={novo.open}
-          initialConversationId={search.conversationId}
-          onClose={novo.hide}
-          onSaved={(ticket) => {
-            novo.hide();
-            setSelectedId(ticket.id);
-            refreshTickets();
-          }}
-        />
+        {canCreate && (
+          <TicketEditor
+            open={novo.open}
+            initialConversationId={search.conversationId}
+            onClose={novo.hide}
+            onSaved={(ticket) => {
+              novo.hide();
+              setSelectedId(ticket.id);
+              refreshTickets();
+            }}
+          />
+        )}
         <TicketDetail
           ticketId={selectedId}
           onClose={() => setSelectedId(null)}
           onChanged={refreshTickets}
+          canUpdate={canUpdate}
+          canUpdateStatus={canUpdateStatus}
+          canComment={canComment}
+          canUploadAttachment={canUploadAttachment}
+          canDeleteAttachment={canDeleteAttachment}
         />
-        <TicketEditor
-          open={!!duplicatingTicket}
-          initialTicket={duplicatingTicket}
-          clone
-          onClose={() => setDuplicatingTicket(null)}
-          onSaved={(ticket) => {
-            setDuplicatingTicket(null);
-            setSelectedId(ticket.id);
-            refreshTickets();
-          }}
-        />
-        <TicketEditor
-          open={!!editingTicket}
-          initialTicket={editingTicket}
-          onClose={() => setEditingTicket(null)}
-          onSaved={(ticket) => {
-            setEditingTicket(null);
-            setSelectedId(ticket.id);
-            refreshTickets();
-          }}
-        />
+        {canCreate && (
+          <TicketEditor
+            open={!!duplicatingTicket}
+            initialTicket={duplicatingTicket}
+            clone
+            onClose={() => setDuplicatingTicket(null)}
+            onSaved={(ticket) => {
+              setDuplicatingTicket(null);
+              setSelectedId(ticket.id);
+              refreshTickets();
+            }}
+          />
+        )}
+        {canUpdate && (
+          <TicketEditor
+            open={!!editingTicket}
+            initialTicket={editingTicket}
+            onClose={() => setEditingTicket(null)}
+            onSaved={(ticket) => {
+              setEditingTicket(null);
+              setSelectedId(ticket.id);
+              refreshTickets();
+            }}
+          />
+        )}
         <ConfirmDialog
           open={!!deletingTicket}
           title="Excluir Chamado?"
@@ -703,10 +733,20 @@ function TicketDetail({
   ticketId,
   onClose,
   onChanged,
+  canUpdate,
+  canUpdateStatus,
+  canComment,
+  canUploadAttachment,
+  canDeleteAttachment,
 }: {
   ticketId: string | null;
   onClose: () => void;
   onChanged: () => void;
+  canUpdate: boolean;
+  canUpdateStatus: boolean;
+  canComment: boolean;
+  canUploadAttachment: boolean;
+  canDeleteAttachment: boolean;
 }) {
   const navigate = useNavigate();
   const ticket = useQuery({
@@ -761,7 +801,7 @@ function TicketDetail({
       title={item ? `${viewMode ? "Visualizar" : "Editar"} Chamado · ${item.protocol}` : "Chamado"}
       size="xl"
       footer={
-        item && viewMode ? (
+        item && viewMode && (canUpdate || canUpdateStatus) ? (
           <Button variant="secondary" size="sm" onClick={() => setViewMode(false)}>
             <Pencil className="h-3.5 w-3.5" /> Editar
           </Button>
@@ -773,48 +813,41 @@ function TicketDetail({
       ) : (
         <div className="space-y-5">
           <div className="grid gap-3 md:grid-cols-4">
-            {viewMode ? (
-              <>
-                <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
-                <Badge tone={priorityTone(item.priority)}>{priorityLabel(item.priority)}</Badge>
-              </>
+            {!viewMode && canUpdateStatus ? (
+              <Select
+                value={item.status}
+                onChange={async (event) => {
+                  await ticketApi.updateStatus(item.id, event.target.value as ApiTicketStatus);
+                  refresh();
+                }}
+              >
+                {statuses.map((status) => (
+                  <option key={status} value={status}>
+                    {statusLabel(status)}
+                  </option>
+                ))}
+              </Select>
             ) : (
-              <>
-                <Select
-                  value={item.status}
-                  onChange={async (event) => {
-                    await ticketApi.updateStatus(item.id, event.target.value as ApiTicketStatus);
-                    refresh();
-                  }}
-                >
-                  {statuses.map((status) => (
-                    <option key={status} value={status}>
-                      {statusLabel(status)}
-                    </option>
-                  ))}
-                </Select>
-                <Select
-                  value={item.priority}
-                  onChange={async (event) => {
-                    await ticketApi.update(item.id, {
-                      priority: event.target.value as ApiTicketPriority,
-                    });
-                    refresh();
-                  }}
-                >
-                  {priorities.map((priority) => (
-                    <option key={priority} value={priority}>
-                      {priorityLabel(priority)}
-                    </option>
-                  ))}
-                </Select>
-              </>
+              <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
             )}
-            {!viewMode && (
-              <>
-                <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
-                <Badge tone={priorityTone(item.priority)}>{priorityLabel(item.priority)}</Badge>
-              </>
+            {!viewMode && canUpdate ? (
+              <Select
+                value={item.priority}
+                onChange={async (event) => {
+                  await ticketApi.update(item.id, {
+                    priority: event.target.value as ApiTicketPriority,
+                  });
+                  refresh();
+                }}
+              >
+                {priorities.map((priority) => (
+                  <option key={priority} value={priority}>
+                    {priorityLabel(priority)}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <Badge tone={priorityTone(item.priority)}>{priorityLabel(item.priority)}</Badge>
             )}
           </div>
           <Card className="p-4">
@@ -853,7 +886,7 @@ function TicketDetail({
                 </Card>
               ))}
             </div>
-            {!viewMode && (
+            {canComment && (
               <div className="mt-3 flex gap-2">
                 <Input
                   value={comment}
@@ -870,7 +903,8 @@ function TicketDetail({
             ticketId={item.id}
             items={attachments.data ?? []}
             onChanged={refresh}
-            readOnly={viewMode}
+            canUpload={canUploadAttachment}
+            canDelete={canDeleteAttachment}
           />
         </div>
       )}
@@ -882,12 +916,14 @@ function Attachments({
   ticketId,
   items,
   onChanged,
-  readOnly,
+  canUpload,
+  canDelete,
 }: {
   ticketId: string;
   items: ApiTicketAttachment[];
   onChanged: () => void;
-  readOnly: boolean;
+  canUpload: boolean;
+  canDelete: boolean;
 }) {
   const [busy, setBusy] = React.useState(false);
   const upload = async (file: File | undefined) => {
@@ -926,7 +962,7 @@ function Attachments({
     <section>
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Atrixus privados</h3>
-        {!readOnly && (
+        {canUpload && (
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-surface-1">
             <Paperclip className="h-3.5 w-3.5" /> {busy ? "Enviando..." : "Anexar"}
             <input
@@ -968,7 +1004,7 @@ function Attachments({
               >
                 <Download className="h-4 w-4" />
               </Button>
-              {!readOnly && (
+              {canDelete && (
                 <Button
                   variant="ghost"
                   size="icon"

@@ -113,6 +113,72 @@ describe("MessagingConnectionsService", () => {
     );
   });
 
+  it("stores only an active department from the same tenant as the instance default", async () => {
+    const prisma = prismaMock();
+    const currentConnection = {
+      ...connection(),
+      status: MessagingConnectionStatus.CONNECTED,
+      ownerPhoneNormalized: "5511999999999",
+      welcomeEnabled: false,
+      welcomeNewMessage: null,
+      welcomeExistingMessage: null,
+      welcomeNewAttachment: null,
+      welcomeExistingAttachment: null,
+      absenceEnabled: false,
+      absenceMessage: null,
+      absenceAttachment: null,
+    };
+    prisma.messagingConnection.findFirst.mockResolvedValue(currentConnection);
+    prisma.department.findFirst.mockResolvedValue({ id: "department-sales" });
+    prisma.messagingConnection.update.mockImplementation(async ({ data }) => ({
+      ...currentConnection,
+      ...data,
+    }));
+
+    await new MessagingConnectionsService(prisma as never, {} as never).update(
+      "connection-a",
+      { defaultDepartmentId: "department-sales" },
+      current as never,
+    );
+
+    expect(prisma.department.findFirst).toHaveBeenCalledWith({
+      where: { id: "department-sales", tenantId: "tenant-a", active: true },
+      select: { id: true },
+    });
+    expect(prisma.messagingConnection.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ defaultDepartmentId: "department-sales" }),
+      }),
+    );
+  });
+
+  it("rejects an inactive or foreign default department", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      status: MessagingConnectionStatus.CONNECTED,
+      ownerPhoneNormalized: "5511999999999",
+      welcomeEnabled: false,
+      welcomeNewMessage: null,
+      welcomeExistingMessage: null,
+      welcomeNewAttachment: null,
+      welcomeExistingAttachment: null,
+      absenceEnabled: false,
+      absenceMessage: null,
+      absenceAttachment: null,
+    });
+    prisma.department.findFirst.mockResolvedValue(null);
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, {} as never).update(
+        "connection-a",
+        { defaultDepartmentId: "department-foreign" },
+        current as never,
+      ),
+    ).rejects.toThrow("Selecione um departamento operacional ativo.");
+    expect(prisma.messagingConnection.update).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     process.env.EVOLUTION_BASE_URL = "http://evolution.local";
     process.env.EVOLUTION_API_KEY = "key";
@@ -779,6 +845,7 @@ function prismaMock() {
     },
     campaign: { count: vi.fn().mockResolvedValue(0) },
     campaignRecipient: { count: vi.fn().mockResolvedValue(0) },
+    department: { findFirst: vi.fn() },
     ticket: { count: vi.fn().mockResolvedValue(0) },
     $transaction: vi.fn(async (callback) => callback(prisma)),
   };

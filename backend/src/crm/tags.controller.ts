@@ -31,7 +31,7 @@ export class TagsController {
   ) {}
 
   @Get("tags")
-  @RequirePermissions("crm.read")
+  @RequirePermissions("chat.tags.read")
   async list(@CurrentUser() current: AuthenticatedUser) {
     const tags = await this.prisma.tag.findMany({
       where: { tenantId: current.tenantId, archivedAt: null },
@@ -103,7 +103,7 @@ export class TagsController {
   }
 
   @Delete("tags/:id")
-  @RequirePermissions("chat.tags.manage")
+  @RequirePermissions("chat.tags.delete")
   async archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     await this.findTagOrThrow(id, current.tenantId);
     const tag = await this.prisma.tag.update({

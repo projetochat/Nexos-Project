@@ -66,7 +66,14 @@ function setup(
     tenantMembership: {
       findFirst: vi.fn().mockResolvedValue({
         id: "membership-a",
-        role: { key: "agent", metadata: { connectionIds: ["connection-a"] } },
+        role: {
+          key: "agent",
+          metadata: { connectionIds: ["connection-a"] },
+          permissions: [
+            { permissionId: "chat.agent_name.show" },
+            { permissionId: "chat.audio.send" },
+          ],
+        },
       }),
     },
     outboxEvent: { create: vi.fn().mockResolvedValue({}) },
@@ -77,6 +84,7 @@ function setup(
     message: { findFirst: vi.fn().mockResolvedValue(options.existing ?? null) },
     conversation: { findFirst: vi.fn().mockResolvedValue(conversation) },
     schedule: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    tenantMembership: tx.tenantMembership,
     $transaction: vi.fn().mockImplementation(async (callback) => callback(tx)),
   };
   const dispatcher = { dispatchMessage: vi.fn().mockResolvedValue(true) };
@@ -236,9 +244,50 @@ describe("MessagingOutboundService scheduled messages", () => {
     );
   });
 
+  it("keeps scheduled audio enabled while individual permissions are paused", async () => {
+    const mediaStorage = {
+      storeDownloaded: vi.fn().mockResolvedValue({
+        objectKey: "tenants/tenant-a/messages/audio",
+        checksum: "checksum-audio",
+        mimeType: "audio/webm",
+        fileName: "audio.webm",
+        sizeBytes: 4,
+      }),
+      deleteObject: vi.fn().mockResolvedValue(undefined),
+    };
+    const { service, prisma } = setup({ mediaStorage });
+    prisma.tenantMembership.findFirst.mockResolvedValue({
+      id: "membership-a",
+      role: {
+        key: "agent",
+        metadata: { connectionIds: ["connection-a"] },
+        permissions: [],
+      },
+    });
+
+    await expect(
+      service.queueScheduledMessage({
+        tenantId: "tenant-a",
+        scheduleId: "schedule-audio",
+        claimedVersion: 2,
+        occurrenceAt,
+        conversationId: "conversation-a",
+        createdByMembershipId: "membership-a",
+        content: "",
+        attachment: {
+          fileName: "audio.webm",
+          mimeType: "audio/webm",
+          size: 4,
+          dataUrl: "data:audio/webm;base64,VGVzdA==",
+        },
+      }),
+    ).resolves.toMatchObject({ created: true });
+    expect(mediaStorage.storeDownloaded).toHaveBeenCalledOnce();
+  });
+
   it("rejects delivery when the stored creator is no longer active", async () => {
-    const { service, tx } = setup();
-    tx.tenantMembership.findFirst.mockResolvedValue(null);
+    const { service, prisma, tx } = setup();
+    prisma.tenantMembership.findFirst.mockResolvedValue(null);
 
     await expect(
       service.queueScheduledMessage({
@@ -252,21 +301,30 @@ describe("MessagingOutboundService scheduled messages", () => {
       }),
     ).rejects.toThrow("não possui mais um vínculo ativo");
 
-    expect(tx.tenantMembership.findFirst).toHaveBeenCalledWith({
+    expect(prisma.tenantMembership.findFirst).toHaveBeenCalledWith({
       where: {
         id: "inactive-membership",
         tenantId: "tenant-a",
         status: "ACTIVE",
         user: { status: "ACTIVE" },
       },
-      select: { id: true, role: { select: { key: true, metadata: true } } },
+      select: {
+        id: true,
+        role: {
+          select: {
+            key: true,
+            metadata: true,
+            permissions: { select: { permissionId: true } },
+          },
+        },
+      },
     });
     expect(tx.message.create).not.toHaveBeenCalled();
   });
 
   it("allows a legacy backfilled schedule without creator using the service identity", async () => {
     const senderDisplayName = { resolveForMembership: vi.fn() };
-    const { service, tx } = setup({ senderDisplayName });
+    const { service, prisma, tx } = setup({ senderDisplayName });
     await service.queueScheduledMessage({
       tenantId: "tenant-a",
       scheduleId: "schedule-legacy",
@@ -276,7 +334,7 @@ describe("MessagingOutboundService scheduled messages", () => {
       createdByMembershipId: null,
       content: "Mensagem legada",
     });
-    expect(tx.tenantMembership.findFirst).not.toHaveBeenCalled();
+    expect(prisma.tenantMembership.findFirst).not.toHaveBeenCalled();
     expect(senderDisplayName.resolveForMembership).not.toHaveBeenCalled();
     expect(tx.message.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ authorMembershipId: null }) }),
@@ -284,10 +342,14 @@ describe("MessagingOutboundService scheduled messages", () => {
   });
 
   it("rejects delivery when the creator lost access to the conversation connection", async () => {
-    const { service, tx } = setup();
-    tx.tenantMembership.findFirst.mockResolvedValue({
+    const { service, prisma, tx } = setup();
+    prisma.tenantMembership.findFirst.mockResolvedValue({
       id: "membership-a",
-      role: { key: "agent", metadata: { connectionIds: ["connection-other"] } },
+      role: {
+        key: "agent",
+        metadata: { connectionIds: ["connection-other"] },
+        permissions: [],
+      },
     });
     await expect(
       service.queueScheduledMessage({

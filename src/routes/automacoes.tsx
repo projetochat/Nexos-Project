@@ -22,11 +22,15 @@ import {
 } from "@/lib/trixus-api";
 import { num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { useSession } from "@/lib/session";
+import { ComingSoonPage } from "@/components/coming-soon-page";
 
 export const Route = createFileRoute("/automacoes")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
   component: Page,
 });
+
+const MODULE_AVAILABLE = false;
 
 const automationQueryKey = ["trixus", "automations"] as const;
 const departmentsQueryKey = ["trixus", "departments"] as const;
@@ -40,7 +44,24 @@ const ACTION_LABEL: Record<ApiAutomationRule["actionType"], string> = {
 };
 
 function Page() {
+  if (!MODULE_AVAILABLE) {
+    return (
+      <ComingSoonPage
+        title="Automações"
+        description="O módulo de Automações está sendo preparado e estará disponível em breve."
+        icon={<Workflow className="h-6 w-6" />}
+      />
+    );
+  }
+
+  return <AutomationsPage />;
+}
+
+function AutomationsPage() {
   const qc = useQueryClient();
+  const permissions = useSession((state) => state.user?.permissions ?? []);
+  const canManage = permissions.includes("automations.manage");
+  const canDelete = permissions.includes("automations.delete");
   const [creating, setCreating] = React.useState(false);
   const { data, isLoading } = useQuery({
     queryKey: automationQueryKey,
@@ -63,13 +84,15 @@ function Page() {
           title="Automações"
           subtitle={`${num(rules.length)} regras configuradas no tenant.`}
           actions={
-            <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-              <Plus className="h-3.5 w-3.5" /> Nova automação
-            </Button>
+            canManage ? (
+              <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+                <Plus className="h-3.5 w-3.5" /> Nova automação
+              </Button>
+            ) : null
           }
         />
 
-        {creating && (
+        {canManage && creating && (
           <AutomationForm
             departments={departments.filter((department) => department.active)}
             onCancel={() => setCreating(false)}
@@ -88,6 +111,8 @@ function Page() {
               <AutomationRow
                 key={rule.id}
                 rule={rule}
+                canManage={canManage}
+                canDelete={canDelete}
                 onToggle={async () => {
                   await automationApi.update(rule.id, {
                     status: rule.status === "active" ? "DISABLED" : "ACTIVE",
@@ -119,10 +144,14 @@ function Page() {
 
 function AutomationRow({
   rule,
+  canManage,
+  canDelete,
   onToggle,
   onArchive,
 }: {
   rule: ApiAutomationRule;
+  canManage: boolean;
+  canDelete: boolean;
   onToggle: () => void;
   onArchive: () => void;
 }) {
@@ -149,18 +178,22 @@ function AutomationRow({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <Button variant="outline" size="sm" onClick={onToggle}>
-          {rule.status === "active" ? "Pausar" : "Ativar"}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="trash-action"
-          onClick={onArchive}
-          aria-label="Arquivar automação"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
+        {canManage && (
+          <Button variant="outline" size="sm" onClick={onToggle}>
+            {rule.status === "active" ? "Pausar" : "Ativar"}
+          </Button>
+        )}
+        {canDelete && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="trash-action"
+            onClick={onArchive}
+            aria-label="Arquivar automação"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
     </div>
   );

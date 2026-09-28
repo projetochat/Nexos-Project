@@ -92,6 +92,157 @@ export class OperationsService {
     };
   }
 
+  async dashboardComponentData(
+    current: AuthenticatedUser,
+    query: OperationalQuery & { groupBy: string },
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: current.tenantId },
+      select: { timezone: true },
+    });
+    const range = periodRange(query, "today", tenant?.timezone);
+    const allowedConnectionIds =
+      current.roleKey === "tenant_admin" ? undefined : (current.connectionIds ?? []);
+    const contactWhere: Prisma.ContactWhereInput = {
+      tenantId: current.tenantId,
+      archivedAt: null,
+      createdAt: { gte: range.start, lt: range.end },
+      ...(query.customerId ? { customerId: query.customerId } : {}),
+      ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+      ...(query.connectionId ? { instanceIds: { has: query.connectionId } } : {}),
+      ...(allowedConnectionIds ? { instanceIds: { hasSome: allowedConnectionIds } } : {}),
+    };
+    const groupBy = query.groupBy;
+
+    if (groupBy.startsWith("custom:")) {
+      const fieldId = groupBy.slice("custom:".length);
+      const field = await this.prisma.contactCustomField.findFirst({
+        where: { id: fieldId, tenantId: current.tenantId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!field) throw new BadRequestException("Campo personalizado inválido.");
+      const [rows, contactsWithoutValue] = await Promise.all([
+        this.prisma.contactCustomFieldValue.groupBy({
+          by: ["value"],
+          where: { tenantId: current.tenantId, fieldId, contact: contactWhere },
+          _count: { _all: true },
+          orderBy: { _count: { value: "desc" } },
+          take: 20,
+        }),
+        this.prisma.contact.count({
+          where: { ...contactWhere, customFieldValues: { none: { fieldId } } },
+        }),
+      ]);
+      const items = rows.map((row) => ({
+        nome: row.value?.trim() || "Não informado",
+        total: row._count._all,
+      }));
+      if (contactsWithoutValue > 0) {
+        const empty = items.find((item) => item.nome === "Não informado");
+        if (empty) empty.total += contactsWithoutValue;
+        else items.push({ nome: "Não informado", total: contactsWithoutValue });
+      }
+      return {
+        items,
+      };
+    }
+
+    if (groupBy === "companyRole") {
+      const rows = await this.prisma.contact.groupBy({
+        by: ["companyRole"],
+        where: contactWhere,
+        _count: { _all: true },
+        orderBy: { _count: { companyRole: "desc" } },
+        take: 20,
+      });
+      const labels: Record<string, string> = {
+        DECISOR: "Decisor",
+        INFLUENCIADOR: "Influenciador",
+        OPERACIONAL: "Operacional",
+        OUTRO: "Outro",
+      };
+      return {
+        items: rows.map((row) => ({
+          nome: row.companyRole ? (labels[row.companyRole] ?? row.companyRole) : "Não informado",
+          total: row._count._all,
+        })),
+      };
+    }
+
+    if (groupBy === "instance") {
+      const rows = await this.prisma.contact.groupBy({
+        by: ["instance"],
+        where: contactWhere,
+        _count: { _all: true },
+        orderBy: { _count: { instance: "desc" } },
+        take: 20,
+      });
+      return {
+        items: rows.map((row) => ({
+          nome: row.instance?.trim() || "Sem instância",
+          total: row._count._all,
+        })),
+      };
+    }
+
+    const relationConfig = {
+      customer: {
+        field: "customerId",
+        load: (ids: string[]) =>
+          this.prisma.customer.findMany({
+            where: { tenantId: current.tenantId, id: { in: ids } },
+            select: { id: true, name: true, color: true },
+          }),
+        empty: "Sem empresa",
+      },
+      department: {
+        field: "contactDepartmentId",
+        load: (ids: string[]) =>
+          this.prisma.contactDepartment.findMany({
+            where: { tenantId: current.tenantId, id: { in: ids } },
+            select: { id: true, name: true, color: true },
+          }),
+        empty: "Sem departamento",
+      },
+      profile: {
+        field: "contactProfileId",
+        load: (ids: string[]) =>
+          this.prisma.contactProfile.findMany({
+            where: { tenantId: current.tenantId, id: { in: ids } },
+            select: { id: true, name: true, color: true },
+          }),
+        empty: "Sem perfil",
+      },
+    } as const;
+    const relation = relationConfig[groupBy as keyof typeof relationConfig];
+    if (!relation) throw new BadRequestException("Agrupamento de contatos inválido.");
+
+    const rows = await this.prisma.contact.groupBy({
+      by: [relation.field],
+      where: contactWhere,
+      _count: { _all: true },
+      orderBy: { _count: { [relation.field]: "desc" } },
+      take: 20,
+    });
+    const ids = rows.flatMap((row) => {
+      const id = row[relation.field];
+      return typeof id === "string" ? [id] : [];
+    });
+    const catalog = await relation.load(ids);
+    const catalogById = new Map(catalog.map((item) => [item.id, item]));
+    return {
+      items: rows.map((row) => {
+        const id = row[relation.field];
+        const item = typeof id === "string" ? catalogById.get(id) : undefined;
+        return {
+          nome: item?.name ?? relation.empty,
+          total: row._count._all,
+          cor: item?.color ?? "#64748b",
+        };
+      }),
+    };
+  }
+
   async history(current: AuthenticatedUser, query: OperationalQuery) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: current.tenantId },
@@ -559,7 +710,7 @@ export class OperationsService {
         where: { tenantId, archivedAt: null, ...scope },
         include: conversationInclude,
         orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
-        take: 8,
+        take: 7,
       })
       .then((items) => items.map(serializeConversation));
   }

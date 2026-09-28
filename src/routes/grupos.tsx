@@ -48,6 +48,12 @@ import {
 } from "@/lib/trixus-api";
 import { num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import {
+  formatGroupContactPhone,
+  matchesGroupContactSearch,
+} from "@/lib/group-contact-presentation";
+import { onlyDigits } from "@/lib/input-masks";
+import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/grupos")({ component: GroupsPage });
 
@@ -140,6 +146,8 @@ function ContactPickerPager({
 
 function GroupsPage() {
   const navigate = useNavigate();
+  const permissions = useSession((state) => state.user?.permissions ?? []);
+  const canManage = permissions.includes("groups.manage");
   const create = useDisclosure();
   const [groups, setGroups] = React.useState<ApiWhatsappGroupSummary[]>([]);
   const [instances, setInstances] = React.useState<ApiContactInstanceOption[]>([]);
@@ -295,19 +303,23 @@ function GroupsPage() {
           subtitle={`${num(total)} grupos de WhatsApp.`}
           actions={
             <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void syncGroups()}
-                disabled={syncing}
-                title="Atualizar grupos"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-                {syncing ? "Atualizando..." : "Atualizar"}
-              </Button>
-              <Button variant="primary" size="sm" onClick={create.show}>
-                <Plus className="h-3.5 w-3.5" /> Criar Grupo
-              </Button>
+              {canManage && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void syncGroups()}
+                  disabled={syncing}
+                  title="Atualizar grupos"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+                  {syncing ? "Atualizando..." : "Atualizar"}
+                </Button>
+              )}
+              {canManage && (
+                <Button variant="primary" size="sm" onClick={create.show}>
+                  <Plus className="h-3.5 w-3.5" /> Criar Grupo
+                </Button>
+              )}
             </div>
           }
         />
@@ -350,7 +362,7 @@ function GroupsPage() {
                   group={group}
                   onOpenChat={() => void openGroupChat(group)}
                   onDetail={() => void openGroupDetail(group)}
-                  onLeave={() => setLeavingGroup(group)}
+                  onLeave={canManage ? () => setLeavingGroup(group) : undefined}
                 />
               ))}
             {!loading && groups.length === 0 && (
@@ -401,23 +413,25 @@ function GroupsPage() {
           </div>
         </Card>
 
-        <CreateGroupModal
-          open={create.open}
-          onClose={create.hide}
-          instances={instances}
-          onSubmit={async (data) => {
-            const group = await groupsApi.create(data);
-            create.hide();
-            if (group.warnings?.length) {
-              toast.warning("Grupo criado com pendências de sincronização", {
-                description: group.warnings.join(" "),
-              });
-            } else {
-              toast.success("Grupo criado");
-            }
-            void load().catch((error) => toast.error((error as Error).message));
-          }}
-        />
+        {canManage && (
+          <CreateGroupModal
+            open={create.open}
+            onClose={create.hide}
+            instances={instances}
+            onSubmit={async (data) => {
+              const group = await groupsApi.create(data);
+              create.hide();
+              if (group.warnings?.length) {
+                toast.warning("Grupo criado com pendências de sincronização", {
+                  description: group.warnings.join(" "),
+                });
+              } else {
+                toast.success("Grupo criado");
+              }
+              void load().catch((error) => toast.error((error as Error).message));
+            }}
+          />
+        )}
         <GroupDetailModal
           group={selectedGroup}
           onClose={invalidateGroupDetail}
@@ -428,39 +442,42 @@ function GroupsPage() {
             );
           }}
           onOpenChat={(group) => void openGroupChat(group)}
+          canManage={canManage}
         />
-        <ConfirmDialog
-          open={!!leavingGroup}
-          title="Sair do Grupo?"
-          destructive
-          confirmLabel="Sair do Grupo"
-          description={
-            <p>
-              Deseja realmente sair do grupo{" "}
-              <strong className="font-semibold text-foreground">
-                "{leavingGroup?.name ?? ""}"
-              </strong>
-              ?
-            </p>
-          }
-          onClose={() => setLeavingGroup(null)}
-          onConfirm={() => {
-            const group = leavingGroup;
-            if (!group) return;
-            void groupsApi
-              .leave(group.id)
-              .then(async () => {
-                toast.success("Você saiu do grupo");
-                if (selectedGroup?.id === group.id) setSelectedGroup(null);
-                await load();
-              })
-              .catch((error) =>
-                toast.error("Não foi possível sair do grupo", {
-                  description: (error as Error).message,
-                }),
-              );
-          }}
-        />
+        {canManage && (
+          <ConfirmDialog
+            open={!!leavingGroup}
+            title="Sair do Grupo?"
+            destructive
+            confirmLabel="Sair do Grupo"
+            description={
+              <p>
+                Deseja realmente sair do grupo{" "}
+                <strong className="font-semibold text-foreground">
+                  "{leavingGroup?.name ?? ""}"
+                </strong>
+                ?
+              </p>
+            }
+            onClose={() => setLeavingGroup(null)}
+            onConfirm={() => {
+              const group = leavingGroup;
+              if (!group) return;
+              void groupsApi
+                .leave(group.id)
+                .then(async () => {
+                  toast.success("Você saiu do grupo");
+                  if (selectedGroup?.id === group.id) setSelectedGroup(null);
+                  await load();
+                })
+                .catch((error) =>
+                  toast.error("Não foi possível sair do grupo", {
+                    description: (error as Error).message,
+                  }),
+                );
+            }}
+          />
+        )}
       </PageContainer>
     </AppShell>
   );
@@ -475,7 +492,7 @@ function GroupCard({
   group: ApiWhatsappGroupSummary;
   onOpenChat: () => void;
   onDetail: () => void;
-  onLeave: () => void;
+  onLeave?: () => void;
 }) {
   return (
     <div
@@ -523,33 +540,37 @@ function GroupCard({
         >
           <MessageSquareMore className="h-4 w-4" />
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          title="Editar grupo"
-          aria-label="Editar grupo"
-          onClick={(event) => {
-            event.stopPropagation();
-            onDetail();
-          }}
-          onDoubleClick={(event) => event.stopPropagation()}
-        >
-          <Pencil className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          title="Sair do grupo"
-          aria-label="Sair do grupo"
-          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-          onClick={(event) => {
-            event.stopPropagation();
-            onLeave();
-          }}
-          onDoubleClick={(event) => event.stopPropagation()}
-        >
-          <LogOut className="h-4 w-4" />
-        </Button>
+        {onLeave && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Editar grupo"
+            aria-label="Editar grupo"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDetail();
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+        )}
+        {onLeave && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Sair do grupo"
+            aria-label="Sair do grupo"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={(event) => {
+              event.stopPropagation();
+              onLeave();
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -627,31 +648,23 @@ function CreateGroupModal({
   }, [instances, open]);
 
   const filteredContacts = React.useMemo(() => {
-    const q = availableQuery.trim().toLowerCase();
     const selected = new Set(selectedContacts.map((contact) => contact.id));
-    const digits = q.replace(/\D/g, "");
     return picker.items.filter((contact) => {
       if (selected.has(contact.id)) return false;
-      if (!q) return true;
-      return (
-        contact.nome.toLowerCase().includes(q) ||
-        contact.telefone.toLowerCase().includes(q) ||
-        (digits && contact.normalizedPhone.includes(digits))
+      return matchesGroupContactSearch(
+        { name: contact.nome, phone: contact.telefone, normalizedPhone: contact.normalizedPhone },
+        availableQuery,
       );
     });
   }, [availableQuery, picker.items, selectedContacts]);
 
   const filteredSelectedContacts = React.useMemo(() => {
-    const q = selectedQuery.trim().toLowerCase();
-    const digits = q.replace(/\D/g, "");
-    return selectedContacts.filter((contact) => {
-      if (!q) return true;
-      return (
-        contact.nome.toLowerCase().includes(q) ||
-        contact.telefone.toLowerCase().includes(q) ||
-        (digits && contact.normalizedPhone.includes(digits))
-      );
-    });
+    return selectedContacts.filter((contact) =>
+      matchesGroupContactSearch(
+        { name: contact.nome, phone: contact.telefone, normalizedPhone: contact.normalizedPhone },
+        selectedQuery,
+      ),
+    );
   }, [selectedContacts, selectedQuery]);
 
   const addContact = (contact: ApiGroupContactPickerItem) => {
@@ -742,7 +755,7 @@ function CreateGroupModal({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium">{contact.nome}</span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {contact.telefone}
+                        {formatGroupContactPhone(contact.normalizedPhone || contact.telefone)}
                       </span>
                     </span>
                     <Button
@@ -790,7 +803,7 @@ function CreateGroupModal({
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium">{contact.nome}</span>
                         <span className="block truncate text-xs text-muted-foreground">
-                          {contact.telefone}
+                          {formatGroupContactPhone(contact.normalizedPhone || contact.telefone)}
                         </span>
                       </span>
                       <Button
@@ -881,11 +894,13 @@ function GroupDetailModal({
   onClose,
   onGroupChange,
   onOpenChat,
+  canManage,
 }: {
   group: ApiWhatsappGroup | null;
   onClose: () => void;
   onGroupChange: (group: ApiWhatsappGroup) => void;
   onOpenChat: (group: ApiWhatsappGroup) => void;
+  canManage: boolean;
 }) {
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -931,31 +946,23 @@ function GroupDetailModal({
   }, [group]);
 
   const availableContacts = React.useMemo(() => {
-    const q = availableQuery.trim().toLowerCase();
-    const digits = q.replace(/\D/g, "");
     return picker.items.filter((contact) => {
       const contactDigits = onlyDigits(contact.normalizedPhone || contact.telefone);
       if (activeParticipantKeys.has(contactDigits)) return false;
-      if (!q) return true;
-      return (
-        contact.nome.toLowerCase().includes(q) ||
-        contact.telefone.toLowerCase().includes(q) ||
-        (digits.length > 0 && contactDigits.includes(digits))
+      return matchesGroupContactSearch(
+        { name: contact.nome, phone: contact.telefone, normalizedPhone: contact.normalizedPhone },
+        availableQuery,
       );
     });
   }, [activeParticipantKeys, availableQuery, picker.items]);
 
   const selectedParticipants = React.useMemo(() => {
-    const q = selectedQuery.trim().toLowerCase();
-    const digits = q.replace(/\D/g, "");
     return (group?.participants ?? []).filter((participant) => {
       if (!participant.active) return false;
-      if (!q) return true;
       const phone = participant.phone ?? participant.externalParticipantId;
-      return (
-        participant.name.toLowerCase().includes(q) ||
-        phone.toLowerCase().includes(q) ||
-        (digits.length > 0 && onlyDigits(phone).includes(digits))
+      return matchesGroupContactSearch(
+        { name: participant.name, phone, normalizedPhone: phone },
+        selectedQuery,
       );
     });
   }, [group?.participants, selectedQuery]);
@@ -1065,7 +1072,7 @@ function GroupDetailModal({
     <Modal
       open={!!group}
       onClose={onClose}
-      title="Editar Grupo"
+      title={canManage ? "Editar Grupo" : "Visualizar Grupo"}
       size="xl"
       footer={
         group ? (
@@ -1133,17 +1140,23 @@ function GroupDetailModal({
                         </p>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title={editingName ? "Salvar nome" : "Editar nome"}
-                      aria-label={editingName ? "Salvar nome" : "Editar nome"}
-                      onClick={editingName ? saveName : () => setEditingName(true)}
-                      disabled={busy === "name"}
-                      className="h-9 w-9"
-                    >
-                      {editingName ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-                    </Button>
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title={editingName ? "Salvar nome" : "Editar nome"}
+                        aria-label={editingName ? "Salvar nome" : "Editar nome"}
+                        onClick={editingName ? saveName : () => setEditingName(true)}
+                        disabled={busy === "name"}
+                        className="h-9 w-9"
+                      >
+                        {editingName ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Pencil className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
                     <span
                       className="hidden h-9 max-w-44 shrink-0 items-center gap-1 rounded-full border border-border bg-surface-2 px-3 text-sm font-medium text-foreground sm:inline-flex"
                       title={`Instância: ${group.connection?.name ?? "-"}`}
@@ -1190,23 +1203,25 @@ function GroupDetailModal({
                         </p>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title={editingDescription ? "Salvar descrição" : "Editar descrição"}
-                      aria-label={editingDescription ? "Salvar descrição" : "Editar descrição"}
-                      onClick={
-                        editingDescription ? saveDescription : () => setEditingDescription(true)
-                      }
-                      disabled={busy === "description"}
-                      className="h-9 w-9 self-center sm:h-10 sm:w-10"
-                    >
-                      {editingDescription ? (
-                        <Check className="h-4 w-4" />
-                      ) : (
-                        <Pencil className="h-4 w-4" />
-                      )}
-                    </Button>
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title={editingDescription ? "Salvar descrição" : "Editar descrição"}
+                        aria-label={editingDescription ? "Salvar descrição" : "Editar descrição"}
+                        onClick={
+                          editingDescription ? saveDescription : () => setEditingDescription(true)
+                        }
+                        disabled={busy === "description"}
+                        className="h-9 w-9 self-center sm:h-10 sm:w-10"
+                      >
+                        {editingDescription ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Pencil className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </Field>
               </div>
@@ -1273,7 +1288,9 @@ function GroupDetailModal({
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate font-medium">{contact.nome}</span>
                                 <span className="block truncate text-xs text-muted-foreground">
-                                  {contact.telefone}
+                                  {formatGroupContactPhone(
+                                    contact.normalizedPhone || contact.telefone,
+                                  )}
                                 </span>
                               </span>
                             </button>
@@ -1298,7 +1315,7 @@ function GroupDetailModal({
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">{participant.name}</p>
                           <p className="truncate text-xs text-muted-foreground">
-                            {formatParticipantPhone(
+                            {formatGroupContactPhone(
                               participant.phone ?? participant.externalParticipantId,
                             )}
                           </p>
@@ -1380,19 +1397,21 @@ function GroupDetailModal({
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-medium">{contact.nome}</span>
                           <span className="block truncate text-xs text-muted-foreground">
-                            {contact.telefone}
+                            {formatGroupContactPhone(contact.normalizedPhone || contact.telefone)}
                           </span>
                         </span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => addParticipant(contact.id)}
-                          disabled={!!busy}
-                          title={`Adicionar ${contact.nome}`}
-                          aria-label={`Adicionar ${contact.nome}`}
-                        >
-                          <UserPlus className="h-3.5 w-3.5" />
-                        </Button>
+                        {canManage && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => addParticipant(contact.id)}
+                            disabled={!!busy}
+                            title={`Adicionar ${contact.nome}`}
+                            aria-label={`Adicionar ${contact.nome}`}
+                          >
+                            <UserPlus className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     ))}
                     {availableContacts.length === 0 && (
@@ -1413,18 +1432,20 @@ function GroupDetailModal({
                       <h3 className="text-sm font-semibold sm:text-lg">Contatos selecionados</h3>
                       <Badge tone="default">{num(group.participantsCount)}</Badge>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="trash-action h-7 min-h-7 px-2 text-[11px] sm:h-auto sm:min-h-8 sm:px-2.5 sm:text-xs"
-                      disabled={
-                        !group.participants.some((participant) => !participant.isSuperAdmin) ||
-                        !!busy
-                      }
-                      onClick={removeAllParticipants}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" /> Remover todos
-                    </Button>
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="trash-action h-7 min-h-7 px-2 text-[11px] sm:h-auto sm:min-h-8 sm:px-2.5 sm:text-xs"
+                        disabled={
+                          !group.participants.some((participant) => !participant.isSuperAdmin) ||
+                          !!busy
+                        }
+                        onClick={removeAllParticipants}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Remover todos
+                      </Button>
+                    )}
                   </div>
                   <SearchInput
                     value={selectedQuery}
@@ -1445,7 +1466,7 @@ function GroupDetailModal({
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-medium">{participant.name}</span>
                           <span className="block truncate text-xs text-muted-foreground">
-                            {formatParticipantPhone(
+                            {formatGroupContactPhone(
                               participant.phone ?? participant.externalParticipantId,
                             )}
                           </span>
@@ -1456,37 +1477,41 @@ function GroupDetailModal({
                             {participant.isSuperAdmin ? "Criador" : "Admin"}
                           </Badge>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title={participant.isAdmin ? "Rebaixar de admin" : "Promover a admin"}
-                          aria-label={
-                            participant.isAdmin ? "Rebaixar de admin" : "Promover a admin"
-                          }
-                          onClick={() =>
-                            updateParticipant(
-                              participant,
-                              participant.isAdmin ? "demote" : "promote",
-                            )
-                          }
-                          disabled={!!busy || participant.isSuperAdmin}
-                          className={`h-8 w-8 sm:h-9 sm:w-9 ${
-                            participant.isAdmin ? "hover:text-destructive" : "hover:text-success"
-                          }`}
-                        >
-                          <Crown className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Remover participante"
-                          aria-label="Remover participante"
-                          className="trash-action h-8 w-8 sm:h-9 sm:w-9"
-                          onClick={() => updateParticipant(participant, "remove")}
-                          disabled={!!busy || participant.isSuperAdmin}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {canManage && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={participant.isAdmin ? "Rebaixar de admin" : "Promover a admin"}
+                            aria-label={
+                              participant.isAdmin ? "Rebaixar de admin" : "Promover a admin"
+                            }
+                            onClick={() =>
+                              updateParticipant(
+                                participant,
+                                participant.isAdmin ? "demote" : "promote",
+                              )
+                            }
+                            disabled={!!busy || participant.isSuperAdmin}
+                            className={`h-8 w-8 sm:h-9 sm:w-9 ${
+                              participant.isAdmin ? "hover:text-destructive" : "hover:text-success"
+                            }`}
+                          >
+                            <Crown className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {canManage && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Remover participante"
+                            aria-label="Remover participante"
+                            className="trash-action h-8 w-8 sm:h-9 sm:w-9"
+                            onClick={() => updateParticipant(participant, "remove")}
+                            disabled={!!busy || participant.isSuperAdmin}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     ))}
                     {selectedParticipants.length === 0 && (
@@ -1563,26 +1588,4 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }).replace(",", "");
-}
-
-function formatParticipantPhone(value?: string | null) {
-  if (!value) return "-";
-  const digits = onlyDigits(value.split("@")[0] ?? value);
-  if (!digits) return value;
-  if (digits.startsWith("55")) {
-    const local = normalizeBrazilMobileDigits(digits.slice(2));
-    if (local.length === 11) {
-      return `+55 (${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
-    }
-  }
-  return `+${digits}`;
-}
-
-function normalizeBrazilMobileDigits(digits: string) {
-  if (digits.length === 10) return `${digits.slice(0, 2)}9${digits.slice(2)}`;
-  return digits;
-}
-
-function onlyDigits(value: string) {
-  return value.replace(/\D/g, "");
 }

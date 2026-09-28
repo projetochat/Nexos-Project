@@ -18,7 +18,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Modal, ConfirmDialog } from "./modal";
 import { MessageReactionPicker } from "./message-reaction-picker";
 import { MessageForwardDialog } from "./message-forward-dialog";
-import { ScheduleMessageModal } from "./schedule-message-modal";
 
 export function MessageActionsMenu({
   message,
@@ -26,14 +25,12 @@ export function MessageActionsMenu({
   onReact,
   onDownload,
   resendRequest = 0,
-  customFieldLabels = [],
 }: {
   message: ApiMessage;
   onReply?: () => void;
   onReact: (emoji: string | null) => Promise<void>;
   onDownload: () => Promise<void>;
   resendRequest?: number;
-  customFieldLabels?: string[];
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -43,7 +40,6 @@ export function MessageActionsMenu({
   const [edit, setEdit] = useState(false);
   const [editText, setEditText] = useState(message.content);
   const [remove, setRemove] = useState(false);
-  const [schedule, setSchedule] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const running = useRef(false);
@@ -175,17 +171,6 @@ export function MessageActionsMenu({
             >
               <Pencil className="h-4 w-4" />
               Editar
-            </button>
-            <button
-              className={itemClass}
-              disabled={busy || message.sender !== "agent"}
-              onClick={() => {
-                setOpen(false);
-                setSchedule(true);
-              }}
-            >
-              <span className="text-base">◷</span>
-              Agendar mensagem
             </button>
             <button
               className={itemClass}
@@ -337,15 +322,6 @@ export function MessageActionsMenu({
             setRemove(false);
           })
         }
-      />
-      <ScheduleMessageModal
-        open={schedule}
-        onClose={() => setSchedule(false)}
-        conversationId={message.conversation_id}
-        initialContent={message.content}
-        identifier={`msg-${message.id}`}
-        customFieldLabels={customFieldLabels}
-        onSaved={() => invalidateConversationQueries(qc, message.conversation_id)}
       />
     </>
   );

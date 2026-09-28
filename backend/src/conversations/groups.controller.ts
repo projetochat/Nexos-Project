@@ -198,7 +198,7 @@ export class GroupsController {
   ) {}
 
   @Get()
-  @RequirePermissions("conversations.read")
+  @RequirePermissions("groups.read")
   async list(@Query() query: ListGroupsQueryDto, @CurrentUser() current: AuthenticatedUser) {
     const { page, pageSize, skip } = pagination(query);
     const where = groupListWhere(query, current);
@@ -221,7 +221,7 @@ export class GroupsController {
   }
 
   @Get("summary")
-  @RequirePermissions("conversations.read")
+  @RequirePermissions("groups.read")
   async listSummary(@Query() query: ListGroupsQueryDto, @CurrentUser() current: AuthenticatedUser) {
     const startedAt = Date.now();
     const { page, pageSize, skip } = pagination(query);
@@ -259,7 +259,7 @@ export class GroupsController {
   }
 
   @Get("options/instances")
-  @RequirePermissions("conversations.read")
+  @RequirePermissions("groups.read")
   async instanceOptions(@CurrentUser() current: AuthenticatedUser) {
     const connections = await this.prisma.messagingConnection.findMany({
       where: {
@@ -288,7 +288,7 @@ export class GroupsController {
   }
 
   @Get(":id")
-  @RequirePermissions("conversations.read")
+  @RequirePermissions("groups.read")
   async detail(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const group = await this.prisma.conversation.findFirst({
       where: {
@@ -306,7 +306,7 @@ export class GroupsController {
   }
 
   @Post()
-  @RequirePermissions("conversations.manage")
+  @RequirePermissions("groups.manage")
   async create(@Body() dto: CreateGroupDto, @CurrentUser() current: AuthenticatedUser) {
     if (dto.participantContactIds.length < 1) {
       throw new BadRequestException("Selecione ao menos um participante.");
@@ -483,7 +483,7 @@ export class GroupsController {
   }
 
   @Patch(":id/name")
-  @RequirePermissions("conversations.manage")
+  @RequirePermissions("groups.manage")
   async updateName(
     @Param("id") id: string,
     @Body() dto: UpdateGroupNameDto,
@@ -509,7 +509,7 @@ export class GroupsController {
   }
 
   @Patch(":id/description")
-  @RequirePermissions("conversations.manage")
+  @RequirePermissions("groups.manage")
   async updateDescription(
     @Param("id") id: string,
     @Body() dto: UpdateGroupDescriptionDto,
@@ -531,7 +531,7 @@ export class GroupsController {
   }
 
   @Post(":id/participants")
-  @RequirePermissions("conversations.manage")
+  @RequirePermissions("groups.manage")
   async updateParticipants(
     @Param("id") id: string,
     @Body() dto: UpdateGroupParticipantsDto,
@@ -611,7 +611,7 @@ export class GroupsController {
   }
 
   @Post(":id/admins")
-  @RequirePermissions("conversations.manage")
+  @RequirePermissions("groups.manage")
   async updateAdmins(
     @Param("id") id: string,
     @Body() dto: UpdateGroupAdminsDto,
@@ -640,7 +640,7 @@ export class GroupsController {
   }
 
   @Post(":id/leave")
-  @RequirePermissions("conversations.manage")
+  @RequirePermissions("groups.manage")
   async leave(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const group = await this.resolveManagedGroup(id, current);
     await this.evolution.leaveGroup({
@@ -656,7 +656,7 @@ export class GroupsController {
   }
 
   @Post("sync")
-  @RequirePermissions("conversations.manage")
+  @RequirePermissions("groups.manage")
   async sync(@Body() dto: SyncGroupsDto | undefined, @CurrentUser() current: AuthenticatedUser) {
     if (current.roleKey === "tenant_admin")
       return this.groupsSync.sync({ tenantId: current.tenantId, connectionId: dto?.connectionId });

@@ -25,11 +25,12 @@ import { SendMessageDto } from "./dto/send-message.dto";
 import { MessagingOutboundService } from "../messaging/messaging-outbound.service";
 import { MessagingMediaStorageService } from "../messaging/media/messaging-media-storage.service";
 import { EvolutionClient } from "../messaging/evolution/evolution.client";
+import { outboundMessageOrigin } from "../messaging/message-origin";
 
 const messageInclude = {
   authorMembership: {
     include: {
-      user: { select: { id: true, email: true, name: true } },
+      user: { select: { id: true, email: true, name: true, avatarUrl: true } },
     },
   },
   reactions: true,
@@ -449,6 +450,8 @@ export class MessagesService {
       author_membership_id: message.authorMembershipId,
       author_name:
         message.authorMembership?.presentationName ?? message.authorMembership?.user.name ?? null,
+      author_avatar_url: message.authorMembership?.user.avatarUrl ?? null,
+      outbound_origin: outboundMessageOrigin(message),
       content: message.content ?? "",
       interactive_data: message.interactiveData ?? null,
       forwarded: asObject(message.interactiveData)?.forwarded === true,

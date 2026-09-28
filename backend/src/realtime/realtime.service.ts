@@ -1,4 +1,6 @@
 import { connectionAccess, roleConnectionIds } from "../auth/connection-access";
+import { effectivePermissions } from "../auth/effective-permissions";
+import type { PermissionKey } from "../auth/permissions.constants";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import Redis from "ioredis";
@@ -128,15 +130,43 @@ export class RealtimeService {
         user: { status: "ACTIVE" },
         tenant: { status: { in: ["ACTIVE", "TRIAL"] } },
       },
-      include: { role: true },
+      include: {
+        tenant: true,
+        role: { include: { permissions: { select: { permissionId: true } } } },
+      },
     });
     if (!membership) return null;
-    return { roleKey: membership.role.key, connectionIds: roleConnectionIds(membership.role) };
+    if (
+      membership.tenant.authRevokedAt &&
+      context.iatMs &&
+      context.iatMs < membership.tenant.authRevokedAt.getTime()
+    ) {
+      return null;
+    }
+    if (context.impersonationSessionId) {
+      const session = await this.prisma.impersonationSession.findFirst({
+        where: {
+          id: context.impersonationSessionId,
+          actorUserId: context.actorPlatformUserId,
+          tenantId: context.tenantId,
+          impersonatedMembershipId: context.membershipId,
+          status: "ACTIVE",
+          expiresAt: { gt: new Date() },
+        },
+        select: { id: true },
+      });
+      if (!session) return null;
+    }
+    return {
+      roleKey: membership.role.key,
+      connectionIds: roleConnectionIds(membership.role),
+      permissions: effectivePermissions(membership.role),
+    };
   }
 
   async canAccessConversation(context: RealtimeSocketContext, conversationId: string) {
     const scope = await this.currentConnectionScope(context);
-    if (!scope) return false;
+    if (!scope?.permissions.includes("conversations.read")) return false;
     return !!(await this.prisma.conversation.findFirst({
       where: {
         id: conversationId,
@@ -158,6 +188,8 @@ export class RealtimeService {
         if (!context) return;
         const scope = await this.currentConnectionScope(context);
         if (!scope) return;
+        const requiredPermission = realtimeEventPermission(event);
+        if (requiredPermission && !scope.permissions.includes(requiredPermission)) return;
         if (payload.conversationId) {
           const conversation = await this.prisma.conversation.findFirst({
             where: {
@@ -191,7 +223,12 @@ export class RealtimeService {
     if (!server || !this.config.enabled) return;
     const room = targetRoom(target);
     const payload = data as { conversationId?: string; connectionId?: string; contactId?: string };
-    if (payload.conversationId || payload.connectionId || payload.contactId) {
+    if (
+      payload.conversationId ||
+      payload.connectionId ||
+      payload.contactId ||
+      realtimeEventPermission(event)
+    ) {
       void this.publishScoped(room, event, data).catch(() => {
         this.emitFailures += 1;
       });
@@ -316,4 +353,22 @@ function targetRoom(target: EmitTarget) {
   if ("ticketId" in target) return realtimeRooms.ticket(target.ticketId);
   if ("campaignId" in target) return `campaign:${target.campaignId}`;
   return realtimeRooms.conversation(target.conversationId);
+}
+
+function realtimeEventPermission(event: RealtimeServerEvent): PermissionKey | null {
+  if (event === "schedule.updated") return "schedules.read";
+  if (
+    event.startsWith("message.") ||
+    event.startsWith("conversation.") ||
+    event.startsWith("typing.")
+  ) {
+    return "conversations.read";
+  }
+  if (event.startsWith("connection.")) return "connections.read";
+  if (event.startsWith("contact.")) return "contacts.read";
+  if (event.startsWith("lead.")) return "chat.leads.read";
+  if (event.startsWith("notification.")) return "notifications.read";
+  if (event.startsWith("ticket.")) return "tickets.read";
+  if (event.startsWith("campaign.")) return "campaigns.read";
+  return null;
 }

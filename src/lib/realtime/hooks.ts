@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSession } from "@/lib/session";
+import { hydrateSession, useSession } from "@/lib/session";
 import { invalidateConversationQueries } from "./invalidate-conversation";
 import {
   shouldNotifyInboxUpdate,
@@ -29,7 +29,9 @@ export function useInstanceAccessUpdates(connect = true) {
     if (user && connect) void connectRealtime();
     return onRealtimeEvent((event) => {
       if (event.event !== "instance-access.updated") return;
-      void queryClient.cancelQueries().then(() => queryClient.resetQueries());
+      void hydrateSession().finally(() => {
+        void queryClient.cancelQueries().then(() => queryClient.resetQueries());
+      });
     });
   }, [connect, queryClient, user]);
 }

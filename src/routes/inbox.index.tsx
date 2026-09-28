@@ -116,6 +116,10 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const bulkClose = useDisclosure();
   const queuePrefs = useQueuePrefs();
   const perms = useChatPerms();
+  const permissions = useSession((state) => state.user?.permissions ?? []);
+  const canStartConversation =
+    permissions.includes("conversations.assign") && permissions.includes("contacts.read");
+  const canBulkClose = permissions.includes("conversations.manage");
   const activeTabs = React.useMemo(
     () => queuePrefs.filter((p) => p.enabled && (perms.visualiza_leads || p.id !== "leads")),
     [queuePrefs, perms.visualiza_leads],
@@ -151,12 +155,17 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const selectedInstancia = selectedInstancias.size === 1 ? [...selectedInstancias][0] : undefined;
   const realtime = useRealtimeInbox(activeId);
 
+  const conversationListQueryKey = React.useMemo(
+    () =>
+      [
+        "trixus",
+        "conversations",
+        { tab, source, onlyUnread, query, selectedCliente, selectedInstancia },
+      ] as const,
+    [onlyUnread, query, selectedCliente, selectedInstancia, source, tab],
+  );
   const { data: conversationsPage, isLoading } = useQuery({
-    queryKey: [
-      "trixus",
-      "conversations",
-      { tab, source, onlyUnread, query, selectedCliente, selectedInstancia },
-    ],
+    queryKey: conversationListQueryKey,
     queryFn: () =>
       conversationApi.list({
         tab,
@@ -263,10 +272,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                 onClick={async () => {
                   setRefreshing(true);
                   try {
-                    const activeConversation = await refreshInboxData(qc, activeId);
-                    if (activeConversation?.status === "fechada") {
-                      await navigate({ to: "/inbox" });
-                    }
+                    await refreshInboxData(qc, conversationListQueryKey, activeId);
                   } catch (error) {
                     toast.error(
                       (error as Error).message || "Não foi possível atualizar as conversas.",
@@ -280,30 +286,34 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   className={`h-4 w-4 transition-transform duration-500 group-hover:rotate-[720deg] ${refreshing ? "animate-spin" : ""}`}
                 />
               </Button>
-              <Button
-                variant="primary"
-                size="icon"
-                aria-label="Nova Conversa"
-                title="Nova Conversa"
-                onClick={newConv.show}
-              >
-                <MessageCirclePlus className="h-4 w-4" />
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Ações das conversas"
-                    title="Ações das conversas"
-                  >
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={bulkClose.show}>Fechar Conversas</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {canStartConversation && (
+                <Button
+                  variant="primary"
+                  size="icon"
+                  aria-label="Nova Conversa"
+                  title="Nova Conversa"
+                  onClick={newConv.show}
+                >
+                  <MessageCirclePlus className="h-4 w-4" />
+                </Button>
+              )}
+              {canBulkClose && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Ações das conversas"
+                      title="Ações das conversas"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={bulkClose.show}>Fechar Conversas</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
 
             <DisconnectedInstanceAlerts connections={filterConnections} />
@@ -488,8 +498,8 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
         </section>
       </div>
 
-      <NewConversationModal open={newConv.open} onClose={newConv.hide} />
-      {bulkClose.open && (
+      {canStartConversation && <NewConversationModal open={newConv.open} onClose={newConv.hide} />}
+      {canBulkClose && bulkClose.open && (
         <BulkCloseConversationsModal
           onClose={bulkClose.hide}
           onSuccess={() => void navigate({ to: "/inbox" })}
@@ -566,6 +576,13 @@ function InboxIndex() {
 
 export function NewConversationModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const user = useSession((s) => s.user);
+  const permissions = user?.permissions ?? [];
+  const canStartConversation =
+    permissions.includes("conversations.assign") && permissions.includes("contacts.read");
+  const canCreateContact =
+    permissions.includes("chat.contacts.create") || permissions.includes("contacts.manage");
+  const canEditContact =
+    permissions.includes("chat.contacts.edit") || permissions.includes("contacts.manage");
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [q, setQ] = React.useState("");
@@ -580,7 +597,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   const [busy, setBusy] = React.useState(false);
   const savingContact = React.useRef(false);
   const { allConnections: availableConnections, error: connectionsError } =
-    useConnectedMessagingConnections({ enabled: open });
+    useConnectedMessagingConnections({ enabled: open && canStartConversation });
   const {
     data: contactsPage,
     isFetching: loadingContacts,
@@ -593,17 +610,17 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
         page,
         pageSize: 10,
       }),
-    enabled: open,
+    enabled: open && canStartConversation,
   });
   const { data: contactOptions, error: optionsError } = useQuery({
     queryKey: ["trixus", "contacts", "conversation-options"],
     queryFn: crmApi.contactOptions,
-    enabled: open,
+    enabled: open && canStartConversation,
   });
   const { data: customersPage, error: customersError } = useQuery({
     queryKey: ["trixus", "customers", "conversation-options"],
     queryFn: () => crmApi.listCustomers({ pageSize: 10000 }),
-    enabled: open,
+    enabled: open && canStartConversation,
   });
   const instances = React.useMemo(
     () => contactOptions?.instances ?? [],
@@ -625,6 +642,8 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
 
   const startConversation = async (contact: ApiContact, connectionId: string) => {
     if (!user) return toast.error("Sessão inválida.");
+    if (!canStartConversation)
+      return toast.error("Você não possui permissão para iniciar conversas.");
     if (
       availableConnections.find((connection) => connection.id === connectionId)?.status !==
       "connected"
@@ -708,16 +727,18 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
         }
       >
         <div className="space-y-3">
-          <div className="flex justify-end">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!formReady}
-              onClick={() => setContactForm({})}
-            >
-              <Plus className="h-3.5 w-3.5" /> Novo Contato
-            </Button>
-          </div>
+          {canCreateContact && (
+            <div className="flex justify-end">
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!formReady}
+                onClick={() => setContactForm({})}
+              >
+                <Plus className="h-3.5 w-3.5" /> Novo Contato
+              </Button>
+            </div>
+          )}
           {(optionsError || customersError) && (
             <p className="text-xs text-destructive">
               Não foi possível carregar o cadastro de contatos. Tente abrir novamente.
@@ -772,17 +793,19 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
                     <Check className="h-4 w-4 shrink-0 text-primary" />
                   )}
                 </button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-7 w-7 shrink-0"
-                  title="Editar contato"
-                  aria-label={"Editar contato " + contact.nome}
-                  disabled={!formReady}
-                  onClick={() => setContactForm({ initial: contact })}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
+                {canEditContact && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    title="Editar contato"
+                    aria-label={"Editar contato " + contact.nome}
+                    disabled={!formReady}
+                    onClick={() => setContactForm({ initial: contact })}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </li>
             ))}
             {contacts.length === 0 && (
@@ -861,81 +884,86 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
           ))}
         </div>
       </Modal>
-      {contactForm && formReady && (
-        <ContactFormModal
-          open={open}
-          initial={contactForm.initial}
-          onClose={() => setContactForm(null)}
-          customers={customersPage.items}
-          tags={contactOptions.tags}
-          departments={contactOptions.departments}
-          profiles={contactOptions.profiles}
-          instances={instances}
-          onCustomerCreated={(customer) =>
-            qc.setQueryData<typeof customersPage>(
-              ["trixus", "customers", "conversation-options"],
-              (current) =>
-                current
-                  ? {
-                      ...current,
-                      items: [...current.items.filter((item) => item.id !== customer.id), customer],
-                    }
-                  : current,
-            )
-          }
-          onDepartmentSaved={(department) =>
-            qc.setQueryData<typeof contactOptions>(
-              ["trixus", "contacts", "conversation-options"],
-              (current) =>
-                current
-                  ? {
-                      ...current,
-                      departments: [
-                        ...current.departments.filter((item) => item.id !== department.id),
-                        department,
-                      ],
-                    }
-                  : current,
-            )
-          }
-          onProfileSaved={(profile) =>
-            qc.setQueryData<typeof contactOptions>(
-              ["trixus", "contacts", "conversation-options"],
-              (current) =>
-                current
-                  ? {
-                      ...current,
-                      profiles: [
-                        ...current.profiles.filter((item) => item.id !== profile.id),
-                        profile,
-                      ],
-                    }
-                  : current,
-            )
-          }
-          onSubmit={async (data) => {
-            if (savingContact.current) return;
-            savingContact.current = true;
-            try {
-              const payload = contactPayload(data);
-              const contact = contactForm.initial
-                ? await crmApi.updateContact(contactForm.initial.id, payload)
-                : await crmApi.createContact(payload);
-              setQ(contact.nome);
-              setPage(1);
-              setContactForm(null);
-              selectContact(contact);
-              void qc.invalidateQueries({ queryKey: ["trixus", "contacts"] });
-              void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-              toast.success(contactForm.initial ? "Contato atualizado" : "Contato criado");
-            } catch (e) {
-              toast.error("Falha ao salvar contato", { description: (e as Error).message });
-            } finally {
-              savingContact.current = false;
+      {contactForm &&
+        formReady &&
+        ((contactForm.initial && canEditContact) || (!contactForm.initial && canCreateContact)) && (
+          <ContactFormModal
+            open={open}
+            initial={contactForm.initial}
+            onClose={() => setContactForm(null)}
+            customers={customersPage.items}
+            tags={contactOptions.tags}
+            departments={contactOptions.departments}
+            profiles={contactOptions.profiles}
+            instances={instances}
+            onCustomerCreated={(customer) =>
+              qc.setQueryData<typeof customersPage>(
+                ["trixus", "customers", "conversation-options"],
+                (current) =>
+                  current
+                    ? {
+                        ...current,
+                        items: [
+                          ...current.items.filter((item) => item.id !== customer.id),
+                          customer,
+                        ],
+                      }
+                    : current,
+              )
             }
-          }}
-        />
-      )}
+            onDepartmentSaved={(department) =>
+              qc.setQueryData<typeof contactOptions>(
+                ["trixus", "contacts", "conversation-options"],
+                (current) =>
+                  current
+                    ? {
+                        ...current,
+                        departments: [
+                          ...current.departments.filter((item) => item.id !== department.id),
+                          department,
+                        ],
+                      }
+                    : current,
+              )
+            }
+            onProfileSaved={(profile) =>
+              qc.setQueryData<typeof contactOptions>(
+                ["trixus", "contacts", "conversation-options"],
+                (current) =>
+                  current
+                    ? {
+                        ...current,
+                        profiles: [
+                          ...current.profiles.filter((item) => item.id !== profile.id),
+                          profile,
+                        ],
+                      }
+                    : current,
+              )
+            }
+            onSubmit={async (data) => {
+              if (savingContact.current) return;
+              savingContact.current = true;
+              try {
+                const payload = contactPayload(data);
+                const contact = contactForm.initial
+                  ? await crmApi.updateContact(contactForm.initial.id, payload)
+                  : await crmApi.createContact(payload);
+                setQ(contact.nome);
+                setPage(1);
+                setContactForm(null);
+                selectContact(contact);
+                void qc.invalidateQueries({ queryKey: ["trixus", "contacts"] });
+                void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+                toast.success(contactForm.initial ? "Contato atualizado" : "Contato criado");
+              } catch (e) {
+                toast.error("Falha ao salvar contato", { description: (e as Error).message });
+              } finally {
+                savingContact.current = false;
+              }
+            }}
+          />
+        )}
     </>
   );
 }

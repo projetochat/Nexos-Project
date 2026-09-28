@@ -35,7 +35,7 @@ Avisos não bloqueantes: depreciação da configuração Prisma 6 em package.jso
 
 ## Limites e condições antes de publicar
 
-1. Confirmar `TRIXUS_AUTO_DEPLOY` ausente ou diferente de `true` antes do merge na main, para impedir deploy automático não autorizado. Seu valor remoto não foi consultado nesta etapa.
+1. O workflow atual não faz deploy em push/merge na main. A publicação exige disparo manual na main com `release_mode=plan` ou `release_mode=deploy`; preservar essa proteção.
 2. Confirmar environment `production`, variáveis públicas corretas, segredos SSH, host key e instalação do executor pelo procedimento existente. Não repetir a instalação se já estiver instalado: `install.sh` é de uso único.
 3. Executar a simulação na VPS em etapa autorizada e exigir `SIMULACAO_OK_SEM_DEPLOY`, espaço, backup/restore planejado e saúde do GLPI. Nada disso foi executado ou certificado aqui.
 4. Preservar D-001: permissões individuais continuam temporariamente suspensas por decisão explícita. Isolamento entre empresas e vínculos permanece testado. Itens D-007 (por exemplo executor de agendamentos) não foram inventados/concluídos nesta preparação.
@@ -52,7 +52,7 @@ git branch --show-current
 git push -u origin feat/respostas-rapidas-e-interface
 ```
 
-Abrir PR de `feat/respostas-rapidas-e-interface` para `main`, revisar o conjunto e aguardar aprovação. Nenhum desses envios/PR foi realizado por esta preparação. Antes de aprovar o merge, confirmar a variável de automação citada acima. O workflow atual só executa seus jobs em `main`; não apresentá-lo como check automático de PR desta branch.
+Abrir PR de `feat/respostas-rapidas-e-interface` para `main`, revisar o conjunto e aguardar aprovação. Nenhum desses envios/PR foi realizado por esta preparação. O workflow atual só executa seus jobs em `main`; não apresentá-lo como check automático de PR desta branch.
 
 ## Publicar pelo fluxo existente — somente depois de revisão e autorização
 

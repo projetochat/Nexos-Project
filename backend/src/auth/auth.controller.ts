@@ -2,6 +2,7 @@ import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
 import { IsEmail, IsOptional, IsString, MinLength } from "class-validator";
 import { CurrentUser } from "./current-user.decorator";
 import { JwtAuthGuard } from "./jwt-auth.guard";
+import { PermissionsGuard } from "./permissions.guard";
 import type { AuthenticatedUser } from "./auth.types";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
@@ -64,7 +65,7 @@ export class AuthController {
   }
 
   @Get("me")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   me(@CurrentUser() current: AuthenticatedUser) {
     return this.auth.me(current.membershipId);
   }

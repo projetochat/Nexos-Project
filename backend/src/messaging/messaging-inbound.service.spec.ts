@@ -667,6 +667,55 @@ describe("MessagingInboundService", () => {
     });
   });
 
+  it("uses the connection default department only when creating a new inbound conversation", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      defaultDepartmentId: "department-sales",
+    });
+    prisma.department.findFirst.mockResolvedValue({ id: "department-sales" });
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(null);
+    prisma.conversation.create.mockResolvedValue(
+      conversation({ id: "conversation-default", departmentId: "department-sales" }),
+    );
+    prisma.message.create.mockResolvedValue({
+      id: "message-inbound",
+      conversationId: "conversation-default",
+    });
+    prisma.conversation.update.mockResolvedValue(
+      conversation({ id: "conversation-default", departmentId: "department-sales" }),
+    );
+
+    await new MessagingInboundService(prisma as never).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "inbound-default-department",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+      type: MessageType.TEXT,
+      content: "Nova conversa na fila correta",
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(prisma.department.findFirst).toHaveBeenCalledWith({
+      where: { id: "department-sales", tenantId: "tenant-a", active: true },
+      select: { id: true },
+    });
+    expect(prisma.conversation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ departmentId: "department-sales" }),
+    });
+    expect(prisma.contact.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ departmentId: "department-a" }),
+      }),
+    );
+  });
+
   it("creates a lead when the inbound sender is a new contact", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());

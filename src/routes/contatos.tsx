@@ -380,6 +380,9 @@ function ContatosPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const user = useSession((state) => state.user);
+  const canManageContacts = user?.permissions?.includes("contacts.manage") ?? false;
+  const canDeleteContacts = user?.permissions?.includes("contacts.delete") ?? false;
+  const canStartConversation = user?.permissions?.includes("conversations.assign") ?? false;
   const filtersStorageKey = `trixus.contacts.filters.${user?.id ?? "anonymous"}`;
   const [contacts, setContacts] = React.useState<Contact[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
@@ -699,6 +702,10 @@ function ContatosPage() {
     : undefined;
 
   const startConversation = async (contact: Contact, connectionId: string) => {
+    if (!canStartConversation) {
+      toast.error("Você não possui permissão para iniciar conversas.");
+      return;
+    }
     setOpeningConversation(true);
     try {
       const conversation = await conversationApi.create({
@@ -716,6 +723,10 @@ function ContatosPage() {
   };
 
   const openConversation = (contact: Contact) => {
+    if (!canStartConversation) {
+      toast.error("Você não possui permissão para iniciar conversas.");
+      return;
+    }
     const connectedInstances = resolveContactInstances(contact.instanceIds, instances).filter(
       (instance) => isConnectedInstanceStatus(instance.status),
     );
@@ -814,6 +825,7 @@ function ContatosPage() {
   };
 
   const openExcelImport = () => {
+    if (!canManageContacts) return;
     if (reopenImportProgress()) return;
     exportMenu.hide();
     importModal.show();
@@ -1014,6 +1026,7 @@ function ContatosPage() {
   };
 
   const importFromAgenda = async () => {
+    if (!canManageContacts) return;
     if (reopenImportProgress()) return;
     exportMenu.hide();
     if (!connectedAgendaInstances.length) {
@@ -1194,6 +1207,14 @@ function ContatosPage() {
 
   const applyBulkAction = async () => {
     if (!selectedBulkCount || !bulkMode) return;
+    if (bulkMode === "delete" && !canDeleteContacts) {
+      toast.error("Você não possui permissão para excluir contatos.");
+      return;
+    }
+    if (bulkMode !== "delete" && !canManageContacts) {
+      toast.error("Você não possui permissão para alterar contatos.");
+      return;
+    }
     const target = allFilteredSelected
       ? { allFiltered: true, filters: currentContactFilters }
       : { contactIds: selectedIds };
@@ -1252,21 +1273,25 @@ function ContatosPage() {
                 </Button>
                 {exportMenu.open && (
                   <div className="absolute left-0 z-[80] mt-2 w-64 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
-                      onClick={() => void importFromAgenda()}
-                    >
-                      <Phone className="h-4 w-4" /> Importar Agenda Telefônica
-                    </button>
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
-                      onClick={openExcelImport}
-                    >
-                      <FileSpreadsheet className="h-4 w-4" /> Importar via Excel/CSV
-                    </button>
-                    <div className="mt-1 border-t border-border"></div>
+                    {canManageContacts && (
+                      <>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
+                          onClick={() => void importFromAgenda()}
+                        >
+                          <Phone className="h-4 w-4" /> Importar Agenda Telefônica
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
+                          onClick={openExcelImport}
+                        >
+                          <FileSpreadsheet className="h-4 w-4" /> Importar via Excel/CSV
+                        </button>
+                        <div className="mt-1 border-t border-border"></div>
+                      </>
+                    )}
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-1"
@@ -1280,9 +1305,11 @@ function ContatosPage() {
                   </div>
                 )}
               </div>
-              <Button variant="primary" size="sm" onClick={create.show}>
-                <Plus className="h-3.5 w-3.5" /> Novo Contato
-              </Button>
+              {canManageContacts && (
+                <Button variant="primary" size="sm" onClick={create.show}>
+                  <Plus className="h-3.5 w-3.5" /> Novo Contato
+                </Button>
+              )}
             </div>
           }
         />
@@ -1383,7 +1410,7 @@ function ContatosPage() {
           </div>
         </Card>
 
-        {selectedBulkCount > 0 && (
+        {selectedBulkCount > 0 && (canManageContacts || canDeleteContacts) && (
           <Card className="mb-4 hidden p-3 md:block">
             <div className="flex flex-wrap items-center gap-2">
               <span className="mr-2 text-sm font-medium">
@@ -1416,8 +1443,8 @@ function ContatosPage() {
                 className="w-60"
               >
                 <option value="">Ações</option>
-                <option value="update">Atualizar em massa</option>
-                <option value="delete">Excluir em massa</option>
+                {canManageContacts && <option value="update">Atualizar em massa</option>}
+                {canDeleteContacts && <option value="delete">Excluir em massa</option>}
               </Select>
               {bulkAction === "update" && (
                 <Select
@@ -1540,159 +1567,170 @@ function ContatosPage() {
           </Card>
         )}
 
-        <Card className="mb-3 p-4 md:hidden">
-          <label className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2">
-            <input
-              type="checkbox"
-              className="h-5 w-5 shrink-0"
-              checked={allVisibleSelected}
-              onChange={toggleVisibleSelection}
-              aria-label="Selecionar registros"
-            />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium">
-              Selecionar registros
-            </span>
-          </label>
-          {selectedBulkCount > 0 && (
-            <div className="mt-3 rounded-lg border border-border bg-card p-3">
-              <span className="mb-2 block text-xs font-semibold">
-                {formatIntegerPtBr(selectedBulkCount)} selecionado(s)
+        {(canManageContacts || canDeleteContacts) && (
+          <Card className="mb-3 p-4 md:hidden">
+            <label className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2">
+              <input
+                type="checkbox"
+                className="h-5 w-5 shrink-0"
+                checked={allVisibleSelected}
+                onChange={toggleVisibleSelection}
+                aria-label="Selecionar registros"
+              />
+              <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                Selecionar registros
               </span>
-              <div className="grid gap-2">
-                <label className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2">
-                  <input
-                    type="checkbox"
-                    className="h-5 w-5 shrink-0"
-                    checked={allFilteredSelected}
-                    onChange={(event) => {
-                      setAllFilteredSelected(event.target.checked);
-                      setSelectedIds(
-                        event.target.checked ? contacts.map((contact) => contact.id) : [],
-                      );
-                    }}
-                  />
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium">
-                    Marcar todos os registros
-                  </span>
-                </label>
-                <Select
-                  value={bulkAction}
-                  onChange={(event) => {
-                    const nextAction = event.target.value;
-                    setBulkAction(nextAction);
-                    setBulkMode(nextAction === "delete" ? "delete" : "");
-                    setBulkValue("");
-                    setBulkTags([]);
-                    setBulkCustomValue("");
-                  }}
-                  className="w-full"
-                >
-                  <option value="">Ações</option>
-                  <option value="update">Atualizar em massa</option>
-                  <option value="delete">Excluir em massa</option>
-                </Select>
-                {bulkAction === "update" && (
+            </label>
+            {selectedBulkCount > 0 && (
+              <div className="mt-3 rounded-lg border border-border bg-card p-3">
+                <span className="mb-2 block text-xs font-semibold">
+                  {formatIntegerPtBr(selectedBulkCount)} selecionado(s)
+                </span>
+                <div className="grid gap-2">
+                  <label className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      className="h-5 w-5 shrink-0"
+                      checked={allFilteredSelected}
+                      onChange={(event) => {
+                        setAllFilteredSelected(event.target.checked);
+                        setSelectedIds(
+                          event.target.checked ? contacts.map((contact) => contact.id) : [],
+                        );
+                      }}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                      Marcar todos os registros
+                    </span>
+                  </label>
                   <Select
-                    value={bulkMode}
+                    value={bulkAction}
                     onChange={(event) => {
-                      setBulkMode(event.target.value as typeof bulkMode);
+                      const nextAction = event.target.value;
+                      setBulkAction(nextAction);
+                      setBulkMode(nextAction === "delete" ? "delete" : "");
                       setBulkValue("");
                       setBulkTags([]);
                       setBulkCustomValue("");
                     }}
                     className="w-full"
                   >
-                    <option value="">- Selecione o campo -</option>
-                    <option value="customer">Empresa do contato</option>
-                    <option value="department">Departamento</option>
-                    <option value="profile">Perfil do contato</option>
-                    <option value="email">E-mail</option>
-                    <option value="instances">Instâncias</option>
-                    <option value="tags">Etiquetas</option>
-                    {customFieldDefinitions.length > 0 && (
-                      <optgroup label="Campos adicionais">
-                        {customFieldDefinitions.map((field) => (
-                          <option key={field.id} value={`custom:${field.id}`}>
-                            {field.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
+                    <option value="">Ações</option>
+                    {canManageContacts && <option value="update">Atualizar em massa</option>}
+                    {canDeleteContacts && <option value="delete">Excluir em massa</option>}
                   </Select>
-                )}
-                {bulkMode === "customer" && (
-                  <Select value={bulkValue} onChange={(event) => setBulkValue(event.target.value)}>
-                    <option value="">- Sem empresa -</option>
-                    {customers.map((customer) => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.nome}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-                {bulkMode === "department" && (
-                  <Select value={bulkValue} onChange={(event) => setBulkValue(event.target.value)}>
-                    <option value="">- Sem departamento -</option>
-                    {departments.map((department) => (
-                      <option key={department.id} value={department.id}>
-                        {department.nome}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-                {bulkMode === "profile" && (
-                  <Select value={bulkValue} onChange={(event) => setBulkValue(event.target.value)}>
-                    <option value="">- Sem perfil -</option>
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.nome}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-                {bulkMode === "tags" && (
-                  <TagMultiSelect
-                    tags={tags}
-                    selectedIds={bulkTags}
-                    onChange={setBulkTags}
-                    placement="down"
-                    flow
-                  />
-                )}
-                {bulkMode === "email" && (
-                  <Input
-                    type="email"
-                    value={bulkValue}
-                    onChange={(event) => setBulkValue(event.target.value)}
-                    placeholder="email@exemplo.com"
-                  />
-                )}
-                {bulkMode === "instances" && (
-                  <InstanceMultiSelect
-                    instances={visibleInstances}
-                    selectedIds={bulkValue ? bulkValue.split(",").filter(Boolean) : []}
-                    onChange={(ids) => setBulkValue(ids.join(","))}
-                  />
-                )}
-                {selectedBulkCustomField && (
-                  <CustomContactFieldInput
-                    field={selectedBulkCustomField}
-                    value={bulkCustomValue}
-                    onChange={setBulkCustomValue}
-                  />
-                )}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={!bulkAction || (bulkAction === "update" && !bulkMode)}
-                  onClick={() => void applyBulkAction()}
-                >
-                  <Check className="h-3.5 w-3.5" /> Aplicar
-                </Button>
+                  {bulkAction === "update" && (
+                    <Select
+                      value={bulkMode}
+                      onChange={(event) => {
+                        setBulkMode(event.target.value as typeof bulkMode);
+                        setBulkValue("");
+                        setBulkTags([]);
+                        setBulkCustomValue("");
+                      }}
+                      className="w-full"
+                    >
+                      <option value="">- Selecione o campo -</option>
+                      <option value="customer">Empresa do contato</option>
+                      <option value="department">Departamento</option>
+                      <option value="profile">Perfil do contato</option>
+                      <option value="email">E-mail</option>
+                      <option value="instances">Instâncias</option>
+                      <option value="tags">Etiquetas</option>
+                      {customFieldDefinitions.length > 0 && (
+                        <optgroup label="Campos adicionais">
+                          {customFieldDefinitions.map((field) => (
+                            <option key={field.id} value={`custom:${field.id}`}>
+                              {field.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </Select>
+                  )}
+                  {bulkMode === "customer" && (
+                    <Select
+                      value={bulkValue}
+                      onChange={(event) => setBulkValue(event.target.value)}
+                    >
+                      <option value="">- Sem empresa -</option>
+                      {customers.map((customer) => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.nome}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                  {bulkMode === "department" && (
+                    <Select
+                      value={bulkValue}
+                      onChange={(event) => setBulkValue(event.target.value)}
+                    >
+                      <option value="">- Sem departamento -</option>
+                      {departments.map((department) => (
+                        <option key={department.id} value={department.id}>
+                          {department.nome}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                  {bulkMode === "profile" && (
+                    <Select
+                      value={bulkValue}
+                      onChange={(event) => setBulkValue(event.target.value)}
+                    >
+                      <option value="">- Sem perfil -</option>
+                      {profiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.nome}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                  {bulkMode === "tags" && (
+                    <TagMultiSelect
+                      tags={tags}
+                      selectedIds={bulkTags}
+                      onChange={setBulkTags}
+                      placement="down"
+                      flow
+                    />
+                  )}
+                  {bulkMode === "email" && (
+                    <Input
+                      type="email"
+                      value={bulkValue}
+                      onChange={(event) => setBulkValue(event.target.value)}
+                      placeholder="email@exemplo.com"
+                    />
+                  )}
+                  {bulkMode === "instances" && (
+                    <InstanceMultiSelect
+                      instances={visibleInstances}
+                      selectedIds={bulkValue ? bulkValue.split(",").filter(Boolean) : []}
+                      onChange={(ids) => setBulkValue(ids.join(","))}
+                    />
+                  )}
+                  {selectedBulkCustomField && (
+                    <CustomContactFieldInput
+                      field={selectedBulkCustomField}
+                      value={bulkCustomValue}
+                      onChange={setBulkCustomValue}
+                    />
+                  )}
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={!bulkAction || (bulkAction === "update" && !bulkMode)}
+                    onClick={() => void applyBulkAction()}
+                  >
+                    <Check className="h-3.5 w-3.5" /> Aplicar
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
-        </Card>
+            )}
+          </Card>
+        )}
 
         <div className="relative">
           <AlphabetFloatingNav
@@ -1716,13 +1754,15 @@ function ContatosPage() {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex min-w-0 flex-1 items-center gap-3">
-                        <input
-                          type="checkbox"
-                          className="h-5 w-5 shrink-0"
-                          checked={allFilteredSelected || selectedIds.includes(contact.id)}
-                          onChange={() => toggleContactSelection(contact.id)}
-                          aria-label={`Selecionar ${contact.nome}`}
-                        />
+                        {(canManageContacts || canDeleteContacts) && (
+                          <input
+                            type="checkbox"
+                            className="h-5 w-5 shrink-0"
+                            checked={allFilteredSelected || selectedIds.includes(contact.id)}
+                            onChange={() => toggleContactSelection(contact.id)}
+                            aria-label={`Selecionar ${contact.nome}`}
+                          />
+                        )}
                         <Avatar
                           name={contact.nome}
                           src={contact.avatar_url ?? undefined}
@@ -1736,31 +1776,37 @@ function ContatosPage() {
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title="Abrir conversa"
-                          onClick={() => void openConversation(contact)}
-                        >
-                          <MessageCirclePlus className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title="Editar"
-                          onClick={() => setEditing(contact)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="trash-action"
-                          title="Excluir"
-                          onClick={() => setDeleting(contact)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {canStartConversation && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Abrir conversa"
+                            onClick={() => void openConversation(contact)}
+                          >
+                            <MessageCirclePlus className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {canManageContacts && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Editar"
+                            onClick={() => setEditing(contact)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {canDeleteContacts && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="trash-action"
+                            title="Excluir"
+                            onClick={() => setDeleting(contact)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1778,14 +1824,16 @@ function ContatosPage() {
                     className="w-10 rounded-tl-lg px-3 py-3 font-medium sm:px-4"
                     style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
                   >
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4"
-                      style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
-                      checked={allVisibleSelected}
-                      onChange={toggleVisibleSelection}
-                      aria-label="Selecionar contatos visíveis"
-                    />
+                    {(canManageContacts || canDeleteContacts) && (
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+                        checked={allVisibleSelected}
+                        onChange={toggleVisibleSelection}
+                        aria-label="Selecionar contatos visíveis"
+                      />
+                    )}
                   </th>
                   <th className="w-[35%] px-3 py-3 font-medium sm:px-4">Contato</th>
                   <th className="w-[16%] px-3 py-3 font-medium sm:px-4">WhatsApp</th>
@@ -1818,14 +1866,16 @@ function ContatosPage() {
                         className="relative px-3 py-3 sm:px-4"
                         style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
                       >
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4"
-                          style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
-                          checked={allFilteredSelected || selectedIds.includes(contact.id)}
-                          onChange={() => toggleContactSelection(contact.id)}
-                          aria-label={`Selecionar ${contact.nome}`}
-                        />
+                        {(canManageContacts || canDeleteContacts) && (
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            style={{ width: 14, height: 14, minWidth: 14, minHeight: 14 }}
+                            checked={allFilteredSelected || selectedIds.includes(contact.id)}
+                            onChange={() => toggleContactSelection(contact.id)}
+                            aria-label={`Selecionar ${contact.nome}`}
+                          />
+                        )}
                       </td>
                       <td className="px-3 py-3 sm:px-4">
                         <div className="flex items-center gap-3">
@@ -1866,31 +1916,37 @@ function ContatosPage() {
                       </td>
                       <td className="px-3 py-3 sm:px-4">
                         <div className="flex justify-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="Abrir conversa"
-                            onClick={() => void openConversation(contact)}
-                          >
-                            <MessageCirclePlus className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="Editar"
-                            onClick={() => setEditing(contact)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="trash-action"
-                            title="Excluir"
-                            onClick={() => setDeleting(contact)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          {canStartConversation && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Abrir conversa"
+                              onClick={() => void openConversation(contact)}
+                            >
+                              <MessageCirclePlus className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canManageContacts && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Editar"
+                              onClick={() => setEditing(contact)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canDeleteContacts && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="trash-action"
+                              title="Excluir"
+                              onClick={() => setDeleting(contact)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1958,67 +2014,71 @@ function ContatosPage() {
           </Card>
         </div>
 
-        <ContactFormModal
-          open={create.open}
-          onClose={create.hide}
-          customers={customers}
-          tags={tags}
-          departments={departments}
-          profiles={profiles}
-          instances={visibleInstances}
-          onCustomerCreated={(customer) =>
-            setCustomers((current) => upsertCustomer(current, customer))
-          }
-          onDepartmentSaved={(department) =>
-            setDepartments((current) => upsertCatalog(current, department))
-          }
-          onProfileSaved={(profile) => setProfiles((current) => upsertCatalog(current, profile))}
-          onSubmit={async (data) => {
-            try {
-              const contact = await crmApi.createContact(contactPayload(data));
-              toast.success(
-                contact.lifecycle === "restored" ? "Contato restaurado" : "Contato criado",
-              );
-              create.hide();
-              await load();
-            } catch (e) {
-              toast.error("Falha ao criar", { description: (e as Error).message });
+        {canManageContacts && (
+          <ContactFormModal
+            open={create.open}
+            onClose={create.hide}
+            customers={customers}
+            tags={tags}
+            departments={departments}
+            profiles={profiles}
+            instances={visibleInstances}
+            onCustomerCreated={(customer) =>
+              setCustomers((current) => upsertCustomer(current, customer))
             }
-          }}
-        />
-        <ContactFormModal
-          open={!!editing}
-          initial={editing ?? undefined}
-          customers={customers}
-          tags={tags}
-          departments={departments}
-          profiles={profiles}
-          instances={visibleInstances}
-          onCustomerCreated={(customer) =>
-            setCustomers((current) => upsertCustomer(current, customer))
-          }
-          onDepartmentSaved={(department) =>
-            setDepartments((current) => upsertCatalog(current, department))
-          }
-          onProfileSaved={(profile) => setProfiles((current) => upsertCatalog(current, profile))}
-          onClose={() => setEditing(null)}
-          onSubmit={async (data) => {
-            if (!editing) return;
-            try {
-              await crmApi.updateContact(editing.id, contactPayload(data));
-              await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ["operations", "history"] }),
-                queryClient.invalidateQueries({ queryKey: ["trixus", "contacts"] }),
-                queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] }),
-              ]);
-              toast.success("Contato atualizado");
-              setEditing(null);
-              await load();
-            } catch (e) {
-              toast.error("Falha ao salvar", { description: (e as Error).message });
+            onDepartmentSaved={(department) =>
+              setDepartments((current) => upsertCatalog(current, department))
             }
-          }}
-        />
+            onProfileSaved={(profile) => setProfiles((current) => upsertCatalog(current, profile))}
+            onSubmit={async (data) => {
+              try {
+                const contact = await crmApi.createContact(contactPayload(data));
+                toast.success(
+                  contact.lifecycle === "restored" ? "Contato restaurado" : "Contato criado",
+                );
+                create.hide();
+                await load();
+              } catch (e) {
+                toast.error("Falha ao criar", { description: (e as Error).message });
+              }
+            }}
+          />
+        )}
+        {canManageContacts && (
+          <ContactFormModal
+            open={!!editing}
+            initial={editing ?? undefined}
+            customers={customers}
+            tags={tags}
+            departments={departments}
+            profiles={profiles}
+            instances={visibleInstances}
+            onCustomerCreated={(customer) =>
+              setCustomers((current) => upsertCustomer(current, customer))
+            }
+            onDepartmentSaved={(department) =>
+              setDepartments((current) => upsertCatalog(current, department))
+            }
+            onProfileSaved={(profile) => setProfiles((current) => upsertCatalog(current, profile))}
+            onClose={() => setEditing(null)}
+            onSubmit={async (data) => {
+              if (!editing) return;
+              try {
+                await crmApi.updateContact(editing.id, contactPayload(data));
+                await Promise.all([
+                  queryClient.invalidateQueries({ queryKey: ["operations", "history"] }),
+                  queryClient.invalidateQueries({ queryKey: ["trixus", "contacts"] }),
+                  queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] }),
+                ]);
+                toast.success("Contato atualizado");
+                setEditing(null);
+                await load();
+              } catch (e) {
+                toast.error("Falha ao salvar", { description: (e as Error).message });
+              }
+            }}
+          />
+        )}
         <Modal
           open={!!conversationChoice}
           onClose={() => !openingConversation && setConversationChoice(null)}
@@ -2058,42 +2118,46 @@ function ContatosPage() {
             ))}
           </div>
         </Modal>
-        <ImportContactsModal
-          open={importModal.open}
-          onClose={importModal.hide}
-          onImport={importContactsRows}
-        />
-        <AgendaImportPreviewModal
-          open={agendaImportPreview.open}
-          loading={agendaImportPreview.loading}
-          busy={agendaImportPreview.busy}
-          previewLoaded={agendaImportPreview.previewLoaded}
-          instances={connectedAgendaInstances}
-          connectionId={agendaImportPreview.connectionId}
-          total={agendaImportPreview.total}
-          skipped={agendaImportPreview.skipped}
-          items={agendaImportPreview.items}
-          ignoredItems={agendaImportPreview.ignoredItems}
-          selectedPhones={agendaImportPreview.selectedPhones}
-          onConnectionIdChange={(connectionId) =>
-            setAgendaImportPreview((current) => ({
-              ...current,
-              connectionId,
-              previewLoaded: false,
-              total: 0,
-              skipped: 0,
-              items: [],
-              ignoredItems: [],
-              selectedPhones: [],
-            }))
-          }
-          onLoadPreview={loadAgendaImportPreview}
-          onSelectedPhonesChange={(selectedPhones) =>
-            setAgendaImportPreview((current) => ({ ...current, selectedPhones }))
-          }
-          onClose={closeAgendaImportPreview}
-          onConfirm={confirmAgendaImport}
-        />
+        {canManageContacts && (
+          <ImportContactsModal
+            open={importModal.open}
+            onClose={importModal.hide}
+            onImport={importContactsRows}
+          />
+        )}
+        {canManageContacts && (
+          <AgendaImportPreviewModal
+            open={agendaImportPreview.open}
+            loading={agendaImportPreview.loading}
+            busy={agendaImportPreview.busy}
+            previewLoaded={agendaImportPreview.previewLoaded}
+            instances={connectedAgendaInstances}
+            connectionId={agendaImportPreview.connectionId}
+            total={agendaImportPreview.total}
+            skipped={agendaImportPreview.skipped}
+            items={agendaImportPreview.items}
+            ignoredItems={agendaImportPreview.ignoredItems}
+            selectedPhones={agendaImportPreview.selectedPhones}
+            onConnectionIdChange={(connectionId) =>
+              setAgendaImportPreview((current) => ({
+                ...current,
+                connectionId,
+                previewLoaded: false,
+                total: 0,
+                skipped: 0,
+                items: [],
+                ignoredItems: [],
+                selectedPhones: [],
+              }))
+            }
+            onLoadPreview={loadAgendaImportPreview}
+            onSelectedPhonesChange={(selectedPhones) =>
+              setAgendaImportPreview((current) => ({ ...current, selectedPhones }))
+            }
+            onClose={closeAgendaImportPreview}
+            onConfirm={confirmAgendaImport}
+          />
+        )}
         <ExportContactsModal
           open={exportModal.open}
           contactCount={exportableContactCount}
@@ -2102,56 +2166,61 @@ function ContatosPage() {
           onClose={exportModal.hide}
           onExport={exportContacts}
         />
-        <ImportProgressModal
-          open={importProgress.open}
-          source={importProgress.source}
-          current={importProgress.current}
-          total={importProgress.total}
-          imported={importProgress.imported}
-          status={importProgress.status}
-          onClose={closeImportProgress}
-        />
-        <ConfirmDialog
-          open={!!deleting}
-          title="Excluir Contato?"
-          description={
-            deleting ? (
-              <div className="space-y-3">
-                <p>
-                  Contato abaixo será apagado.
-                  <br />
-                  Deseja continuar?
-                </p>
-                <div className="space-y-1 text-foreground">
+        {canManageContacts && (
+          <ImportProgressModal
+            open={importProgress.open}
+            source={importProgress.source}
+            current={importProgress.current}
+            total={importProgress.total}
+            imported={importProgress.imported}
+            status={importProgress.status}
+            onClose={closeImportProgress}
+          />
+        )}
+        {canDeleteContacts && (
+          <ConfirmDialog
+            open={!!deleting}
+            title="Excluir Contato?"
+            description={
+              deleting ? (
+                <div className="space-y-3">
                   <p>
-                    <strong>Nome: </strong>{" "}
-                    <strong className="font-semibold text-foreground">"{deleting.nome}"</strong>
+                    Contato abaixo será apagado.
+                    <br />
+                    Deseja continuar?
                   </p>
-                  <p>
-                    <strong>Whatsapp: </strong> {formatPhoneWithDdi(deleting.telefone)}
+                  <div className="space-y-1 text-foreground">
+                    <p>
+                      <strong>Nome: </strong>{" "}
+                      <strong className="font-semibold text-foreground">"{deleting.nome}"</strong>
+                    </p>
+                    <p>
+                      <strong>Whatsapp: </strong> {formatPhoneWithDdi(deleting.telefone)}
+                    </p>
+                  </div>
+                  <p className="italic">
+                    Histórico de Conversas associadas a esse contato serão preservadas para
+                    auditoria.
                   </p>
                 </div>
-                <p className="italic">
-                  Histórico de Conversas associadas a esse contato serão preservadas para auditoria.
-                </p>
-              </div>
-            ) : undefined
-          }
-          destructive
-          confirmLabel="Excluir"
-          onClose={() => setDeleting(null)}
-          onConfirm={async () => {
-            if (!deleting) return;
-            try {
-              await crmApi.deleteContact(deleting.id);
-              toast.success("Contato excluído");
-              setDeleting(null);
-              await load();
-            } catch (e) {
-              toast.error("Falha ao excluir", { description: (e as Error).message });
+              ) : undefined
             }
-          }}
-        />
+            destructive
+            confirmLabel="Excluir"
+            onClose={() => setDeleting(null)}
+            onConfirm={async () => {
+              if (!deleting) return;
+              try {
+                await crmApi.deleteContact(deleting.id);
+                toast.success("Contato excluído");
+                setDeleting(null);
+                await load();
+              } catch (e) {
+                toast.error("Falha ao excluir", { description: (e as Error).message });
+              }
+            }}
+          />
+        )}
       </PageContainer>
     </AppShell>
   );

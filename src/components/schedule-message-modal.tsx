@@ -5,7 +5,7 @@ import { Button, Field } from "./ui-kit";
 import { ConfirmDialog, Modal } from "./modal";
 import { GreetingMessageEditor } from "./greeting-message-editor";
 import { schedulesApi, type QuickReplyAttachment } from "@/lib/trixus-api";
-import type { ApiSchedule } from "@/lib/schedule-types";
+import { scheduleWritePayload, type ApiSchedule } from "@/lib/schedule-types";
 import { pendingConversationSchedules, toLocalDateTimeInput } from "@/lib/schedule-message";
 import {
   CONNECTION_MESSAGE_VARIABLES,
@@ -93,8 +93,8 @@ export function ScheduleMessageModal({
 
   const save = async () => {
     const trimmedContent = content.trim();
-    if (!trimmedContent || !scheduleAt) {
-      setError("Informe a mensagem, a data e o horário.");
+    if ((!trimmedContent && !attachment) || !scheduleAt) {
+      setError("Informe a mensagem ou um anexo, além da data e do horário.");
       return;
     }
     if (trimmedContent.length > 1000) {
@@ -112,13 +112,13 @@ export function ScheduleMessageModal({
       const mode = editing ? "edit" : "create";
       await schedulesApi.save(
         editing
-          ? {
+          ? scheduleWritePayload({
               ...editing,
               content: trimmedContent,
               scheduledAt: date.toISOString(),
               attachment,
               attachmentName: attachment?.fileName ?? null,
-            }
+            })
           : {
               id: crypto.randomUUID(),
               identifier,
@@ -191,13 +191,15 @@ export function ScheduleMessageModal({
               />
             </Field>
             <Field label="Data e horário *">
-              <input
-                type="datetime-local"
-                value={scheduleAt}
-                onChange={(event) => setScheduleAt(event.target.value)}
-                className="w-full rounded-lg border border-border bg-card p-2.5 text-sm"
-                required
-              />
+              <div className="min-w-0 max-w-full overflow-hidden">
+                <input
+                  type="datetime-local"
+                  value={scheduleAt}
+                  onChange={(event) => setScheduleAt(event.target.value)}
+                  className="block w-full min-w-0 max-w-full rounded-lg border border-border bg-card p-2.5 text-sm"
+                  required
+                />
+              </div>
             </Field>
             <p className="text-xs text-muted-foreground">
               A mensagem digitada será enviada na data escolhida.
@@ -219,7 +221,7 @@ export function ScheduleMessageModal({
               <Button
                 type="submit"
                 variant="primary"
-                disabled={busy || !content.trim() || !scheduleAt}
+                disabled={busy || (!content.trim() && !attachment) || !scheduleAt}
               >
                 {busy ? "Salvando..." : editing ? "Salvar alterações" : "Agendar"}
               </Button>

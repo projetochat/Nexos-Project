@@ -113,7 +113,7 @@ export class DepartmentsController {
   }
 
   @Delete(":id")
-  @RequirePermissions("departments.manage")
+  @RequirePermissions("departments.delete")
   async deactivate(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     await this.findDepartmentOrThrow(id, current.tenantId);
     const department = await this.prisma.department.update({

@@ -19,6 +19,7 @@ import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
 import { organizationApi, type ApiDepartment } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/departamentos")({ component: Page });
 
@@ -60,6 +61,9 @@ function departmentWithLogFallback(department: ApiDepartment, previous?: ApiDepa
 
 function Page() {
   const qc = useQueryClient();
+  const permissions = useSession((state) => state.user?.permissions ?? []);
+  const canManage = permissions.includes("departments.manage");
+  const canDelete = permissions.includes("departments.delete");
   const [editing, setEditing] = React.useState<ApiDepartment | null>(null);
   const [duplicating, setDuplicating] = React.useState<ApiDepartment | null>(null);
   const [deleting, setDeleting] = React.useState<ApiDepartment | null>(null);
@@ -135,9 +139,11 @@ function Page() {
           title="Departamentos"
           subtitle={`${num(departamentos.length)} departamentos cadastrados.`}
           actions={
-            <Button variant="primary" size="sm" onClick={novo.show}>
-              <Plus className="h-3.5 w-3.5" /> Criar Departamento
-            </Button>
+            canManage ? (
+              <Button variant="primary" size="sm" onClick={novo.show}>
+                <Plus className="h-3.5 w-3.5" /> Criar Departamento
+              </Button>
+            ) : null
           }
         />
 
@@ -186,34 +192,40 @@ function Page() {
                     <p className="min-w-0 truncate font-semibold">{d.name}</p>
                   </div>
                   <div className="flex shrink-0 gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      title="Duplicar departamento"
-                      aria-label={`Duplicar departamento ${d.name}`}
-                      onClick={() => setDuplicating(d)}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      title="Editar departamento"
-                      aria-label={`Editar departamento ${d.name}`}
-                      onClick={() => setEditing(d)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="trash-action"
-                      title="Excluir departamento"
-                      aria-label={`Excluir departamento ${d.name}`}
-                      onClick={() => setDeleting(d)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Duplicar departamento"
+                        aria-label={`Duplicar departamento ${d.name}`}
+                        onClick={() => setDuplicating(d)}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Editar departamento"
+                        aria-label={`Editar departamento ${d.name}`}
+                        onClick={() => setEditing(d)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="trash-action"
+                        title="Excluir departamento"
+                        aria-label={`Excluir departamento ${d.name}`}
+                        onClick={() => setDeleting(d)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               </Card>

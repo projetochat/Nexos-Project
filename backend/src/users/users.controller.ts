@@ -15,6 +15,7 @@ import { createHash, randomBytes } from "crypto";
 import { compare, hash } from "bcryptjs";
 import {
   IsArray,
+  IsBoolean,
   IsEmail,
   IsOptional,
   IsString,
@@ -27,6 +28,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
+import { effectivePermissions } from "../auth/effective-permissions";
 import { Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
@@ -52,6 +54,10 @@ class CreateInvitationDto {
 }
 
 class UpdateMyProfileDto {
+  @IsOptional()
+  @IsBoolean()
+  keepSidebarCollapsed?: boolean;
+
   @IsOptional()
   @IsString()
   @MaxLength(120)
@@ -117,6 +123,7 @@ type MembershipWithRelations = {
     name: string;
     passwordHash: string;
     avatarUrl?: string | null;
+    keepSidebarCollapsed: boolean;
     status: string;
     platformRole: string;
   };
@@ -156,7 +163,7 @@ export class UsersController {
         departments: { include: { department: true } },
       },
     });
-    const permissions = membership.role.permissions.map((item) => item.permissionId);
+    const permissions = effectivePermissions(membership.role);
 
     return {
       user: {
@@ -219,6 +226,9 @@ export class UsersController {
       data: {
         name: dto.name?.trim() || undefined,
         ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
+        ...(dto.keepSidebarCollapsed !== undefined
+          ? { keepSidebarCollapsed: dto.keepSidebarCollapsed }
+          : {}),
         ...(dto.newPassword ? { passwordHash: await hash(dto.newPassword, 12) } : {}),
       },
     });
@@ -308,6 +318,7 @@ export class UsersController {
 
   @Get("company")
   @UseGuards(PermissionsGuard)
+  @RequirePermissions("settings.read")
   async company(@CurrentUser() current: AuthenticatedUser) {
     const tenant = await this.prisma.tenant.findUniqueOrThrow({
       where: { id: current.tenantId },
@@ -351,12 +362,13 @@ export class UsersController {
 
   @Patch("company")
   @UseGuards(PermissionsGuard)
+  @RequirePermissions("settings.manage")
   async updateCompany(
     @Body() dto: UpdateCompanySettingsDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    if (current.roleKey !== "tenant_admin" || current.impersonationSessionId) {
-      throw new ForbiddenException("Somente o Administrador pode alterar os dados da empresa.");
+    if (current.impersonationSessionId) {
+      throw new ForbiddenException("A empresa não pode ser alterada durante uma impersonação.");
     }
     return this.prisma.tenant.update({
       where: { id: current.tenantId },
@@ -367,6 +379,7 @@ export class UsersController {
 
   @Get("company/financial")
   @UseGuards(PermissionsGuard)
+  @RequirePermissions("settings.read")
   async financial(@CurrentUser() current: AuthenticatedUser) {
     const invoices = await this.prisma.invoice.findMany({
       where: { tenantId: current.tenantId },
@@ -422,7 +435,7 @@ export class UsersController {
   @RequirePermissions("users.manage")
   async create(@Body() dto: CreateUserDto, @CurrentUser() current: AuthenticatedUser) {
     const roleId = dto.roleId ?? (await this.defaultRoleId(current.tenantId));
-    await this.assertAssignableRole(roleId, current.tenantId);
+    await this.assertAssignableRole(roleId, current);
     await this.assertDepartmentsInTenant(dto.departmentIds ?? [], current.tenantId);
 
     const passwordHash = await hash(dto.password, 12);
@@ -494,7 +507,8 @@ export class UsersController {
   ) {
     const existing = await this.findMembershipOrThrow(id, current.tenantId);
     this.assertMasterMembershipProtected(existing);
-    if (dto.roleId) await this.assertAssignableRole(dto.roleId, current.tenantId);
+    this.assertSelfAccessPreserved(existing, dto, current);
+    if (dto.roleId) await this.assertAssignableRole(dto.roleId, current);
     if (dto.departmentIds)
       await this.assertDepartmentsInTenant(dto.departmentIds, current.tenantId);
     const avatarUrl = normalizeAvatarUrl(dto.avatarUrl);
@@ -511,6 +525,7 @@ export class UsersController {
       );
       const latest = await this.findMembershipOrThrow(id, current.tenantId, tx);
       this.assertMasterMembershipProtected(latest);
+      this.assertSelfAccessPreserved(latest, dto, current);
       const reactivating =
         (latest.status !== "ACTIVE" && dto.membershipStatus === "ACTIVE") ||
         (latest.user.status === "DISABLED" && dto.status === "ACTIVE");
@@ -564,9 +579,9 @@ export class UsersController {
 
   @Patch("users/:id/deactivate")
   @UseGuards(PermissionsGuard)
-  @RequirePermissions("users.manage")
+  @RequirePermissions("users.delete")
   deactivate(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
-    return this.setMembershipStatus(id, current.tenantId, "DISABLED");
+    return this.setMembershipStatus(id, current, "DISABLED");
   }
 
   @Get("user-invitations")
@@ -598,7 +613,7 @@ export class UsersController {
     @Body() dto: CreateInvitationDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    await this.assertAssignableRole(dto.roleId, current.tenantId);
+    await this.assertAssignableRole(dto.roleId, current);
     await this.assertDepartmentsInTenant(dto.departmentIds ?? [], current.tenantId);
     const token = randomBytes(32).toString("base64url");
     const email = dto.email.toLowerCase().trim();
@@ -641,9 +656,16 @@ export class UsersController {
     return { ok: true };
   }
 
-  private async setMembershipStatus(id: string, tenantId: string, status: "ACTIVE" | "DISABLED") {
-    const membership = await this.findMembershipOrThrow(id, tenantId);
+  private async setMembershipStatus(
+    id: string,
+    current: AuthenticatedUser,
+    status: "ACTIVE" | "DISABLED",
+  ) {
+    const membership = await this.findMembershipOrThrow(id, current.tenantId);
     this.assertMasterMembershipProtected(membership);
+    if (status !== "ACTIVE") {
+      this.assertSelfAccessPreserved(membership, { membershipStatus: status }, current);
+    }
     const updated = await this.prisma.tenantMembership.update({
       where: { id: membership.id },
       data: { status },
@@ -658,6 +680,23 @@ export class UsersController {
     }
   }
 
+  private assertSelfAccessPreserved(
+    membership: { id: string; userId: string; role: { id: string } },
+    dto: Pick<UpdateUserDto, "status" | "membershipStatus" | "roleId">,
+    current: AuthenticatedUser,
+  ) {
+    if (membership.id !== current.membershipId && membership.userId !== current.userId) return;
+    const disablesUser = dto.status !== undefined && dto.status !== "ACTIVE";
+    const disablesMembership =
+      dto.membershipStatus !== undefined && dto.membershipStatus !== "ACTIVE";
+    const changesRole = dto.roleId !== undefined && dto.roleId !== membership.role.id;
+    if (disablesUser || disablesMembership || changesRole) {
+      throw new ForbiddenException(
+        "Você não pode bloquear seu próprio usuário nem alterar o próprio perfil de acesso.",
+      );
+    }
+  }
+
   private async defaultRoleId(tenantId: string) {
     const role = await this.prisma.role.findUnique({
       where: { tenantId_key: { tenantId, key: "agent" } },
@@ -667,15 +706,37 @@ export class UsersController {
   }
 
   private async assertRoleInTenant(roleId: string, tenantId: string) {
-    const role = await this.prisma.role.findFirst({ where: { id: roleId, tenantId } });
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId, tenantId },
+      include: { permissions: { select: { permissionId: true } } },
+    });
     if (!role) throw new BadRequestException("Role inexistente para este tenant.");
     return role;
   }
 
-  private async assertAssignableRole(roleId: string, tenantId: string) {
-    const role = await this.assertRoleInTenant(roleId, tenantId);
+  private async assertAssignableRole(roleId: string, current: AuthenticatedUser) {
+    const role = await this.assertRoleInTenant(roleId, current.tenantId);
     if (role.key === "tenant_admin") {
       throw new BadRequestException("O perfil Administrador é reservado ao usuário administrador.");
+    }
+    if (current.roleKey === "tenant_admin") return;
+    const granted = new Set<string>(current.permissions ?? []);
+    const forbiddenPermission = effectivePermissions(role).find(
+      (permission) => !granted.has(permission),
+    );
+    if (forbiddenPermission) {
+      throw new ForbiddenException("Você não pode atribuir um perfil com permissões superiores.");
+    }
+    const roleConnectionIds = Array.isArray(
+      (role.metadata as { connectionIds?: unknown } | null)?.connectionIds,
+    )
+      ? ((role.metadata as { connectionIds: unknown[] }).connectionIds.filter(
+          (id): id is string => typeof id === "string",
+        ) as string[])
+      : [];
+    const allowedConnectionIds = new Set(current.connectionIds ?? []);
+    if (roleConnectionIds.some((id) => !allowedConnectionIds.has(id))) {
+      throw new ForbiddenException("Você não pode atribuir um perfil com instâncias superiores.");
     }
   }
 
@@ -778,6 +839,7 @@ export class UsersController {
         name: membership.presentationName?.trim() || membership.user.name,
         presentationName: membership.presentationName,
         avatarUrl: membership.user.avatarUrl,
+        keepSidebarCollapsed: membership.user.keepSidebarCollapsed,
         status: membership.user.status,
         platformRole: membership.user.platformRole,
       },

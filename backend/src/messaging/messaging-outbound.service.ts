@@ -1,4 +1,5 @@
 import { connectionAccess, roleConnectionIds } from "../auth/connection-access";
+import { effectivePermissions } from "../auth/effective-permissions";
 import {
   assertMessagingServiceEnabled,
   MessagingServicePausedError,
@@ -6,6 +7,7 @@ import {
 } from "./service-availability";
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -14,7 +16,6 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import type { AuthenticatedUser } from "../auth/auth.types";
-import { PERMISSIONS } from "../auth/permissions.constants";
 import {
   ConversationStatus,
   ConversationType,
@@ -54,11 +55,12 @@ import { EvolutionOutboundPayloadFactory } from "./evolution/evolution-outbound-
 import { normalizeEvolutionRecipient } from "./evolution/evolution-recipient.normalizer";
 import { SenderDisplayNameService } from "./sender-display-name.service";
 import { resolveMessageTemplate } from "./message-template";
+import { outboundMessageOrigin } from "./message-origin";
 
 const messageInclude = {
   authorMembership: {
     include: {
-      user: { select: { id: true, email: true, name: true } },
+      user: { select: { id: true, email: true, name: true, avatarUrl: true } },
     },
   },
   reactions: true,
@@ -454,20 +456,60 @@ export class MessagingOutboundService {
       throw new ScheduledMessagePermanentError("Instância indisponível para o agendamento.");
     }
     assertMessagingServiceEnabled(conversation.connection);
-    const resolvedContent = cleanMessageContent(
-      resolveMessageTemplate(input.content, {
-        contactName: conversation.contact.name,
-        phone: conversation.contact.phone,
-        email: conversation.contact.email,
-        instance: conversation.connection.name,
-        department: conversation.department?.name ?? conversation.contact.departmentName,
-        customer: conversation.contact.customer?.name,
-        customFields: Object.fromEntries(
-          conversation.contact.customFieldValues.map((item) => [item.field.label, item.value]),
-        ),
-        now: input.occurrenceAt,
-      }),
-    );
+    const templatedContent = resolveMessageTemplate(input.content, {
+      contactName: conversation.contact.name,
+      phone: conversation.contact.phone,
+      email: conversation.contact.email,
+      instance: conversation.connection.name,
+      department: conversation.department?.name ?? conversation.contact.departmentName,
+      customer: conversation.contact.customer?.name,
+      customFields: Object.fromEntries(
+        conversation.contact.customFieldValues.map((item) => [item.field.label, item.value]),
+      ),
+      now: input.occurrenceAt,
+    });
+    const resolvedContent = templatedContent.trim()
+      ? cleanMessageContent(templatedContent)
+      : input.attachment
+        ? ""
+        : cleanMessageContent(templatedContent);
+
+    const authorMembership = input.createdByMembershipId
+      ? await this.prisma.tenantMembership.findFirst({
+          where: {
+            id: input.createdByMembershipId,
+            tenantId: input.tenantId,
+            status: MembershipStatus.ACTIVE,
+            user: { status: "ACTIVE" },
+          },
+          select: {
+            id: true,
+            role: {
+              select: {
+                key: true,
+                metadata: true,
+                permissions: { select: { permissionId: true } },
+              },
+            },
+          },
+        })
+      : null;
+    if (input.createdByMembershipId && !authorMembership) {
+      throw new ScheduledMessagePermanentError(
+        "O criador do agendamento não possui mais um vínculo ativo.",
+      );
+    }
+    const authorPermissions = authorMembership ? effectivePermissions(authorMembership.role) : [];
+    const allowedConnectionIds = authorMembership ? roleConnectionIds(authorMembership.role) : null;
+    if (
+      authorMembership &&
+      allowedConnectionIds !== null &&
+      !allowedConnectionIds.includes(conversation.connection.id)
+    ) {
+      throw new ScheduledMessagePermanentError(
+        "O criador não possui mais acesso à instância deste agendamento.",
+      );
+    }
 
     let stored: Awaited<ReturnType<MessagingMediaStorageService["storeDownloaded"]>> | undefined;
     let messageType: MessageType = MessageType.TEXT;
@@ -476,6 +518,14 @@ export class MessagingOutboundService {
       const [, encoded = ""] = input.attachment.dataUrl.split(",");
       const body = Buffer.from(encoded, "base64");
       messageType = resolveMessageType(input.attachment.mimeType, "");
+      if (
+        (messageType === MessageType.VOICE || messageType === MessageType.AUDIO) &&
+        !authorPermissions.includes("chat.audio.send")
+      ) {
+        throw new ScheduledMessagePermanentError(
+          "O criador não possui permissão para enviar mensagens de áudio.",
+        );
+      }
       stored = await this.mediaStorage.storeDownloaded({
         tenantId: input.tenantId,
         conversationId: input.conversationId,
@@ -519,36 +569,8 @@ export class MessagingOutboundService {
         }
 
         const connection = await this.resolveConnection(tx, input.tenantId, conversation);
-        const authorMembership = input.createdByMembershipId
-          ? await tx.tenantMembership.findFirst({
-              where: {
-                id: input.createdByMembershipId,
-                tenantId: input.tenantId,
-                status: MembershipStatus.ACTIVE,
-                user: { status: "ACTIVE" },
-              },
-              select: { id: true, role: { select: { key: true, metadata: true } } },
-            })
-          : null;
-        if (input.createdByMembershipId && !authorMembership) {
-          throw new ScheduledMessagePermanentError(
-            "O criador do agendamento não possui mais um vínculo ativo.",
-          );
-        }
-        const allowedConnectionIds = authorMembership
-          ? roleConnectionIds(authorMembership.role)
-          : null;
-        if (
-          authorMembership &&
-          allowedConnectionIds !== null &&
-          !allowedConnectionIds.includes(connection.id)
-        ) {
-          throw new ScheduledMessagePermanentError(
-            "O criador não possui mais acesso à instância deste agendamento.",
-          );
-        }
         const content =
-          authorMembership && PERMISSIONS.includes("chat.agent_name.show")
+          resolvedContent && authorMembership && authorPermissions.includes("chat.agent_name.show")
             ? await this.prepareScheduledOutboundText(tx, resolvedContent, {
                 tenantId: input.tenantId,
                 membershipId: authorMembership.id,
@@ -656,6 +678,16 @@ export class MessagingOutboundService {
     });
     this.assertCanSend(conversation);
     if (!this.mediaStorage) throw new BadRequestException("Storage de mensagens indisponivel.");
+    const requestedMediaType = resolveMessageType(
+      header(req, "content-type").split(";")[0].trim().toLowerCase(),
+      header(req, "x-media-type"),
+    );
+    if (
+      (requestedMediaType === MessageType.VOICE || requestedMediaType === MessageType.AUDIO) &&
+      !current.permissions?.includes("chat.audio.send")
+    ) {
+      throw new ForbiddenException("Sem permissão para enviar mensagens de áudio.");
+    }
     const stored = await this.mediaStorage.storeUpload({
       tenantId: current.tenantId,
       conversationId,
@@ -1463,6 +1495,8 @@ export class MessagingOutboundService {
       author_membership_id: message.authorMembershipId,
       author_name:
         message.authorMembership?.presentationName ?? message.authorMembership?.user.name ?? null,
+      author_avatar_url: message.authorMembership?.user.avatarUrl ?? null,
+      outbound_origin: outboundMessageOrigin(message),
       content: message.content ?? "",
       created_at: message.createdAt,
       updated_at: message.updatedAt,

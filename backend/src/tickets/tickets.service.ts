@@ -551,7 +551,9 @@ export class TicketsService {
     if (
       current.roleKey !== "tenant_admin" &&
       current.membershipId !== membershipId &&
-      !(current.permissions ?? []).includes("tickets.assign")
+      !(current.permissions ?? []).some((permission) =>
+        ["tickets.assign", "tickets.manage"].includes(permission),
+      )
     ) {
       throw new ForbiddenException("Usuário sem permissão para atribuir este chamado.");
     }

@@ -155,6 +155,15 @@ export class MessagingInboundService {
             },
           });
 
+      const initialConversationDepartmentId = historical
+        ? (contact.departmentId ?? null)
+        : await this.initialConversationDepartmentId(
+            tx,
+            event.tenantId,
+            connection.defaultDepartmentId,
+            contact.departmentId ?? null,
+          );
+
       const conversationResult = await this.findOrCreateConversation(
         tx,
         event,
@@ -162,6 +171,7 @@ export class MessagingInboundService {
         connection,
         groupDisplayName,
         historical,
+        initialConversationDepartmentId,
       );
       const conversation = conversationResult.conversation;
       const createdConversation = conversationResult.created;
@@ -678,6 +688,7 @@ export class MessagingInboundService {
     connection: { ownerPhoneNormalized: string | null },
     groupDisplayName?: string | null,
     historical = false,
+    initialDepartmentId: string | null = contact.departmentId ?? null,
   ) {
     if (event.conversationType === "GROUP") {
       const existing = await tx.conversation.findFirst({
@@ -706,7 +717,7 @@ export class MessagingInboundService {
           tenantId: event.tenantId,
           contactId: contact.id,
           connectionId: event.connectionId,
-          departmentId: contact.departmentId ?? null,
+          departmentId: initialDepartmentId,
           status: historical ? ConversationStatus.FECHADA : ConversationStatus.ABERTA,
           closedAt: historical ? event.occurredAt : null,
           isGroup: true,
@@ -755,7 +766,7 @@ export class MessagingInboundService {
         connectionId: event.connectionId,
         conversationType: ConversationType.DIRECT,
         externalChatId: event.externalChatId,
-        departmentId: contact.departmentId ?? null,
+        departmentId: initialDepartmentId,
         status: historical ? ConversationStatus.FECHADA : ConversationStatus.ABERTA,
         closedAt: historical ? event.occurredAt : null,
         unreadCount: 0,
@@ -773,6 +784,20 @@ export class MessagingInboundService {
       select: { id: true },
     });
     return department?.id ?? null;
+  }
+
+  private async initialConversationDepartmentId(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    configuredDepartmentId: string | null,
+    fallbackDepartmentId: string | null,
+  ) {
+    if (!configuredDepartmentId) return fallbackDepartmentId;
+    const department = await tx.department.findFirst({
+      where: { id: configuredDepartmentId, tenantId, active: true },
+      select: { id: true },
+    });
+    return department?.id ?? fallbackDepartmentId;
   }
 
   private async notifyLeadCreated(

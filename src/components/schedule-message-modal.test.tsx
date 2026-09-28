@@ -62,6 +62,9 @@ it("reuses the rich editor, custom variables and a saved attachment while editin
       size: 12,
       dataUrl: "data:application/pdf;base64,AA==",
     },
+    dueAt: "2099-10-01T15:00:00.000Z",
+    executionStatus: "PENDING",
+    attempts: 0,
   };
   api.list.mockResolvedValue([scheduled]);
 
@@ -87,6 +90,9 @@ it("reuses the rich editor, custom variables and a saved attachment while editin
     await React.act(async () => Promise.resolve());
 
     expect(document.querySelector('[aria-label="Inserir emoji"]')).not.toBeNull();
+    const scheduleInput = document.querySelector<HTMLInputElement>('input[type="datetime-local"]');
+    expect(scheduleInput?.className).toContain("min-w-0");
+    expect(scheduleInput?.className).toContain("max-w-full");
     const variables = document.querySelector<HTMLButtonElement>('[aria-label="Inserir variável"]')!;
     await React.act(async () => variables.click());
     expect(document.body.textContent).toContain("{{codigo_cliente}}");
@@ -96,6 +102,21 @@ it("reuses the rich editor, custom variables and a saved attachment while editin
     expect(document.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Mensagem salva");
     expect(document.body.textContent).toContain("documento.pdf");
     expect(document.querySelector('[aria-label="Remover arquivo"]')).not.toBeNull();
+
+    api.save.mockResolvedValue(scheduled);
+    const save = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Salvar alterações",
+    )!;
+    await React.act(async () => save.click());
+    await vi.waitFor(() => expect(api.save).toHaveBeenCalledOnce());
+    expect(api.save.mock.calls[0]?.[0]).toMatchObject({
+      id: scheduled.id,
+      attachment: scheduled.attachment,
+      attachmentName: scheduled.attachmentName,
+    });
+    expect(api.save.mock.calls[0]?.[0]).not.toHaveProperty("dueAt");
+    expect(api.save.mock.calls[0]?.[0]).not.toHaveProperty("executionStatus");
+    expect(api.save.mock.calls[0]?.[0]).not.toHaveProperty("attempts");
   } finally {
     await React.act(async () => root.unmount());
     queryClient.clear();

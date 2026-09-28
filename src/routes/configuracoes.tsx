@@ -1,17 +1,16 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   Building2,
-  Clock,
   CreditCard,
   ListPlus,
   Braces,
   Plug,
   Shield,
   SlidersHorizontal,
-  Users,
 } from "lucide-react";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { SectionHeader } from "@/components/ui-kit";
+import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/configuracoes")({
   component: ConfiguracoesLayout,
@@ -21,16 +20,15 @@ const TABS = [
   { to: "/configuracoes/empresa", label: "Empresa", icon: Building2 },
   { to: "/configuracoes/financeiro", label: "Financeiro", icon: CreditCard },
   { to: "/configuracoes/geral", label: "Filas do Chat", icon: SlidersHorizontal },
-  { to: "/configuracoes/usuarios", label: "Usuários", icon: Users },
   { to: "/configuracoes/permissoes", label: "Permissões", icon: Shield },
   { to: "/configuracoes/integracoes", label: "Integrações", icon: Plug },
-  { to: "/configuracoes/horarios", label: "Horários", icon: Clock },
   { to: "/configuracoes/campos-contato", label: "Campos Adicionais", icon: ListPlus },
   { to: "/configuracoes/variaveis", label: "Variáveis", icon: Braces },
 ] as const;
 
 function ConfiguracoesLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const permissions = useSession((state) => state.user?.permissions ?? []);
   return (
     <AppShell>
       <PageContainer className="overflow-x-hidden">
@@ -40,6 +38,13 @@ function ConfiguracoesLayout() {
           <aside>
             <nav className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-surface-1 p-1 sm:grid-cols-3 lg:flex lg:flex-col lg:p-2">
               {TABS.map((t) => {
+                if (
+                  (t.to === "/configuracoes/campos-contato" ||
+                    t.to === "/configuracoes/variaveis") &&
+                  !permissions.includes("crm.read")
+                ) {
+                  return null;
+                }
                 const Icon = t.icon;
                 const active =
                   pathname === t.to ||

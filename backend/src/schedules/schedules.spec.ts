@@ -49,6 +49,21 @@ it("rejects client-supplied tenant ownership", async () => {
   ).resolves.toMatchObject({ attachment: null });
   await expect(
     pipe.transform(
+      {
+        ...item,
+        content: "",
+        attachment: {
+          ...attachment,
+          fileName: "audio.ogg",
+          mimeType: "audio/ogg;codecs=opus",
+          dataUrl: "data:audio/ogg;codecs=opus;base64,T2dnUw==",
+        },
+      },
+      { type: "body", metatype: SaveScheduleDto },
+    ),
+  ).resolves.toMatchObject({ content: "", attachment: { mimeType: "audio/ogg;codecs=opus" } });
+  await expect(
+    pipe.transform(
       { ...item, attachment: { ...attachment, dataUrl: "invalid" } },
       { type: "body", metatype: SaveScheduleDto },
     ),

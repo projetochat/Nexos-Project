@@ -93,25 +93,39 @@ class ExportQueryDto extends OperationalQueryDto {
   format?: "csv" | "xlsx" | "pdf";
 }
 
+class DashboardComponentQueryDto extends OperationalQueryDto {
+  @IsString()
+  groupBy!: string;
+}
+
 @Controller("operations")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class OperationsController {
   constructor(@Inject(OperationsService) private readonly operations: OperationsService) {}
 
   @Get("dashboard")
-  @RequirePermissions("conversations.read")
+  @RequirePermissions("dashboard.read")
   dashboard(@Query() query: OperationalQueryDto, @CurrentUser() current: AuthenticatedUser) {
     return this.operations.dashboard(current, query);
   }
 
+  @Get("dashboard/component-data")
+  @RequirePermissions("dashboard.read")
+  dashboardComponentData(
+    @Query() query: DashboardComponentQueryDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.operations.dashboardComponentData(current, query);
+  }
+
   @Get("history/conversations")
-  @RequirePermissions("conversations.read")
+  @RequirePermissions("history.read")
   history(@Query() query: OperationalQueryDto, @CurrentUser() current: AuthenticatedUser) {
     return this.operations.history(current, query);
   }
 
   @Get("history/conversations/:id/timeline")
-  @RequirePermissions("conversations.read")
+  @RequirePermissions("history.read")
   timeline(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.operations.timeline(current, id);
   }

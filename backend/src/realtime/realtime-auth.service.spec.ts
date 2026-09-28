@@ -17,7 +17,7 @@ describe("RealtimeAuthService", () => {
       membershipId: "membership-a",
       roleKey: "agent",
       departmentIds: ["department-a"],
-      permissions: ["conversations.read"],
+      permissions: expect.arrayContaining(["conversations.read", "messages.send"]),
     });
   });
 
@@ -28,10 +28,25 @@ describe("RealtimeAuthService", () => {
       code: "REALTIME_USER_INACTIVE",
     });
   });
+
+  it("rejects a token issued before tenant session revocation", async () => {
+    const service = serviceWith({
+      iatMs: 1_000,
+      authRevokedAt: new Date(2_000),
+    });
+    await expect(service.authenticate("access-token")).rejects.toMatchObject({
+      code: "REALTIME_TOKEN_INVALID",
+    });
+  });
 });
 
 function serviceWith(
-  options: { userStatus?: "ACTIVE" | "DISABLED"; membershipStatus?: string } = {},
+  options: {
+    userStatus?: "ACTIVE" | "DISABLED";
+    membershipStatus?: string;
+    iatMs?: number;
+    authRevokedAt?: Date | null;
+  } = {},
 ) {
   const jwt = {
     verifyAsync: vi.fn().mockResolvedValue({
@@ -42,6 +57,7 @@ function serviceWith(
       roleKey: "agent",
       platformRole: "USER",
       typ: "access",
+      iatMs: options.iatMs,
     }),
   };
   const config = { get: vi.fn().mockReturnValue("test-access-secret-minimum-32-chars") };
@@ -54,6 +70,7 @@ function serviceWith(
         roleId: "role-a",
         status: options.membershipStatus ?? "ACTIVE",
         user: { status: options.userStatus ?? "ACTIVE", platformRole: "USER" },
+        tenant: { status: "ACTIVE", authRevokedAt: options.authRevokedAt ?? null },
         role: {
           key: "agent",
           permissions: [{ permissionId: "conversations.read" }],
@@ -61,6 +78,7 @@ function serviceWith(
         departments: [{ departmentId: "department-a" }],
       }),
     },
+    impersonationSession: { findFirst: vi.fn() },
   };
   return new RealtimeAuthService(jwt as never, config as never, prisma as never);
 }
