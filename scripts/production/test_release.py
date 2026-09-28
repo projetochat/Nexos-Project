@@ -113,6 +113,8 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(updated['services']['backend']['environment']['TOKEN'], 'a$$b$${c}')
         self.assertIn('trixus-vps', command)
         self.assertEqual(updated['services']['backend']['cap_drop'], ['ALL'])
+        self.assertEqual(updated['services']['backend']['mem_limit'], '768m')
+        self.assertEqual(updated['services']['backend']['memswap_limit'], '768m')
 
     def test_backup_failure_restarts_existing_apps_without_migration(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -124,6 +126,10 @@ class ReleaseTest(unittest.TestCase):
                 return ''
             with patch.object(release, 'command', side_effect=run), self.assertRaises(CheckError):
                 release.publish(config(), {'backend': 'sha256:old', 'frontend': 'sha256:old2'}, {}, SHA, Path(folder))
+            previous = json.loads((Path(folder) / 'previous-compose.json').read_text())
+            self.assertEqual(previous['services']['backend']['mem_limit'], '768m')
+            self.assertEqual(previous['services']['backend']['memswap_limit'], '768m')
+            self.assertEqual(previous['services']['backend']['cap_drop'], ['ALL'])
             self.assertTrue(any('start' in command for command in commands))
             self.assertFalse(any('prisma:migrate:deploy' in command for command in commands))
 
@@ -147,6 +153,120 @@ class ReleaseTest(unittest.TestCase):
             self.assertFalse(any('start' in command or 'up' in command for command in commands))
             self.assertTrue(any('stop' in command for command in commands))
             self.assertEqual((Path(folder) / 'status.txt').read_text().strip(), 'RECUPERACAO_MANUAL_NECESSARIA')
+
+    def test_healthy_apps_uses_only_loopback_and_checks_trixus_identity(self):
+        calls = []
+
+        def run(args, **kwargs):
+            calls.append(args)
+            if args[-1].endswith('/api/health'):
+                return ('{"ok":true,"service":"trixus-api","database":"up",'
+                        '"redis":"up","queue":"up","storage":"up"}')
+            return '<html><head><title>Trixus</title></head></html>'
+
+        with patch.object(release, 'command', side_effect=run), \
+             patch.object(release, 'app_container_state', return_value={
+                 'backend': 'a' * 64, 'frontend': 'b' * 64,
+             }), patch.object(release.time, 'sleep') as sleep:
+            release.healthy_apps(['docker', 'compose'], stabilization_seconds=30)
+
+        urls = [args[-1] for args in calls]
+        self.assertEqual(urls, ['http://127.0.0.1:3001/api/health',
+                                'http://127.0.0.1:4173/',
+                                'http://127.0.0.1:3001/api/health',
+                                'http://127.0.0.1:4173/'])
+        self.assertTrue(all(url.startswith('http://127.0.0.1:') for url in urls))
+        sleep.assert_called_once_with(30)
+
+    def test_healthy_apps_rejects_unrelated_responses(self):
+        healthy = ('{"ok":true,"service":"trixus-api","database":"up",'
+                   '"redis":"up","queue":"up","storage":"up"}')
+        for backend, frontend in (('{"status":"ok"}', '<title>Trixus</title>'),
+                                  ('not-json', '<title>Trixus</title>'),
+                                  ('{"ok":true,"service":"other","database":"up",'
+                                   '"redis":"up","queue":"up","storage":"up"}',
+                                   '<title>Trixus</title>'),
+                                  (healthy, '<title>GLPI</title>')):
+            with self.subTest(backend=backend, frontend=frontend), \
+                 patch.object(release, 'command', side_effect=[backend, frontend]), \
+                 patch.object(release, 'app_container_state', return_value={
+                     'backend': 'a' * 64, 'frontend': 'b' * 64,
+                 }), patch.object(release.time, 'sleep'), \
+                 self.assertRaises(CheckError):
+                release.healthy_apps(['docker', 'compose'], stabilization_seconds=0)
+
+    def test_healthy_apps_rejects_restart_after_initial_health(self):
+        healthy = ('{"ok":true,"service":"trixus-api","database":"up",'
+                   '"redis":"up","queue":"up","storage":"up"}')
+        stable = {'backend': 'a' * 64, 'frontend': 'b' * 64}
+        with patch.object(release, 'command', side_effect=[healthy, '<title>Trixus</title>']), \
+             patch.object(release, 'app_container_state', side_effect=[
+                 stable, CheckError('Container da aplicacao instavel: backend'),
+             ]), patch.object(release.time, 'sleep') as sleep, self.assertRaises(CheckError):
+            release.healthy_apps(['docker', 'compose'], stabilization_seconds=30)
+        sleep.assert_called_once_with(30)
+
+    def test_retention_keeps_two_newest_current_and_recovery(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder)
+            releases = state / 'releases'
+            releases.mkdir()
+            shas = {name: char * 40 for name, char in (
+                ('old', 'a'), ('recovery', 'b'), ('current', 'c'), ('newer', 'd'), ('newest', 'e'))}
+            names = [
+                f'20260920T000000Z-{shas["old"]}',
+                f'20260921T000000Z-{shas["recovery"]}',
+                f'20260922T000000Z-{shas["current"]}',
+                f'20260923T000000Z-{shas["newer"]}',
+                f'20260924T000000Z-{shas["newest"]}',
+            ]
+            for name in names:
+                path = releases / name
+                path.mkdir()
+                (path / 'database.dump').write_bytes(b'backup')
+            unexpected = releases / 'manual-notes'
+            unexpected.mkdir()
+            (unexpected / 'keep.txt').write_text('do not delete')
+            (state / 'current.txt').write_text(str(releases / names[2]) + '\n')
+            (state / 'recovery-required').write_text(str(releases / names[1]) + '\n')
+
+            with patch.object(release, 'STATE', state), patch.object(release.subprocess, 'run') as run:
+                removed = release.retain_release_history()
+
+            self.assertEqual(removed, [names[0]])
+            self.assertTrue((releases / names[4]).is_dir())
+            self.assertTrue((releases / names[3]).is_dir())
+            self.assertTrue((releases / names[2]).is_dir())
+            self.assertTrue((releases / names[1]).is_dir())
+            self.assertEqual((unexpected / 'keep.txt').read_text(), 'do not delete')
+            image_rm = run.call_args.args[0]
+            self.assertEqual(image_rm[:4], ['/usr/bin/docker', 'image', 'rm',
+                                            f'trixus-release/backend:{shas["old"]}'])
+            self.assertIn(f'trixus-previous/frontend:{names[0]}', image_rm)
+
+    def test_retention_never_follows_symlink_or_accepts_external_marker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder)
+            releases = state / 'releases'
+            releases.mkdir()
+            outside = state / 'outside'
+            outside.mkdir()
+            link = releases / '20260920-link'
+            try:
+                link.symlink_to(outside, target_is_directory=True)
+            except OSError:
+                self.skipTest('Symlinks are unavailable in this environment')
+            for name in ('20260922-current', '20260923-new'):
+                (releases / name).mkdir()
+            unexpected = releases / 'manual-notes'
+            unexpected.mkdir()
+            (unexpected / 'keep.txt').write_text('do not delete')
+            (state / 'current.txt').write_text(str(outside) + '\n')
+
+            with patch.object(release, 'STATE', state), self.assertRaises(CheckError):
+                release.retain_release_history()
+            self.assertTrue(outside.is_dir())
+            self.assertEqual((unexpected / 'keep.txt').read_text(), 'do not delete')
 
 
 if __name__ == '__main__':

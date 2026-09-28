@@ -47,6 +47,7 @@ describe("ScheduleExecutorService", () => {
     const prisma = {
       schedule: {
         findMany: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([row]),
+        findFirst: vi.fn().mockResolvedValue({ payload: row.payload }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     };
@@ -65,8 +66,26 @@ describe("ScheduleExecutorService", () => {
           dueAt: { lte: expect.any(Date) },
         }),
         orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          tenantId: true,
+          dueAt: true,
+          attempts: true,
+          version: true,
+          createdByMembershipId: true,
+        },
+        take: 25,
       }),
     );
+    expect(prisma.schedule.findFirst).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        id: "schedule-a",
+        executionStatus: "CLAIMED",
+        version: 3,
+      },
+      select: { payload: true },
+    });
     expect(prisma.schedule.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -105,6 +124,7 @@ describe("ScheduleExecutorService", () => {
     const prisma = {
       schedule: {
         findMany: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([row]),
+        findFirst: vi.fn().mockResolvedValue({ payload: row.payload }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     };
@@ -132,6 +152,7 @@ describe("ScheduleExecutorService", () => {
     const prisma = {
       schedule: {
         findMany: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([row]),
+        findFirst: vi.fn().mockResolvedValue({ payload: row.payload }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     };
@@ -160,6 +181,7 @@ describe("ScheduleExecutorService", () => {
     const prisma = {
       schedule: {
         findMany: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([finalAttempt]),
+        findFirst: vi.fn().mockResolvedValue({ payload: row.payload }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     };
@@ -208,6 +230,7 @@ describe("ScheduleExecutorService", () => {
     const prisma = {
       schedule: {
         findMany: vi.fn().mockResolvedValue([queued]),
+        findUnique: vi.fn().mockResolvedValue({ payload: queued.payload }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       message: {
@@ -235,6 +258,58 @@ describe("ScheduleExecutorService", () => {
     expect(realtime.publish).toHaveBeenCalledWith({ tenantId: "tenant-a" }, "schedule.updated", {
       scheduleId: "schedule-a",
     });
+    expect(prisma.schedule.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: { id: true, tenantId: true, messageId: true, version: true },
+        take: 25,
+      }),
+    );
+  });
+
+  it("loads a large attachment only after claiming its lightweight row", async () => {
+    const largeDataUrl = `data:application/octet-stream;base64,${"A".repeat(4 * 1024 * 1024)}`;
+    const payload = {
+      ...row.payload,
+      content: "Arquivo grande",
+      attachment: {
+        fileName: "arquivo.bin",
+        mimeType: "application/octet-stream",
+        size: 3 * 1024 * 1024,
+        dataUrl: largeDataUrl,
+      },
+    };
+    const lightweightRow = {
+      id: row.id,
+      tenantId: row.tenantId,
+      dueAt: row.dueAt,
+      attempts: row.attempts,
+      version: row.version,
+      createdByMembershipId: row.createdByMembershipId,
+    };
+    const prisma = {
+      schedule: {
+        findMany: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([lightweightRow]),
+        findFirst: vi.fn().mockResolvedValue({ payload }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const outbound = { queueScheduledMessage: vi.fn().mockResolvedValue({ created: true }) };
+    const { executor } = service(prisma, outbound);
+
+    await expect(executor.runOnce(due)).resolves.toEqual({ scanned: 1, claimed: 1 });
+
+    expect(prisma.schedule.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        select: expect.not.objectContaining({ payload: expect.anything() }),
+        take: 25,
+      }),
+    );
+    expect(prisma.schedule.findFirst).toHaveBeenCalledTimes(1);
+    expect(outbound.queueScheduledMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachment: expect.objectContaining({ dataUrl: largeDataUrl }),
+      }),
+    );
   });
 
   it("keeps final failures observable on the schedule", async () => {

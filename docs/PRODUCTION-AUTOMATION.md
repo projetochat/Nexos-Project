@@ -88,8 +88,19 @@ Isso nao interrompe uma publicacao ja em andamento.
 6. Sobe frontend/backend com `--no-deps --no-build --pull never`. Limites:
    backend 768 MiB, frontend/migrate 512 MiB, uma CPU cada, 256 processos,
    sem capabilities e sem escalada de privilegios.
-7. Confere API, frontend, HTTPS e GLPI; confirma que containers de infraestrutura
-   mantiveram o mesmo inicio de execucao. Grava `DEPLOY_OK` e release atual.
+7. Confere a identidade e a saude da API e do frontend exclusivamente pelas
+   portas loopback validadas do Trixus. O GLPI recebe somente uma requisicao de
+   leitura para confirmar disponibilidade; nenhum dominio publico do Trixus e
+   presumido pelo executor. Confirma que containers de infraestrutura mantiveram
+   o mesmo inicio de execucao e grava `DEPLOY_OK` e a release atual.
+8. Aguarda ao menos 30 segundos de estabilizacao, exigindo os mesmos IDs de
+   containers, estado `running/healthy`, nenhuma reinicializacao e nova resposta
+   valida da API e do frontend antes de confirmar o deploy.
+9. Somente depois do deploy confirmado e da remocao de `recovery-required`,
+   conserva as duas releases mais recentes e quaisquer releases apontadas por
+   `current.txt` ou `recovery-required`. Links simbolicos, arquivos e caminhos
+   inesperados nunca sao seguidos nem excluidos. Falha nessa limpeza gera aviso,
+   mas nao transforma um deploy ja confirmado em falha.
 
 Apache, MariaDB, PostgreSQL, Redis e Evolution nao sao reiniciados pelo executor.
 Nao ha compose down, prune global, mudanca de proxy/certificados ou reboot.
@@ -117,8 +128,10 @@ do GLPI exige outra VPS.
   sozinho sobre schema incompativel.
 - `pg_restore --list` nao substitui ensaio completo de restore. Backups locais
   nao protegem contra perda da VPS; manter backup externo.
-- Sem exclusao automatica de backups/imagens. Revisar retencao e disco;
-  novas releases bloqueiam se faltar espaco.
+- Releases antigas e seus backups locais sao removidos pela retencao conservadora
+  somente apos sucesso confirmado. A mesma etapa remove sem `--force` apenas as
+  tags Docker exatas pertencentes a essas releases; nao existe `prune` global.
+  Revisar disco; novas releases bloqueiam se faltar espaco.
 
 Infraestrutura, variaveis novas, volumes e portas exigem revisao local.
 Atualizacoes comuns de codigo e migrations sao automatizadas.
@@ -128,6 +141,20 @@ Atualizacoes comuns de codigo e migrations sao automatizadas.
 `python3 -m unittest discover -s scripts/production -p 'test_*.py' -v`
 cobre entradas invalidas, checksum, truncamento, tags extras, caminhos perigosos,
 isolamento da configuracao, falha de backup e falha de migration simuladas.
+
+## Atualizacao do executor da VPS
+
+Alteracoes em `scripts/production/release.py` nao chegam a uma instalacao ja
+existente pelo workflow de imagens. Um administrador deve transferir um checkout
+ou pacote revisado e, em `scripts/production`, executar `sudo bash upgrade.sh`
+antes da proxima publicacao. O manifesto `INSTALL-SHA256SUMS` impede aplicar um
+conjunto parcial ou alterado.
+
+O upgrade adquire o mesmo lock de release, valida sintaxe Python e sudoers,
+substitui atomicamente apenas os quatro scripts do runner e restaura a versao
+anterior se qualquer validacao falhar. Ele conserva somente duas copias pequenas
+dos scripts e nao consulta nem altera banco, storage, containers, Apache,
+MariaDB, GLPI, proxy ou certificados.
 O teste opt-in `TRIXUS_TEST_DOCKER_ARCHIVE=1` exporta/importa tres imagens
 locais temporarias, compara configuracao/camadas e executa Bun nelas.
 Nao usa dados ou servicos da VPS.

@@ -148,6 +148,18 @@ def compose_json(config):
     return json.dumps(escape(config))
 
 
+def harden_release_service(service, name):
+    service['cpus'] = 1.0
+    service['mem_limit'] = '768m' if name == 'backend' else '512m'
+    # Do not let application containers consume host swap beyond their RAM
+    # budget. This keeps a failing Trixus process from pressuring shared GLPI.
+    service['memswap_limit'] = service['mem_limit']
+    service['pids_limit'] = 256
+    service['cap_drop'] = ['ALL']
+    service['security_opt'] = ['no-new-privileges:true']
+    service['logging'] = {'driver': 'json-file', 'options': {'max-size': '10m', 'max-file': '3'}}
+
+
 def compose_file(config, images, path):
     value = copy.deepcopy(config)
     for name in SERVICES:
@@ -155,12 +167,7 @@ def compose_file(config, images, path):
         service.pop('build', None)
         service['image'] = images[name]
         service['pull_policy'] = 'never'
-        service['cpus'] = 1.0
-        service['mem_limit'] = '768m' if name == 'backend' else '512m'
-        service['pids_limit'] = 256
-        service['cap_drop'] = ['ALL']
-        service['security_opt'] = ['no-new-privileges:true']
-        service['logging'] = {'driver': 'json-file', 'options': {'max-size': '10m', 'max-file': '3'}}
+        harden_release_service(service, name)
     # config is already interpolated; Compose must not reinterpret secret '$'.
     path.write_text(compose_json(value))
     return ['/usr/bin/docker', 'compose', '--project-directory', str(APP),
@@ -176,11 +183,98 @@ def shared_health():
              '--output', '/dev/null', 'https://glpi.flowid.com.br/'])
 
 
-def healthy_apps():
-    for url in ('http://127.0.0.1:3001/api/health', 'http://127.0.0.1:4173/',
-                'https://api-nexos.nexxos.tech/api/health', 'https://nexos.nexxos.tech/'):
-        command(['/usr/bin/curl', '--fail', '--silent', '--show-error', '--location',
-                 '--max-time', '20', '--output', '/dev/null', url])
+def app_container_state(compose):
+    state = {}
+    for name in ('backend', 'frontend'):
+        container = command(compose + ['ps', '-q', name])
+        require(bool(re.fullmatch('[0-9a-f]{12,64}', container)),
+                'Container da aplicacao ausente: ' + name)
+        data = json.loads(command(['/usr/bin/docker', 'inspect', container]))[0]
+        health = data['State'].get('Health', {}).get('Status')
+        require(data['State']['Running'] and health == 'healthy'
+                and data.get('RestartCount') == 0
+                and data['Config']['Labels'].get('com.docker.compose.project') == PROJECT,
+                'Container da aplicacao instavel: ' + name)
+        state[name] = container
+    return state
+
+
+def healthy_apps(compose, stabilization_seconds=30):
+    # Public routing is owned by the host configuration and must not be
+    # guessed here. Verify the two loopback-only ports declared and validated
+    # by validate_config(), including enough response identity to reject a
+    # healthy but unrelated process bound to the same port.
+    require(isinstance(stabilization_seconds, (int, float)) and stabilization_seconds >= 0,
+            'Janela de estabilizacao invalida')
+
+    def check_identity():
+        backend = command(['/usr/bin/curl', '--fail', '--silent', '--show-error',
+                           '--max-time', '20', 'http://127.0.0.1:3001/api/health'])
+        try:
+            payload = json.loads(backend)
+        except (json.JSONDecodeError, TypeError):
+            raise CheckError('Resposta de saude da API Trixus invalida') from None
+        require(isinstance(payload, dict) and payload.get('ok') is True
+                and payload.get('service') == 'trixus-api'
+                and all(payload.get(name) == 'up'
+                        for name in ('database', 'redis', 'queue', 'storage')),
+                'API local nao confirmou identidade e saude do Trixus')
+
+        frontend = command(['/usr/bin/curl', '--fail', '--silent', '--show-error',
+                            '--max-time', '20', 'http://127.0.0.1:4173/'])
+        require(bool(re.search(r'<title[^>]*>\s*Trixus\s*</title>', frontend,
+                               flags=re.IGNORECASE)),
+                'Frontend local nao confirmou identidade do Trixus')
+
+    initial = app_container_state(compose)
+    check_identity()
+    time.sleep(stabilization_seconds)
+    final = app_container_state(compose)
+    require(final == initial, 'Containers da aplicacao mudaram durante estabilizacao')
+    check_identity()
+
+
+def retain_release_history(keep=2):
+    """Remove only old, unprotected release directories after a confirmed deploy."""
+    require(isinstance(keep, int) and keep >= 2, 'Retencao de releases invalida')
+    releases = STATE / 'releases'
+    require(releases.is_dir() and not releases.is_symlink(), 'Diretorio de releases invalido')
+
+    def marker_target(name):
+        marker = STATE / name
+        if not marker.exists():
+            return None
+        value = Path(marker.read_text().strip())
+        require(value.parent == releases and value.name, 'Marcador de release invalido: ' + name)
+        return value
+
+    protected = {path for path in (marker_target('current.txt'),
+                                    marker_target('recovery-required')) if path is not None}
+    candidates = []
+    for path in releases.iterdir():
+        # Never follow or delete a link, file, or nested/unexpected target.
+        if (path.is_symlink() or not path.is_dir() or path.parent != releases
+                or not re.fullmatch(r'\d{8}T\d{6}Z-[0-9a-f]{40}', path.name)):
+            continue
+        candidates.append(path)
+    candidates.sort(key=lambda path: path.name, reverse=True)
+    protected.update(candidates[:keep])
+
+    removed = []
+    for path in candidates:
+        if path in protected:
+            continue
+        shutil.rmtree(path)
+        sha = path.name.rsplit('-', 1)[1]
+        tags = [f'trixus-release/{name}:{sha}' for name in SERVICES]
+        tags.extend(f'trixus-previous/{name}:{path.name}' for name in ('backend', 'frontend'))
+        # Remove only exact, executor-owned tags. Never prune globally and
+        # never force-delete an image that Docker still considers in use.
+        subprocess.run(['/usr/bin/docker', 'image', 'rm', *tags],
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=120, check=False)
+        removed.append(path.name)
+    return removed
 
 
 def inventory():
@@ -241,6 +335,8 @@ def publish(config, old, protected, sha, release_dir):
     for name, image in old.items():
         previous['services'][name].pop('build', None)
         previous['services'][name]['image'] = image
+    for name in SERVICES:
+        harden_release_service(previous['services'][name], name)
     (release_dir / 'previous-compose.json').write_text(compose_json(previous))
     current = compose_file(config, images, release_dir / 'compose.json')
     command(current + ['config', '--quiet'])
@@ -276,7 +372,7 @@ def publish(config, old, protected, sha, release_dir):
         stage('PUBLICANDO_APLICACAO_TRIXUS')
         command(current + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never',
                 '--wait', '--wait-timeout', '180', 'backend', 'frontend'], timeout=240)
-        healthy_apps()
+        healthy_apps(current)
         check_protected(protected)
         (STATE / 'current.txt').write_text(str(release_dir) + '\n')
         stage('DEPLOY_OK')
@@ -353,6 +449,17 @@ def main(args):
             (STATE / 'recovery-required').write_text(str(release_dir) + '\n')
             publish(config, old, protected, sha, release_dir)
             (STATE / 'recovery-required').unlink()
+            # Cleanup is deliberately post-commit: never delete recovery data
+            # while a deploy or migration is pending. A cleanup failure must
+            # not turn an already confirmed deploy into a false rollback case.
+            try:
+                removed = retain_release_history()
+                print(json.dumps({'retencao_releases_removidas': removed}))
+            except Exception:
+                with (STATE / 'last-error.log').open('ab') as log:
+                    log.write(b'Retencao de releases falhou apos DEPLOY_OK; revisar disco.\n')
+                print('AVISO_RETENCAO: deploy confirmado; revisar releases antigas na VPS',
+                      file=sys.stderr)
 
 
 def cli():

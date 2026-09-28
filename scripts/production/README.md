@@ -23,3 +23,15 @@ em [PRODUCTION-AUTOMATION.md](../../docs/PRODUCTION-AUTOMATION.md).
 
 Execute `python3 -B -m unittest discover -s scripts/production` no repositorio
 para testar a validacao de configuracao sem acessar Docker ou a VPS.
+
+## Atualizacao do runner instalado
+
+O workflow nao substitui automaticamente os scripts root-owned da VPS. Depois
+de revisar um checkout ou pacote administrativo, execute como root, a partir de
+`scripts/production`, `bash upgrade.sh`. O script valida `INSTALL-SHA256SUMS`,
+compilacao Python e sudoers; troca atomicamente somente `preflight.py`,
+`release.py`, `gateway.py` e `entrypoint.py`. Em falha, restaura os quatro.
+
+A copia anterior contem somente esses scripts em
+`/var/lib/trixus-production/runner-backups`; as duas mais recentes sao mantidas.
+O upgrade nao toca banco, anexos, containers, proxy, GLPI ou outros servicos.

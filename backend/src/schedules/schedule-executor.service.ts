@@ -59,6 +59,14 @@ export class ScheduleExecutorService implements OnApplicationBootstrap, OnModule
         OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
       },
       orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        tenantId: true,
+        dueAt: true,
+        attempts: true,
+        version: true,
+        createdByMembershipId: true,
+      },
       take: this.batchSize(),
     });
     let claimed = 0;
@@ -117,6 +125,13 @@ export class ScheduleExecutorService implements OnApplicationBootstrap, OnModule
     const schedules = await this.prisma.schedule.findMany({
       where: { executionStatus: ScheduleExecutionStatus.QUEUED, messageId: { not: null } },
       orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        tenantId: true,
+        messageId: true,
+        version: true,
+      },
+      take: this.batchSize(),
     });
     if (!schedules.length) return { scanned: 0, completed: 0, failed: 0 };
     const messages = await this.prisma.message.findMany({
@@ -144,7 +159,14 @@ export class ScheduleExecutorService implements OnApplicationBootstrap, OnModule
         message.status === MessageStatus.DELIVERED ||
         message.status === MessageStatus.READ
       ) {
-        const payload = payloadObject(schedule.payload);
+        // Payloads may contain base64 attachments. Fetch one only when it is needed instead of
+        // retaining every queued attachment in the reconciliation batch.
+        const current = await this.prisma.schedule.findUnique({
+          where: { tenantId_id: { tenantId: schedule.tenantId, id: schedule.id } },
+          select: { payload: true },
+        });
+        if (!current) continue;
+        const payload = payloadObject(current.payload);
         const result = await this.prisma.schedule.updateMany({
           where: {
             tenantId: schedule.tenantId,
@@ -209,12 +231,25 @@ export class ScheduleExecutorService implements OnApplicationBootstrap, OnModule
       id: string;
       tenantId: string;
       dueAt: Date | null;
-      payload: Prisma.JsonValue;
       createdByMembershipId: string | null;
     },
     claimedVersion: number,
   ) {
-    const payload = payloadObject(schedule.payload) as SchedulePayload;
+    // The due scan intentionally excludes payload so a batch never holds multiple large
+    // data-URL attachments in memory. Load only the schedule that won the CAS claim.
+    const claimed = await this.prisma.schedule.findFirst({
+      where: {
+        tenantId: schedule.tenantId,
+        id: schedule.id,
+        executionStatus: ScheduleExecutionStatus.CLAIMED,
+        version: claimedVersion,
+      },
+      select: { payload: true },
+    });
+    if (!claimed) {
+      throw new ScheduledMessagePermanentError("Agendamento reivindicado não foi encontrado.");
+    }
+    const payload = payloadObject(claimed.payload) as SchedulePayload;
     if (!isExecutablePayload(payload) || !schedule.dueAt) {
       throw new ScheduledMessagePermanentError("Agendamento fora do escopo executável.");
     }
