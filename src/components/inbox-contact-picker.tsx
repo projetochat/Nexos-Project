@@ -1,10 +1,15 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ContactRound } from "lucide-react";
-import { crmApi } from "@/lib/trixus-api";
+import { crmApi, type ApiContact } from "@/lib/trixus-api";
 import { contactCardFile } from "@/lib/contact-card";
+import { formatBrazilPhoneWithDdi } from "@/lib/input-masks";
 import { Modal } from "./modal";
-import { Button, Input } from "./ui-kit";
+import { Avatar, Button, Input } from "./ui-kit";
+
+export type SharedContactSelection = {
+  file: File;
+  contact: Pick<ApiContact, "nome" | "telefone" | "normalizedPhone" | "avatar_url">;
+};
 
 export function InboxContactPicker({
   onClose,
@@ -12,7 +17,7 @@ export function InboxContactPicker({
   priorityInstances = [],
 }: {
   onClose: () => void;
-  onSelect: (file: File) => void;
+  onSelect: (selection: SharedContactSelection) => void;
   /** Identifiers/names of the conversation instance, ordered by preference. */
   priorityInstances?: string[];
 }) {
@@ -45,8 +50,7 @@ export function InboxContactPicker({
     <Modal
       open
       onClose={onClose}
-      title="Compartilhar contato"
-      description="Selecione um contato para anexar seu cartão à mensagem."
+      title="Compartilhar Contato"
       footer={
         <Button variant="secondary" onClick={onClose}>
           Cancelar
@@ -85,10 +89,20 @@ export function InboxContactPicker({
                 key={contact.id}
                 type="button"
                 disabled={!contact.telefone}
-                onClick={() => onSelect(contactCardFile(contact))}
+                onClick={() =>
+                  onSelect({
+                    file: contactCardFile(contact),
+                    contact: {
+                      nome: contact.nome,
+                      telefone: contact.telefone,
+                      normalizedPhone: contact.normalizedPhone,
+                      avatar_url: contact.avatar_url,
+                    },
+                  })
+                }
                 className="flex w-full items-center gap-3 rounded-lg p-3 text-left hover:bg-surface-2 disabled:opacity-50"
               >
-                <ContactRound className="h-5 w-5 shrink-0" />
+                <Avatar name={contact.nome} src={contact.avatar_url} size={30} />
                 <span className="min-w-0">
                   <span className="flex items-center gap-2 truncate text-sm font-medium">
                     <span className="truncate">{contact.nome}</span>
@@ -98,7 +112,9 @@ export function InboxContactPicker({
                       </span>
                     )}
                   </span>
-                  <span className="block text-xs text-muted-foreground">{contact.telefone}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {formatBrazilPhoneWithDdi(contact.normalizedPhone || contact.telefone)}
+                  </span>
                 </span>
               </button>
             );

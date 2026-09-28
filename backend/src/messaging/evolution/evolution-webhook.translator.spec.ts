@@ -323,6 +323,114 @@ describe("EvolutionWebhookTranslator", () => {
     });
   });
 
+  it("preserves WhatsApp forwarded metadata from media contextInfo", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: false, id: "FORWARDED-1" },
+          pushName: "Cliente",
+          message: {
+            videoMessage: {
+              url: "https://mmg.whatsapp.net/video.enc",
+              mimetype: "video/mp4",
+              caption: "Bora comer uma carne assada 😊",
+              contextInfo: { isForwarded: true, forwardingScore: 1 },
+            },
+          },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        externalMessageId: "FORWARDED-1",
+        type: "VIDEO",
+        forwarded: true,
+      },
+    });
+  });
+
+  it("does not mark ordinary WhatsApp messages as forwarded", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: false, id: "REGULAR-1" },
+          pushName: "Cliente",
+          message: { extendedTextMessage: { text: "Mensagem normal" } },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({ kind: "inbound", event: { forwarded: false } });
+  });
+
+  it("preserves the WhatsApp link preview without fetching the target page", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: false, id: "LINK-1" },
+          pushName: "Cliente",
+          message: {
+            extendedTextMessage: {
+              text: "Veja https://www.instagram.com/reel/example",
+              matchedText: "https://www.instagram.com/reel/example",
+              canonicalUrl: "https://www.instagram.com/reel/example/",
+              title: "7 dias só carne",
+              description: "Conteúdo compartilhado no Instagram",
+              jpegThumbnail: [255, 216, 255, 217],
+            },
+          },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({
+      kind: "inbound",
+      event: {
+        content: "Veja https://www.instagram.com/reel/example",
+        linkPreview: {
+          url: "https://www.instagram.com/reel/example",
+          title: "7 dias só carne",
+          description: "Conteúdo compartilhado no Instagram",
+          thumbnailDataUrl: "data:image/jpeg;base64,/9j/2Q==",
+        },
+      },
+    });
+  });
+
+  it("rejects unsafe link preview URLs with embedded credentials", () => {
+    const result = translator.translate(
+      {
+        event: "MESSAGES_UPSERT",
+        instance: "tenant-support",
+        data: {
+          key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: false, id: "LINK-UNSAFE" },
+          pushName: "Cliente",
+          message: {
+            extendedTextMessage: {
+              text: "https://usuario:senha@example.com/privado",
+              matchedText: "https://usuario:senha@example.com/privado",
+              title: "Não renderizar",
+            },
+          },
+        },
+      },
+      connection,
+    );
+
+    expect(result).toMatchObject({ kind: "inbound", event: { linkPreview: null } });
+  });
+
   it("normalizes stickers as inbound image media", () => {
     const result = translator.translate(
       {
@@ -348,7 +456,7 @@ describe("EvolutionWebhookTranslator", () => {
       event: {
         externalMessageId: "STICKER-1",
         type: "IMAGE",
-        content: "[figurinha]",
+        sticker: true,
         media: {
           url: "https://mmg.whatsapp.net/sticker.enc",
           mimetype: "image/webp",
@@ -356,6 +464,7 @@ describe("EvolutionWebhookTranslator", () => {
         },
       },
     });
+    if (result.kind === "inbound") expect(result.event.content).not.toBe("[figurinha]");
   });
 
   it("normalizes wrapped inbound media and preserves raw message for Evolution download", () => {

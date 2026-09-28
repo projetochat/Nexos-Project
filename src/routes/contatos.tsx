@@ -33,7 +33,7 @@ import {
   ListIndentDecrease,
   ListIndentIncrease,
   ListOrdered,
-  MessageSquareMore,
+  MessageCirclePlus,
   Network,
   Plug,
   Pencil,
@@ -1742,7 +1742,7 @@ function ContatosPage() {
                           title="Abrir conversa"
                           onClick={() => void openConversation(contact)}
                         >
-                          <MessageSquareMore className="h-3.5 w-3.5" />
+                          <MessageCirclePlus className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -1872,7 +1872,7 @@ function ContatosPage() {
                             title="Abrir conversa"
                             onClick={() => void openConversation(contact)}
                           >
-                            <MessageSquareMore className="h-3.5 w-3.5" />
+                            <MessageCirclePlus className="h-3.5 w-3.5" />
                           </Button>
                           <Button
                             variant="ghost"
@@ -3293,15 +3293,17 @@ export function ContactFormModal({
                   return (
                     <div key={field.id} className={isHtmlField ? "md:col-span-2" : ""}>
                       <div>
-                        <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium leading-none text-muted-foreground">
-                          <span>
-                            {field.label}
-                            {field.required && <span className="text-destructive"> *</span>}
-                          </span>
-                          {field.note && (
-                            <InfoTooltip label={field.label}>{field.note}</InfoTooltip>
-                          )}
-                        </div>
+                        {field.type !== "checkbox" && (
+                          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium leading-none text-muted-foreground">
+                            <span>
+                              {field.label}
+                              {field.required && <span className="text-destructive"> *</span>}
+                            </span>
+                            {field.note && (
+                              <InfoTooltip label={field.label}>{field.note}</InfoTooltip>
+                            )}
+                          </div>
+                        )}
                         <div
                           className={`flex gap-2 ${isHtmlField ? "items-start" : "items-center"}`}
                         >
@@ -4390,16 +4392,28 @@ function CustomContactFieldInput({
     );
   }
   if (field.type === "checkbox") {
-    const description = contactCheckboxDescription(field);
+    const checked = value === true || value === "true";
     return (
-      <div className="inline-flex w-full items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm">
-        <input
-          type="checkbox"
-          checked={value === true || value === "true"}
-          onChange={(event) => onChange(event.target.checked)}
-          className="h-4 w-4"
-        />
-        <span>{description || "Marcado"}</span>
+      <div className="flex min-h-10 items-center gap-3 text-sm text-muted-foreground">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          aria-label={field.label}
+          onClick={() => onChange(!checked)}
+          className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${checked ? "bg-blue-600" : "bg-slate-300"}`}
+        >
+          <span
+            className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`}
+          />
+        </button>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate">
+            {field.label}
+            {field.required && <span className="text-destructive"> *</span>}
+          </span>
+          {field.note && <InfoTooltip label={field.label}>{field.note}</InfoTooltip>}
+        </span>
       </div>
     );
   }
@@ -5008,10 +5022,6 @@ function contactDateVariant(field: ContactCustomField): ContactDateVariant {
 
 function contactListVariant(field: ContactCustomField): ContactListVariant {
   return parseContactFieldConfig(field.mask).list?.variant ?? "single";
-}
-
-function contactCheckboxDescription(field: ContactCustomField) {
-  return parseContactFieldConfig(field.mask).checkbox?.description?.trim() ?? "";
 }
 
 function parseMultiListValue(value: string) {

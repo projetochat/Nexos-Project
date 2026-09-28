@@ -2,7 +2,7 @@ import * as React from "react";
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  MessageSquare,
+  MessageCirclePlus,
   Plus,
   Inbox as InboxIcon,
   Clock,
@@ -18,7 +18,6 @@ import {
   ChevronLeft,
   ChevronRight,
   MoreVertical,
-  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
@@ -53,9 +52,16 @@ import { useRealtimeInbox } from "@/lib/realtime/hooks";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 import { resolveConnectedContactInstances } from "@/lib/contact-instance-selection";
 import { refreshInboxData } from "@/lib/refresh-inbox";
-import { connectRealtime } from "@/lib/realtime/client";
+import { DisconnectedInstanceAlerts } from "@/components/disconnected-instance-alerts";
+import { conversationListMetadataLabel } from "@/lib/conversation-list-metadata";
+import {
+  getInboxTab,
+  setInboxTab,
+  subscribeInboxTab,
+  type InboxTabId,
+} from "@/lib/inbox-tab-state";
 
-type TabId = "ativas" | "standby" | "fila" | "leads";
+type TabId = InboxTabId;
 type SourceId = "todos" | "privado" | "grupos" | "humano" | "bots";
 
 const TAB_ICONS: Record<TabId, React.ComponentType<{ className?: string }>> = {
@@ -88,14 +94,12 @@ const STATUS_LABEL: Record<ConvStatus, string> = {
 };
 
 const inboxListMemory: {
-  tab: TabId;
   source: SourceId;
   onlyUnread: boolean;
   query: string;
   selectedInstancias: string[];
   selectedClientes: string[];
 } = {
-  tab: "ativas",
   source: "todos",
   onlyUnread: false,
   query: "",
@@ -116,11 +120,8 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
     () => queuePrefs.filter((p) => p.enabled && (perms.visualiza_leads || p.id !== "leads")),
     [queuePrefs, perms.visualiza_leads],
   );
-  const [tab, setTabState] = React.useState<TabId>(inboxListMemory.tab);
-  const setTab = React.useCallback((next: TabId) => {
-    inboxListMemory.tab = next;
-    setTabState(next);
-  }, []);
+  const tab = React.useSyncExternalStore(subscribeInboxTab, getInboxTab, getInboxTab);
+  const setTab = setInboxTab;
   React.useEffect(() => {
     if (!activeTabs.some((item) => item.id === tab) && activeTabs[0]) {
       setTab(activeTabs[0].id);
@@ -253,8 +254,9 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                 className="flex-1"
               />
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon"
+                className="group"
                 aria-label="Atualizar"
                 title="Atualizar"
                 disabled={refreshing}
@@ -274,21 +276,23 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   }
                 }}
               >
-                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`h-4 w-4 transition-transform duration-500 group-hover:rotate-[720deg] ${refreshing ? "animate-spin" : ""}`}
+                />
               </Button>
               <Button
                 variant="primary"
                 size="icon"
-                aria-label="Nova mensagem"
-                title="Nova mensagem"
+                aria-label="Nova Conversa"
+                title="Nova Conversa"
                 onClick={newConv.show}
               >
-                <Plus className="h-4 w-4" />
+                <MessageCirclePlus className="h-4 w-4" />
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="icon"
                     aria-label="Ações das conversas"
                     title="Ações das conversas"
@@ -302,22 +306,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
               </DropdownMenu>
             </div>
 
-            {realtime.status !== "connected" && realtime.status !== "disabled" && (
-              <div className="flex items-center gap-3 rounded-xl bg-amber-50 px-4 py-3 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
-                <AlertTriangle className="h-7 w-7 shrink-0 text-amber-500" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold">Computador desconectado</p>
-                  <p className="text-xs">Confira se o computador está conectado à internet.</p>
-                  <button
-                    type="button"
-                    className="mt-1 text-xs font-semibold text-emerald-700 hover:underline dark:text-emerald-400"
-                    onClick={() => void connectRealtime()}
-                  >
-                    Reconectar
-                  </button>
-                </div>
-              </div>
-            )}
+            <DisconnectedInstanceAlerts connections={filterConnections} />
 
             <div className="grid grid-cols-2 gap-2">
               <MultiSelect
@@ -416,6 +405,13 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   c.contact?.instancia;
                 const customerName = (c.contact as unknown as { customer?: { nome?: string } })
                   ?.customer?.nome;
+                const metadataLabel = conversationListMetadataLabel({
+                  company: customerName,
+                  department: c.contact?.contactDepartment?.nome,
+                  legacyDepartment: c.contact?.departamento,
+                  profile: c.contact?.contactProfile?.nome,
+                  legacyProfile: c.contact?.nivel_gerencia,
+                });
                 return (
                   <li key={c.id}>
                     <Link
@@ -452,11 +448,11 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                           </p>
                           <ConversationListTimestamp value={c.last_message_at} unread={u > 0} />
                         </div>
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {[customerName, c.contact?.departamento, c.contact?.nivel_gerencia]
-                            .filter(Boolean)
-                            .join(" - ") || "—"}
-                        </p>
+                        {metadataLabel && (
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {metadataLabel}
+                          </p>
+                        )}
                         <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                           <span className="truncate">
                             {[
@@ -493,7 +489,12 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <NewConversationModal open={newConv.open} onClose={newConv.hide} />
-      {bulkClose.open && <BulkCloseConversationsModal onClose={bulkClose.hide} />}
+      {bulkClose.open && (
+        <BulkCloseConversationsModal
+          onClose={bulkClose.hide}
+          onSuccess={() => void navigate({ to: "/inbox" })}
+        />
+      )}
     </AppShellFull>
   );
 }
@@ -542,10 +543,16 @@ function instanceTipo(conversation: ApiConversation): TipoInstancia {
 function InboxIndex() {
   return (
     <InboxLayout>
-      <div className="flex h-full items-center justify-center p-8">
+      <div className="flex h-full w-full min-w-0 items-center justify-center p-8">
         <div className="max-w-sm text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-surface-1 text-muted-foreground">
-            <MessageSquare className="h-6 w-6" />
+          <div className="mx-auto mb-4 inline-flex rounded-2xl p-2 dark:bg-white">
+            <img
+              src="/trixus-logo-wordmark.png"
+              alt="Trixus"
+              width={1166}
+              height={702}
+              className="h-auto w-48 object-contain"
+            />
           </div>
           <h2 className="text-lg font-semibold">Selecione uma conversa</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -630,6 +637,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
         connectionId,
         assignToSelf: true,
       });
+      setInboxTab("ativas");
       toast.success("Conversa iniciada");
       void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
       onClose();

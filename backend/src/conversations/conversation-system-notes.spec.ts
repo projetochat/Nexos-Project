@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { BadRequestException } from "@nestjs/common";
 import { ConversationStatus } from "../generated/prisma";
-import { assignmentSystemNote } from "./conversations.controller";
+import { assertConversationStatusChange, assignmentSystemNote } from "./conversations.controller";
 
 const base = {
   assignedMembershipId: null,
@@ -51,5 +52,23 @@ describe("assignmentSystemNote", () => {
         false,
       ),
     ).toBe("Conversa movida para fila");
+  });
+});
+
+describe("assertConversationStatusChange", () => {
+  it.each([ConversationStatus.ABERTA, ConversationStatus.AGUARDANDO])(
+    "rejects moving a conversation back to its current status %s",
+    (status) => {
+      expect(() => assertConversationStatusChange(status, status)).toThrow(BadRequestException);
+      expect(() => assertConversationStatusChange(status, status)).toThrow(
+        "A conversa já está neste status.",
+      );
+    },
+  );
+
+  it("allows a real queue transition", () => {
+    expect(() =>
+      assertConversationStatusChange(ConversationStatus.ABERTA, ConversationStatus.AGUARDANDO),
+    ).not.toThrow();
   });
 });

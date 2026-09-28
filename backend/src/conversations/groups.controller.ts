@@ -1,10 +1,11 @@
-import { connectionAccess } from "../auth/connection-access";
+import { connectionAccess, connectionIdAccess } from "../auth/connection-access";
 import {
   BadRequestException,
   Body,
   Controller,
   Get,
   Inject,
+  Logger,
   Patch,
   NotFoundException,
   Param,
@@ -116,19 +117,80 @@ const groupInclude = {
   contact: true,
   connection: true,
   participants: {
+    where: { active: true },
     orderBy: [{ isSuperAdmin: "desc" }, { isAdmin: "desc" }, { displayName: "asc" }],
   },
 } satisfies Prisma.ConversationInclude;
 
+const groupSummaryInclude = {
+  contact: {
+    select: {
+      name: true,
+      avatarUrl: true,
+    },
+  },
+  connection: {
+    select: {
+      id: true,
+      name: true,
+      externalReference: true,
+      status: true,
+      color: true,
+    },
+  },
+  _count: {
+    select: {
+      participants: { where: { active: true } },
+    },
+  },
+} satisfies Prisma.ConversationInclude;
+
 type GroupConversation = Prisma.ConversationGetPayload<{ include: typeof groupInclude }>;
+type GroupConversationSummary = Prisma.ConversationGetPayload<{
+  include: typeof groupSummaryInclude;
+}>;
 const EMPTY_GROUP_FILTER_VALUE = "__empty__";
 const visibleGroupConnectionWhere: Prisma.ConversationWhereInput = {
   OR: [{ connectionId: null }, { connection: { is: { archivedAt: null } } }],
 };
 
+function groupListWhere(query: ListGroupsQueryDto, current: AuthenticatedUser) {
+  const q = query.q?.trim();
+  const qDigits = q?.replace(/\D/g, "") ?? "";
+  const filterWithoutConnection = query.connectionId === EMPTY_GROUP_FILTER_VALUE;
+  const filters: Prisma.ConversationWhereInput[] = [
+    visibleGroupConnectionWhere,
+    connectionAccess(current),
+  ];
+  if (q) {
+    filters.push({
+      OR: [
+        { groupName: { contains: q, mode: "insensitive" } },
+        { externalChatId: { contains: q, mode: "insensitive" } },
+        { contact: { name: { contains: q, mode: "insensitive" } } },
+        { participants: { some: { displayName: { contains: q, mode: "insensitive" } } } },
+        ...(qDigits ? [{ participants: { some: { phone: { contains: qDigits } } } }] : []),
+      ],
+    });
+  }
+  return {
+    tenantId: current.tenantId,
+    archivedAt: null,
+    conversationType: ConversationType.GROUP,
+    AND: filters,
+    ...(filterWithoutConnection
+      ? { connectionId: null }
+      : query.connectionId
+        ? { connectionId: query.connectionId }
+        : {}),
+  } satisfies Prisma.ConversationWhereInput;
+}
+
 @Controller("groups")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class GroupsController {
+  private readonly logger = new Logger(GroupsController.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(EvolutionClient) private readonly evolution: EvolutionClient,
@@ -139,36 +201,7 @@ export class GroupsController {
   @RequirePermissions("conversations.read")
   async list(@Query() query: ListGroupsQueryDto, @CurrentUser() current: AuthenticatedUser) {
     const { page, pageSize, skip } = pagination(query);
-    const q = query.q?.trim();
-    const qDigits = q?.replace(/\D/g, "") ?? "";
-    const filterWithoutConnection = query.connectionId === EMPTY_GROUP_FILTER_VALUE;
-    const filters: Prisma.ConversationWhereInput[] = [
-      visibleGroupConnectionWhere,
-      connectionAccess(current),
-    ];
-    if (q) {
-      filters.push({
-        OR: [
-          { groupName: { contains: q, mode: "insensitive" } },
-          { externalChatId: { contains: q, mode: "insensitive" } },
-          { contact: { name: { contains: q, mode: "insensitive" } } },
-          { participants: { some: { displayName: { contains: q, mode: "insensitive" } } } },
-          ...(qDigits ? [{ participants: { some: { phone: { contains: qDigits } } } }] : []),
-        ],
-      });
-    }
-    const where: Prisma.ConversationWhereInput = {
-      tenantId: current.tenantId,
-      archivedAt: null,
-      conversationType: ConversationType.GROUP,
-      AND: filters,
-      ...(filterWithoutConnection
-        ? { connectionId: null }
-        : query.connectionId
-          ? { connectionId: query.connectionId }
-          : {}),
-    };
-
+    const where = groupListWhere(query, current);
     const [items, total] = await this.prisma.$transaction([
       this.prisma.conversation.findMany({
         where,
@@ -179,13 +212,79 @@ export class GroupsController {
       }),
       this.prisma.conversation.count({ where }),
     ]);
-
     return paginated(
       items.map((item) => serializeGroup(item)),
       total,
       page,
       pageSize,
     );
+  }
+
+  @Get("summary")
+  @RequirePermissions("conversations.read")
+  async listSummary(@Query() query: ListGroupsQueryDto, @CurrentUser() current: AuthenticatedUser) {
+    const startedAt = Date.now();
+    const { page, pageSize, skip } = pagination(query);
+    const q = query.q?.trim();
+    const where = groupListWhere(query, current);
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.conversation.findMany({
+        where,
+        orderBy: [{ groupName: "asc" }, { contact: { name: "asc" } }, { createdAt: "desc" }],
+        skip,
+        take: pageSize,
+        include: groupSummaryInclude,
+      }),
+      this.prisma.conversation.count({ where }),
+    ]);
+
+    this.logger.debug({
+      event: "groups.list",
+      durationMs: Date.now() - startedAt,
+      returned: items.length,
+      total,
+      page,
+      pageSize,
+      filteredByConnection: Boolean(query.connectionId),
+      searched: Boolean(q),
+    });
+
+    return paginated(
+      items.map((item) => serializeGroupSummary(item)),
+      total,
+      page,
+      pageSize,
+    );
+  }
+
+  @Get("options/instances")
+  @RequirePermissions("conversations.read")
+  async instanceOptions(@CurrentUser() current: AuthenticatedUser) {
+    const connections = await this.prisma.messagingConnection.findMany({
+      where: {
+        tenantId: current.tenantId,
+        archivedAt: null,
+        status: {
+          in: [MessagingConnectionStatus.CONNECTED, MessagingConnectionStatus.DISCONNECTED],
+        },
+        ...connectionIdAccess(current),
+      },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        color: true,
+        externalReference: true,
+      },
+    });
+    return connections.map((connection) => ({
+      id: connection.id,
+      value: connection.id,
+      name: connection.name,
+      color: connection.color,
+      externalReference: connection.externalReference,
+    }));
   }
 
   @Get(":id")
@@ -655,6 +754,33 @@ function serializeGroup(group: GroupConversation) {
   };
 }
 
+function serializeGroupSummary(group: GroupConversationSummary) {
+  const name = group.groupName || group.contact.name || "Grupo WhatsApp";
+  return {
+    id: group.id,
+    tenantId: group.tenantId,
+    conversationId: group.id,
+    name,
+    externalChatId: group.externalChatId,
+    imageUrl: group.groupImageUrl || group.contact.avatarUrl,
+    description: groupDescription(group.groupMetadataJson),
+    createdAt: groupCreatedAt(group),
+    updatedAt: group.updatedAt,
+    participantsCount: group._count.participants,
+    connection: group.connection
+      ? {
+          id: group.connection.id,
+          name: group.connection.name,
+          externalReference: group.connection.externalReference,
+          status: group.connection.status,
+          color: group.connection.color,
+        }
+      : null,
+    lastMessagePreview: group.lastMessagePreview,
+    lastMessageAt: group.lastMessageAt,
+  };
+}
+
 function groupDescription(value: Prisma.JsonValue | null) {
   const metadata = groupMetadataObject(value);
   const description = metadata.description;
@@ -696,7 +822,7 @@ function validateGroupImageDataUrl(value: string | undefined) {
   return value;
 }
 
-function groupCreatedAt(group: GroupConversation) {
+function groupCreatedAt(group: Pick<GroupConversation, "groupMetadataJson" | "createdAt">) {
   const createdAt = metadataDate(group.groupMetadataJson, "createdAt");
   return createdAt ?? group.createdAt;
 }

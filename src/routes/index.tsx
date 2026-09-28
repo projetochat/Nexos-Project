@@ -299,7 +299,7 @@ function Dashboard() {
     { recebidas: 0, enviadas: 0 },
   );
   const totalMessages = messageTrafficTotals.recebidas + messageTrafficTotals.enviadas;
-  const messageContactsTotal = data?.charts.messageContactsTotal ?? 0;
+  const messageAttendancesTotal = data?.charts.messageAttendancesTotal ?? 0;
 
   const beginEditingBiTitle = (id: DashboardBiId) => {
     setEditingBiId(id);
@@ -494,7 +494,7 @@ function Dashboard() {
                       type="monotone"
                       dataKey="enviadas"
                       name="Enviados"
-                      stroke="#16a34a"
+                      stroke="#dc2626"
                       strokeWidth={2}
                       dot={false}
                     />
@@ -508,9 +508,9 @@ function Dashboard() {
                     />
                     <Line
                       type="monotone"
-                      dataKey="contatosAtendidos"
-                      name="Qtd Contatos"
-                      stroke="#f97316"
+                      dataKey="atendimentos"
+                      name="Atendimentos"
+                      stroke="#16a34a"
                       strokeWidth={2}
                       dot={false}
                     />
@@ -523,9 +523,9 @@ function Dashboard() {
                   <thead>
                     <tr>
                       <MessageTrafficLegendHeader label="Recebidos" color="#2563eb" />
-                      <MessageTrafficLegendHeader label="Enviados" color="#16a34a" />
+                      <MessageTrafficLegendHeader label="Enviados" color="#dc2626" />
                       <MessageTrafficLegendHeader label="Total" color="#94a3b8" />
-                      <MessageTrafficLegendHeader label="Qtd Contatos" color="#f97316" />
+                      <MessageTrafficLegendHeader label="Atendimentos" color="#16a34a" />
                     </tr>
                   </thead>
                   <tbody>
@@ -539,7 +539,10 @@ function Dashboard() {
                         value={messageTrafficTotals.enviadas}
                       />
                       <MessageTrafficTotalCell label="Total" value={totalMessages} emphasized />
-                      <MessageTrafficTotalCell label="Qtd Clientes" value={messageContactsTotal} />
+                      <MessageTrafficTotalCell
+                        label="Atendimentos"
+                        value={messageAttendancesTotal}
+                      />
                     </tr>
                   </tbody>
                 </table>

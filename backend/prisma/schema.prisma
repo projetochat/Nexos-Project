@@ -158,6 +158,14 @@ enum OutboxEventStatus {
   FAILED
 }
 
+enum ScheduleExecutionStatus {
+  PENDING
+  CLAIMED
+  QUEUED
+  SENT
+  FAILED
+}
+
 enum MessagingProviderType {
   DEVELOPMENT
   EVOLUTION
@@ -1515,15 +1523,28 @@ model CampaignRecipient {
   @@map("campaign_recipients")
 }
 model Schedule {
-  id           String   @default(uuid())
-  tenantId     String
-  connectionId String?
-  payload      Json
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                    String                   @default(uuid())
+  tenantId              String
+  connectionId          String?
+  payload               Json
+  dueAt                 DateTime?
+  executionStatus       ScheduleExecutionStatus?
+  claimedAt             DateTime?
+  messageId             String?
+  attempts              Int                      @default(0)
+  lastError             String?
+  completedAt           DateTime?
+  createdByMembershipId String?
+  nextAttemptAt         DateTime?
+  version               Int                      @default(0)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  tenant                Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@id([tenantId, id])
   @@index([tenantId, createdAt])
+  @@index([executionStatus, dueAt])
+  @@index([executionStatus, nextAttemptAt])
+  @@index([tenantId, messageId])
   @@map("schedules")
 }

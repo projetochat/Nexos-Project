@@ -73,8 +73,7 @@ export function normalizeWorkSchedule(value: unknown): WorkSchedule {
 
 export function workPeriodError(period: Pick<WorkPeriod, "start" | "end">) {
   const time = /^([01]\d|2[0-3]):[0-5]\d$/;
-  if (!time.test(period.start) || !time.test(period.end))
-    return "Informe horários válidos (HH:mm).";
+  if (!time.test(period.start) || !time.test(period.end)) return "Informe horários válidos";
   if (period.end <= period.start) return "Hora final deve ser maior que a inicial.";
   return "";
 }

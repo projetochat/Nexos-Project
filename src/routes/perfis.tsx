@@ -991,7 +991,7 @@ function PermissionGroupBlock({
   );
 }
 
-function WorkScheduleEditor({
+export function WorkScheduleEditor({
   value,
   onChange,
 }: {
@@ -999,6 +999,20 @@ function WorkScheduleEditor({
   onChange: (value: WorkSchedule) => void;
 }) {
   const errorPrefix = React.useId();
+  const enabledToggleId = React.useId();
+  const enabled = !value.noSchedule;
+  const [selectedDay, setSelectedDay] = React.useState<WeekDay | null>(null);
+  const firstActiveStartRef = React.useRef<HTMLInputElement | null>(null);
+
+  React.useEffect(() => {
+    if (!enabled) {
+      setSelectedDay(null);
+      return;
+    }
+    if (selectedDay && value.days[selectedDay].active) return;
+    setSelectedDay(WEEK_DAYS.find((day) => value.days[day].active) ?? null);
+  }, [enabled, selectedDay, value.days]);
+
   const updateDay = (day: WeekDay, patch: Partial<WorkSchedule["days"][WeekDay]>) => {
     onChange({
       ...value,
@@ -1036,10 +1050,9 @@ function WorkScheduleEditor({
     const days = { ...value.days };
 
     WEEK_DAYS.forEach((day) => {
-      if (day === sourceDay) return;
+      if (day === sourceDay || !value.days[day].active) return;
       days[day] = {
         ...value.days[day],
-        active: source.active,
         periods: source.periods.map((period) => createWorkPeriod(period.start, period.end)),
       };
     });
@@ -1047,38 +1060,85 @@ function WorkScheduleEditor({
     onChange({ ...value, days });
   };
 
+  const timeInputOrder = (dayIndex: number, periodIndex: number, fieldOffset: 0 | 1) =>
+    WEEK_DAYS.slice(0, dayIndex).reduce(
+      (total, day) => total + value.days[day].periods.length * 2,
+      0,
+    ) +
+    periodIndex * 2 +
+    fieldOffset;
+
+  const handleTimeInputTab = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
+    const table = event.currentTarget.closest("table");
+    if (!table) return;
+    const inputs = Array.from(
+      table.querySelectorAll<HTMLInputElement>("input[data-work-hour-order]:not(:disabled)"),
+    ).sort(
+      (left, right) => Number(left.dataset.workHourOrder) - Number(right.dataset.workHourOrder),
+    );
+    const currentIndex = inputs.indexOf(event.currentTarget);
+    const target = inputs[currentIndex + (event.shiftKey ? -1 : 1)];
+    if (!target) return;
+    event.preventDefault();
+    target.focus();
+    target.select();
+  };
+
   return (
-    <section>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={value.noSchedule}
-            onChange={(event) => {
-              const noSchedule = event.target.checked;
-              onChange({ ...value, noSchedule });
-            }}
-            className="h-4 w-4 accent-primary"
+    <section className="space-y-3">
+      <div className="flex items-center gap-3">
+        <button
+          id={enabledToggleId}
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Habilitar Jornada"
+          onClick={() => {
+            onChange({ ...value, noSchedule: enabled });
+            if (!enabled) {
+              const firstActiveDay = WEEK_DAYS.find((day) => value.days[day].active) ?? null;
+              setSelectedDay(firstActiveDay);
+              requestAnimationFrame(() => {
+                firstActiveStartRef.current?.focus({ preventScroll: true });
+                firstActiveStartRef.current?.select();
+              });
+            }
+          }}
+          className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${enabled ? "bg-blue-600" : "bg-slate-300"}`}
+        >
+          <span
+            className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${enabled ? "translate-x-6" : "translate-x-1"}`}
           />
-          Sem jornada
+        </button>
+        <label htmlFor={enabledToggleId} className="cursor-pointer text-sm text-muted-foreground">
+          Habilitar Jornada
         </label>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[580px] table-fixed text-xs">
-          <thead className="bg-surface-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+      <div className="overflow-hidden rounded-lg border border-border sm:overflow-x-auto">
+        <table className="w-full table-fixed border-collapse text-sm sm:min-w-[580px]">
+          <colgroup>
+            <col className="w-[20%] sm:w-[42%]" />
+            <col className="w-[23%] sm:w-[18%]" />
+            <col className="w-[23%] sm:w-[18%]" />
+            <col className="w-[34%] sm:w-[22%]" />
+          </colgroup>
+          <thead className="bg-surface-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground sm:text-[11px] sm:tracking-widest">
             <tr>
-              <th className="w-28 px-3 py-2 text-left">Dia da semana</th>
-              <th className="w-14 px-2 py-2 text-center">Ativo</th>
-              <th className="px-2 py-2 text-center">Início</th>
-              <th className="px-2 py-2 text-center">Fim</th>
-              <th className="w-[116px] px-2 py-2 text-center">Ações</th>
+              <th className="px-1 py-2 text-left font-semibold sm:px-3 sm:py-3">
+                <span className="sm:hidden">Dia</span>
+                <span className="hidden sm:inline">Dia da semana</span>
+              </th>
+              <th className="!px-0 py-2 text-center font-semibold sm:!px-2 sm:py-3">Início</th>
+              <th className="!px-0 py-2 text-center font-semibold sm:!px-2 sm:py-3">Fim</th>
+              <th className="!pl-1 !pr-0 py-2 text-center sm:!px-2 sm:py-3" aria-label="Ações" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
-            {WEEK_DAYS.map((day) => {
+          <tbody>
+            {WEEK_DAYS.map((day, dayIndex) => {
               const item = value.days[day];
               const errors =
-                !value.noSchedule && item.active
+                enabled && item.active
                   ? item.periods.map((period) =>
                       workPeriodError({
                         ...period,
@@ -1087,152 +1147,176 @@ function WorkScheduleEditor({
                       }),
                     )
                   : [];
+              const dayError = errors.find(Boolean) ?? "";
+              const dayErrorId = `${errorPrefix}-${day}`;
+              const dayBorder = dayIndex < WEEK_DAYS.length - 1 ? "border-b border-border" : "";
+              const firstActiveDay = WEEK_DAYS.find((candidate) => value.days[candidate].active);
               return (
-                <tr key={day}>
-                  <td className="px-3 py-3 align-top font-medium">
-                    <p>{day}</p>
-                    {errors.map(
-                      (error, index) =>
-                        error && (
-                          <p
-                            key={item.periods[index].id}
-                            id={`${errorPrefix}-${day}-${item.periods[index].id}`}
-                            role="alert"
-                            className="mt-1 whitespace-normal break-words text-[11px] font-normal leading-tight text-destructive [overflow-wrap:anywhere]"
+                <React.Fragment key={day}>
+                  <tr className={`transition hover:bg-surface-1/60 ${dayError ? "" : dayBorder}`}>
+                    <td className="py-3 pl-1 pr-0.5 align-top text-xs sm:px-3 sm:text-sm">
+                      <div className="flex items-center gap-1 sm:gap-2">
+                        <input
+                          type="checkbox"
+                          checked={item.active}
+                          disabled={!enabled}
+                          onChange={(event) => {
+                            setSelectedDay(day);
+                            updateDay(day, { active: event.target.checked });
+                          }}
+                          className="h-4 w-4 shrink-0 accent-primary"
+                          aria-label={`Ativar jornada de ${day}`}
+                        />
+                        <p aria-label={day}>
+                          <span aria-hidden="true" className="sm:hidden">
+                            {day.slice(0, 3)}
+                          </span>
+                          <span aria-hidden="true" className="hidden sm:inline">
+                            {day}
+                          </span>
+                        </p>
+                      </div>
+                    </td>
+                    <td className="!px-0 py-2 align-top text-center sm:!px-2">
+                      <div className="flex flex-col gap-2">
+                        {item.periods.map((period, periodIndex) => {
+                          const error = errors[periodIndex];
+                          return (
+                            <Input
+                              key={period.id}
+                              ref={
+                                day === firstActiveDay && periodIndex === 0
+                                  ? firstActiveStartRef
+                                  : undefined
+                              }
+                              type="text"
+                              inputMode="numeric"
+                              data-work-hour-order={timeInputOrder(dayIndex, periodIndex, 0)}
+                              aria-label={`Início do período ${periodIndex + 1} de ${day}`}
+                              aria-invalid={!!error}
+                              aria-describedby={error ? dayErrorId : undefined}
+                              value={period.start}
+                              placeholder="00:00"
+                              disabled={!enabled || !item.active}
+                              onFocus={() => setSelectedDay(day)}
+                              onKeyDown={handleTimeInputTab}
+                              onChange={(event) =>
+                                updatePeriod(day, period.id, {
+                                  start: sanitizeWorkHourDraft(event.target.value),
+                                })
+                              }
+                              onBlur={(event) =>
+                                updatePeriod(day, period.id, {
+                                  start: formatWorkHourDraft(event.target.value),
+                                })
+                              }
+                              className={`!h-9 !min-h-9 w-full min-w-0 px-1 !text-[13px] text-center sm:!h-10 sm:!min-h-10 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="!px-0 py-2 align-top text-center sm:!px-2">
+                      <div className="flex flex-col gap-2">
+                        {item.periods.map((period, periodIndex) => {
+                          const error = errors[periodIndex];
+                          return (
+                            <Input
+                              key={period.id}
+                              type="text"
+                              inputMode="numeric"
+                              data-work-hour-order={timeInputOrder(dayIndex, periodIndex, 1)}
+                              aria-label={`Fim do período ${periodIndex + 1} de ${day}`}
+                              aria-invalid={!!error}
+                              aria-describedby={error ? dayErrorId : undefined}
+                              value={period.end}
+                              placeholder="00:00"
+                              disabled={!enabled || !item.active}
+                              onFocus={() => setSelectedDay(day)}
+                              onKeyDown={handleTimeInputTab}
+                              onChange={(event) =>
+                                updatePeriod(day, period.id, {
+                                  end: sanitizeWorkHourDraft(event.target.value),
+                                })
+                              }
+                              onBlur={(event) =>
+                                updatePeriod(day, period.id, {
+                                  end: formatWorkHourDraft(event.target.value),
+                                })
+                              }
+                              className={`!h-9 !min-h-9 w-full min-w-0 px-1 !text-[13px] text-center sm:!h-10 sm:!min-h-10 sm:px-3 sm:!text-sm ${error ? "!border-destructive" : ""}`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="!pl-1 !pr-0 py-2 align-top text-center sm:!px-2">
+                      <div className="flex flex-col gap-2">
+                        {item.periods.map((period, periodIndex) => (
+                          <div
+                            key={period.id}
+                            className="grid h-9 grid-cols-3 items-center gap-0.5 sm:h-10 sm:gap-1"
                           >
-                            {error}
-                          </p>
-                        ),
-                    )}
-                  </td>
-                  <td className="px-2 py-3 align-top text-center">
-                    <input
-                      type="checkbox"
-                      checked={item.active}
-                      disabled={value.noSchedule}
-                      onChange={(event) => updateDay(day, { active: event.target.checked })}
-                      className="h-4 w-4 accent-primary"
-                      aria-label={`Ativar jornada de ${day}`}
-                    />
-                  </td>
-                  <td className="px-2 py-2 align-top">
-                    <div className="space-y-2">
-                      {item.periods.map((period, index) => {
-                        const error = errors[index];
-                        return (
-                          <Input
-                            key={period.id}
-                            type="text"
-                            inputMode="numeric"
-                            aria-label={`Início do período ${index + 1} de ${day}`}
-                            aria-invalid={!!error}
-                            aria-describedby={
-                              error ? `${errorPrefix}-${day}-${period.id}` : undefined
-                            }
-                            value={period.start}
-                            placeholder="00:00"
-                            disabled={value.noSchedule || !item.active}
-                            className={`w-full px-2 text-center ${error ? "!border-destructive" : ""}`}
-                            onChange={(event) =>
-                              updatePeriod(day, period.id, {
-                                start: sanitizeWorkHourDraft(event.target.value),
-                              })
-                            }
-                            onBlur={(event) =>
-                              updatePeriod(day, period.id, {
-                                start: formatWorkHourDraft(event.target.value),
-                              })
-                            }
-                          />
-                        );
-                      })}
-                    </div>
-                  </td>
-                  <td className="px-2 py-2 align-top">
-                    <div className="space-y-2">
-                      {item.periods.map((period, index) => {
-                        const error = errors[index];
-                        return (
-                          <Input
-                            key={period.id}
-                            type="text"
-                            inputMode="numeric"
-                            aria-label={`Fim do período ${index + 1} de ${day}`}
-                            aria-invalid={!!error}
-                            aria-describedby={
-                              error ? `${errorPrefix}-${day}-${period.id}` : undefined
-                            }
-                            value={period.end}
-                            placeholder="00:00"
-                            disabled={value.noSchedule || !item.active}
-                            className={`w-full px-2 text-center ${error ? "!border-destructive" : ""}`}
-                            onChange={(event) =>
-                              updatePeriod(day, period.id, {
-                                end: sanitizeWorkHourDraft(event.target.value),
-                              })
-                            }
-                            onBlur={(event) =>
-                              updatePeriod(day, period.id, {
-                                end: formatWorkHourDraft(event.target.value),
-                              })
-                            }
-                          />
-                        );
-                      })}
-                    </div>
-                  </td>
-                  <td className="px-2 py-2 align-top">
-                    <div className="space-y-2">
-                      {item.periods.map((period, index) => (
-                        <div
-                          key={period.id}
-                          className="flex h-10 items-center justify-center gap-1"
+                            {enabled && selectedDay === day && item.active && (
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removePeriod(day, period.id)}
+                                  title="Excluir horário"
+                                  aria-label={`Excluir período ${periodIndex + 1} de ${day}`}
+                                  className="trash-action"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                                {periodIndex === 0 && (
+                                  <>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => copyDayToAll(day)}
+                                      title="Copiar para todos"
+                                      aria-label={`Copiar horários de ${day} para todos os dias ativos`}
+                                    >
+                                      <Copy className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => addPeriod(day)}
+                                      title="Incluir novo horário"
+                                      aria-label={`Incluir horário em ${day}`}
+                                      className="group hover:text-primary"
+                                    >
+                                      <Plus className="h-3.5 w-3.5 transition-colors group-hover:text-primary" />
+                                    </Button>
+                                  </>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                  {dayError && (
+                    <tr className={dayBorder}>
+                      <td className="p-0" aria-hidden="true" />
+                      <td colSpan={3} className="px-2 pb-2 pt-0">
+                        <p
+                          id={dayErrorId}
+                          role="alert"
+                          className="block w-full whitespace-normal text-[11px] leading-tight text-destructive sm:text-xs"
                         >
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={value.noSchedule || !item.active}
-                            onClick={() => removePeriod(day, period.id)}
-                            title="Excluir horário"
-                            aria-label={`Excluir período ${index + 1} de ${day}`}
-                            className="h-8 w-8 p-0"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                          {index === 0 && (
-                            <>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                disabled={value.noSchedule || !item.active}
-                                onClick={() => copyDayToAll(day)}
-                                title="Duplicar horários para todos os dias"
-                                aria-label={`Duplicar horários de ${day} para todos os dias`}
-                                className="h-8 w-8 p-0"
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                disabled={value.noSchedule || !item.active}
-                                onClick={() => addPeriod(day)}
-                                title="Incluir novo horário"
-                                aria-label={`Incluir horário em ${day}`}
-                                className="h-8 w-8 p-0"
-                              >
-                                <Plus className="h-3.5 w-3.5" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
+                          {dayError}
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               );
             })}
           </tbody>

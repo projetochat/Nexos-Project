@@ -15,6 +15,13 @@ export class SenderDisplayNameService {
   private readonly logger = new Logger(SenderDisplayNameService.name);
 
   async resolve(db: DbClient, current: AuthenticatedUser) {
+    return this.resolveForMembership(db, current);
+  }
+
+  async resolveForMembership(
+    db: DbClient,
+    current: Pick<AuthenticatedUser, "tenantId" | "membershipId" | "roleKey">,
+  ) {
     const membership = await db.tenantMembership.findFirst({
       where: {
         id: current.membershipId,

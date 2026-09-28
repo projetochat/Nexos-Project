@@ -11,14 +11,13 @@ import { organizationApi } from "@/lib/trixus-api";
 import { ROLE_META, useSession } from "@/lib/session";
 import {
   inboxNotificationSoundEnabled,
-  setInboxNotificationSoundEnabled,
-  NOTIFICATION_QUEUES,
+  applyInboxNotificationSoundPreference,
   inboxNotificationQueues,
   setInboxNotificationQueues,
 } from "@/lib/inbox-notification-sound";
 import { Switch } from "@/components/ui/switch";
-import { Checkbox } from "@/components/ui/checkbox";
 import type { QueueId } from "@/lib/queue-prefs";
+import { NotificationQueueToggles } from "@/components/notification-queue-toggles";
 
 export const Route = createFileRoute("/perfil")({
   component: PerfilPage,
@@ -70,8 +69,9 @@ function PerfilPage() {
 
   const changeSoundPreference = (enabled: boolean) => {
     if (!user) return;
-    setInboxNotificationSoundEnabled(user.id, enabled);
+    const queues = applyInboxNotificationSoundPreference(user.id, enabled);
     setSoundEnabled(enabled);
+    setNotificationQueues(queues);
     toast.success(enabled ? "Aviso sonoro ativado." : "Aviso sonoro desativado.");
   };
 
@@ -354,45 +354,11 @@ function PerfilPage() {
                     Selecione as abas que devem emitir um aviso sonoro. As preferências são salvas
                     automaticamente neste navegador.
                   </p>
-                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {NOTIFICATION_QUEUES.map(({ id, label }) => (
-                      <label
-                        key={id}
-                        className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50"
-                      >
-                        <Checkbox
-                          checked={notificationQueues.includes(id)}
-                          disabled={!soundEnabled}
-                          onCheckedChange={(checked) =>
-                            changeNotificationQueues(
-                              checked === true
-                                ? [...notificationQueues, id]
-                                : notificationQueues.filter((queue) => queue !== id),
-                            )
-                          }
-                        />
-                        <span className="text-sm">{label}</span>
-                      </label>
-                    ))}
-                    <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50 sm:col-span-2">
-                      <Checkbox
-                        checked={
-                          notificationQueues.length === NOTIFICATION_QUEUES.length
-                            ? true
-                            : notificationQueues.length > 0
-                              ? "indeterminate"
-                              : false
-                        }
-                        disabled={!soundEnabled}
-                        onCheckedChange={(checked) =>
-                          changeNotificationQueues(
-                            checked === true ? NOTIFICATION_QUEUES.map(({ id }) => id) : [],
-                          )
-                        }
-                      />
-                      <span className="text-sm font-medium">Todas</span>
-                    </label>
-                  </div>
+                  <NotificationQueueToggles
+                    enabled={soundEnabled}
+                    selected={notificationQueues}
+                    onChange={changeNotificationQueues}
+                  />
                 </fieldset>
               </section>
             )}

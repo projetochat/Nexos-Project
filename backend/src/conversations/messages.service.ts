@@ -35,6 +35,15 @@ const messageInclude = {
   reactions: true,
   quotedMessage: {
     select: {
+      direction: true,
+      participantName: true,
+      interactiveData: true,
+      authorMembership: {
+        select: {
+          presentationName: true,
+          user: { select: { name: true } },
+        },
+      },
       mediaStorageKey: true,
       mediaMimeType: true,
       mediaFileName: true,
@@ -442,6 +451,9 @@ export class MessagesService {
         message.authorMembership?.presentationName ?? message.authorMembership?.user.name ?? null,
       content: message.content ?? "",
       interactive_data: message.interactiveData ?? null,
+      forwarded: asObject(message.interactiveData)?.forwarded === true,
+      sticker: asObject(message.interactiveData)?.sticker === true,
+      link_preview: serializeLinkPreview(asObject(message.interactiveData)?.linkPreview),
       created_at: message.createdAt,
       updated_at: message.updatedAt,
       edited_at: asObject(message.interactiveData)?.editedAt ?? null,
@@ -464,6 +476,10 @@ export class MessagesService {
             provider_message_id: message.quotedProviderMessageId,
             content_preview: message.quotedContentPreview,
             type: message.quotedMessageType ? serializeType(message.quotedMessageType) : null,
+            author_name: serializeQuotedAuthorName(message.quotedMessage),
+            link_preview: serializeLinkPreview(
+              asObject(message.quotedMessage?.interactiveData)?.linkPreview,
+            ),
             media_data: message.quotedMessage?.mediaStorageKey
               ? {
                   state: message.quotedMessage.mediaState?.toLowerCase() ?? "ready",
@@ -521,6 +537,43 @@ export class MessagesService {
   }
 }
 
+function serializeLinkPreview(value: unknown) {
+  const preview = asObject(value);
+  if (!preview || typeof preview.url !== "string" || !isSafeWebUrl(preview.url)) return null;
+  return {
+    url: preview.url,
+    title: typeof preview.title === "string" ? preview.title : null,
+    description: typeof preview.description === "string" ? preview.description : null,
+    thumbnail_data_url:
+      typeof preview.thumbnailDataUrl === "string" &&
+      preview.thumbnailDataUrl.startsWith("data:image/")
+        ? preview.thumbnailDataUrl
+        : null,
+  };
+}
+
+function serializeQuotedAuthorName(message: MessageWithRelations["quotedMessage"]) {
+  if (!message) return null;
+  if (message.direction === MessageDirection.INBOUND) return message.participantName ?? null;
+  return (
+    message.authorMembership?.presentationName ??
+    message.authorMembership?.user.name ??
+    message.participantName ??
+    null
+  );
+}
+
+function isSafeWebUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password
+    );
+  } catch {
+    return false;
+  }
+}
+
 function cleanMessageContent(value: string) {
   const content = value.trim();
   if (!content) throw new BadRequestException("Mensagem vazia.");
@@ -540,7 +593,7 @@ function truncatePreview(content: string) {
   return content.length > 500 ? `${content.slice(0, 497)}...` : content;
 }
 
-function asObject(value: Prisma.JsonValue | null | undefined): Record<string, Prisma.JsonValue> {
+function asObject(value: unknown): Record<string, Prisma.JsonValue> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, Prisma.JsonValue>)
     : {};

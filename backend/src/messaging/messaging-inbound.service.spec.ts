@@ -658,6 +658,13 @@ describe("MessagingInboundService", () => {
     });
     expect(prisma.lead.upsert).not.toHaveBeenCalled();
     expect(prisma.notification.createMany).not.toHaveBeenCalled();
+    expect(prisma.message.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        direction: MessageDirection.SYSTEM,
+        type: MessageType.SYSTEM,
+        content: "Nova conversa (passiva)",
+      }),
+    });
   });
 
   it("creates a lead when the inbound sender is a new contact", async () => {
@@ -707,6 +714,13 @@ describe("MessagingInboundService", () => {
       }),
     });
     expect(prisma.notification.createMany).toHaveBeenCalledOnce();
+    expect(prisma.message.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        direction: MessageDirection.SYSTEM,
+        type: MessageType.SYSTEM,
+        content: "Nova lead (passiva)",
+      }),
+    });
   });
 
   it("reuses the unique contact when inbound creation races with another message", async () => {

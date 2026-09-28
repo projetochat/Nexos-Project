@@ -837,7 +837,7 @@ function TicketDetail({
                   })
                 }
               >
-                Abrir conversation relacionada
+                Abrir conversas relacionada
               </Button>
             )}
           </Card>

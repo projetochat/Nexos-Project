@@ -25,6 +25,7 @@ export function MessageVariablesMenu({
           className="h-7 w-7"
           disabled={disabled}
           aria-label="Inserir variável"
+          title="Inserir variáveis"
         >
           <Braces className="h-3.5 w-3.5" />
         </Button>

@@ -362,7 +362,7 @@ export class OperationsMetricsService {
             createdAt: true,
             direction: true,
             type: true,
-            conversation: { select: { contactId: true } },
+            conversation: { select: { id: true, contactId: true } },
           },
         }),
       ]);
@@ -397,6 +397,7 @@ export class OperationsMetricsService {
     }
     const messagesByHour = messageTrafficByHour(messages, timezone);
     const messageContactsTotal = uniqueInboundContacts(messages);
+    const messageAttendancesTotal = uniqueInboundConversations(messages);
     return {
       byDepartment: byDepartment.map((row) => {
         const department = departments.find((item) => item.id === row.departmentId);
@@ -424,6 +425,7 @@ export class OperationsMetricsService {
       })),
       messagesByHour,
       messageContactsTotal,
+      messageAttendancesTotal,
     };
   }
 
@@ -494,8 +496,10 @@ export function messageTrafficByHour(messages: MessageTrafficRow[], timezone: st
     recebidas: 0,
     enviadas: 0,
     total: 0,
+    atendimentos: 0,
   }));
   const contactsByHour = Array.from({ length: 24 }, () => new Set<string>());
+  const firstInboundByConversation = new Map<string, { createdAt: Date; hour: number }>();
   const formatter = new Intl.DateTimeFormat("en-GB", {
     timeZone: timezone,
     hour: "2-digit",
@@ -509,13 +513,31 @@ export function messageTrafficByHour(messages: MessageTrafficRow[], timezone: st
       bucket.recebidas++;
       const contactId = message.conversation?.contactId;
       if (contactId) contactsByHour[hour].add(contactId);
+      const conversationId = message.conversation?.id;
+      const currentFirst = conversationId ? firstInboundByConversation.get(conversationId) : null;
+      if (conversationId && (!currentFirst || message.createdAt < currentFirst.createdAt)) {
+        firstInboundByConversation.set(conversationId, { createdAt: message.createdAt, hour });
+      }
     } else bucket.enviadas++;
     bucket.total = bucket.recebidas + bucket.enviadas;
+  }
+  for (const firstInbound of firstInboundByConversation.values()) {
+    buckets[firstInbound.hour].atendimentos++;
   }
   return buckets.map((bucket, hour) => ({
     ...bucket,
     contatosAtendidos: contactsByHour[hour].size,
   }));
+}
+
+export function uniqueInboundConversations(messages: MessageTrafficRow[]) {
+  return new Set(
+    messages.flatMap((message) =>
+      message.type !== "SYSTEM" && message.direction === "INBOUND" && message.conversation?.id
+        ? [message.conversation.id]
+        : [],
+    ),
+  ).size;
 }
 
 export function uniqueInboundContacts(messages: MessageTrafficRow[]) {
@@ -534,5 +556,5 @@ type MessageTrafficRow = {
   createdAt: Date;
   direction: string;
   type?: string;
-  conversation?: { contactId: string | null } | null;
+  conversation?: { id: string; contactId: string | null } | null;
 };

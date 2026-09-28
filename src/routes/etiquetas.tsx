@@ -331,7 +331,7 @@ function EtiquetaForm({
               onChange={(event) => setColor(normalizeHexColor(event.target.value))}
               placeholder={completeHexColor("#3B82F6")}
               maxLength={7}
-              className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase focus:border-0 max-sm:!min-h-0 max-sm:!p-0"
+              className="min-w-0 flex-1 border-0 bg-transparent font-mono text-sm uppercase focus:border-0 max-sm:!min-h-0 max-sm:!p-0"
             />
           </div>
         </Field>

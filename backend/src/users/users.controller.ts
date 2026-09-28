@@ -238,14 +238,24 @@ export class UsersController {
     if (current.roleKey !== "tenant_admin" || current.impersonationSessionId) {
       throw new ForbiddenException("Somente o Administrador pode alterar estas credenciais.");
     }
-    // A senha atual pode permanecer preenchida enquanto o administrador altera apenas o nome.
-    // A troca só começa quando algum dos campos da nova senha recebe valor.
     const isChangingPassword = dto.newPassword !== undefined || dto.confirmPassword !== undefined;
+    const hasCredentialChange =
+      isChangingPassword || dto.presentationName !== undefined || dto.avatarUrl !== undefined;
+    const presentationName = dto.presentationName?.trim();
+    if (!hasCredentialChange) {
+      throw new BadRequestException("Nenhuma alteração foi informada.");
+    }
+    if (!dto.currentPassword) {
+      throw new BadRequestException("Informe a senha atual.");
+    }
     if (isChangingPassword && (!dto.currentPassword || !dto.newPassword || !dto.confirmPassword)) {
       throw new BadRequestException("Preencha todos os campos de senha.");
     }
     if (isChangingPassword && dto.newPassword !== dto.confirmPassword) {
       throw new BadRequestException("A confirmação da nova senha não confere.");
+    }
+    if (dto.presentationName !== undefined && !presentationName) {
+      throw new BadRequestException("Informe o nome de apresentação.");
     }
     const membership = await this.prisma.tenantMembership.findFirstOrThrow({
       where: {
@@ -259,41 +269,40 @@ export class UsersController {
     if (membership.role.key !== "tenant_admin") {
       throw new ForbiddenException("Somente o Administrador pode alterar estas credenciais.");
     }
+    if (!(await compare(dto.currentPassword, membership.user.passwordHash))) {
+      throw new BadRequestException("Senha atual inválida.");
+    }
     if (isChangingPassword) {
-      if (!(await compare(dto.currentPassword!, membership.user.passwordHash))) {
-        throw new BadRequestException("Senha atual inválida.");
-      }
       if (dto.newPassword === dto.currentPassword) {
         throw new BadRequestException("A nova senha deve ser diferente da senha atual.");
       }
     }
+    const passwordHash = isChangingPassword ? await hash(dto.newPassword!, 12) : undefined;
+    const avatarUrl = dto.avatarUrl === undefined ? undefined : normalizeAvatarUrl(dto.avatarUrl);
     await this.prisma.$transaction(async (tx) => {
       if (isChangingPassword) {
         await tx.user.update({
           where: { id: membership.userId },
-          data: { passwordHash: await hash(dto.newPassword!, 12) },
+          data: { passwordHash },
         });
       }
       if (dto.presentationName !== undefined) {
         await tx.tenantMembership.update({
           where: { id: membership.id },
-          data: { presentationName: dto.presentationName.trim() },
+          data: { presentationName },
         });
       }
       if (dto.avatarUrl !== undefined) {
         await tx.user.update({
           where: { id: membership.userId },
-          data: { avatarUrl: normalizeAvatarUrl(dto.avatarUrl) },
+          data: { avatarUrl },
         });
       }
     });
     return {
       ok: true,
-      presentationName: dto.presentationName?.trim() ?? membership.presentationName,
-      avatarUrl:
-        dto.avatarUrl === undefined
-          ? (membership.user.avatarUrl ?? null)
-          : normalizeAvatarUrl(dto.avatarUrl),
+      presentationName: presentationName ?? membership.presentationName,
+      avatarUrl: dto.avatarUrl === undefined ? (membership.user.avatarUrl ?? null) : avatarUrl,
     };
   }
 

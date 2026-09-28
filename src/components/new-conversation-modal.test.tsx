@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewConversationModal } from "../routes/inbox.index";
+import { getInboxTab, setInboxTab } from "@/lib/inbox-tab-state";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -84,6 +85,7 @@ async function mount() {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  setInboxTab("fila");
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   container = document.createElement("div");
   document.body.append(container);
@@ -194,6 +196,7 @@ describe("new conversation contact picker", () => {
       to: "/inbox/$conversationId",
       params: { conversationId: "conversation" },
     });
+    expect(getInboxTab()).toBe("ativas");
   });
   it("opens a conversation by double-clicking a contact with one connected instance", async () => {
     await mount();

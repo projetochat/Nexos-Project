@@ -56,7 +56,7 @@ it("opens the six actions in order and executes each selected action", async () 
   }
 });
 
-it("prepares a contact card with escaped name and normalized phone", async () => {
+it("prepares a contact card with escaped name and WhatsApp-style phone", async () => {
   const file = contactCardFile({ nome: "Ana; Silva\nTeste", telefone: "+55 (62) 99999-1234" });
   const content = await new Promise<string>((resolve) => {
     const reader = new FileReader();
@@ -65,6 +65,6 @@ it("prepares a contact card with escaped name and normalized phone", async () =>
   });
   expect(file.type).toBe("text/vcard");
   expect(content).toContain("FN:Ana\\; Silva\\nTeste\r\n");
-  expect(content).toContain("TEL;TYPE=CELL:+5562999991234\r\n");
+  expect(content).toContain("TEL;TYPE=CELL:+55 62 99999-1234\r\n");
   expect(content).toContain("END:VCARD\r\n");
 });

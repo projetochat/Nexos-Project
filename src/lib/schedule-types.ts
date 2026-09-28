@@ -1,5 +1,11 @@
 type ScheduleType = "message" | "task";
 type ScheduleStatus = "pending" | "completed";
+export type ScheduleAttachment = {
+  fileName: string;
+  mimeType: string;
+  size: number;
+  dataUrl: string;
+};
 export type ApiSchedule = {
   id: string;
   identifier: string;
@@ -21,4 +27,12 @@ export type ApiSchedule = {
   recurrenceUntil: string;
   assignedMembershipId: string;
   attachmentName: string | null;
+  attachment?: ScheduleAttachment | null;
+  dueAt?: string | null;
+  executionStatus?: "PENDING" | "CLAIMED" | "QUEUED" | "SENT" | "FAILED" | null;
+  claimedAt?: string | null;
+  messageId?: string | null;
+  attempts?: number;
+  lastError?: string | null;
+  completedAt?: string | null;
 };

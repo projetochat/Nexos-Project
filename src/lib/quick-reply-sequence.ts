@@ -45,7 +45,6 @@ export type SequenceItem = QuickReplyMessage & { clientMessageId: string; messag
 export type SequenceDraft = {
   items: SequenceItem[];
   next: number;
-  intervalSeconds: number;
   closeAfter: boolean;
 };
 export function createSequence(
@@ -59,7 +58,6 @@ export function createSequence(
       clientMessageId: crypto.randomUUID(),
     })),
     next: 0,
-    intervalSeconds: reply.intervalSeconds ?? 0,
     closeAfter: reply.close_on_send,
   };
 }
@@ -98,8 +96,6 @@ export async function sendSequence(
   try {
     const wait = transport.wait ?? waitForSequence;
     while (draft.next < draft.items.length) {
-      if (signal.aborted) throw new Error("Envio interrompido.");
-      if (draft.next > 0 && draft.intervalSeconds) await wait(draft.intervalSeconds * 1000, signal);
       if (signal.aborted) throw new Error("Envio interrompido.");
       const item = draft.items[draft.next];
       let result = item.messageId

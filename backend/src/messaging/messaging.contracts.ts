@@ -110,6 +110,14 @@ export type InboundMessageEvent = {
       options: Array<{ title: string; description?: string | null }>;
     }>;
   } | null;
+  forwarded?: boolean;
+  sticker?: boolean;
+  linkPreview?: {
+    url: string;
+    title: string | null;
+    description: string | null;
+    thumbnailDataUrl: string | null;
+  } | null;
   media?: {
     url?: string | null;
     mimetype?: string | null;

@@ -11,6 +11,7 @@ import {
   MinLength,
   ValidateNested,
 } from "class-validator";
+import { QuickReplyAttachmentDto } from "../quick-replies/dto/quick-reply-message.dto";
 class ScheduleRecipientDto {
   @IsUUID() id!: string;
   @IsString() @MaxLength(200) name!: string;
@@ -40,4 +41,14 @@ export class SaveScheduleDto {
   @IsString() @MaxLength(40) recurrenceUntil!: string;
   @IsString() @MaxLength(100) assignedMembershipId!: string;
   @IsOptional() @IsString() @MaxLength(255) attachmentName!: string | null;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuickReplyAttachmentDto)
+  attachment?: QuickReplyAttachmentDto | null;
+}
+
+export class ListSchedulesQueryDto {
+  @IsOptional()
+  @IsUUID()
+  conversationId?: string;
 }

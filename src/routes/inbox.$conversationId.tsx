@@ -23,6 +23,8 @@ import {
   ArrowLeft,
   ContactRound,
   Phone,
+  MessageCirclePlus,
+  Forward,
 } from "lucide-react";
 import { toast as systemToast } from "sonner";
 // Notificações desativadas nesta tela — nenhum toast deve aparecer no chat.
@@ -38,22 +40,23 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { MessageStatusIcon } from "@/components/message-status-icon";
 import { MessageActionsMenu } from "@/components/message-actions-menu";
 import { InboxMobileActions } from "@/components/inbox-mobile-actions";
-import { InboxContactPicker } from "@/components/inbox-contact-picker";
+import { InboxContactPicker, type SharedContactSelection } from "@/components/inbox-contact-picker";
 import { ProfileCameraModal } from "@/components/profile-photo-controls";
+import { ScheduleMessageModal } from "@/components/schedule-message-modal";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { useDisclosure } from "@/hooks/use-disclosure";
-import { maskBrazilPhone } from "@/lib/input-masks";
+import { formatBrazilPhoneWithDdi, maskBrazilPhone } from "@/lib/input-masks";
 import {
   conversationApi,
   crmApi,
   messageApi,
   organizationApi,
   quickReplyApi,
-  schedulesApi,
   ticketApi,
   type ApiMessage,
   type ApiQuickReply as QuickReply,
   type ApiTag as Tag,
+  TrixusApiError,
 } from "@/lib/trixus-api";
 import {
   createSequence,
@@ -69,6 +72,12 @@ import { sortByOptionLabel } from "@/lib/sort-options";
 import { resolveMessageVariables, type MessageVariableContext } from "@/lib/message-variables";
 import { invalidateConversationQueries } from "@/lib/realtime/invalidate-conversation";
 import { startTyping, stopTyping } from "@/lib/realtime/client";
+import {
+  availableTransferQueues,
+  currentTransferQueue,
+  type TransferQueue,
+} from "@/lib/conversation-transfer";
+import { getInboxTab, setInboxTab, subscribeInboxTab } from "@/lib/inbox-tab-state";
 import { ContactFormModal, contactPayload } from "./contatos";
 import { InboxImageViewer } from "@/components/inbox-image-viewer";
 import {
@@ -181,7 +190,8 @@ function AudioPreview({
         className="h-9 w-9 shrink-0 rounded-full"
         onClick={() => void togglePlayback()}
         disabled={disabled}
-        aria-label={playing ? "Pausar áudio" : "Reproduzir áudio"}
+        aria-label={playing ? "Pausar Gravação" : "Continuar Gravação"}
+        title={playing ? "Pausar Gravação" : "Continuar Gravação"}
       >
         {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
       </Button>
@@ -191,7 +201,8 @@ function AudioPreview({
         variant="ghost"
         size="icon"
         className="h-9 w-9 shrink-0"
-        aria-label="Descartar áudio"
+        aria-label="Apagar Gravação"
+        title="Apagar Gravação"
         disabled={disabled}
         onClick={onDiscard}
       >
@@ -201,7 +212,8 @@ function AudioPreview({
         variant="primary"
         size="icon"
         className="h-9 w-9 shrink-0 rounded-full"
-        aria-label={sending ? "Enviando áudio" : "Enviar áudio"}
+        aria-label={sending ? "Enviando" : "Enviar"}
+        title={sending ? "Enviando" : "Enviar"}
         disabled={disabled}
         onClick={onSend}
       >
@@ -295,18 +307,26 @@ function unescapeVCard(value: string) {
 function ConversationPage() {
   const isMobile = useIsMobile();
   const { conversationId } = Route.useParams();
+  const inboxTab = React.useSyncExternalStore(subscribeInboxTab, getInboxTab, getInboxTab);
   const user = useSession((s) => s.user);
   const qc = useQueryClient();
   const navigate = useNavigate();
 
-  const { data: conv } = useQuery({
+  const {
+    data: conv,
+    error: conversationError,
+    isLoading: conversationLoading,
+  } = useQuery({
     queryKey: ["trixus", "conversations", conversationId],
     queryFn: () => conversationApi.get(conversationId),
+    retry: (failureCount, error) =>
+      !(error instanceof TrixusApiError && error.status === 404) && failureCount < 3,
   });
 
   const { data: mensagens = [] } = useQuery({
     queryKey: ["trixus", "messages", conversationId],
     queryFn: () => messageApi.list(conversationId, { limit: 50 }).then((page) => page.items),
+    enabled: !!conv,
     refetchInterval: 30_000,
   });
 
@@ -400,12 +420,21 @@ function ConversationPage() {
   const [closing, setClosing] = React.useState(false);
   const [gerando, setGerando] = React.useState(false);
 
+  React.useEffect(() => {
+    if (
+      !conversationLoading &&
+      !conv &&
+      conversationError instanceof TrixusApiError &&
+      conversationError.status === 404
+    ) {
+      void navigate({ to: "/inbox", replace: true });
+    }
+  }, [conv, conversationError, conversationLoading, navigate]);
+
   if (!conv) {
     return (
       <InboxLayout>
-        <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
-          Conversa não encontrada.
-        </div>
+        <div className="h-full" />
       </InboxLayout>
     );
   }
@@ -427,6 +456,7 @@ function ConversationPage() {
     try {
       const hadProtocolo = !!conv.protocolo;
       await conversationApi.assign(conv.id, { self: true });
+      setInboxTab("ativas");
       void invalidateConversationQueries(qc, conv.id);
       toast.success(
         hadProtocolo || isStandby ? "Conversa retomada" : "Conversa iniciada — protocolo gerado",
@@ -534,7 +564,7 @@ function ConversationPage() {
               )}
               {conv.status === "fechada" ? (
                 <Button variant="secondary" size="sm" onClick={handleNewConversation}>
-                  <Plus className="h-3.5 w-3.5" /> Nova conversa
+                  <MessageCirclePlus className="h-3.5 w-3.5" /> Nova conversa
                 </Button>
               ) : (
                 <>
@@ -584,19 +614,32 @@ function ConversationPage() {
                 const hasLifecycleLog = mensagens.some(
                   (message) =>
                     message.type === "system" &&
-                    /nova conversa|atendimento iniciado|conversa iniciada|novo lead/i.test(
+                    /nova conversa|atendimento iniciado|conversa iniciada|nov[ao] lead/i.test(
                       message.content,
                     ),
                 );
                 if (hasLifecycleLog) return null;
-                const isLead = !conv.agent_id && conv.status !== "fechada" && !conv.protocolo;
+                const firstConversationMessage = mensagens.find(
+                  (message) => message.type !== "system",
+                );
+                const startedByContact = firstConversationMessage?.sender === "contact";
+                if (!startedByContact) {
+                  return (
+                    <StartedServiceLog
+                      type="ATIVO"
+                      protocol={conv.protocolo}
+                      attendantName={conv.agent?.nome ?? "Não informado"}
+                      timestamp={new Date(conv.created_at).getTime()}
+                    />
+                  );
+                }
+                const isLead = conv.originated_as_lead ?? conv.is_lead;
                 const line = isLead ? "bg-info/40" : "bg-success/40";
                 const pill = isLead
                   ? "border-info/40 bg-info/10 text-info"
                   : "border-success/40 bg-success/10 text-success";
-                const label = isLead
-                  ? `NOVA CONVERSA (PASSIVA) — ${fmtLogStamp(new Date(conv.created_at).getTime())}`
-                  : `ATENDIMENTO INICIADO${conv.protocolo ? ` - PROTOCOLO: ${conv.protocolo}` : ""} — ${fmtLogStamp(new Date(conv.created_at).getTime())}`;
+                const openingLabel = isLead ? "NOVO LEAD" : "NOVA CONVERSA";
+                const label = `${openingLabel} — ${fmtLogStamp(new Date(conv.created_at).getTime())}`;
                 return (
                   <div className="flex items-center gap-3">
                     <span className={`h-0.5 flex-1 ${line}`} />
@@ -609,29 +652,29 @@ function ConversationPage() {
                   </div>
                 );
               })()}
-              {mensagens
-                .filter(
-                  (m) => !(conv.protocolo && m.type === "system" && /novo lead/i.test(m.content)),
-                )
-                .map((m) => (
-                  <MessageBubble
-                    key={m.id}
-                    m={m}
-                    agents={messageAgents}
-                    showAgentName={showAgentName}
-                    onReply={(message) => setReplyTo(message)}
-                    onQuotedClick={scrollToMessage}
-                    highlighted={highlightedMessageId === m.id}
-                    contactName={conv.contact?.nome ?? "Contato"}
-                    isGroup={conv.is_group}
-                    contactAvatarUrl={conv.contact?.avatar_url ?? null}
-                    galleryImages={galleryImages}
-                    setMessageRef={(node) => {
-                      if (node) messageRefs.current.set(m.id, node);
-                      else messageRefs.current.delete(m.id);
-                    }}
-                  />
-                ))}
+              {mensagens.map((m) => (
+                <MessageBubble
+                  key={m.id}
+                  m={m}
+                  agents={messageAgents}
+                  showAgentName={showAgentName}
+                  onReply={(message) => setReplyTo(message)}
+                  onQuotedClick={scrollToMessage}
+                  highlighted={highlightedMessageId === m.id}
+                  contactName={conv.contact?.nome ?? "Contato"}
+                  isGroup={conv.is_group}
+                  conversationOriginatedAsLead={conv.originated_as_lead ?? conv.is_lead}
+                  customFieldLabels={(conv.contact?.customFieldValues ?? []).map(
+                    (field) => field.label,
+                  )}
+                  contactAvatarUrl={conv.contact?.avatar_url ?? null}
+                  galleryImages={galleryImages}
+                  setMessageRef={(node) => {
+                    if (node) messageRefs.current.set(m.id, node);
+                    else messageRefs.current.delete(m.id);
+                  }}
+                />
+              ))}
               {mensagens.length === 0 && (
                 <p className="text-center text-xs text-muted-foreground">Nenhuma mensagem ainda.</p>
               )}
@@ -730,8 +773,10 @@ function ConversationPage() {
         onClose={transferModal.hide}
         agents={agents.filter((a) => a.userId !== conv.agent_id)}
         departments={departments.filter((d) => d.id !== conv.department_id)}
+        currentStatus={currentTransferQueue(conv, inboxTab)}
         onSubmitAgent={async (id) => {
           await conversationApi.assign(conv.id, { membershipId: id });
+          setInboxTab("ativas");
           void invalidateConversationQueries(qc, conv.id);
           toast.success("Conversa transferida");
           transferModal.hide();
@@ -745,6 +790,7 @@ function ConversationPage() {
         onSubmitStatus={async (status) => {
           const label = status === "fila" ? filaLabel : standbyLabel;
           await conversationApi.updateStatus(conv.id, status === "fila" ? "aberta" : "aguardando");
+          setInboxTab(status);
           void invalidateConversationQueries(qc, conv.id);
           toast.success(`Conversa movida para ${label}`);
           transferModal.hide();
@@ -759,10 +805,63 @@ function ConversationPage() {
         onConfirm={async () => {
           await conversationApi.updateStatus(conv.id, "fechada");
           void invalidateConversationQueries(qc, conv.id);
+          setClosing(false);
           toast.success("Conversa encerrada");
+          await navigate({ to: "/inbox" });
         }}
       />
     </InboxLayout>
+  );
+}
+
+function StartedServiceLog({
+  type,
+  protocol,
+  attendantName,
+  timestamp,
+}: {
+  type: "ATIVO" | "PASSIVO";
+  protocol: string | null;
+  attendantName: string;
+  timestamp: number;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="h-0.5 flex-1 bg-success/40" />
+      <div
+        data-service-start-log
+        className="flex min-w-0 flex-col items-center justify-center rounded-full border border-success/40 bg-success/10 px-4 py-2 text-center text-[10px] font-medium uppercase tracking-widest text-success"
+      >
+        <p>ATENDIMENTO INICIADO — {fmtLogStamp(timestamp)}</p>
+        <p>
+          TIPO: {type} — PROTOCOLO: {protocol || "NÃO INFORMADO"}
+        </p>
+        <p>ATENDENTE: {attendantName}</p>
+      </div>
+      <span className="h-0.5 flex-1 bg-success/40" />
+    </div>
+  );
+}
+
+function ClosedServiceLog({
+  attendantName,
+  timestamp,
+}: {
+  attendantName: string;
+  timestamp: number;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="h-0.5 flex-1 bg-destructive/40" />
+      <div
+        data-service-closed-log
+        className="flex min-w-0 flex-col items-center justify-center rounded-full border border-destructive/40 bg-destructive/10 px-4 py-2 text-center text-[10px] font-medium uppercase tracking-widest text-destructive"
+      >
+        <p>ATENDIMENTO ENCERRADO — {fmtLogStamp(timestamp)}</p>
+        <p>ATENDENTE: {attendantName}</p>
+      </div>
+      <span className="h-0.5 flex-1 bg-destructive/40" />
+    </div>
   );
 }
 
@@ -778,6 +877,8 @@ export function MessageBubble({
   contactName,
   contactAvatarUrl,
   isGroup = false,
+  conversationOriginatedAsLead = false,
+  customFieldLabels = [],
   galleryImages,
   setMessageRef,
 }: {
@@ -791,6 +892,8 @@ export function MessageBubble({
   contactName: string;
   contactAvatarUrl?: string | null;
   isGroup?: boolean;
+  conversationOriginatedAsLead?: boolean;
+  customFieldLabels?: string[];
   galleryImages: Message[];
   setMessageRef?: (node: HTMLDivElement | null) => void;
 }) {
@@ -840,24 +943,51 @@ export function MessageBubble({
   if (m.type === "system") {
     const ts = new Date(m.created_at).getTime();
     const normalizedContent = normalizeSystemLogLabel(m.content);
+    const isLegacyPassiveOpening = /nova conversa.*passiva/i.test(normalizedContent);
+    const displayContent = isLegacyPassiveOpening
+      ? conversationOriginatedAsLead
+        ? "Novo Lead"
+        : "Nova conversa"
+      : normalizedContent.replace(/\s*\(passiva\)\s*/i, "");
     const isClosing = /encerra/i.test(normalizedContent);
-    const isLead = /novo lead|nova conversa.*passiva/i.test(normalizedContent);
-    const isStarted = /atendimento iniciado|conversa iniciada/i.test(normalizedContent);
-    const startedParts = normalizedContent.match(
-      /^(Atendimento iniciado \((?:passivo|ativa)\))\s*-\s*protocolo:\s*(.+)$/i,
+    const isAttendantClosing = /^Conversa encerrada(?:\s*-\s*protocolo\s+[^.]+)?\.?$/i.test(
+      normalizedContent,
     );
+    const isLead = /nov[ao] lead/i.test(displayContent);
+    const isConversationOpening = /nova conversa/i.test(displayContent);
+    const isStarted = /atendimento iniciado|conversa iniciada/i.test(normalizedContent);
+    const eventAuthorName =
+      m.author_name ?? agents.find((agent) => agent.id === m.author_id)?.nome ?? "Não informado";
+    if (isAttendantClosing) {
+      return <ClosedServiceLog attendantName={eventAuthorName} timestamp={ts} />;
+    }
+    const startedParts = normalizedContent.match(
+      /^Atendimento iniciado \((passivo|passiva|ativo|ativa)\)(?:\s*-\s*protocolo:\s*(.+?))?\.?$/i,
+    );
+    if (startedParts) {
+      return (
+        <StartedServiceLog
+          type={/^passiv[oa]$/i.test(startedParts[1]) ? "PASSIVO" : "ATIVO"}
+          protocol={startedParts[2]?.trim() ?? null}
+          attendantName={eventAuthorName}
+          timestamp={ts}
+        />
+      );
+    }
     const tone = isClosing
       ? {
           line: "bg-destructive/40",
           pill: "border-destructive/40 bg-destructive/10 text-destructive",
         }
-      : isLead
+      : isLead || isConversationOpening
         ? { line: "bg-primary/40", pill: "border-primary/40 bg-primary/10 text-primary" }
         : isStarted
           ? { line: "bg-success/40", pill: "border-success/40 bg-success/10 text-success" }
           : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
-    const withLines = isClosing || isLead || isStarted;
-    const label = (startedParts?.[1] ?? normalizedContent).toUpperCase();
+    const withLines = isClosing || isLead || isConversationOpening || isStarted;
+    const label = (
+      isLead ? displayContent.replace(/^nova lead$/i, "Novo Lead") : displayContent
+    ).toUpperCase();
     return (
       <div className="flex items-center gap-3">
         <span className={`h-0.5 flex-1 ${withLines ? tone.line : "opacity-0"}`} />
@@ -865,10 +995,7 @@ export function MessageBubble({
           className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${tone.pill}`}
         >
           {label}
-          <span className="ml-2 opacity-80">
-            {startedParts ? "-" : "—"} {fmtLogStamp(ts)}
-            {startedParts ? ` - PROTOCOLO: ${startedParts[2]}` : ""}
-          </span>
+          <span className="ml-1 opacity-80">— {fmtLogStamp(ts)}</span>
         </span>
         <span className={`h-0.5 flex-1 ${withLines ? tone.line : "opacity-0"}`} />
       </div>
@@ -885,7 +1012,11 @@ export function MessageBubble({
       ? (m.author_name ?? agents.find((a) => a.id === m.author_id)?.nome ?? null)
       : null;
   const avatarName = mine ? (authorName ?? "Atendente") : (m.participant?.name ?? contactName);
+  const isAudioMessage = m.type === "audio" || m.type === "voice";
+  const isSticker =
+    m.type === "image" && (m.sticker === true || m.content.trim().toLowerCase() === "[figurinha]");
   const contactCard = isContactCardMessage(m);
+  const isVisualOnly = contactCard || isSticker;
   const timestamp = conversationTimestamp(new Date(m.created_at).getTime());
   return (
     <div
@@ -896,13 +1027,20 @@ export function MessageBubble({
       } ${highlighted ? "rounded-xl ring-2 ring-primary/60 ring-offset-2 ring-offset-background" : ""}`}
     >
       {!mine && (
-        <div className={isGroup ? "shrink-0" : "hidden shrink-0 md:block"}>
-          <Avatar
-            name={avatarName}
-            size={30}
-            src={contactAvatarUrl}
-            className="mb-5 ring-1 ring-border/70"
-          />
+        <div
+          data-avatar-slot={isAudioMessage ? "spacer" : "avatar"}
+          className={
+            isGroup ? "h-[30px] w-[30px] shrink-0" : "hidden h-[30px] w-[30px] shrink-0 md:block"
+          }
+        >
+          {!isAudioMessage && (
+            <Avatar
+              name={avatarName}
+              size={30}
+              src={contactAvatarUrl}
+              className="mb-5 ring-1 ring-border/70"
+            />
+          )}
         </div>
       )}
       <div
@@ -914,7 +1052,7 @@ export function MessageBubble({
             event.currentTarget.focus({ preventScroll: true });
         }}
         className={`group/message relative min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:max-w-[75%] ${
-          contactCard
+          isVisualOnly
             ? "rounded-xl bg-transparent p-0 shadow-none"
             : `rounded-2xl px-3 py-2 shadow-card ${mine ? "rounded-br-sm bg-gradient-brand text-white" : "rounded-bl-sm border border-border bg-surface-1"}`
         }`}
@@ -926,10 +1064,20 @@ export function MessageBubble({
             onReact={react}
             onDownload={() => download()}
             resendRequest={resendRequest}
+            customFieldLabels={customFieldLabels}
           />
         )}
         {m.participant?.name && !mine && (
           <p className="mb-1 text-[11px] font-semibold text-primary">{m.participant.name}</p>
+        )}
+        {m.forwarded && (
+          <p
+            aria-label="Mensagem encaminhada"
+            className={`mb-1 flex items-center gap-1 text-[11px] italic ${mine ? "text-white/75" : "text-muted-foreground"}`}
+          >
+            <Forward className="h-3 w-3" aria-hidden="true" />
+            Encaminhada
+          </p>
         )}
         {m.quoted && (
           <QuotedPreview
@@ -959,7 +1107,14 @@ export function MessageBubble({
         )}
         <div className={m.deleted_for_everyone ? "opacity-50" : undefined}>
           {m.type === "image" && m.media_data && (
-            <div className="mb-2 overflow-hidden rounded-lg border border-border/60">
+            <div
+              data-sticker-media={isSticker || undefined}
+              className={
+                isSticker
+                  ? "overflow-hidden"
+                  : "mb-2 overflow-hidden rounded-lg border border-border/60"
+              }
+            >
               {mediaUrl ? (
                 <button
                   type="button"
@@ -969,8 +1124,8 @@ export function MessageBubble({
                 >
                   <img
                     src={mediaUrl}
-                    alt={m.media_data.file_name ?? "imagem"}
-                    className="max-h-72 max-w-full object-contain"
+                    alt={isSticker ? "Figurinha" : (m.media_data.file_name ?? "imagem")}
+                    className={`max-h-72 max-w-full object-contain ${isSticker ? "block" : ""}`}
                   />
                 </button>
               ) : mediaError || mediaState === "failed" ? (
@@ -998,7 +1153,13 @@ export function MessageBubble({
           {(m.type === "audio" || m.type === "voice") &&
             m.media_data &&
             (mediaUrl ? (
-              <AudioPlayer src={mediaUrl} durationMs={m.duration_ms} mine={mine} />
+              <AudioPlayer
+                src={mediaUrl}
+                durationMs={m.duration_ms}
+                mine={mine}
+                avatarName={avatarName}
+                avatarUrl={mine ? user?.avatarUrl : contactAvatarUrl}
+              />
             ) : (
               <div
                 className={`mb-2 rounded-lg px-3 py-2 text-xs ${
@@ -1034,7 +1195,8 @@ export function MessageBubble({
               </span>
             </button>
           )}
-          {m.content && !contactCard && m.content !== "[áudio]" && m.content !== "[imagem]" && (
+          {m.link_preview && <LinkPreviewCard preview={m.link_preview} mine={mine} />}
+          {m.content && !isVisualOnly && m.content !== "[áudio]" && m.content !== "[imagem]" && (
             <>
               <MessageText content={m.content} />
               {m.edited_at && <span className="ml-1 text-[10px] opacity-70">(editada)</span>}
@@ -1070,8 +1232,8 @@ export function MessageBubble({
           )}
         </div>
         {m.deleted_for_everyone && (
-          <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide opacity-70">
-            Apagada
+          <p className="mt-1 text-[10px] font-semibold italic uppercase tracking-wide text-red-500">
+            Mensagem apagada
           </p>
         )}
         <div className="mt-1 flex items-center justify-end">
@@ -1095,7 +1257,7 @@ export function MessageBubble({
           </div>
         </div>
       </div>
-      {mine && (
+      {mine && !isAudioMessage && (
         <div className={isGroup ? "shrink-0" : "hidden shrink-0 md:block"}>
           <Avatar
             name={avatarName}
@@ -1176,15 +1338,64 @@ function MessageText({ content }: { content: string }) {
   const text = content.trim();
   const match =
     text.match(/^\*\*(.+?):\*\*(?:\r?\n){1,2}([\s\S]*)$/) ??
-    text.match(/^\*(.+?):\*(?:\r?\n){1,2}([\s\S]*)$/);
+    text.match(/^\*(.+?):\*(?:\r?\n){1,2}([\s\S]*)$/) ??
+    text.match(/^\*\*([^*\n]+)\*\*\s*:?\s+([\s\S]+)$/) ??
+    text.match(/^\*([^*\n]+)\*\s*:?\s+([\s\S]+)$/);
   if (!match)
     return <span className="whitespace-pre-wrap break-words">{renderWhatsAppText(text)}</span>;
+  const author = match[1].trim().replace(/:\s*$/, "");
   return (
     <span className="whitespace-pre-wrap break-words">
-      <strong>{match[1]}:</strong>
+      <strong>{author}:</strong>
       {"\n\n"}
       {renderWhatsAppText(match[2])}
     </span>
+  );
+}
+
+function LinkPreviewCard({
+  preview,
+  mine,
+}: {
+  preview: NonNullable<Message["link_preview"]>;
+  mine: boolean;
+}) {
+  let hostname: string;
+  try {
+    const url = new URL(preview.url);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    hostname = url.hostname.replace(/^www\./i, "");
+  } catch {
+    return null;
+  }
+  const thumbnail = preview.thumbnail_data_url?.startsWith("data:image/")
+    ? preview.thumbnail_data_url
+    : null;
+  return (
+    <a
+      href={preview.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Abrir preview de ${hostname}`}
+      className={`mb-2 block max-w-sm overflow-hidden rounded-lg border text-left transition hover:brightness-95 ${
+        mine ? "border-white/25 bg-black/10" : "border-border/70 bg-surface-2"
+      }`}
+    >
+      {thumbnail && (
+        <img
+          src={thumbnail}
+          alt="Imagem de prévia do link"
+          className="max-h-64 w-full object-cover"
+        />
+      )}
+      <span className="block space-y-0.5 px-3 py-2">
+        {preview.title && <span className="block line-clamp-2 font-semibold">{preview.title}</span>}
+        {preview.description && (
+          <span className="block line-clamp-2 text-xs opacity-80">{preview.description}</span>
+        )}
+        <span className="block truncate text-[11px] opacity-65">{hostname}</span>
+      </span>
+    </a>
   );
 }
 
@@ -1212,7 +1423,26 @@ function renderWhatsAppText(text: string) {
     if (part.startsWith("`") && part.endsWith("`")) {
       return <code key={index}>{part.slice(1, -1)}</code>;
     }
-    return <React.Fragment key={index}>{part}</React.Fragment>;
+    const linkParts = part.split(/(https?:\/\/[^\s<>]+)/gi);
+    return (
+      <React.Fragment key={index}>
+        {linkParts.map((linkPart, linkIndex) =>
+          /^https?:\/\//i.test(linkPart) ? (
+            <a
+              key={linkIndex}
+              href={linkPart}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              {linkPart}
+            </a>
+          ) : (
+            <React.Fragment key={linkIndex}>{linkPart}</React.Fragment>
+          ),
+        )}
+      </React.Fragment>
+    );
   });
 }
 
@@ -1232,6 +1462,19 @@ function QuotedPreview({
     !!quoted.message_id &&
     quoted.media_data?.state !== "failed" &&
     (quoted.type === "image" || quoted.type === "video");
+  const isAudio = quoted.type === "audio" || quoted.type === "voice";
+  const isText = quoted.type === "text" || quoted.type === null;
+  const isSticker =
+    quoted.type === "image" &&
+    (quoted.content_preview?.toLowerCase().includes("figurinha") ||
+      quoted.media_data?.mime_type === "image/webp");
+  const durationSeconds = Math.max(0, Math.round((quoted.media_data?.duration_ms ?? 0) / 1000));
+  const durationLabel = `${Math.floor(durationSeconds / 60)}:${String(durationSeconds % 60).padStart(2, "0")}`;
+  const durationSuffix = quoted.media_data?.duration_ms ? ` (${durationLabel})` : "";
+  const linkHostname = quoted.link_preview ? safeLinkHostname(quoted.link_preview.url) : null;
+  const linkThumbnail = quoted.link_preview?.thumbnail_data_url?.startsWith("data:image/")
+    ? quoted.link_preview.thumbnail_data_url
+    : null;
 
   React.useEffect(() => {
     if (!canPreview || !quoted.message_id) return;
@@ -1257,31 +1500,88 @@ function QuotedPreview({
     <button
       type="button"
       onClick={onClick}
-      className={`mb-2 flex w-full items-center gap-2 border-l-2 px-2 py-1 text-left text-xs ${
+      className={`mb-2 block w-full border-l-2 px-2 py-1 text-left text-xs ${
         mine ? "border-white/60 bg-white/10 text-white/85" : "border-primary/60 bg-card"
       } ${quoted.message_id ? "cursor-pointer transition hover:opacity-85" : "cursor-default"}`}
     >
-      <div className="min-w-0 flex-1">
-        <p className="font-medium">{messageTypeLabel(quoted.type)}</p>
-        <p className="line-clamp-2 break-words opacity-80">
-          {quoted.content_preview ?? "Mensagem citada"}
+      {quoted.author_name && (
+        <p className={`mb-1 truncate font-semibold ${mine ? "text-white" : "text-primary"}`}>
+          {quoted.author_name}
         </p>
-      </div>
-      {canPreview && (
-        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md bg-black/10">
-          {mediaUrl ? (
-            quoted.type === "video" ? (
-              <video src={mediaUrl} className="h-full w-full object-cover" muted />
-            ) : (
-              <img src={mediaUrl} alt="" className="h-full w-full object-cover" />
-            )
-          ) : (
-            <div className="h-full w-full animate-pulse bg-black/10" />
-          )}
-        </div>
       )}
+      <div className="flex items-center gap-2">
+        {!isSticker && (
+          <div className="min-w-0 flex-1">
+            {quoted.link_preview && linkHostname ? (
+              <div className="min-w-0">
+                {quoted.link_preview.title && (
+                  <p className="line-clamp-1 font-medium">{quoted.link_preview.title}</p>
+                )}
+                <p className="line-clamp-2 break-all opacity-90">
+                  {quoted.content_preview ?? quoted.link_preview.url}
+                </p>
+                <p className="truncate text-[10px] opacity-65">{linkHostname}</p>
+              </div>
+            ) : isAudio ? (
+              <p className="flex items-center gap-1.5 font-medium">
+                <Mic className="h-3.5 w-3.5 shrink-0" />
+                {quoted.type === "voice" ? "Mensagem de voz" : "Áudio"}
+                {durationSuffix}
+              </p>
+            ) : isText ? (
+              <p className="line-clamp-3 break-words opacity-90">
+                <MessageText content={quoted.content_preview ?? "Mensagem citada"} />
+              </p>
+            ) : (
+              <>
+                <p className="font-medium">{messageTypeLabel(quoted.type)}</p>
+                {quoted.content_preview && (
+                  <p className="line-clamp-2 break-words opacity-80">
+                    <MessageText content={quoted.content_preview} />
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+        {linkThumbnail ? (
+          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md bg-black/10">
+            <img
+              src={linkThumbnail}
+              alt="Imagem de prévia do link citado"
+              className="h-full w-full object-cover"
+            />
+          </div>
+        ) : canPreview ? (
+          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md bg-black/10">
+            {mediaUrl ? (
+              quoted.type === "video" ? (
+                <video src={mediaUrl} className="h-full w-full object-cover" muted />
+              ) : (
+                <img
+                  src={mediaUrl}
+                  alt={isSticker ? "Figurinha citada" : "Imagem citada"}
+                  className={`h-full w-full ${isSticker ? "object-contain" : "object-cover"}`}
+                />
+              )
+            ) : (
+              <div className="h-full w-full animate-pulse bg-black/10" />
+            )}
+          </div>
+        ) : null}
+      </div>
     </button>
   );
+}
+
+function safeLinkHostname(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.hostname.replace(/^www\./i, "");
+  } catch {
+    return null;
+  }
 }
 
 function messageTypeLabel(type: Message["type"] | null) {
@@ -1301,13 +1601,18 @@ function AudioPlayer({
   src,
   durationMs,
   mine,
+  avatarName,
+  avatarUrl,
 }: {
   src: string;
   durationMs: number | null;
   mine: boolean;
+  avatarName: string;
+  avatarUrl?: string | null;
 }) {
   const audioRef = React.useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = React.useState(false);
+  const [progress, setProgress] = React.useState(0);
   const toggle = () => {
     const a = audioRef.current;
     if (!a) return;
@@ -1322,17 +1627,40 @@ function AudioPlayer({
   const secs = durationMs ? Math.round(durationMs / 1000) : null;
   return (
     <div
-      className={`flex min-w-[180px] items-center gap-2 rounded-lg px-2 py-1 ${mine ? "bg-white/15" : "bg-surface-2"}`}
+      className={`flex min-w-[220px] items-center gap-2 rounded-lg px-2 py-1.5 ${mine ? "bg-white/15" : "bg-surface-2"}`}
     >
       <button
         type="button"
         onClick={toggle}
+        aria-label={playing ? "Pausar áudio" : "Reproduzir áudio"}
+        title={playing ? "Pausar áudio" : "Reproduzir áudio"}
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/20"
       >
         {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
       </button>
-      <div className="flex-1 text-[11px] opacity-80">Áudio {secs !== null ? `· ${secs}s` : ""}</div>
-      <audio ref={audioRef} src={src} onEnded={() => setPlaying(false)} preload="metadata" />
+      <div className="min-w-0 flex-1">
+        <AudioWaveform progress={progress} />
+        <div className="mt-1 text-[10px] opacity-80">{secs !== null ? `${secs}s` : "Áudio"}</div>
+      </div>
+      <Avatar
+        name={avatarName}
+        src={avatarUrl ?? undefined}
+        size={38}
+        className="shrink-0 ring-1 ring-black/10"
+      />
+      <audio
+        ref={audioRef}
+        src={src}
+        onTimeUpdate={(event) => {
+          const audio = event.currentTarget;
+          setProgress(audio.duration ? audio.currentTime / audio.duration : 0);
+        }}
+        onEnded={() => {
+          setPlaying(false);
+          setProgress(0);
+        }}
+        preload="metadata"
+      />
     </div>
   );
 }
@@ -1383,6 +1711,7 @@ function Composer({
     file: File;
     previewUrl: string | null;
     mediaType: "image" | "video" | "document";
+    sharedContact?: SharedContactSelection["contact"];
   } | null>(null);
   const [showQR, setShowQR] = React.useState(false);
   const [qrFilter, setQrFilter] = React.useState("");
@@ -1408,7 +1737,6 @@ function Composer({
   const [showCamera, setShowCamera] = React.useState(false);
   const [showContacts, setShowContacts] = React.useState(false);
   const [showSchedule, setShowSchedule] = React.useState(false);
-  const [scheduleAt, setScheduleAt] = React.useState("");
   const typingActiveRef = React.useRef(false);
   const typingStopTimerRef = React.useRef<number | null>(null);
 
@@ -1953,7 +2281,13 @@ function Composer({
         )}
         {pendingFile && (
           <div className="mb-2 flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
-            {pendingFile.previewUrl ? (
+            {pendingFile.sharedContact ? (
+              <Avatar
+                name={pendingFile.sharedContact.nome}
+                src={pendingFile.sharedContact.avatar_url}
+                size={48}
+              />
+            ) : pendingFile.previewUrl ? (
               pendingFile.mediaType === "video" ? (
                 <video src={pendingFile.previewUrl} className="h-16 w-16 rounded object-cover" />
               ) : (
@@ -1968,7 +2302,20 @@ function Composer({
                 <Paperclip className="h-5 w-5" />
               </div>
             )}
-            <p className="flex-1 text-xs text-muted-foreground">{pendingFile.file.name}</p>
+            {pendingFile.sharedContact ? (
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{pendingFile.sharedContact.nome}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {formatBrazilPhoneWithDdi(
+                    pendingFile.sharedContact.normalizedPhone || pendingFile.sharedContact.telefone,
+                  )}
+                </p>
+              </div>
+            ) : (
+              <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {pendingFile.file.name}
+              </p>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -2065,7 +2412,8 @@ function Composer({
               size="icon"
               className="h-9 w-9 shrink-0 text-destructive"
               onClick={discardRecording}
-              aria-label="Descartar gravação"
+              aria-label="Apagar Gravação"
+              title="Apagar Gravação"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -2088,6 +2436,7 @@ function Composer({
               className="h-9 w-9 shrink-0 rounded-full"
               onClick={toggleRecordingPause}
               aria-label={recordingPaused ? "Continuar gravação" : "Pausar gravação"}
+              title={recordingPaused ? "Continuar Gravação" : "Pausar Gravação"}
             >
               {recordingPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
             </Button>
@@ -2096,7 +2445,8 @@ function Composer({
               size="icon"
               className="h-9 w-9 shrink-0 rounded-full"
               onClick={stopRecording}
-              aria-label="Concluir gravação"
+              aria-label="Encerrar gravação"
+              title="Encerrar gravação"
             >
               <Square className="h-3.5 w-3.5 fill-current" />
             </Button>
@@ -2214,90 +2564,29 @@ function Composer({
           <InboxContactPicker
             priorityInstances={priorityInstances}
             onClose={() => setShowContacts(false)}
-            onSelect={(file) => {
+            onSelect={(selection) => {
               if (pendingFile?.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
-              setPendingFile({ file, previewUrl: null, mediaType: "document" });
+              setPendingFile({
+                file: selection.file,
+                previewUrl: null,
+                mediaType: "document",
+                sharedContact: selection.contact,
+              });
               setShowContacts(false);
             }}
           />
         )}
-        <Modal open={showSchedule} onClose={() => setShowSchedule(false)} title="Agendar mensagem">
-          <form
-            className="space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void (async () => {
-                if (!text.trim() || !scheduleAt) return;
-                await schedulesApi.save({
-                  id: crypto.randomUUID(),
-                  identifier: `composer-${conversationId}-${Date.now()}`,
-                  type: "message",
-                  title: "Mensagem agendada",
-                  destination: "Conversa atual",
-                  scheduledAt: new Date(scheduleAt).toISOString(),
-                  recurrence: "once",
-                  delivery: true,
-                  status: "pending",
-                  connectionId: "",
-                  departmentId: "",
-                  content: text.trim(),
-                  recipientIds: [],
-                  recipients: [],
-                  recurrenceDays: [],
-                  recurrenceLimit: "",
-                  recurrenceUntil: "",
-                  assignedMembershipId: "",
-                  attachmentName: null,
-                  conversationId,
-                } as never);
-                setText("");
-                setScheduleAt("");
-                setShowSchedule(false);
-              })();
-            }}
-          >
-            <label className="block text-sm">
-              <span className="mb-1 block text-muted-foreground">Mensagem</span>
-              <textarea
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                rows={4}
-                className="w-full resize-y rounded-lg border border-border bg-card p-2"
-                placeholder="Escreva a mensagem"
-                required
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block text-muted-foreground">Data e horário</span>
-              <input
-                type="datetime-local"
-                value={scheduleAt}
-                onChange={(event) => setScheduleAt(event.target.value)}
-                className="w-full rounded-lg border border-border bg-card p-2"
-                required
-              />
-            </label>
-            <p className="text-xs text-muted-foreground">
-              A mensagem digitada será enviada na data escolhida.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-lg border border-border px-3 py-2 text-sm"
-                onClick={() => setShowSchedule(false)}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
-                disabled={!text.trim() || !scheduleAt}
-              >
-                Agendar
-              </button>
-            </div>
-          </form>
-        </Modal>
+        <ScheduleMessageModal
+          open={showSchedule}
+          onClose={() => setShowSchedule(false)}
+          conversationId={conversationId}
+          initialContent={text}
+          identifier={`composer-${conversationId}-${Date.now()}`}
+          customFieldLabels={Object.keys(variableContext.customFields ?? {})}
+          onSaved={(mode) => {
+            if (mode === "create") setText("");
+          }}
+        />
       </div>
       <ProfileCameraModal
         open={showCamera}
@@ -2709,6 +2998,7 @@ function TransferModal({
   onSubmitAgent,
   onSubmitDepartment,
   onSubmitStatus,
+  currentStatus,
   agents,
   departments,
 }: {
@@ -2717,26 +3007,40 @@ function TransferModal({
   onSubmitAgent: (id: string) => void | Promise<void>;
   onSubmitDepartment: (id: string) => void | Promise<void>;
   onSubmitStatus: (status: "fila" | "standby") => void | Promise<void>;
+  currentStatus: TransferQueue | null;
   agents: { id: string; nome: string }[];
   departments: { id: string; nome: string }[];
 }) {
   const [mode, setMode] = React.useState<"department" | "agent" | "status">("department");
   const [selectedAgent, setSelectedAgent] = React.useState("");
   const [selectedDept, setSelectedDept] = React.useState("");
-  const [selectedStatus, setSelectedStatus] = React.useState<"fila" | "standby">("fila");
+  const [selectedStatus, setSelectedStatus] = React.useState<TransferQueue | "">("");
   const queuePrefs = useQueuePrefs();
   const filaLabel = queuePrefs.find((p) => p.id === "fila")?.label ?? "Fila";
   const standbyLabel = queuePrefs.find((p) => p.id === "standby")?.label ?? "Stand By";
   const filaEnabled = queuePrefs.find((p) => p.id === "fila")?.enabled ?? true;
   const standbyEnabled = queuePrefs.find((p) => p.id === "standby")?.enabled ?? true;
+  const statusOptions = React.useMemo(() => {
+    const enabledOptions = (["fila", "standby"] as const)
+      .map((id) => {
+        const preference = queuePrefs.find((queue) => queue.id === id);
+        return {
+          id,
+          label: id === "fila" ? filaLabel : standbyLabel,
+          enabled: preference?.enabled ?? true,
+        };
+      })
+      .filter((option) => option.enabled);
+    return availableTransferQueues(enabledOptions, currentStatus);
+  }, [currentStatus, filaLabel, queuePrefs, standbyLabel]);
   React.useEffect(() => {
     if (open) {
       setMode("department");
       setSelectedAgent(agents[0]?.id ?? "");
       setSelectedDept(departments[0]?.id ?? "");
-      setSelectedStatus(filaEnabled ? "fila" : "standby");
+      setSelectedStatus(statusOptions[0]?.id ?? "");
     }
-  }, [open, agents, departments, filaEnabled]);
+  }, [open, agents, departments, statusOptions]);
 
   const handleSubmit = () => {
     if (mode === "agent") {
@@ -2746,6 +3050,9 @@ function TransferModal({
     if (mode === "department") {
       if (!selectedDept) return toast.error("Selecione um departamento.");
       return onSubmitDepartment(selectedDept);
+    }
+    if (!selectedStatus || selectedStatus === currentStatus) {
+      return toast.error("Selecione um status diferente do atual.");
     }
     const enabled = selectedStatus === "fila" ? filaEnabled : standbyEnabled;
     if (!enabled) return toast.error("Essa fila está desativada.");
@@ -2768,13 +3075,17 @@ function TransferModal({
       open={open}
       onClose={onClose}
       title="Transferir Atendimento"
-      description="Escolha entre mover para outro departamento, transferir para outro atendente ou alterar o status."
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Button variant="primary" size="sm" onClick={handleSubmit}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleSubmit}
+            disabled={mode === "status" && !selectedStatus}
+          >
             Transferir
           </Button>
         </>
@@ -2812,16 +3123,6 @@ function TransferModal({
       )}
       {mode === "status" &&
         (() => {
-          const statusOptions = (["fila", "standby"] as const)
-            .map((id) => {
-              const p = queuePrefs.find((q) => q.id === id);
-              return {
-                id,
-                label: id === "fila" ? filaLabel : standbyLabel,
-                enabled: p?.enabled ?? true,
-              };
-            })
-            .filter((o) => o.enabled);
           return (
             <Field label="Novo status">
               {statusOptions.length === 0 ? (
@@ -2831,7 +3132,7 @@ function TransferModal({
               ) : (
                 <Select
                   value={selectedStatus}
-                  onChange={(e) => setSelectedStatus(e.target.value as "fila" | "standby")}
+                  onChange={(e) => setSelectedStatus(e.target.value as TransferQueue)}
                 >
                   {statusOptions.map((o) => (
                     <option key={o.id} value={o.id}>

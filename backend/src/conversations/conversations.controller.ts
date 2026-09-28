@@ -490,6 +490,8 @@ export class ConversationsController {
     const conversation = await this.findVisibleConversation(id, current);
     const target = parseStatus(dto.status);
 
+    assertConversationStatusChange(conversation.status, target);
+
     if (
       conversation.status === ConversationStatus.FECHADA &&
       target !== ConversationStatus.FECHADA
@@ -819,6 +821,7 @@ export class ConversationsController {
         conversation.status !== ConversationStatus.FECHADA &&
         !!conversation.lead &&
         ([LeadStatus.NEW, LeadStatus.QUEUED] as LeadStatus[]).includes(conversation.lead.status),
+      originated_as_lead: Boolean(conversation.lead),
       contact: conversation.contact
         ? {
             id: conversation.contact.id,
@@ -939,6 +942,15 @@ function parseStatus(status: "aberta" | "em_andamento" | "aguardando" | "fechada
   return map[status];
 }
 
+export function assertConversationStatusChange(
+  current: ConversationStatus,
+  target: ConversationStatus,
+) {
+  if (current === target) {
+    throw new BadRequestException("A conversa já está neste status.");
+  }
+}
+
 function serializeStatus(status: ConversationStatus) {
   const map: Record<ConversationStatus, "aberta" | "em_andamento" | "aguardando" | "fechada"> = {
     ABERTA: "aberta",
@@ -1000,7 +1012,10 @@ async function hasPassiveStartLog(
         tenantId,
         conversationId,
         type: MessageType.SYSTEM,
-        content: { startsWith: "Nova conversa (passiva)", mode: "insensitive" },
+        OR: [
+          { content: { startsWith: "Nova conversa (passiva)", mode: "insensitive" } },
+          { content: { startsWith: "Nova lead (passiva)", mode: "insensitive" } },
+        ],
       },
       select: { id: true },
     }),

@@ -613,7 +613,7 @@ export function AtendenteForm({
           : { ...initial, senha: "" }
         : {
             cargo: "Atendente",
-            perfilId: perfis[0]?.id,
+            perfilId: undefined,
             status: "online",
             ativo: true,
           },
