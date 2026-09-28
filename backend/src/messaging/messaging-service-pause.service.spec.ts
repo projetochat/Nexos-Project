@@ -84,6 +84,26 @@ function setup() {
 }
 
 describe("service pause retention and replay (isolated mocks)", () => {
+  it("preserves retained events without starting replay when the worker is disabled", async () => {
+    vi.useFakeTimers();
+    const previous = process.env.TRIXUS_DEFERRED_REPLAY_WORKER_ENABLED;
+    process.env.TRIXUS_DEFERRED_REPLAY_WORKER_ENABLED = "false";
+    try {
+      const { prisma, service } = setup();
+      service.onModuleInit();
+      await service.drain();
+      await vi.advanceTimersByTimeAsync(10000);
+
+      expect(prisma.messagingConnection.findMany).not.toHaveBeenCalled();
+      expect(prisma.outboxEvent.findMany).not.toHaveBeenCalled();
+      await service.onModuleDestroy();
+    } finally {
+      if (previous === undefined) delete process.env.TRIXUS_DEFERRED_REPLAY_WORKER_ENABLED;
+      else process.env.TRIXUS_DEFERRED_REPLAY_WORKER_ENABLED = previous;
+      vi.useRealTimers();
+    }
+  });
+
   it("round-trips timestamps and inline contact bytes without changing the stored JSON", () => {
     const original = inboundEvent();
     const stored = json(original);
@@ -131,7 +151,7 @@ describe("service pause retention and replay (isolated mocks)", () => {
   });
 
   it("replays original then deletion in database arrival order and suppresses automatic replies", async () => {
-    const { tx, service, inbound } = setup();
+    const { tx, prisma, service, inbound } = setup();
     const deletion: EvolutionWebhookTranslation = {
       kind: "delete",
       event: {
@@ -146,9 +166,13 @@ describe("service pause retention and replay (isolated mocks)", () => {
       { id: "2", payload: json(deletion) },
     ] as never);
     await service.drain();
+    expect(prisma.outboxEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 1 }),
+    );
     expect(tx.outboxEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         orderBy: [{ attempts: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        take: 1,
       }),
     );
     expect(inbound.process).toHaveBeenCalledWith(
@@ -383,23 +407,20 @@ describe("retained target and media recovery", () => {
 });
 
 describe("paused capture pagination and readiness", () => {
-  it("advances capture beyond the first fifty retained events while paused", async () => {
+  it("advances capture one retained event at a time while paused", async () => {
     const { prisma, service, inbound } = setup();
     prisma.messagingConnection.findMany.mockResolvedValue([
       { ...connection, serviceEnabled: false },
     ] as never);
     prisma.outboxEvent.findMany
       .mockResolvedValueOnce(
-        Array.from({ length: 50 }, (_, index) => ({
-          id: String(index),
-          payload: json(inboundEvent()),
-        })) as never,
+        [{ id: "first", payload: json(inboundEvent()) }] as never,
       )
       .mockResolvedValueOnce([]);
     await service.drain();
     await service.drain();
     expect(prisma.outboxEvent.findMany).toHaveBeenLastCalledWith(
-      expect.objectContaining({ cursor: { id: "49" }, skip: 1 }),
+      expect.objectContaining({ cursor: { id: "first" }, skip: 1, take: 1 }),
     );
     expect(inbound.process).not.toHaveBeenCalled();
   });

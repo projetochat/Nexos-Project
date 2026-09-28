@@ -115,6 +115,12 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(updated['services']['backend']['cap_drop'], ['ALL'])
         self.assertEqual(updated['services']['backend']['mem_limit'], '768m')
         self.assertEqual(updated['services']['backend']['memswap_limit'], '768m')
+        self.assertEqual(
+            updated['services']['backend']['environment']['TRIXUS_HISTORY_IMPORT_WORKER_ENABLED'],
+            'false')
+        self.assertEqual(
+            updated['services']['backend']['environment']['TRIXUS_DEFERRED_REPLAY_WORKER_ENABLED'],
+            'false')
         self.assertEqual(updated['services']['frontend']['healthcheck']['test'][:3],
                          ['CMD', 'bun', '-e'])
         self.assertIn('127.0.0.1:4173',

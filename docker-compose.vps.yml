@@ -99,6 +99,11 @@ services:
       BACKEND_HOST: 0.0.0.0
       TRIXUS_STORAGE_LOCAL_PATH: /var/lib/trixus/storage/tickets
       TRIXUS_MESSAGE_STORAGE_LOCAL_PATH: /var/lib/trixus/storage/messages
+      # History import is intentionally paused in production until its fetches
+      # are page-bounded. This prevents a restart loop from loading an entire
+      # WhatsApp history into the shared VPS memory.
+      TRIXUS_HISTORY_IMPORT_WORKER_ENABLED: ${TRIXUS_HISTORY_IMPORT_WORKER_ENABLED:-false}
+      TRIXUS_DEFERRED_REPLAY_WORKER_ENABLED: ${TRIXUS_DEFERRED_REPLAY_WORKER_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy
