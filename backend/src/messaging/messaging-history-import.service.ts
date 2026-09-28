@@ -61,6 +61,13 @@ export class MessagingHistoryImportService implements OnModuleInit, OnModuleDest
   ) {}
 
   async onModuleInit() {
+    if (!this.workerEnabled()) {
+      this.logger.warn({
+        event: "messaging.history_import.worker_disabled",
+        reason: "TRIXUS_HISTORY_IMPORT_WORKER_ENABLED=false",
+      });
+      return;
+    }
     const interrupted = await this.prisma.messagingHistoryImport.findMany({
       where: {
         status: {
@@ -189,7 +196,7 @@ export class MessagingHistoryImportService implements OnModuleInit, OnModuleDest
   }
 
   private schedulePending() {
-    if (this.stopping || this.scanning) return;
+    if (!this.workerEnabled() || this.stopping || this.scanning) return;
     this.scanning = this.resumePendingImports()
       .catch(() =>
         this.logger.warn("Importações pendentes aguardam uma nova tentativa de consulta."),
@@ -215,7 +222,7 @@ export class MessagingHistoryImportService implements OnModuleInit, OnModuleDest
   }
 
   private enqueue(jobId: string) {
-    if (this.stopping || this.queued.has(jobId)) return;
+    if (!this.workerEnabled() || this.stopping || this.queued.has(jobId)) return;
     this.queued.add(jobId);
     const timeout = setTimeout(() => {
       this.scheduled.delete(jobId);
@@ -276,6 +283,7 @@ export class MessagingHistoryImportService implements OnModuleInit, OnModuleDest
   }
 
   private async run(jobId: string) {
+    if (!this.workerEnabled()) return;
     const job = await this.prisma.messagingHistoryImport.findUnique({
       where: { id: jobId },
       include: { connection: true },
@@ -456,6 +464,10 @@ export class MessagingHistoryImportService implements OnModuleInit, OnModuleDest
         error: error instanceof Error ? error.message : "Falha inesperada.",
       });
     }
+  }
+
+  private workerEnabled() {
+    return process.env.TRIXUS_HISTORY_IMPORT_WORKER_ENABLED !== "false";
   }
 
   private translateStoredMessage(record: Record<string, unknown>, connection: ImportConnection) {

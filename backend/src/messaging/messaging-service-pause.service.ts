@@ -37,6 +37,13 @@ export class MessagingServicePauseService implements OnModuleInit, OnModuleDestr
   ) {}
 
   onModuleInit() {
+    if (!this.replayWorkerEnabled()) {
+      this.logger.warn({
+        event: "messaging.service.replay_disabled",
+        reason: "TRIXUS_DEFERRED_REPLAY_WORKER_ENABLED=false",
+      });
+      return;
+    }
     this.timer = setInterval(() => this.scheduleDrain(), 5000);
     this.timer.unref();
     this.scheduleDrain();
@@ -48,7 +55,7 @@ export class MessagingServicePauseService implements OnModuleInit, OnModuleDestr
   }
 
   private scheduleDrain() {
-    if (this.running) return;
+    if (!this.replayWorkerEnabled() || this.running) return;
     this.running = this.drain()
       .catch(() => {
         this.logger.warn("Falha ao importar mensagens retidas; nova tentativa no próximo ciclo.");
@@ -106,6 +113,7 @@ export class MessagingServicePauseService implements OnModuleInit, OnModuleDestr
   }
 
   async drain() {
+    if (!this.replayWorkerEnabled()) return;
     const connections = await this.prisma.messagingConnection.findMany({
       where: { archivedAt: null },
       select: { id: true, tenantId: true, serviceEnabled: true },
@@ -117,10 +125,10 @@ export class MessagingServicePauseService implements OnModuleInit, OnModuleDestr
         const retained = await this.prisma.outboxEvent.findMany({
           where: this.pendingWhere(connection),
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-          take: 50,
+          take: 1,
           ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
         });
-        if (retained.length === 50)
+        if (retained.length === 1)
           this.captureCursors.set(connection.id, retained[retained.length - 1].id);
         else this.captureCursors.delete(connection.id);
         for (const row of retained) await this.captureRetainedMedia(connection, row);
@@ -135,7 +143,7 @@ export class MessagingServicePauseService implements OnModuleInit, OnModuleDestr
             const events = await tx.outboxEvent.findMany({
               where: this.pendingWhere(connection),
               orderBy: [{ attempts: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-              take: 50,
+              take: 1,
             });
             for (const row of events) {
               const current = await tx.messagingConnection.findFirst({
@@ -329,6 +337,10 @@ export class MessagingServicePauseService implements OnModuleInit, OnModuleDestr
       aggregateId: { startsWith: `${connection.id}:` },
       status: OutboxEventStatus.PENDING,
     };
+  }
+
+  private replayWorkerEnabled() {
+    return process.env.TRIXUS_DEFERRED_REPLAY_WORKER_ENABLED !== "false";
   }
 }
 

@@ -158,6 +158,14 @@ def harden_release_service(service, name):
     service['cap_drop'] = ['ALL']
     service['security_opt'] = ['no-new-privileges:true']
     service['logging'] = {'driver': 'json-file', 'options': {'max-size': '10m', 'max-file': '3'}}
+    if name == 'backend':
+        # The current history importer retains very large provider pages in
+        # memory. Keep the worker paused in generated production releases until
+        # it is rewritten with bounded pagination and global concurrency.
+        service.setdefault('environment', {})['TRIXUS_HISTORY_IMPORT_WORKER_ENABLED'] = 'false'
+        # Deferred media can contain large inline payloads. Preserve it in the
+        # outbox, but do not replay automatically until memory use is bounded.
+        service['environment']['TRIXUS_DEFERRED_REPLAY_WORKER_ENABLED'] = 'false'
     if name == 'frontend':
         # The base Compose historically had no frontend healthcheck. Define one
         # in every generated release so stabilization can distinguish a running

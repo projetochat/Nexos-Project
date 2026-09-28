@@ -414,6 +414,25 @@ function lifecycleFixture() {
 
 describe("history lifecycle after service pause", () => {
   afterEach(() => vi.useRealTimers());
+  it("does not inspect or resume imports when the production worker is disabled", async () => {
+    vi.useFakeTimers();
+    const previous = process.env.TRIXUS_HISTORY_IMPORT_WORKER_ENABLED;
+    process.env.TRIXUS_HISTORY_IMPORT_WORKER_ENABLED = "false";
+    try {
+      const { prisma, evolution, service, runner } = lifecycleFixture();
+      await service.onModuleInit();
+      runner.enqueue("import-1");
+      await vi.advanceTimersByTimeAsync(10000);
+
+      expect(prisma.messagingHistoryImport.findMany).not.toHaveBeenCalled();
+      expect(prisma.messagingHistoryImport.findUnique).not.toHaveBeenCalled();
+      expect(evolution.findChats).not.toHaveBeenCalled();
+      await service.onModuleDestroy();
+    } finally {
+      if (previous === undefined) delete process.env.TRIXUS_HISTORY_IMPORT_WORKER_ENABLED;
+      else process.env.TRIXUS_HISTORY_IMPORT_WORKER_ENABLED = previous;
+    }
+  });
   it("handles schema rejection before the run try block without an unhandled promise", async () => {
     vi.useFakeTimers();
     const { prisma, service, runner } = lifecycleFixture();
