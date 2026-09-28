@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageCirclePlus } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Button } from "@/components/ui-kit";
@@ -343,8 +343,11 @@ export function HistoricoPage() {
                       size="sm"
                       className="hover:!bg-secondary hover:!text-blue-500"
                       onClick={handleNewConversation}
+                      aria-label="Nova conversa"
+                      title="Nova conversa"
                     >
-                      <Plus className="h-3.5 w-3.5" /> Nova conversa
+                      <MessageCirclePlus className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Nova conversa</span>
                     </Button>
                   </header>
 
@@ -371,6 +374,9 @@ export function HistoricoPage() {
                             contactName={active.contact?.nome ?? "Contato"}
                             contactAvatarUrl={active.contact?.avatar_url}
                             isGroup={active.is_group}
+                            conversationOriginatedAsLead={
+                              active.originated_as_lead ?? active.is_lead
+                            }
                             galleryImages={orderedMessages.filter(
                               (item) => item.type === "image" && !item.deleted_for_everyone,
                             )}

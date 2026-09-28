@@ -3,6 +3,7 @@ import {
   messageTrafficByHour,
   OperationsMetricsService,
   uniqueInboundContacts,
+  uniqueInboundConversations,
 } from "./operations-metrics.service";
 it("counts only real traffic and uses the organization's timezone instead of UTC", () => {
   const rows = [
@@ -10,13 +11,13 @@ it("counts only real traffic and uses the organization's timezone instead of UTC
       createdAt: new Date("2026-09-18T03:00:00Z"),
       direction: "INBOUND",
       type: "TEXT",
-      conversation: { contactId: "contact-a" },
+      conversation: { id: "conversation-a", contactId: "contact-a" },
     },
     {
       createdAt: new Date("2026-09-18T07:36:00Z"),
       direction: "OUTBOUND",
       type: "IMAGE",
-      conversation: { contactId: "contact-a" },
+      conversation: { id: "conversation-a", contactId: "contact-a" },
     },
     { createdAt: new Date("2026-09-18T07:36:00Z"), direction: "SYSTEM", type: "SYSTEM" },
     { createdAt: new Date("2026-09-18T07:36:00Z"), direction: "SYSTEM", type: "SYSTEM" },
@@ -25,38 +26,41 @@ it("counts only real traffic and uses the organization's timezone instead of UTC
   const chart = messageTrafficByHour(rows, "America/Sao_Paulo");
   expect(chart[0]).toMatchObject({ recebidas: 1, total: 1 });
   expect(chart[0]).toMatchObject({ contatosAtendidos: 1 });
+  expect(chart[0]).toMatchObject({ atendimentos: 1 });
   expect(chart[4]).toMatchObject({ enviadas: 1, total: 1 });
   expect(chart[4]).toMatchObject({ contatosAtendidos: 0 });
   expect(chart[7].total).toBe(0);
   expect(chart.every((hour) => hour.total === hour.recebidas + hour.enviadas)).toBe(true);
   expect(messageTrafficByHour(rows.slice(0, 1), "America/Manaus")[23].total).toBe(1);
 });
-it("counts each inbound contact once in the period and once per hour", () => {
+it("counts each conversation once at its first inbound message, including repeat contacts", () => {
   const rows = [
     ...Array.from({ length: 10 }, (_, minute) => ({
       createdAt: new Date(`2026-09-18T12:${String(minute).padStart(2, "0")}:00Z`),
       direction: "INBOUND",
       type: "TEXT",
-      conversation: { contactId: "contact-a" },
+      conversation: { id: "conversation-a", contactId: "contact-a" },
     })),
     {
       createdAt: new Date("2026-09-18T13:00:00Z"),
       direction: "INBOUND",
       type: "TEXT",
-      conversation: { contactId: "contact-a" },
+      conversation: { id: "conversation-a", contactId: "contact-a" },
     },
     {
-      createdAt: new Date("2026-09-18T12:30:00Z"),
+      createdAt: new Date("2026-09-18T13:30:00Z"),
       direction: "INBOUND",
       type: "TEXT",
-      conversation: { contactId: "contact-b" },
+      conversation: { id: "conversation-b", contactId: "contact-a" },
     },
   ];
   const chart = messageTrafficByHour(rows, "UTC");
-  expect(chart[12]).toMatchObject({ recebidas: 11, contatosAtendidos: 2 });
-  expect(chart[13]).toMatchObject({ recebidas: 1, contatosAtendidos: 1 });
+  expect(chart[12]).toMatchObject({ recebidas: 10, contatosAtendidos: 1, atendimentos: 1 });
+  expect(chart[13]).toMatchObject({ recebidas: 2, contatosAtendidos: 1, atendimentos: 1 });
   expect(uniqueInboundContacts(rows.slice(0, 10))).toBe(1);
-  expect(uniqueInboundContacts(rows)).toBe(2);
+  expect(uniqueInboundContacts(rows)).toBe(1);
+  expect(uniqueInboundConversations(rows.slice(0, 10))).toBe(1);
+  expect(uniqueInboundConversations(rows)).toBe(2);
 });
 it("filters system events in the database while preserving tenant and instance scope", async () => {
   const prisma = {
@@ -84,10 +88,11 @@ it("filters system events in the database while preserving tenant and instance s
         conversation: expect.objectContaining({ connectionId: "vocical" }),
       }),
       select: expect.objectContaining({
-        conversation: { select: { contactId: true } },
+        conversation: { select: { id: true, contactId: true } },
       }),
     }),
   );
   expect(result.messageContactsTotal).toBe(0);
+  expect(result.messageAttendancesTotal).toBe(0);
   expect(result.messagesByHour).toHaveLength(24);
 });

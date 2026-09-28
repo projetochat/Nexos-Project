@@ -70,3 +70,51 @@ it("opens message actions, handles reply/copy/reaction/download and restricts un
     qc.clear();
   }
 });
+
+it("uses the approved destructive copy for deleting an outgoing message", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const qc = new QueryClient();
+  try {
+    await React.act(() =>
+      root.render(
+        <QueryClientProvider client={qc}>
+          <MessageActionsMenu
+            message={
+              {
+                id: "m2",
+                conversation_id: "c1",
+                sender: "agent",
+                type: "text",
+                content: "Mensagem de teste",
+                status: "sent",
+                created_at: "2026-09-27T12:00:00Z",
+              } as ApiMessage
+            }
+            onReply={vi.fn()}
+            onReact={vi.fn().mockResolvedValue(undefined)}
+            onDownload={vi.fn().mockResolvedValue(undefined)}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    await React.act(() => host.querySelector("button")!.click());
+    const deleteAction = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Apagar",
+    );
+    await React.act(() => deleteAction?.click());
+
+    expect(document.body.textContent).toContain("Apagar Mensagem");
+    expect(document.body.textContent).toContain("Deseja realmente apagar a mensagem?");
+    const confirm = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Apagar",
+    );
+    expect(confirm?.className).toContain("bg-destructive");
+  } finally {
+    await React.act(() => root.unmount());
+    host.remove();
+    qc.clear();
+  }
+});

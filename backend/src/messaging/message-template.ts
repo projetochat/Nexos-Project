@@ -22,6 +22,7 @@ type TemplateContext = {
   email?: string | null;
   instance?: string | null;
   department?: string | null;
+  customer?: string | null;
   customFields?: Record<string, string | number | boolean | null | undefined>;
   now?: Date;
 };
@@ -34,6 +35,7 @@ export function resolveMessageTemplate(text: string, context: TemplateContext = 
     email: context.email?.trim() ?? "",
     instancia: context.instance?.trim() ?? "",
     departamento: context.department?.trim() ?? "",
+    cliente: context.customer?.trim() ?? "",
   };
   for (const [label, value] of Object.entries(context.customFields ?? {})) {
     const words = normalizeWords(label);

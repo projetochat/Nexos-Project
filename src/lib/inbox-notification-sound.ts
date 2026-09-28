@@ -56,6 +56,13 @@ export function setInboxNotificationSoundEnabled(userId: string, enabled: boolea
   );
 }
 
+export function applyInboxNotificationSoundPreference(userId: string, enabled: boolean) {
+  const queues = enabled ? NOTIFICATION_QUEUES.map(({ id }) => id) : [];
+  setInboxNotificationQueues(userId, queues);
+  setInboxNotificationSoundEnabled(userId, enabled);
+  return queues;
+}
+
 export function isInboundConversationUpdate(event: RealtimeEnvelope) {
   if (event.event !== "conversation.updated") return false;
   const reason = (event.data as { reason?: string } | undefined)?.reason;

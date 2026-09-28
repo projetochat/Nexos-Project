@@ -66,10 +66,9 @@ describe("quick reply editor", () => {
         />,
       ),
     );
-    expect((document.querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(
-      false,
-    );
-    expect(document.querySelector('[aria-label="Abrir opções de anexo"]')).not.toBeNull();
+    expect(document.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
+    expect(document.querySelector('[aria-label="Tipo de mídia"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Abrir opções de anexo"]')).toBeNull();
     await click(button("Adicionar mensagem"));
     const second = document.querySelectorAll("textarea")[1];
     await act(async () => second.focus());
@@ -112,6 +111,38 @@ describe("quick reply editor", () => {
     await click(smilingEmoji);
     expect(texts()).toEqual(["Primeira", "Seg😊unda"]);
   });
+  it("shows and removes recorded audio with the same segmented footer", async () => {
+    const withAudio = {
+      ...initial,
+      messages: [
+        {
+          text: "Mensagem com áudio",
+          attachment: {
+            fileName: "audio-123.webm",
+            mimeType: "audio/webm",
+            size: 123,
+            dataUrl: "data:audio/webm;base64,AA==",
+          },
+        },
+      ],
+    } as ApiQuickReply;
+    await act(async () =>
+      root.render(
+        <QuickReplyEditor
+          open
+          initial={withAudio}
+          existingReplies={[]}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />,
+      ),
+    );
+
+    expect(document.body.textContent).toContain("Áudio gravado.");
+    await click(document.querySelector('[aria-label="Remover áudio"]')!);
+    expect(document.body.textContent).not.toContain("Áudio gravado.");
+    expect(document.querySelector('[aria-label="Gravar áudio"]')).not.toBeNull();
+  });
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.clearAllMocks();
@@ -146,16 +177,16 @@ describe("quick reply editor", () => {
     expect(document.querySelector('[aria-label="Mover para baixo"]')).toBeNull();
     expect(texts()).toEqual(["Primeira", "Segunda"]);
     expect(document.querySelector("details")).toBeNull();
-    await click(document.querySelector('[aria-label="Abrir opções de anexo"]')!);
-    expect(document.querySelector('[aria-label="Opções de anexo"]')).not.toBeNull();
-    expect(document.querySelector('[aria-label="Gravar áudio"]')).not.toBeNull();
+    expect(document.querySelectorAll('[aria-label="Tipo de mídia"]')).toHaveLength(2);
     expect(document.querySelector('[aria-label="Anexar arquivo à mensagem 1"]')).not.toBeNull();
+    await click(document.querySelectorAll('[aria-label="Selecionar gravação de áudio"]')[0]);
+    expect(document.querySelector('[aria-label="Gravar áudio"]')).not.toBeNull();
     await click(button("Salvar"));
     expect(api.update).toHaveBeenCalledWith(
       "reply",
       expect.objectContaining({
         messages: [{ text: "Primeira" }, { text: "Segunda" }],
-        intervalSeconds: 3,
+        intervalSeconds: 0,
         closeOnSend: true,
       }),
     );
@@ -179,7 +210,7 @@ describe("quick reply editor", () => {
       expect.objectContaining({
         shortcut: "teste-copia",
         messages: initial.messages,
-        intervalSeconds: 3,
+        intervalSeconds: 0,
       }),
     );
     expect(api.update).not.toHaveBeenCalled();

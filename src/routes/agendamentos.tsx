@@ -66,7 +66,7 @@ function SchedulingPage() {
     error: loadError,
   } = useQuery({
     queryKey: schedulesKey,
-    queryFn: schedulesApi.list,
+    queryFn: () => schedulesApi.list(),
     enabled: !!user,
     refetchInterval: 15000,
     refetchOnWindowFocus: "always",
@@ -1017,7 +1017,10 @@ function ScheduleForm({
               type="file"
               className="hidden"
               onChange={(event) =>
-                update({ attachmentName: event.target.files?.[0]?.name ?? null })
+                update({
+                  attachmentName: event.target.files?.[0]?.name ?? null,
+                  attachment: null,
+                })
               }
             />
           </label>
@@ -1047,6 +1050,7 @@ function blankSchedule(): Schedule {
     recurrenceUntil: "",
     assignedMembershipId: "",
     attachmentName: null,
+    attachment: null,
   };
 }
 function readSchedules(): Schedule[] {

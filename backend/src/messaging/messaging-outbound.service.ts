@@ -1,4 +1,4 @@
-import { connectionAccess } from "../auth/connection-access";
+import { connectionAccess, roleConnectionIds } from "../auth/connection-access";
 import {
   assertMessagingServiceEnabled,
   MessagingServicePausedError,
@@ -14,6 +14,7 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import type { AuthenticatedUser } from "../auth/auth.types";
+import { PERMISSIONS } from "../auth/permissions.constants";
 import {
   ConversationStatus,
   ConversationType,
@@ -27,6 +28,13 @@ import {
   MessagingProviderType,
   Prisma,
 } from "../generated/prisma";
+
+export class ScheduledMessagePermanentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ScheduledMessagePermanentError";
+  }
+}
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { SendMessageDto } from "../conversations/dto/send-message.dto";
@@ -45,6 +53,7 @@ import { EvolutionClient } from "./evolution/evolution.client";
 import { EvolutionOutboundPayloadFactory } from "./evolution/evolution-outbound-payload.factory";
 import { normalizeEvolutionRecipient } from "./evolution/evolution-recipient.normalizer";
 import { SenderDisplayNameService } from "./sender-display-name.service";
+import { resolveMessageTemplate } from "./message-template";
 
 const messageInclude = {
   authorMembership: {
@@ -55,6 +64,15 @@ const messageInclude = {
   reactions: true,
   quotedMessage: {
     select: {
+      direction: true,
+      participantName: true,
+      interactiveData: true,
+      authorMembership: {
+        select: {
+          presentationName: true,
+          user: { select: { name: true } },
+        },
+      },
       mediaStorageKey: true,
       mediaMimeType: true,
       mediaFileName: true,
@@ -124,7 +142,7 @@ export class MessagingOutboundService {
       contact: true,
       connection: true,
     });
-    this.assertCanSend(conversation, current);
+    this.assertCanSend(conversation);
 
     const prepared: PreparedOutbound = await this.prisma.$transaction(async (tx) => {
       if (dto.clientMessageId) {
@@ -390,12 +408,253 @@ export class MessagingOutboundService {
     return { created: true, message: this.serialize(message) };
   }
 
+  /** Materializes one claimed, conversation-bound schedule into the durable outbound pipeline. */
+  async queueScheduledMessage(input: {
+    tenantId: string;
+    scheduleId: string;
+    claimedVersion: number;
+    occurrenceAt: Date;
+    conversationId: string;
+    createdByMembershipId: string | null;
+    content: string;
+    attachment?: { fileName: string; mimeType: string; size: number; dataUrl: string } | null;
+  }) {
+    const clientMessageId = `schedule:${input.scheduleId}:${input.occurrenceAt.toISOString()}`;
+    const existing = await this.prisma.message.findFirst({
+      where: { tenantId: input.tenantId, conversationId: input.conversationId, clientMessageId },
+      include: messageInclude,
+    });
+    if (existing) {
+      await this.linkClaimedSchedule(input, existing.id);
+      return { created: false, message: this.serialize(existing) };
+    }
+
+    const conversation = await this.prisma.conversation.findFirst({
+      where: { id: input.conversationId, tenantId: input.tenantId, archivedAt: null },
+      include: {
+        contact: {
+          include: {
+            customer: { select: { name: true } },
+            customFieldValues: { include: { field: { select: { label: true } } } },
+          },
+        },
+        connection: true,
+        department: { select: { name: true } },
+      },
+    });
+    if (!conversation) {
+      throw new ScheduledMessagePermanentError("Conversa não encontrada para o agendamento.");
+    }
+    try {
+      this.assertCanSend(conversation);
+    } catch (error) {
+      throw new ScheduledMessagePermanentError(errorMessage(error));
+    }
+    if (!conversation.connection || conversation.connection.archivedAt) {
+      throw new ScheduledMessagePermanentError("Instância indisponível para o agendamento.");
+    }
+    assertMessagingServiceEnabled(conversation.connection);
+    const resolvedContent = cleanMessageContent(
+      resolveMessageTemplate(input.content, {
+        contactName: conversation.contact.name,
+        phone: conversation.contact.phone,
+        email: conversation.contact.email,
+        instance: conversation.connection.name,
+        department: conversation.department?.name ?? conversation.contact.departmentName,
+        customer: conversation.contact.customer?.name,
+        customFields: Object.fromEntries(
+          conversation.contact.customFieldValues.map((item) => [item.field.label, item.value]),
+        ),
+        now: input.occurrenceAt,
+      }),
+    );
+
+    let stored: Awaited<ReturnType<MessagingMediaStorageService["storeDownloaded"]>> | undefined;
+    let messageType: MessageType = MessageType.TEXT;
+    if (input.attachment) {
+      if (!this.mediaStorage) throw new BadRequestException("Storage de mensagens indisponivel.");
+      const [, encoded = ""] = input.attachment.dataUrl.split(",");
+      const body = Buffer.from(encoded, "base64");
+      messageType = resolveMessageType(input.attachment.mimeType, "");
+      stored = await this.mediaStorage.storeDownloaded({
+        tenantId: input.tenantId,
+        conversationId: input.conversationId,
+        body,
+        mimeType: input.attachment.mimeType,
+        fileName: input.attachment.fileName,
+        messageType,
+      });
+    }
+
+    let prepared: PreparedOutbound;
+    try {
+      prepared = await this.prisma.$transaction(async (tx) => {
+        const duplicate = await tx.message.findFirst({
+          where: {
+            tenantId: input.tenantId,
+            conversationId: input.conversationId,
+            clientMessageId,
+          },
+          include: messageInclude,
+        });
+        if (duplicate) {
+          const linked = await tx.schedule.updateMany({
+            where: {
+              tenantId: input.tenantId,
+              id: input.scheduleId,
+              executionStatus: "CLAIMED",
+              version: input.claimedVersion,
+            },
+            data: {
+              executionStatus: "QUEUED",
+              messageId: duplicate.id,
+              claimedAt: null,
+              lastError: null,
+              version: { increment: 1 },
+            },
+          });
+          if (linked.count !== 1)
+            throw new Error("Schedule claim was lost before materialization.");
+          return { message: duplicate, dispatch: false };
+        }
+
+        const connection = await this.resolveConnection(tx, input.tenantId, conversation);
+        const authorMembership = input.createdByMembershipId
+          ? await tx.tenantMembership.findFirst({
+              where: {
+                id: input.createdByMembershipId,
+                tenantId: input.tenantId,
+                status: MembershipStatus.ACTIVE,
+                user: { status: "ACTIVE" },
+              },
+              select: { id: true, role: { select: { key: true, metadata: true } } },
+            })
+          : null;
+        if (input.createdByMembershipId && !authorMembership) {
+          throw new ScheduledMessagePermanentError(
+            "O criador do agendamento não possui mais um vínculo ativo.",
+          );
+        }
+        const allowedConnectionIds = authorMembership
+          ? roleConnectionIds(authorMembership.role)
+          : null;
+        if (
+          authorMembership &&
+          allowedConnectionIds !== null &&
+          !allowedConnectionIds.includes(connection.id)
+        ) {
+          throw new ScheduledMessagePermanentError(
+            "O criador não possui mais acesso à instância deste agendamento.",
+          );
+        }
+        const content =
+          authorMembership && PERMISSIONS.includes("chat.agent_name.show")
+            ? await this.prepareScheduledOutboundText(tx, resolvedContent, {
+                tenantId: input.tenantId,
+                membershipId: authorMembership.id,
+                roleKey: authorMembership.role.key,
+              })
+            : resolvedContent;
+        const now = new Date();
+        const preview = stored ? mediaPreview(messageType, content, stored.fileName) : content;
+        const message = await tx.message.create({
+          data: {
+            tenantId: input.tenantId,
+            conversationId: input.conversationId,
+            connectionId: connection.id,
+            direction: MessageDirection.OUTBOUND,
+            type: messageType,
+            status: MessageStatus.QUEUED,
+            authorMembershipId: authorMembership?.id ?? null,
+            content,
+            providerChatId: conversation.externalChatId,
+            clientMessageId,
+            providerStatus: "scheduled_queued",
+            interactiveData: { scheduleId: input.scheduleId },
+            mediaStorageKey: stored?.objectKey,
+            mediaMimeType: stored?.mimeType,
+            mediaFileName: stored?.fileName,
+            mediaSize: stored?.sizeBytes,
+            mediaCaption: stored ? content : null,
+            mediaChecksum: stored?.checksum,
+            mediaSha256: stored?.checksum,
+            mediaState: stored ? MessageMediaState.READY : null,
+            queuedAt: now,
+            createdAt: now,
+          },
+          include: messageInclude,
+        });
+        await tx.outboxEvent.create({
+          data: {
+            tenantId: input.tenantId,
+            type: OUTBOX_MESSAGING_OUTBOUND_REQUESTED,
+            aggregateId: message.id,
+            payload: { tenantId: input.tenantId, messageId: message.id },
+          },
+        });
+        const linked = await tx.schedule.updateMany({
+          where: {
+            tenantId: input.tenantId,
+            id: input.scheduleId,
+            executionStatus: "CLAIMED",
+            version: input.claimedVersion,
+          },
+          data: {
+            executionStatus: "QUEUED",
+            messageId: message.id,
+            claimedAt: null,
+            lastError: null,
+            version: { increment: 1 },
+          },
+        });
+        if (linked.count !== 1) throw new Error("Schedule claim was lost before materialization.");
+        await this.updateConversationFromMessage(
+          tx,
+          input.conversationId,
+          input.tenantId,
+          preview,
+          now,
+        );
+        return { message, dispatch: true };
+      });
+    } catch (error) {
+      if (stored && this.mediaStorage) {
+        await this.mediaStorage.deleteObject(stored.objectKey).catch(() => undefined);
+      }
+      throw error;
+    }
+
+    if (prepared.dispatch) {
+      this.realtime?.publishMessageCreated({
+        tenantId: prepared.message.tenantId,
+        conversationId: prepared.message.conversationId,
+        connectionId: prepared.message.connectionId,
+        message: this.serialize(prepared.message),
+      });
+      this.realtime?.publishConversationUpdated({
+        tenantId: prepared.message.tenantId,
+        conversationId: prepared.message.conversationId,
+        reason: "schedule.queued",
+      });
+      void this.outboxDispatcher.dispatchMessage(prepared.message.id).catch((error) => {
+        this.logger.warn({
+          event: "messaging.schedule.immediate_dispatch_failed",
+          tenantId: input.tenantId,
+          scheduleId: input.scheduleId,
+          messageId: prepared.message.id,
+          error: error instanceof Error ? error.message : "Outbox dispatch failed.",
+        });
+      });
+    }
+    return { created: prepared.dispatch, message: this.serialize(prepared.message) };
+  }
+
   async sendMedia(conversationId: string, req: Request, current: AuthenticatedUser) {
     const conversation = await this.findVisibleConversation(this.prisma, conversationId, current, {
       contact: true,
       connection: true,
     });
-    this.assertCanSend(conversation, current);
+    this.assertCanSend(conversation);
     if (!this.mediaStorage) throw new BadRequestException("Storage de mensagens indisponivel.");
     const stored = await this.mediaStorage.storeUpload({
       tenantId: current.tenantId,
@@ -984,14 +1243,11 @@ export class MessagingOutboundService {
     return connectionAccess(current);
   }
 
-  private assertCanSend(
-    conversation: {
-      assignedMembershipId: string | null;
-      status: ConversationStatus;
-      conversationType?: ConversationType;
-    },
-    current: AuthenticatedUser,
-  ) {
+  private assertCanSend(conversation: {
+    assignedMembershipId: string | null;
+    status: ConversationStatus;
+    conversationType?: ConversationType;
+  }) {
     if (conversation.status === ConversationStatus.FECHADA) {
       throw new BadRequestException("Conversa encerrada não aceita novas mensagens.");
     }
@@ -1004,6 +1260,28 @@ export class MessagingOutboundService {
     }
   }
 
+  private async linkClaimedSchedule(
+    input: { tenantId: string; scheduleId: string; claimedVersion: number },
+    messageId: string,
+  ) {
+    const linked = await this.prisma.schedule.updateMany({
+      where: {
+        tenantId: input.tenantId,
+        id: input.scheduleId,
+        executionStatus: "CLAIMED",
+        version: input.claimedVersion,
+      },
+      data: {
+        executionStatus: "QUEUED",
+        messageId,
+        claimedAt: null,
+        lastError: null,
+        version: { increment: 1 },
+      },
+    });
+    if (linked.count !== 1) throw new Error("Schedule claim was lost before materialization.");
+  }
+
   private async prepareOutboundText(
     tx: Prisma.TransactionClient,
     content: string,
@@ -1013,6 +1291,18 @@ export class MessagingOutboundService {
     if (!current.permissions?.includes("chat.agent_name.show")) return content;
     const agentName = this.senderDisplayName
       ? await this.senderDisplayName.resolve(tx, current)
+      : null;
+    if (!agentName) return content;
+    return cleanMessageContent(`*${agentName}:*\n\n${content}`);
+  }
+
+  private async prepareScheduledOutboundText(
+    tx: Prisma.TransactionClient,
+    content: string,
+    author: { tenantId: string; membershipId: string; roleKey: string },
+  ) {
+    const agentName = this.senderDisplayName
+      ? await this.senderDisplayName.resolveForMembership(tx, author)
       : null;
     if (!agentName) return content;
     return cleanMessageContent(`*${agentName}:*\n\n${content}`);
@@ -1193,6 +1483,10 @@ export class MessagingOutboundService {
             provider_message_id: message.quotedProviderMessageId,
             content_preview: message.quotedContentPreview,
             type: message.quotedMessageType ? serializeType(message.quotedMessageType) : null,
+            author_name: serializeQuotedAuthorName(message.quotedMessage),
+            link_preview: serializeLinkPreview(
+              asObject(message.quotedMessage?.interactiveData)?.linkPreview,
+            ),
             media_data: message.quotedMessage?.mediaStorageKey
               ? {
                   state: message.quotedMessage.mediaState?.toLowerCase() ?? "ready",
@@ -1300,6 +1594,49 @@ function serializeType(type: MessageType) {
   return map[type];
 }
 
+function serializeQuotedAuthorName(message: MessageWithRelations["quotedMessage"]) {
+  if (!message) return null;
+  if (message.direction === MessageDirection.INBOUND) return message.participantName ?? null;
+  return (
+    message.authorMembership?.presentationName ??
+    message.authorMembership?.user.name ??
+    message.participantName ??
+    null
+  );
+}
+
+function serializeLinkPreview(value: unknown) {
+  const preview = asObject(value);
+  if (!preview || typeof preview.url !== "string" || !isSafeWebUrl(preview.url)) return null;
+  return {
+    url: preview.url,
+    title: typeof preview.title === "string" ? preview.title : null,
+    description: typeof preview.description === "string" ? preview.description : null,
+    thumbnail_data_url:
+      typeof preview.thumbnailDataUrl === "string" &&
+      preview.thumbnailDataUrl.startsWith("data:image/")
+        ? preview.thumbnailDataUrl
+        : null,
+  };
+}
+
+function asObject(value: unknown): Record<string, Prisma.JsonValue> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, Prisma.JsonValue>)
+    : null;
+}
+
+function isSafeWebUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password
+    );
+  } catch {
+    return false;
+  }
+}
+
 function previewFromMessage(message: {
   type: MessageType;
   content: string | null;
@@ -1384,6 +1721,10 @@ function canonicalProviderError(error: unknown) {
 
 function sanitizeErrorMessage(message: string) {
   return message.replace(/(apikey|api_key|secret|token)=\S+/gi, "$1=[redacted]").slice(0, 500);
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error || "Falha na mensagem agendada.");
 }
 
 function maskReference(value: string | null) {

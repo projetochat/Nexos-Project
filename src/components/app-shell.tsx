@@ -39,7 +39,12 @@ import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
 import { useTheme } from "./theme-context";
 import { useSession, ROLE_META, signOut } from "@/lib/session";
-import { notificationApi, stopStoredPlatformImpersonation } from "@/lib/trixus-api";
+import {
+  conversationApi,
+  notificationApi,
+  stopStoredPlatformImpersonation,
+  TrixusApiError,
+} from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 
 /* ============================================================
@@ -205,11 +210,31 @@ const LABELS: Record<string, string> = {
 function useBreadcrumbs() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const parts = pathname.split("/").filter(Boolean);
+  const conversationId = parts[0] === "inbox" && parts.length === 2 ? parts[1] : null;
+  const conversation = useQuery({
+    queryKey: ["trixus", "conversations", conversationId],
+    queryFn: () => conversationApi.get(conversationId!),
+    enabled: !!conversationId,
+    retry: (failureCount, error) =>
+      !(error instanceof TrixusApiError && error.status === 404) && failureCount < 3,
+  });
   const crumbs = [{ href: "/", label: "Trixus" }];
   let acc = "";
-  for (const part of parts) {
+  for (const [index, part] of parts.entries()) {
     acc += "/" + part;
-    crumbs.push({ href: acc, label: LABELS[part] ?? decodeURIComponent(part) });
+    const isConversation = index === 1 && parts[0] === "inbox";
+    const contactName = conversation.data?.contact?.nome?.trim();
+    const conversationLabel = contactName
+      ? contactName
+      : conversation.isPending
+        ? "Carregando conversa…"
+        : conversation.isError
+          ? "Conversa indisponível"
+          : "Contato";
+    crumbs.push({
+      href: acc,
+      label: isConversation ? conversationLabel : (LABELS[part] ?? decodeURIComponent(part)),
+    });
   }
   return crumbs;
 }
@@ -325,7 +350,7 @@ function NavLink({
         requestAnimationFrame(() => requestAnimationFrame(() => collapse()));
       }}
       className={`group relative flex items-center rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground data-[status=active]:bg-surface-2 data-[status=active]:text-foreground ${
-        collapsed ? "h-9 w-9 justify-center" : "gap-3 pl-7 pr-3 py-2"
+        collapsed ? "h-9 w-9 justify-center" : "gap-3 pl-5 pr-3 py-2"
       }`}
     >
       <span

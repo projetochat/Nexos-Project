@@ -1,9 +1,10 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Eye, EyeOff, Lock, Trash2, Upload } from "lucide-react";
+import { Camera, Eye, EyeOff, Info, Lock, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, Button, Card, Field, Input } from "@/components/ui-kit";
+import { Modal } from "@/components/modal";
 import {
   ProfileCameraModal,
   ProfilePhotoMenu,
@@ -14,6 +15,7 @@ import { usePhotoCropper } from "@/hooks/use-photo-cropper";
 import { TimezoneSelect } from "@/components/timezone-select";
 import { organizationApi, type ApiCompanyProfile } from "@/lib/trixus-api";
 import { useSession } from "@/lib/session";
+import { waitForMinimumDuration } from "@/lib/minimum-duration";
 
 export const Route = createFileRoute("/configuracoes/empresa")({
   component: EmpresaSettings,
@@ -39,13 +41,13 @@ function EmpresaSettings() {
   const [currentPassword, setCurrentPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [passwordConfirmationOpen, setPasswordConfirmationOpen] = React.useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = React.useState(false);
   const [showNewPassword, setShowNewPassword] = React.useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
-  const newPasswordMatchesCurrent =
-    Boolean(currentPassword) && Boolean(newPassword) && currentPassword === newPassword;
-  const confirmPasswordMatchesCurrent =
-    Boolean(currentPassword) && Boolean(confirmPassword) && currentPassword === confirmPassword;
+  const [pendingCredentialChange, setPendingCredentialChange] = React.useState<
+    { kind: "form" } | { kind: "avatar"; avatarUrl: string | null } | null
+  >(null);
   const passwordsDoNotMatch =
     Boolean(newPassword) && Boolean(confirmPassword) && newPassword !== confirmPassword;
   const passwordReuseError = "A nova senha deve ser diferente da senha atual.";
@@ -76,47 +78,30 @@ function EmpresaSettings() {
     },
   });
 
-  const saveAvatarUrl = async (avatarUrl: string | null) => {
-    setSavingAvatar(true);
-    try {
-      const updated = await organizationApi.updateAdministratorCredentials({ avatarUrl });
-      const nextAvatarUrl = updated.avatarUrl ?? null;
-      setAdministratorAvatarUrl(nextAvatarUrl);
-      useSession.setState((state) => ({
-        user: state.user ? { ...state.user, avatarUrl: nextAvatarUrl ?? undefined } : state.user,
-      }));
-      await queryClient.invalidateQueries({ queryKey: ["trixus", "company"] });
-      toast.success(nextAvatarUrl ? "Foto de perfil atualizada." : "Foto de perfil removida.");
-    } catch (error) {
-      toast.error((error as Error).message || "Não foi possível salvar a foto.");
-      throw error;
-    } finally {
-      setSavingAvatar(false);
-    }
+  const requestAvatarSave = async (avatarUrl: string | null) => {
+    setCurrentPassword("");
+    setShowCurrentPassword(false);
+    setPendingCredentialChange({ kind: "avatar", avatarUrl });
+    setPasswordConfirmationOpen(true);
   };
 
-  const photoCrop = usePhotoCropper(saveAvatarUrl);
+  const photoCrop = usePhotoCropper(requestAvatarSave);
   const choosePhoto = (file: File | undefined) => {
     photoCrop.choose(file);
     if (photoInputRef.current) photoInputRef.current.value = "";
   };
 
-  const savePassword = async () => {
+  const requestCredentialSave = () => {
     const trimmedPresentationName = presentationName.trim();
-    // A senha atual pode continuar preenchida sem transformar a edição do nome em troca de senha.
     const isChangingPassword = Boolean(newPassword || confirmPassword);
     if (!trimmedPresentationName) return toast.error("Informe o nome de apresentação.");
     if (isChangingPassword) {
-      if (!currentPassword || !newPassword || !confirmPassword) {
-        toast.error("Preencha todos os campos de senha.");
+      if (!newPassword || !confirmPassword) {
+        toast.error("Preencha os campos da nova senha.");
         return;
       }
       if (newPassword.length < 6) {
         toast.error("A nova senha deve ter ao menos 6 caracteres.");
-        return;
-      }
-      if (newPasswordMatchesCurrent) {
-        toast.error(passwordReuseError);
         return;
       }
       if (newPassword !== confirmPassword) {
@@ -124,27 +109,74 @@ function EmpresaSettings() {
         return;
       }
     }
+    setCurrentPassword("");
+    setShowCurrentPassword(false);
+    setPendingCredentialChange({ kind: "form" });
+    setPasswordConfirmationOpen(true);
+  };
+
+  const confirmCredentialSave = async () => {
+    if (!pendingCredentialChange) return;
+    const trimmedPresentationName = presentationName.trim();
+    const isFormSave = pendingCredentialChange.kind === "form";
+    const isChangingPassword = isFormSave && Boolean(newPassword || confirmPassword);
+    if (!currentPassword) return toast.error("Informe a senha atual.");
+    if (isChangingPassword && newPassword === currentPassword) {
+      toast.error(passwordReuseError);
+      return;
+    }
+
+    const startedAt = Date.now();
     setSavingPassword(true);
+    setSavingAvatar(pendingCredentialChange.kind === "avatar");
+    let failure: unknown;
     try {
-      await organizationApi.updateAdministratorCredentials({
-        presentationName: trimmedPresentationName,
-        ...(isChangingPassword ? { currentPassword, newPassword, confirmPassword } : {}),
-      });
-      useSession.setState((state) => ({
-        user: state.user ? { ...state.user, nome: trimmedPresentationName } : state.user,
-      }));
+      const updated = await organizationApi.updateAdministratorCredentials(
+        pendingCredentialChange.kind === "avatar"
+          ? { currentPassword, avatarUrl: pendingCredentialChange.avatarUrl }
+          : {
+              presentationName: trimmedPresentationName,
+              currentPassword,
+              ...(isChangingPassword ? { newPassword, confirmPassword } : {}),
+            },
+      );
+      await waitForMinimumDuration(startedAt, 5_000);
+      if (pendingCredentialChange.kind === "avatar") {
+        const nextAvatarUrl = updated.avatarUrl ?? null;
+        setAdministratorAvatarUrl(nextAvatarUrl);
+        useSession.setState((state) => ({
+          user: state.user ? { ...state.user, avatarUrl: nextAvatarUrl ?? undefined } : state.user,
+        }));
+      } else {
+        useSession.setState((state) => ({
+          user: state.user ? { ...state.user, nome: trimmedPresentationName } : state.user,
+        }));
+      }
       await queryClient.invalidateQueries({ queryKey: ["trixus", "company"] });
+      setPasswordConfirmationOpen(false);
+      setPendingCredentialChange(null);
       setCurrentPassword("");
       setShowCurrentPassword(false);
-      setNewPassword("");
-      setConfirmPassword("");
-      toast.success(
-        isChangingPassword ? "Credenciais atualizadas." : "Nome de apresentação atualizado.",
-      );
+      if (isFormSave) {
+        setNewPassword("");
+        setConfirmPassword("");
+        toast.success(
+          isChangingPassword ? "Credenciais atualizadas." : "Nome de apresentação atualizado.",
+        );
+      } else {
+        toast.success(
+          updated.avatarUrl ? "Foto de perfil atualizada." : "Foto de perfil removida.",
+        );
+      }
     } catch (error) {
-      toast.error((error as Error).message || "Não foi possível alterar a senha.");
+      failure = error;
+      await waitForMinimumDuration(startedAt, 5_000);
     } finally {
       setSavingPassword(false);
+      setSavingAvatar(false);
+    }
+    if (failure) {
+      toast.error((failure as Error).message || "Não foi possível salvar as credenciais.");
     }
   };
 
@@ -196,9 +228,9 @@ function EmpresaSettings() {
 
       {sessionUser?.role === "admin" && company?.canManageAdministratorCredentials && (
         <Card>
-          <div className="flex items-start gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Lock className="h-7 w-7" />
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Lock className="h-5 w-5" />
             </div>
             <div className="min-w-0">
               <h2 className="text-xl font-semibold text-foreground">
@@ -207,14 +239,19 @@ function EmpresaSettings() {
             </div>
           </div>
 
-          <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-            <p className="font-semibold">
-              Este usuário possui acesso a todas as funcionalidades permitidas pelo plano da
-              empresa.
-            </p>
-            <p className="mt-0.5 font-normal text-blue-700">
-              Utilize as credenciais abaixo para acessar o sistema.
-            </p>
+          <div className="mt-4 flex items-stretch gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+            <div className="flex shrink-0 items-center self-stretch" aria-hidden="true">
+              <Info className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold">
+                Este usuário possui acesso a todas as funcionalidades permitidas pelo plano da
+                empresa.
+              </p>
+              <p className="mt-0.5 font-normal text-blue-700">
+                Utilize as credenciais abaixo para acessar o sistema.
+              </p>
+            </div>
           </div>
 
           <div className="mt-4 grid gap-5 md:grid-cols-[132px_minmax(0,1fr)]">
@@ -278,7 +315,7 @@ function EmpresaSettings() {
                     icon={<Trash2 className="h-3.5 w-3.5" />}
                     onClick={() => {
                       setPhotoMenuOpen(false);
-                      void saveAvatarUrl(null).catch(() => {});
+                      void requestAvatarSave(null);
                     }}
                   >
                     Remover foto
@@ -316,42 +353,19 @@ function EmpresaSettings() {
                 </Field>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <Field label="Senha atual *">
-                  <PasswordInput
-                    value={currentPassword}
-                    onChange={(value) => {
-                      setCurrentPassword(value);
-                      if (!value) setShowCurrentPassword(false);
-                    }}
-                    visible={showCurrentPassword}
-                    canToggle={Boolean(currentPassword)}
-                    onToggle={() => setShowCurrentPassword((value) => !value)}
-                    autoComplete="current-password"
-                  />
-                </Field>
-                <Field
-                  label="Nova senha *"
-                  error={newPasswordMatchesCurrent ? passwordReuseError : undefined}
-                >
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Nova senha *">
                   <PasswordInput
                     value={newPassword}
                     onChange={setNewPassword}
                     visible={showNewPassword}
                     onToggle={() => setShowNewPassword((current) => !current)}
                     autoComplete="new-password"
-                    invalid={newPasswordMatchesCurrent}
                   />
                 </Field>
                 <Field
                   label="Confirmar nova senha *"
-                  error={
-                    passwordsDoNotMatch
-                      ? passwordConfirmationError
-                      : confirmPasswordMatchesCurrent
-                        ? passwordReuseError
-                        : undefined
-                  }
+                  error={passwordsDoNotMatch ? passwordConfirmationError : undefined}
                 >
                   <PasswordInput
                     value={confirmPassword}
@@ -359,7 +373,7 @@ function EmpresaSettings() {
                     visible={showConfirmPassword}
                     onToggle={() => setShowConfirmPassword((current) => !current)}
                     autoComplete="new-password"
-                    invalid={passwordsDoNotMatch || confirmPasswordMatchesCurrent}
+                    invalid={passwordsDoNotMatch}
                   />
                 </Field>
               </div>
@@ -367,7 +381,12 @@ function EmpresaSettings() {
           </div>
 
           <div className="mt-6 flex justify-end border-t border-border pt-4">
-            <Button variant="primary" size="lg" onClick={savePassword} disabled={savingPassword}>
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={requestCredentialSave}
+              disabled={savingPassword}
+            >
               <Lock className="h-4 w-4" />
               {savingPassword ? "Salvando..." : "Salvar alterações"}
             </Button>
@@ -386,6 +405,73 @@ function EmpresaSettings() {
             src={administratorAvatarUrl ?? undefined}
             onClose={() => setPhotoPreviewOpen(false)}
           />
+          <Modal
+            open={passwordConfirmationOpen}
+            onClose={() => {
+              if (savingPassword) return;
+              setPasswordConfirmationOpen(false);
+              setPendingCredentialChange(null);
+              setCurrentPassword("");
+              setShowCurrentPassword(false);
+            }}
+            title="Confirme sua senha atual"
+            description="Por segurança, confirme sua senha para salvar as alterações."
+            size="sm"
+            closeOnBackdrop={!savingPassword}
+            initialFocus='input[autocomplete="current-password"]'
+            footer={
+              savingPassword ? undefined : (
+                <>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setPasswordConfirmationOpen(false);
+                      setPendingCredentialChange(null);
+                      setCurrentPassword("");
+                      setShowCurrentPassword(false);
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button variant="primary" onClick={() => void confirmCredentialSave()}>
+                    Confirmar
+                  </Button>
+                </>
+              )
+            }
+          >
+            {savingPassword ? (
+              <div
+                className="flex min-h-32 items-center justify-center"
+                role="status"
+                aria-label="Validando senha e salvando alterações"
+              >
+                <div className="flex items-center gap-2" aria-hidden="true">
+                  {[0, 1, 2].map((index) => (
+                    <span
+                      key={index}
+                      className="h-2.5 w-2.5 animate-bounce rounded-full bg-primary"
+                      style={{ animationDelay: `${index * 140}ms` }}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <Field label="Senha atual *">
+                <PasswordInput
+                  value={currentPassword}
+                  onChange={(value) => {
+                    setCurrentPassword(value);
+                    if (!value) setShowCurrentPassword(false);
+                  }}
+                  visible={showCurrentPassword}
+                  canToggle={Boolean(currentPassword)}
+                  onToggle={() => setShowCurrentPassword((value) => !value)}
+                  autoComplete="current-password"
+                />
+              </Field>
+            )}
+          </Modal>
         </Card>
       )}
     </div>

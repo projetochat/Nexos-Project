@@ -24,7 +24,6 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
-import { GroupsSyncService } from "../conversations/groups-sync.service";
 import { phoneFromRemoteIdentity } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
 import {
@@ -52,7 +51,6 @@ export class MessagingConnectionsService {
     @Inject(PlanEntitlementService)
     private readonly entitlements?: PlanEntitlementService,
     @Optional() @Inject(RealtimePublisher) private readonly realtime?: RealtimePublisher,
-    @Optional() @Inject(GroupsSyncService) private readonly groupsSync?: GroupsSyncService,
     @Optional()
     @Inject(MessagingHistoryImportService)
     private readonly historyImport?: MessagingHistoryImportService,
@@ -209,7 +207,6 @@ export class MessagingConnectionsService {
       status: connection.status.toLowerCase(),
       updatedAt: connection.updatedAt,
     });
-    this.enqueueGroupSyncForConnectedConnection(connection);
     void this.historyImport?.enqueueForConnection(connection);
     return {
       ...this.serialize(connection),
@@ -261,7 +258,6 @@ export class MessagingConnectionsService {
         updatedAt: updated.updatedAt,
       });
     }
-    this.enqueueGroupSyncForConnectedConnection(updated);
     void this.historyImport?.enqueueForConnection(updated);
     return this.serialize(updated, { existsInProvider: true, webhookUrl: instance.Webhook?.url });
   }
@@ -854,29 +850,8 @@ export class MessagingConnectionsService {
         updatedAt: updated.updatedAt,
       });
     }
-    this.enqueueGroupSyncForConnectedConnection(updated);
     void this.historyImport?.enqueueForConnection(updated);
     return updated;
-  }
-
-  private enqueueGroupSyncForConnectedConnection(connection: {
-    id: string;
-    tenantId: string;
-    status: MessagingConnectionStatus;
-    serviceEnabled?: boolean;
-  }) {
-    if (
-      connection.status !== MessagingConnectionStatus.CONNECTED ||
-      connection.serviceEnabled === false
-    )
-      return;
-    this.groupsSync?.enqueue({
-      tenantId: connection.tenantId,
-      connectionId: connection.id,
-      includeParticipants: false,
-      followUpFullSync: true,
-      delayMs: CONNECTED_GROUP_LIGHT_SYNC_DELAY_MS,
-    });
   }
 
   private async ensureWebhookConfiguredSafely(instanceName: string, connectionId: string) {
@@ -1075,7 +1050,6 @@ function normalizeAutomaticAttachment(
 }
 
 const INSTANCE_REMOVAL_CLOSE_MESSAGE = "Conversa encerrada via remoção da instância";
-const CONNECTED_GROUP_LIGHT_SYNC_DELAY_MS = 10 * 1000;
 
 type RemoveConnectionOptions = {
   removeConversationHistory?: boolean;

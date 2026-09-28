@@ -258,6 +258,7 @@ export type ApiConversation = {
   lastMessagePreview: string | null;
   inbox_archived_at: string | null;
   is_lead: boolean;
+  originated_as_lead?: boolean;
   contact: ApiContact | null;
   department: { id: string; nome: string; cor: string; descricao: string | null } | null;
   agent: { id: string; membershipId: string; nome: string; email: string } | null;
@@ -305,6 +306,8 @@ export type ApiWhatsappGroup = {
   lastMessageAt: string | null;
   warnings?: string[];
 };
+
+export type ApiWhatsappGroupSummary = Omit<ApiWhatsappGroup, "participants">;
 
 export type QuickReplyAttachment = {
   fileName: string;
@@ -355,6 +358,14 @@ export type ApiMessage = {
       options: Array<{ title: string; description?: string | null }>;
     }>;
   } | null;
+  forwarded?: boolean;
+  sticker?: boolean;
+  link_preview?: {
+    url: string;
+    title: string | null;
+    description: string | null;
+    thumbnail_data_url: string | null;
+  } | null;
   created_at: string;
   updated_at: string;
   edited_at?: string | null;
@@ -376,6 +387,8 @@ export type ApiMessage = {
     provider_message_id: string;
     content_preview: string | null;
     type: ApiMessage["type"] | null;
+    author_name?: string | null;
+    link_preview?: ApiMessage["link_preview"];
     media_data?: {
       state?: "pending" | "downloading" | "ready" | "failed";
       mime_type: string | null;
@@ -758,6 +771,7 @@ export type ApiOperationsHourlyMessage = {
   recebidas: number;
   enviadas: number;
   total: number;
+  atendimentos: number;
   contatosAtendidos: number;
 };
 
@@ -771,6 +785,7 @@ export type ApiOperationsDashboard = {
     byConnection: ApiOperationsChartItem[];
     byTag: ApiOperationsChartItem[];
     messagesByHour: ApiOperationsHourlyMessage[];
+    messageAttendancesTotal: number;
     messageContactsTotal: number;
   };
   recent: ApiConversation[];
@@ -1255,7 +1270,8 @@ export const crmApi = {
 
 export const groupsApi = {
   list: (params: ListParams & { connectionId?: string } = {}) =>
-    apiRequest<PaginatedResponse<ApiWhatsappGroup>>(`/groups${queryString(params)}`),
+    apiRequest<PaginatedResponse<ApiWhatsappGroupSummary>>(`/groups/summary${queryString(params)}`),
+  instanceOptions: () => apiRequest<ApiContactInstanceOption[]>("/groups/options/instances"),
   detail: (id: string) => apiRequest<ApiWhatsappGroup>(`/groups/${id}`),
   create: (data: {
     name: string;
@@ -2388,7 +2404,8 @@ function queryString(params: Record<string, string | number | boolean | undefine
 }
 
 export const schedulesApi = {
-  list: () => apiRequest<ApiSchedule[]>("/schedules"),
+  list: (params: { conversationId?: string } = {}) =>
+    apiRequest<ApiSchedule[]>(`/schedules${queryString(params)}`),
   save: (data: ApiSchedule) =>
     apiRequest<ApiSchedule>("/schedules", { method: "POST", body: JSON.stringify(data) }),
   remove: (id: string) => apiRequest<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" }),

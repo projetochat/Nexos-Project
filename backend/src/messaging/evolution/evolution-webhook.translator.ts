@@ -176,7 +176,9 @@ export class EvolutionWebhookTranslator {
     }
     if (!senderIdentity) return { kind: "ignored", reason: "MISSING_REMOTE_IDENTITY" };
     const normalizedPhoneCandidates = senderIdentity.candidates;
-    const quoted = extractQuoted(message, readRecord(data, "contextInfo"));
+    const fallbackContext = readRecord(data, "contextInfo");
+    const context = extractContextInfo(message, fallbackContext);
+    const quoted = extractQuoted(message, fallbackContext);
 
     return {
       kind: "inbound",
@@ -199,6 +201,9 @@ export class EvolutionWebhookTranslator {
         type: content.type,
         content: text,
         interactive: content.interactive ?? null,
+        forwarded: isForwardedContext(context),
+        sticker: content.sticker === true,
+        linkPreview: content.linkPreview ?? null,
         media,
         quotedProviderMessageId: quoted.providerMessageId,
         quotedContentPreview: quoted.preview,
@@ -296,6 +301,8 @@ function extractMessageContent(message: Record<string, unknown> | null): {
   type: Extract<MessageType, "TEXT" | "IMAGE" | "AUDIO" | "VOICE" | "VIDEO" | "DOCUMENT">;
   text?: string | null;
   interactive?: InboundMessageEvent["interactive"];
+  sticker?: boolean;
+  linkPreview?: InboundMessageEvent["linkPreview"];
   caption?: string | null;
   media?: InboundMessageEvent["media"];
 } {
@@ -333,7 +340,13 @@ function extractMessageContent(message: Record<string, unknown> | null): {
   }
   const extended = readRecord(message, "extendedTextMessage");
   const extendedText = readString(extended ?? undefined, "text");
-  if (extendedText) return { type: MessageType.TEXT, text: extendedText };
+  if (extendedText) {
+    return {
+      type: MessageType.TEXT,
+      text: extendedText,
+      linkPreview: extractLinkPreview(extended, extendedText),
+    };
+  }
   const list = readRecord(message, "listMessage");
   if (list) {
     const interactive = interactiveListData(list);
@@ -362,7 +375,8 @@ function extractMessageContent(message: Record<string, unknown> | null): {
   if (sticker) {
     return {
       type: MessageType.IMAGE,
-      caption: "[figurinha]",
+      caption: null,
+      sticker: true,
       media: extractMediaEnvelope(sticker),
     };
   }
@@ -390,6 +404,73 @@ function extractMessageContent(message: Record<string, unknown> | null): {
     };
   }
   return { type: MessageType.TEXT };
+}
+
+function extractLinkPreview(extended: Record<string, unknown> | null, text: string) {
+  if (!extended) return null;
+  const candidate =
+    readString(extended, "matchedText") ??
+    text.match(/https?:\/\/[^\s<>]+/i)?.[0] ??
+    readString(extended, "canonicalUrl") ??
+    null;
+  const url = safeHttpUrl(candidate);
+  if (!url) return null;
+  const title = cleanPreviewText(readString(extended, "title"), 300);
+  const description = cleanPreviewText(readString(extended, "description"), 1_000);
+  const thumbnailDataUrl = imageThumbnailDataUrl(extended.jpegThumbnail);
+  if (!title && !description && !thumbnailDataUrl) return null;
+  return { url, title, description, thumbnailDataUrl };
+}
+
+function safeHttpUrl(value: string | null) {
+  if (!value || value.length > 2_048) return null;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function cleanPreviewText(value: string | null, maxLength: number) {
+  return value ? value.slice(0, maxLength) : null;
+}
+
+function imageThumbnailDataUrl(value: unknown) {
+  const maxBytes = 512 * 1024;
+  let buffer: Buffer | null = null;
+  if (typeof value === "string") {
+    const encoded = value.replace(/^data:image\/(?:jpeg|png|webp);base64,/i, "");
+    if (!/^[a-z\d+/=\s]+$/i.test(encoded)) return null;
+    buffer = Buffer.from(encoded, "base64");
+  } else {
+    const record = readRecord({ value }, "value");
+    const data = Array.isArray(record?.data) ? record.data : Array.isArray(value) ? value : null;
+    if (!data || data.length === 0 || data.length > maxBytes) return null;
+    if (!data.every((item) => Number.isInteger(item) && Number(item) >= 0 && Number(item) <= 255)) {
+      return null;
+    }
+    buffer = Buffer.from(data as number[]);
+  }
+  if (buffer.byteLength === 0 || buffer.byteLength > maxBytes) return null;
+  const mimeType = thumbnailMimeType(buffer);
+  return mimeType ? `data:${mimeType};base64,${buffer.toString("base64")}` : null;
+}
+
+function thumbnailMimeType(buffer: Buffer) {
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
+  if (buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    return "image/png";
+  }
+  if (
+    buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buffer.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return null;
 }
 
 function contactDisplayName(vcard: string) {
@@ -525,15 +606,7 @@ function extractQuoted(
   message: Record<string, unknown> | null,
   fallbackContext?: Record<string, unknown> | null,
 ) {
-  message = unwrapMessage(message);
-  const context =
-    readNestedRecord(message, ["extendedTextMessage", "contextInfo"]) ??
-    readNestedRecord(message, ["imageMessage", "contextInfo"]) ??
-    readNestedRecord(message, ["audioMessage", "contextInfo"]) ??
-    readNestedRecord(message, ["videoMessage", "contextInfo"]) ??
-    readNestedRecord(message, ["documentMessage", "contextInfo"]) ??
-    readNestedRecord(message, ["stickerMessage", "contextInfo"]) ??
-    fallbackContext;
+  const context = extractContextInfo(message, fallbackContext);
   if (!context) {
     return { providerMessageId: null, preview: null, type: null as MessageType | null };
   }
@@ -545,6 +618,27 @@ function extractQuoted(
     preview: quotedContent.text ?? quotedContent.caption ?? mediaPreview(quotedContent.type),
     type: quotedContent.type,
   };
+}
+
+function extractContextInfo(
+  message: Record<string, unknown> | null,
+  fallbackContext?: Record<string, unknown> | null,
+) {
+  message = unwrapMessage(message);
+  return (
+    readNestedRecord(message, ["extendedTextMessage", "contextInfo"]) ??
+    readNestedRecord(message, ["imageMessage", "contextInfo"]) ??
+    readNestedRecord(message, ["audioMessage", "contextInfo"]) ??
+    readNestedRecord(message, ["videoMessage", "contextInfo"]) ??
+    readNestedRecord(message, ["documentMessage", "contextInfo"]) ??
+    readNestedRecord(message, ["stickerMessage", "contextInfo"]) ??
+    fallbackContext ??
+    null
+  );
+}
+
+function isForwardedContext(context: Record<string, unknown> | null) {
+  return context?.isForwarded === true || (numberValue(context?.forwardingScore) ?? 0) > 0;
 }
 
 function unwrapMessage(message: Record<string, unknown> | null): Record<string, unknown> | null {

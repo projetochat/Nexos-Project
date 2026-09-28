@@ -14,8 +14,6 @@ type GroupSyncInput = {
   tenantId: string;
   connectionId?: string;
   includeParticipants?: boolean;
-  followUpFullSync?: boolean;
-  delayMs?: number;
 };
 
 type GroupPictureTarget = {
@@ -29,17 +27,11 @@ type GroupPictureTarget = {
 @Injectable()
 export class GroupsSyncService implements OnModuleDestroy {
   private readonly logger = new Logger(GroupsSyncService.name);
-  private readonly queuedKeys = new Set<string>();
   private readonly queuedPictureKeys = new Set<string>();
   private readonly recentPictureAttempts = new Map<string, number>();
-  private readonly queuedReconciliationTenants = new Set<string>();
-  private pending: GroupSyncInput[] = [];
   private pendingPictures: GroupPictureTarget[] = [];
-  private draining = false;
   private drainingPictures = false;
-  private drainTimer: ReturnType<typeof setTimeout> | null = null;
   private pictureDrainTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly delayedSyncTimers = new Set<ReturnType<typeof setTimeout>>();
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -47,25 +39,7 @@ export class GroupsSyncService implements OnModuleDestroy {
   ) {}
 
   onModuleDestroy() {
-    if (this.drainTimer) clearTimeout(this.drainTimer);
     if (this.pictureDrainTimer) clearTimeout(this.pictureDrainTimer);
-    for (const timer of this.delayedSyncTimers) clearTimeout(timer);
-    this.delayedSyncTimers.clear();
-  }
-
-  enqueueParticipantNameReconciliation(input: { tenantId: string }) {
-    if (this.queuedReconciliationTenants.has(input.tenantId)) return;
-    this.queuedReconciliationTenants.add(input.tenantId);
-    setTimeout(() => {
-      this.queuedReconciliationTenants.delete(input.tenantId);
-      void this.reconcileGroupParticipantNames({ tenantId: input.tenantId }).catch((error) => {
-        this.logger.warn(
-          `Nao foi possivel reconciliar participantes de grupos: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      });
-    }, 250);
   }
 
   async reconcileGroupParticipantNames(input: { tenantId: string }) {
@@ -133,26 +107,8 @@ export class GroupsSyncService implements OnModuleDestroy {
     return { updated, checked: participants.length };
   }
 
-  enqueue(input: GroupSyncInput) {
-    const key = queueKey(input);
-    if (this.queuedKeys.has(key)) return;
-    this.queuedKeys.add(key);
-    const enqueueNow = () => {
-      this.pending.push(input);
-      this.scheduleDrain();
-    };
-    if (input.delayMs && input.delayMs > 0) {
-      const timer = setTimeout(() => {
-        this.delayedSyncTimers.delete(timer);
-        enqueueNow();
-      }, input.delayMs);
-      this.delayedSyncTimers.add(timer);
-      return;
-    }
-    enqueueNow();
-  }
-
   async sync(input: GroupSyncInput) {
+    const startedAt = Date.now();
     const connections = await this.prisma.messagingConnection.findMany({
       where: {
         tenantId: input.tenantId,
@@ -257,24 +213,19 @@ export class GroupsSyncService implements OnModuleDestroy {
         tenantId: input.tenantId,
       });
       result.participantNamesUpdated = reconciliation.updated;
-    } else if (input.followUpFullSync && result.synced > 0) {
-      this.enqueue({
-        tenantId: input.tenantId,
-        connectionId: input.connectionId,
-        includeParticipants: true,
-        delayMs: GROUP_FULL_SYNC_AFTER_LIGHT_SYNC_DELAY_MS,
-      });
     }
 
+    this.logger.debug({
+      event: "groups.sync",
+      durationMs: Date.now() - startedAt,
+      connectionId: input.connectionId ?? null,
+      connections: result.connections,
+      groups: result.groups,
+      participants: result.participants,
+      failed: result.failed,
+      includeParticipants,
+    });
     return result;
-  }
-
-  private scheduleDrain() {
-    if (this.drainTimer || this.draining) return;
-    this.drainTimer = setTimeout(() => {
-      this.drainTimer = null;
-      void this.drain();
-    }, 250);
   }
 
   private async safeGroupInfo(instanceName: string, group: EvolutionGroupSnapshot) {
@@ -297,29 +248,6 @@ export class GroupsSyncService implements OnModuleDestroy {
       };
     } catch {
       return group;
-    }
-  }
-
-  private async drain() {
-    if (this.draining) return;
-    this.draining = true;
-    try {
-      while (this.pending.length) {
-        const item = this.pending.shift();
-        if (!item) break;
-        const key = queueKey(item);
-        this.queuedKeys.delete(key);
-        await this.sync(item);
-      }
-    } catch (error) {
-      this.logger.warn(
-        `Nao foi possivel sincronizar grupos em segundo plano: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    } finally {
-      this.draining = false;
-      if (this.pending.length) this.scheduleDrain();
     }
   }
 
@@ -585,11 +513,6 @@ export class GroupsSyncService implements OnModuleDestroy {
 
 const GROUP_SYNC_CONCURRENCY = 4;
 const GROUP_PICTURE_RETRY_INTERVAL_MS = 3 * 60 * 60 * 1000;
-const GROUP_FULL_SYNC_AFTER_LIGHT_SYNC_DELAY_MS = 60 * 1000;
-
-function queueKey(input: GroupSyncInput) {
-  return `${input.tenantId}:${input.connectionId ?? "all"}:${input.includeParticipants ?? true}`;
-}
 
 async function mapWithConcurrency<T, R>(
   items: T[],

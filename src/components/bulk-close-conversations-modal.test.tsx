@@ -16,6 +16,7 @@ it("selects/deselects all queues and submits only the chosen queues once", async
   const root = createRoot(host);
   const client = new QueryClient();
   const onClose = vi.fn();
+  const onSuccess = vi.fn();
   bulkClose.mockResolvedValue({ closed: 12 });
   list.mockResolvedValue({
     items: [],
@@ -29,7 +30,7 @@ it("selects/deselects all queues and submits only the chosen queues once", async
     await act(async () =>
       root.render(
         <QueryClientProvider client={client}>
-          <BulkCloseConversationsModal onClose={onClose} />
+          <BulkCloseConversationsModal onClose={onClose} onSuccess={onSuccess} />
         </QueryClientProvider>,
       ),
     );
@@ -58,6 +59,7 @@ it("selects/deselects all queues and submits only the chosen queues once", async
       confirm.click();
     });
     expect(bulkClose).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain("Encerrar conversas?");
     expect(document.body.textContent).toContain("10 conversa(s)");
     const closeConversations = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -66,6 +68,7 @@ it("selects/deselects all queues and submits only the chosen queues once", async
     await act(async () => closeConversations.click());
     expect(bulkClose).toHaveBeenCalledExactlyOnceWith(["standby", "leads"]);
     expect(onClose).toHaveBeenCalledOnce();
+    expect(onSuccess).toHaveBeenCalledOnce();
   } finally {
     await act(async () => root.unmount());
     client.clear();

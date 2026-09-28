@@ -1,4 +1,6 @@
 import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ConversationStatus,
@@ -24,6 +26,13 @@ const current = {
 };
 
 describe("MessagingConnectionsService", () => {
+  it("does not depend on the automatic group synchronization service", () => {
+    const source = readFileSync(resolve(__dirname, "messaging-connections.service.ts"), "utf8");
+
+    expect(source).not.toContain("GroupsSyncService");
+    expect(source).not.toContain("groupsSync");
+  });
+
   it("treats the selected import date as midnight in São Paulo", () => {
     expect(parseImportStartDate("2026-09-17")?.toISOString()).toBe("2026-09-17T03:00:00.000Z");
     expect(parseImportStartDate("2026-02-31")).toBeNull();
@@ -330,64 +339,6 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
-  it("enqueues group sync when the created Evolution instance is already connected", async () => {
-    const prisma = prismaMock();
-    prisma.messagingConnection.create.mockResolvedValue({
-      ...connection(),
-      status: MessagingConnectionStatus.CONNECTED,
-    });
-    const evolution = {
-      createInstance: vi.fn().mockResolvedValue({ instance: { status: "open" } }),
-      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
-      deleteInstance: vi.fn(),
-    };
-    const groupsSync = { enqueue: vi.fn() };
-
-    await new MessagingConnectionsService(
-      prisma as never,
-      evolution as never,
-      undefined,
-      undefined,
-      groupsSync as never,
-    ).createEvolution({ name: "Suporte" }, current as never);
-
-    expect(groupsSync.enqueue).toHaveBeenCalledWith({
-      tenantId: "tenant-a",
-      connectionId: "connection-a",
-      includeParticipants: false,
-      followUpFullSync: true,
-      delayMs: 10000,
-    });
-  });
-
-  it("enqueues group sync when a connection status changes to connected", async () => {
-    const prisma = prismaMock();
-    prisma.messagingConnection.findUniqueOrThrow.mockResolvedValue(connection());
-    prisma.messagingConnection.findFirst.mockResolvedValue(null);
-    prisma.messagingConnection.update.mockResolvedValue({
-      ...connection(),
-      status: MessagingConnectionStatus.CONNECTED,
-    });
-    const evolution = { setWebhook: vi.fn().mockResolvedValue({ ok: true }) };
-    const groupsSync = { enqueue: vi.fn() };
-
-    await new MessagingConnectionsService(
-      prisma as never,
-      evolution as never,
-      undefined,
-      undefined,
-      groupsSync as never,
-    ).updateConnectionStatus("connection-a", MessagingConnectionStatus.CONNECTED);
-
-    expect(groupsSync.enqueue).toHaveBeenCalledWith({
-      tenantId: "tenant-a",
-      connectionId: "connection-a",
-      includeParticipants: false,
-      followUpFullSync: true,
-      delayMs: 10000,
-    });
-  });
-
   it("ignores raw instanceName and always generates a unique technical instance", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.create.mockResolvedValue(connection());
@@ -658,7 +609,6 @@ describe("MessagingConnectionsService", () => {
       connectionState: vi.fn().mockResolvedValue({ instance: { state: "open" } }),
       setWebhook: vi.fn().mockResolvedValue({ ok: true }),
     };
-
     await new MessagingConnectionsService(prisma as never, evolution as never).status(
       "connection-a",
       current as never,

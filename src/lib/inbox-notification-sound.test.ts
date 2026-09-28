@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   inboxNotificationSoundEnabled,
+  applyInboxNotificationSoundPreference,
   isInboundConversationUpdate,
   setInboxNotificationSoundEnabled,
   inboxNotificationQueues,
@@ -50,6 +51,23 @@ describe("isInboundConversationUpdate", () => {
     expect(inboxNotificationSoundEnabled("user-b")).toBe(true);
     setInboxNotificationSoundEnabled("user-a", true);
     expect(inboxNotificationSoundEnabled("user-a")).toBe(true);
+  });
+
+  it("uses the sound toggle as a master control without blocking later queue customization", () => {
+    setInboxNotificationQueues("user-a", ["fila"]);
+
+    expect(applyInboxNotificationSoundPreference("user-a", true)).toEqual(
+      NOTIFICATION_QUEUES.map(({ id }) => id),
+    );
+    expect(inboxNotificationSoundEnabled("user-a")).toBe(true);
+    expect(inboxNotificationQueues("user-a")).toEqual(NOTIFICATION_QUEUES.map(({ id }) => id));
+
+    setInboxNotificationQueues("user-a", ["leads", "ativas"]);
+    expect(inboxNotificationQueues("user-a")).toEqual(["leads", "ativas"]);
+
+    expect(applyInboxNotificationSoundPreference("user-a", false)).toEqual([]);
+    expect(inboxNotificationSoundEnabled("user-a")).toBe(false);
+    expect(inboxNotificationQueues("user-a")).toEqual([]);
   });
 
   it("filters incoming alerts by the conversation queue and preserves user preferences", () => {

@@ -18,7 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Modal, ConfirmDialog } from "./modal";
 import { MessageReactionPicker } from "./message-reaction-picker";
 import { MessageForwardDialog } from "./message-forward-dialog";
-import { schedulesApi } from "@/lib/trixus-api";
+import { ScheduleMessageModal } from "./schedule-message-modal";
 
 export function MessageActionsMenu({
   message,
@@ -26,12 +26,14 @@ export function MessageActionsMenu({
   onReact,
   onDownload,
   resendRequest = 0,
+  customFieldLabels = [],
 }: {
   message: ApiMessage;
   onReply?: () => void;
   onReact: (emoji: string | null) => Promise<void>;
   onDownload: () => Promise<void>;
   resendRequest?: number;
+  customFieldLabels?: string[];
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -42,7 +44,6 @@ export function MessageActionsMenu({
   const [editText, setEditText] = useState(message.content);
   const [remove, setRemove] = useState(false);
   const [schedule, setSchedule] = useState(false);
-  const [scheduleAt, setScheduleAt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const running = useRef(false);
@@ -325,8 +326,10 @@ export function MessageActionsMenu({
       <ConfirmDialog
         open={remove}
         onClose={() => !busy && setRemove(false)}
-        title="Apagar mensagem"
-        description="A mensagem será sinalizada como apagada para todos."
+        title="Apagar Mensagem"
+        description="Deseja realmente apagar a mensagem?"
+        confirmLabel="Apagar"
+        destructive
         onConfirm={() =>
           run(async () => {
             await messageApi.delete(message.conversation_id, message.id);
@@ -335,75 +338,15 @@ export function MessageActionsMenu({
           })
         }
       />
-      <Modal open={schedule} onClose={() => !busy && setSchedule(false)} title="Agendar mensagem">
-        <form
-          className="space-y-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void run(async () => {
-              if (!scheduleAt) throw new Error("Escolha data e horário.");
-              const date = new Date(scheduleAt);
-              if (date <= new Date()) throw new Error("Escolha um horário futuro.");
-              await schedulesApi.save({
-                id: crypto.randomUUID(),
-                identifier: `msg-${message.id}`,
-                type: "message",
-                title: "Mensagem agendada",
-                destination: "Conversa atual",
-                scheduledAt: date.toISOString(),
-                recurrence: "once",
-                delivery: true,
-                status: "pending",
-                connectionId: "",
-                departmentId: "",
-                content: message.content,
-                recipientIds: [],
-                recipients: [],
-                recurrenceDays: [],
-                recurrenceLimit: "",
-                recurrenceUntil: "",
-                assignedMembershipId: "",
-                attachmentName: null,
-                conversationId: message.conversation_id,
-              } as never);
-              await invalidateConversationQueries(qc, message.conversation_id);
-              setSchedule(false);
-            });
-          }}
-        >
-          <label className="block text-sm">
-            <span className="mb-1 block text-muted-foreground">Data e horário</span>
-            <input
-              type="datetime-local"
-              value={scheduleAt}
-              onChange={(event) => setScheduleAt(event.target.value)}
-              className="w-full rounded-lg border border-border bg-card p-2"
-              required
-            />
-          </label>
-          {error && (
-            <p role="alert" className="text-xs text-destructive">
-              {error}
-            </p>
-          )}
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              className="rounded-lg border border-border px-3 py-2 text-sm"
-              onClick={() => setSchedule(false)}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
-              disabled={busy}
-            >
-              Agendar
-            </button>
-          </div>
-        </form>
-      </Modal>
+      <ScheduleMessageModal
+        open={schedule}
+        onClose={() => setSchedule(false)}
+        conversationId={message.conversation_id}
+        initialContent={message.content}
+        identifier={`msg-${message.id}`}
+        customFieldLabels={customFieldLabels}
+        onSaved={() => invalidateConversationQueries(qc, message.conversation_id)}
+      />
     </>
   );
 }

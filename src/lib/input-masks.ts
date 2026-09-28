@@ -15,6 +15,21 @@ export function formatPhoneForDisplay(value: string) {
   return `+${phone.countryCallingCode} ${nationalNumber}`.trim();
 }
 
+export function formatBrazilPhoneWithDdi(value: string) {
+  const digits = onlyDigits(value);
+  if (!digits) return "";
+
+  const local = digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;
+  if (local.length === 11) {
+    return `+55 ${local.slice(0, 2)} ${local.slice(2, 7)}-${local.slice(7)}`;
+  }
+  if (local.length === 10) {
+    return `+55 ${local.slice(0, 2)} ${local.slice(2, 6)}-${local.slice(6)}`;
+  }
+
+  return formatPhoneForDisplay(value);
+}
+
 export function maskBrazilPhone(value: string) {
   const digits = onlyDigits(value).slice(0, 13);
   const local = digits.startsWith("55") && digits.length > 11 ? digits.slice(2) : digits;

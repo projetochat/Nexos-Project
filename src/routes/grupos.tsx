@@ -44,6 +44,7 @@ import {
   type ApiGroupContactPickerItem,
   type ApiWhatsappGroup,
   type ApiWhatsappGroupParticipant,
+  type ApiWhatsappGroupSummary,
 } from "@/lib/trixus-api";
 import { num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
@@ -140,7 +141,7 @@ function ContactPickerPager({
 function GroupsPage() {
   const navigate = useNavigate();
   const create = useDisclosure();
-  const [groups, setGroups] = React.useState<ApiWhatsappGroup[]>([]);
+  const [groups, setGroups] = React.useState<ApiWhatsappGroupSummary[]>([]);
   const [instances, setInstances] = React.useState<ApiContactInstanceOption[]>([]);
   const [query, setQuery] = React.useState("");
   const [instanceFilter, setInstanceFilter] = React.useState("");
@@ -151,19 +152,21 @@ function GroupsPage() {
   const [loading, setLoading] = React.useState(true);
   const [syncing, setSyncing] = React.useState(false);
   const [selectedGroup, setSelectedGroup] = React.useState<ApiWhatsappGroup | null>(null);
-  const [leavingGroup, setLeavingGroup] = React.useState<ApiWhatsappGroup | null>(null);
+  const [leavingGroup, setLeavingGroup] = React.useState<ApiWhatsappGroupSummary | null>(null);
   const initialReloadScheduledRef = React.useRef(false);
+  const latestListRequestRef = React.useRef(0);
+  const latestDetailRequestRef = React.useRef(0);
   const debouncedQuery = useDebouncedValue(query, 250);
 
   React.useEffect(() => {
-    void crmApi
-      .contactOptions()
+    void groupsApi
+      .instanceOptions()
       .then((options) =>
         setInstances(
           sortByOptionLabel(
             // Grupos já sincronizados continuam consultáveis mesmo depois que a instância é desligada.
-            // A API de opções retorna as conexões conectadas e desconectadas não arquivadas.
-            options.instances,
+            // A API retorna somente as conexões conectadas e desconectadas não arquivadas.
+            options,
             (instance) => instance.name,
           ),
         ),
@@ -174,6 +177,8 @@ function GroupsPage() {
   }, []);
 
   const load = React.useCallback(async () => {
+    latestDetailRequestRef.current += 1;
+    const requestId = ++latestListRequestRef.current;
     setLoading(true);
     try {
       const groupResponse = await groupsApi.list({
@@ -182,19 +187,25 @@ function GroupsPage() {
         pageSize,
         connectionId: instanceFilter,
       });
+      if (requestId !== latestListRequestRef.current) return;
       setGroups(groupResponse.items);
       setTotal(groupResponse.total);
       setTotalPages(groupResponse.totalPages);
     } catch (error) {
+      if (requestId !== latestListRequestRef.current) return;
       toast.error("Falha ao carregar grupos", { description: (error as Error).message });
     } finally {
-      setLoading(false);
+      if (requestId === latestListRequestRef.current) setLoading(false);
     }
   }, [debouncedQuery, instanceFilter, page, pageSize]);
 
   React.useEffect(() => {
+    if (query.trim() !== debouncedQuery.trim()) return;
     void load();
-  }, [load]);
+    return () => {
+      latestListRequestRef.current += 1;
+    };
+  }, [debouncedQuery, load, query]);
 
   React.useEffect(() => {
     if (loading || total > 0 || initialReloadScheduledRef.current) return;
@@ -203,11 +214,52 @@ function GroupsPage() {
     return () => clearTimeout(timer);
   }, [load, loading, total]);
 
-  React.useEffect(() => {
-    setPage(1);
-  }, [instanceFilter, query, pageSize]);
-
   const pageSafe = Math.min(page, totalPages);
+  const invalidateGroupDetail = React.useCallback(() => {
+    latestDetailRequestRef.current += 1;
+    setSelectedGroup(null);
+  }, []);
+  const changeQuery = React.useCallback(
+    (value: string) => {
+      invalidateGroupDetail();
+      setQuery(value);
+      setPage(1);
+    },
+    [invalidateGroupDetail],
+  );
+  const changeInstanceFilter = React.useCallback(
+    (value: string) => {
+      invalidateGroupDetail();
+      setInstanceFilter(value);
+      setPage(1);
+    },
+    [invalidateGroupDetail],
+  );
+  const changePageSize = React.useCallback(
+    (value: number) => {
+      invalidateGroupDetail();
+      setPageSize(value);
+      setPage(1);
+    },
+    [invalidateGroupDetail],
+  );
+  const changePage = React.useCallback(
+    (updater: React.SetStateAction<number>) => {
+      invalidateGroupDetail();
+      setPage(updater);
+    },
+    [invalidateGroupDetail],
+  );
+  const openGroupDetail = React.useCallback(async (group: ApiWhatsappGroupSummary) => {
+    const requestId = ++latestDetailRequestRef.current;
+    try {
+      const detail = await groupsApi.detail(group.id);
+      if (requestId === latestDetailRequestRef.current) setSelectedGroup(detail);
+    } catch (error) {
+      if (requestId !== latestDetailRequestRef.current) return;
+      toast.error("Falha ao carregar grupo", { description: (error as Error).message });
+    }
+  }, []);
   const syncGroups = async () => {
     setSyncing(true);
     try {
@@ -224,7 +276,7 @@ function GroupsPage() {
       setSyncing(false);
     }
   };
-  const openGroupChat = async (group: ApiWhatsappGroup) => {
+  const openGroupChat = async (group: ApiWhatsappGroupSummary) => {
     try {
       navigate({
         to: "/inbox/$conversationId",
@@ -266,7 +318,7 @@ function GroupsPage() {
               <Field label="Busca">
                 <SearchInput
                   value={query}
-                  onChange={setQuery}
+                  onChange={changeQuery}
                   placeholder="Buscar por grupo, participante..."
                 />
               </Field>
@@ -274,7 +326,7 @@ function GroupsPage() {
             <Field label="Instância">
               <InstanceSelect
                 value={instanceFilter}
-                onChange={setInstanceFilter}
+                onChange={changeInstanceFilter}
                 instances={instances}
                 emptyLabel="Todas"
               />
@@ -297,7 +349,7 @@ function GroupsPage() {
                   key={group.id}
                   group={group}
                   onOpenChat={() => void openGroupChat(group)}
-                  onDetail={() => setSelectedGroup(group)}
+                  onDetail={() => void openGroupDetail(group)}
                   onLeave={() => setLeavingGroup(group)}
                 />
               ))}
@@ -315,7 +367,7 @@ function GroupsPage() {
               </span>
               <Select
                 value={String(pageSize)}
-                onChange={(event) => setPageSize(Number(event.target.value))}
+                onChange={(event) => changePageSize(Number(event.target.value))}
                 className="h-8 w-20 text-xs sm:w-24"
               >
                 {PAGE_SIZE_OPTIONS.map((option) => (
@@ -329,7 +381,7 @@ function GroupsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                onClick={() => changePage((current) => Math.max(1, current - 1))}
                 disabled={pageSafe <= 1}
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
@@ -340,7 +392,7 @@ function GroupsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                onClick={() => changePage((current) => Math.min(totalPages, current + 1))}
                 disabled={pageSafe >= totalPages}
               >
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -368,7 +420,7 @@ function GroupsPage() {
         />
         <GroupDetailModal
           group={selectedGroup}
-          onClose={() => setSelectedGroup(null)}
+          onClose={invalidateGroupDetail}
           onGroupChange={(updated) => {
             setSelectedGroup(updated);
             setGroups((current) =>
@@ -420,7 +472,7 @@ function GroupCard({
   onDetail,
   onLeave,
 }: {
-  group: ApiWhatsappGroup;
+  group: ApiWhatsappGroupSummary;
   onOpenChat: () => void;
   onDetail: () => void;
   onLeave: () => void;

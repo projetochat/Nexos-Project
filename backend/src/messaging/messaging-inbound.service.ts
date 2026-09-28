@@ -231,7 +231,15 @@ export class MessagingInboundService {
           type: event.type,
           status: event.fromMe ? MessageStatus.SENT : MessageStatus.CREATED,
           content: event.content ?? null,
-          interactiveData: event.interactive ?? undefined,
+          interactiveData:
+            event.interactive || event.forwarded || event.sticker || event.linkPreview
+              ? {
+                  ...(event.interactive ?? {}),
+                  ...(event.forwarded ? { forwarded: true } : {}),
+                  ...(event.sticker ? { sticker: true } : {}),
+                  ...(event.linkPreview ? { linkPreview: event.linkPreview } : {}),
+                }
+              : undefined,
           externalMessageId: event.externalMessageId,
           providerMessageId: event.externalMessageId,
           providerChatId: event.externalChatId,
@@ -268,7 +276,10 @@ export class MessagingInboundService {
             conversationId: conversation.id,
             direction: MessageDirection.SYSTEM,
             type: MessageType.SYSTEM,
-            content: "Nova conversa (passiva)",
+            content:
+              createdConversation && !existingContact && !isGroup
+                ? "Nova lead (passiva)"
+                : "Nova conversa (passiva)",
             createdAt: new Date(event.occurredAt.getTime() - 1),
           },
         });

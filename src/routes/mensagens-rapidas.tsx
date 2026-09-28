@@ -2,7 +2,7 @@ import { customFieldVariableKey } from "@/lib/message-variables";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { InfoTooltip } from "@/components/info-tooltip";
@@ -29,7 +29,6 @@ import {
 import { assertQuickReplySaved, quickReplyMessages } from "@/lib/quick-reply-sequence";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
-import { formatMessageAttachmentSize } from "@/lib/message-attachment";
 
 export const Route = createFileRoute("/mensagens-rapidas")({
   component: QuickRepliesPage,
@@ -287,7 +286,6 @@ export function QuickReplyEditor({
 }) {
   const [atalho, setAtalho] = React.useState("");
   const [messages, setMessages] = React.useState<QuickReplyMessage[]>([{ text: "" }]);
-  const [intervalSeconds, setIntervalSeconds] = React.useState(0);
   const [closeOnSend, setCloseOnSend] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [shortcutError, setShortcutError] = React.useState("");
@@ -358,7 +356,6 @@ export function QuickReplyEditor({
     if (!open) return;
     setAtalho(initial ? duplicateShortcut(initial.atalho, clone) : "");
     setMessages(initial ? quickReplyMessages(initial) : [{ text: "" }]);
-    setIntervalSeconds(initial?.intervalSeconds ?? 0);
     setCloseOnSend(initial?.close_on_send ?? false);
     setShortcutError("");
   }, [clone, open, initial]);
@@ -393,7 +390,7 @@ export function QuickReplyEditor({
           shortcut,
           content,
           messages,
-          intervalSeconds,
+          intervalSeconds: 0,
           departmentId: initial.departmentId,
           closeOnSend,
           attachmentFileName: attachment?.fileName ?? null,
@@ -407,7 +404,7 @@ export function QuickReplyEditor({
           shortcut,
           content,
           messages,
-          intervalSeconds,
+          intervalSeconds: 0,
           departmentId: null,
           closeOnSend,
           attachmentFileName: attachment?.fileName ?? null,
@@ -416,7 +413,7 @@ export function QuickReplyEditor({
           attachmentDataUrl: attachment?.dataUrl ?? null,
         });
       }
-      assertQuickReplySaved(saved, messages, intervalSeconds);
+      assertQuickReplySaved(saved, messages, 0);
       toast.success("Salvo");
       onSaved();
     } catch (error) {
@@ -529,7 +526,7 @@ export function QuickReplyEditor({
                 className="block min-h-24 w-full resize-y border-0 bg-transparent px-3 py-3 text-sm outline-none"
                 placeholder="Texto da mensagem ou legenda do arquivo"
               />
-              <div className="flex flex-wrap items-center gap-1.5 overflow-visible border-t border-border bg-surface-1 px-2 py-1.5">
+              <div className="flex flex-wrap items-center gap-1.5 overflow-visible rounded-b-lg border-t border-border bg-surface-1 px-2 py-1.5">
                 <MessageEmojiPicker
                   disabled={busy}
                   onSelect={(emoji) => {
@@ -551,28 +548,19 @@ export function QuickReplyEditor({
                     insertVariable(token.slice(2, -2));
                   }}
                 />
-                {message.attachment && (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-7 w-7"
-                    aria-label="Remover arquivo"
-                    disabled={busy}
-                    onClick={() =>
-                      setMessages((items) =>
-                        items.map((item, position) =>
-                          position === index ? { ...item, attachment: null } : item,
-                        ),
-                      )
-                    }
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                )}
                 <MessageAttachmentMenu
+                  variant="segmented"
+                  attachment={message.attachment ?? null}
                   disabled={busy}
                   fileInputLabel={`Anexar arquivo à mensagem ${index + 1}`}
                   onLoadingChange={setBusy}
+                  onRemove={() =>
+                    setMessages((items) =>
+                      items.map((item, position) =>
+                        position === index ? { ...item, attachment: null } : item,
+                      ),
+                    )
+                  }
                   onAttachment={(attachment) =>
                     setMessages((items) =>
                       items.map((item, position) =>
@@ -581,16 +569,6 @@ export function QuickReplyEditor({
                     )
                   }
                 />
-                <span
-                  className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
-                  title={message.attachment?.fileName}
-                >
-                  {message.attachment ? (
-                    `${message.attachment.fileName} (${formatMessageAttachmentSize(message.attachment.size)})`
-                  ) : (
-                    <i>Imagens até 8 MB; demais arquivos até 10 MB.</i>
-                  )}
-                </span>
                 <div className="ml-auto flex gap-1">
                   <Button
                     variant="ghost"
@@ -608,45 +586,34 @@ export function QuickReplyEditor({
               </div>
             </div>
           ))}
-          {messages.length > 1 && (
-            <Field
-              label="Intervalo entre mensagens (segundos)"
-              hint="De 0 a 60 segundos, após a confirmação de envio do item anterior."
-            >
-              <Input
-                type="number"
-                min={0}
-                max={60}
-                step={1}
-                value={intervalSeconds}
+          <div className="space-y-3">
+            <label className="flex cursor-pointer items-center gap-3 text-sm text-muted-foreground">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={closeOnSend}
+                aria-label="Encerrar conversa"
                 disabled={busy}
-                onChange={(event) =>
-                  setIntervalSeconds(
-                    Math.min(60, Math.max(0, Math.floor(Number(event.target.value) || 0))),
-                  )
-                }
-              />
-            </Field>
-          )}
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface-1 p-3 text-sm transition hover:bg-surface-2">
-            <input
-              type="checkbox"
-              checked={closeOnSend}
-              onChange={(event) => setCloseOnSend(event.target.checked)}
-              className="mt-0.5 h-4 w-4 accent-primary"
-            />
-            <span>
-              <span className="flex items-center gap-1 font-medium">
+                onClick={() => setCloseOnSend((current) => !current)}
+                className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 ${closeOnSend ? "bg-blue-600" : "bg-slate-300"}`}
+              >
+                <span
+                  className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${closeOnSend ? "translate-x-6" : "translate-x-1"}`}
+                />
+              </button>
+              <span>Encerrar conversa</span>
+            </label>
+            <div className="flex items-stretch gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              <span className="flex w-6 shrink-0 items-center justify-center [&_svg]:h-5 [&_svg]:w-5">
                 <InfoTooltip label="encerrar conversa">
                   Ao enviar este atalho no chat, a conversa será encerrada automaticamente.
                 </InfoTooltip>
-                Encerrar conversa
               </span>
-              <span className="mt-1 block text-xs text-muted-foreground">
+              <p className="font-semibold">
                 Ao enviar este atalho no chat, a conversa será encerrada automaticamente.
-              </span>
-            </span>
-          </label>
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </Modal>

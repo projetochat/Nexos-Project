@@ -14,7 +14,13 @@ const QUEUES = [
 ] as const;
 type Queue = (typeof QUEUES)[number]["id"];
 
-export function BulkCloseConversationsModal({ onClose }: { onClose: () => void }) {
+export function BulkCloseConversationsModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess?: () => void;
+}) {
   const qc = useQueryClient();
   const { data: counts, isLoading: loadingCounts } = useQuery({
     queryKey: ["trixus", "conversations", "bulk-close-counts"],
@@ -39,6 +45,7 @@ export function BulkCloseConversationsModal({ onClose }: { onClose: () => void }
       await qc.invalidateQueries();
       toast.success(`${result.closed} conversa(s) encerrada(s).`);
       onClose();
+      onSuccess?.();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Não foi possível encerrar as conversas.",

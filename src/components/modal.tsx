@@ -13,6 +13,7 @@ export function Modal({
   className,
   footer,
   initialFocus,
+  closeOnBackdrop = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -23,6 +24,7 @@ export function Modal({
   className?: string;
   footer?: React.ReactNode;
   initialFocus?: string;
+  closeOnBackdrop?: boolean;
 }) {
   const dialogRef = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
@@ -61,7 +63,10 @@ export function Modal({
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={closeOnBackdrop ? onClose : undefined}
+      />
       <div
         role="dialog"
         ref={dialogRef}

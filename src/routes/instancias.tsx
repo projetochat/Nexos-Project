@@ -27,7 +27,6 @@ import {
   Upload,
   Wifi,
   WifiOff,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
@@ -36,9 +35,7 @@ import { ConfirmDialog, Modal } from "@/components/modal";
 import { TimezoneSelect } from "@/components/timezone-select";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { InfoTooltip } from "@/components/info-tooltip";
-import { MessageAttachmentMenu } from "@/components/message-attachment-menu";
-import { MessageVariablesMenu } from "@/components/message-variables-menu";
-import { MessageEmojiPicker } from "@/components/message-emoji-picker";
+import { GreetingMessageEditor } from "@/components/greeting-message-editor";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
 import { num } from "@/lib/format";
@@ -53,7 +50,12 @@ import {
   type ApiServiceHoursRow,
   type QuickReplyAttachment,
 } from "@/lib/trixus-api";
-import { formatMessageAttachmentSize } from "@/lib/message-attachment";
+import {
+  CONNECTION_MESSAGE_VARIABLES,
+  mergeMessageVariables,
+} from "@/lib/message-variable-options";
+
+export { GreetingMessageEditor } from "@/components/greeting-message-editor";
 
 export const Route = createFileRoute("/instancias")({ component: Page });
 
@@ -372,7 +374,7 @@ function Page() {
                       </Button>
                     )}
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
                       onClick={() => refresh.mutate(connection.id)}
                       title="Verificar integração do WhatsApp"
@@ -499,11 +501,8 @@ function ConnectionForm({
   const [connectionType, setConnectionType] = React.useState<"qr-code">("qr-code");
   const [serviceEnabled, setServiceEnabled] = React.useState(true);
   const [importHistory, setImportHistory] = React.useState(false);
-  const [importGroups, setImportGroups] = React.useState(false);
   const [historyStartDate, setHistoryStartDate] = React.useState("");
-  const [groupStartDate, setGroupStartDate] = React.useState("");
-  const missingImportDate =
-    serviceEnabled && ((importHistory && !historyStartDate) || (importGroups && !groupStartDate));
+  const missingImportDate = serviceEnabled && importHistory && !historyStartDate;
   const duplicateName = instanceNameAlreadyExists(name, connections);
   const canCreate = name.trim().length >= 2 && !missingImportDate && !duplicateName;
 
@@ -514,9 +513,7 @@ function ConnectionForm({
       setConnectionType("qr-code");
       setServiceEnabled(true);
       setImportHistory(false);
-      setImportGroups(false);
       setHistoryStartDate("");
-      setGroupStartDate("");
     }
   }, [open]);
 
@@ -530,176 +527,192 @@ function ConnectionForm({
       importHistoryEnabled: serviceEnabled && importHistory,
       importHistoryStartDate:
         serviceEnabled && importHistory ? historyStartDate || undefined : undefined,
-      importGroupsEnabled: serviceEnabled && importGroups,
-      importGroupsStartDate:
-        serviceEnabled && importGroups ? groupStartDate || undefined : undefined,
+      importGroupsEnabled: false,
+      importGroupsStartDate: undefined,
     });
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Nova Instância"
-      size="md"
-      className="lg:max-w-[40.25rem]"
-      footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            type="submit"
-            form="new-whatsapp-instance-form"
-            disabled={busy || !canCreate}
-          >
-            Criar
-          </Button>
-        </>
-      }
-    >
-      <form id="new-whatsapp-instance-form" className="space-y-5" onSubmit={submit}>
-        <fieldset>
-          <legend className="mb-2.5 flex items-center gap-2 text-sm font-semibold">
-            Tipo de conexão
-            <InfoTooltip label="tipo de conexão">
-              Escolha como conectar o WhatsApp: QR Code pelo celular ou API Oficial da Meta.
-            </InfoTooltip>
-          </legend>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              aria-pressed={connectionType === "qr-code"}
-              onClick={() => setConnectionType("qr-code")}
-              className="group flex min-h-32 flex-col items-center justify-center rounded-xl border border-border bg-surface-1 p-3 text-center outline-none transition hover:border-emerald-500 hover:bg-emerald-500/10 focus-visible:border-emerald-500 data-[selected=true]:border-emerald-500 data-[selected=true]:bg-emerald-500/10 sm:min-h-36 sm:p-4"
-              data-selected={connectionType === "qr-code"}
+    <>
+      <Modal
+        open={open}
+        onClose={() => {
+          if (!busy) onClose();
+        }}
+        title="Nova Instância"
+        size="md"
+        className="lg:max-w-[40.25rem]"
+        closeOnBackdrop={false}
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              type="submit"
+              form="new-whatsapp-instance-form"
+              disabled={busy || !canCreate}
             >
-              <span className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-surface-3 text-muted-foreground transition group-hover:bg-emerald-500 group-hover:text-white group-data-[selected=true]:bg-emerald-500 group-data-[selected=true]:text-white">
-                <MessageCircle className="h-6 w-6" aria-hidden="true" />
-              </span>
-              <span className="text-base font-semibold">QR Code</span>
-              <span className="mt-0.5 text-sm text-muted-foreground">Conexão via celular</span>
-            </button>
-            <button
-              type="button"
-              disabled
-              aria-disabled="true"
-              title="A integração com a API Oficial estará disponível em breve."
-              className="flex min-h-32 cursor-not-allowed flex-col items-center justify-center rounded-xl border border-border bg-surface-1 p-3 text-center opacity-50 sm:min-h-36 sm:p-4"
-            >
-              <span className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-surface-3 text-muted-foreground">
-                <InfinityIcon className="h-7 w-7" aria-hidden="true" />
-              </span>
-              <span className="text-base font-semibold">API Oficial</span>
-              <span className="mt-0.5 text-sm text-muted-foreground">Meta Business</span>
-            </button>
-          </div>
-        </fieldset>
-
-        <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
-          <Field label="Nome da instância *">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Digite o nome da instância"
-              aria-invalid={duplicateName}
-              className={duplicateName ? "border-destructive focus:border-destructive" : undefined}
-              required
-            />
-            {duplicateName && (
-              <p className="mt-1 text-xs text-destructive" role="alert">
-                Já existe uma instância com este nome.
-              </p>
-            )}
-          </Field>
-          <Field label="Cor" asLabel={false}>
-            <div className="flex h-10 items-center gap-1 rounded-lg border border-border bg-surface-1 px-1.5 transition focus-within:border-primary sm:gap-1.5 sm:px-2">
-              <input
-                type="color"
-                aria-label="Selecionar cor da instância"
-                value={completeHexColor(color, "#22c55e")}
-                onChange={(event) => setColor(normalizeHexColor(event.target.value))}
-                className="h-7 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
-              />
-              <input
-                type="text"
-                aria-label="Código da cor da instância"
-                value={color}
-                onChange={(event) => setColor(normalizeHexColor(event.target.value))}
-                placeholder="#22C55E"
-                maxLength={7}
-                className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 max-sm:p-0"
-              />
-            </div>
-          </Field>
-        </div>
-
-        <div className="rounded-xl border border-border bg-surface-1 p-4">
-          <ImportOption
-            label="Atendimento ativo"
-            checked={serviceEnabled}
-            onCheckedChange={setServiceEnabled}
-          />
-          <p className="mt-2 text-xs text-muted-foreground">
-            Ativa o envio e o recebimento de mensagens nesta instância.
-          </p>
-        </div>
-
-        <section className="space-y-4 border-t border-border pt-5" aria-label="Importar mensagens">
-          <h3 className="text-base font-semibold">Importar Mensagens</h3>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-3">
-              <ImportOption
-                label="Importar histórico de mensagens"
-                checked={importHistory}
-                onCheckedChange={setImportHistory}
-                disabled={!serviceEnabled}
-              />
-              <ImportDate
-                label="Dt. início p/ importação"
-                required={importHistory}
-                value={historyStartDate}
-                onChange={setHistoryStartDate}
-                disabled={!serviceEnabled || !importHistory}
-              />
-            </div>
-            <div className="space-y-3">
-              <ImportOption
-                label="Importar mensagens de grupo"
-                checked={importGroups}
-                onCheckedChange={setImportGroups}
-                disabled={!serviceEnabled}
-              />
-              <ImportDate
-                label="Dt. início p/ importação"
-                required={importGroups}
-                value={groupStartDate}
-                onChange={setGroupStartDate}
-                disabled={!serviceEnabled || !importGroups}
-              />
-            </div>
-          </div>
-          <div className="flex items-stretch gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-            <span className="flex w-6 shrink-0 items-center justify-center">
-              <InfoTooltip label="importação de mensagens">
-                A importação de mensagens começará após ler o QR Code. Pode levar até 5 minutos para
-                iniciar.
+              Criar
+            </Button>
+          </>
+        }
+      >
+        <form id="new-whatsapp-instance-form" className="space-y-5" onSubmit={submit}>
+          <fieldset>
+            <legend className="mb-2.5 flex items-center gap-2 text-sm font-semibold">
+              Tipo de conexão
+              <InfoTooltip label="tipo de conexão">
+                Escolha como conectar o WhatsApp: QR Code pelo celular ou API Oficial da Meta.
               </InfoTooltip>
-            </span>
-            <div>
-              <p className="font-semibold">
-                A importação de mensagens começará após ler o QR Code.
-              </p>
-              <p className="mt-0.5 text-sm font-normal text-blue-700">
-                Pode levar até 5 minutos para iniciar.
-              </p>
+            </legend>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                aria-pressed={connectionType === "qr-code"}
+                onClick={() => setConnectionType("qr-code")}
+                className="group flex min-h-32 flex-col items-center justify-center rounded-xl border border-border bg-surface-1 p-3 text-center outline-none transition hover:border-emerald-500 hover:bg-emerald-500/10 focus-visible:border-emerald-500 data-[selected=true]:border-emerald-500 data-[selected=true]:bg-emerald-500/10 sm:min-h-36 sm:p-4"
+                data-selected={connectionType === "qr-code"}
+              >
+                <span className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-surface-3 text-muted-foreground transition group-hover:bg-emerald-500 group-hover:text-white group-data-[selected=true]:bg-emerald-500 group-data-[selected=true]:text-white">
+                  <MessageCircle className="h-6 w-6" aria-hidden="true" />
+                </span>
+                <span className="text-base font-semibold">QR Code</span>
+                <span className="mt-0.5 text-sm text-muted-foreground">Conexão via celular</span>
+              </button>
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                title="A integração com a API Oficial estará disponível em breve."
+                className="flex min-h-32 cursor-not-allowed flex-col items-center justify-center rounded-xl border border-border bg-surface-1 p-3 text-center opacity-50 sm:min-h-36 sm:p-4"
+              >
+                <span className="mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-surface-3 text-muted-foreground">
+                  <InfinityIcon className="h-7 w-7" aria-hidden="true" />
+                </span>
+                <span className="text-base font-semibold">API Oficial</span>
+                <span className="mt-0.5 text-sm text-muted-foreground">
+                  Meta Business (Em Breve)
+                </span>
+              </button>
             </div>
+          </fieldset>
+
+          <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
+            <Field label="Nome da instância *">
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Digite o nome da instância"
+                aria-invalid={duplicateName}
+                className={
+                  duplicateName ? "border-destructive focus:border-destructive" : undefined
+                }
+                required
+              />
+              {duplicateName && (
+                <p className="mt-1 text-xs text-destructive" role="alert">
+                  Já existe uma instância com este nome.
+                </p>
+              )}
+            </Field>
+            <Field label="Cor" asLabel={false}>
+              <div className="flex h-10 items-center gap-1 rounded-lg border border-border bg-surface-1 px-1.5 transition focus-within:border-primary sm:gap-1.5 sm:px-2">
+                <input
+                  type="color"
+                  aria-label="Selecionar cor da instância"
+                  value={completeHexColor(color, "#22c55e")}
+                  onChange={(event) => setColor(normalizeHexColor(event.target.value))}
+                  className="h-7 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0"
+                />
+                <input
+                  type="text"
+                  aria-label="Código da cor da instância"
+                  value={color}
+                  onChange={(event) => setColor(normalizeHexColor(event.target.value))}
+                  placeholder="#22C55E"
+                  maxLength={7}
+                  className="min-w-0 flex-1 border-0 bg-transparent font-mono text-sm uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 max-sm:p-0"
+                />
+              </div>
+            </Field>
           </div>
-        </section>
-      </form>
-    </Modal>
+
+          <div className="space-y-3">
+            <ImportOption
+              label="Ativar Atendimento"
+              checked={serviceEnabled}
+              onCheckedChange={setServiceEnabled}
+            />
+            <InstanceInfoNotice
+              label="ativar atendimento"
+              tooltip="Pausa o envio e recebimento de mensagens da instância, mantendo o WhatsApp conectado."
+            >
+              <p className="font-semibold">
+                Pausa o envio e recebimento de mensagens da instância, mantendo o WhatsApp
+                conectado.
+              </p>
+            </InstanceInfoNotice>
+          </div>
+
+          <section
+            className="space-y-4 border-t border-border pt-5"
+            aria-label="Importar mensagens"
+          >
+            <h3 className="text-base font-semibold">Importar Mensagens</h3>
+            <div className="space-y-3 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(14rem,1fr)] sm:items-end sm:gap-4 sm:space-y-0">
+              <div className="sm:flex sm:h-11 sm:items-center">
+                <ImportOption
+                  label="Importar histórico de mensagens"
+                  checked={importHistory}
+                  onCheckedChange={setImportHistory}
+                  disabled={!serviceEnabled}
+                />
+              </div>
+              {importHistory && (
+                <ImportDate
+                  label="Dt. início p/ importação"
+                  required
+                  value={historyStartDate}
+                  onChange={setHistoryStartDate}
+                  disabled={!serviceEnabled}
+                />
+              )}
+            </div>
+            <InstanceInfoNotice
+              label="importação de mensagens"
+              tooltip="A importação de mensagens começará após ler o QR Code. Pode levar até 5 minutos para iniciar."
+            >
+              <div>
+                <p className="font-semibold">
+                  A importação de mensagens começará após ler o QR Code.
+                </p>
+                <p className="mt-0.5 text-sm font-normal text-blue-700">
+                  Pode levar até 5 minutos para iniciar.
+                </p>
+              </div>
+            </InstanceInfoNotice>
+          </section>
+        </form>
+      </Modal>
+      {busy && typeof document !== "undefined"
+        ? createPortal(
+            <div className="fixed inset-0 z-[280] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
+              <div
+                role="status"
+                aria-live="assertive"
+                className="flex min-w-72 flex-col items-center gap-4 rounded-xl border border-border bg-card px-6 py-7 text-center text-sm font-semibold text-foreground shadow-2xl"
+              >
+                <RefreshCw className="h-7 w-7 animate-spin text-primary" aria-hidden="true" />
+                <span>Aguarde, QR Code está sendo gerado!</span>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 
@@ -733,6 +746,25 @@ function ImportOption({
       </button>
       <span>{label}</span>
     </label>
+  );
+}
+
+function InstanceInfoNotice({
+  label,
+  tooltip,
+  children,
+}: {
+  label: string;
+  tooltip: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-stretch gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+      <span className="flex w-6 shrink-0 items-center justify-center [&_svg]:h-5 [&_svg]:w-5">
+        <InfoTooltip label={label}>{tooltip}</InfoTooltip>
+      </span>
+      <div>{children}</div>
+    </div>
   );
 }
 
@@ -921,26 +953,6 @@ type ServiceHoursPeriod = {
   id: string;
   start: string;
   end: string;
-};
-
-const CONNECTION_MESSAGE_VARIABLES = [
-  "{{cumprimento}}",
-  "{{nome}}",
-  "{{telefone}}",
-  "{{email}}",
-  "{{departamento}}",
-  "{{cliente}}",
-  "{{instancia}}",
-];
-
-const CONNECTION_MESSAGE_VARIABLE_DESCRIPTIONS: Record<string, string> = {
-  "{{cumprimento}}": "Bom dia, Boa tarde e Boa noite. Será apresentado conforme a hora do dia.",
-  "{{nome}}": "Nome do contato.",
-  "{{telefone}}": "Telefone do contato.",
-  "{{email}}": "E-mail do contato.",
-  "{{instancia}}": "Instância da conversa.",
-  "{{cliente}}": "Cliente do contato.",
-  "{{departamento}}": "Departamento do contato.",
 };
 
 const NEW_CONTACT_MESSAGE_PLACEHOLDER = `Olá!
@@ -1236,12 +1248,12 @@ function ConnectionSettingsModal({
 
           {tab === "general" && (
             <div className="space-y-5">
-              <div className="grid gap-5 lg:grid-cols-[170px_minmax(0,1fr)]">
-                <div className="relative grid grid-cols-2 items-center gap-3 sm:flex sm:flex-col sm:justify-center">
+              <div className="grid gap-5 lg:gap-8">
+                <div className="relative grid max-w-md grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 lg:mx-auto lg:w-full lg:max-w-[32rem] lg:grid-cols-[9rem_minmax(0,1fr)] lg:gap-16">
                   <button
                     ref={logoButtonRef}
                     type="button"
-                    className="group relative flex h-28 w-28 shrink-0 items-center justify-center justify-self-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-sm font-semibold text-muted-foreground"
+                    className="group relative flex h-28 w-28 shrink-0 items-center justify-center justify-self-center overflow-hidden rounded-full border border-border bg-surface-1 text-center text-sm font-semibold text-muted-foreground lg:h-36 lg:w-36"
                     onClick={() => setLogoMenuOpen((open) => !open)}
                     aria-label="Opções da foto"
                   >
@@ -1258,7 +1270,7 @@ function ConnectionSettingsModal({
                       <Camera className="h-8 w-8" />
                     </span>
                   </button>
-                  <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center sm:hidden">
+                  <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center">
                     {connection && (
                       <div className="mb-3">
                         <Badge tone={STATUS_TONE[connection.status]}>
@@ -1268,7 +1280,7 @@ function ConnectionSettingsModal({
                       </div>
                     )}
                     <span className="text-base uppercase tracking-wide text-muted-foreground">
-                      WhatsApp
+                      {connection ? providerLabel(connection.providerType) : "WhatsApp"}
                     </span>
                     <span className="text-base font-medium text-foreground">
                       {connection?.ownerPhone
@@ -1336,20 +1348,8 @@ function ConnectionSettingsModal({
                 </div>
 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-2 sm:gap-4">
-                    <div className="hidden sm:col-start-1 sm:row-start-1 sm:block">
-                      <Field label="Status">
-                        <div className="flex h-10 items-center">
-                          {connection ? (
-                            <Badge tone={STATUS_TONE[connection.status]}>
-                              {statusIcon(connection.status)}
-                              {statusLabel(connection.status)}
-                            </Badge>
-                          ) : null}
-                        </div>
-                      </Field>
-                    </div>
-                    <div className="min-w-0 sm:col-start-1 sm:row-start-2">
+                  <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_9.75rem]">
+                    <div className="min-w-0">
                       <Field label="Nome *">
                         <Input
                           value={form.name}
@@ -1368,7 +1368,7 @@ function ConnectionSettingsModal({
                         )}
                       </Field>
                     </div>
-                    <div className="min-w-0 sm:col-start-2 sm:row-start-1">
+                    <div className="min-w-0">
                       <Field label="Cor">
                         <div className="flex min-h-10 items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-2 py-1.5 transition focus-within:border-primary max-sm:gap-1 max-sm:px-1.5 max-sm:py-0">
                           <input
@@ -1393,19 +1393,9 @@ function ConnectionSettingsModal({
                             }
                             placeholder={completeHexColor("#22c55e")}
                             maxLength={7}
-                            className="min-w-0 flex-1 border-0 bg-transparent font-mono text-xs uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 max-sm:p-0"
+                            className="min-w-0 flex-1 border-0 bg-transparent font-mono text-sm uppercase outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 max-sm:p-0"
                           />
                         </div>
-                      </Field>
-                    </div>
-                    <div className="hidden sm:col-start-2 sm:row-start-2 sm:block">
-                      <Field label="Telefone *">
-                        <Input
-                          value={
-                            connection?.ownerPhone ? maskBrazilPhone(connection.ownerPhone) : ""
-                          }
-                          readOnly
-                        />
                       </Field>
                     </div>
                   </div>
@@ -1426,62 +1416,59 @@ function ConnectionSettingsModal({
                       </Select>
                     </div>
                     <Field label="Time Zone">
-                      <TimezoneSelect value={timezone} onChange={setTimezone} className="text-xs" />
+                      <TimezoneSelect value={timezone} onChange={setTimezone} />
                     </Field>
                   </div>
                 </div>
               </div>
-              <div className="rounded-xl border border-border bg-surface-1 p-4">
+              <div className="space-y-3">
                 <ImportOption
-                  label="Atendimento ativo"
+                  label="Ativar Atendimento"
                   checked={serviceEnabled}
                   onCheckedChange={setServiceEnabled}
                   disabled={busy}
                 />
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Pausa o envio e recebimento de mensagens da instância, mantendo o WhatsApp
-                  conectado.
-                </p>
+                <InstanceInfoNotice
+                  label="ativar atendimento"
+                  tooltip="Pausa o envio e recebimento de mensagens da instância, mantendo o WhatsApp conectado."
+                >
+                  <p className="font-semibold">
+                    Pausa o envio e recebimento de mensagens da instância, mantendo o WhatsApp
+                    conectado.
+                  </p>
+                </InstanceInfoNotice>
               </div>
               <section
-                className="space-y-4 rounded-xl border border-border bg-surface-1 p-4"
-                aria-label="Importação de Mensagens"
+                className="space-y-4 border-t border-border pt-5"
+                aria-label="Importar mensagens"
               >
-                <h3 className="text-base font-semibold text-foreground">Importação de Mensagens</h3>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {(["DIRECT", "GROUP"] as const).map((kind) => {
-                    const job = importJobs.find((item) => item.kind === kind);
-                    const label =
-                      kind === "DIRECT" ? "Histórico de mensagens" : "Mensagens de grupo";
+                <h3 className="text-base font-semibold text-foreground">Importar Mensagens</h3>
+                <div className="space-y-3 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(14rem,1fr)] sm:items-end sm:gap-4 sm:space-y-0">
+                  {(() => {
+                    const job = importJobs.find((item) => item.kind === "DIRECT");
                     return (
-                      <div key={kind} className="min-w-0 space-y-4">
-                        <ImportOption
-                          label={
-                            kind === "DIRECT"
-                              ? "Importar histórico de mensagens"
-                              : "Importar mensagens de grupo"
-                          }
-                          checked={
-                            kind === "DIRECT"
-                              ? connection?.importHistoryEnabled === true
-                              : connection?.importGroupsEnabled === true
-                          }
-                          onCheckedChange={() => undefined}
-                          disabled
-                        />
-                        <ImportDate
-                          label="Dt. início p/ importação"
-                          value={
-                            (kind === "DIRECT"
-                              ? connection?.importHistoryStartDate
-                              : connection?.importGroupsStartDate) ?? ""
-                          }
-                          onChange={() => undefined}
-                          disabled
-                        />
-                        <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs">
+                      <>
+                        <div className="sm:flex sm:h-11 sm:items-center">
+                          <ImportOption
+                            label="Importar histórico de mensagens"
+                            checked={connection?.importHistoryEnabled === true}
+                            onCheckedChange={() => undefined}
+                            disabled
+                          />
+                        </div>
+                        {connection?.importHistoryEnabled === true && (
+                          <ImportDate
+                            label="Dt. início p/ importação"
+                            value={connection.importHistoryStartDate ?? ""}
+                            onChange={() => undefined}
+                            disabled
+                          />
+                        )}
+                        <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs sm:col-span-2">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium text-foreground">{label}</span>
+                            <span className="font-medium text-foreground">
+                              Histórico de mensagens
+                            </span>
                             <ImportStatusBadge job={job} />
                           </div>
                           {job && (
@@ -1498,16 +1485,16 @@ function ConnectionSettingsModal({
                                 variant="secondary"
                                 size="sm"
                                 disabled={retryImport.isPending}
-                                onClick={() => retryImport.mutate(kind)}
+                                onClick={() => retryImport.mutate("DIRECT")}
                               >
                                 Tentar novamente
                               </Button>
                             </div>
                           )}
                         </div>
-                      </div>
+                      </>
                     );
-                  })}
+                  })()}
                 </div>
               </section>
             </div>
@@ -1539,6 +1526,7 @@ function ConnectionSettingsModal({
                   value={form.welcomeNewMessage ?? ""}
                   attachment={form.welcomeNewAttachment}
                   showEmoji
+                  attachmentLayout="segmented"
                   variables={mergeMessageVariables(
                     CONNECTION_MESSAGE_VARIABLES,
                     contactCustomFields,
@@ -1571,6 +1559,7 @@ function ConnectionSettingsModal({
                   value={form.welcomeExistingMessage ?? ""}
                   attachment={form.welcomeExistingAttachment}
                   showEmoji
+                  attachmentLayout="segmented"
                   variables={mergeMessageVariables(
                     CONNECTION_MESSAGE_VARIABLES,
                     contactCustomFields,
@@ -1621,6 +1610,7 @@ function ConnectionSettingsModal({
                   value={absenceMessage}
                   attachment={absenceAttachment}
                   showEmoji
+                  attachmentLayout="segmented"
                   variables={mergeMessageVariables(
                     CONNECTION_MESSAGE_VARIABLES,
                     contactCustomFields,
@@ -1685,96 +1675,6 @@ function TabButton({
     >
       {children}
     </button>
-  );
-}
-
-export function GreetingMessageEditor({
-  value,
-  attachment,
-  variables,
-  disabled,
-  invalid,
-  placeholder,
-  showAttachment = true,
-  showEmoji = false,
-  onChange,
-}: {
-  value: string;
-  attachment: QuickReplyAttachment | null;
-  variables: Array<{ token: string; description: string }>;
-  disabled: boolean;
-  invalid: boolean;
-  placeholder: string;
-  showAttachment?: boolean;
-  showEmoji?: boolean;
-  onChange: (value: string, attachment: QuickReplyAttachment | null) => void;
-}) {
-  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
-
-  const insertText = (text: string) => {
-    const input = textareaRef.current;
-    const start = input?.selectionStart ?? value.length;
-    const end = input?.selectionEnd ?? start;
-    if (value.length - (end - start) + text.length > 1000) {
-      toast.error("A mensagem deve ter no máximo 1000 caracteres.");
-      return;
-    }
-    const next = value.slice(0, start) + text + value.slice(end);
-    onChange(next, attachment);
-    requestAnimationFrame(() => {
-      input?.focus();
-      input?.setSelectionRange(start + text.length, start + text.length);
-    });
-  };
-
-  return (
-    <div className="overflow-visible rounded-lg border border-border bg-card focus-within:border-primary">
-      <textarea
-        ref={textareaRef}
-        rows={6}
-        maxLength={1000}
-        value={value}
-        onChange={(event) => onChange(event.target.value, attachment)}
-        disabled={disabled}
-        aria-invalid={invalid}
-        placeholder={placeholder}
-        className="block min-h-32 w-full resize-y rounded-t-lg border-0 bg-transparent px-3 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
-      />
-      <div className="flex flex-wrap items-center gap-1.5 overflow-visible border-t border-border bg-surface-1 px-2 py-1.5">
-        {showEmoji && <MessageEmojiPicker disabled={disabled} onSelect={insertText} />}
-        <MessageVariablesMenu disabled={disabled} variables={variables} onSelect={insertText} />
-        {showAttachment && attachment && (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-7 w-7"
-            disabled={disabled}
-            aria-label="Remover arquivo"
-            onClick={() => onChange(value, null)}
-          >
-            <X className="h-3.5 w-3.5" />
-          </Button>
-        )}
-        {showAttachment && (
-          <>
-            <MessageAttachmentMenu
-              disabled={disabled}
-              fileInputLabel="Anexar arquivo à mensagem automática"
-              onAttachment={(nextAttachment) => onChange(value, nextAttachment)}
-            />
-            <span
-              className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
-              title={attachment?.fileName}
-            >
-              {attachment
-                ? `${attachment.fileName} (${formatMessageAttachmentSize(attachment.size)})`
-                : "Imagens até 8 MB; demais arquivos até 10 MB."}
-            </span>
-          </>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -2092,56 +1992,6 @@ function VariableTokenButton({ token }: { token: string }) {
   );
 }
 
-function mergeMessageVariables(baseTokens: string[], customFields: ApiContactCustomField[]) {
-  const variables = baseTokens.map((token) => ({
-    token,
-    description: CONNECTION_MESSAGE_VARIABLE_DESCRIPTIONS[token] ?? "Variável disponível.",
-  }));
-  const knownTokens = new Set(baseTokens);
-
-  customFields.forEach((field) => {
-    const token = customFieldVariableToken(field.label);
-    if (!token || knownTokens.has(token)) return;
-    knownTokens.add(token);
-    variables.push({ token, description: `Campo adicional: ${field.label}.` });
-  });
-
-  return variables;
-}
-
-const VARIABLE_NAME_STOP_WORDS = new Set([
-  "de",
-  "do",
-  "dos",
-  "da",
-  "das",
-  "o",
-  "a",
-  "os",
-  "as",
-  "um",
-  "uns",
-  "uma",
-  "umas",
-  "e",
-  "ou",
-]);
-
-function customFieldVariableToken(label: string) {
-  const words = label
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .split("_")
-    .filter(Boolean);
-  const meaningfulWords = words.filter((word) => !VARIABLE_NAME_STOP_WORDS.has(word));
-  const key = (meaningfulWords.length ? meaningfulWords : words).join("_");
-  return key ? `{{${key}}}` : null;
-}
-
 export function ServiceHoursTable({
   rows,
   onChange,
@@ -2214,6 +2064,29 @@ export function ServiceHoursTable({
           : row,
       ),
     );
+  };
+
+  const timeInputOrder = (rowIndex: number, periodIndex: number, fieldOffset: 0 | 1) =>
+    rows.slice(0, rowIndex).reduce((total, row) => total + row.periods.length * 2, 0) +
+    periodIndex * 2 +
+    fieldOffset;
+
+  const handleTimeInputTab = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
+    const table = event.currentTarget.closest("table");
+    if (!table) return;
+    const inputs = Array.from(
+      table.querySelectorAll<HTMLInputElement>("input[data-service-hour-order]:not(:disabled)"),
+    ).sort(
+      (left, right) =>
+        Number(left.dataset.serviceHourOrder) - Number(right.dataset.serviceHourOrder),
+    );
+    const currentIndex = inputs.indexOf(event.currentTarget);
+    const target = inputs[currentIndex + (event.shiftKey ? -1 : 1)];
+    if (!target) return;
+    event.preventDefault();
+    target.focus();
+    target.select();
   };
 
   return (
@@ -2306,10 +2179,12 @@ export function ServiceHoursTable({
                               aria-describedby={error ? dayErrorId : undefined}
                               type="text"
                               inputMode="numeric"
+                              data-service-hour-order={timeInputOrder(index, periodIndex, 0)}
                               value={period.start}
                               placeholder="00:00"
                               disabled={!enabled || !row.active}
                               onFocus={() => setSelectedRow(index)}
+                              onKeyDown={handleTimeInputTab}
                               onChange={(event) =>
                                 updatePeriod(index, period.id, {
                                   start: sanitizeServiceHourDraft(event.target.value),
@@ -2335,6 +2210,7 @@ export function ServiceHoursTable({
                               key={period.id}
                               type="text"
                               inputMode="numeric"
+                              data-service-hour-order={timeInputOrder(index, periodIndex, 1)}
                               aria-label={
                                 periodIndex === 0
                                   ? `Fim de ${row.day}`
@@ -2346,6 +2222,7 @@ export function ServiceHoursTable({
                               placeholder="00:00"
                               disabled={!enabled || !row.active}
                               onFocus={() => setSelectedRow(index)}
+                              onKeyDown={handleTimeInputTab}
                               onChange={(event) =>
                                 updatePeriod(index, period.id, {
                                   end: sanitizeServiceHourDraft(event.target.value),
@@ -2378,9 +2255,9 @@ export function ServiceHoursTable({
                                   onClick={() => removePeriod(index, period.id)}
                                   title="Excluir horário"
                                   aria-label={`Excluir período ${periodIndex + 1} de ${row.day}`}
-                                  className="trash-action h-7 w-7 p-0 sm:h-8 sm:w-8"
+                                  className="trash-action"
                                 >
-                                  <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </Button>
                                 {periodIndex === 0 && (
                                   <>
@@ -2391,9 +2268,8 @@ export function ServiceHoursTable({
                                       onClick={() => copyToAll(index)}
                                       title="Copiar para todos"
                                       aria-label={`Copiar horários de ${row.day} para todos os dias ativos`}
-                                      className="h-7 w-7 p-0 sm:h-8 sm:w-8"
                                     >
-                                      <Copy className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                                      <Copy className="h-3.5 w-3.5" />
                                     </Button>
                                     <Button
                                       type="button"
@@ -2402,9 +2278,9 @@ export function ServiceHoursTable({
                                       onClick={() => addPeriod(index)}
                                       title="Incluir novo horário"
                                       aria-label={`Incluir horário em ${row.day}`}
-                                      className="group h-7 w-7 p-0 hover:text-primary sm:h-8 sm:w-8"
+                                      className="group hover:text-primary"
                                     >
-                                      <Plus className="h-4 w-4 transition-colors group-hover:text-primary sm:h-3.5 sm:w-3.5" />
+                                      <Plus className="h-3.5 w-3.5 transition-colors group-hover:text-primary" />
                                     </Button>
                                   </>
                                 )}
@@ -2486,7 +2362,7 @@ function QrModal({
     <Modal
       open={!!qr}
       onClose={onClose}
-      title={qr ? `QR - ${qr.name}` : "QR"}
+      title={qr ? `QR Code - ${qr.name}` : "QR"}
       size="sm"
       className="sm:max-w-[30.125rem]"
     >
