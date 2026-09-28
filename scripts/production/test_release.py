@@ -115,6 +115,10 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(updated['services']['backend']['cap_drop'], ['ALL'])
         self.assertEqual(updated['services']['backend']['mem_limit'], '768m')
         self.assertEqual(updated['services']['backend']['memswap_limit'], '768m')
+        self.assertEqual(updated['services']['frontend']['healthcheck']['test'][:3],
+                         ['CMD', 'bun', '-e'])
+        self.assertIn('127.0.0.1:4173',
+                      updated['services']['frontend']['healthcheck']['test'][3])
 
     def test_backup_failure_restarts_existing_apps_without_migration(self):
         with tempfile.TemporaryDirectory() as folder:

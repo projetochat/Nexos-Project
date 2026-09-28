@@ -156,13 +156,13 @@ jobs:
     needs: build
     if: >-
       github.ref == 'refs/heads/main' &&
-      ((github.event_name == 'workflow_dispatch' && inputs.release_mode != 'build') ||
-       (github.event_name == 'push' && vars.TRIXUS_AUTO_DEPLOY == 'true'))
+      github.event_name == 'workflow_dispatch' &&
+      inputs.release_mode != 'build'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: production
     env:
-      RELEASE_MODE: ${{ github.event_name == 'push' && 'deploy' || inputs.release_mode }}
+      RELEASE_MODE: ${{ inputs.release_mode }}
       DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
       DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER }}
