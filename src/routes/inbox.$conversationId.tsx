@@ -442,9 +442,14 @@ function ConversationPage() {
   const isStarted = conv.is_group ? !!conv.protocolo : !!conv.protocolo && !!conv.agent_id;
   const isStandby = conv.status === "aguardando";
   const isMine = !!user && conv.agent_id === user.id;
+  const canSendMessages = user?.permissions?.includes("messages.send") ?? false;
+  const canAssignConversations = user?.permissions?.includes("conversations.assign") ?? false;
+  const canCreateTicket =
+    user?.permissions?.includes("tickets.create") || user?.permissions?.includes("tickets.manage");
   const canSend =
-    (conv.is_group && !!conv.protocolo && conv.status !== "fechada" && !isStandby) ||
-    (isStarted && conv.status !== "fechada" && !isStandby);
+    canSendMessages &&
+    ((conv.is_group && !!conv.protocolo && conv.status !== "fechada" && !isStandby) ||
+      (isStarted && conv.status !== "fechada" && !isStandby));
   const showStart =
     conv.status !== "fechada" &&
     (conv.is_group ? !conv.protocolo || isStandby : !conv.agent_id || isStandby);
@@ -568,7 +573,7 @@ function ConversationPage() {
                 </Button>
               ) : (
                 <>
-                  {showStart && (
+                  {showStart && canAssignConversations && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -581,26 +586,29 @@ function ConversationPage() {
                       <span className="hidden md:inline">{startLabel}</span>
                     </Button>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="group"
-                    onClick={transferModal.show}
-                    aria-label="Transferir Atendimento"
-                    title="Transferir Atendimento"
-                  >
-                    <ArrowRightLeft className="h-3.5 w-3.5 transition-colors group-hover:text-amber-500" />{" "}
-                    <span className="hidden lg:inline">Transferir</span>
-                  </Button>
+                  {canAssignConversations && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="group"
+                      onClick={transferModal.show}
+                      aria-label="Transferir Atendimento"
+                      title="Transferir Atendimento"
+                    >
+                      <ArrowRightLeft className="h-3.5 w-3.5 transition-colors group-hover:text-amber-500" />{" "}
+                      <span className="hidden lg:inline">Transferir</span>
+                    </Button>
+                  )}
 
                   <Button
                     variant="ghost"
                     size="sm"
+                    className="group"
                     onClick={() => setClosing(true)}
                     aria-label="Encerrar Atendimento"
                     title="Encerrar Atendimento"
                   >
-                    <CircleCheckBig className="h-3.5 w-3.5" />{" "}
+                    <CircleCheckBig className="h-3.5 w-3.5 transition-colors group-hover:text-destructive" />{" "}
                     <span className="hidden lg:inline">Encerrar</span>
                   </Button>
                 </>
@@ -668,6 +676,8 @@ function ConversationPage() {
                     (field) => field.label,
                   )}
                   contactAvatarUrl={conv.contact?.avatar_url ?? null}
+                  connectionAvatarUrl={conv.connection?.logo_url ?? null}
+                  connectionName={conv.connection?.name ?? "WhatsApp"}
                   galleryImages={galleryImages}
                   setMessageRef={(node) => {
                     if (node) messageRefs.current.set(m.id, node);
@@ -721,7 +731,7 @@ function ConversationPage() {
               allowQuickReplies={perms.acessa_mensagens_rapidas}
               allowAudio={perms.enviar_audio}
               onTicket={handleGerarChamado}
-              ticketDisabled={gerando || !conv.protocolo}
+              ticketDisabled={gerando || !conv.protocolo || !canCreateTicket}
               mentionOptions={conv.is_group ? mentionOptions : []}
               replyTo={replyTo}
               onCancelReply={() => setReplyTo(null)}
@@ -732,15 +742,17 @@ function ConversationPage() {
             />
           </div>
           <div className="hidden border-t border-border bg-surface-1 px-3 pb-3 md:block xl:hidden">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleGerarChamado}
-              disabled={gerando || !conv.protocolo}
-              className="w-full"
-            >
-              <Ticket className="h-3.5 w-3.5" /> {gerando ? "Gerando…" : "Gerar Chamado"}
-            </Button>
+            {canCreateTicket && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleGerarChamado}
+                disabled={gerando || !conv.protocolo || !canCreateTicket}
+                className="w-full"
+              >
+                <Ticket className="h-3.5 w-3.5" /> {gerando ? "Gerando…" : "Gerar Chamado"}
+              </Button>
+            )}
             {!isMobile && (
               <div className="hidden md:block">
                 <Button
@@ -876,6 +888,8 @@ export function MessageBubble({
   highlighted,
   contactName,
   contactAvatarUrl,
+  connectionAvatarUrl,
+  connectionName = "WhatsApp",
   isGroup = false,
   conversationOriginatedAsLead = false,
   customFieldLabels = [],
@@ -891,6 +905,8 @@ export function MessageBubble({
   highlighted?: boolean;
   contactName: string;
   contactAvatarUrl?: string | null;
+  connectionAvatarUrl?: string | null;
+  connectionName?: string;
   isGroup?: boolean;
   conversationOriginatedAsLead?: boolean;
   customFieldLabels?: string[];
@@ -898,7 +914,6 @@ export function MessageBubble({
   setMessageRef?: (node: HTMLDivElement | null) => void;
 }) {
   const qc = useQueryClient();
-  const user = useSession((state) => state.user);
   const [mediaUrl, setMediaUrl] = React.useState<string | null>(null);
   const [imagePreviewOpen, setImagePreviewOpen] = React.useState(false);
   const [mediaError, setMediaError] = React.useState(false);
@@ -1012,6 +1027,18 @@ export function MessageBubble({
       ? (m.author_name ?? agents.find((a) => a.id === m.author_id)?.nome ?? null)
       : null;
   const avatarName = mine ? (authorName ?? "Atendente") : (m.participant?.name ?? contactName);
+  const outboundAvatarName =
+    m.outbound_origin === "external"
+      ? connectionName
+      : m.outbound_origin === "unknown"
+        ? "Outro sistema"
+        : avatarName;
+  const outboundAvatarUrl =
+    m.outbound_origin === "external"
+      ? connectionAvatarUrl
+      : m.outbound_origin === "trixus"
+        ? m.author_avatar_url
+        : null;
   const isAudioMessage = m.type === "audio" || m.type === "voice";
   const isSticker =
     m.type === "image" && (m.sticker === true || m.content.trim().toLowerCase() === "[figurinha]");
@@ -1064,7 +1091,6 @@ export function MessageBubble({
             onReact={react}
             onDownload={() => download()}
             resendRequest={resendRequest}
-            customFieldLabels={customFieldLabels}
           />
         )}
         {m.participant?.name && !mine && (
@@ -1157,8 +1183,8 @@ export function MessageBubble({
                 src={mediaUrl}
                 durationMs={m.duration_ms}
                 mine={mine}
-                avatarName={avatarName}
-                avatarUrl={mine ? user?.avatarUrl : contactAvatarUrl}
+                avatarName={mine ? outboundAvatarName : avatarName}
+                avatarUrl={mine ? outboundAvatarUrl : contactAvatarUrl}
               />
             ) : (
               <div
@@ -1260,8 +1286,8 @@ export function MessageBubble({
       {mine && !isAudioMessage && (
         <div className={isGroup ? "shrink-0" : "hidden shrink-0 md:block"}>
           <Avatar
-            name={avatarName}
-            src={user?.avatarUrl}
+            name={outboundAvatarName}
+            src={outboundAvatarUrl}
             size={30}
             className="mb-5 ring-1 ring-border/70"
           />

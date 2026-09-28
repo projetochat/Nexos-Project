@@ -43,12 +43,10 @@ import { Route as AtendimentoIndexRouteImport } from './routes/atendimento.index
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as InboxConversationIdRouteImport } from './routes/inbox.$conversationId'
 import { Route as ConfiguracoesVariaveisRouteImport } from './routes/configuracoes.variaveis'
-import { Route as ConfiguracoesUsuariosRouteImport } from './routes/configuracoes.usuarios'
 import { Route as ConfiguracoesSegurancaRouteImport } from './routes/configuracoes.seguranca'
 import { Route as ConfiguracoesPermissoesRouteImport } from './routes/configuracoes.permissoes'
 import { Route as ConfiguracoesMensagensRouteImport } from './routes/configuracoes.mensagens'
 import { Route as ConfiguracoesIntegracoesRouteImport } from './routes/configuracoes.integracoes'
-import { Route as ConfiguracoesHorariosRouteImport } from './routes/configuracoes.horarios'
 import { Route as ConfiguracoesGeralRouteImport } from './routes/configuracoes.geral'
 import { Route as ConfiguracoesFinanceiroRouteImport } from './routes/configuracoes.financeiro'
 import { Route as ConfiguracoesEmpresaRouteImport } from './routes/configuracoes.empresa'
@@ -240,11 +238,6 @@ const ConfiguracoesVariaveisRoute = ConfiguracoesVariaveisRouteImport.update({
   path: '/variaveis',
   getParentRoute: () => ConfiguracoesRoute,
 } as any)
-const ConfiguracoesUsuariosRoute = ConfiguracoesUsuariosRouteImport.update({
-  id: '/usuarios',
-  path: '/usuarios',
-  getParentRoute: () => ConfiguracoesRoute,
-} as any)
 const ConfiguracoesSegurancaRoute = ConfiguracoesSegurancaRouteImport.update({
   id: '/seguranca',
   path: '/seguranca',
@@ -266,11 +259,6 @@ const ConfiguracoesIntegracoesRoute =
     path: '/integracoes',
     getParentRoute: () => ConfiguracoesRoute,
   } as any)
-const ConfiguracoesHorariosRoute = ConfiguracoesHorariosRouteImport.update({
-  id: '/horarios',
-  path: '/horarios',
-  getParentRoute: () => ConfiguracoesRoute,
-} as any)
 const ConfiguracoesGeralRoute = ConfiguracoesGeralRouteImport.update({
   id: '/geral',
   path: '/geral',
@@ -421,12 +409,10 @@ export interface FileRoutesByFullPath {
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
   '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
-  '/configuracoes/horarios': typeof ConfiguracoesHorariosRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
   '/configuracoes/mensagens': typeof ConfiguracoesMensagensRoute
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
-  '/configuracoes/usuarios': typeof ConfiguracoesUsuariosRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin/': typeof AdminIndexRoute
@@ -479,12 +465,10 @@ export interface FileRoutesByTo {
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
   '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
-  '/configuracoes/horarios': typeof ConfiguracoesHorariosRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
   '/configuracoes/mensagens': typeof ConfiguracoesMensagensRoute
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
-  '/configuracoes/usuarios': typeof ConfiguracoesUsuariosRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin': typeof AdminIndexRoute
@@ -542,12 +526,10 @@ export interface FileRoutesById {
   '/configuracoes/empresa': typeof ConfiguracoesEmpresaRoute
   '/configuracoes/financeiro': typeof ConfiguracoesFinanceiroRoute
   '/configuracoes/geral': typeof ConfiguracoesGeralRoute
-  '/configuracoes/horarios': typeof ConfiguracoesHorariosRoute
   '/configuracoes/integracoes': typeof ConfiguracoesIntegracoesRoute
   '/configuracoes/mensagens': typeof ConfiguracoesMensagensRoute
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
-  '/configuracoes/usuarios': typeof ConfiguracoesUsuariosRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin/': typeof AdminIndexRoute
@@ -606,12 +588,10 @@ export interface FileRouteTypes {
     | '/configuracoes/empresa'
     | '/configuracoes/financeiro'
     | '/configuracoes/geral'
-    | '/configuracoes/horarios'
     | '/configuracoes/integracoes'
     | '/configuracoes/mensagens'
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
-    | '/configuracoes/usuarios'
     | '/configuracoes/variaveis'
     | '/inbox/$conversationId'
     | '/admin/'
@@ -664,12 +644,10 @@ export interface FileRouteTypes {
     | '/configuracoes/empresa'
     | '/configuracoes/financeiro'
     | '/configuracoes/geral'
-    | '/configuracoes/horarios'
     | '/configuracoes/integracoes'
     | '/configuracoes/mensagens'
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
-    | '/configuracoes/usuarios'
     | '/configuracoes/variaveis'
     | '/inbox/$conversationId'
     | '/admin'
@@ -726,12 +704,10 @@ export interface FileRouteTypes {
     | '/configuracoes/empresa'
     | '/configuracoes/financeiro'
     | '/configuracoes/geral'
-    | '/configuracoes/horarios'
     | '/configuracoes/integracoes'
     | '/configuracoes/mensagens'
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
-    | '/configuracoes/usuarios'
     | '/configuracoes/variaveis'
     | '/inbox/$conversationId'
     | '/admin/'
@@ -1012,13 +988,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfiguracoesVariaveisRouteImport
       parentRoute: typeof ConfiguracoesRoute
     }
-    '/configuracoes/usuarios': {
-      id: '/configuracoes/usuarios'
-      path: '/usuarios'
-      fullPath: '/configuracoes/usuarios'
-      preLoaderRoute: typeof ConfiguracoesUsuariosRouteImport
-      parentRoute: typeof ConfiguracoesRoute
-    }
     '/configuracoes/seguranca': {
       id: '/configuracoes/seguranca'
       path: '/seguranca'
@@ -1045,13 +1014,6 @@ declare module '@tanstack/react-router' {
       path: '/integracoes'
       fullPath: '/configuracoes/integracoes'
       preLoaderRoute: typeof ConfiguracoesIntegracoesRouteImport
-      parentRoute: typeof ConfiguracoesRoute
-    }
-    '/configuracoes/horarios': {
-      id: '/configuracoes/horarios'
-      path: '/horarios'
-      fullPath: '/configuracoes/horarios'
-      preLoaderRoute: typeof ConfiguracoesHorariosRouteImport
       parentRoute: typeof ConfiguracoesRoute
     }
     '/configuracoes/geral': {
@@ -1266,12 +1228,10 @@ interface ConfiguracoesRouteChildren {
   ConfiguracoesEmpresaRoute: typeof ConfiguracoesEmpresaRoute
   ConfiguracoesFinanceiroRoute: typeof ConfiguracoesFinanceiroRoute
   ConfiguracoesGeralRoute: typeof ConfiguracoesGeralRoute
-  ConfiguracoesHorariosRoute: typeof ConfiguracoesHorariosRoute
   ConfiguracoesIntegracoesRoute: typeof ConfiguracoesIntegracoesRoute
   ConfiguracoesMensagensRoute: typeof ConfiguracoesMensagensRoute
   ConfiguracoesPermissoesRoute: typeof ConfiguracoesPermissoesRoute
   ConfiguracoesSegurancaRoute: typeof ConfiguracoesSegurancaRoute
-  ConfiguracoesUsuariosRoute: typeof ConfiguracoesUsuariosRoute
   ConfiguracoesVariaveisRoute: typeof ConfiguracoesVariaveisRoute
   ConfiguracoesIndexRoute: typeof ConfiguracoesIndexRoute
 }
@@ -1281,12 +1241,10 @@ const ConfiguracoesRouteChildren: ConfiguracoesRouteChildren = {
   ConfiguracoesEmpresaRoute: ConfiguracoesEmpresaRoute,
   ConfiguracoesFinanceiroRoute: ConfiguracoesFinanceiroRoute,
   ConfiguracoesGeralRoute: ConfiguracoesGeralRoute,
-  ConfiguracoesHorariosRoute: ConfiguracoesHorariosRoute,
   ConfiguracoesIntegracoesRoute: ConfiguracoesIntegracoesRoute,
   ConfiguracoesMensagensRoute: ConfiguracoesMensagensRoute,
   ConfiguracoesPermissoesRoute: ConfiguracoesPermissoesRoute,
   ConfiguracoesSegurancaRoute: ConfiguracoesSegurancaRoute,
-  ConfiguracoesUsuariosRoute: ConfiguracoesUsuariosRoute,
   ConfiguracoesVariaveisRoute: ConfiguracoesVariaveisRoute,
   ConfiguracoesIndexRoute: ConfiguracoesIndexRoute,
 }

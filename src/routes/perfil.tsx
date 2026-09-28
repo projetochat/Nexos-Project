@@ -30,6 +30,7 @@ function PerfilPage() {
     inboxNotificationSoundEnabled(useSession.getState().user?.id),
   );
   const [savingAvatar, setSavingAvatar] = React.useState(false);
+  const [savingSidebarPreference, setSavingSidebarPreference] = React.useState(false);
   const [notificationQueues, setNotificationQueues] = React.useState(() =>
     inboxNotificationQueues(useSession.getState().user?.id),
   );
@@ -73,6 +74,27 @@ function PerfilPage() {
     setSoundEnabled(enabled);
     setNotificationQueues(queues);
     toast.success(enabled ? "Aviso sonoro ativado." : "Aviso sonoro desativado.");
+  };
+
+  const changeSidebarPreference = async (checked: boolean) => {
+    if (!user || savingSidebarPreference) return;
+    setSavingSidebarPreference(true);
+    try {
+      const updated = await organizationApi.updateMyProfile({ keepSidebarCollapsed: checked });
+      useSession.setState((state) => ({
+        user: state.user
+          ? {
+              ...state.user,
+              keepSidebarCollapsed: updated.user.keepSidebarCollapsed ?? checked,
+            }
+          : state.user,
+      }));
+      toast.success("Preferência do menu atualizada.");
+    } catch (error) {
+      toast.error((error as Error).message || "Não foi possível atualizar a preferência do menu.");
+    } finally {
+      setSavingSidebarPreference(false);
+    }
   };
 
   const saveAvatarUrl = async (avatarUrl: string | null) => {
@@ -267,6 +289,23 @@ function PerfilPage() {
                   <Field label="Empresa">
                     <Input value={user?.empresaNome ?? ""} readOnly />
                   </Field>
+                </div>
+                <div className="mt-5 flex items-center justify-between gap-4 rounded-xl border border-border bg-surface-1 p-4">
+                  <div>
+                    <label htmlFor="profile-keep-sidebar-collapsed" className="text-sm font-medium">
+                      Manter menu recolhido
+                    </label>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Mantém o menu lateral recolhido por padrão neste usuário.
+                    </p>
+                  </div>
+                  <Switch
+                    id="profile-keep-sidebar-collapsed"
+                    checked={user?.keepSidebarCollapsed ?? false}
+                    disabled={savingSidebarPreference}
+                    onCheckedChange={(checked) => void changeSidebarPreference(checked)}
+                    aria-label="Manter menu recolhido"
+                  />
                 </div>
                 <section className="mt-5">
                   <p className="text-sm font-semibold">Alterar senha</p>

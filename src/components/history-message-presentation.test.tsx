@@ -41,6 +41,8 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
             m={message}
             agents={[]}
             contactName="Contato"
+            connectionName="WhatsApp VOCICAL"
+            connectionAvatarUrl="https://example.test/whatsapp-instance.png"
             galleryImages={[]}
             readOnly
           />
@@ -174,6 +176,44 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
 
     await render({ ...base, forwarded: false });
     expect(host.querySelector('[aria-label="Mensagem encaminhada"]')).toBeNull();
+
+    await render({
+      ...base,
+      sender: "agent",
+      direction: "outbound",
+      author_id: "agent-real",
+      author_name: "Atendente real",
+      author_avatar_url: "https://example.test/agent.png",
+      outbound_origin: "trixus",
+    } as ApiMessage);
+    expect(host.querySelector('img[alt="Atendente real"]')?.getAttribute("src")).toBe(
+      "https://example.test/agent.png",
+    );
+
+    await render({
+      ...base,
+      sender: "agent",
+      direction: "outbound",
+      author_name: null,
+      author_avatar_url: null,
+      outbound_origin: "external",
+    } as ApiMessage);
+    expect(host.querySelector('img[alt="WhatsApp VOCICAL"]')?.getAttribute("src")).toBe(
+      "https://example.test/whatsapp-instance.png",
+    );
+
+    await render({
+      ...base,
+      sender: "agent",
+      direction: "outbound",
+      type: "audio",
+      content: "[áudio]",
+      media_data: { file_name: "audio.ogg", state: "ready" },
+      outbound_origin: "external",
+    } as ApiMessage);
+    expect(host.querySelector('img[alt="WhatsApp VOCICAL"]')?.getAttribute("src")).toBe(
+      "https://example.test/whatsapp-instance.png",
+    );
 
     await render({
       ...base,

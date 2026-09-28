@@ -1,4 +1,4 @@
-import { PERMISSIONS } from "./permissions.constants";
+import { effectivePermissions } from "./effective-permissions";
 import {
   ForbiddenException,
   HttpException,
@@ -81,6 +81,7 @@ export class AuthService {
           email: user.email,
           name: user.name,
           avatarUrl: user.avatarUrl,
+          keepSidebarCollapsed: user.keepSidebarCollapsed,
           roleId: "",
           roleKey: "platform_admin",
           platformRole: user.platformRole,
@@ -128,7 +129,7 @@ export class AuthService {
         message: "Organização suspensa ou encerrada.",
       });
     }
-    const permissions = [...PERMISSIONS];
+    const permissions = effectivePermissions(membership.role);
 
     const basePayload = {
       sub: user.id,
@@ -152,6 +153,7 @@ export class AuthService {
         email: user.email,
         name: membershipDisplayName(membership, user.name),
         avatarUrl: user.avatarUrl,
+        keepSidebarCollapsed: user.keepSidebarCollapsed,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         platformRole: user.platformRole,
@@ -371,7 +373,7 @@ export class AuthService {
         role: { include: { permissions: { select: { permissionId: true } } } },
       },
     });
-    const permissions = [...PERMISSIONS];
+    const permissions = effectivePermissions(membership.role);
     const basePayload = {
       sub: membership.userId,
       tenantId: membership.tenantId,
@@ -395,6 +397,7 @@ export class AuthService {
         email: membership.user.email,
         name: membershipDisplayName(membership),
         avatarUrl: membership.user.avatarUrl,
+        keepSidebarCollapsed: membership.user.keepSidebarCollapsed,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         platformRole: membership.user.platformRole,
@@ -429,7 +432,7 @@ export class AuthService {
         departments: { include: { department: true } },
       },
     });
-    const permissions = [...PERMISSIONS];
+    const permissions = effectivePermissions(membership.role);
 
     return {
       user: {
@@ -437,6 +440,7 @@ export class AuthService {
         email: membership.user.email,
         name: membershipDisplayName(membership),
         avatarUrl: membership.user.avatarUrl,
+        keepSidebarCollapsed: membership.user.keepSidebarCollapsed,
         roleId: membership.roleId,
         roleKey: membership.role.key,
         roleName: membership.role.name,

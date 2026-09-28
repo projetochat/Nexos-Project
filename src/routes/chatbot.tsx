@@ -5,13 +5,30 @@ import { AppShell, PageContainer } from "@/components/app-shell";
 import { Badge, Button, Card, SectionHeader } from "@/components/ui-kit";
 import { num } from "@/lib/format";
 import { automationApi } from "@/lib/trixus-api";
+import { ComingSoonPage } from "@/components/coming-soon-page";
 
 export const Route = createFileRoute("/chatbot")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
   component: Page,
 });
 
+const MODULE_AVAILABLE = false;
+
 function Page() {
+  if (!MODULE_AVAILABLE) {
+    return (
+      <ComingSoonPage
+        title="Fluxo de Bot"
+        description="O módulo de Fluxo de Bot está sendo preparado e estará disponível em breve."
+        icon={<Bot className="h-6 w-6" />}
+      />
+    );
+  }
+
+  return <ChatbotPage />;
+}
+
+function ChatbotPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["trixus", "chatbot-rules"],
     queryFn: () => automationApi.list({ pageSize: 100 }),

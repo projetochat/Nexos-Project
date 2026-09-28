@@ -212,9 +212,12 @@ export function AudioAttachmentRecorder({
           toast.error("O áudio ficou curto demais. Grave novamente por pelo menos 1 segundo.");
           return;
         }
-        const type = blob.type || "audio/webm";
+        const type = (blob.type || "audio/webm").split(";")[0]?.trim() || "audio/webm";
+        const normalizedBlob = new Blob([blob], { type });
         void Promise.resolve(
-          onRecorded(new File([blob], `audio-${Date.now()}.${audioExtension(type)}`, { type })),
+          onRecorded(
+            new File([normalizedBlob], `audio-${Date.now()}.${audioExtension(type)}`, { type }),
+          ),
         ).catch((error) => toast.error((error as Error).message));
       };
       recorder.onerror = () => {

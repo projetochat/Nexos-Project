@@ -891,6 +891,7 @@ export class ConversationsController {
             status: conversation.connection.status.toLowerCase(),
             externalReference: conversation.connection.externalReference,
             color: conversation.connection.color,
+            logo_url: conversation.connection.logoUrl,
           }
         : null,
     };

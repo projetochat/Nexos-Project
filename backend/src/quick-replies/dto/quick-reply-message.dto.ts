@@ -20,7 +20,7 @@ export class QuickReplyAttachmentDto {
   @IsInt() @Min(0) @Max(10 * 1024 * 1024) size!: number;
   @IsString()
   @Length(1, 14 * 1024 * 1024)
-  @Matches(/^data:[^;,]+;base64,[A-Za-z0-9+/]*={0,2}$/)
+  @Matches(/^data:[^,\r\n]+;base64,[A-Za-z0-9+/]*={0,2}$/)
   dataUrl!: string;
 }
 

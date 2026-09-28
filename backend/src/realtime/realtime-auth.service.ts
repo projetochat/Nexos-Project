@@ -3,6 +3,7 @@ import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { JwtPayload } from "../auth/auth.types";
+import { effectivePermissions } from "../auth/effective-permissions";
 
 export type RealtimeAuthCode =
   | "REALTIME_TOKEN_MISSING"
@@ -26,6 +27,9 @@ export type RealtimeSocketContext = {
   platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   departmentIds: string[];
   permissions: string[];
+  iatMs?: number;
+  impersonationSessionId?: string;
+  actorPlatformUserId?: string;
 };
 
 @Injectable()
@@ -52,6 +56,7 @@ export class RealtimeAuthService {
       },
       include: {
         user: true,
+        tenant: true,
         role: { include: { permissions: { select: { permissionId: true } } } },
         departments: { select: { departmentId: true } },
       },
@@ -60,6 +65,30 @@ export class RealtimeAuthService {
       throw new RealtimeAuthError("REALTIME_MEMBERSHIP_INACTIVE");
     }
     if (membership.user.status !== "ACTIVE") throw new RealtimeAuthError("REALTIME_USER_INACTIVE");
+    if (membership.tenant.status !== "ACTIVE" && membership.tenant.status !== "TRIAL") {
+      throw new RealtimeAuthError("REALTIME_MEMBERSHIP_INACTIVE");
+    }
+    if (
+      membership.tenant.authRevokedAt &&
+      payload.iatMs &&
+      payload.iatMs < membership.tenant.authRevokedAt.getTime()
+    ) {
+      throw new RealtimeAuthError("REALTIME_TOKEN_INVALID");
+    }
+    if (payload.impersonationSessionId) {
+      const session = await this.prisma.impersonationSession.findFirst({
+        where: {
+          id: payload.impersonationSessionId,
+          actorUserId: payload.actorPlatformUserId,
+          tenantId: payload.tenantId,
+          impersonatedMembershipId: payload.membershipId,
+          status: "ACTIVE",
+          expiresAt: { gt: new Date() },
+        },
+        select: { id: true },
+      });
+      if (!session) throw new RealtimeAuthError("REALTIME_TOKEN_INVALID");
+    }
 
     return {
       userId: membership.userId,
@@ -69,7 +98,10 @@ export class RealtimeAuthService {
       roleKey: membership.role.key,
       platformRole: membership.user.platformRole,
       departmentIds: membership.departments.map((item) => item.departmentId),
-      permissions: membership.role.permissions.map((item) => item.permissionId),
+      permissions: effectivePermissions(membership.role),
+      iatMs: payload.iatMs,
+      impersonationSessionId: payload.impersonationSessionId,
+      actorPlatformUserId: payload.actorPlatformUserId,
     };
   }
 

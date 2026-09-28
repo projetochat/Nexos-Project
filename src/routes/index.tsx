@@ -1,44 +1,36 @@
-import { useInstanceAccessUpdates } from "@/lib/realtime/hooks";
 import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Legend,
   Line,
   LineChart,
-  Pie,
-  PieChart,
+  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import {
   CheckCircle2,
-  Check,
   Clock,
-  GripVertical,
   MessagesSquare,
   PauseCircle,
   Pencil,
   Play,
   RefreshCw,
-  RotateCcw,
-  Save,
   UserPlus,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { DashboardFiltersBar } from "@/components/dashboard-filters";
-import { Button, Card, Input, KPI, SectionHeader } from "@/components/ui-kit";
-import { Modal } from "@/components/modal";
+import { DashboardEditorModal } from "@/components/dashboard-editor-modal";
+import {
+  DashboardComponentRenderer,
+  type DashboardVisualDatum,
+} from "@/components/dashboard-component-renderer";
+import { Button, Card, KPI, SectionHeader } from "@/components/ui-kit";
 import { num, relativeTime } from "@/lib/format";
-import { operationsApi } from "@/lib/trixus-api";
+import { crmApi, operationsApi } from "@/lib/trixus-api";
 import {
   DEFAULT_OPERATIONAL_FILTERS,
   datesForOperationalPeriod,
@@ -49,55 +41,19 @@ import { useSession } from "@/lib/session";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
+  DEFAULT_DASHBOARD_COMPONENTS,
+  dashboardColumnClass,
+  loadDashboardComponents,
+  saveDashboardComponents,
+  type DashboardComponentConfig,
+} from "@/lib/dashboard-components";
+import {
   DASHBOARD_CHART_MARGIN,
   DASHBOARD_CHART_TEXT_COLOR,
   messageHourTicks,
 } from "@/lib/dashboard-chart-layout";
 
 export const Route = createFileRoute("/")({ component: Dashboard });
-
-const COLORS = ["#2563eb", "#0f766e", "#9333ea", "#d97706", "#16a34a", "#dc2626"];
-const DASHBOARD_BIS = [
-  "counters",
-  "messages",
-  "distribution",
-  "connection",
-  "customer",
-  "department",
-  "tag",
-  "agent",
-  "recent",
-] as const;
-type DashboardBiId = (typeof DASHBOARD_BIS)[number];
-type DashboardColumnCount = 1 | 2 | 3 | 4;
-type DashboardPreferences = {
-  visible: DashboardBiId[];
-  order: DashboardBiId[];
-  labels: Partial<Record<DashboardBiId, string>>;
-  columns: Partial<Record<DashboardBiId, DashboardColumnCount>>;
-};
-const DEFAULT_DASHBOARD_COLUMNS: Record<DashboardBiId, DashboardColumnCount> = {
-  counters: 4,
-  messages: 2,
-  distribution: 1,
-  connection: 1,
-  customer: 1,
-  department: 1,
-  tag: 1,
-  agent: 1,
-  recent: 4,
-};
-const BI_LABELS: Record<DashboardBiId, string> = {
-  counters: "Contadores de registro",
-  messages: "Tráfego de mensagens",
-  distribution: "Distribuição de conversas",
-  connection: "Conversas por instância",
-  customer: "Conversas por cliente",
-  department: "Conversas por departamento",
-  tag: "Conversas por etiqueta",
-  agent: "Conversas por atendente",
-  recent: "Atividade recente",
-};
 
 const DASHBOARD_PERIODS = new Set([
   "today",
@@ -153,50 +109,37 @@ function loadDashboardFilters(storageKey: string): OperationalReportFilters {
 }
 
 function Dashboard() {
-  useInstanceAccessUpdates();
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const user = useSession((state) => state.user);
-  const canEditDashboard =
+  const canManageDashboard =
     user?.role === "admin" ||
     user?.role === "super_admin" ||
     user?.permissions?.includes("dashboard.manage");
+  const canDeleteDashboard =
+    user?.role === "admin" ||
+    user?.role === "super_admin" ||
+    user?.permissions?.includes("dashboard.delete");
+  const canEditDashboard = canManageDashboard || canDeleteDashboard;
   const storageKey = `trixus.dashboard.bis.${user?.id ?? "anonymous"}`;
   const filtersStorageKey = `trixus.dashboard.filters.${user?.id ?? "anonymous"}`;
   const [editingDashboard, setEditingDashboard] = React.useState(false);
-  const [visibleBis, setVisibleBis] = React.useState<DashboardBiId[]>(
-    () => loadDashboardPreferences(storageKey).visible,
+  const [previewComponent, setPreviewComponent] = React.useState<DashboardComponentConfig | null>(
+    null,
   );
-  const [draftBis, setDraftBis] = React.useState<DashboardBiId[]>(visibleBis);
-  const [dashboardOrder, setDashboardOrder] = React.useState<DashboardBiId[]>(
-    () => loadDashboardPreferences(storageKey).order,
+  const [dashboardComponents, setDashboardComponents] = React.useState<DashboardComponentConfig[]>(
+    () => loadDashboardComponents(storageKey),
   );
-  const [draftOrder, setDraftOrder] = React.useState<DashboardBiId[]>(dashboardOrder);
-  const [dashboardLabels, setDashboardLabels] = React.useState<
-    Partial<Record<DashboardBiId, string>>
-  >(() => loadDashboardPreferences(storageKey).labels);
-  const [draftLabels, setDraftLabels] =
-    React.useState<Partial<Record<DashboardBiId, string>>>(dashboardLabels);
-  const [dashboardColumns, setDashboardColumns] = React.useState<
-    Partial<Record<DashboardBiId, DashboardColumnCount>>
-  >(() => loadDashboardPreferences(storageKey).columns);
-  const [draftColumns, setDraftColumns] =
-    React.useState<Partial<Record<DashboardBiId, DashboardColumnCount>>>(dashboardColumns);
-  const [editingBiId, setEditingBiId] = React.useState<DashboardBiId | null>(null);
-  const [editingBiTitle, setEditingBiTitle] = React.useState("");
-  const [draggingBiId, setDraggingBiId] = React.useState<DashboardBiId | null>(null);
   React.useEffect(() => {
-    const saved = loadDashboardPreferences(storageKey);
-    setVisibleBis(saved.visible);
-    setDraftBis(saved.visible);
-    setDashboardOrder(saved.order);
-    setDraftOrder(saved.order);
-    setDashboardLabels(saved.labels);
-    setDraftLabels(saved.labels);
-    setDashboardColumns(saved.columns);
-    setDraftColumns(saved.columns);
-    setEditingBiId(null);
+    setDashboardComponents(loadDashboardComponents(storageKey));
   }, [storageKey]);
+  const updateDashboardComponents = React.useCallback(
+    (components: DashboardComponentConfig[]) => {
+      setDashboardComponents(components);
+      saveDashboardComponents(storageKey, components);
+    },
+    [storageKey],
+  );
   const [filters, setFilters] = React.useState<OperationalReportFilters>(() =>
     loadDashboardFilters(filtersStorageKey),
   );
@@ -211,6 +154,31 @@ function Dashboard() {
     queryFn: () => operationsApi.dashboard(filters),
     refetchInterval: 30_000,
   });
+  const customFieldsQuery = useQuery({
+    queryKey: ["trixus", "contact-custom-fields"],
+    queryFn: crmApi.listContactCustomFields,
+    enabled: !!canEditDashboard,
+  });
+  const contactGroups = [
+    ...new Set([
+      ...dashboardComponents
+        .filter((component) => component.dataSource === "contacts")
+        .map((component) => component.groupBy),
+      ...(previewComponent?.dataSource === "contacts" ? [previewComponent.groupBy] : []),
+    ]),
+  ];
+  const contactComponentQueries = useQueries({
+    queries: contactGroups.map((groupBy) => ({
+      queryKey: ["operations", "dashboard", "component-data", filters, groupBy],
+      queryFn: () => operationsApi.dashboardComponentData({ ...filters, groupBy }),
+    })),
+  });
+  const contactDataByGroup = new Map(
+    contactGroups.map((groupBy, index) => [
+      groupBy,
+      contactComponentQueries[index]?.data?.items ?? [],
+    ]),
+  );
   const data = query.data;
   const [refreshing, setRefreshing] = React.useState(false);
   const loadingCards = query.isLoading || refreshing;
@@ -220,6 +188,9 @@ function Dashboard() {
     try {
       await Promise.all([
         query.refetch({ throwOnError: true }),
+        ...contactComponentQueries.map((componentQuery) =>
+          componentQuery.refetch({ throwOnError: true }),
+        ),
         new Promise((resolve) => window.setTimeout(resolve, 600)),
       ]);
     } catch {
@@ -247,7 +218,7 @@ function Dashboard() {
     { nome: "Aguardando", total: kpiValue(kpis.conversasAguardando) },
     { nome: "Encerradas", total: kpiValue(kpis.conversasEncerradas) },
   ];
-  const recent = data?.recent ?? [];
+  const recent = (data?.recent ?? []).slice(0, 7);
   const queueKpiById: Record<QueueId, [keyof typeof kpis, keyof typeof kpis]> = {
     ativas: ["contadorAtivasAtuais", "filaAtivas"],
     standby: ["contadorStandbyAtual", "filaStandby"],
@@ -273,24 +244,7 @@ function Dashboard() {
     kpis.conversasTotalAtual === undefined
       ? queueCards.reduce((total, queue) => total + queue.value, 0) + closedConversations
       : kpiValue(kpis.conversasTotalAtual);
-  const hasBi = (id: DashboardBiId) => visibleBis.includes(id);
-  const biLabel = (id: DashboardBiId) => dashboardLabels[id]?.trim() || BI_LABELS[id];
-  const dashboardPosition = (id: DashboardBiId) => dashboardOrder.indexOf(id);
-  const dashboardColumnClass = (id: DashboardBiId) => {
-    const columns = dashboardColumnCount(id);
-    return {
-      1: "md:col-span-1",
-      2: "md:col-span-2",
-      3: "md:col-span-3",
-      4: "md:col-span-4",
-    }[columns];
-  };
-  const dashboardColumnCount = (id: DashboardBiId): DashboardColumnCount =>
-    id === "counters" ? 4 : (dashboardColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id]);
-  const messagesColumns = dashboardColumns.messages ?? DEFAULT_DASHBOARD_COLUMNS.messages;
-  const compactMessagesChart = isMobile || messagesColumns <= 2;
   const messageTraffic = data?.charts.messagesByHour ?? [];
-  const messageTicks = messageHourTicks(isMobile);
   const messageTrafficTotals = messageTraffic.reduce(
     (totals, item) => ({
       recebidas: totals.recebidas + item.recebidas,
@@ -299,31 +253,46 @@ function Dashboard() {
     { recebidas: 0, enviadas: 0 },
   );
   const totalMessages = messageTrafficTotals.recebidas + messageTrafficTotals.enviadas;
-  const messageAttendancesTotal = data?.charts.messageAttendancesTotal ?? 0;
-
-  const beginEditingBiTitle = (id: DashboardBiId) => {
-    setEditingBiId(id);
-    setEditingBiTitle(draftLabels[id]?.trim() || BI_LABELS[id]);
-  };
-
-  const saveEditingBiTitle = () => {
-    if (!editingBiId) return;
-    const title = editingBiTitle.trim();
-    if (!title) {
-      toast.error("Informe um título para o dashboard.");
-      return;
+  const visibleComponents = dashboardComponents.filter((component) => component.visible);
+  const resolveDashboardData = (component: DashboardComponentConfig): DashboardVisualDatum[] => {
+    if (component.dataSource === "records") {
+      return [
+        ...queueCards.map((queue) => ({ nome: queue.label, total: queue.value })),
+        { nome: "Fechadas", total: closedConversations },
+        { nome: "Total", total: totalConversations },
+      ];
     }
-    setDraftLabels((current) => ({ ...current, [editingBiId]: title }));
-    setEditingBiId(null);
-  };
-
-  const reorderDraftBis = (sourceId: DashboardBiId, targetId: DashboardBiId) => {
-    if (sourceId === targetId) return;
-    setDraftOrder((current) => {
-      const next = current.filter((id) => id !== sourceId);
-      next.splice(next.indexOf(targetId), 0, sourceId);
-      return next;
-    });
+    if (component.dataSource === "messages") {
+      if (component.groupBy === "direction") {
+        return [
+          { nome: "Recebidas", total: messageTrafficTotals.recebidas, cor: "#2563eb" },
+          { nome: "Enviadas", total: messageTrafficTotals.enviadas, cor: "#dc2626" },
+          { nome: "Total", total: totalMessages, cor: "#94a3b8" },
+        ];
+      }
+      return messageTraffic.map((item) => ({ nome: item.hora, total: item.total }));
+    }
+    if (component.dataSource === "conversations") {
+      const chartByGroup: Record<string, DashboardVisualDatum[]> = {
+        status: statusSerie,
+        connection: data?.charts.byConnection ?? [],
+        customer: data?.charts.byCustomer ?? [],
+        department: data?.charts.byDepartment ?? [],
+        tag: data?.charts.byTag ?? [],
+        agent: data?.charts.byAgent ?? [],
+      };
+      return chartByGroup[component.groupBy] ?? [];
+    }
+    if (component.dataSource === "activity") {
+      return recent.slice(0, 20).map((conversation) => ({
+        nome: conversation.contact?.nome ?? "Contato",
+        total: 1,
+      }));
+    }
+    if (component.dataSource === "contacts") {
+      return contactDataByGroup.get(component.groupBy) ?? [];
+    }
+    return [];
   };
 
   return (
@@ -351,14 +320,7 @@ function Dashboard() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => {
-                    setDraftBis(visibleBis);
-                    setDraftOrder(dashboardOrder);
-                    setDraftLabels(dashboardLabels);
-                    setDraftColumns(dashboardColumns);
-                    setEditingBiId(null);
-                    setEditingDashboard(true);
-                  }}
+                  onClick={() => setEditingDashboard(true)}
                   title="Editar Dashboard"
                   aria-label="Editar Dashboard"
                 >
@@ -384,534 +346,284 @@ function Dashboard() {
             className="grid grid-cols-1 gap-4 md:grid-cols-4"
           >
             <span className="sr-only">Carregando indicadores do dashboard...</span>
-            {dashboardOrder.filter(hasBi).map((id) => (
-              <div key={id} className={dashboardColumnClass(id)}>
+            {visibleComponents.map((component) => (
+              <div key={component.id} className={dashboardColumnClass(component.columns)}>
                 <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  {biLabel(id)}
+                  {component.title}
                 </p>
-                {id === "counters" ? (
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6">
-                    {Array.from({ length: queueCards.length + 2 }, (_, index) => (
-                      <Card key={index} className="h-28 animate-pulse bg-surface-2">
-                        <div className="h-4 w-2/3 rounded bg-surface-3" />
-                        <div className="mt-4 h-7 w-1/3 rounded bg-surface-3" />
-                      </Card>
-                    ))}
-                  </div>
-                ) : (
-                  <Card className="h-64 animate-pulse bg-surface-2">
-                    <div className="h-full rounded bg-surface-3" />
-                  </Card>
-                )}
+                <Card className="h-64 animate-pulse bg-surface-2">
+                  <div className="h-full rounded bg-surface-3" />
+                </Card>
               </div>
             ))}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <div
-              style={{ order: dashboardPosition("counters") }}
-              className={`${dashboardColumnClass("counters")} ${hasBi("counters") ? "" : "hidden"}`}
-            >
-              <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                {biLabel("counters")}
-              </p>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6">
-                {queueCards.map((queue) => {
-                  const Icon = queue.Icon;
-                  return (
-                    <KPI
-                      key={queue.id}
-                      label={queue.label}
-                      value={num(queue.value)}
-                      tone="info"
-                      icon={<Icon className="h-6 w-6" />}
-                    />
-                  );
-                })}
-                <KPI
-                  label="Fechadas"
-                  value={num(closedConversations)}
-                  tone="info"
-                  icon={<CheckCircle2 className="h-6 w-6" />}
-                />
-                <KPI
-                  label="Total"
-                  value={num(totalConversations)}
-                  tone="info"
-                  icon={<MessagesSquare className="h-6 w-6" />}
-                />
-              </div>
-            </div>
-
-            <div
-              style={{ order: dashboardPosition("messages") }}
-              className={`${dashboardColumnClass("messages")} ${hasBi("messages") ? "" : "hidden"}`}
-            >
-              <Card className="h-full">
-                <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
-                  {biLabel("messages")}
-                </p>
-                <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={messageTraffic} margin={DASHBOARD_CHART_MARGIN}>
-                    <CartesianGrid stroke="var(--border)" vertical={false} />
-                    <XAxis
-                      dataKey="hora"
-                      stroke="var(--muted-foreground)"
-                      tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
-                      fontSize={11}
-                      ticks={messageTicks}
-                      interval={0}
-                      angle={compactMessagesChart ? -45 : 0}
-                      textAnchor={compactMessagesChart ? "end" : "middle"}
-                      height={compactMessagesChart ? 48 : 30}
-                      tickMargin={compactMessagesChart ? 8 : 0}
-                    />
-                    <YAxis
-                      stroke="var(--muted-foreground)"
-                      tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
-                      fontSize={11}
-                      allowDecimals={false}
-                      width={38}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "var(--popover)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        color: "var(--popover-foreground)",
-                        fontSize: 12,
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="recebidas"
-                      name="Recebidos"
-                      stroke="#2563eb"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="enviadas"
-                      name="Enviados"
-                      stroke="#dc2626"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="total"
-                      name="Total"
-                      stroke="#94a3b8"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="atendimentos"
-                      name="Atendimentos"
-                      stroke="#16a34a"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-                <table
-                  aria-label="Totais do tráfego de mensagens no período"
-                  className="mx-auto mt-1 w-full max-w-md table-fixed border-collapse whitespace-nowrap text-xs"
-                >
-                  <thead>
-                    <tr>
-                      <MessageTrafficLegendHeader label="Recebidos" color="#2563eb" />
-                      <MessageTrafficLegendHeader label="Enviados" color="#dc2626" />
-                      <MessageTrafficLegendHeader label="Total" color="#94a3b8" />
-                      <MessageTrafficLegendHeader label="Atendimentos" color="#16a34a" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <MessageTrafficTotalCell
-                        label="Recebidos"
-                        value={messageTrafficTotals.recebidas}
-                      />
-                      <MessageTrafficTotalCell
-                        label="Enviados"
-                        value={messageTrafficTotals.enviadas}
-                      />
-                      <MessageTrafficTotalCell label="Total" value={totalMessages} emphasized />
-                      <MessageTrafficTotalCell
-                        label="Atendimentos"
-                        value={messageAttendancesTotal}
-                      />
-                    </tr>
-                  </tbody>
-                </table>
-              </Card>
-            </div>
-
-            <div
-              style={{ order: dashboardPosition("distribution") }}
-              className={`${dashboardColumnClass("distribution")} ${hasBi("distribution") ? "" : "hidden"}`}
-            >
-              <Card className="flex h-full flex-col">
-                <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
-                  {biLabel("distribution")}
-                </p>
-                <div className="min-h-[260px] min-w-0 flex-1">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Tooltip
-                        contentStyle={{
-                          background: "var(--popover)",
-                          border: "1px solid var(--border)",
-                          borderRadius: 8,
-                          color: "var(--popover-foreground)",
-                          fontSize: 12,
-                        }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Pie
-                        data={statusSerie}
-                        dataKey="total"
-                        nameKey="nome"
-                        innerRadius="42%"
-                        outerRadius="70%"
-                        paddingAngle={3}
-                      >
-                        {statusSerie.map((item, index) => (
-                          <Cell key={item.nome} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
-            </div>
-
-            {[
-              {
-                id: "connection",
-                title: biLabel("connection"),
-                data: data?.charts.byConnection ?? [],
-              },
-              { id: "customer", title: biLabel("customer"), data: data?.charts.byCustomer ?? [] },
-              {
-                id: "department",
-                title: biLabel("department"),
-                data: data?.charts.byDepartment ?? [],
-              },
-              {
-                id: "tag",
-                title: biLabel("tag"),
-                data: (data?.charts.byTag ?? []).map((item) => ({
-                  ...item,
-                  nome: `${item.nome} (${item.percentual ?? 0}%)`,
-                })),
-              },
-              { id: "agent", title: biLabel("agent"), data: data?.charts.byAgent ?? [] },
-            ]
-              .filter((chart) => hasBi(chart.id as DashboardBiId))
-              .map((chart) => {
-                const chartData = compactDashboardChartData(
-                  chart.data,
-                  dashboardColumnCount(chart.id as DashboardBiId),
-                );
-                const rotateLabels =
-                  chartData.length > 5 || chartData.some((item) => item.nome.length > 14);
-                return (
-                  <div
-                    key={chart.id}
-                    style={{ order: dashboardPosition(chart.id as DashboardBiId) }}
-                    className={dashboardColumnClass(chart.id as DashboardBiId)}
-                  >
-                    <Card className="flex h-full flex-col">
-                      <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">
-                        {chart.title}
-                      </p>
-                      {chart.data.length === 0 ? (
-                        <div className="flex min-h-[270px] flex-1 items-center justify-center text-xs text-muted-foreground">
-                          Sem dados para o periodo.
-                        </div>
-                      ) : (
-                        <div className="min-h-[270px] min-w-0 flex-1">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chartData} margin={DASHBOARD_CHART_MARGIN}>
-                              <CartesianGrid stroke="var(--border)" vertical={false} />
-                              <XAxis
-                                dataKey="nome"
-                                stroke="var(--muted-foreground)"
-                                tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
-                                fontSize={11}
-                                interval={0}
-                                angle={rotateLabels ? -35 : 0}
-                                textAnchor={rotateLabels ? "end" : "middle"}
-                                height={rotateLabels ? 78 : 30}
-                                tickMargin={rotateLabels ? 8 : 0}
-                              />
-                              <YAxis
-                                stroke="var(--muted-foreground)"
-                                tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
-                                fontSize={11}
-                                allowDecimals={false}
-                                width={38}
-                              />
-                              <Tooltip content={<DashboardBarTooltip />} />
-                              <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-                                {chartData.map((item, index) => (
-                                  <Cell
-                                    key={`${item.nome}-${index}`}
-                                    fill={item.cor || COLORS[index % COLORS.length]}
-                                  />
-                                ))}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      )}
-                    </Card>
-                  </div>
-                );
-              })}
-
-            <div
-              style={{ order: dashboardPosition("recent") }}
-              className={`${dashboardColumnClass("recent")} ${hasBi("recent") ? "" : "hidden"}`}
-            >
-              <Card className="p-0">
-                <div className="border-b border-border px-5 py-4">
-                  <p className="text-sm font-semibold">{biLabel("recent")}</p>
-                  <p className="text-xs text-muted-foreground">Ultimas conversas movimentadas.</p>
-                </div>
-                <ul className="divide-y divide-border">
-                  {recent.map((conversation) => (
-                    <li key={conversation.id} className="flex items-center gap-3 px-5 py-3 text-sm">
-                      <span className="h-2 w-2 rounded-full bg-primary" />
-                      <span className="min-w-0 flex-1 truncate">
-                        <Link
-                          to="/inbox/$conversationId"
-                          params={{ conversationId: conversation.id }}
-                          className="font-medium hover:underline"
-                        >
-                          {conversation.contact?.nome ?? "Contato"}
-                        </Link>
-                        <span className="ml-2 text-muted-foreground">
-                          {conversation.protocolo
-                            ? `#${conversation.protocolo}`
-                            : conversation.status}
-                        </span>
-                      </span>
-                      <span className="font-mono text-[11px] text-muted-foreground">
-                        ha {relativeTime(new Date(conversation.last_message_at).getTime())}
-                      </span>
-                    </li>
-                  ))}
-                  {!query.isLoading && recent.length === 0 && (
-                    <li className="px-5 py-6 text-center text-xs text-muted-foreground">
-                      Nenhuma atividade operacional encontrada.
-                    </li>
-                  )}
-                </ul>
-              </Card>
-            </div>
-          </div>
-        )}
-        <Modal
-          open={editingDashboard}
-          onClose={() => setEditingDashboard(false)}
-          title="Editar Dashboard"
-          size="lg"
-          footer={
-            <div className="flex flex-wrap justify-end gap-3">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  const preferences: DashboardPreferences = {
-                    visible: [...DASHBOARD_BIS],
-                    order: [...DASHBOARD_BIS],
-                    labels: {},
-                    columns: { ...DEFAULT_DASHBOARD_COLUMNS },
-                  };
-                  window.localStorage.setItem(storageKey, JSON.stringify(preferences));
-                  setVisibleBis(preferences.visible);
-                  setDashboardOrder(preferences.order);
-                  setDashboardLabels(preferences.labels);
-                  setDashboardColumns(preferences.columns);
-                  setDraftBis(preferences.visible);
-                  setDraftOrder(preferences.order);
-                  setDraftLabels(preferences.labels);
-                  setDraftColumns(preferences.columns);
-                  setEditingBiId(null);
-                  setEditingDashboard(false);
-                  toast.success("Configurações restauradas para o padrão do sistema.");
-                }}
-              >
-                <RotateCcw className="h-4 w-4" />
-                Restaurar padrão
-              </Button>
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setEditingBiId(null);
-                    setEditingDashboard(false);
-                  }}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    const preferences: DashboardPreferences = {
-                      visible: draftBis,
-                      order: draftOrder,
-                      labels: draftLabels,
-                      columns: { ...draftColumns, counters: 4 },
-                    };
-                    window.localStorage.setItem(storageKey, JSON.stringify(preferences));
-                    setVisibleBis(draftBis);
-                    setDashboardOrder(draftOrder);
-                    setDashboardLabels(draftLabels);
-                    setDashboardColumns({ ...draftColumns, counters: 4 });
-                    setEditingBiId(null);
-                    setEditingDashboard(false);
-                  }}
-                >
-                  <Save className="h-4 w-4" />
-                  Salvar
-                </Button>
-              </div>
-            </div>
-          }
-        >
-          <p className="mb-3 text-sm text-muted-foreground">
-            Os filtros são obrigatórios e permanecem sempre visíveis.
-          </p>
-          <div className="space-y-2">
-            {draftOrder.map((id, index) => (
-              <div
-                key={id}
-                draggable={editingBiId !== id}
-                onDragStart={(event) => {
-                  event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("text/plain", id);
-                  setDraggingBiId(id);
-                }}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const sourceId = event.dataTransfer.getData("text/plain") as DashboardBiId;
-                  if (DASHBOARD_BIS.includes(sourceId)) reorderDraftBis(sourceId, id);
-                  setDraggingBiId(null);
-                }}
-                onDragEnd={() => setDraggingBiId(null)}
-                className={`flex min-h-11 items-center gap-2 rounded-lg border border-border px-2 py-1.5 transition ${
-                  draggingBiId === id ? "opacity-50" : ""
-                }`}
-              >
-                <div className="flex shrink-0 cursor-grab items-center gap-1 text-muted-foreground active:cursor-grabbing">
-                  <GripVertical className="h-3.5 w-3.5" />
-                  <span className="w-3 text-center font-mono text-xs">{index + 1}</span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={draftBis.includes(id)}
-                  onChange={(event) =>
-                    setDraftBis((current) =>
-                      event.target.checked
-                        ? [...current, id]
-                        : current.filter((item) => item !== id),
-                    )
-                  }
-                  className="h-4 w-4 shrink-0 accent-primary"
-                  aria-label={`Exibir ${draftLabels[id]?.trim() || BI_LABELS[id]}`}
-                />
-                {editingBiId === id ? (
-                  <div className="flex min-w-0 flex-1 items-center gap-1">
-                    <div className="relative min-w-0 flex-1">
-                      <Input
-                        autoFocus
-                        value={editingBiTitle}
-                        onChange={(event) => setEditingBiTitle(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") saveEditingBiTitle();
-                          if (event.key === "Escape") setEditingBiId(null);
-                        }}
-                        className="h-8 min-w-0 pr-9 text-sm"
-                        aria-label="Título do dashboard"
-                      />
-                      <button
-                        type="button"
-                        className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-                        title="Cancelar edição"
-                        aria-label="Cancelar edição"
-                        onClick={() => setEditingBiId(null)}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 shrink-0 p-0"
-                      title="Salvar título"
-                      aria-label="Salvar título"
-                      onClick={saveEditingBiTitle}
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ) : (
+            {visibleComponents.map((component) => (
+              <div key={component.id} className={dashboardColumnClass(component.columns)}>
+                {component.dataSource === "records" &&
+                component.groupBy === "queue" &&
+                component.visualization === "cards" &&
+                component.valueMode === "count" ? (
                   <>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                      {draftLabels[id]?.trim() || BI_LABELS[id]}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 shrink-0 p-0"
-                      title="Editar título"
-                      aria-label={`Editar ${draftLabels[id]?.trim() || BI_LABELS[id]}`}
-                      onClick={() => beginEditingBiTitle(id)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                      {component.title}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-6">
+                      {queueCards.map((queue) => {
+                        const Icon = queue.Icon;
+                        return (
+                          <KPI
+                            key={queue.id}
+                            label={queue.label}
+                            value={num(queue.value)}
+                            tone="info"
+                            icon={<Icon className="h-6 w-6" />}
+                          />
+                        );
+                      })}
+                      <KPI
+                        label="Fechadas"
+                        value={num(closedConversations)}
+                        tone="info"
+                        icon={<CheckCircle2 className="h-6 w-6" />}
+                      />
+                      <KPI
+                        label="Total"
+                        value={num(totalConversations)}
+                        tone="info"
+                        icon={<MessagesSquare className="h-6 w-6" />}
+                      />
+                    </div>
                   </>
-                )}
-                <div className="ml-2 hidden shrink-0 items-center gap-1 border-l border-border pl-3 text-xs text-muted-foreground md:flex">
-                  <span className="hidden sm:inline">Colunas</span>
-                  {id === "counters" ? (
-                    <span className="flex h-8 w-12 items-center justify-center rounded-md border border-border bg-surface-2 text-sm text-muted-foreground">
-                      4
-                    </span>
-                  ) : (
-                    <select
-                      value={draftColumns[id] ?? DEFAULT_DASHBOARD_COLUMNS[id]}
-                      onChange={(event) =>
-                        setDraftColumns((current) => ({
-                          ...current,
-                          [id]: Number(event.target.value) as DashboardColumnCount,
-                        }))
-                      }
-                      onMouseDown={(event) => event.stopPropagation()}
-                      className="h-8 w-12 rounded-md border border-border bg-surface px-1 text-center text-sm text-foreground outline-none focus:border-primary"
-                      aria-label={`Quantidade de colunas de ${draftLabels[id]?.trim() || BI_LABELS[id]}`}
-                    >
-                      {[1, 2, 3, 4].map((columns) => (
-                        <option key={columns} value={columns}>
-                          {columns}
-                        </option>
+                ) : component.dataSource === "messages" &&
+                  component.groupBy === "hour" &&
+                  component.visualization === "line" &&
+                  component.valueMode === "count" ? (
+                  <MessageTrafficWidget
+                    title={component.title}
+                    data={messageTraffic}
+                    columns={component.columns}
+                    isMobile={isMobile}
+                  />
+                ) : component.dataSource === "activity" &&
+                  component.groupBy === "recent" &&
+                  component.visualization === "table" &&
+                  component.valueMode === "count" ? (
+                  <Card className="h-full">
+                    <div className="mb-4">
+                      <p className="text-xs uppercase tracking-widest text-muted-foreground">
+                        {component.title}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Últimas conversas movimentadas.
+                      </p>
+                    </div>
+                    <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+                      {recent.map((conversation) => (
+                        <li
+                          key={conversation.id}
+                          className="flex items-center gap-3 px-3 py-2 text-sm"
+                        >
+                          <span className="h-2 w-2 rounded-full bg-primary" />
+                          <span className="min-w-0 flex-1 truncate">
+                            <Link
+                              to="/inbox/$conversationId"
+                              params={{ conversationId: conversation.id }}
+                              className="font-medium hover:underline"
+                            >
+                              {conversation.contact?.nome ?? "Contato"}
+                            </Link>
+                            <span className="ml-2 text-muted-foreground">
+                              {conversation.protocolo
+                                ? `#${conversation.protocolo}`
+                                : conversation.status}
+                            </span>
+                          </span>
+                          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                            há {relativeTime(new Date(conversation.last_message_at).getTime())}
+                          </span>
+                        </li>
                       ))}
-                    </select>
-                  )}
-                </div>
+                      {recent.length === 0 && (
+                        <li className="px-3 py-6 text-center text-xs text-muted-foreground">
+                          Nenhuma atividade operacional encontrada.
+                        </li>
+                      )}
+                    </ul>
+                  </Card>
+                ) : (
+                  <DashboardComponentRenderer
+                    title={component.title}
+                    visualization={component.visualization}
+                    columns={component.columns}
+                    valueMode={component.valueMode}
+                    data={resolveDashboardData(component)}
+                    preserveOrder={component.dataSource === "activity"}
+                  />
+                )}
               </div>
             ))}
+            {visibleComponents.length === 0 && (
+              <Card className="md:col-span-4">
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Nenhum componente visível. Use “Editar Dashboard” para configurar a tela.
+                </p>
+              </Card>
+            )}
           </div>
-        </Modal>
+        )}
+
+        <DashboardEditorModal
+          open={editingDashboard}
+          components={dashboardComponents}
+          customFields={(customFieldsQuery.data ?? []).map((field) => ({
+            id: field.id,
+            label: field.label,
+          }))}
+          resolveData={resolveDashboardData}
+          renderPreview={(component) =>
+            component.dataSource === "messages" &&
+            component.groupBy === "hour" &&
+            component.visualization === "line" &&
+            component.valueMode === "count" ? (
+              <MessageTrafficWidget
+                title={component.title}
+                data={messageTraffic}
+                columns={component.columns}
+                isMobile={isMobile}
+              />
+            ) : undefined
+          }
+          onPreviewConfigChange={setPreviewComponent}
+          canManage={canManageDashboard}
+          canDelete={canDeleteDashboard}
+          onChange={updateDashboardComponents}
+          onClose={() => setEditingDashboard(false)}
+        />
       </PageContainer>
     </AppShell>
+  );
+}
+
+function MessageTrafficWidget({
+  title,
+  data,
+  columns,
+  isMobile,
+}: {
+  title: string;
+  data: Array<{
+    hora: string;
+    recebidas: number;
+    enviadas: number;
+    total: number;
+    atendimentos: number;
+  }>;
+  columns: 1 | 2 | 3 | 4;
+  isMobile: boolean;
+}) {
+  const compact = isMobile || columns <= 2;
+  const ticks = messageHourTicks(isMobile);
+  const totals = data.reduce(
+    (current, item) => ({
+      recebidas: current.recebidas + item.recebidas,
+      enviadas: current.enviadas + item.enviadas,
+      total: current.total + item.total,
+      atendimentos: current.atendimentos + item.atendimentos,
+    }),
+    { recebidas: 0, enviadas: 0, total: 0, atendimentos: 0 },
+  );
+  return (
+    <Card className="h-full">
+      <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">{title}</p>
+      <ResponsiveContainer width="100%" height={260}>
+        <LineChart data={data} margin={DASHBOARD_CHART_MARGIN}>
+          <CartesianGrid stroke="var(--border)" vertical={false} />
+          <XAxis
+            dataKey="hora"
+            stroke="var(--muted-foreground)"
+            tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
+            fontSize={11}
+            ticks={ticks}
+            interval={0}
+            angle={compact ? -45 : 0}
+            textAnchor={compact ? "end" : "middle"}
+            height={compact ? 48 : 30}
+            tickMargin={compact ? 8 : 0}
+          />
+          <YAxis
+            stroke="var(--muted-foreground)"
+            tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
+            fontSize={11}
+            allowDecimals={false}
+            width={38}
+          />
+          <Tooltip
+            contentStyle={{
+              background: "var(--popover)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              color: "var(--popover-foreground)",
+              fontSize: 12,
+            }}
+          />
+          <Line
+            type="monotone"
+            dataKey="recebidas"
+            name="Recebidos"
+            stroke="#2563eb"
+            strokeWidth={2}
+            dot={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="enviadas"
+            name="Enviados"
+            stroke="#dc2626"
+            strokeWidth={2}
+            dot={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="total"
+            name="Total"
+            stroke="#94a3b8"
+            strokeWidth={2}
+            dot={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="atendimentos"
+            name="Atendimentos"
+            stroke="#16a34a"
+            strokeWidth={2}
+            dot={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+      <table
+        aria-label="Totais do tráfego de mensagens no período"
+        className="mx-auto mt-1 w-full max-w-md table-fixed border-collapse whitespace-nowrap text-xs"
+      >
+        <thead>
+          <tr>
+            <MessageTrafficLegendHeader label="Recebidos" color="#2563eb" />
+            <MessageTrafficLegendHeader label="Enviados" color="#dc2626" />
+            <MessageTrafficLegendHeader label="Total" color="#94a3b8" />
+            <MessageTrafficLegendHeader label="Atendimentos" color="#16a34a" />
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <MessageTrafficTotalCell label="Recebidos" value={totals.recebidas} />
+            <MessageTrafficTotalCell label="Enviados" value={totals.enviadas} />
+            <MessageTrafficTotalCell label="Total" value={totals.total} emphasized />
+            <MessageTrafficTotalCell label="Atendimentos" value={totals.atendimentos} />
+          </tr>
+        </tbody>
+      </table>
+    </Card>
   );
 }
 
@@ -949,140 +661,6 @@ function MessageTrafficLegendHeader({ label, color }: { label: string; color: st
   );
 }
 
-function Snapshot({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number | string;
-}) {
-  return (
-    <Card>
-      <div className="flex items-center gap-2 text-muted-foreground">
-        {icon}
-        <span className="text-xs uppercase tracking-widest">{label}</span>
-      </div>
-      <p className="mt-3 font-mono text-2xl font-semibold">{value}</p>
-    </Card>
-  );
-}
-
 function kpiValue(kpi: { value: number | null } | undefined) {
   return kpi?.value ?? 0;
-}
-
-type DashboardChartDatum = {
-  nome: string;
-  total: number;
-  cor?: string | null;
-  detalhes?: DashboardChartDatum[];
-};
-
-function compactDashboardChartData(data: DashboardChartDatum[], columns: DashboardColumnCount) {
-  const maxItemsByColumn: Record<DashboardColumnCount, number> = {
-    1: 5,
-    2: 10,
-    3: 15,
-    4: 20,
-  };
-  const maxItems = maxItemsByColumn[columns];
-  const sorted = [...data].sort(
-    (first, second) => second.total - first.total || first.nome.localeCompare(second.nome, "pt-BR"),
-  );
-  if (sorted.length <= maxItems) return sorted;
-  const visible = sorted.slice(0, maxItems - 1);
-  const detalhes = sorted.slice(maxItems - 1);
-  return [
-    ...visible,
-    {
-      nome: "Outros",
-      total: detalhes.reduce((total, item) => total + item.total, 0),
-      cor: "#94a3b8",
-      detalhes,
-    },
-  ];
-}
-
-function DashboardBarTooltip({
-  active,
-  payload,
-}: {
-  active?: boolean;
-  payload?: Array<{ value?: number | string; payload?: DashboardChartDatum }>;
-}) {
-  const item = payload?.[0]?.payload;
-  if (!active || !item) return null;
-
-  return (
-    <div className="max-w-64 rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-lg">
-      <p className="font-semibold text-foreground">
-        {item.nome}: {num(item.total)}
-      </p>
-      {item.detalhes && (
-        <div className="mt-2 max-h-44 space-y-1 overflow-y-auto border-t border-border pt-2 text-muted-foreground">
-          {item.detalhes.map((detail) => (
-            <p key={detail.nome} className="flex items-center justify-between gap-4">
-              <span className="truncate">{detail.nome}</span>
-              <span className="shrink-0 font-medium text-foreground">{num(detail.total)}</span>
-            </p>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function loadDashboardPreferences(storageKey: string): DashboardPreferences {
-  const defaults: DashboardPreferences = {
-    visible: [...DASHBOARD_BIS],
-    order: [...DASHBOARD_BIS],
-    labels: {},
-    columns: DEFAULT_DASHBOARD_COLUMNS,
-  };
-  if (typeof window === "undefined") return defaults;
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]") as unknown;
-    const normalizeIds = (value: unknown): DashboardBiId[] =>
-      Array.isArray(value)
-        ? value.filter(
-            (item): item is DashboardBiId =>
-              typeof item === "string" && DASHBOARD_BIS.includes(item as DashboardBiId),
-          )
-        : [];
-
-    if (Array.isArray(stored)) {
-      const visible = normalizeIds(stored);
-      return { ...defaults, visible: visible.length ? visible : defaults.visible };
-    }
-    if (!stored || typeof stored !== "object") return defaults;
-
-    const data = stored as Partial<DashboardPreferences>;
-    const visible = normalizeIds(data.visible);
-    const savedOrder = normalizeIds(data.order);
-    const order = [...savedOrder, ...DASHBOARD_BIS.filter((id) => !savedOrder.includes(id))];
-    const labels = Object.fromEntries(
-      Object.entries(data.labels ?? {}).filter(
-        ([id, value]) => DASHBOARD_BIS.includes(id as DashboardBiId) && typeof value === "string",
-      ),
-    ) as Partial<Record<DashboardBiId, string>>;
-    const columns = Object.fromEntries(
-      Object.entries(data.columns ?? {}).filter(
-        ([id, value]) =>
-          DASHBOARD_BIS.includes(id as DashboardBiId) &&
-          typeof value === "number" &&
-          value >= 1 &&
-          value <= 4,
-      ),
-    ) as Partial<Record<DashboardBiId, DashboardColumnCount>>;
-    return { visible: visible.length ? visible : defaults.visible, order, labels, columns };
-  } catch {
-    return defaults;
-  }
-}
-
-function formatMinutes(value: number | null | undefined) {
-  if (value == null) return "sem amostra";
-  return `${num(value)} min`;
 }

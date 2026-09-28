@@ -6,6 +6,7 @@ import {
   logoutFromTrixusApi,
   readStoredPlatformImpersonation,
 } from "@/lib/trixus-api";
+import { effectiveSessionPermissions } from "@/lib/access-permissions";
 
 /* ============================================================
    Trixus Session
@@ -23,15 +24,89 @@ export type SessionUser = {
   empresaId?: string;
   empresaNome?: string;
   avatarUrl?: string;
+  keepSidebarCollapsed?: boolean;
   permissions?: string[];
 };
 
-export const ROLE_META: Record<Role, { label: string; scope: string; home: string }> = {
-  super_admin: { label: "Super Admin", scope: "Plataforma Trixus", home: "/admin" },
-  admin: { label: "Administrador", scope: "Empresa", home: "/" },
-  supervisor: { label: "Supervisor", scope: "Empresa", home: "/" },
-  operator: { label: "Atendente", scope: "Central de Atendimento", home: "/inbox" },
+export const ROLE_META: Record<Role, { label: string; scope: string }> = {
+  super_admin: { label: "Super Admin", scope: "Plataforma Trixus" },
+  admin: { label: "Administrador", scope: "Empresa" },
+  supervisor: { label: "Supervisor", scope: "Empresa" },
+  operator: { label: "Atendente", scope: "Central de Atendimento" },
 };
+
+export const TENANT_ROUTE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
+  "/": ["dashboard.read"],
+  "/inbox": ["conversations.read"],
+  "/clientes": ["crm.read", "crm.manage"],
+  "/contatos": ["contacts.read"],
+  "/historico": ["history.read"],
+  "/atendentes": ["users.read"],
+  "/perfis": ["roles.read"],
+  "/departamentos": ["departments.read"],
+  "/etiquetas": ["chat.tags.read"],
+  "/mensagens-rapidas": ["chat.quick_replies.read"],
+  "/agendamentos": ["schedules.read"],
+  "/campanhas": ["campaigns.read"],
+  "/filas": ["conversations.manage"],
+  "/bi": ["crm.read", "conversations.read", "campaigns.read", "tickets.read"],
+  "/instancias": ["connections.read"],
+  "/grupos": ["groups.read"],
+  "/chatbot": ["bot_flows.read"],
+  "/automacoes": ["automations.read"],
+  "/agente-ia": ["ai_agents.read"],
+  "/chamados": ["tickets.read"],
+  "/configuracoes": ["settings.read"],
+  "/relatorios": ["crm.read", "conversations.read", "campaigns.read", "tickets.read"],
+};
+
+const TENANT_PUBLIC_ROUTES = new Set(["/perfil", "/ajuda"]);
+
+// Ordem da navegação universal do tenant: dashboard, operação e administração.
+const TENANT_HOME_CANDIDATES = [
+  "/",
+  "/inbox",
+  "/contatos",
+  "/grupos",
+  "/historico",
+  "/atendentes",
+  "/perfis",
+  "/departamentos",
+  "/etiquetas",
+  "/mensagens-rapidas",
+  "/agendamentos",
+  "/campanhas",
+  "/instancias",
+  "/chatbot",
+  "/automacoes",
+  "/agente-ia",
+  "/chamados",
+  "/configuracoes",
+] as const;
+
+function matchingTenantRoute(pathname: string) {
+  return Object.keys(TENANT_ROUTE_PERMISSIONS)
+    .filter((candidate) =>
+      candidate === "/"
+        ? pathname === "/"
+        : pathname === candidate || pathname.startsWith(candidate + "/"),
+    )
+    .sort((left, right) => right.length - left.length)[0];
+}
+
+export function canAccessTenantRoute(pathname: string, permissions?: readonly string[]): boolean {
+  if (TENANT_PUBLIC_ROUTES.has(pathname)) return true;
+  const route = matchingTenantRoute(pathname);
+  if (!route) return false;
+  const required = TENANT_ROUTE_PERMISSIONS[route];
+  return required.some((permission) => permissions?.includes(permission));
+}
+
+export function tenantHomeForPermissions(permissions?: readonly string[]): string {
+  return (
+    TENANT_HOME_CANDIDATES.find((route) => canAccessTenantRoute(route, permissions)) ?? "/perfil"
+  );
+}
 
 type SessionState = {
   user: SessionUser | null;
@@ -72,13 +147,32 @@ export const useSession = create<SessionState>()(
       impersonate: (input) => set({ impersonating: input }),
       stopImpersonation: () => set({ impersonating: null }),
     }),
-    { name: "trixus.session" },
+    {
+      name: "trixus.session",
+      version: 1,
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<SessionState>;
+        const user = persisted.user
+          ? {
+              ...persisted.user,
+              permissions: effectiveSessionPermissions(
+                persisted.user.role,
+                persisted.user.permissions,
+              ),
+            }
+          : null;
+        return { ...currentState, ...persisted, user };
+      },
+    },
   ),
 );
 
-export function currentRoleHome(role: Role | undefined): string {
+export function currentRoleHome(
+  role: Role | undefined,
+  permissions = useSession.getState().user?.permissions,
+): string {
   if (!role) return "/login";
-  return ROLE_META[role].home;
+  return role === "super_admin" ? "/admin" : tenantHomeForPermissions(permissions);
 }
 
 export async function hydrateSession(): Promise<void> {

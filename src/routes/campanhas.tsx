@@ -37,6 +37,7 @@ import {
 } from "@/lib/trixus-api";
 import { fmtDate, num } from "@/lib/format";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/campanhas")({ component: Page });
 
@@ -89,6 +90,16 @@ const STATUS_TONE: Record<
 
 function Page() {
   const queryClient = useQueryClient();
+  const permissions = useSession((state) => state.user?.permissions ?? []);
+  const canAdminister = permissions.includes("campaigns.manage");
+  const canUpdate = canAdminister || permissions.includes("campaigns.update");
+  const canCreate = canAdminister || canUpdate || permissions.includes("campaigns.create");
+  const canStart = canAdminister || canUpdate || permissions.includes("campaigns.start");
+  const canPause = canAdminister || canUpdate || permissions.includes("campaigns.pause");
+  const canCancel = canAdminister || canUpdate || permissions.includes("campaigns.cancel");
+  const canDuplicate = canAdminister || canUpdate || permissions.includes("campaigns.duplicate");
+  const canDelete = canAdminister || permissions.includes("campaigns.delete");
+  const canReadRecipients = canAdminister || permissions.includes("campaigns.recipients.read");
   const createModal = useDisclosure();
   const [filters, setFilters] = React.useState<CampaignFilters>(DEFAULT_CAMPAIGN_FILTERS);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -142,7 +153,7 @@ function Page() {
   const recipientsQuery = useQuery({
     queryKey: queryKeys.recipients(selectedCampaign?.id ?? null),
     queryFn: () => campaignApi.recipients(selectedCampaign!.id, { pageSize: 25 }),
-    enabled: !!selectedCampaign,
+    enabled: !!selectedCampaign && canReadRecipients,
     refetchInterval:
       selectedCampaign && ["QUEUED", "RUNNING", "CANCELLING"].includes(selectedCampaign.status)
         ? 5000
@@ -201,9 +212,11 @@ function Page() {
               <Button variant="outline" size="sm" onClick={() => invalidateCampaigns()}>
                 <RefreshCw className="h-3.5 w-3.5" /> Atualizar
               </Button>
-              <Button variant="primary" size="sm" onClick={createModal.show}>
-                <Plus className="h-3.5 w-3.5" /> Nova Campanha
-              </Button>
+              {canCreate && (
+                <Button variant="primary" size="sm" onClick={createModal.show}>
+                  <Plus className="h-3.5 w-3.5" /> Nova Campanha
+                </Button>
+              )}
             </>
           }
         />
@@ -268,9 +281,11 @@ function Page() {
                 icon={<Megaphone className="h-5 w-5" />}
                 title="Nenhuma campanha encontrada"
                 action={
-                  <Button size="sm" onClick={createModal.show}>
-                    Criar campanha
-                  </Button>
+                  canCreate ? (
+                    <Button size="sm" onClick={createModal.show}>
+                      Criar campanha
+                    </Button>
+                  ) : undefined
                 }
               />
             ) : (
@@ -294,6 +309,12 @@ function Page() {
             campaign={detail}
             recipients={recipients}
             loading={detailQuery.isLoading || recipientsQuery.isLoading}
+            canStartAction={canStart}
+            canPauseAction={canPause}
+            canCancelAction={canCancel}
+            canDuplicateAction={canDuplicate}
+            canReadRecipients={canReadRecipients}
+            canDelete={canDelete}
             onAction={(action, campaign) => {
               if (action === "start" || action === "cancel") setConfirming({ action, campaign });
               else actionMutation.mutate({ action, campaign });
@@ -301,17 +322,19 @@ function Page() {
           />
         </div>
 
-        <CampaignEditor
-          open={createModal.open}
-          onClose={createModal.hide}
-          connections={sortedConnections}
-          onCreated={(campaign) => {
-            createModal.hide();
-            setFilters(DEFAULT_CAMPAIGN_FILTERS);
-            setSelectedId(campaign.id);
-            invalidateCampaigns();
-          }}
-        />
+        {canCreate && (
+          <CampaignEditor
+            open={createModal.open}
+            onClose={createModal.hide}
+            connections={sortedConnections}
+            onCreated={(campaign) => {
+              createModal.hide();
+              setFilters(DEFAULT_CAMPAIGN_FILTERS);
+              setSelectedId(campaign.id);
+              invalidateCampaigns();
+            }}
+          />
+        )}
 
         <ConfirmDialog
           open={!!confirming}
@@ -385,6 +408,12 @@ function CampaignDetail({
   campaign,
   recipients,
   loading,
+  canStartAction,
+  canPauseAction,
+  canCancelAction,
+  canDuplicateAction,
+  canReadRecipients,
+  canDelete,
   onAction,
 }: {
   campaign: ApiCampaign | null;
@@ -399,6 +428,12 @@ function CampaignDetail({
     lastErrorCode: string | null;
   }>;
   loading: boolean;
+  canStartAction: boolean;
+  canPauseAction: boolean;
+  canCancelAction: boolean;
+  canDuplicateAction: boolean;
+  canReadRecipients: boolean;
+  canDelete: boolean;
   onAction: (
     action: "start" | "pause" | "resume" | "cancel" | "duplicate" | "archive",
     campaign: ApiCampaign,
@@ -453,35 +488,37 @@ function CampaignDetail({
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        {canStart && (
+        {canStartAction && canStart && (
           <Button size="sm" onClick={() => onAction("start", campaign)}>
             <Play className="h-3.5 w-3.5" /> Iniciar
           </Button>
         )}
-        {canPause && (
+        {canPauseAction && canPause && (
           <Button size="sm" variant="outline" onClick={() => onAction("pause", campaign)}>
             <Pause className="h-3.5 w-3.5" /> Pausar
           </Button>
         )}
-        {canResume && (
+        {canPauseAction && canResume && (
           <Button size="sm" onClick={() => onAction("resume", campaign)}>
             <Play className="h-3.5 w-3.5" /> Retomar
           </Button>
         )}
-        {canCancel && (
+        {canCancelAction && canCancel && (
           <Button size="sm" variant="destructive" onClick={() => onAction("cancel", campaign)}>
             <Square className="h-3.5 w-3.5" /> Cancelar
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="outline"
-          className="duplicate-action-button"
-          onClick={() => onAction("duplicate", campaign)}
-        >
-          <Copy className="h-3.5 w-3.5" /> Duplicar
-        </Button>
-        {canArchive && (
+        {canDuplicateAction && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="duplicate-action-button"
+            onClick={() => onAction("duplicate", campaign)}
+          >
+            <Copy className="h-3.5 w-3.5" /> Duplicar
+          </Button>
+        )}
+        {canDelete && canArchive && (
           <Button
             size="sm"
             variant="ghost"
@@ -493,49 +530,51 @@ function CampaignDetail({
         )}
       </div>
 
-      <div className="mt-6">
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-semibold">Recipients</p>
-          {loading && <span className="text-xs text-muted-foreground">Atualizando...</span>}
-        </div>
-        <div className="overflow-hidden rounded-lg border border-border">
-          <table className="w-full table-fixed text-sm">
-            <thead className="bg-surface-1 text-xs uppercase text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 text-left">Contato</th>
-                <th className="px-3 py-2 text-left">Telefone</th>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-left">Erro</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recipients.length === 0 ? (
+      {canReadRecipients && (
+        <div className="mt-6">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm font-semibold">Recipients</p>
+            {loading && <span className="text-xs text-muted-foreground">Atualizando...</span>}
+          </div>
+          <div className="overflow-hidden rounded-lg border border-border">
+            <table className="w-full table-fixed text-sm">
+              <thead className="bg-surface-1 text-xs uppercase text-muted-foreground">
                 <tr>
-                  <td className="px-3 py-5 text-center text-muted-foreground" colSpan={4}>
-                    Sem snapshot de recipients.
-                  </td>
+                  <th className="px-3 py-2 text-left">Contato</th>
+                  <th className="px-3 py-2 text-left">Telefone</th>
+                  <th className="px-3 py-2 text-left">Status</th>
+                  <th className="px-3 py-2 text-left">Erro</th>
                 </tr>
-              ) : (
-                recipients.map((recipient) => (
-                  <tr key={recipient.id} className="border-t border-border">
-                    <td className="px-3 py-2">
-                      <p>{recipient.contactName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {recipient.customerName ?? "Sem customer"}
-                      </p>
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs">{recipient.phoneMasked}</td>
-                    <td className="px-3 py-2">{recipient.status}</td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {recipient.skipReason ?? recipient.lastErrorCode ?? "-"}
+              </thead>
+              <tbody>
+                {recipients.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-5 text-center text-muted-foreground" colSpan={4}>
+                      Sem snapshot de recipients.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  recipients.map((recipient) => (
+                    <tr key={recipient.id} className="border-t border-border">
+                      <td className="px-3 py-2">
+                        <p>{recipient.contactName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {recipient.customerName ?? "Sem customer"}
+                        </p>
+                      </td>
+                      <td className="px-3 py-2 font-mono text-xs">{recipient.phoneMasked}</td>
+                      <td className="px-3 py-2">{recipient.status}</td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">
+                        {recipient.skipReason ?? recipient.lastErrorCode ?? "-"}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
     </Card>
   );
 }

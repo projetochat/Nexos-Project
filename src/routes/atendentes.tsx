@@ -48,6 +48,7 @@ const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 type Atendente = {
   id: string;
+  userId: string;
   nome: string;
   email: string;
   cargo: string;
@@ -76,6 +77,8 @@ function normalizeAtendenteName(value: string) {
 function AtendentesPage() {
   const qc = useQueryClient();
   const sessionUser = useSession((state) => state.user);
+  const canManage = sessionUser?.permissions?.includes("users.manage") ?? false;
+  const canDelete = sessionUser?.permissions?.includes("users.delete") ?? false;
   const { data: memberships = [], isLoading } = useQuery({
     queryKey: ["trixus", "users"],
     queryFn: organizationApi.listUsers,
@@ -186,9 +189,11 @@ function AtendentesPage() {
           subtitle={`${num(atendentes.length)} atendentes cadastrados.`}
           subtitleClassName="hidden sm:block"
           actions={
-            <Button variant="primary" size="sm" onClick={novo.show}>
-              <Plus className="h-3.5 w-3.5" /> Novo Atendente
-            </Button>
+            canManage ? (
+              <Button variant="primary" size="sm" onClick={novo.show}>
+                <Plus className="h-3.5 w-3.5" /> Novo Atendente
+              </Button>
+            ) : null
           }
         />
 
@@ -225,6 +230,7 @@ function AtendentesPage() {
           {!isLoading &&
             paginated.map((a) => {
               const perfil = perfis.find((p) => p.id === a.perfilId);
+              const isCurrentUser = a.userId === sessionUser?.id;
               return (
                 <Card key={a.id} className="p-4">
                   <div className="flex items-center justify-between gap-3">
@@ -238,41 +244,47 @@ function AtendentesPage() {
                         <p className="truncate text-xs text-muted-foreground">{a.email}</p>
                       </div>
                     </div>
-                    {a.perfilKey !== "tenant_admin" && (
+                    {a.perfilKey !== "tenant_admin" && (canManage || canDelete) && (
                       <div className="flex shrink-0 gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDuplicating(a)}
-                          title="Duplicar"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setEditing(a)}
-                          title="Editar"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className={
-                            a.ativo
-                              ? "text-amber-600 hover:text-amber-700"
-                              : "text-emerald-600 hover:text-emerald-700"
-                          }
-                          onClick={() => setDeleting(a)}
-                          title={a.ativo ? "Bloquear" : "Desbloquear"}
-                        >
-                          {a.ativo ? (
-                            <Ban className="h-3.5 w-3.5" />
-                          ) : (
-                            <Unlock className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
+                        {canManage && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDuplicating(a)}
+                            title="Duplicar"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {canManage && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditing(a)}
+                            title="Editar"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {canDelete && !isCurrentUser && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={
+                              a.ativo
+                                ? "text-amber-600 hover:text-amber-700"
+                                : "text-emerald-600 hover:text-emerald-700"
+                            }
+                            onClick={() => setDeleting(a)}
+                            title={a.ativo ? "Bloquear" : "Desbloquear"}
+                          >
+                            {a.ativo ? (
+                              <Ban className="h-3.5 w-3.5" />
+                            ) : (
+                              <Unlock className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -308,6 +320,7 @@ function AtendentesPage() {
               {!isLoading &&
                 paginated.map((a) => {
                   const perfil = perfis.find((p) => p.id === a.perfilId);
+                  const isCurrentUser = a.userId === sessionUser?.id;
                   return (
                     <tr key={a.id} className="transition hover:bg-surface-1">
                       <td className="px-3 py-3 sm:px-4">
@@ -328,44 +341,50 @@ function AtendentesPage() {
                         </Badge>
                       </td>
                       <td className="px-3 py-3 sm:px-4">
-                        {a.perfilKey !== "tenant_admin" && (
+                        {a.perfilKey !== "tenant_admin" && (canManage || canDelete) && (
                           <div className="flex justify-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setDuplicating(a)}
-                              title="Duplicar"
-                              aria-label="Duplicar"
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setEditing(a)}
-                              title="Editar"
-                              aria-label="Editar"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className={
-                                a.ativo
-                                  ? "text-amber-600 hover:text-amber-700"
-                                  : "text-emerald-600 hover:text-emerald-700"
-                              }
-                              onClick={() => setDeleting(a)}
-                              title={a.ativo ? "Bloquear" : "Desbloquear"}
-                              aria-label={a.ativo ? "Bloquear" : "Desbloquear"}
-                            >
-                              {a.ativo ? (
-                                <Ban className="h-3.5 w-3.5" />
-                              ) : (
-                                <Unlock className="h-3.5 w-3.5" />
-                              )}
-                            </Button>
+                            {canManage && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDuplicating(a)}
+                                title="Duplicar"
+                                aria-label="Duplicar"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                            {canManage && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setEditing(a)}
+                                title="Editar"
+                                aria-label="Editar"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                            {canDelete && !isCurrentUser && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={
+                                  a.ativo
+                                    ? "text-amber-600 hover:text-amber-700"
+                                    : "text-emerald-600 hover:text-emerald-700"
+                                }
+                                onClick={() => setDeleting(a)}
+                                title={a.ativo ? "Bloquear" : "Desbloquear"}
+                                aria-label={a.ativo ? "Bloquear" : "Desbloquear"}
+                              >
+                                {a.ativo ? (
+                                  <Ban className="h-3.5 w-3.5" />
+                                ) : (
+                                  <Unlock className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -428,46 +447,53 @@ function AtendentesPage() {
           </div>
         </Card>
 
-        <AtendenteForm
-          open={novo.open}
-          atendentes={atendentes}
-          perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({
-            id: p.id,
-            nome: p.name,
-          }))}
-          onClose={novo.hide}
-          onSubmit={(data) => create.mutate(data)}
-        />
-        <AtendenteForm
-          open={!!editing}
-          atendentes={atendentes}
-          perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({
-            id: p.id,
-            nome: p.name,
-          }))}
-          initial={editing ?? undefined}
-          onClose={() => setEditing(null)}
-          onSubmit={(data) =>
-            editing &&
-            update.mutate({
-              id: editing.id,
-              data,
-              reactivating: !editing.ativo && data.ativo === true,
-            })
-          }
-        />
-        <AtendenteForm
-          open={!!duplicating}
-          atendentes={atendentes}
-          perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({
-            id: p.id,
-            nome: p.name,
-          }))}
-          initial={duplicating ?? undefined}
-          clone
-          onClose={() => setDuplicating(null)}
-          onSubmit={(data) => create.mutate(data)}
-        />
+        {canManage && (
+          <AtendenteForm
+            open={novo.open}
+            atendentes={atendentes}
+            perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({
+              id: p.id,
+              nome: p.name,
+            }))}
+            onClose={novo.hide}
+            onSubmit={(data) => create.mutate(data)}
+          />
+        )}
+        {canManage && (
+          <AtendenteForm
+            open={!!editing}
+            atendentes={atendentes}
+            perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({
+              id: p.id,
+              nome: p.name,
+            }))}
+            initial={editing ?? undefined}
+            protectOwnAccess={editing?.userId === sessionUser?.id}
+            onClose={() => setEditing(null)}
+            onSubmit={(data) =>
+              editing &&
+              update.mutate({
+                id: editing.id,
+                data,
+                reactivating: !editing.ativo && data.ativo === true,
+              })
+            }
+          />
+        )}
+        {canManage && (
+          <AtendenteForm
+            open={!!duplicating}
+            atendentes={atendentes}
+            perfis={sortByOptionLabel(perfisAtribuiveis, (p) => p.name).map((p) => ({
+              id: p.id,
+              nome: p.name,
+            }))}
+            initial={duplicating ?? undefined}
+            clone
+            onClose={() => setDuplicating(null)}
+            onSubmit={(data) => create.mutate(data)}
+          />
+        )}
         <ConfirmDialog
           open={!!deleting?.ativo}
           title={deleting?.ativo ? "Bloquear Atendente?" : "Desbloquear Atendente?"}
@@ -564,6 +590,7 @@ export function AtendenteForm({
   clone = false,
   atendentes,
   perfis,
+  protectOwnAccess = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -572,6 +599,7 @@ export function AtendenteForm({
   clone?: boolean;
   atendentes: Atendente[];
   perfis: { id: string; nome: string }[];
+  protectOwnAccess?: boolean;
 }) {
   const [form, setForm] = React.useState<Partial<Atendente>>({});
   const [errors, setErrors] = React.useState<Record<string, string>>({});
@@ -772,6 +800,7 @@ export function AtendenteForm({
                 type="checkbox"
                 className="h-4 w-4 accent-primary"
                 checked={form.ativo !== false}
+                disabled={protectOwnAccess}
                 onChange={(event) => setForm({ ...form, ativo: event.target.checked })}
               />
               <span>Ativo</span>
@@ -796,6 +825,7 @@ export function AtendenteForm({
               <Field label="Perfil de acesso *">
                 <Select
                   value={form.perfilId ?? ""}
+                  disabled={protectOwnAccess}
                   onChange={(e) => setForm({ ...form, perfilId: e.target.value || undefined })}
                 >
                   <option value="">Selecione...</option>
@@ -1185,6 +1215,7 @@ function toAtendente(membership: ApiUserMembership): Atendente {
   const active = membership.status === "ACTIVE" && membership.user.status === "ACTIVE";
   return {
     id: membership.id,
+    userId: membership.user.id,
     nome:
       membership.presentationName?.trim() ||
       membership.user.presentationName?.trim() ||

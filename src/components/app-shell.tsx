@@ -38,7 +38,13 @@ import { LogoMark, Avatar, Badge } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
 import { useConnectionStatus } from "@/lib/realtime";
 import { useTheme } from "./theme-context";
-import { useSession, ROLE_META, signOut } from "@/lib/session";
+import {
+  canAccessTenantRoute,
+  tenantHomeForPermissions,
+  useSession,
+  ROLE_META,
+  signOut,
+} from "@/lib/session";
 import {
   conversationApi,
   notificationApi,
@@ -46,6 +52,7 @@ import {
   TrixusApiError,
 } from "@/lib/trixus-api";
 import { onRealtimeEvent } from "@/lib/realtime/client";
+import { useInstanceAccessUpdates } from "@/lib/realtime/hooks";
 
 /* ============================================================
    Trixus · App Shell (Painel Administrativo da Empresa)
@@ -60,34 +67,10 @@ type NavItem = {
   badge?: string;
 };
 
-// Rotas permitidas ao Atendente (operador) — sem administração.
-const OPERATOR_ALLOWED = new Set<string>([
-  "/",
-  "/inbox",
-  "/contatos",
-  "/mensagens-rapidas",
-  "/historico",
-  "/perfil",
-  "/ajuda",
-]);
-
-// Filtra itens de navegação para o papel operador.
-function filterForOperator(items: NavItem[]): NavItem[] {
-  return items.filter((i) => OPERATOR_ALLOWED.has(i.to));
-}
-
-const principalNav: NavItem[] = [
-  { to: "/inbox", label: "Chat", icon: MessagesSquare },
-  { to: "/contatos", label: "Contatos", icon: Users },
-  { to: "/historico", label: "Histórico de Conversas", icon: History },
-  { to: "/mensagens-rapidas", label: "Mensagens Rápidas", icon: Zap },
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-];
-
-// Itens exibidos no topo da sidebar (sem agrupador) para administradores.
+// Itens exibidos no topo da sidebar (sem agrupador).
 const topNav: NavItem[] = [{ to: "/", label: "Dashboard", icon: LayoutDashboard }];
 
-// Agrupamento exibido apenas para administradores.
+// Navegação universal do tenant, filtrada exclusivamente pelas permissões do perfil.
 const adminGroups: { title: string; items: NavItem[] }[] = [
   {
     title: "Operação",
@@ -125,41 +108,14 @@ const adminGroups: { title: string; items: NavItem[] }[] = [
   },
 ];
 
-const NAV_PERMISSIONS: Record<string, string[]> = {
-  "/inbox": ["conversations.read", "messages.send"],
-  "/clientes": ["crm.read", "crm.manage"],
-  "/contatos": ["chat.contacts.read", "crm.read"],
-  "/historico": ["conversations.read"],
-  "/atendentes": ["users.read", "users.manage"],
-  "/perfis": ["roles.read", "roles.manage"],
-  "/departamentos": ["departments.read", "departments.manage"],
-  "/etiquetas": ["chat.tags.use", "chat.tags.manage"],
-  "/mensagens-rapidas": ["chat.quick_replies.read", "chat.quick_replies.manage"],
-  "/agendamentos": ["automations.read", "automations.manage"],
-  "/campanhas": ["campaigns.read", "campaigns.manage"],
-  "/filas": ["conversations.manage"],
-  "/bi": ["crm.read", "conversations.read", "campaigns.read", "tickets.read"],
-  "/instancias": ["connections.read", "connections.manage"],
-  "/grupos": ["conversations.read", "conversations.manage"],
-  "/chatbot": ["automations.read", "automations.manage"],
-  "/automacoes": ["automations.read", "automations.manage"],
-  "/agente-ia": ["automations.read", "automations.manage"],
-  "/chamados": ["tickets.read", "tickets.create", "tickets.manage"],
-  "/relatorios": ["crm.read", "conversations.read", "campaigns.read", "tickets.read"],
-};
-
 function canSeeNavItem(item: NavItem, permissions?: string[]) {
-  const required = NAV_PERMISSIONS[item.to];
-  if (!required || !permissions?.length) return true;
-  const granted = new Set(permissions);
-  return required.some((permission) => granted.has(permission));
+  return canAccessTenantRoute(item.to, permissions);
 }
 
 function filterAdminGroupsByPermissions(
   groups: { title: string; items: NavItem[] }[],
   permissions?: string[],
 ) {
-  if (!permissions?.length) return groups;
   return groups
     .map((group) => ({
       ...group,
@@ -197,10 +153,10 @@ const LABELS: Record<string, string> = {
 
   chatbot: "Fluxo de Bot",
   automacoes: "Automações",
+  "agente-ia": "Agente de IA",
   empresa: "Empresa",
   usuarios: "Usuários",
   permissoes: "Permissões",
-  horarios: "Horários",
   mensagens: "Mensagens automáticas",
   integracoes: "Integrações",
   seguranca: "Segurança",
@@ -240,71 +196,27 @@ function useBreadcrumbs() {
 }
 
 /* ---------- Sidebar state ---------- */
-const SIDEBAR_KEY = "trixus.sidebar.collapsed";
-const SidebarCollapseContext = React.createContext<() => void>(() => {});
-let sidebarCollapsedMemory: boolean | undefined;
 function useSidebarState() {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const role = useSession((s) => s.user?.role);
-  const isOperator = role === "operator";
-  const isInbox = pathname.startsWith("/inbox");
-  const [collapsed, setCollapsed] = React.useState(() => {
-    if (sidebarCollapsedMemory !== undefined) return sidebarCollapsedMemory;
-    if (
-      typeof document !== "undefined" &&
-      document.documentElement.dataset.sidebarCollapsed === "1"
-    )
-      return true;
-    if (isInbox && isOperator) {
-      sidebarCollapsedMemory = true;
-      if (typeof document !== "undefined") document.documentElement.dataset.sidebarCollapsed = "1";
-      return true;
-    }
-    return false;
-  });
-  const lastInboxRef = React.useRef(isInbox);
+  const userId = useSession((s) => s.user?.id);
+  const keepSidebarCollapsed = useSession((s) => s.user?.keepSidebarCollapsed ?? false);
+  const [collapsed, setCollapsed] = React.useState(() => keepSidebarCollapsed);
+  const sidebarPreferenceKey = `${userId ?? "anonymous"}:${keepSidebarCollapsed ? "1" : "0"}`;
+  const lastSidebarPreferenceRef = React.useRef(sidebarPreferenceKey);
   React.useEffect(() => {
-    try {
-      const v = localStorage.getItem(SIDEBAR_KEY);
-      if (v === "1") {
-        sidebarCollapsedMemory = true;
-        document.documentElement.dataset.sidebarCollapsed = "1";
-        setCollapsed(true);
-      }
-    } catch {
-      // localStorage may be unavailable in restricted browser contexts.
-    }
-  }, []);
-  // Auto-recolher ao entrar em /inbox (apenas atendentes)
-  React.useEffect(() => {
-    if (isInbox && !lastInboxRef.current && isOperator) {
-      sidebarCollapsedMemory = true;
-      document.documentElement.dataset.sidebarCollapsed = "1";
-      setCollapsed(true);
-    }
-    lastInboxRef.current = isInbox;
-  }, [isInbox, isOperator]);
-  const persist = React.useCallback((next: boolean) => {
-    sidebarCollapsedMemory = next;
+    if (lastSidebarPreferenceRef.current === sidebarPreferenceKey) return;
+    lastSidebarPreferenceRef.current = sidebarPreferenceKey;
+    const next = keepSidebarCollapsed;
     document.documentElement.dataset.sidebarCollapsed = next ? "1" : "0";
-    try {
-      localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0");
-    } catch {
-      // Keep the in-memory state even when persistence is unavailable.
-    }
+    setCollapsed(next);
+  }, [keepSidebarCollapsed, sidebarPreferenceKey]);
+  const persist = React.useCallback((next: boolean) => {
+    document.documentElement.dataset.sidebarCollapsed = next ? "1" : "0";
   }, []);
   const toggle = React.useCallback(() => {
     setCollapsed((v) => {
       const next = !v;
       persist(next);
       return next;
-    });
-  }, [persist]);
-  const collapse = React.useCallback(() => {
-    setCollapsed((v) => {
-      if (v) return v;
-      persist(true);
-      return true;
     });
   }, [persist]);
   React.useEffect(() => {
@@ -317,7 +229,7 @@ function useSidebarState() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [toggle]);
-  return { collapsed, toggle, collapse };
+  return { collapsed, toggle };
 }
 
 /* ---------- Sidebar item ---------- */
@@ -331,24 +243,11 @@ function NavLink({
   exact?: boolean;
 }) {
   const Icon = item.icon;
-  const collapse = React.useContext(SidebarCollapseContext);
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const role = useSession((s) => s.user?.role);
-  const isOperator = role === "operator";
-  const isActive =
-    (exact ?? item.to === "/")
-      ? pathname === item.to
-      : pathname === item.to || pathname.startsWith(item.to + "/");
   return (
     <Link
       to={item.to}
       activeOptions={{ exact: exact ?? item.to === "/" }}
       title={collapsed ? item.label : undefined}
-      onClick={() => {
-        // Auto-recolher apenas para operadores; administradores mantêm a sidebar aberta.
-        if (!isOperator || collapsed || isActive) return;
-        requestAnimationFrame(() => requestAnimationFrame(() => collapse()));
-      }}
       className={`group relative flex items-center rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground data-[status=active]:bg-surface-2 data-[status=active]:text-foreground ${
         collapsed ? "h-9 w-9 justify-center" : "gap-3 pl-5 pr-3 py-2"
       }`}
@@ -530,68 +429,43 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
 }
 
 /* ---------- Sidebar ---------- */
-function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
-  const role = useSession((s) => s.user?.role);
+function Sidebar({ collapsed }: { collapsed: boolean }) {
   const permissions = useSession((s) => s.user?.permissions);
-  const isOperator = role === "operator";
-  const mainNav = isOperator ? filterForOperator(principalNav) : principalNav;
-  const sysNav = isOperator ? filterForOperator(sistemaNav) : sistemaNav;
+  const sysNav = sistemaNav.filter((item) => canSeeNavItem(item, permissions));
   const visibleTopNav = topNav.filter((item) => canSeeNavItem(item, permissions));
   const visibleAdminGroups = filterAdminGroupsByPermissions(adminGroups, permissions);
   return (
     <aside
       className={`hidden shrink-0 border-r border-border bg-surface-1 transition-[width] duration-200 ease-out lg:flex lg:flex-col ${
         collapsed ? "w-14" : "w-64"
-      } ${!isOperator ? "sidebar-admin-compact" : ""}`}
+      } sidebar-admin-compact`}
     >
       <div
         className={`flex h-14 shrink-0 items-center border-b border-border ${
           collapsed ? "justify-center" : "px-4"
         }`}
       >
-        <Link to={isOperator ? "/inbox" : "/"} className="flex items-center gap-2">
+        <Link to={tenantHomeForPermissions(permissions)} className="flex items-center gap-2">
           <LogoMark size={36} />
           {!collapsed && <span className="text-sm font-semibold tracking-tight">Trixus</span>}
         </Link>
       </div>
 
       <nav
-        className={`flex min-h-0 flex-1 flex-col overflow-x-hidden py-3 ${
-          isOperator ? "gap-5 overflow-y-auto" : "gap-1"
-        } ${collapsed ? "px-2" : "px-3"} ${
-          !isOperator ? (collapsed ? "sidebar-scroll-hover" : "sidebar-scroll overflow-y-auto") : ""
+        className={`flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden py-3 ${
+          collapsed ? "sidebar-scroll-hover px-2" : "sidebar-scroll overflow-y-auto px-3"
         }`}
       >
-        {isOperator ? (
-          mainNav.length > 0 && (
-            <div
-              className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}
-            >
-              {mainNav.map((item) => (
-                <NavLink key={item.to} item={item} collapsed={collapsed} />
-              ))}
-            </div>
-          )
-        ) : (
-          <>
-            <div
-              className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}
-            >
-              {visibleTopNav.map((item) => (
-                <NavLink key={item.to} item={item} collapsed={collapsed} />
-              ))}
-            </div>
-            {visibleAdminGroups.map((g) => (
-              <NavSection
-                key={g.title}
-                title={g.title}
-                items={g.items}
-                collapsed={collapsed}
-                flush
-              />
-            ))}
-          </>
-        )}
+        <div
+          className={`space-y-0.5 ${collapsed ? "flex flex-col items-center gap-0.5 space-y-0" : ""}`}
+        >
+          {visibleTopNav.map((item) => (
+            <NavLink key={item.to} item={item} collapsed={collapsed} />
+          ))}
+        </div>
+        {visibleAdminGroups.map((g) => (
+          <NavSection key={g.title} title={g.title} items={g.items} collapsed={collapsed} flush />
+        ))}
       </nav>
       <div className={`shrink-0 border-t border-border ${collapsed ? "px-2" : "px-3"} py-3`}>
         {sysNav.length > 0 && (
@@ -601,14 +475,6 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
             {sysNav.map((item) => (
               <NavLink key={item.to} item={item} collapsed={collapsed} />
             ))}
-          </div>
-        )}
-        {isOperator && (
-          <div className="mt-3 border-t border-border pt-3">
-            <SidebarBottomActions collapsed={collapsed} onToggle={onToggle} toggleOnly={false} />
-            <div className="mt-2">
-              <SidebarUser collapsed={collapsed} />
-            </div>
           </div>
         )}
       </div>
@@ -904,13 +770,10 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
 
 /* ---------- Mobile side nav ---------- */
 function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const role = useSession((s) => s.user?.role);
   const permissions = useSession((s) => s.user?.permissions);
   const logout = useSession((s) => s.logout);
   const navigate = useNavigate();
-  const isOperator = role === "operator";
-  const mainNav = isOperator ? filterForOperator(principalNav) : principalNav;
-  const sysNav = isOperator ? filterForOperator(sistemaNav) : sistemaNav;
+  const sysNav = sistemaNav.filter((item) => canSeeNavItem(item, permissions));
   const visibleTopNav = topNav.filter((item) => canSeeNavItem(item, permissions));
   const visibleAdminGroups = filterAdminGroupsByPermissions(adminGroups, permissions);
   return (
@@ -930,7 +793,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
           <Link
-            to={isOperator ? "/inbox" : "/"}
+            to={tenantHomeForPermissions(permissions)}
             className="flex items-center gap-2"
             onClick={onClose}
           >
@@ -947,35 +810,27 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
           </button>
         </div>
         <nav className="sidebar-scroll min-h-0 flex-1 overflow-y-auto px-3 py-3">
-          {isOperator ? (
-            <div className="space-y-0.5">
-              {mainNav.map((item) => (
-                <MobileNavLink key={item.to} item={item} onClose={onClose} />
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {visibleTopNav.length > 0 && (
-                <div className="space-y-0.5">
-                  {visibleTopNav.map((item) => (
+          <div className="space-y-3">
+            {visibleTopNav.length > 0 && (
+              <div className="space-y-0.5">
+                {visibleTopNav.map((item) => (
+                  <MobileNavLink key={item.to} item={item} onClose={onClose} />
+                ))}
+              </div>
+            )}
+            {visibleAdminGroups.map((group) => (
+              <div key={group.title} className="space-y-0.5">
+                <p className="mb-0.5 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  {group.title}
+                </p>
+                <div className="space-y-0.5 pl-3">
+                  {group.items.map((item) => (
                     <MobileNavLink key={item.to} item={item} onClose={onClose} />
                   ))}
                 </div>
-              )}
-              {visibleAdminGroups.map((group) => (
-                <div key={group.title} className="space-y-0.5">
-                  <p className="mb-0.5 pl-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    {group.title}
-                  </p>
-                  <div className="space-y-0.5 pl-3">
-                    {group.items.map((item) => (
-                      <MobileNavLink key={item.to} item={item} onClose={onClose} />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+              </div>
+            ))}
+          </div>
         </nav>
         <div className="shrink-0 border-t border-border px-3 py-2">
           {sysNav.length > 0 && (
@@ -1025,31 +880,32 @@ function MobileNavLink({ item, onClose }: { item: NavItem; onClose: () => void }
   );
 }
 
-/* ---------- Auth gate (redirects by role) ---------- */
-function useAuthGate(expected: "app" | "admin" | "operator") {
+/* ---------- Tenant auth gate ---------- */
+function useTenantAuthGate() {
   const navigate = useNavigate();
   const user = useSession((s) => s.user);
   const hydrated = useSession((s) => s.hydrated);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const authorized =
+    hydrated &&
+    !!user &&
+    user.role !== "super_admin" &&
+    canAccessTenantRoute(pathname, user.permissions);
   React.useEffect(() => {
     if (!hydrated) return; // aguarda hidratação da sessão para não redirecionar em F5
     if (!user) {
       navigate({ to: "/login" });
       return;
     }
-    if (expected === "app" && user.role === "super_admin") {
+    if (user.role === "super_admin") {
       navigate({ to: "/admin" });
       return;
     }
-    if (expected === "app" && user.role === "operator") {
-      // Atendente só acessa rotas permitidas — caso contrário, volta para o Inbox.
-      const allowed =
-        pathname.startsWith("/inbox") ||
-        [...OPERATOR_ALLOWED].some((p) => pathname === p || pathname.startsWith(p + "/"));
-      if (!allowed) navigate({ to: "/inbox" });
+    if (!canAccessTenantRoute(pathname, user.permissions)) {
+      navigate({ to: tenantHomeForPermissions(user.permissions) as never });
     }
-  }, [user, hydrated, expected, navigate, pathname]);
-  return user;
+  }, [user, hydrated, navigate, pathname]);
+  return authorized;
 }
 
 /* ---------- Impersonation banner ---------- */
@@ -1097,60 +953,52 @@ function ImpersonationBanner() {
 
 /* ---------- Shell ---------- */
 export function AppShell({ children }: { children: React.ReactNode }) {
-  useAuthGate("app");
-  const { collapsed, toggle, collapse } = useSidebarState();
+  useInstanceAccessUpdates();
+  const authorized = useTenantAuthGate();
+  const { collapsed, toggle } = useSidebarState();
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
-  const role = useSession((s) => s.user?.role);
-  const showTopbar = role !== "operator";
+  if (!authorized) return null;
   return (
-    <SidebarCollapseContext.Provider value={collapse}>
-      <div className="flex h-dvh overflow-hidden bg-background text-foreground">
-        <TopProgress active={isNavigating} />
-        <Sidebar collapsed={collapsed} onToggle={toggle} />
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <ImpersonationBanner />
-          <OfflineBanner />
-          {showTopbar && (
-            <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
-          )}
-          <main
-            key={pathname}
-            className="min-w-0 flex-1 overflow-y-auto overscroll-contain animate-fade-in-soft"
-          >
-            {children}
-          </main>
-          <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
-        </div>
+    <div className="flex h-dvh overflow-hidden bg-background text-foreground">
+      <TopProgress active={isNavigating} />
+      <Sidebar collapsed={collapsed} />
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <ImpersonationBanner />
+        <OfflineBanner />
+        <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
+        <main
+          key={pathname}
+          className="min-w-0 flex-1 overflow-y-auto overscroll-contain animate-fade-in-soft"
+        >
+          {children}
+        </main>
+        <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       </div>
-    </SidebarCollapseContext.Provider>
+    </div>
   );
 }
 
 export function AppShellFull({ children }: { children: React.ReactNode }) {
-  useAuthGate("app");
-  const { collapsed, toggle, collapse } = useSidebarState();
+  useInstanceAccessUpdates();
+  const authorized = useTenantAuthGate();
+  const { collapsed, toggle } = useSidebarState();
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
-  const role = useSession((s) => s.user?.role);
-  const showTopbar = role !== "operator";
+  if (!authorized) return null;
   return (
-    <SidebarCollapseContext.Provider value={collapse}>
-      <div className="flex h-dvh overflow-hidden bg-background text-foreground">
-        <TopProgress active={isNavigating} />
-        <Sidebar collapsed={collapsed} onToggle={toggle} />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <ImpersonationBanner />
-          <OfflineBanner />
-          {showTopbar && (
-            <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
-          )}
-          <main className="min-w-0 flex-1 overflow-hidden animate-fade-in-soft">{children}</main>
-          <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
-        </div>
+    <div className="flex h-dvh overflow-hidden bg-background text-foreground">
+      <TopProgress active={isNavigating} />
+      <Sidebar collapsed={collapsed} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <ImpersonationBanner />
+        <OfflineBanner />
+        <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
+        <main className="min-w-0 flex-1 overflow-hidden animate-fade-in-soft">{children}</main>
+        <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       </div>
-    </SidebarCollapseContext.Provider>
+    </div>
   );
 }
 

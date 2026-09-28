@@ -106,6 +106,40 @@ describe("ScheduleExecutorService", () => {
     );
   });
 
+  it("materializes an attachment-only scheduled message", async () => {
+    const attachmentOnly = {
+      ...row,
+      payload: {
+        ...row.payload,
+        content: "",
+        attachment: {
+          fileName: "audio.ogg",
+          mimeType: "audio/ogg",
+          size: 4,
+          dataUrl: "data:audio/ogg;base64,T2dnUw==",
+        },
+      },
+    };
+    const prisma = {
+      schedule: {
+        findMany: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([attachmentOnly]),
+        findFirst: vi.fn().mockResolvedValue({ payload: attachmentOnly.payload }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const outbound = { queueScheduledMessage: vi.fn().mockResolvedValue({ created: true }) };
+    const { executor } = service(prisma, outbound);
+
+    await executor.runOnce(new Date("2026-09-27T10:01:00.000Z"));
+
+    expect(outbound.queueScheduledMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "",
+        attachment: expect.objectContaining({ mimeType: "audio/ogg" }),
+      }),
+    );
+  });
+
   it("does not materialize when another poller wins the conditional claim", async () => {
     const prisma = {
       schedule: {

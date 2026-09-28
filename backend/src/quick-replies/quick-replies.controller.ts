@@ -129,7 +129,7 @@ export class QuickRepliesController {
   }
 
   @Delete(":id")
-  @RequirePermissions("chat.quick_replies.manage")
+  @RequirePermissions("chat.quick_replies.delete")
   async archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const existing = await this.findOrThrow(id, current.tenantId);
     const reply = await this.prisma.quickReply.update({

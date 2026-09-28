@@ -18,7 +18,7 @@ import type { Request, Response } from "express";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequirePermissions } from "../auth/permissions.decorator";
+import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { CreateTicketCommentDto } from "./dto/create-ticket-comment.dto";
@@ -41,7 +41,7 @@ export class TicketsController {
   }
 
   @Post()
-  @RequirePermissions("tickets.create")
+  @RequireAnyPermission("tickets.manage", "tickets.create")
   create(@Body() dto: CreateTicketDto, @CurrentUser() current: AuthenticatedUser) {
     return this.ticketsService.create(dto, current);
   }
@@ -53,7 +53,7 @@ export class TicketsController {
   }
 
   @Patch(":id")
-  @RequirePermissions("tickets.update")
+  @RequireAnyPermission("tickets.update", "tickets.manage")
   update(
     @Param("id") id: string,
     @Body() dto: UpdateTicketDto,
@@ -63,7 +63,7 @@ export class TicketsController {
   }
 
   @Patch(":id/status")
-  @RequirePermissions("tickets.status.update")
+  @RequireAnyPermission("tickets.status.update", "tickets.manage")
   updateStatus(
     @Param("id") id: string,
     @Body() dto: UpdateTicketStatusDto,
@@ -73,7 +73,7 @@ export class TicketsController {
   }
 
   @Patch(":id/assignee")
-  @RequirePermissions("tickets.assign")
+  @RequireAnyPermission("tickets.assign", "tickets.manage")
   updateAssignee(
     @Param("id") id: string,
     @Body() dto: UpdateTicketAssigneeDto,
@@ -83,7 +83,7 @@ export class TicketsController {
   }
 
   @Patch(":id/department")
-  @RequirePermissions("tickets.assign")
+  @RequireAnyPermission("tickets.assign", "tickets.manage")
   updateDepartment(
     @Param("id") id: string,
     @Body() dto: UpdateTicketDepartmentDto,
@@ -93,7 +93,7 @@ export class TicketsController {
   }
 
   @Delete(":id")
-  @RequirePermissions("tickets.manage")
+  @RequireAnyPermission("tickets.delete", "tickets.manage")
   archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.ticketsService.archive(id, current);
   }
@@ -105,7 +105,7 @@ export class TicketsController {
   }
 
   @Post(":id/comments")
-  @RequirePermissions("tickets.comment")
+  @RequireAnyPermission("tickets.comment", "tickets.manage")
   createComment(
     @Param("id") id: string,
     @Body() dto: CreateTicketCommentDto,
@@ -116,7 +116,7 @@ export class TicketsController {
 
   @Post(":id/attachments")
   @HttpCode(201)
-  @RequirePermissions("tickets.attachments.upload")
+  @RequireAnyPermission("tickets.attachments.upload", "tickets.manage")
   uploadAttachment(
     @Param("id") id: string,
     @CurrentUser() current: AuthenticatedUser,
@@ -172,7 +172,7 @@ export class TicketsController {
   }
 
   @Delete(":id/attachments/:attachmentId")
-  @RequirePermissions("tickets.attachments.delete")
+  @RequireAnyPermission("tickets.attachments.delete", "tickets.manage")
   deleteAttachment(
     @Param("id") id: string,
     @Param("attachmentId") attachmentId: string,

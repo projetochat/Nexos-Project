@@ -344,7 +344,7 @@ function isExecutablePayload(
     Array.isArray(payload.recipientIds) &&
     payload.recipientIds.length === 0 &&
     typeof payload.content === "string" &&
-    !!payload.content.trim()
+    (!!payload.content.trim() || !!payload.attachment)
   );
 }
 

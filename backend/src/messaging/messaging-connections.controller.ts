@@ -146,7 +146,7 @@ export class MessagingConnectionsController {
   }
 
   @Delete(":id")
-  @RequirePermissions("connections.manage")
+  @RequirePermissions("connections.delete")
   remove(
     @Param("id") id: string,
     @Body() dto: { removeConversationHistory?: boolean } | undefined,

@@ -1,5 +1,6 @@
-import type { ApiSchedule } from "./schedule-types";
+import { scheduleWritePayload, type ApiSchedule } from "./schedule-types";
 import type { Role, SessionUser } from "@/lib/session";
+import { effectiveSessionPermissions } from "@/lib/access-permissions";
 
 const ACCESS_KEY = "trixus.api.accessToken";
 const REFRESH_KEY = "trixus.api.refreshToken";
@@ -19,6 +20,7 @@ type LoginResponse = {
     name: string;
     presentationName?: string | null;
     avatarUrl?: string | null;
+    keepSidebarCollapsed?: boolean;
     roleId: string;
     roleKey: ApiRoleKey;
     platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
@@ -101,6 +103,7 @@ export type ApiUserMembership = {
     name: string;
     presentationName?: string | null;
     avatarUrl?: string | null;
+    keepSidebarCollapsed?: boolean;
     status: "ACTIVE" | "DISABLED";
     platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   };
@@ -269,6 +272,7 @@ export type ApiConversation = {
     status: "disconnected" | "connecting" | "connected" | "error";
     externalReference: string | null;
     color: string | null;
+    logo_url: string | null;
   } | null;
 };
 
@@ -349,6 +353,8 @@ export type ApiMessage = {
   author_id: string | null;
   author_membership_id: string | null;
   author_name?: string | null;
+  author_avatar_url?: string | null;
+  outbound_origin?: "trixus" | "external" | "unknown" | null;
   content: string;
   interactive_data?: {
     kind: "list";
@@ -507,6 +513,7 @@ export type ApiMessagingConnection = {
   timezone?: string;
   id: string;
   tenantId: string;
+  defaultDepartmentId?: string | null;
   name: string;
   providerType: "development" | "evolution" | "meta_cloud";
   status: "disconnected" | "connecting" | "connected" | "error" | "removed";
@@ -791,6 +798,10 @@ export type ApiOperationsDashboard = {
   recent: ApiConversation[];
 };
 
+export type ApiDashboardComponentData = {
+  items: ApiOperationsChartItem[];
+};
+
 export type ApiOperationsReport = {
   range: { start: string; end: string };
   kpis: Record<string, number | null>;
@@ -933,15 +944,17 @@ export async function loginWithTrixusApi(email: string, password: string, tenant
 
 export async function hydrateWithTrixusApi() {
   const data = await apiRequest<MeResponse>("/auth/me");
+  const role = roleMap[data.user.roleKey] ?? "operator";
   return {
     id: data.user.id,
     nome: data.user.name,
     email: data.user.email,
-    role: roleMap[data.user.roleKey] ?? "operator",
+    role,
     empresaId: data.tenant.id,
     empresaNome: data.tenant.name,
     avatarUrl: data.user.avatarUrl ?? undefined,
-    permissions: data.permissions,
+    keepSidebarCollapsed: data.user.keepSidebarCollapsed ?? false,
+    permissions: effectiveSessionPermissions(role, data.permissions),
   } satisfies SessionUser;
 }
 
@@ -959,6 +972,7 @@ async function hydrateWithPlatformToken(stored: StoredImpersonation) {
     role: "super_admin",
     empresaId: "platform",
     empresaNome: "Trixus Platform",
+    keepSidebarCollapsed: false,
     permissions: [],
   } satisfies SessionUser;
 }
@@ -1040,6 +1054,7 @@ export const organizationApi = {
     id: string,
     data: {
       name?: string;
+      defaultDepartmentId?: string | null;
       description?: string | null;
       permissionIds?: string[];
       metadata?: unknown;
@@ -1080,6 +1095,7 @@ export const organizationApi = {
   updateMyProfile: (data: {
     name?: string;
     avatarUrl?: string | null;
+    keepSidebarCollapsed?: boolean;
     currentPassword?: string;
     newPassword?: string;
   }) =>
@@ -1553,6 +1569,10 @@ export const messageApi = {
 export const operationsApi = {
   dashboard: (params: Partial<OperationalFilters> = {}) =>
     apiRequest<ApiOperationsDashboard>(`/operations/dashboard${queryString(params)}`),
+  dashboardComponentData: (params: Partial<OperationalFilters> & { groupBy: string }) =>
+    apiRequest<ApiDashboardComponentData>(
+      `/operations/dashboard/component-data${queryString(params)}`,
+    ),
   history: (params: Partial<OperationalFilters> & { page?: number; pageSize?: number } = {}) =>
     apiRequest<PaginatedResponse<ApiConversation>>(
       `/operations/history/conversations${queryString(params)}`,
@@ -2373,15 +2393,17 @@ function restorePlatformTokens(stored: StoredImpersonation) {
 }
 
 function loginResponseToSessionUser(data: LoginResponse): SessionUser {
+  const role = roleMap[data.user.roleKey] ?? "operator";
   return {
     id: data.user.id,
     nome: data.user.name,
     email: data.user.email,
-    role: roleMap[data.user.roleKey] ?? "operator",
+    role,
     empresaId: data.tenant.id,
     empresaNome: data.tenant.name,
     avatarUrl: data.user.avatarUrl ?? undefined,
-    permissions: data.permissions,
+    keepSidebarCollapsed: data.user.keepSidebarCollapsed ?? false,
+    permissions: effectiveSessionPermissions(role, data.permissions),
   };
 }
 
@@ -2407,6 +2429,9 @@ export const schedulesApi = {
   list: (params: { conversationId?: string } = {}) =>
     apiRequest<ApiSchedule[]>(`/schedules${queryString(params)}`),
   save: (data: ApiSchedule) =>
-    apiRequest<ApiSchedule>("/schedules", { method: "POST", body: JSON.stringify(data) }),
+    apiRequest<ApiSchedule>("/schedules", {
+      method: "POST",
+      body: JSON.stringify(scheduleWritePayload(data)),
+    }),
   remove: (id: string) => apiRequest<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" }),
 };

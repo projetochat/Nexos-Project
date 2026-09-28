@@ -318,7 +318,7 @@ enum AutomationActionType {
 }
 
 model Tenant {
-  schedules Schedule[]
+  schedules                   Schedule[]
   id                          String                       @id @default(uuid())
   name                        String
   slug                        String                       @unique
@@ -344,7 +344,7 @@ model Tenant {
   contacts                    Contact[]
   contactDepartments          ContactDepartment[]
   contactProfiles             ContactProfile[]
-  contactCustomFields ContactCustomField[]
+  contactCustomFields         ContactCustomField[]
   tags                        Tag[]
   quickReplies                QuickReply[]
   conversations               Conversation[]
@@ -378,11 +378,12 @@ model Tenant {
 }
 
 model User {
-    id                    String                 @id @default(uuid())
-    email                 String                 @unique
-    name                  String
-    avatarUrl             String?                @map("avatar_url")
-    passwordHash          String
+  id                    String                 @id @default(uuid())
+  email                 String                 @unique
+  name                  String
+  avatarUrl             String?                @map("avatar_url")
+  keepSidebarCollapsed  Boolean                @default(false) @map("keep_sidebar_collapsed")
+  passwordHash          String
   status                UserStatus             @default(ACTIVE)
   platformRole          PlatformRole           @default(USER)
   createdAt             DateTime               @default(now())
@@ -610,23 +611,24 @@ model TenantMembership {
 }
 
 model Department {
-  id              String                 @id @default(uuid())
-  tenantId        String
-  name            String
-  description     String?
-  color           String                 @default("#3B82F6")
-  active          Boolean                @default(true)
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
-  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  members         DepartmentMembership[]
-  contacts        Contact[]
-  conversations   Conversation[]
-  quickReplies    QuickReply[]
-  tickets         Ticket[]
-  leads           Lead[]
-  notifications   Notification[]
-  automationRules AutomationRule[]
+  id                    String                 @id @default(uuid())
+  tenantId              String
+  name                  String
+  description           String?
+  color                 String                 @default("#3B82F6")
+  active                Boolean                @default(true)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members               DepartmentMembership[]
+  contacts              Contact[]
+  conversations         Conversation[]
+  quickReplies          QuickReply[]
+  tickets               Ticket[]
+  leads                 Lead[]
+  notifications         Notification[]
+  automationRules       AutomationRule[]
+  defaultForConnections MessagingConnection[]  @relation("MessagingConnectionDefaultDepartment")
 
   @@unique([tenantId, name])
   @@unique([tenantId, id])
@@ -797,22 +799,22 @@ model ContactProfile {
 }
 
 model ContactCustomField {
-  id             String                 @id @default(uuid())
+  id             String                    @id @default(uuid())
   tenantId       String
   label          String
   normalizedName String
   type           ContactCustomFieldType
-  required       Boolean                @default(false)
+  required       Boolean                   @default(false)
   mask           String?
   note           String?
-  tabName        String                 @default("Dados Adicionais") @map("tab_name")
-  groupName      String                 @default("") @map("group_name")
-  options        String[]               @default([])
-  position       Int                    @default(0)
+  tabName        String                    @default("Dados Adicionais") @map("tab_name")
+  groupName      String                    @default("") @map("group_name")
+  options        String[]                  @default([])
+  position       Int                       @default(0)
   archivedAt     DateTime?
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  tenant         Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  tenant         Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   values         ContactCustomFieldValue[]
 
   @@unique([tenantId, normalizedName])
@@ -835,6 +837,7 @@ model ContactCustomFieldValue {
   @@index([tenantId, fieldId])
   @@map("contact_custom_field_values")
 }
+
 model Tag {
   id             String       @id @default(uuid())
   tenantId       String
@@ -878,39 +881,39 @@ model ConversationProtocolCounter {
 }
 
 model Conversation {
-  id                   String               @id @default(uuid())
-  tenantId             String
-  contactId            String
-  departmentId         String?
-  assignedMembershipId String?
-  connectionId         String?
-  status               ConversationStatus   @default(ABERTA)
-  protocol             String?
-  isGroup              Boolean              @default(false)
-  conversationType     ConversationType     @default(DIRECT)
-  externalChatId       String?
-  externalGroupId      String?
-  groupName            String?
-  groupImageUrl        String?
+  id                    String                    @id @default(uuid())
+  tenantId              String
+  contactId             String
+  departmentId          String?
+  assignedMembershipId  String?
+  connectionId          String?
+  status                ConversationStatus        @default(ABERTA)
+  protocol              String?
+  isGroup               Boolean                   @default(false)
+  conversationType      ConversationType          @default(DIRECT)
+  externalChatId        String?
+  externalGroupId       String?
+  groupName             String?
+  groupImageUrl         String?
   groupSubjectUpdatedAt DateTime?
-  groupMetadataJson    Json?
-  unreadCount          Int                  @default(0)
-  lastMessagePreview   String?
-  lastMessageAt        DateTime?
-  inboxArchivedAt      DateTime?
-  archivedAt           DateTime?
-  closedAt             DateTime?
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-  tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contact              Contact              @relation(fields: [contactId], references: [id], onDelete: Restrict)
-  department           Department?          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  assignedMembership   TenantMembership?    @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
-  connection           MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
-  messages             Message[]
-  participants         ConversationParticipant[]
-  tickets              Ticket[]
-  lead                 Lead?
+  groupMetadataJson     Json?
+  unreadCount           Int                       @default(0)
+  lastMessagePreview    String?
+  lastMessageAt         DateTime?
+  inboxArchivedAt       DateTime?
+  archivedAt            DateTime?
+  closedAt              DateTime?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  tenant                Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact               Contact                   @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  department            Department?               @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  assignedMembership    TenantMembership?         @relation(fields: [assignedMembershipId], references: [id], onDelete: SetNull)
+  connection            MessagingConnection?      @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
+  messages              Message[]
+  participants          ConversationParticipant[]
+  tickets               Ticket[]
+  lead                  Lead?
 
   @@unique([tenantId, id])
   @@unique([tenantId, protocol])
@@ -926,64 +929,64 @@ model Conversation {
 }
 
 model Message {
-  id                   String               @id @default(uuid())
-  tenantId             String
-  conversationId       String
-  connectionId         String?
-  direction            MessageDirection
-  type                 MessageType          @default(TEXT)
-  status               MessageStatus        @default(CREATED)
-  authorMembershipId   String?
-  content              String?
-  interactiveData      Json?
-  clientMessageId      String?
-  providerMessageId    String?
-  providerChatId       String?
-  providerParticipantId String?
-  participantName      String?
-  participantPhone     String?
-  participantLid       String?
-  quotedMessageId      String?
+  id                      String               @id @default(uuid())
+  tenantId                String
+  conversationId          String
+  connectionId            String?
+  direction               MessageDirection
+  type                    MessageType          @default(TEXT)
+  status                  MessageStatus        @default(CREATED)
+  authorMembershipId      String?
+  content                 String?
+  interactiveData         Json?
+  clientMessageId         String?
+  providerMessageId       String?
+  providerChatId          String?
+  providerParticipantId   String?
+  participantName         String?
+  participantPhone        String?
+  participantLid          String?
+  quotedMessageId         String?
   quotedProviderMessageId String?
-  quotedContentPreview String?
-  quotedMessageType    MessageType?
-  mediaStorageKey      String?
-  mediaMimeType        String?
-  mediaFileName        String?
-  mediaSize            Int?
-  mediaCaption         String?
-  mediaWidth           Int?
-  mediaHeight          Int?
-  mediaDurationMs      Int?
-  mediaChecksum        String?
-  mediaSha256          String?
-  mediaProviderUrl     String?
-  mediaState           MessageMediaState?
-  providerStatus       String?
-  providerErrorCode    String?
-  providerErrorMessage String?
-  providerAcceptedAt   DateTime?
-  queuedAt             DateTime?
-  sentAt               DateTime?
-  deliveredAt          DateTime?
-  failedAt             DateTime?
-  campaignId           String?
-  campaignRecipientId  String?
-  sendAttempts         Int                  @default(0)
-  lastAttemptAt        DateTime?
-  externalMessageId    String?
-  readAt               DateTime?
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-  tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  conversation         Conversation         @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
-  connection           MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
-  authorMembership     TenantMembership?    @relation(fields: [authorMembershipId], references: [id], onDelete: SetNull)
-  quotedMessage        Message?             @relation("MessageReplies", fields: [quotedMessageId], references: [id], onDelete: SetNull)
-  replies              Message[]            @relation("MessageReplies")
-  reactions            MessageReaction[]
-  campaign             Campaign?            @relation(fields: [tenantId, campaignId], references: [tenantId, id], onDelete: NoAction)
-  campaignRecipient    CampaignRecipient?   @relation(fields: [tenantId, campaignRecipientId], references: [tenantId, id], onDelete: NoAction)
+  quotedContentPreview    String?
+  quotedMessageType       MessageType?
+  mediaStorageKey         String?
+  mediaMimeType           String?
+  mediaFileName           String?
+  mediaSize               Int?
+  mediaCaption            String?
+  mediaWidth              Int?
+  mediaHeight             Int?
+  mediaDurationMs         Int?
+  mediaChecksum           String?
+  mediaSha256             String?
+  mediaProviderUrl        String?
+  mediaState              MessageMediaState?
+  providerStatus          String?
+  providerErrorCode       String?
+  providerErrorMessage    String?
+  providerAcceptedAt      DateTime?
+  queuedAt                DateTime?
+  sentAt                  DateTime?
+  deliveredAt             DateTime?
+  failedAt                DateTime?
+  campaignId              String?
+  campaignRecipientId     String?
+  sendAttempts            Int                  @default(0)
+  lastAttemptAt           DateTime?
+  externalMessageId       String?
+  readAt                  DateTime?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  tenant                  Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation            Conversation         @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+  connection              MessagingConnection? @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Restrict)
+  authorMembership        TenantMembership?    @relation(fields: [authorMembershipId], references: [id], onDelete: SetNull)
+  quotedMessage           Message?             @relation("MessageReplies", fields: [quotedMessageId], references: [id], onDelete: SetNull)
+  replies                 Message[]            @relation("MessageReplies")
+  reactions               MessageReaction[]
+  campaign                Campaign?            @relation(fields: [tenantId, campaignId], references: [tenantId, id], onDelete: NoAction)
+  campaignRecipient       CampaignRecipient?   @relation(fields: [tenantId, campaignRecipientId], references: [tenantId, id], onDelete: NoAction)
 
   @@unique([tenantId, conversationId, clientMessageId])
   @@unique([tenantId, id])
@@ -1029,21 +1032,21 @@ model ConversationParticipant {
 }
 
 model MessageReaction {
-  id                         String                   @id @default(uuid())
-  tenantId                   String
-  messageId                  String
-  emoji                      String
-  actorType                  MessageReactionActorType
-  actorMembershipId          String?
-  externalParticipantId      String?
-  externalParticipantName    String?
-  providerReactionId         String?
-  removedAt                  DateTime?
-  createdAt                  DateTime                 @default(now())
-  updatedAt                  DateTime                 @updatedAt
-  tenant                     Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  message                    Message                  @relation(fields: [tenantId, messageId], references: [tenantId, id], onDelete: Cascade)
-  actorMembership            TenantMembership?        @relation(fields: [actorMembershipId], references: [id], onDelete: SetNull)
+  id                      String                   @id @default(uuid())
+  tenantId                String
+  messageId               String
+  emoji                   String
+  actorType               MessageReactionActorType
+  actorMembershipId       String?
+  externalParticipantId   String?
+  externalParticipantName String?
+  providerReactionId      String?
+  removedAt               DateTime?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  tenant                  Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  message                 Message                  @relation(fields: [tenantId, messageId], references: [tenantId, id], onDelete: Cascade)
+  actorMembership         TenantMembership?        @relation(fields: [actorMembershipId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, messageId, actorType, actorMembershipId, externalParticipantId], map: "message_reactions_tenantId_messageId_actorType_actorMembershipI")
   @@index([tenantId, messageId, removedAt])
@@ -1073,44 +1076,46 @@ model OutboxEvent {
 }
 
 model MessagingConnection {
-  serviceEnabled       Boolean                   @default(true)
-  serviceHours         Json?
-  timezone             String                    @default("America/Sao_Paulo")
-  id                   String                    @id @default(uuid())
-  tenantId             String
-  name                 String
-  color                String?                   @default("#22c55e")
-  logoUrl              String?
-  welcomeEnabled       Boolean                   @default(false)
-  welcomeNewMessage    String?
-  welcomeExistingMessage String?
-  welcomeNewAttachment Json?
+  serviceEnabled            Boolean                   @default(true)
+  serviceHours              Json?
+  timezone                  String                    @default("America/Sao_Paulo")
+  id                        String                    @id @default(uuid())
+  tenantId                  String
+  defaultDepartmentId       String?
+  name                      String
+  color                     String?                   @default("#22c55e")
+  logoUrl                   String?
+  welcomeEnabled            Boolean                   @default(false)
+  welcomeNewMessage         String?
+  welcomeExistingMessage    String?
+  welcomeNewAttachment      Json?
   welcomeExistingAttachment Json?
-  absenceEnabled       Boolean                   @default(false)
-  absenceMessage       String?
-  absenceAttachment    Json?
-  notes                String?
-  providerType         MessagingProviderType
-  status               MessagingConnectionStatus @default(DISCONNECTED)
-  externalReference    String?
-  ownerExternalId      String?
-  ownerPhoneNormalized String?
-  groupsLastSyncedAt   DateTime?
-  groupsSyncStatus     String?                    @default("IDLE")
-  groupsSyncError      String?
-  groupsSyncedCount    Int                       @default(0)
-  importHistoryEnabled Boolean                   @default(false)
-  importHistoryStartDate DateTime?
-  importGroupsEnabled  Boolean                   @default(false)
-  importGroupsStartDate DateTime?
-  historyImports       MessagingHistoryImport[]
-  archivedAt           DateTime?
-  createdAt            DateTime                  @default(now())
-  updatedAt            DateTime                  @updatedAt
-  tenant               Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  conversations        Conversation[]
-  messages             Message[]
-  campaigns            Campaign[]
+  absenceEnabled            Boolean                   @default(false)
+  absenceMessage            String?
+  absenceAttachment         Json?
+  notes                     String?
+  providerType              MessagingProviderType
+  status                    MessagingConnectionStatus @default(DISCONNECTED)
+  externalReference         String?
+  ownerExternalId           String?
+  ownerPhoneNormalized      String?
+  groupsLastSyncedAt        DateTime?
+  groupsSyncStatus          String?                   @default("IDLE")
+  groupsSyncError           String?
+  groupsSyncedCount         Int                       @default(0)
+  importHistoryEnabled      Boolean                   @default(false)
+  importHistoryStartDate    DateTime?
+  importGroupsEnabled       Boolean                   @default(false)
+  importGroupsStartDate     DateTime?
+  historyImports            MessagingHistoryImport[]
+  archivedAt                DateTime?
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+  tenant                    Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  defaultDepartment         Department?               @relation("MessagingConnectionDefaultDepartment", fields: [tenantId, defaultDepartmentId], references: [tenantId, id], onDelete: SetNull)
+  conversations             Conversation[]
+  messages                  Message[]
+  campaigns                 Campaign[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, providerType, externalReference], map: "messaging_connections_tenantId_providerType_externalReference_k")
@@ -1118,26 +1123,27 @@ model MessagingConnection {
   @@index([tenantId, status])
   @@index([tenantId, archivedAt])
   @@index([tenantId, ownerPhoneNormalized])
+  @@index([tenantId, defaultDepartmentId])
   @@map("messaging_connections")
 }
 
 model MessagingHistoryImport {
-  id                    String                        @id @default(uuid())
-  tenantId              String
-  connectionId          String
-  kind                  MessagingHistoryImportKind
-  status                MessagingHistoryImportStatus @default(PENDING)
-  startDate             DateTime
-  chatsProcessed        Int                           @default(0)
-  messagesImported      Int                           @default(0)
-  messagesSkipped       Int                           @default(0)
-  error                 String?
-  startedAt             DateTime?
-  finishedAt            DateTime?
-  createdAt             DateTime                      @default(now())
-  updatedAt             DateTime                      @updatedAt
-  tenant                Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  connection            MessagingConnection           @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Cascade)
+  id               String                       @id @default(uuid())
+  tenantId         String
+  connectionId     String
+  kind             MessagingHistoryImportKind
+  status           MessagingHistoryImportStatus @default(PENDING)
+  startDate        DateTime
+  chatsProcessed   Int                          @default(0)
+  messagesImported Int                          @default(0)
+  messagesSkipped  Int                          @default(0)
+  error            String?
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+  tenant           Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection       MessagingConnection          @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Cascade)
 
   @@unique([connectionId, kind])
   @@index([tenantId, status])
@@ -1147,7 +1153,7 @@ model MessagingHistoryImport {
 
 model QuickReply {
   messages              Json?
-  intervalSeconds       Int      @default(0)
+  intervalSeconds       Int               @default(0)
   id                    String            @id @default(uuid())
   tenantId              String
   title                 String
@@ -1522,6 +1528,7 @@ model CampaignRecipient {
   @@index([tenantId, externalMessageId])
   @@map("campaign_recipients")
 }
+
 model Schedule {
   id                    String                   @default(uuid())
   tenantId              String

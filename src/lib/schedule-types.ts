@@ -36,3 +36,29 @@ export type ApiSchedule = {
   lastError?: string | null;
   completedAt?: string | null;
 };
+
+export function scheduleWritePayload(data: ApiSchedule): ApiSchedule {
+  return {
+    id: data.id,
+    identifier: data.identifier,
+    type: data.type,
+    title: data.title,
+    destination: data.destination,
+    conversationId: data.conversationId,
+    scheduledAt: data.scheduledAt,
+    recurrence: data.recurrence,
+    delivery: data.delivery,
+    status: data.status,
+    connectionId: data.connectionId,
+    departmentId: data.departmentId,
+    content: data.content,
+    recipientIds: data.recipientIds,
+    recipients: data.recipients,
+    recurrenceDays: data.recurrenceDays,
+    recurrenceLimit: data.recurrenceLimit,
+    recurrenceUntil: data.recurrenceUntil,
+    assignedMembershipId: data.assignedMembershipId,
+    attachmentName: data.attachmentName,
+    attachment: data.attachment,
+  };
+}

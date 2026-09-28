@@ -1,20 +1,37 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { ApiConversation } from "@/lib/trixus-api";
-
-export async function refreshInboxData(queryClient: QueryClient, activeId?: string) {
+export async function refreshInboxData(
+  queryClient: QueryClient,
+  listQueryKey: readonly unknown[],
+  activeId?: string,
+) {
   await Promise.all([
-    queryClient.refetchQueries({ queryKey: ["trixus", "conversations"], type: "all" }),
-    queryClient.refetchQueries({ queryKey: ["trixus", "customers", "all"], type: "all" }),
+    queryClient.refetchQueries(
+      {
+        queryKey: listQueryKey,
+        exact: true,
+        type: "active",
+      },
+      { throwOnError: true },
+    ),
     ...(activeId
       ? [
-          queryClient.refetchQueries({
-            queryKey: ["trixus", "messages", activeId],
-            type: "all",
-          }),
+          queryClient.refetchQueries(
+            {
+              queryKey: ["trixus", "conversations", activeId],
+              exact: true,
+              type: "active",
+            },
+            { throwOnError: true },
+          ),
+          queryClient.refetchQueries(
+            {
+              queryKey: ["trixus", "messages", activeId],
+              exact: true,
+              type: "active",
+            },
+            { throwOnError: true },
+          ),
         ]
       : []),
   ]);
-  return activeId
-    ? queryClient.getQueryData<ApiConversation>(["trixus", "conversations", activeId])
-    : undefined;
 }

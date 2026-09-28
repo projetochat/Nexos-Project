@@ -3,9 +3,19 @@ import { RealtimeService } from "./realtime.service";
 
 describe("realtime instance access", () => {
   it("checks the current profile before subscriptions and stops access immediately after revocation", async () => {
-    const role = { key: "agent", metadata: { connectionIds: ["vocical"] } };
+    const role = {
+      key: "agent",
+      metadata: { connectionIds: ["vocical"] },
+      permissions: [{ permissionId: "conversations.read" }],
+    };
     const prisma = {
-      tenantMembership: { findFirst: vi.fn().mockImplementation(async () => ({ role })) },
+      tenantMembership: {
+        findFirst: vi.fn().mockImplementation(async () => ({
+          role,
+          tenant: { authRevokedAt: null },
+        })),
+      },
+      impersonationSession: { findFirst: vi.fn() },
       conversation: {
         findFirst: vi
           .fn()
@@ -33,15 +43,26 @@ describe("realtime instance access", () => {
       data: { context: { membershipId: "denied", tenantId: "tenant-a" } },
       emit: vi.fn(),
     };
+    const withoutPermission = {
+      data: { context: { membershipId: "without-permission", tenantId: "tenant-a" } },
+      emit: vi.fn(),
+    };
     const prisma = {
       tenantMembership: {
         findFirst: vi.fn().mockImplementation(async ({ where }) => ({
           role: {
             key: "agent",
-            metadata: { connectionIds: where.id === "allowed" ? ["vocical"] : [] },
+            metadata: {
+              connectionIds:
+                where.id === "allowed" || where.id === "without-permission" ? ["vocical"] : [],
+            },
+            permissions:
+              where.id === "without-permission" ? [] : [{ permissionId: "conversations.read" }],
           },
+          tenant: { authRevokedAt: null },
         })),
       },
+      impersonationSession: { findFirst: vi.fn() },
       conversation: {
         findFirst: vi
           .fn()
@@ -52,12 +73,13 @@ describe("realtime instance access", () => {
     };
     const service = new RealtimeService({} as never, prisma as never);
     service["server"] = {
-      in: () => ({ fetchSockets: async () => [allowed, denied] }),
+      in: () => ({ fetchSockets: async () => [allowed, denied, withoutPermission] }),
     } as unknown as NonNullable<RealtimeService["server"]>;
     await service["publishScoped"]("tenant:tenant-a", "conversation.updated", {
       conversationId: "vocical-chat",
     });
     expect(allowed.emit).toHaveBeenCalledOnce();
     expect(denied.emit).not.toHaveBeenCalled();
+    expect(withoutPermission.emit).toHaveBeenCalledOnce();
   });
 });

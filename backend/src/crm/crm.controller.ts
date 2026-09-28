@@ -28,7 +28,7 @@ import {
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequirePermissions } from "../auth/permissions.decorator";
+import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import {
   ContactCompanyRole,
@@ -355,7 +355,7 @@ export class CrmController {
   }
 
   @Get("contacts")
-  @RequirePermissions("crm.read")
+  @RequirePermissions("contacts.read")
   async listContacts(
     @Query() query: ListContactsQueryDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -441,7 +441,7 @@ export class CrmController {
   // Keep this endpoint outside `/contacts/:id`: some router builds resolve dynamic
   // contact routes before nested static paths, treating "picker" as a contact id.
   @Get("group-contact-picker")
-  @RequirePermissions("crm.read")
+  @RequirePermissions("contacts.read")
   async listContactsForGroupPicker(
     @Query() query: PaginationDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -450,6 +450,9 @@ export class CrmController {
     const pageSize = Math.min(50, Math.max(1, query.pageSize ?? 50));
     const q = query.q?.trim();
     const digits = q?.replace(/\D/g, "") ?? "";
+    const accentInsensitiveContactIds = q
+      ? await this.findContactsByAccentInsensitiveText(current.tenantId, q)
+      : [];
     const where: Prisma.ContactWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,
@@ -457,6 +460,7 @@ export class CrmController {
       ...(q
         ? {
             OR: [
+              { id: { in: accentInsensitiveContactIds } },
               { name: { contains: q, mode: "insensitive" } },
               { phone: { contains: q, mode: "insensitive" } },
               ...(digits ? [{ normalizedPhone: { contains: digits } }] : []),
@@ -489,7 +493,7 @@ export class CrmController {
   }
 
   @Get("contacts/options")
-  @RequirePermissions("crm.read")
+  @RequirePermissions("contacts.read")
   async contactOptions(@CurrentUser() current: AuthenticatedUser) {
     const [connections, departments, profiles, tags] = await this.prisma.$transaction([
       this.prisma.messagingConnection.findMany({
@@ -735,7 +739,7 @@ export class CrmController {
     return { updated: total, deleted: false };
   }
   @Get("contacts/:id")
-  @RequirePermissions("crm.read")
+  @RequirePermissions("contacts.read")
   async findContact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const contact = await this.findContactOrThrow(id, current.tenantId);
     return this.serializeContact(contact);
@@ -1166,7 +1170,7 @@ export class CrmController {
   }
 
   @Post("contacts")
-  @RequirePermissions("crm.manage")
+  @RequireAnyPermission("contacts.manage", "chat.contacts.create")
   async createContact(@Body() dto: CreateContactDto, @CurrentUser() current: AuthenticatedUser) {
     await this.entitlements.assertTenantOperational(current.tenantId);
     await this.entitlements.assertWithinLimit(
@@ -1278,7 +1282,7 @@ export class CrmController {
   }
 
   @Patch("contacts/:id")
-  @RequirePermissions("crm.manage")
+  @RequireAnyPermission("contacts.manage", "chat.contacts.edit")
   async updateContact(
     @Param("id") id: string,
     @Body() dto: UpdateContactDto,
@@ -1372,7 +1376,7 @@ export class CrmController {
   }
 
   @Delete("contacts/:id")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.delete")
   async deleteContact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     await this.findContactOrThrow(id, current.tenantId);
     const contact = await this.prisma.contact.update({

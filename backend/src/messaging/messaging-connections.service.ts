@@ -349,6 +349,19 @@ export class MessagingConnectionsService {
         throw new BadRequestException("Fuso horário inválido.");
       }
     }
+    if (dto.defaultDepartmentId) {
+      const department = await this.prisma.department.findFirst({
+        where: {
+          id: dto.defaultDepartmentId,
+          tenantId: current.tenantId,
+          active: true,
+        },
+        select: { id: true },
+      });
+      if (!department) {
+        throw new BadRequestException("Selecione um departamento operacional ativo.");
+      }
+    }
     const absenceEnabled = dto.absenceEnabled ?? connection.absenceEnabled;
     const absenceMessage =
       dto.absenceMessage === undefined
@@ -379,6 +392,7 @@ export class MessagingConnectionsService {
           serviceHours,
           timezone: dto.timezone,
           serviceEnabled: dto.serviceEnabled,
+          defaultDepartmentId: dto.defaultDepartmentId,
           notes: cleanOptionalText(dto.notes),
         },
       });
@@ -1001,6 +1015,7 @@ export class MessagingConnectionsService {
       id: connection.id,
       tenantId: connection.tenantId,
       name: connection.name,
+      defaultDepartmentId: connection.defaultDepartmentId,
       serviceEnabled: connection.serviceEnabled,
       providerType: connection.providerType.toLowerCase(),
       status: connection.status.toLowerCase(),

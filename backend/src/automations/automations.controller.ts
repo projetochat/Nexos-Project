@@ -203,7 +203,7 @@ export class AutomationsController {
   }
 
   @Delete(":id")
-  @RequirePermissions("automations.manage")
+  @RequirePermissions("automations.delete")
   async archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     await this.prisma.automationRule.update({
       where: { tenantId_id: { tenantId: current.tenantId, id } },

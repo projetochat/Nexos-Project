@@ -58,6 +58,8 @@ const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 function SchedulingPage() {
   const user = useSession((state) => state.user);
+  const canManage = user?.permissions?.includes("schedules.manage") ?? false;
+  const canDelete = user?.permissions?.includes("schedules.delete") ?? false;
   const qc = useQueryClient();
   const schedulesKey = ["trixus", "schedules", user?.empresaId];
   const {
@@ -157,9 +159,11 @@ function SchedulingPage() {
           title="Agendamentos"
           subtitle={`${num(items.length)} agendamento(s) cadastrado(s).`}
           actions={
-            <Button variant="primary" size="sm" onClick={() => setEditing(blankSchedule())}>
-              <Plus className="h-3.5 w-3.5" /> Novo Agendamento
-            </Button>
+            canManage ? (
+              <Button variant="primary" size="sm" onClick={() => setEditing(blankSchedule())}>
+                <Plus className="h-3.5 w-3.5" /> Novo Agendamento
+              </Button>
+            ) : null
           }
         />
         {loadError && (
@@ -168,7 +172,7 @@ function SchedulingPage() {
           </Alert>
         )}
         {isLoading && <p className="text-sm text-muted-foreground">Carregando agendamentos…</p>}
-        {legacyItems.length > 0 && (
+        {canManage && legacyItems.length > 0 && (
           <Card className="mb-4 space-y-2 p-4">
             <p className="text-sm">
               Existem {legacyItems.length} agendamentos antigos salvos somente neste navegador.
@@ -245,6 +249,8 @@ function SchedulingPage() {
                 })
               }
               onRemove={() => setRemoving(item)}
+              canManage={canManage}
+              canDelete={canDelete}
             />
           ))}
           {!filtered.length && (
@@ -303,6 +309,8 @@ function SchedulingPage() {
                       })
                     }
                     onRemove={() => setRemoving(item)}
+                    canManage={canManage}
+                    canDelete={canDelete}
                   />
                 ))}
                 {!filtered.length && (
@@ -326,14 +334,16 @@ function SchedulingPage() {
             onNext={() => setPage((current) => Math.min(totalPages, current + 1))}
           />
         </Card>
-        <ScheduleForm
-          item={editing}
-          connections={connections}
-          departments={departments}
-          onClose={() => setEditing(null)}
-          onSave={save}
-          busy={saving}
-        />
+        {canManage && (
+          <ScheduleForm
+            item={editing}
+            connections={connections}
+            departments={departments}
+            onClose={() => setEditing(null)}
+            onSave={save}
+            busy={saving}
+          />
+        )}
         <ConfirmDialog
           open={!!removing}
           title="Excluir Agendamento?"
@@ -466,6 +476,8 @@ function ScheduleMobileCard({
   onEdit,
   onDuplicate,
   onRemove,
+  canManage,
+  canDelete,
 }: {
   item: Schedule;
   connections: ApiMessagingConnection[];
@@ -473,6 +485,8 @@ function ScheduleMobileCard({
   onEdit: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
+  canManage: boolean;
+  canDelete: boolean;
 }) {
   const connection = connections.find((entry) => entry.id === item.connectionId)?.name ?? "—";
   const department = departments.find((entry) => entry.id === item.departmentId)?.name ?? "—";
@@ -517,30 +531,38 @@ function ScheduleMobileCard({
           </div>
         </div>
       </div>
-      <div className="mt-4 flex justify-end gap-1 border-t border-border pt-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          title="Duplicar"
-          aria-label="Duplicar"
-          onClick={onDuplicate}
-        >
-          <Copy className="h-4 w-4" />
-        </Button>
-        <Button variant="ghost" size="sm" title="Editar" aria-label="Editar" onClick={onEdit}>
-          <Pencil className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          title="Excluir"
-          aria-label="Excluir"
-          className="trash-action"
-          onClick={onRemove}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
+      {(canManage || canDelete) && (
+        <div className="mt-4 flex justify-end gap-1 border-t border-border pt-3">
+          {canManage && (
+            <Button
+              variant="ghost"
+              size="sm"
+              title="Duplicar"
+              aria-label="Duplicar"
+              onClick={onDuplicate}
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+          )}
+          {canManage && (
+            <Button variant="ghost" size="sm" title="Editar" aria-label="Editar" onClick={onEdit}>
+              <Pencil className="h-4 w-4" />
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              title="Excluir"
+              aria-label="Excluir"
+              className="trash-action"
+              onClick={onRemove}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      )}
     </Card>
   );
 }
@@ -552,6 +574,8 @@ function ScheduleRow({
   onEdit,
   onDuplicate,
   onRemove,
+  canManage,
+  canDelete,
 }: {
   item: Schedule;
   connections: ApiMessagingConnection[];
@@ -559,6 +583,8 @@ function ScheduleRow({
   onEdit: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
+  canManage: boolean;
+  canDelete: boolean;
 }) {
   const connection = connections.find((entry) => entry.id === item.connectionId)?.name ?? "—";
   const department = departments.find((entry) => entry.id === item.departmentId)?.name ?? "—";
@@ -612,21 +638,27 @@ function ScheduleRow({
       </td>
       <td className="px-4 py-3">
         <div className="flex gap-1">
-          <Button variant="ghost" size="sm" title="Duplicar" onClick={onDuplicate}>
-            <Copy className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="sm" title="Editar" onClick={onEdit}>
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            title="Excluir"
-            className="trash-action"
-            onClick={onRemove}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          {canManage && (
+            <Button variant="ghost" size="sm" title="Duplicar" onClick={onDuplicate}>
+              <Copy className="h-4 w-4" />
+            </Button>
+          )}
+          {canManage && (
+            <Button variant="ghost" size="sm" title="Editar" onClick={onEdit}>
+              <Pencil className="h-4 w-4" />
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              title="Excluir"
+              className="trash-action"
+              onClick={onRemove}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </td>
     </tr>

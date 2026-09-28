@@ -10,7 +10,7 @@ import {
 } from "@/lib/work-schedule";
 import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Pencil, Trash2, ShieldCheck, Check, Copy } from "lucide-react";
 import { toast } from "sonner";
@@ -37,101 +37,337 @@ import {
   type ApiUserMembership,
 } from "@/lib/trixus-api";
 import { cn } from "@/lib/utils";
+import { useSession } from "@/lib/session";
+import { Switch } from "@/components/ui/switch";
+import {
+  delegatedPermissionIds,
+  permissionDependencyIssue,
+  togglePermissionGroupInTree,
+  togglePermissionInTree,
+} from "@/lib/access-profile-permission-tree";
 
-export const Route = createFileRoute("/perfis")({ component: Page });
+export const Route = createFileRoute("/perfis")({
+  validateSearch: (search) => ({
+    edit: typeof search.edit === "string" ? search.edit : undefined,
+    tab: search.tab === "acessos" ? "acessos" : undefined,
+  }),
+  component: Page,
+});
 
-type PerfilTab = "geral" | "chat" | "administracao" | "chamados" | "jornada";
+type PerfilTab = "geral" | "acessos";
 type PermissionTab = "chat" | "administracao" | "chamados";
-type PermissionField = { id: string; label: string };
+type PermissionField = { id: string; label: string; description: string };
 
-const PERMISSION_GROUPS: Array<{ title: string; tab: PermissionTab; items: PermissionField[] }> = [
+const PERMISSION_GROUPS: Array<{
+  title: string;
+  tab: PermissionTab;
+  items: PermissionField[];
+}> = [
   {
-    title: "Administração",
-    tab: "administracao",
-    items: [
-      { id: "users.read", label: "Ver usuários" },
-      { id: "users.manage", label: "Gerenciar usuários" },
-      { id: "departments.read", label: "Ver departamentos" },
-      { id: "departments.manage", label: "Gerenciar departamentos" },
-      { id: "roles.read", label: "Ver perfis" },
-      { id: "roles.manage", label: "Gerenciar perfis" },
-    ],
-  },
-  {
-    title: "CRM e leads",
-    tab: "administracao",
-    items: [
-      { id: "crm.read", label: "Ver CRM" },
-      { id: "crm.manage", label: "Gerenciar CRM" },
-      { id: "chat.contacts.read", label: "Visualizar contatos" },
-      { id: "chat.contacts.edit", label: "Editar contato" },
-      { id: "chat.contacts.block", label: "Bloquear contatos" },
-      { id: "chat.customer_link.edit", label: "Editar vinculo de cliente" },
-      { id: "chat.phone.read", label: "Visualizar número" },
-      { id: "chat.leads.read", label: "Visualizar leads" },
-      { id: "leads.manage", label: "Gerenciar leads" },
-    ],
-  },
-  {
-    title: "Atendimento e mensagens",
+    title: "Dashboard",
     tab: "chat",
     items: [
-      { id: "conversations.read", label: "Ver conversas" },
-      { id: "conversations.assign", label: "Atribuir conversas" },
-      { id: "conversations.manage", label: "Gerenciar conversas" },
-      { id: "messages.send", label: "Enviar mensagens" },
-      { id: "chat.messages.edit", label: "Editar mensagem" },
-      { id: "chat.messages.delete", label: "Excluir mensagem" },
-      { id: "chat.audio.send", label: "Enviar audio" },
-      { id: "chat.agent_name.show", label: "Apresentar nome do atendente" },
-      { id: "chat.conversations.view_all_active", label: "Ver todas conversas ativas" },
+      { id: "dashboard.read", label: "Ver", description: "Permite visualizar o dashboard." },
+      {
+        id: "dashboard.manage",
+        label: "Criar/Editar",
+        description: "Permite criar/editar os componentes do dashboard.",
+      },
+      {
+        id: "dashboard.delete",
+        label: "Excluir",
+        description: "Permite excluir os componentes do dashboard.",
+      },
     ],
   },
   {
-    title: "Catalogos e canais",
-    tab: "administracao",
+    title: "Chat",
+    tab: "chat",
     items: [
-      { id: "connections.read", label: "Ver instancias" },
-      { id: "connections.manage", label: "Gerenciar instancias" },
-      { id: "chat.tags.use", label: "Usar etiquetas" },
-      { id: "chat.tags.manage", label: "Gerenciar etiquetas" },
-      { id: "chat.quick_replies.read", label: "Acessar mensagens rapidas" },
-      { id: "chat.quick_replies.manage", label: "Gerenciar mensagens rapidas" },
-      { id: "notifications.read", label: "Ver notificacoes" },
-      { id: "notifications.manage", label: "Gerenciar notificacoes" },
+      {
+        id: "conversations.read",
+        label: "Ver conversas",
+        description: "Permite visualizar as conversas.",
+      },
+      {
+        id: "chat.contacts.edit",
+        label: "Editar contato",
+        description: "Permite editar os contatos.",
+      },
+      {
+        id: "chat.contacts.create",
+        label: "Criar contato",
+        description: "Permite criar contatos.",
+      },
+      {
+        id: "messages.send",
+        label: "Enviar mensagens",
+        description: "Permite enviar mensagens para os contatos.",
+      },
+      {
+        id: "chat.messages.edit",
+        label: "Editar mensagens",
+        description: "Permite editar as mensagens enviadas.",
+      },
+      {
+        id: "chat.messages.delete",
+        label: "Apagar mensagens",
+        description: "Permite apagar as mensagens enviadas.",
+      },
+      {
+        id: "chat.agent_name.show",
+        label: "Assinar mensagem",
+        description: "Apresentar o nome do atendente nas mensagens enviadas.",
+      },
+      {
+        id: "chat.audio.send",
+        label: "Enviar áudio",
+        description: "Permite enviar mensagens de áudio.",
+      },
+      {
+        id: "tickets.create",
+        label: "Gerar chamado",
+        description: "Permite gerar chamados a partir da conversa.",
+      },
+      {
+        id: "conversations.assign",
+        label: "Atribuir conversas",
+        description: "Permite atribuir conversas para outros atendentes.",
+      },
+      {
+        id: "conversations.manage",
+        label: "Gerenciar conversas",
+        description: "Permite alterar o estado e encerrar conversas.",
+      },
+      {
+        id: "chat.contacts.read",
+        label: "Ver contatos no chat",
+        description: "Permite visualizar os dados dos contatos no chat.",
+      },
+      {
+        id: "chat.phone.read",
+        label: "Ver telefone",
+        description: "Permite visualizar o telefone dos contatos no chat.",
+      },
+      {
+        id: "chat.customer_link.edit",
+        label: "Alterar cliente vinculado",
+        description: "Permite alterar o cliente vinculado à conversa.",
+      },
+      {
+        id: "chat.tags.use",
+        label: "Utilizar etiquetas",
+        description: "Permite atribuir ou remover etiquetas nas conversas.",
+      },
+      {
+        id: "chat.contacts.block",
+        label: "Bloquear contatos",
+        description: "Permite bloquear contatos a partir do chat.",
+      },
+      {
+        id: "chat.conversations.view_all_active",
+        label: "Ver todas as conversas ativas",
+        description: "Permite visualizar conversas ativas de outros atendentes.",
+      },
     ],
   },
   {
-    title: "Automacoes e campanhas",
+    title: "Contatos",
+    tab: "chat",
+    items: [
+      { id: "contacts.read", label: "Ver", description: "Permite visualizar os contatos." },
+      {
+        id: "contacts.manage",
+        label: "Criar/Editar",
+        description: "Permite criar/editar os contatos.",
+      },
+      { id: "contacts.delete", label: "Excluir", description: "Permite excluir os contatos." },
+    ],
+  },
+  {
+    title: "Gerenciar Grupos",
+    tab: "chat",
+    items: [
+      { id: "groups.read", label: "Ver", description: "Permite visualizar os grupos." },
+      {
+        id: "groups.manage",
+        label: "Criar/Editar",
+        description: "Permite adicionar ou excluir participantes dos grupos.",
+      },
+    ],
+  },
+  {
+    title: "Histórico de Conversas",
+    tab: "chat",
+    items: [
+      {
+        id: "history.read",
+        label: "Ver",
+        description: "Permite visualizar o histórico de conversas.",
+      },
+    ],
+  },
+  {
+    title: "Clientes e Campos Adicionais",
     tab: "administracao",
     items: [
-      { id: "automations.read", label: "Ver automacoes" },
-      { id: "automations.manage", label: "Gerenciar automacoes" },
-      { id: "campaigns.read", label: "Ver campanhas" },
-      { id: "campaigns.create", label: "Criar campanhas" },
-      { id: "campaigns.update", label: "Editar campanhas" },
-      { id: "campaigns.schedule", label: "Agendar campanhas" },
-      { id: "campaigns.start", label: "Iniciar campanhas" },
-      { id: "campaigns.pause", label: "Pausar campanhas" },
-      { id: "campaigns.cancel", label: "Cancelar campanhas" },
-      { id: "campaigns.duplicate", label: "Duplicar campanhas" },
-      { id: "campaigns.recipients.read", label: "Ver recipients de campanhas" },
-      { id: "campaigns.manage", label: "Gerenciar campanhas" },
+      {
+        id: "crm.read",
+        label: "Ver",
+        description: "Permite visualizar clientes, catálogos e campos adicionais.",
+      },
+      {
+        id: "crm.manage",
+        label: "Criar/Editar",
+        description: "Permite criar, editar e excluir clientes, catálogos e campos adicionais.",
+      },
+    ],
+  },
+  {
+    title: "Leads",
+    tab: "chat",
+    items: [
+      { id: "chat.leads.read", label: "Ver", description: "Permite visualizar os leads." },
+      {
+        id: "leads.manage",
+        label: "Criar/Editar",
+        description: "Permite criar e editar os leads.",
+      },
+    ],
+  },
+  {
+    title: "Notificações",
+    tab: "administracao",
+    items: [
+      {
+        id: "notifications.read",
+        label: "Ver",
+        description: "Permite visualizar as notificações.",
+      },
+      {
+        id: "notifications.manage",
+        label: "Gerenciar",
+        description: "Permite gerenciar as notificações.",
+      },
+    ],
+  },
+  ...(
+    [
+      ["Atendentes", "users.read", "users.manage", "users.delete", "atendentes"],
+      ["Perfil de Acesso", "roles.read", "roles.manage", "roles.delete", "perfis de acesso"],
+      [
+        "Departamentos",
+        "departments.read",
+        "departments.manage",
+        "departments.delete",
+        "departamentos",
+      ],
+      ["Etiquetas", "chat.tags.read", "chat.tags.manage", "chat.tags.delete", "etiquetas"],
+      [
+        "Mensagens Rápidas",
+        "chat.quick_replies.read",
+        "chat.quick_replies.manage",
+        "chat.quick_replies.delete",
+        "mensagens rápidas",
+      ],
+      ["Agendamentos", "schedules.read", "schedules.manage", "schedules.delete", "agendamentos"],
+      ["Instâncias", "connections.read", "connections.manage", "connections.delete", "instâncias"],
+      ["Fluxo de Bot", "bot_flows.read", "bot_flows.manage", "bot_flows.delete", "fluxos de bot"],
+      ["Automações", "automations.read", "automations.manage", "automations.delete", "automações"],
+      ["Agente de IA", "ai_agents.read", "ai_agents.manage", "ai_agents.delete", "agentes de IA"],
+      ["Configurações", "settings.read", "settings.manage", "settings.delete", "configurações"],
+    ] as const
+  ).map(([title, read, manage, remove, resource]) => ({
+    title,
+    tab: "administracao" as const,
+    items: [
+      { id: read, label: "Ver", description: `Permite visualizar ${resource}.` },
+      { id: manage, label: "Criar/Editar", description: `Permite criar/editar ${resource}.` },
+      { id: remove, label: "Excluir", description: `Permite excluir ${resource}.` },
+    ],
+  })),
+  {
+    title: "Campanhas",
+    tab: "administracao",
+    items: [
+      { id: "campaigns.read", label: "Ver", description: "Permite visualizar campanhas." },
+      { id: "campaigns.create", label: "Criar", description: "Permite criar campanhas." },
+      {
+        id: "campaigns.update",
+        label: "Editar",
+        description: "Permite editar campanhas.",
+      },
+      {
+        id: "campaigns.schedule",
+        label: "Agendar",
+        description: "Permite agendar campanhas.",
+      },
+      { id: "campaigns.start", label: "Iniciar", description: "Permite iniciar campanhas." },
+      { id: "campaigns.pause", label: "Pausar", description: "Permite pausar campanhas." },
+      {
+        id: "campaigns.cancel",
+        label: "Cancelar",
+        description: "Permite cancelar campanhas.",
+      },
+      {
+        id: "campaigns.duplicate",
+        label: "Duplicar",
+        description: "Permite duplicar campanhas.",
+      },
+      {
+        id: "campaigns.recipients.read",
+        label: "Ver destinatários",
+        description: "Permite visualizar os destinatários das campanhas.",
+      },
+      {
+        id: "campaigns.manage",
+        label: "Gerenciar",
+        description: "Permite executar ações administrativas nas campanhas.",
+      },
+      { id: "campaigns.delete", label: "Excluir", description: "Permite excluir campanhas." },
     ],
   },
   {
     title: "Chamados",
     tab: "chamados",
     items: [
-      { id: "tickets.read", label: "Ver chamados" },
-      { id: "tickets.create", label: "Criar chamados" },
-      { id: "tickets.update", label: "Atualizar chamados" },
-      { id: "tickets.assign", label: "Atribuir chamados" },
-      { id: "tickets.status.update", label: "Alterar status de chamados" },
-      { id: "tickets.comment", label: "Comentar chamados" },
-      { id: "tickets.attachments.upload", label: "Anexar em chamados" },
-      { id: "tickets.attachments.delete", label: "Excluir atrixus de chamados" },
-      { id: "tickets.manage", label: "Gerenciar chamados" },
+      { id: "tickets.read", label: "Ver", description: "Permite visualizar os chamados." },
+      {
+        id: "tickets.update",
+        label: "Editar",
+        description: "Permite editar os chamados.",
+      },
+      {
+        id: "tickets.assign",
+        label: "Atribuir",
+        description: "Permite atribuir chamados a atendentes.",
+      },
+      {
+        id: "tickets.status.update",
+        label: "Alterar status",
+        description: "Permite alterar o status dos chamados.",
+      },
+      {
+        id: "tickets.comment",
+        label: "Comentar",
+        description: "Permite adicionar comentários aos chamados.",
+      },
+      {
+        id: "tickets.attachments.upload",
+        label: "Enviar anexos",
+        description: "Permite adicionar anexos aos chamados.",
+      },
+      {
+        id: "tickets.attachments.delete",
+        label: "Excluir anexos",
+        description: "Permite excluir anexos dos chamados.",
+      },
+      {
+        id: "tickets.manage",
+        label: "Gerenciar",
+        description: "Permite executar todas as ações administrativas dos chamados.",
+      },
+      { id: "tickets.delete", label: "Excluir", description: "Permite excluir os chamados." },
     ],
   },
 ];
@@ -259,6 +495,15 @@ function CheckField({
 
 function Page() {
   const qc = useQueryClient();
+  const navigate = useNavigate({ from: "/perfis" });
+  const search = Route.useSearch();
+  const currentUser = useSession((state) => state.user);
+  const grantedPermissions = React.useMemo(
+    () => currentUser?.permissions ?? [],
+    [currentUser?.permissions],
+  );
+  const canManageRoles = grantedPermissions.includes("roles.manage");
+  const canDeleteRoles = grantedPermissions.includes("roles.delete");
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["trixus", "roles"],
     queryFn: organizationApi.listRoles,
@@ -266,14 +511,17 @@ function Page() {
   const { data: departamentos = [] } = useQuery({
     queryKey: ["trixus", "departments"],
     queryFn: organizationApi.listDepartments,
+    enabled: grantedPermissions.includes("departments.read"),
   });
   const { data: connections = [] } = useQuery({
     queryKey: ["trixus", "messaging-connections"],
     queryFn: connectionsApi.list,
+    enabled: grantedPermissions.includes("connections.read"),
   });
   const { data: memberships = [] } = useQuery({
     queryKey: ["trixus", "users"],
     queryFn: organizationApi.listUsers,
+    enabled: grantedPermissions.includes("users.read"),
   });
 
   const [editing, setEditing] = React.useState<ApiRole | null>(null);
@@ -282,6 +530,20 @@ function Page() {
   const [query, setQuery] = React.useState("");
   const novo = useDisclosure();
   const memberCountByRoleId = React.useMemo(() => countRoleMembers(memberships), [memberships]);
+
+  const closeEditing = React.useCallback(() => {
+    setEditing(null);
+    if (search.edit) {
+      void navigate({ search: { edit: undefined, tab: undefined }, replace: true });
+    }
+  }, [navigate, search.edit]);
+
+  React.useEffect(() => {
+    if (!search.edit || !canManageRoles) return;
+    const requestedRole = items.find((role) => role.id === search.edit);
+    if (!requestedRole || isAdministratorRole(requestedRole)) return;
+    setEditing((current) => (current?.id === requestedRole.id ? current : requestedRole));
+  }, [canManageRoles, items, search.edit]);
 
   const filtered = sortByOptionLabel(items, (perfil) => perfil.name).filter((p) => {
     if (
@@ -331,7 +593,7 @@ function Page() {
       qc.invalidateQueries({ queryKey: ["trixus", "roles"] });
       toast.success(vars.id ? "Perfil atualizado" : "Perfil criado");
       novo.hide();
-      setEditing(null);
+      closeEditing();
       setDuplicating(null);
     },
     onError: (error) => toast.error((error as Error).message),
@@ -354,9 +616,11 @@ function Page() {
           title="Perfil de Acesso"
           subtitle={`${num(items.length)} perfis cadastrados.`}
           actions={
-            <Button variant="primary" size="sm" onClick={novo.show}>
-              <Plus className="h-3.5 w-3.5" /> Novo Perfil de Acesso
-            </Button>
+            canManageRoles ? (
+              <Button variant="primary" size="sm" onClick={novo.show}>
+                <Plus className="h-3.5 w-3.5" /> Novo Perfil de Acesso
+              </Button>
+            ) : undefined
           }
         />
 
@@ -400,37 +664,43 @@ function Page() {
                       </div>
                     </div>
 
-                    {!isAdministrator && (
+                    {!isAdministrator && (canManageRoles || canDeleteRoles) && (
                       <div className="flex shrink-0 gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="duplicate-action-button"
-                          onClick={() => setDuplicating(duplicateRoleDraft(p, items))}
-                          title="Duplicar Perfil de Acesso"
-                          aria-label={`Duplicar Perfil de Acesso ${p.name}`}
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setEditing(p)}
-                          title="Editar perfil"
-                          aria-label={`Editar perfil ${p.name}`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="trash-action"
-                          onClick={() => setDeleting(p)}
-                          title="Excluir perfil"
-                          aria-label={`Excluir perfil ${p.name}`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {canManageRoles && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="duplicate-action-button"
+                              onClick={() => setDuplicating(duplicateRoleDraft(p, items))}
+                              title="Duplicar Perfil de Acesso"
+                              aria-label={`Duplicar Perfil de Acesso ${p.name}`}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setEditing(p)}
+                              title="Editar perfil"
+                              aria-label={`Editar perfil ${p.name}`}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                        {canDeleteRoles && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="trash-action"
+                            onClick={() => setDeleting(p)}
+                            title="Excluir perfil"
+                            aria-label={`Excluir perfil ${p.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -445,6 +715,7 @@ function Page() {
           roles={items}
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
+          grantablePermissionIds={grantedPermissions}
           onClose={novo.hide}
           onSubmit={(data) => save.mutate({ data })}
         />
@@ -453,8 +724,10 @@ function Page() {
           roles={items}
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
+          grantablePermissionIds={grantedPermissions}
           initial={editing ?? undefined}
-          onClose={() => setEditing(null)}
+          initialTab={search.edit === editing?.id && search.tab === "acessos" ? "acessos" : "geral"}
+          onClose={closeEditing}
           onSubmit={(data) => editing && save.mutate({ id: editing.id, data })}
         />
         <PerfilForm
@@ -462,6 +735,7 @@ function Page() {
           roles={items}
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
+          grantablePermissionIds={grantedPermissions}
           initial={duplicating ?? undefined}
           clone
           onClose={() => setDuplicating(null)}
@@ -491,19 +765,23 @@ function PerfilForm({
   onClose,
   onSubmit,
   initial,
+  initialTab = "geral",
   clone = false,
   roles,
   departamentos,
   connections,
+  grantablePermissionIds,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: PerfilFormData) => void;
   initial?: ApiRole;
+  initialTab?: PerfilTab;
   clone?: boolean;
   roles: ApiRole[];
   departamentos: { id: string; name: string }[];
   connections: ApiMessagingConnection[];
+  grantablePermissionIds: string[];
 }) {
   const [form, setForm] = React.useState<PerfilFormData>({
     name: "",
@@ -539,7 +817,11 @@ function PerfilForm({
             color: metadata.color ?? DEFAULT_ROLE_COLOR,
             language: metadata.language ?? "system",
             timezone: metadata.timezone ?? "America/Sao_Paulo",
-            permissionIds: initial.permissionIds,
+            permissionIds: clone
+              ? initial.permissionIds.filter((permissionId) =>
+                  grantablePermissionIds.includes(permissionId),
+                )
+              : initial.permissionIds,
             departmentIds: metadata.departmentIds ?? [],
             connectionIds: metadata.connectionIds ?? [],
             workSchedule: normalizeWorkSchedule(metadata.workSchedule ?? defaultWorkSchedule()),
@@ -552,18 +834,18 @@ function PerfilForm({
             timezone: "America/Sao_Paulo",
             permissionIds: [
               "departments.read",
-              "chat.contacts.read",
+              "contacts.read",
               "chat.tags.use",
               "chat.quick_replies.read",
-            ],
+            ].filter((permissionId) => grantablePermissionIds.includes(permissionId)),
             departmentIds: [],
             connectionIds: [],
             workSchedule: defaultWorkSchedule(),
           },
     );
     setError("");
-    setActiveTab("geral");
-  }, [initial, open]);
+    setActiveTab(initialTab);
+  }, [clone, grantablePermissionIds, initial, initialTab, open]);
 
   const submit = () => {
     if (!form.name || form.name.trim().length < 2) {
@@ -578,20 +860,49 @@ function PerfilForm({
     }
     const scheduleError = workScheduleError(form.workSchedule);
     if (scheduleError) {
-      setActiveTab("jornada");
+      setActiveTab("geral");
       toast.error(scheduleError);
       return;
     }
-    onSubmit(form);
+    const permissionIds = delegatedPermissionIds({
+      selectedIds: form.permissionIds,
+      originalIds: initial && !clone ? initial.permissionIds : [],
+      grantablePermissionIds,
+    });
+    const dependencyIssue = permissionDependencyIssue(permissionIds, PERMISSION_GROUPS);
+    if (dependencyIssue) {
+      setActiveTab("acessos");
+      toast.error(dependencyIssue);
+      return;
+    }
+    onSubmit({ ...form, permissionIds });
   };
 
-  const togglePermission = (id: string, checked: boolean) => {
-    setForm((current) => ({
-      ...current,
-      permissionIds: checked
-        ? Array.from(new Set([...current.permissionIds, id]))
-        : current.permissionIds.filter((permissionId) => permissionId !== id),
-    }));
+  const togglePermission = (
+    group: (typeof PERMISSION_GROUPS)[number],
+    id: string,
+    checked: boolean,
+  ) => {
+    const result = togglePermissionInTree({
+      selectedIds: form.permissionIds,
+      permissionId: id,
+      checked,
+      group,
+      grantablePermissionIds,
+    });
+    if (result.blockedReason) toast.error(result.blockedReason);
+    setForm((current) => ({ ...current, permissionIds: result.permissionIds }));
+  };
+
+  const togglePermissionGroup = (group: (typeof PERMISSION_GROUPS)[number], checked: boolean) => {
+    const result = togglePermissionGroupInTree({
+      selectedIds: form.permissionIds,
+      checked,
+      group,
+      grantablePermissionIds,
+    });
+    if (result.blockedReason) toast.error(result.blockedReason);
+    setForm((current) => ({ ...current, permissionIds: result.permissionIds }));
   };
 
   const toggleDepartment = (id: string, checked: boolean) => {
@@ -634,10 +945,10 @@ function PerfilForm({
           ? "Editar Perfil de Acesso"
           : clone
             ? "Duplicar Perfil de Acesso"
-            : "Novo Perfil de Acesso"
+            : "Criar Perfil de Acesso"
       }
       size="xl"
-      className="sm:max-w-[50rem]"
+      className="sm:max-w-[68rem]"
       footer={
         <div className="flex w-full items-center justify-between gap-4">
           <EntityFormLog
@@ -658,54 +969,34 @@ function PerfilForm({
     >
       <div className="space-y-5">
         <PerfilTabs active={activeTab} onChange={setActiveTab} />
-        {activeTab !== "geral" && (
-          <p className="text-xs text-muted-foreground">
-            Somente a seleção de instâncias controla o acesso neste momento. As demais opções ainda
-            não aplicam restrições.
-          </p>
-        )}
-
         {activeTab === "geral" && (
-          <GeneralTab
-            form={form}
-            error={error}
-            onChange={(patch) => {
-              setForm((current) => ({ ...current, ...patch }));
-              if (patch.name !== undefined) setError(duplicateNameError(patch.name));
-            }}
-          />
+          <div className="space-y-6">
+            <GeneralTab
+              form={form}
+              error={error}
+              departamentos={departamentos}
+              connections={connections}
+              onChange={(patch) => {
+                setForm((current) => ({ ...current, ...patch }));
+                if (patch.name !== undefined) setError(duplicateNameError(patch.name));
+              }}
+              toggleDepartment={toggleDepartment}
+              toggleConnection={toggleConnection}
+              toggleMany={toggleMany}
+            />
+            <WorkScheduleEditor
+              value={form.workSchedule}
+              onChange={(workSchedule) => setForm((current) => ({ ...current, workSchedule }))}
+            />
+          </div>
         )}
 
-        {(activeTab === "chat" || activeTab === "administracao") && (
+        {activeTab === "acessos" && (
           <PermissionSettings
-            tab={activeTab}
             form={form}
-            departamentos={departamentos}
-            connections={connections}
             togglePermission={togglePermission}
-            toggleDepartment={toggleDepartment}
-            toggleConnection={toggleConnection}
-            toggleMany={toggleMany}
-          />
-        )}
-
-        {activeTab === "chamados" && (
-          <PermissionSettings
-            tab="chamados"
-            form={form}
-            departamentos={departamentos}
-            connections={connections}
-            togglePermission={togglePermission}
-            toggleDepartment={toggleDepartment}
-            toggleConnection={toggleConnection}
-            toggleMany={toggleMany}
-          />
-        )}
-
-        {activeTab === "jornada" && (
-          <WorkScheduleEditor
-            value={form.workSchedule}
-            onChange={(workSchedule) => setForm((current) => ({ ...current, workSchedule }))}
+            togglePermissionGroup={togglePermissionGroup}
+            grantablePermissionIds={grantablePermissionIds}
           />
         )}
       </div>
@@ -722,10 +1013,7 @@ function PerfilTabs({
 }) {
   const tabs: Array<{ id: PerfilTab; label: string }> = [
     { id: "geral", label: "Geral" },
-    { id: "chat", label: "Chat" },
-    { id: "administracao", label: "Administração" },
-    { id: "chamados", label: "Chamados" },
-    { id: "jornada", label: "Jornada de Trabalho" },
+    { id: "acessos", label: "Acessos" },
   ];
 
   return (
@@ -752,12 +1040,33 @@ function PerfilTabs({
 function GeneralTab({
   form,
   error,
+  departamentos,
+  connections,
   onChange,
+  toggleDepartment,
+  toggleConnection,
+  toggleMany,
 }: {
   form: PerfilFormData;
   error: string;
+  departamentos: { id: string; name: string }[];
+  connections: ApiMessagingConnection[];
   onChange: (patch: Partial<PerfilFormData>) => void;
+  toggleDepartment: (id: string, checked: boolean) => void;
+  toggleConnection: (id: string, checked: boolean) => void;
+  toggleMany: (
+    field: "permissionIds" | "departmentIds" | "connectionIds",
+    ids: string[],
+    checked: boolean,
+  ) => void;
 }) {
+  const sortedConnections = sortByOptionLabel(
+    selectableConnections(connections, { includePaused: true }),
+    (connection) => connection.name,
+  );
+  const connectionIds = sortedConnections.map((connection) => connection.id);
+  const departmentIds = departamentos.map((department) => department.id);
+
   return (
     <section className="space-y-4">
       <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 md:gap-4 md:grid-cols-[minmax(0,1fr)_9rem]">
@@ -820,91 +1129,76 @@ function GeneralTab({
           onChange={(event) => onChange({ description: event.target.value })}
         />
       </Field>
+
+      <div className="grid items-start gap-4 md:grid-cols-2">
+        <SelectionSection
+          title="Instâncias"
+          ids={connectionIds}
+          selectedIds={form.connectionIds}
+          emptyLabel="Nenhuma instância cadastrada."
+          onToggleAll={(checked) => toggleMany("connectionIds", connectionIds, checked)}
+        >
+          {sortedConnections.map((connection) => (
+            <CheckField
+              key={connection.id}
+              label={connection.name}
+              checked={form.connectionIds.includes(connection.id)}
+              onChange={(checked) => toggleConnection(connection.id, checked)}
+            />
+          ))}
+        </SelectionSection>
+
+        <SelectionSection
+          title="Departamentos"
+          ids={departmentIds}
+          selectedIds={form.departmentIds}
+          emptyLabel="Nenhum departamento cadastrado."
+          onToggleAll={(checked) => toggleMany("departmentIds", departmentIds, checked)}
+        >
+          {departamentos.map((department) => (
+            <CheckField
+              key={department.id}
+              label={department.name}
+              checked={form.departmentIds.includes(department.id)}
+              onChange={(checked) => toggleDepartment(department.id, checked)}
+            />
+          ))}
+        </SelectionSection>
+      </div>
     </section>
   );
 }
 
 function PermissionSettings({
-  tab,
   form,
-  departamentos,
-  connections,
   togglePermission,
-  toggleDepartment,
-  toggleConnection,
-  toggleMany,
+  togglePermissionGroup,
+  grantablePermissionIds,
 }: {
-  tab: PermissionTab;
   form: PerfilFormData;
-  departamentos: { id: string; name: string }[];
-  connections: ApiMessagingConnection[];
-  togglePermission: (id: string, checked: boolean) => void;
-  toggleDepartment: (id: string, checked: boolean) => void;
-  toggleConnection: (id: string, checked: boolean) => void;
-  toggleMany: (
-    field: "permissionIds" | "departmentIds" | "connectionIds",
-    ids: string[],
+  togglePermission: (
+    group: (typeof PERMISSION_GROUPS)[number],
+    id: string,
     checked: boolean,
   ) => void;
+  togglePermissionGroup: (group: (typeof PERMISSION_GROUPS)[number], checked: boolean) => void;
+  grantablePermissionIds: string[];
 }) {
-  const sortedConnections = sortByOptionLabel(
-    selectableConnections(connections, { includePaused: true }),
-    (connection) => connection.name,
-  );
-  const connectionIds = sortedConnections.map((connection) => connection.id);
-  const departmentIds = departamentos.map((department) => department.id);
-
   return (
     <div className="space-y-6">
-      {tab === "chat" && (
-        <>
-          <SelectionSection
-            title="Instâncias"
-            ids={connectionIds}
-            selectedIds={form.connectionIds}
-            emptyLabel="Nenhuma instancia cadastrada."
-            onToggleAll={(checked) => toggleMany("connectionIds", connectionIds, checked)}
-          >
-            {sortedConnections.map((connection) => (
-              <CheckField
-                key={connection.id}
-                label={connection.name}
-                checked={form.connectionIds.includes(connection.id)}
-                onChange={(checked) => toggleConnection(connection.id, checked)}
-              />
-            ))}
-          </SelectionSection>
-
-          <SelectionSection
-            title="Departamentos"
-            ids={departmentIds}
-            selectedIds={form.departmentIds}
-            emptyLabel="Nenhum departamento cadastrado."
-            onToggleAll={(checked) => toggleMany("departmentIds", departmentIds, checked)}
-          >
-            {departamentos.map((department) => (
-              <CheckField
-                key={department.id}
-                label={department.name}
-                checked={form.departmentIds.includes(department.id)}
-                onChange={(checked) => toggleDepartment(department.id, checked)}
-              />
-            ))}
-          </SelectionSection>
-        </>
-      )}
       <section>
         <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           Permissões
         </h3>
         <div className="space-y-4">
-          {PERMISSION_GROUPS.filter((group) => group.tab === tab).map((group) => (
+          {PERMISSION_GROUPS.map((group) => (
             <PermissionGroupBlock
               key={group.title}
               group={group}
               selectedIds={form.permissionIds}
               togglePermission={togglePermission}
-              toggleMany={toggleMany}
+              togglePermissionGroup={togglePermissionGroup}
+              grantablePermissionIds={grantablePermissionIds}
             />
           ))}
         </div>
@@ -951,42 +1245,96 @@ function PermissionGroupBlock({
   group,
   selectedIds,
   togglePermission,
-  toggleMany,
+  togglePermissionGroup,
+  grantablePermissionIds,
 }: {
   group: { title: string; tab: PermissionTab; items: PermissionField[] };
   selectedIds: string[];
-  togglePermission: (id: string, checked: boolean) => void;
-  toggleMany: (
-    field: "permissionIds" | "departmentIds" | "connectionIds",
-    ids: string[],
+  togglePermission: (
+    group: (typeof PERMISSION_GROUPS)[number],
+    id: string,
     checked: boolean,
   ) => void;
+  togglePermissionGroup: (group: (typeof PERMISSION_GROUPS)[number], checked: boolean) => void;
+  grantablePermissionIds: string[];
 }) {
   const ids = group.items.map((permission) => permission.id);
-  const allSelected = ids.length > 0 && ids.every((id) => selectedIds.includes(id));
+  const grantableIds = ids.filter((id) => grantablePermissionIds.includes(id));
+  const allSelected =
+    grantableIds.length > 0 && grantableIds.every((id) => selectedIds.includes(id));
+  const parentId = ids[0];
+  const parentSelected = !!parentId && selectedIds.includes(parentId);
+  const canToggleAll =
+    grantableIds.length > 0 &&
+    !!parentId &&
+    (grantablePermissionIds.includes(parentId) || parentSelected);
 
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+    <div className="overflow-hidden rounded-xl border border-border bg-surface-1">
+      <div className="flex items-center justify-between gap-3 bg-primary/[0.06] px-4 py-2.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-foreground">
           {group.title}
         </p>
-        <CheckField
+        <PermissionSwitch
           label="Todos"
+          compact
           checked={allSelected}
-          onChange={(checked) => toggleMany("permissionIds", ids, checked)}
+          disabled={!canToggleAll}
+          onChange={(checked) => togglePermissionGroup(group, checked)}
         />
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-        {group.items.map((permission) => (
-          <CheckField
-            key={permission.id}
-            label={permission.label}
-            checked={selectedIds.includes(permission.id)}
-            onChange={(checked) => togglePermission(permission.id, checked)}
-          />
-        ))}
+      <div className="grid sm:grid-cols-2">
+        {group.items.map((permission, index) => {
+          const isChild = index > 0;
+          return (
+            <div
+              key={permission.id}
+              className="border-t border-border sm:[&:nth-child(odd)]:border-r"
+            >
+              <PermissionSwitch
+                label={permission.label}
+                description={permission.description}
+                checked={selectedIds.includes(permission.id)}
+                disabled={
+                  !grantablePermissionIds.includes(permission.id) || (isChild && !parentSelected)
+                }
+                onChange={(checked) => togglePermission(group, permission.id, checked)}
+              />
+            </div>
+          );
+        })}
       </div>
+    </div>
+  );
+}
+
+function PermissionSwitch({
+  label,
+  description,
+  checked,
+  disabled = false,
+  compact = false,
+  onChange,
+}: {
+  label: string;
+  description?: string;
+  checked: boolean;
+  disabled?: boolean;
+  compact?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between gap-4",
+        compact ? "min-h-0 p-0" : "min-h-14 px-4 py-2.5",
+      )}
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+      </div>
+      <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} aria-label={label} />
     </div>
   );
 }

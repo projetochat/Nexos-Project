@@ -20,6 +20,32 @@ const current = {
 };
 
 describe("MessagingOutboundService", () => {
+  it("rejects voice uploads when the current profile cannot send audio", async () => {
+    const prisma = prismaMock();
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    const mediaStorage = { storeUpload: vi.fn() };
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      mediaStorage as never,
+    );
+
+    await expect(
+      service.sendMedia(
+        "conversation-a",
+        {
+          headers: {
+            "content-type": "audio/webm",
+            "x-media-type": "audio",
+          },
+        } as never,
+        current as never,
+      ),
+    ).rejects.toThrow("Sem permissão para enviar mensagens de áudio.");
+    expect(mediaStorage.storeUpload).not.toHaveBeenCalled();
+  });
+
   it("does not send if pause commits between the fresh snapshot and the admission lock", async () => {
     const prisma = prismaMock();
     prisma.message.findFirst.mockResolvedValueOnce(message()).mockResolvedValueOnce(null);

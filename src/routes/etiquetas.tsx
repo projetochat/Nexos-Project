@@ -11,6 +11,7 @@ import { num } from "@/lib/format";
 import { crmApi, type ApiTag } from "@/lib/trixus-api";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/etiquetas")({ component: Page });
 
@@ -29,6 +30,9 @@ function Page() {
   const qc = useQueryClient();
   const perms = useChatPerms();
   const canManageCatalog = perms.pode_editar_etiquetas;
+  const canDeleteCatalog = useSession((state) =>
+    state.user?.permissions?.includes("chat.tags.delete"),
+  );
   const nova = useDisclosure();
   const [editing, setEditing] = React.useState<ApiTag | null>(null);
   const [duplicating, setDuplicating] = React.useState<ApiTag | null>(null);
@@ -86,36 +90,42 @@ function Page() {
                   {etiqueta.nome}
                 </p>
               </div>
-              {canManageCatalog && (
+              {(canManageCatalog || canDeleteCatalog) && (
                 <div className="flex shrink-0 items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    title="Duplicar"
-                    aria-label={`Duplicar ${etiqueta.nome}`}
-                    onClick={() => setDuplicating(etiqueta)}
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    title="Editar"
-                    aria-label={`Editar ${etiqueta.nome}`}
-                    onClick={() => setEditing(etiqueta)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="trash-action"
-                    title="Excluir"
-                    aria-label={`Excluir ${etiqueta.nome}`}
-                    onClick={() => setDeleting(etiqueta)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  {canManageCatalog && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Duplicar"
+                      aria-label={`Duplicar ${etiqueta.nome}`}
+                      onClick={() => setDuplicating(etiqueta)}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  {canManageCatalog && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Editar"
+                      aria-label={`Editar ${etiqueta.nome}`}
+                      onClick={() => setEditing(etiqueta)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  {canDeleteCatalog && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="trash-action"
+                      title="Excluir"
+                      aria-label={`Excluir ${etiqueta.nome}`}
+                      onClick={() => setDeleting(etiqueta)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
               )}
             </Card>

@@ -9,6 +9,7 @@ vi.mock("@tanstack/react-router", () => ({
 import { AtendenteForm, ReactivateAttendantModal } from "./atendentes";
 const initial = {
   id: "blocked",
+  userId: "blocked-user",
   nome: "Pessoa teste",
   email: "pessoa@example.test",
   cargo: "Atendente",

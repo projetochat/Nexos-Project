@@ -1,8 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AppShell, PageContainer } from "@/components/app-shell";
-import { Card, SectionHeader, Badge, Button } from "@/components/ui-kit";
-import { Bot, Plus, Sparkles, MessageSquareText } from "lucide-react";
-import { toast } from "sonner";
+import { Sparkles } from "lucide-react";
+import { ComingSoonPage } from "@/components/coming-soon-page";
 
 export const Route = createFileRoute("/agente-ia")({
   head: () => ({
@@ -17,39 +15,10 @@ export const Route = createFileRoute("/agente-ia")({
     ],
   }),
   component: () => (
-    <AppShell>
-      <PageContainer>
-        <SectionHeader
-          title="Agente de IA"
-          subtitle="Assistentes inteligentes que respondem, qualificam leads e apoiam sua equipe."
-          subtitleClassName="hidden sm:block"
-          actions={
-            <Button variant="primary" onClick={() => toast.info("Criação de agente em breve")}>
-              <Plus className="h-3.5 w-3.5" /> Novo Agente
-            </Button>
-          }
-        />
-        <Card>
-          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 text-primary">
-              <Bot className="h-7 w-7" />
-            </div>
-            <h3 className="text-lg font-semibold">Configure seu primeiro Agente de IA</h3>
-            <p className="max-w-md text-sm text-muted-foreground">
-              Treine com sua base de conhecimento, defina tom de voz, gatilhos de transferência e
-              deixe a IA cuidar de dúvidas frequentes 24/7.
-            </p>
-            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-              <Badge tone="info">
-                <Sparkles className="mr-1 h-3 w-3" /> Multi-canal
-              </Badge>
-              <Badge tone="default">
-                <MessageSquareText className="mr-1 h-3 w-3" /> Handoff humano
-              </Badge>
-            </div>
-          </div>
-        </Card>
-      </PageContainer>
-    </AppShell>
+    <ComingSoonPage
+      title="Agente de IA"
+      description="O módulo de Agente de IA está sendo preparado e estará disponível em breve."
+      icon={<Sparkles className="h-6 w-6" />}
+    />
   ),
 });

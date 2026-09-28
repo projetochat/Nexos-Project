@@ -14,10 +14,10 @@ O workflow `build-production.yml` oferece tres modos manuais na main:
 | `plan`           | Transfere e valida pacote, recursos e GLPI. Remove temporarios; nao importa imagens, para servicos ou altera banco. |
 | `deploy`         | Publica somente se o administrador tambem habilitou o executor na VPS.                                              |
 
-Push na main executa testes e build. Apenas a **repository variable**
-`TRIXUS_AUTO_DEPLOY=true` habilita publicacao automatica depois do build.
-Deixar ausente ate a primeira publicacao aprovada. Nao cadastrar essa chave
-como environment variable: o `if` do job precisa dela antes do runner.
+Push na main executa testes e build, sem acessar a VPS. A publicacao e sempre
+manual: exige executar o workflow na main com `release_mode=plan` ou
+`release_mode=deploy`. O workflow atual nao possui deploy automatico por
+variavel de repositorio.
 
 ## Configuracao existente
 
@@ -31,7 +31,8 @@ como environment variable: o `if` do job precisa dela antes do runner.
 
 ## Instalar e simular sem deploy
 
-1. Revisar e integrar esta branch. Manter `TRIXUS_AUTO_DEPLOY` ausente.
+1. Revisar e integrar esta branch. O push/merge na main executara apenas testes
+   e build.
 2. Baixar de commit fixo os arquivos de `scripts/production/`: `preflight.py`,
    `release.py`, `gateway.py`, `entrypoint.py`, `install.sh`. Conferir os SHA256
    fornecidos para esse commit antes de executar.
@@ -62,12 +63,9 @@ chmod 600 /var/lib/trixus-production/enabled
 
 Executar workflow na main com `release_mode=deploy`. Ele constroi novamente
 o commit escolhido e baixa apenas o artifact da propria execucao. Confirmar
-`DEPLOY_OK`, acesso/login no Trixus e GLPI. Depois cadastrar
-`TRIXUS_AUTO_DEPLOY=true` em Settings > Secrets and variables > Actions > Variables
-(nivel repositorio). Proximos pushes/merges na main publicam automaticamente.
-
-Para impedir novas publicacoes, remover a variavel e renomear `enabled` na VPS.
-Isso nao interrompe uma publicacao ja em andamento.
+`DEPLOY_OK`, acesso/login no Trixus e GLPI. Proximas publicacoes continuam
+exigindo novo disparo manual na main. Para impedir novas publicacoes, renomear
+`enabled` na VPS; isso nao interrompe uma publicacao ja em andamento.
 
 ## O que acontece no deploy
 

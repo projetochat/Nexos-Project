@@ -22,6 +22,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { crmApi, type ApiContactCustomField } from "@/lib/trixus-api";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
+import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/configuracoes/campos-contato")({
   component: ContactFieldsSettings,
@@ -70,6 +71,9 @@ const RESERVED_CONTACT_GROUP = "Dados do contato";
 const DEFAULT_CONTACT_CUSTOM_TAB = "Dados Adicionais";
 
 function ContactFieldsSettings() {
+  const permissions = useSession((state) => state.user?.permissions ?? []);
+  const canRead = permissions.includes("crm.read");
+  const canManage = permissions.includes("crm.manage");
   const [fields, setFields] = React.useState<ApiContactCustomField[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [editing, setEditing] = React.useState<ApiContactCustomField | null>(null);
@@ -85,6 +89,10 @@ function ContactFieldsSettings() {
   const create = useDisclosure();
 
   const load = React.useCallback(async () => {
+    if (!canRead) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       setFields(await crmApi.listContactCustomFields());
@@ -93,13 +101,14 @@ function ContactFieldsSettings() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canRead]);
 
   React.useEffect(() => {
     void load();
   }, [load]);
 
   const save = async (data: FieldForm) => {
+    if (!canManage) return;
     const payload = {
       label: data.label.trim(),
       type: data.type === "custom" ? ("text" as const) : data.type,
@@ -184,6 +193,7 @@ function ContactFieldsSettings() {
   }, [fields]);
 
   const reorderField = async (draggedId: string, targetId: string) => {
+    if (!canManage) return;
     if (draggedId === targetId) return;
     const sourceIndex = orderedFields.findIndex((field) => field.id === draggedId);
     if (sourceIndex < 0 || !orderedFields.some((field) => field.id === targetId)) return;
@@ -203,6 +213,10 @@ function ContactFieldsSettings() {
     }
   };
 
+  if (!canRead) {
+    return <Card className="p-5 text-sm text-muted-foreground">Permissão insuficiente.</Card>;
+  }
+
   return (
     <Card className="p-4 sm:p-5">
       <SectionHeader
@@ -210,9 +224,11 @@ function ContactFieldsSettings() {
         subtitle="Defina campos que aparecem no cadastro e edição de contatos."
         subtitleClassName="hidden md:block"
         actions={
-          <Button variant="primary" size="sm" onClick={create.show}>
-            <Plus className="h-3.5 w-3.5" /> Novo Campo
-          </Button>
+          canManage ? (
+            <Button variant="primary" size="sm" onClick={create.show}>
+              <Plus className="h-3.5 w-3.5" /> Novo Campo
+            </Button>
+          ) : null
         }
       />
       <div className="mb-4 rounded-lg border border-border bg-card p-4">
@@ -279,7 +295,7 @@ function ContactFieldsSettings() {
           filteredFields.map((field) => (
             <div
               key={field.id}
-              draggable
+              draggable={canManage}
               onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = "move";
                 event.dataTransfer.setData("text/plain", field.id);
@@ -319,34 +335,36 @@ function ContactFieldsSettings() {
                     {fieldTypeLabel(field)}
                   </p>
                 </div>
-                <div className="flex shrink-0 justify-end gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="duplicate-action-button h-8 w-8 p-0"
-                    title="Duplicar"
-                    onClick={() => setDuplicating(field)}
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    title="Editar"
-                    onClick={() => setEditing(field)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="trash-action"
-                    title="Excluir"
-                    onClick={() => setDeleting(field)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                {canManage && (
+                  <div className="flex shrink-0 justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="duplicate-action-button h-8 w-8 p-0"
+                      title="Duplicar"
+                      onClick={() => setDuplicating(field)}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Editar"
+                      onClick={() => setEditing(field)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="trash-action"
+                      title="Excluir"
+                      onClick={() => setDeleting(field)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -381,7 +399,7 @@ function ContactFieldsSettings() {
               filteredFields.map((field) => (
                 <tr
                   key={field.id}
-                  draggable
+                  draggable={canManage}
                   onDragStart={(event) => {
                     event.dataTransfer.effectAllowed = "move";
                     event.dataTransfer.setData("text/plain", field.id);
@@ -424,34 +442,36 @@ function ContactFieldsSettings() {
                   <td className="px-4 py-3 text-muted-foreground">{displayFieldTab(field)}</td>
                   <td className="px-4 py-3 text-muted-foreground">{displayFieldGroup(field)}</td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="duplicate-action-button"
-                        title="Duplicar"
-                        onClick={() => setDuplicating(field)}
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Editar"
-                        onClick={() => setEditing(field)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Excluir"
-                        className="trash-action"
-                        onClick={() => setDeleting(field)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                    {canManage && (
+                      <div className="flex justify-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="duplicate-action-button"
+                          title="Duplicar"
+                          onClick={() => setDuplicating(field)}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Editar"
+                          onClick={() => setEditing(field)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Excluir"
+                          className="trash-action"
+                          onClick={() => setDeleting(field)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -465,38 +485,43 @@ function ContactFieldsSettings() {
           </tbody>
         </table>
       </div>
-      <ContactFieldFormModal
-        open={create.open || !!editing || !!duplicating}
-        fields={fields}
-        initial={editing ?? duplicating ?? undefined}
-        clone={!!duplicating}
-        onClose={() => {
-          create.hide();
-          setEditing(null);
-          setDuplicating(null);
-        }}
-        onSubmit={save}
-      />
-      <ConfirmDialog
-        open={!!deleting}
-        title="Excluir Campo?"
-        description={
-          <p>
-            Deseja realmente excluir o campo adicional "
-            <strong className="font-semibold text-foreground">{deleting?.label ?? ""}</strong>"?
-          </p>
-        }
-        destructive
-        confirmLabel="Excluir"
-        onClose={() => setDeleting(null)}
-        onConfirm={async () => {
-          if (!deleting) return;
-          await crmApi.deleteContactCustomField(deleting.id);
-          toast.success("Campo excluído");
-          setDeleting(null);
-          await load();
-        }}
-      />
+      {canManage && (
+        <>
+          <ContactFieldFormModal
+            open={create.open || !!editing || !!duplicating}
+            fields={fields}
+            initial={editing ?? duplicating ?? undefined}
+            clone={!!duplicating}
+            onClose={() => {
+              create.hide();
+              setEditing(null);
+              setDuplicating(null);
+            }}
+            onSubmit={save}
+          />
+          <ConfirmDialog
+            open={!!deleting}
+            title="Excluir Campo?"
+            description={
+              <p>
+                Deseja realmente excluir o campo adicional "
+                <strong className="font-semibold text-foreground">{deleting?.label ?? ""}</strong>
+                "?
+              </p>
+            }
+            destructive
+            confirmLabel="Excluir"
+            onClose={() => setDeleting(null)}
+            onConfirm={async () => {
+              if (!deleting) return;
+              await crmApi.deleteContactCustomField(deleting.id);
+              toast.success("Campo excluído");
+              setDeleting(null);
+              await load();
+            }}
+          />
+        </>
+      )}
     </Card>
   );
 }

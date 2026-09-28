@@ -29,6 +29,7 @@ import {
 import { assertQuickReplySaved, quickReplyMessages } from "@/lib/quick-reply-sequence";
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import { useSession } from "@/lib/session";
 
 export const Route = createFileRoute("/mensagens-rapidas")({
   component: QuickRepliesPage,
@@ -59,6 +60,9 @@ function QuickRepliesPage() {
   const qc = useQueryClient();
   const perms = useChatPerms();
   const canManageCatalog = perms.pode_gerenciar_respostas_rapidas;
+  const canDeleteCatalog = useSession((state) =>
+    state.user?.permissions?.includes("chat.quick_replies.delete"),
+  );
   const editor = useDisclosure();
   const [editing, setEditing] = React.useState<ApiQuickReply | null>(null);
   const [duplicating, setDuplicating] = React.useState<ApiQuickReply | null>(null);
@@ -157,7 +161,7 @@ function QuickRepliesPage() {
                   className="relative h-full overflow-hidden transition hover:border-primary/35 hover:bg-surface-1"
                 >
                   <div
-                    className={`flex h-full min-h-0 min-w-0 flex-col overflow-hidden ${canManageCatalog ? "pr-32" : ""}`}
+                    className={`flex h-full min-h-0 min-w-0 flex-col overflow-hidden ${canManageCatalog || canDeleteCatalog ? "pr-32" : ""}`}
                   >
                     <p className="font-mono text-sm text-primary">
                       /{reply.atalho.replace(/^\//, "")}
@@ -176,36 +180,42 @@ function QuickRepliesPage() {
                       </p>
                     )}
                   </div>
-                  {canManageCatalog && (
+                  {(canManageCatalog || canDeleteCatalog) && (
                     <div className="absolute right-4 top-4 flex gap-1 sm:right-6 sm:top-6">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Duplicar"
-                        aria-label="Duplicar"
-                        onClick={() => openDuplicate(reply)}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Editar"
-                        aria-label="Editar"
-                        onClick={() => openEdit(reply)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Remover"
-                        aria-label="Remover"
-                        className="trash-action"
-                        onClick={() => setConfirming(reply)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {canManageCatalog && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Duplicar"
+                          aria-label="Duplicar"
+                          onClick={() => openDuplicate(reply)}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canManageCatalog && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Editar"
+                          aria-label="Editar"
+                          onClick={() => openEdit(reply)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canDeleteCatalog && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Remover"
+                          aria-label="Remover"
+                          className="trash-action"
+                          onClick={() => setConfirming(reply)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   )}
                 </Card>

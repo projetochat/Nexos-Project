@@ -4,6 +4,7 @@ import {
   Controller,
   ConflictException,
   Delete,
+  ForbiddenException,
   Get,
   Inject,
   Module,
@@ -22,7 +23,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PrismaService } from "../prisma/prisma.service";
-import { Prisma } from "../generated/prisma";
+import { MessageType, Prisma } from "../generated/prisma";
 import {
   resolveMessageType,
   validatePolicy,
@@ -51,7 +52,7 @@ export class SchedulesController {
     };
   }
   @Get()
-  @RequirePermissions("automations.read")
+  @RequirePermissions("schedules.read")
   async list(
     @CurrentUser() current: AuthenticatedUser,
     @Query() query: ListSchedulesQueryDto = {},
@@ -79,15 +80,17 @@ export class SchedulesController {
     return rows.sort(compareScheduleOrder).map(serializeSchedule);
   }
   @Post()
-  @RequirePermissions("automations.manage")
+  @RequirePermissions("schedules.manage")
   async save(@Body() dto: SaveScheduleDto, @CurrentUser() current: AuthenticatedUser) {
     if (
       !dto.title.trim() ||
       !dto.identifier.trim() ||
-      !dto.content.trim() ||
+      (!dto.content.trim() && !dto.attachment) ||
       !Number.isFinite(Date.parse(dto.scheduledAt))
     )
-      throw new BadRequestException("Informe título, identificador, conteúdo e data válidos.");
+      throw new BadRequestException(
+        "Informe título, identificador, conteúdo ou anexo e data válidos.",
+      );
     const existing = await this.prisma.schedule.findUnique({
       where: { tenantId_id: { tenantId: current.tenantId, id: dto.id } },
     });
@@ -159,6 +162,15 @@ export class SchedulesController {
       throw new BadRequestException("A mensagem agendada deve ter no máximo 4000 caracteres.");
     }
     const attachment = normalizeScheduleAttachment(dto.attachment);
+    const attachmentType = attachment
+      ? resolveMessageType(attachment.mimeType, "")
+      : MessageType.TEXT;
+    if (
+      (attachmentType === MessageType.AUDIO || attachmentType === MessageType.VOICE) &&
+      !current.permissions?.includes("chat.audio.send")
+    ) {
+      throw new ForbiddenException("Sem permissão para agendar mensagens de áudio.");
+    }
     const payload = {
       ...dto,
       scheduledAt: executable ? dueAt.toISOString() : dto.scheduledAt,
@@ -239,7 +251,7 @@ export class SchedulesController {
     return serializeSchedule(saved);
   }
   @Delete(":id")
-  @RequirePermissions("automations.manage")
+  @RequirePermissions("schedules.delete")
   async remove(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const existing = await this.prisma.schedule.findUnique({
       where: { tenantId_id: { tenantId: current.tenantId, id } },

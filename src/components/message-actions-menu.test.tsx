@@ -101,6 +101,7 @@ it("uses the approved destructive copy for deleting an outgoing message", async 
       ),
     );
     await React.act(() => host.querySelector("button")!.click());
+    expect(document.body.textContent).not.toContain("Agendar mensagem");
     const deleteAction = [...document.querySelectorAll("button")].find(
       (button) => button.textContent?.trim() === "Apagar",
     );
