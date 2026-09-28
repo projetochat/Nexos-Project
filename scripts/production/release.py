@@ -158,6 +158,18 @@ def harden_release_service(service, name):
     service['cap_drop'] = ['ALL']
     service['security_opt'] = ['no-new-privileges:true']
     service['logging'] = {'driver': 'json-file', 'options': {'max-size': '10m', 'max-file': '3'}}
+    if name == 'frontend':
+        # The base Compose historically had no frontend healthcheck. Define one
+        # in every generated release so stabilization can distinguish a running
+        # process from a frontend that is actually serving the Trixus page.
+        service['healthcheck'] = {
+            'test': ['CMD', 'bun', '-e',
+                     "fetch('http://127.0.0.1:4173/').then(r => { if (!r.ok) process.exit(1) })"],
+            'interval': '15s',
+            'timeout': '5s',
+            'retries': 10,
+            'start_period': '20s',
+        }
 
 
 def compose_file(config, images, path):
