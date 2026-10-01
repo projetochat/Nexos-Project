@@ -60,23 +60,31 @@ export class DepartmentsController {
   }
 
   @Post()
-  @RequirePermissions("departments.manage")
+  @RequirePermissions("departments.create")
   async create(@Body() dto: CreateDepartmentDto, @CurrentUser() current: AuthenticatedUser) {
     const name = dto.name.trim();
+    await this.entitlements.assertTenantOperational(current.tenantId);
     const department = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
       );
-      await this.entitlements.assertTenantOperational(current.tenantId);
-      await this.ensureNameAvailable(tx, current.tenantId, name);
-      const activeDepartments = await tx.department.count({
-        where: { tenantId: current.tenantId, active: true },
-      });
-      await this.entitlements.assertWithinLimit(
-        current.tenantId,
-        "maxDepartments",
-        activeDepartments,
-      );
+      const nameMatches = await this.findDepartmentsByNormalizedName(tx, current.tenantId, name);
+      const activeMatch = nameMatches.find((department) => department.active);
+      if (activeMatch) {
+        throw new BadRequestException("Já existe um departamento com este nome.");
+      }
+      const inactiveMatch = nameMatches[0];
+      if (inactiveMatch) {
+        return tx.department.update({
+          where: { id: inactiveMatch.id },
+          data: {
+            name: nameMatches.length === 1 ? name : inactiveMatch.name,
+            description: dto.description?.trim() || null,
+            color: dto.color ?? "#3B82F6",
+            active: dto.active ?? true,
+          },
+        });
+      }
       return tx.department.create({
         data: {
           tenantId: current.tenantId,
@@ -91,7 +99,7 @@ export class DepartmentsController {
   }
 
   @Patch(":id")
-  @RequirePermissions("departments.manage")
+  @RequirePermissions("departments.update")
   async update(
     @Param("id") id: string,
     @Body() dto: UpdateDepartmentDto,
@@ -127,7 +135,7 @@ export class DepartmentsController {
   }
 
   @Post(":id/members")
-  @RequirePermissions("departments.manage")
+  @RequirePermissions("departments.update")
   async assignMember(
     @Param("id") id: string,
     @Body() dto: AssignDepartmentMemberDto,
@@ -147,7 +155,7 @@ export class DepartmentsController {
   }
 
   @Delete(":id/members/:membershipId")
-  @RequirePermissions("departments.manage")
+  @RequirePermissions("departments.update")
   async removeMember(
     @Param("id") id: string,
     @Param("membershipId") membershipId: string,
@@ -172,19 +180,26 @@ export class DepartmentsController {
     name: string,
     excludeDepartmentId?: string,
   ) {
-    const normalizedName = normalizeDepartmentName(name);
-    const departments = await tx.department.findMany({
-      where: { tenantId },
-      select: { id: true, name: true },
-    });
-    const duplicate = departments.find(
-      (department) =>
-        department.id !== excludeDepartmentId &&
-        normalizeDepartmentName(department.name) === normalizedName,
-    );
+    const departments = await this.findDepartmentsByNormalizedName(tx, tenantId, name);
+    const duplicate = departments.find((department) => department.id !== excludeDepartmentId);
     if (duplicate) {
       throw new BadRequestException("Já existe um departamento com este nome.");
     }
+  }
+
+  private async findDepartmentsByNormalizedName(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    name: string,
+  ) {
+    const normalizedName = normalizeDepartmentName(name);
+    const departments = await tx.department.findMany({
+      where: { tenantId },
+      select: { id: true, name: true, active: true },
+    });
+    return departments.filter(
+      (department) => normalizeDepartmentName(department.name) === normalizedName,
+    );
   }
 
   private serialize(department: {

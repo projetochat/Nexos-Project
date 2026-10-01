@@ -57,7 +57,7 @@ export class RolesController {
   }
 
   @Post("roles")
-  @RequirePermissions("roles.manage")
+  @RequirePermissions("roles.create")
   async create(@Body() dto: CreateRoleDto, @CurrentUser() current: AuthenticatedUser) {
     this.assertPermissions(dto.permissionIds);
     this.assertPermissionDependencies(dto.permissionIds);
@@ -99,7 +99,7 @@ export class RolesController {
   }
 
   @Patch("roles/:id")
-  @RequirePermissions("roles.manage")
+  @RequirePermissions("roles.update")
   async update(
     @Param("id") id: string,
     @Body() dto: UpdateRoleDto,
@@ -190,8 +190,6 @@ export class RolesController {
     existingPermissionIds: string[] = [],
   ) {
     if (current.roleKey === "tenant_admin") return;
-    // D-001 mantém as permissões efetivas liberadas em runtime, mas a delegação
-    // de um perfil continua limitada às permissões realmente atribuídas ao autor.
     const granted = new Set<string>(current.assignedPermissionIds ?? current.permissions ?? []);
     const requested = new Set(permissionIds);
     const existing = new Set(existingPermissionIds);
@@ -331,12 +329,16 @@ export class RolesController {
 }
 
 const PERMISSION_DEPENDENCIES: Record<string, readonly string[]> = {
-  "dashboard.read": ["dashboard.manage", "dashboard.delete"],
-  "users.read": ["users.manage", "users.delete"],
-  "departments.read": ["departments.manage", "departments.delete"],
-  "roles.read": ["roles.manage", "roles.delete"],
-  "crm.read": ["crm.manage"],
-  "contacts.read": ["contacts.manage", "contacts.delete"],
+  "dashboard.read": ["dashboard.create", "dashboard.update", "dashboard.delete"],
+  "users.read": ["users.create", "users.update", "users.delete"],
+  "departments.read": ["departments.create", "departments.update", "departments.delete"],
+  "roles.read": ["roles.create", "roles.update", "roles.delete"],
+  "contacts.read": [
+    "contacts.create",
+    "contacts.update",
+    "contacts.delete",
+    "contacts.additional_fields.read",
+  ],
   "conversations.read": [
     "conversations.assign",
     "conversations.manage",
@@ -353,41 +355,22 @@ const PERMISSION_DEPENDENCIES: Record<string, readonly string[]> = {
     "chat.audio.send",
     "chat.agent_name.show",
     "chat.conversations.view_all_active",
-    "tickets.create",
+    "chat.tickets.create",
   ],
-  "connections.read": ["connections.manage", "connections.delete"],
-  "groups.read": ["groups.manage"],
-  "chat.tags.read": ["chat.tags.manage", "chat.tags.delete"],
-  "chat.quick_replies.read": ["chat.quick_replies.manage", "chat.quick_replies.delete"],
-  "chat.leads.read": ["leads.manage"],
-  "notifications.read": ["notifications.manage"],
-  "automations.read": ["automations.manage", "automations.delete"],
-  "tickets.read": [
-    "tickets.update",
-    "tickets.assign",
-    "tickets.status.update",
-    "tickets.comment",
-    "tickets.attachments.upload",
-    "tickets.attachments.delete",
-    "tickets.manage",
-    "tickets.delete",
+  "connections.read": ["connections.create", "connections.update", "connections.delete"],
+  "groups.read": ["groups.create", "groups.update"],
+  "chat.tags.read": ["chat.tags.create", "chat.tags.update", "chat.tags.delete"],
+  "chat.quick_replies.read": [
+    "chat.quick_replies.create",
+    "chat.quick_replies.update",
+    "chat.quick_replies.delete",
   ],
-  "campaigns.read": [
-    "campaigns.create",
-    "campaigns.update",
-    "campaigns.schedule",
-    "campaigns.start",
-    "campaigns.pause",
-    "campaigns.cancel",
-    "campaigns.duplicate",
-    "campaigns.recipients.read",
-    "campaigns.manage",
-    "campaigns.delete",
-  ],
-  "schedules.read": ["schedules.manage", "schedules.delete"],
-  "bot_flows.read": ["bot_flows.manage", "bot_flows.delete"],
-  "ai_agents.read": ["ai_agents.manage", "ai_agents.delete"],
-  "settings.read": ["settings.manage", "settings.delete"],
+  "automations.read": ["automations.create", "automations.update", "automations.delete"],
+  "tickets.read": ["tickets.create", "tickets.update", "tickets.delete"],
+  "campaigns.read": ["campaigns.create", "campaigns.update", "campaigns.delete"],
+  "schedules.read": ["schedules.create", "schedules.update", "schedules.delete"],
+  "bot_flows.read": ["bot_flows.create", "bot_flows.update", "bot_flows.delete"],
+  "ai_agents.read": ["ai_agents.create", "ai_agents.update", "ai_agents.delete"],
 };
 
 function normalizeRoleName(value: string) {

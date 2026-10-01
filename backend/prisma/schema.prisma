@@ -350,6 +350,8 @@ model Tenant {
   notes                       String?
   maxUsers                    Int?
   maxConnections              Int?
+  featureOverrides            Json?
+  limitOverrides              Json?
   authRevokedAt               DateTime?
   activatedAt                 DateTime?
   suspendedAt                 DateTime?

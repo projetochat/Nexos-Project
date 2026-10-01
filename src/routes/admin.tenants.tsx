@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Eye, EyeOff, KeyRound, Lock, LockOpen, MoreVertical } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Lock, LockOpen, MoreVertical, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminContainer } from "@/components/admin-shell";
 import { DashboardDateInput } from "@/components/dashboard-filters";
@@ -22,12 +22,14 @@ import {
   Select,
 } from "@/components/ui-kit";
 import { fmtDate } from "@/lib/format";
+import { Switch } from "@/components/ui/switch";
 import { DASHBOARD_PERIOD_OPTIONS, datesForOperationalPeriod } from "@/lib/operational-filters";
 import {
   platformApi,
   type OperationalPeriod,
   type PlatformPlan,
   type PlatformTenant,
+  type PlatformTenantConfiguration,
 } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/tenants")({
@@ -72,6 +74,7 @@ function TenantsAdmin() {
   const [error, setError] = React.useState<string | null>(null);
   const [selectedTenant, setSelectedTenant] = React.useState<TenantListRow | null>(null);
   const [credentialTenant, setCredentialTenant] = React.useState<TenantListRow | null>(null);
+  const [configurationTenant, setConfigurationTenant] = React.useState<TenantListRow | null>(null);
 
   const load = React.useCallback(
     () =>
@@ -237,6 +240,12 @@ function TenantsAdmin() {
                               <KeyRound /> Gerenciar credenciais
                             </DropdownMenuItem>
                           )}
+                          <DropdownMenuItem
+                            onSelect={() => setConfigurationTenant(tenant)}
+                            className="cursor-pointer focus:bg-blue-50 focus:text-blue-700 dark:focus:bg-blue-950/40 dark:focus:text-blue-300"
+                          >
+                            <Settings2 /> Configuração da Tenant
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </td>
@@ -298,6 +307,14 @@ function TenantsAdmin() {
           setCredentialTenant(null);
         }}
       />
+      <TenantConfigurationModal
+        tenant={configurationTenant}
+        onClose={() => setConfigurationTenant(null)}
+        onSaved={async () => {
+          await load();
+          setConfigurationTenant(null);
+        }}
+      />
     </AdminContainer>
   );
 }
@@ -318,6 +335,219 @@ function formatTenantTableDate(value: string) {
     timeZone: "America/Sao_Paulo",
   }).format(date);
   return `${formattedDate} ${formattedTime}`;
+}
+
+const TENANT_LIMIT_FIELDS = [
+  ["maxUsers", "Usuários"],
+  ["maxDepartments", "Departamentos"],
+  ["maxConnections", "Instâncias"],
+  ["maxCampaigns", "Campanhas por período"],
+  ["maxContacts", "Contatos"],
+  ["maxCampaignRecipients", "Destinatários por campanha"],
+  ["maxStorageBytes", "Armazenamento (bytes)"],
+] as const;
+
+function TenantConfigurationModal({
+  tenant,
+  onClose,
+  onSaved,
+}: {
+  tenant: TenantListRow | null;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [configuration, setConfiguration] = React.useState<PlatformTenantConfiguration | null>(
+    null,
+  );
+  const [modules, setModules] = React.useState({ campaigns: false, tickets: false });
+  const [limits, setLimits] = React.useState<Record<string, string>>({});
+  const [loading, setLoading] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState("");
+
+  React.useEffect(() => {
+    if (!tenant) {
+      setConfiguration(null);
+      setError("");
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    void platformApi
+      .tenantConfiguration(tenant.id)
+      .then((result) => {
+        if (cancelled) return;
+        setConfiguration(result);
+        setModules({ campaigns: result.modules.campaigns, tickets: result.modules.tickets });
+        setLimits(
+          Object.fromEntries(
+            TENANT_LIMIT_FIELDS.map(([key]) => {
+              const override = result.overrides.limits[key];
+              return [key, override == null ? "" : String(override)];
+            }),
+          ),
+        );
+      })
+      .catch((reason) => {
+        if (!cancelled) setError((reason as Error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenant]);
+
+  const save = async () => {
+    if (!tenant || !configuration) return;
+    const normalizedLimits: Record<string, number | null> = {};
+    for (const [key, label] of TENANT_LIMIT_FIELDS) {
+      const raw = limits[key]?.trim() ?? "";
+      if (!raw) {
+        normalizedLimits[key] = null;
+        continue;
+      }
+      const value = Number(raw);
+      if (!Number.isInteger(value) || value < 0) {
+        toast.error(`Informe um limite válido para ${label}.`);
+        return;
+      }
+      normalizedLimits[key] = value;
+    }
+    setSaving(true);
+    try {
+      await platformApi.updateTenantConfiguration(tenant.id, {
+        modules: { chat: true, campaigns: modules.campaigns, tickets: modules.tickets },
+        limits: normalizedLimits,
+      });
+      toast.success("Configuração da Tenant atualizada.");
+      await onSaved();
+    } catch (reason) {
+      toast.error((reason as Error).message || "Não foi possível atualizar a configuração.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={Boolean(tenant)}
+      onClose={onClose}
+      closeOnBackdrop={!saving}
+      title="Configuração da Tenant"
+      description={tenant ? `Módulos e limites individuais de ${tenant.name}.` : undefined}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button onClick={() => void save()} disabled={loading || saving || !configuration}>
+            {saving ? "Salvando..." : "Salvar"}
+          </Button>
+        </>
+      }
+    >
+      {loading ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">Carregando configuração...</p>
+      ) : error ? (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </p>
+      ) : configuration ? (
+        <div className="space-y-6">
+          <section>
+            <h3 className="font-semibold">Módulos</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              A desativação preserva os dados e remove o acesso ao módulo na Tenant.
+            </p>
+            <div className="mt-3 space-y-2">
+              <ModuleToggle
+                label="Chat"
+                description="Módulo obrigatório e sempre habilitado."
+                checked
+                disabled
+                onCheckedChange={() => undefined}
+              />
+              <ModuleToggle
+                label="Campanhas"
+                description="Controla menu, permissões e operações de campanhas."
+                checked={modules.campaigns}
+                disabled={saving}
+                onCheckedChange={(checked) =>
+                  setModules((current) => ({ ...current, campaigns: checked }))
+                }
+              />
+              <ModuleToggle
+                label="Chamados"
+                description="Controla menu, permissões e geração de chamados pelo Chat."
+                checked={modules.tickets}
+                disabled={saving}
+                onCheckedChange={(checked) =>
+                  setModules((current) => ({ ...current, tickets: checked }))
+                }
+              />
+            </div>
+          </section>
+
+          <section className="border-t border-border pt-5">
+            <h3 className="font-semibold">Limites do plano</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Deixe vazio para herdar o limite atual do plano contratado.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {TENANT_LIMIT_FIELDS.map(([key, label]) => (
+                <Field key={key} label={label}>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={limits[key] ?? ""}
+                    placeholder={`Plano: ${configuration.limits[key] ?? "—"}`}
+                    disabled={saving}
+                    onChange={(event) =>
+                      setLimits((current) => ({ ...current, [key]: event.target.value }))
+                    }
+                  />
+                </Field>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
+function ModuleToggle({
+  label,
+  description,
+  checked,
+  disabled,
+  onCheckedChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-surface-1 p-3">
+      <div>
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </div>
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onCheckedChange}
+        aria-label={`${checked ? "Desabilitar" : "Habilitar"} ${label}`}
+      />
+    </div>
+  );
 }
 
 function TenantCredentialsModal({

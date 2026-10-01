@@ -86,7 +86,8 @@ export function DashboardEditorModal({
   onPreviewConfigChange,
   onChange,
   onClose,
-  canManage = true,
+  canCreate = true,
+  canUpdate = true,
   canDelete = true,
 }: {
   open: boolean;
@@ -97,7 +98,8 @@ export function DashboardEditorModal({
   onPreviewConfigChange?: (config: DashboardComponentConfig | null) => void;
   onChange: (components: DashboardComponentConfig[]) => void;
   onClose: () => void;
-  canManage?: boolean;
+  canCreate?: boolean;
+  canUpdate?: boolean;
   canDelete?: boolean;
 }) {
   const [draft, setDraft] = React.useState(components);
@@ -138,7 +140,7 @@ export function DashboardEditorModal({
   };
 
   const moveComponent = (id: string, direction: -1 | 1) => {
-    if (!canManage) return;
+    if (!canUpdate) return;
     const index = draft.findIndex((item) => item.id === id);
     const target = draft[index + direction];
     if (index < 0 || !target) return;
@@ -151,7 +153,7 @@ export function DashboardEditorModal({
   };
 
   const reorder = (sourceId: string, targetId: string) => {
-    if (!canManage || sourceId === targetId) return;
+    if (!canUpdate || sourceId === targetId) return;
     const next = reorderDashboardComponents(draft, sourceId, targetId);
     if (next !== draft) apply(next);
   };
@@ -166,7 +168,7 @@ export function DashboardEditorModal({
         className="sm:max-w-2xl"
         footer={
           <div className="flex w-full flex-wrap items-center justify-between gap-3">
-            {canManage ? (
+            {canUpdate ? (
               <Button variant="ghost" onClick={restoreDefaults}>
                 <RotateCcw className="h-4 w-4" />
                 Restaurar padrão
@@ -180,7 +182,7 @@ export function DashboardEditorModal({
           </div>
         }
       >
-        {canManage && (
+        {canCreate && (
           <div className="mb-4 flex justify-end">
             <Button onClick={() => openConfiguration(createDashboardComponent(), true)}>
               <Plus className="h-4 w-4" />
@@ -197,10 +199,10 @@ export function DashboardEditorModal({
                 key={component.id}
                 data-dashboard-component-id={component.id}
                 onDragOver={(event) => {
-                  if (canManage) event.preventDefault();
+                  if (canUpdate) event.preventDefault();
                 }}
                 onDrop={(event) => {
-                  if (!canManage) return;
+                  if (!canUpdate) return;
                   event.preventDefault();
                   const sourceId = event.dataTransfer.getData("text/plain");
                   reorder(sourceId, component.id);
@@ -211,7 +213,7 @@ export function DashboardEditorModal({
                   draggingId === component.id ? "opacity-50" : ""
                 }`}
               >
-                {canManage ? (
+                {canUpdate ? (
                   <div
                     role="button"
                     tabIndex={0}
@@ -290,7 +292,7 @@ export function DashboardEditorModal({
                 </label>
 
                 <div className="ml-auto flex shrink-0 gap-1.5">
-                  {canManage && (
+                  {canCreate && (
                     <IconButton
                       label="Duplicar"
                       ariaLabel={`Duplicar ${component.title}`}
@@ -311,7 +313,7 @@ export function DashboardEditorModal({
                       <Trash2 className="h-4 w-4" />
                     </IconButton>
                   )}
-                  {canManage && (
+                  {canUpdate && (
                     <IconButton
                       label="Configurar"
                       ariaLabel={`Configurar ${component.title}`}

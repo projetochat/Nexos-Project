@@ -134,15 +134,11 @@ export class MessagingConnectionsService {
     if (this.entitlements) {
       await this.entitlements.assertTenantOperational(current.tenantId);
       const usage = await this.entitlements.getUsage(current.tenantId);
-      const entitlement = await this.entitlements.getEntitlements(current.tenantId);
       await this.entitlements.assertWithinLimit(
         current.tenantId,
         "maxConnections",
         usage.connections,
       );
-      if (usage.connections >= 1 && !entitlement.features.multipleConnections) {
-        throw new BadRequestException({ code: "PLAN_FEATURE_NOT_AVAILABLE" });
-      }
     }
     const config = evolutionConfigFromEnv();
     if (!assertEvolutionConfigured(config)) {

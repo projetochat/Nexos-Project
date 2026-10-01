@@ -380,8 +380,11 @@ function ContatosPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const user = useSession((state) => state.user);
-  const canManageContacts = user?.permissions?.includes("contacts.manage") ?? false;
+  const canCreateContacts = user?.permissions?.includes("contacts.create") ?? false;
+  const canUpdateContacts = user?.permissions?.includes("contacts.update") ?? false;
   const canDeleteContacts = user?.permissions?.includes("contacts.delete") ?? false;
+  const canReadAdditionalFields =
+    user?.permissions?.includes("contacts.additional_fields.read") ?? false;
   const canStartConversation = user?.permissions?.includes("conversations.assign") ?? false;
   const filtersStorageKey = `trixus.contacts.filters.${user?.id ?? "anonymous"}`;
   const [contacts, setContacts] = React.useState<Contact[]>([]);
@@ -585,7 +588,7 @@ function ContatosPage() {
     void Promise.all([
       crmApi.listCustomers({ pageSize: 100 }),
       crmApi.contactOptions(),
-      crmApi.listContactCustomFields(),
+      canReadAdditionalFields ? crmApi.listContactCustomFields() : Promise.resolve([]),
     ])
       .then(([customerResponse, options, customFields]) => {
         if (!active) return;
@@ -601,7 +604,7 @@ function ContatosPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [canReadAdditionalFields]);
   React.useEffect(() => {
     setPage(1);
     setSelectedIds([]);
@@ -825,7 +828,7 @@ function ContatosPage() {
   };
 
   const openExcelImport = () => {
-    if (!canManageContacts) return;
+    if (!canCreateContacts) return;
     if (reopenImportProgress()) return;
     exportMenu.hide();
     importModal.show();
@@ -1026,7 +1029,7 @@ function ContatosPage() {
   };
 
   const importFromAgenda = async () => {
-    if (!canManageContacts) return;
+    if (!canCreateContacts) return;
     if (reopenImportProgress()) return;
     exportMenu.hide();
     if (!connectedAgendaInstances.length) {
@@ -1211,7 +1214,7 @@ function ContatosPage() {
       toast.error("Você não possui permissão para excluir contatos.");
       return;
     }
-    if (bulkMode !== "delete" && !canManageContacts) {
+    if (bulkMode !== "delete" && !canUpdateContacts) {
       toast.error("Você não possui permissão para alterar contatos.");
       return;
     }
@@ -1273,7 +1276,7 @@ function ContatosPage() {
                 </Button>
                 {exportMenu.open && (
                   <div className="absolute left-0 z-[80] mt-2 w-64 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
-                    {canManageContacts && (
+                    {canCreateContacts && (
                       <>
                         <button
                           type="button"
@@ -1305,7 +1308,7 @@ function ContatosPage() {
                   </div>
                 )}
               </div>
-              {canManageContacts && (
+              {canCreateContacts && (
                 <Button variant="primary" size="sm" onClick={create.show}>
                   <Plus className="h-3.5 w-3.5" /> Novo Contato
                 </Button>
@@ -1410,7 +1413,7 @@ function ContatosPage() {
           </div>
         </Card>
 
-        {selectedBulkCount > 0 && (canManageContacts || canDeleteContacts) && (
+        {selectedBulkCount > 0 && (canUpdateContacts || canDeleteContacts) && (
           <Card className="mb-4 hidden p-3 md:block">
             <div className="flex flex-wrap items-center gap-2">
               <span className="mr-2 text-sm font-medium">
@@ -1443,7 +1446,7 @@ function ContatosPage() {
                 className="w-60"
               >
                 <option value="">Ações</option>
-                {canManageContacts && <option value="update">Atualizar em massa</option>}
+                {canUpdateContacts && <option value="update">Atualizar em massa</option>}
                 {canDeleteContacts && <option value="delete">Excluir em massa</option>}
               </Select>
               {bulkAction === "update" && (
@@ -1567,7 +1570,7 @@ function ContatosPage() {
           </Card>
         )}
 
-        {(canManageContacts || canDeleteContacts) && (
+        {(canUpdateContacts || canDeleteContacts) && (
           <Card className="mb-3 p-4 md:hidden">
             <label className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2">
               <input
@@ -1616,7 +1619,7 @@ function ContatosPage() {
                     className="w-full"
                   >
                     <option value="">Ações</option>
-                    {canManageContacts && <option value="update">Atualizar em massa</option>}
+                    {canUpdateContacts && <option value="update">Atualizar em massa</option>}
                     {canDeleteContacts && <option value="delete">Excluir em massa</option>}
                   </Select>
                   {bulkAction === "update" && (
@@ -1754,7 +1757,7 @@ function ContatosPage() {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex min-w-0 flex-1 items-center gap-3">
-                        {(canManageContacts || canDeleteContacts) && (
+                        {(canUpdateContacts || canDeleteContacts) && (
                           <input
                             type="checkbox"
                             className="h-5 w-5 shrink-0"
@@ -1786,7 +1789,7 @@ function ContatosPage() {
                             <MessageCirclePlus className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {canManageContacts && (
+                        {canUpdateContacts && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1824,7 +1827,7 @@ function ContatosPage() {
                     className="w-10 rounded-tl-lg px-3 py-3 font-medium sm:px-4"
                     style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
                   >
-                    {(canManageContacts || canDeleteContacts) && (
+                    {(canUpdateContacts || canDeleteContacts) && (
                       <input
                         type="checkbox"
                         className="h-4 w-4"
@@ -1866,7 +1869,7 @@ function ContatosPage() {
                         className="relative px-3 py-3 sm:px-4"
                         style={{ overflow: "visible", textOverflow: "clip", whiteSpace: "normal" }}
                       >
-                        {(canManageContacts || canDeleteContacts) && (
+                        {(canUpdateContacts || canDeleteContacts) && (
                           <input
                             type="checkbox"
                             className="h-4 w-4"
@@ -1926,7 +1929,7 @@ function ContatosPage() {
                               <MessageCirclePlus className="h-3.5 w-3.5" />
                             </Button>
                           )}
-                          {canManageContacts && (
+                          {canUpdateContacts && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -2014,7 +2017,7 @@ function ContatosPage() {
           </Card>
         </div>
 
-        {canManageContacts && (
+        {canCreateContacts && (
           <ContactFormModal
             open={create.open}
             onClose={create.hide}
@@ -2044,7 +2047,7 @@ function ContatosPage() {
             }}
           />
         )}
-        {canManageContacts && (
+        {canUpdateContacts && (
           <ContactFormModal
             open={!!editing}
             initial={editing ?? undefined}
@@ -2118,14 +2121,14 @@ function ContatosPage() {
             ))}
           </div>
         </Modal>
-        {canManageContacts && (
+        {canCreateContacts && (
           <ImportContactsModal
             open={importModal.open}
             onClose={importModal.hide}
             onImport={importContactsRows}
           />
         )}
-        {canManageContacts && (
+        {canCreateContacts && (
           <AgendaImportPreviewModal
             open={agendaImportPreview.open}
             loading={agendaImportPreview.loading}
@@ -2166,7 +2169,7 @@ function ContatosPage() {
           onClose={exportModal.hide}
           onExport={exportContacts}
         />
-        {canManageContacts && (
+        {canCreateContacts && (
           <ImportProgressModal
             open={importProgress.open}
             source={importProgress.source}
@@ -3023,6 +3026,9 @@ export function ContactFormModal({
   initial?: Contact;
   defaultInstanceId?: string;
 }) {
+  const canReadAdditionalFields = useSession(
+    (state) => state.user?.permissions?.includes("contacts.additional_fields.read") ?? false,
+  );
   const [nome, setNome] = React.useState("");
   const [telefone, setTelefone] = React.useState("");
   const [countryCode, setCountryCode] = React.useState("55");
@@ -3043,9 +3049,16 @@ export function ContactFormModal({
   const customersManager = useDisclosure();
   const departmentsManager = useDisclosure();
   const profilesManager = useDisclosure();
+  const initializedFormSession = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedFormSession.current = null;
+      return;
+    }
+    const sessionKey = initial?.id ?? "new-contact";
+    if (initializedFormSession.current === sessionKey) return;
+    initializedFormSession.current = sessionKey;
     setNome(initial?.nome ?? "");
     const initialPhone = splitPhoneByCountry(initial?.telefone ?? "");
     setCountryCode(initialPhone.countryCode);
@@ -3071,11 +3084,15 @@ export function ContactFormModal({
     setActiveContactTab("Geral");
     setErrors({});
     setPhotoPreviewOpen(false);
-    void crmApi
-      .listContactCustomFields()
-      .then(setCustomFieldDefinitions)
-      .catch(() => setCustomFieldDefinitions([]));
-  }, [defaultInstanceId, initial, instances, open]);
+    if (canReadAdditionalFields) {
+      void crmApi
+        .listContactCustomFields()
+        .then(setCustomFieldDefinitions)
+        .catch(() => setCustomFieldDefinitions([]));
+    } else {
+      setCustomFieldDefinitions([]);
+    }
+  }, [canReadAdditionalFields, defaultInstanceId, initial, instances, open]);
 
   const contactTabs = React.useMemo(
     () => uniqueLabels(["Geral", ...customFieldDefinitions.map(normalizeContactCustomFieldTab)]),

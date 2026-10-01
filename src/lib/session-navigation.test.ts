@@ -21,6 +21,16 @@ describe("tenant permission navigation", () => {
     expect(tenantHomeForPermissions([])).toBe("/perfil");
   });
 
+  it("blocks optional modules disabled for the tenant", () => {
+    expect(canAccessTenantRoute("/campanhas", ["campaigns.read"], { campaigns: false })).toBe(
+      false,
+    );
+    expect(canAccessTenantRoute("/chamados/ticket-1", ["tickets.read"], { tickets: false })).toBe(
+      false,
+    );
+    expect(canAccessTenantRoute("/chamados", ["tickets.read"], { tickets: true })).toBe(true);
+  });
+
   it("uses permissions for every tenant role and preserves the platform admin home", () => {
     expect(currentRoleHome("operator", ["roles.read"])).toBe("/perfis");
     expect(currentRoleHome("supervisor", ["conversations.read"])).toBe("/inbox");

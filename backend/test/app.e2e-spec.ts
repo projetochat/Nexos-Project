@@ -116,8 +116,8 @@ describe("Trixus API organization and RBAC", () => {
         expect(body.user.email).toBe("admin@trixus.app");
         expect(body.user.roleKey).toBe("tenant_admin");
         expect(body.tenant.slug).toBe("acme");
-        expect(body.permissions).toContain("users.manage");
-        expect(body.permissions).toContain("crm.manage");
+        expect(body.permissions).toContain("users.create");
+        expect(body.permissions).toContain("contacts.read");
       });
   });
 
@@ -236,14 +236,14 @@ describe("Trixus API organization and RBAC", () => {
     });
   });
 
-  it("allows tenant administration while individual permission switches are paused", async () => {
+  it("enforces granular administration permissions", async () => {
     const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     const departmentName = `Departamento do atendente ${Date.now()}`;
     await request(app.getHttpServer())
       .post("/api/departments")
       .set("Authorization", `Bearer ${agentToken}`)
       .send({ name: departmentName, color: "#111111" })
-      .expect(201);
+      .expect(403);
 
     const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     await request(app.getHttpServer())
@@ -907,7 +907,7 @@ describe("Trixus API organization and RBAC", () => {
     await expect(prisma.department.count({ where: { tenantId, active: true } })).resolves.toBe(2);
   });
 
-  it("serializes concurrent department creation at the last plan slot", async () => {
+  it("allows concurrent department creation without the removed plan limit", async () => {
     const { token, tenantId } = await createStarterTenant("department-limit");
     await request(app.getHttpServer())
       .post("/api/departments")
@@ -926,33 +926,24 @@ describe("Trixus API organization and RBAC", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({ name: `Departamento B ${suffix}`, color: "#16a34a" }),
     ]);
-    expect(responses.filter((response) => response.status === 201)).toHaveLength(1);
-    expect(
-      responses.some(
-        (response) =>
-          response.status === 409 && response.body.code === "PLAN_LIMIT_DEPARTMENTS_REACHED",
-      ),
-    ).toBe(true);
-    await expect(prisma.department.count({ where: { tenantId, active: true } })).resolves.toBe(2);
+    expect(responses.filter((response) => response.status === 201)).toHaveLength(2);
+    await expect(prisma.department.count({ where: { tenantId, active: true } })).resolves.toBe(3);
   });
 
-  it("allows agents to read and write CRM while individual permissions are paused", async () => {
+  it("blocks the CRM module when the agent profile has only chat permissions", async () => {
     const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     const customerName = `Cliente do atendente ${Date.now()}`;
 
     await request(app.getHttpServer())
       .get("/api/crm/contacts?pageSize=5")
       .set("Authorization", `Bearer ${agentToken}`)
-      .expect(200)
-      .expect(({ body }) => {
-        expect(Array.isArray(body.items)).toBe(true);
-      });
+      .expect(403);
 
     await request(app.getHttpServer())
       .post("/api/crm/customers")
       .set("Authorization", `Bearer ${agentToken}`)
       .send({ name: customerName })
-      .expect(201);
+      .expect(403);
   });
 
   it("creates, searches, updates and archives CRM contacts", async () => {
@@ -1201,7 +1192,7 @@ describe("Trixus API organization and RBAC", () => {
       .expect(201);
   });
 
-  it("requires authentication and returns no conversations for profiles without selected instances", async () => {
+  it("requires authentication and conversation access permission", async () => {
     await request(app.getHttpServer()).get("/api/conversations").expect(401);
 
     const platformMembership = await prisma.tenantMembership.findFirstOrThrow({
@@ -1229,11 +1220,7 @@ describe("Trixus API organization and RBAC", () => {
       await request(app.getHttpServer())
         .get("/api/conversations")
         .set("Authorization", `Bearer ${token}`)
-        .expect(200)
-        .expect(({ body }) => {
-          expect(body.items).toEqual([]);
-          expect(body.total).toBe(0);
-        });
+        .expect(403);
     } finally {
       await prisma.tenantMembership.update({
         where: { id: platformMembership.id },
@@ -1789,7 +1776,7 @@ describe("Trixus API organization and RBAC", () => {
         .post(`/api/conversations/${activeConversation}/messages`)
         .set("Authorization", `Bearer ${noSendToken}`)
         .send({ content: "Sem permissao" })
-        .expect(404);
+        .expect(403);
     } finally {
       await prisma.tenantMembership.update({
         where: { id: platformMembership.id },
@@ -2433,7 +2420,7 @@ describe("Trixus API organization and RBAC", () => {
     }
   });
 
-  it("allows agents to manage tags while retaining tenant isolation", async () => {
+  it("allows agents to use tags without granting tag creation", async () => {
     const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     const orbitToken = await login("admin-orbit@trixus.app", "demo1234", "orbit");
@@ -2455,11 +2442,11 @@ describe("Trixus API organization and RBAC", () => {
       .post("/api/tags")
       .set("Authorization", `Bearer ${agentToken}`)
       .send({ name: `E2E Agent Created ${suffix}`, color: "#2563eb" })
-      .expect(201);
+      .expect(403);
 
     await request(app.getHttpServer())
       .get("/api/tags")
-      .set("Authorization", `Bearer ${agentToken}`)
+      .set("Authorization", `Bearer ${adminToken}`)
       .expect(200)
       .expect(({ body }) => {
         expect(body.some((tag: { id: string }) => tag.id === created.body.id)).toBe(true);
@@ -2510,7 +2497,7 @@ describe("Trixus API organization and RBAC", () => {
       });
   });
 
-  it("allows agent quick-reply management and enforces tenant scope, duplicates and archive", async () => {
+  it("enforces quick-reply permissions, tenant scope, duplicates and archive", async () => {
     const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     const orbitToken = await login("admin-orbit@trixus.app", "demo1234", "orbit");
@@ -2537,14 +2524,11 @@ describe("Trixus API organization and RBAC", () => {
     await request(app.getHttpServer())
       .get("/api/quick-replies?q=Sprint%2010")
       .set("Authorization", `Bearer ${agentToken}`)
-      .expect(200)
-      .expect(({ body }) => {
-        expect(body.some((reply: { id: string }) => reply.id === created.body.id)).toBe(true);
-      });
+      .expect(403);
 
     const agentCreated = await request(app.getHttpServer())
       .post("/api/quick-replies")
-      .set("Authorization", `Bearer ${agentToken}`)
+      .set("Authorization", `Bearer ${adminToken}`)
       .send({
         title: "Agent created",
         shortcut: `agent-${shortcut}`,
@@ -2554,7 +2538,7 @@ describe("Trixus API organization and RBAC", () => {
 
     await request(app.getHttpServer())
       .patch(`/api/quick-replies/${created.body.id}`)
-      .set("Authorization", `Bearer ${agentToken}`)
+      .set("Authorization", `Bearer ${adminToken}`)
       .send({ content: "Resposta do atendente." })
       .expect(200);
 
@@ -2577,7 +2561,7 @@ describe("Trixus API organization and RBAC", () => {
 
     await request(app.getHttpServer())
       .delete(`/api/quick-replies/${agentCreated.body.id}`)
-      .set("Authorization", `Bearer ${agentToken}`)
+      .set("Authorization", `Bearer ${adminToken}`)
       .expect(200);
 
     await request(app.getHttpServer())
@@ -2753,6 +2737,11 @@ describe("Trixus API organization and RBAC", () => {
     await request(app.getHttpServer())
       .get(`/api/tickets/${created.body.id}`)
       .set("Authorization", `Bearer ${agentToken}`)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .get(`/api/tickets/${created.body.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
       .expect(200)
       .expect(({ body }) => {
         expect(body.id).toBe(created.body.id);
@@ -2781,7 +2770,7 @@ describe("Trixus API organization and RBAC", () => {
 
     const comment = await request(app.getHttpServer())
       .post(`/api/tickets/${created.body.id}/comments`)
-      .set("Authorization", `Bearer ${agentToken}`)
+      .set("Authorization", `Bearer ${adminToken}`)
       .send({ bodyHtml: '<p>Comentario interno</p><iframe src="x"></iframe>' })
       .expect(201);
     expect(comment.body.bodyText).toBe("Comentario interno");
@@ -2803,7 +2792,7 @@ describe("Trixus API organization and RBAC", () => {
 
     await request(app.getHttpServer())
       .get(`/api/tickets/${created.body.id}/attachments/${pdf.body.id}/download`)
-      .set("Authorization", `Bearer ${agentToken}`)
+      .set("Authorization", `Bearer ${adminToken}`)
       .expect(200)
       .expect("Content-Type", /application\/pdf/)
       .expect("Content-Disposition", /attachment/)
@@ -2814,7 +2803,7 @@ describe("Trixus API organization and RBAC", () => {
 
     await request(app.getHttpServer())
       .get(`/api/tickets/${created.body.id}/attachments/${pdf.body.id}/inline`)
-      .set("Authorization", `Bearer ${agentToken}`)
+      .set("Authorization", `Bearer ${adminToken}`)
       .expect(200)
       .expect("Content-Disposition", /inline/);
 
@@ -2902,13 +2891,21 @@ describe("Trixus API organization and RBAC", () => {
     const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const staleCampaigns = await prisma.campaign.findMany({
-      where: { tenantId: tenant.id, name: "Campaign E2E" },
+      where: {
+        tenantId: tenant.id,
+        name: { in: ["Campaign E2E", "Campaign Cancel E2E"] },
+      },
       select: { id: true },
     });
     await prisma.message.deleteMany({
       where: { tenantId: tenant.id, campaignId: { in: staleCampaigns.map((item) => item.id) } },
     });
-    await prisma.campaign.deleteMany({ where: { tenantId: tenant.id, name: "Campaign E2E" } });
+    await prisma.campaign.deleteMany({
+      where: {
+        tenantId: tenant.id,
+        name: { in: ["Campaign E2E", "Campaign Cancel E2E"] },
+      },
+    });
     const staleContacts = await prisma.contact.findMany({
       where: { tenantId: tenant.id, normalizedPhone: "+5511999998888" },
       select: { id: true },
@@ -3018,12 +3015,23 @@ describe("Trixus API organization and RBAC", () => {
     expect(recipients.body.items).toHaveLength(1);
     expect(recipients.body.items[0].phoneMasked).not.toContain("999998888");
 
+    const cancellable = await request(app.getHttpServer())
+      .post("/api/campaigns")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        name: "Campaign Cancel E2E",
+        messageText: previewPayload.messageText,
+        connectionId: connection.id,
+        audience: previewPayload.audience,
+      })
+      .expect(201);
+
     await prisma.campaign.update({
-      where: { id: created.body.id },
-      data: { status: CampaignStatus.RUNNING },
+      where: { id: cancellable.body.id },
+      data: { status: CampaignStatus.SCHEDULED },
     });
     await request(app.getHttpServer())
-      .post(`/api/campaigns/${created.body.id}/cancel`)
+      .post(`/api/campaigns/${cancellable.body.id}/cancel`)
       .set("Authorization", `Bearer ${adminToken}`)
       .expect(201)
       .expect(({ body }) => {
@@ -3031,10 +3039,15 @@ describe("Trixus API organization and RBAC", () => {
       });
 
     await prisma.message.deleteMany({
-      where: { tenantId: tenant.id, campaignId: created.body.id },
+      where: {
+        tenantId: tenant.id,
+        campaignId: { in: [created.body.id, cancellable.body.id] },
+      },
     });
     await prisma.conversation.deleteMany({ where: { tenantId: tenant.id, contactId: contact.id } });
-    await prisma.campaign.deleteMany({ where: { id: created.body.id } });
+    await prisma.campaign.deleteMany({
+      where: { id: { in: [created.body.id, cancellable.body.id] } },
+    });
     await prisma.contact.deleteMany({ where: { id: contact.id } });
     await prisma.messagingConnection.delete({ where: { id: connection.id } });
   });
@@ -3078,7 +3091,7 @@ describe("Trixus API organization and RBAC", () => {
     await prisma.contact.deleteMany({ where: { id: contact.id } });
   });
 
-  it("validates campaign connection ownership even while individual permissions are paused", async () => {
+  it("checks campaign permission before validating connection ownership", async () => {
     const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     await request(app.getHttpServer())
       .post("/api/campaigns")
@@ -3089,10 +3102,10 @@ describe("Trixus API organization and RBAC", () => {
         connectionId: "00000000-0000-4000-8000-000000000000",
         audience: { type: "ALL", tagIds: [], customerIds: [], contactIds: [] },
       })
-      .expect(400);
+      .expect(403);
   });
 
-  it("allows agent automation management and enforces action validation and tenant scope", async () => {
+  it("enforces automation CRUD permissions, action validation and tenant scope", async () => {
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const orbitTenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "orbit" } });
     const adminMembership = await prisma.tenantMembership.findFirstOrThrow({
@@ -3104,7 +3117,9 @@ describe("Trixus API organization and RBAC", () => {
     await prisma.rolePermission.createMany({
       data: [
         { roleId: adminMembership.roleId, permissionId: "automations.read" },
-        { roleId: adminMembership.roleId, permissionId: "automations.manage" },
+        { roleId: adminMembership.roleId, permissionId: "automations.create" },
+        { roleId: adminMembership.roleId, permissionId: "automations.update" },
+        { roleId: adminMembership.roleId, permissionId: "automations.delete" },
         { roleId: orbitAdminMembership.roleId, permissionId: "automations.read" },
       ],
       skipDuplicates: true,
@@ -3215,7 +3230,7 @@ describe("Trixus API organization and RBAC", () => {
         responseText: "allowed",
         actionType: AutomationActionType.BOT_REPLY,
       })
-      .expect(201);
+      .expect(403);
 
     await request(app.getHttpServer())
       .delete(`/api/automations/${assign.body.id}`)

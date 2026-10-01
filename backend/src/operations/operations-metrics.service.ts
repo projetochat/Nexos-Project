@@ -431,7 +431,10 @@ export class OperationsMetricsService {
         const membership = row.assignedMembershipId
           ? membershipById.get(row.assignedMembershipId)
           : undefined;
-        return { nome: membership?.user.name ?? "Sem atendente", total: row._count._all };
+        return {
+          nome: membership?.presentationName?.trim() || membership?.user.name || "Sem atendente",
+          total: row._count._all,
+        };
       }),
       byCustomer: [...customerCounts.values()],
       byConnection: byConnection.map((row) => {

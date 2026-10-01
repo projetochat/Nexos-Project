@@ -58,7 +58,8 @@ const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 function SchedulingPage() {
   const user = useSession((state) => state.user);
-  const canManage = user?.permissions?.includes("schedules.manage") ?? false;
+  const canCreate = user?.permissions?.includes("schedules.create") ?? false;
+  const canUpdate = user?.permissions?.includes("schedules.update") ?? false;
   const canDelete = user?.permissions?.includes("schedules.delete") ?? false;
   const qc = useQueryClient();
   const schedulesKey = ["trixus", "schedules", user?.empresaId];
@@ -159,7 +160,7 @@ function SchedulingPage() {
           title="Agendamentos"
           subtitle={`${num(items.length)} agendamento(s) cadastrado(s).`}
           actions={
-            canManage ? (
+            canCreate ? (
               <Button variant="primary" size="sm" onClick={() => setEditing(blankSchedule())}>
                 <Plus className="h-3.5 w-3.5" /> Novo Agendamento
               </Button>
@@ -172,7 +173,7 @@ function SchedulingPage() {
           </Alert>
         )}
         {isLoading && <p className="text-sm text-muted-foreground">Carregando agendamentos…</p>}
-        {canManage && legacyItems.length > 0 && (
+        {canCreate && legacyItems.length > 0 && (
           <Card className="mb-4 space-y-2 p-4">
             <p className="text-sm">
               Existem {legacyItems.length} agendamentos antigos salvos somente neste navegador.
@@ -249,7 +250,8 @@ function SchedulingPage() {
                 })
               }
               onRemove={() => setRemoving(item)}
-              canManage={canManage}
+              canCreate={canCreate}
+              canUpdate={canUpdate}
               canDelete={canDelete}
             />
           ))}
@@ -309,7 +311,8 @@ function SchedulingPage() {
                       })
                     }
                     onRemove={() => setRemoving(item)}
-                    canManage={canManage}
+                    canCreate={canCreate}
+                    canUpdate={canUpdate}
                     canDelete={canDelete}
                   />
                 ))}
@@ -334,7 +337,7 @@ function SchedulingPage() {
             onNext={() => setPage((current) => Math.min(totalPages, current + 1))}
           />
         </Card>
-        {canManage && (
+        {(editing && items.some((item) => item.id === editing.id) ? canUpdate : canCreate) && (
           <ScheduleForm
             item={editing}
             connections={connections}
@@ -476,7 +479,8 @@ function ScheduleMobileCard({
   onEdit,
   onDuplicate,
   onRemove,
-  canManage,
+  canCreate,
+  canUpdate,
   canDelete,
 }: {
   item: Schedule;
@@ -485,7 +489,8 @@ function ScheduleMobileCard({
   onEdit: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
-  canManage: boolean;
+  canCreate: boolean;
+  canUpdate: boolean;
   canDelete: boolean;
 }) {
   const connection = connections.find((entry) => entry.id === item.connectionId)?.name ?? "—";
@@ -531,9 +536,9 @@ function ScheduleMobileCard({
           </div>
         </div>
       </div>
-      {(canManage || canDelete) && (
+      {(canCreate || canUpdate || canDelete) && (
         <div className="mt-4 flex justify-end gap-1 border-t border-border pt-3">
-          {canManage && (
+          {canCreate && (
             <Button
               variant="ghost"
               size="sm"
@@ -544,7 +549,7 @@ function ScheduleMobileCard({
               <Copy className="h-4 w-4" />
             </Button>
           )}
-          {canManage && (
+          {canUpdate && (
             <Button variant="ghost" size="sm" title="Editar" aria-label="Editar" onClick={onEdit}>
               <Pencil className="h-4 w-4" />
             </Button>
@@ -574,7 +579,8 @@ function ScheduleRow({
   onEdit,
   onDuplicate,
   onRemove,
-  canManage,
+  canCreate,
+  canUpdate,
   canDelete,
 }: {
   item: Schedule;
@@ -583,7 +589,8 @@ function ScheduleRow({
   onEdit: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
-  canManage: boolean;
+  canCreate: boolean;
+  canUpdate: boolean;
   canDelete: boolean;
 }) {
   const connection = connections.find((entry) => entry.id === item.connectionId)?.name ?? "—";
@@ -638,12 +645,12 @@ function ScheduleRow({
       </td>
       <td className="px-4 py-3">
         <div className="flex gap-1">
-          {canManage && (
+          {canCreate && (
             <Button variant="ghost" size="sm" title="Duplicar" onClick={onDuplicate}>
               <Copy className="h-4 w-4" />
             </Button>
           )}
-          {canManage && (
+          {canUpdate && (
             <Button variant="ghost" size="sm" title="Editar" onClick={onEdit}>
               <Pencil className="h-4 w-4" />
             </Button>

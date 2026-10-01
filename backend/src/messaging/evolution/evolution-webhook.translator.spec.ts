@@ -662,6 +662,50 @@ describe("EvolutionWebhookTranslator", () => {
     });
   });
 
+  it.each([
+    [
+      "list response",
+      {
+        listResponseMessage: { title: "Suporte", singleSelectReply: { selectedRowId: "support" } },
+      },
+      "Suporte",
+    ],
+    [
+      "button response",
+      { buttonsResponseMessage: { selectedButtonId: "support", selectedDisplayText: "Suporte" } },
+      "Suporte",
+    ],
+    [
+      "native flow response",
+      {
+        interactiveResponseMessage: {
+          nativeFlowResponseMessage: {
+            paramsJson: JSON.stringify({ id: "support", title: "Suporte" }),
+          },
+        },
+      },
+      "Suporte",
+    ],
+  ])("preserves the selected option from a WhatsApp %s", (_label, message, expected) => {
+    expect(
+      translator.translate(
+        {
+          event: "messages.upsert",
+          instance: "tenant-support",
+          data: {
+            key: { remoteJid: "5511999990000@s.whatsapp.net", fromMe: false, id: "REPLY-1" },
+            pushName: "Cliente",
+            message,
+          },
+        },
+        connection,
+      ),
+    ).toMatchObject({
+      kind: "inbound",
+      event: { externalMessageId: "REPLY-1", fromMe: false, content: expected },
+    });
+  });
+
   it("returns canonical ignored reasons for invalid inbound payloads", () => {
     expect(
       translator.translate(

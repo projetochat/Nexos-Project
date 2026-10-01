@@ -27,7 +27,12 @@ import { RealtimeService } from "../realtime/realtime.service";
 import { FileStorageProvider } from "../tickets/storage/file-storage.provider";
 import { seedTenantRoles } from "./tenant-role-seed";
 import { PlatformAuditService } from "./platform-audit.service";
-import { coerceFeatures, coerceLimits, PlanEntitlementService } from "./plan-entitlement.service";
+import {
+  coerceFeatures,
+  coerceLimitOverrides,
+  coerceLimits,
+  PlanEntitlementService,
+} from "./plan-entitlement.service";
 import {
   optionalPlanStatus,
   optionalIdentifier,
@@ -57,6 +62,7 @@ import type {
   UpdatePlatformSettingsDto,
   UpdateSubscriptionDto,
   UpdateTenantAdministratorCredentialsDto,
+  UpdateTenantConfigurationDto,
   UpdateTenantDto,
 } from "./platform.dto";
 
@@ -805,6 +811,108 @@ export class PlatformService {
       tenantId: id,
     });
     return tenant;
+  }
+
+  async tenantConfiguration(id: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        maxUsers: true,
+        maxConnections: true,
+        featureOverrides: true,
+        limitOverrides: true,
+      },
+    });
+    if (!tenant) throw new NotFoundException("Tenant não encontrado.");
+    const effective = await this.entitlements.getEntitlements(id);
+    const featureOverrides = jsonRecord(tenant.featureOverrides);
+    return {
+      tenantId: id,
+      modules: {
+        chat: true,
+        campaigns: effective.features.campaigns,
+        tickets: effective.features.tickets,
+      },
+      lockedModules: ["chat"],
+      limits: effective.limits,
+      overrides: {
+        modules: {
+          ...(typeof featureOverrides.campaigns === "boolean"
+            ? { campaigns: featureOverrides.campaigns }
+            : {}),
+          ...(typeof featureOverrides.tickets === "boolean"
+            ? { tickets: featureOverrides.tickets }
+            : {}),
+        },
+        limits: {
+          ...coerceLimitOverrides(tenant.limitOverrides),
+          ...(tenant.maxUsers == null ? {} : { maxUsers: tenant.maxUsers }),
+          ...(tenant.maxConnections == null ? {} : { maxConnections: tenant.maxConnections }),
+        },
+      },
+    };
+  }
+
+  async updateTenantConfiguration(
+    id: string,
+    dto: UpdateTenantConfigurationDto,
+    current: AuthenticatedUser,
+  ) {
+    const existing = await this.prisma.tenant.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        featureOverrides: true,
+        limitOverrides: true,
+        maxUsers: true,
+        maxConnections: true,
+      },
+    });
+    if (!existing) throw new NotFoundException("Tenant não encontrado.");
+
+    const featureOverrides = jsonRecord(existing.featureOverrides);
+    if (dto.modules?.campaigns !== undefined) {
+      featureOverrides.campaigns = dto.modules.campaigns;
+    }
+    if (dto.modules?.tickets !== undefined) featureOverrides.tickets = dto.modules.tickets;
+
+    const limitOverrides = jsonRecord(existing.limitOverrides);
+    let maxUsers = existing.maxUsers;
+    let maxConnections = existing.maxConnections;
+    for (const [key, value] of Object.entries(dto.limits ?? {})) {
+      if (key === "maxUsers") {
+        maxUsers = value == null ? null : Number(value);
+      } else if (key === "maxConnections") {
+        maxConnections = value == null ? null : Number(value);
+      } else if (value == null) {
+        delete limitOverrides[key];
+      } else {
+        limitOverrides[key] = Number(value);
+      }
+    }
+
+    await this.prisma.tenant.update({
+      where: { id },
+      data: {
+        featureOverrides: featureOverrides as Prisma.InputJsonObject,
+        limitOverrides: limitOverrides as Prisma.InputJsonObject,
+        maxUsers,
+        maxConnections,
+      },
+    });
+    await this.audit.record({
+      actor: current,
+      action: "tenant.configuration.updated",
+      targetType: "tenant",
+      targetId: id,
+      tenantId: id,
+      metadata: {
+        modules: dto.modules ?? {},
+        limits: dto.limits ?? {},
+      },
+    });
+    return this.tenantConfiguration(id);
   }
 
   async settings() {
@@ -2725,4 +2833,15 @@ function serializeInvoice(invoice: {
     client: invoice.subscription?.client ?? null,
     inconsistent: !invoice.subscription || !invoice.subscription.plan,
   };
+}
+
+function jsonRecord(value: unknown): Record<string, boolean | number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result: Record<string, boolean | number> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item === "boolean" || (typeof item === "number" && Number.isFinite(item))) {
+      result[key] = item;
+    }
+  }
+  return result;
 }

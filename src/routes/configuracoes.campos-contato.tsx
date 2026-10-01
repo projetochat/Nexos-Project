@@ -72,8 +72,8 @@ const DEFAULT_CONTACT_CUSTOM_TAB = "Dados Adicionais";
 
 function ContactFieldsSettings() {
   const permissions = useSession((state) => state.user?.permissions ?? []);
-  const canRead = permissions.includes("crm.read");
-  const canManage = permissions.includes("crm.manage");
+  const canRead = permissions.includes("contacts.read");
+  const canManage = permissions.includes("contacts.update");
   const [fields, setFields] = React.useState<ApiContactCustomField[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [editing, setEditing] = React.useState<ApiContactCustomField | null>(null);

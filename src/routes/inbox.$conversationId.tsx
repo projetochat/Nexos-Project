@@ -68,6 +68,7 @@ import { useSession } from "@/lib/session";
 import { conversationTimestamp, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
+import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { resolveMessageVariables, type MessageVariableContext } from "@/lib/message-variables";
 import { invalidateConversationQueries } from "@/lib/realtime/invalidate-conversation";
@@ -309,6 +310,8 @@ function ConversationPage() {
   const { conversationId } = Route.useParams();
   const inboxTab = React.useSyncExternalStore(subscribeInboxTab, getInboxTab, getInboxTab);
   const user = useSession((s) => s.user);
+  const entitlements = useTenantEntitlements();
+  const modules = tenantModules(entitlements.data?.features);
   const qc = useQueryClient();
   const navigate = useNavigate();
 
@@ -445,7 +448,7 @@ function ConversationPage() {
   const canSendMessages = user?.permissions?.includes("messages.send") ?? false;
   const canAssignConversations = user?.permissions?.includes("conversations.assign") ?? false;
   const canCreateTicket =
-    user?.permissions?.includes("tickets.create") || user?.permissions?.includes("tickets.manage");
+    modules.tickets && (user?.permissions?.includes("chat.tickets.create") ?? false);
   const canSend =
     canSendMessages &&
     ((conv.is_group && !!conv.protocolo && conv.status !== "fechada" && !isStandby) ||
@@ -730,7 +733,7 @@ function ConversationPage() {
               onStart={showStart ? handleAssume : undefined}
               allowQuickReplies={perms.acessa_mensagens_rapidas}
               allowAudio={perms.enviar_audio}
-              onTicket={handleGerarChamado}
+              onTicket={canCreateTicket ? handleGerarChamado : undefined}
               ticketDisabled={gerando || !conv.protocolo || !canCreateTicket}
               mentionOptions={conv.is_group ? mentionOptions : []}
               replyTo={replyTo}
@@ -753,7 +756,7 @@ function ConversationPage() {
                 <Ticket className="h-3.5 w-3.5" /> {gerando ? "Gerando…" : "Gerar Chamado"}
               </Button>
             )}
-            {!isMobile && (
+            {modules.tickets && !isMobile && (
               <div className="hidden md:block">
                 <Button
                   variant="ghost"
@@ -918,6 +921,7 @@ export function MessageBubble({
   const [imagePreviewOpen, setImagePreviewOpen] = React.useState(false);
   const [mediaError, setMediaError] = React.useState(false);
   const [resendRequest, setResendRequest] = React.useState(0);
+  const [actionsOpenRequest, setActionsOpenRequest] = React.useState(0);
   const mediaState = m.media_data?.state ?? null;
   const mediaReady = !!m.media_data && (!mediaState || mediaState === "ready");
   React.useEffect(() => {
@@ -1072,6 +1076,11 @@ export function MessageBubble({
       )}
       <div
         tabIndex={0}
+        onContextMenu={(event) => {
+          if (readOnly) return;
+          event.preventDefault();
+          setActionsOpenRequest((request) => request + 1);
+        }}
         onClick={(event) => {
           if (
             !(event.target as HTMLElement).closest("button, a, input, video, audio, [role=dialog]")
@@ -1091,6 +1100,7 @@ export function MessageBubble({
             onReact={react}
             onDownload={() => download()}
             resendRequest={resendRequest}
+            openRequest={actionsOpenRequest}
           />
         )}
         {m.participant?.name && !mine && (
@@ -1722,7 +1732,7 @@ function Composer({
   onCancelReply?: () => void;
   allowQuickReplies?: boolean;
   allowAudio?: boolean;
-  onTicket: () => void;
+  onTicket?: () => void;
   ticketDisabled: boolean;
   mentionOptions?: MentionOption[];
 }) {

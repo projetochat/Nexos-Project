@@ -516,6 +516,12 @@ export class AuthService {
       include: { tenant: true, role: true },
     });
     if (!invitation) throw new UnauthorizedException("Convite inválido ou expirado.");
+    const requestedName = dto.name?.trim();
+    const tenantAdministratorName =
+      invitation.role.key === "tenant_admin"
+        ? invitation.tenant.responsibleName?.trim()
+        : undefined;
+    const invitationName = requestedName || tenantAdministratorName;
 
     await this.prisma.$transaction(async (tx) => {
       let user = await tx.user.findUnique({ where: { email: invitation.email } });
@@ -529,7 +535,7 @@ export class AuthService {
         user = await tx.user.create({
           data: {
             email: invitation.email,
-            name: dto.name?.trim() || invitation.email,
+            name: invitationName || invitation.email,
             passwordHash: await hash(dto.password, 12),
           },
         });
@@ -543,7 +549,7 @@ export class AuthService {
           tenantId: invitation.tenantId,
           userId: user.id,
           roleId: invitation.roleId,
-          presentationName: dto.name?.trim() || null,
+          presentationName: invitationName || null,
           status: "ACTIVE",
         },
       });
@@ -858,7 +864,8 @@ export class AuthService {
       })),
       permissions,
       capabilities: {
-        canManageTenant: permissions.includes("users.manage"),
+        canManageTenant:
+          permissions.includes("users.create") || permissions.includes("users.update"),
         canOperateInbox: permissions.some((permission) => permission.startsWith("chat.")),
       },
     };

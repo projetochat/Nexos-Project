@@ -4,7 +4,9 @@ export type ChatPerms = {
   pode_editar_contato: boolean;
   pode_editar_vinculo_cliente: boolean;
   pode_usar_etiquetas: boolean;
+  pode_criar_etiquetas: boolean;
   pode_editar_etiquetas: boolean;
+  pode_criar_respostas_rapidas: boolean;
   pode_gerenciar_respostas_rapidas: boolean;
   visualiza_leads: boolean;
   visualiza_contatos: boolean;
@@ -22,7 +24,9 @@ export const DEFAULT_PERMS: ChatPerms = {
   pode_editar_contato: true,
   pode_editar_vinculo_cliente: true,
   pode_usar_etiquetas: true,
+  pode_criar_etiquetas: true,
   pode_editar_etiquetas: true,
+  pode_criar_respostas_rapidas: true,
   pode_gerenciar_respostas_rapidas: true,
   visualiza_leads: true,
   visualiza_contatos: true,
@@ -43,12 +47,14 @@ export function useChatPerms(): ChatPerms {
   const has = (...required: string[]) =>
     required.some((permission) => permissions?.includes(permission)) ?? false;
   return {
-    pode_editar_contato: has("chat.contacts.edit", "contacts.manage"),
-    pode_editar_vinculo_cliente: has("chat.customer_link.edit"),
+    pode_editar_contato: has("chat.contacts.edit", "contacts.update"),
+    pode_editar_vinculo_cliente: has("chat.customer_link.edit", "contacts.update"),
     pode_usar_etiquetas: has("chat.tags.use"),
-    pode_editar_etiquetas: has("chat.tags.manage"),
-    pode_gerenciar_respostas_rapidas: has("chat.quick_replies.manage"),
-    visualiza_leads: has("chat.leads.read"),
+    pode_criar_etiquetas: has("chat.tags.create"),
+    pode_editar_etiquetas: has("chat.tags.update"),
+    pode_criar_respostas_rapidas: has("chat.quick_replies.create"),
+    pode_gerenciar_respostas_rapidas: has("chat.quick_replies.update"),
+    visualiza_leads: has("conversations.read"),
     visualiza_contatos: has("chat.contacts.read", "contacts.read"),
     visualiza_numero: has("chat.phone.read"),
     excluir_mensagem: has("chat.messages.delete"),

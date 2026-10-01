@@ -12,10 +12,6 @@ const PERMISSION_GROUP_LABELS: Record<string, string> = {
   messages: "Chat",
   contacts: "Contatos",
   groups: "Gerenciar Grupos",
-  history: "Histórico de Conversas",
-  crm: "Clientes e Campos Adicionais",
-  leads: "Leads",
-  notifications: "Notificações",
   users: "Atendentes",
   roles: "Perfil de Acesso",
   departments: "Departamentos",
@@ -47,11 +43,9 @@ function permissionLabel(permission: string) {
     "chat.customer_link.edit": "Alterar cliente vinculado",
     "chat.tags.use": "Utilizar etiquetas",
     "chat.conversations.view_all_active": "Ver todas as conversas ativas",
-    "tickets.create": "Gerar chamado",
-    "tickets.status.update": "Alterar status",
-    "tickets.attachments.upload": "Enviar anexos",
-    "tickets.attachments.delete": "Excluir anexos",
-    "campaigns.recipients.read": "Ver destinatários",
+    "chat.tickets.create": "Gerar chamado",
+    "contacts.additional_fields.read": "Ver campos adicionais",
+    "settings.manage": "Configurar",
   };
   if (specificLabels[permission]) return specificLabels[permission];
 
@@ -80,10 +74,14 @@ function permissionLabel(permission: string) {
 }
 
 function permissionGroupTitle(permission: string) {
-  if (permission === "tickets.create" || permission === "chat.tags.use") return "Chat";
+  if (
+    permission === "chat.tickets.create" ||
+    permission === "chat.tags.use" ||
+    permission === "history.read"
+  )
+    return "Chat";
   if (permission.startsWith("chat.quick_replies.")) return "Mensagens Rápidas";
   if (permission.startsWith("chat.tags.")) return "Etiquetas";
-  if (permission.startsWith("chat.leads.")) return "Leads";
   const root = permission.split(".")[0] ?? permission;
   return PERMISSION_GROUP_LABELS[root] ?? "Outras permissões";
 }
@@ -115,7 +113,7 @@ export const Route = createFileRoute("/configuracoes/permissoes")({
 function PermissoesSettings() {
   const navigate = useNavigate();
   const permissions = useSession((state) => state.user?.permissions ?? []);
-  const canEditRoles = permissions.includes("roles.read") && permissions.includes("roles.manage");
+  const canEditRoles = permissions.includes("roles.read") && permissions.includes("roles.update");
   const { data: roles = [], isLoading } = useQuery({
     queryKey: ["trixus", "roles"],
     queryFn: organizationApi.listRoles,

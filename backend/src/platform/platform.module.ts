@@ -8,21 +8,23 @@ import { RealtimeModule } from "../realtime/realtime.module";
 import { StorageModule } from "../tickets/storage/storage.module";
 import { PlatformAuthGuard } from "./platform-auth.guard";
 import { PlatformAuditService } from "./platform-audit.service";
-import { PlatformController } from "./platform.controller";
+import { PlatformController, TenantEntitlementsController } from "./platform.controller";
 import { ImpersonationHandoffController } from "./impersonation-handoff.controller";
 import { PlanEntitlementService } from "./plan-entitlement.service";
 import { PlatformService } from "./platform.service";
+import { TenantFeatureGuard } from "./tenant-feature.guard";
 
 @Module({
   imports: [AuthModule, EmailModule, PrismaModule, QueueModule, RealtimeModule, StorageModule],
-  controllers: [PlatformController, ImpersonationHandoffController],
+  controllers: [PlatformController, TenantEntitlementsController, ImpersonationHandoffController],
   providers: [
     CampaignDispatchQueue,
     PlatformAuthGuard,
     PlatformAuditService,
     PlanEntitlementService,
     PlatformService,
+    TenantFeatureGuard,
   ],
-  exports: [PlanEntitlementService, PlatformAuditService],
+  exports: [PlanEntitlementService, PlatformAuditService, TenantFeatureGuard],
 })
 export class PlatformModule {}

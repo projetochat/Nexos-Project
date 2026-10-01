@@ -17,7 +17,7 @@ describe("RealtimeAuthService", () => {
       membershipId: "membership-a",
       roleKey: "agent",
       departmentIds: ["department-a"],
-      permissions: expect.arrayContaining(["conversations.read", "messages.send"]),
+      permissions: ["conversations.read"],
     });
   });
 

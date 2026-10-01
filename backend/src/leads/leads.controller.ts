@@ -66,7 +66,7 @@ export class LeadsController {
   ) {}
 
   @Get()
-  @RequirePermissions("chat.leads.read")
+  @RequirePermissions("conversations.read")
   async list(@Query() query: ListLeadsQueryDto, @CurrentUser() current: AuthenticatedUser) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
@@ -95,7 +95,7 @@ export class LeadsController {
   }
 
   @Patch(":id/assign")
-  @RequirePermissions("leads.manage")
+  @RequirePermissions("conversations.manage")
   async assign(
     @Param("id") id: string,
     @Body() dto: AssignLeadDto,

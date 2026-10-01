@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { effectivePermissions } from "./effective-permissions";
-import { PERMISSIONS } from "./permissions.constants";
+import { TENANT_ADMIN_PERMISSIONS } from "./permissions.constants";
 
 describe("effectivePermissions", () => {
   it("grants the complete catalog to the protected tenant administrator", () => {
-    expect(effectivePermissions({ key: "tenant_admin", permissions: [] })).toEqual(PERMISSIONS);
+    expect(effectivePermissions({ key: "tenant_admin", permissions: [] })).toEqual(
+      TENANT_ADMIN_PERMISSIONS,
+    );
   });
 
-  it("keeps individual permission switches paused for regular roles", () => {
+  it("uses only known permissions assigned to regular roles", () => {
     expect(
       effectivePermissions({
         key: "custom",
@@ -17,6 +19,6 @@ describe("effectivePermissions", () => {
           { permissionId: "unknown.permission" },
         ],
       }),
-    ).toEqual(PERMISSIONS);
+    ).toEqual(["contacts.read"]);
   });
 });

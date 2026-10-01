@@ -7,7 +7,8 @@ describe("effectiveSessionPermissions", () => {
 
     expect(permissions).toEqual(TENANT_ADMIN_PERMISSIONS);
     expect(permissions).toContain("dashboard.read");
-    expect(permissions).toContain("roles.manage");
+    expect(permissions).toContain("roles.create");
+    expect(permissions).toContain("roles.update");
     expect(permissions).toContain("settings.manage");
   });
 

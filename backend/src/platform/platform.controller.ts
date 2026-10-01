@@ -17,6 +17,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PlatformAuthGuard } from "./platform-auth.guard";
 import { RequirePlatformPermissions } from "./platform-auth.decorator";
 import { PlatformService } from "./platform.service";
+import { PlanEntitlementService } from "./plan-entitlement.service";
 import { PlatformExceptionFilter } from "./platform-exception.filter";
 import {
   CancelSubscriptionDto,
@@ -35,6 +36,7 @@ import {
   UpdatePlatformSettingsDto,
   UpdateSubscriptionDto,
   UpdateTenantAdministratorCredentialsDto,
+  UpdateTenantConfigurationDto,
 } from "./platform.dto";
 
 @Controller("platform")
@@ -130,6 +132,22 @@ export class PlatformController {
   @RequirePlatformPermissions("platform.usage.read")
   usage(@Param("id") id: string) {
     return this.platform.usage(id);
+  }
+
+  @Get("tenants/:id/configuration")
+  @RequirePlatformPermissions("platform.tenants.read")
+  tenantConfiguration(@Param("id") id: string) {
+    return this.platform.tenantConfiguration(id);
+  }
+
+  @Patch("tenants/:id/configuration")
+  @RequirePlatformPermissions("platform.tenants.update")
+  updateTenantConfiguration(
+    @Param("id") id: string,
+    @Body() dto: UpdateTenantConfigurationDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.platform.updateTenantConfiguration(id, dto, current);
   }
 
   @Get("plans")
@@ -344,5 +362,23 @@ export class PlatformController {
   @RequirePlatformPermissions("platform.impersonation.start")
   currentImpersonation(@CurrentUser() current: AuthenticatedUser) {
     return this.platform.currentImpersonation(current);
+  }
+}
+
+@Controller("tenant")
+@UseGuards(JwtAuthGuard)
+export class TenantEntitlementsController {
+  constructor(
+    @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
+  ) {}
+
+  @Get("entitlements")
+  async current(@CurrentUser() current: AuthenticatedUser) {
+    const effective = await this.entitlements.getEntitlements(current.tenantId);
+    return {
+      tenantId: current.tenantId,
+      features: effective.features,
+      limits: effective.limits,
+    };
   }
 }

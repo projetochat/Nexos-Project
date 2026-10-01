@@ -345,6 +345,44 @@ describe("AuthService session hydration", () => {
     );
   });
 
+  it("uses the tenant responsible name when an administrator accepts without typing a name", async () => {
+    const userCreate = vi.fn().mockImplementation(({ data }) => ({ id: "admin-1", ...data }));
+    const membershipUpsert = vi.fn().mockResolvedValue({ id: "membership-a" });
+    const tx = {
+      user: { findUnique: vi.fn().mockResolvedValue(null), create: userCreate },
+      tenantMembership: { upsert: membershipUpsert },
+      departmentMembership: { deleteMany: vi.fn(), createMany: vi.fn() },
+      userInvitation: { update: vi.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      userInvitation: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "invite-admin",
+          email: "admin@tenant.test",
+          tenantId: "tenant-a",
+          roleId: "role-admin",
+          departmentIds: [],
+          tenant: { slug: "tenant", responsibleName: "Ana Administradora" },
+          role: { id: "role-admin", key: "tenant_admin" },
+        }),
+      },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+    vi.spyOn(service, "loginTenant").mockResolvedValue({ accessToken: "access" } as never);
+
+    await service.acceptInvitation({ token: "invite-token", password: "NovaSenha@2026" });
+
+    expect(userCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: "Ana Administradora" }),
+    });
+    expect(membershipUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ presentationName: "Ana Administradora" }),
+      }),
+    );
+  });
+
   it("refuses to treat an invitation as permission to replace an existing password", async () => {
     const existingHash = await hash("SenhaExistente@2026", 4);
     const tx = {

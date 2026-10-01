@@ -8,7 +8,7 @@ const current = {
   roleId: "role-editor",
   roleKey: "custom",
   platformRole: "USER",
-  permissions: ["roles.manage", "contacts.read"],
+  permissions: ["roles.create", "roles.update", "contacts.read"],
   connectionIds: ["connection-a"],
 };
 
@@ -20,8 +20,8 @@ describe("RolesController permission delegation", () => {
     await expect(
       controller.create({ name: "Superior", permissionIds: ["contacts.read", "contacts.delete"] }, {
         ...current,
-        permissions: ["roles.manage", "contacts.read", "contacts.delete"],
-        assignedPermissionIds: ["roles.manage", "contacts.read"],
+        permissions: ["roles.create", "roles.update", "contacts.read", "contacts.delete"],
+        assignedPermissionIds: ["roles.create", "roles.update", "contacts.read"],
       } as never),
     ).rejects.toThrow("Você não pode adicionar ou remover uma permissão que não possui.");
   });
@@ -129,7 +129,7 @@ describe("RolesController permission delegation", () => {
     const controller = new RolesController(prisma as never, {} as never);
 
     await expect(
-      controller.create({ name: "Sem leitura", permissionIds: ["users.manage"] }, {
+      controller.create({ name: "Sem leitura", permissionIds: ["users.create"] }, {
         ...current,
         roleKey: "tenant_admin",
       } as never),

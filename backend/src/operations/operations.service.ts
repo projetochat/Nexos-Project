@@ -694,7 +694,10 @@ export class OperationsService {
       }),
       byAgent: byAgent.map((row) => {
         const membership = memberships.find((item) => item.id === row.assignedMembershipId);
-        return { nome: membership?.user.name ?? "Sem atendente", total: row._count._all };
+        return {
+          nome: membership?.presentationName?.trim() || membership?.user.name || "Sem atendente",
+          total: row._count._all,
+        };
       }),
       byCustomer: [...customerCounts.values()],
       byConnection: byConnection.map((row) => {

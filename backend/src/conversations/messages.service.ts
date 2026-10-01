@@ -187,6 +187,7 @@ export class MessagesService {
       where: { tenantId_id: { tenantId: current.tenantId, id: messageId } },
       data: {
         content: clean,
+        mediaCaption: message.type === MessageType.IMAGE ? clean : undefined,
         interactiveData: {
           ...asObject(message.interactiveData),
           editedAt: new Date().toISOString(),

@@ -59,7 +59,8 @@ const MESSAGE_VARIABLES = [
 function QuickRepliesPage() {
   const qc = useQueryClient();
   const perms = useChatPerms();
-  const canManageCatalog = perms.pode_gerenciar_respostas_rapidas;
+  const canCreateCatalog = perms.pode_criar_respostas_rapidas;
+  const canUpdateCatalog = perms.pode_gerenciar_respostas_rapidas;
   const canDeleteCatalog = useSession((state) =>
     state.user?.permissions?.includes("chat.quick_replies.delete"),
   );
@@ -117,7 +118,7 @@ function QuickRepliesPage() {
           subtitle="Atalhos que aparecem digitando / no chat."
           subtitleClassName="hidden sm:block"
           actions={
-            canManageCatalog ? (
+            canCreateCatalog ? (
               <Button variant="primary" size="sm" onClick={openNew}>
                 <Plus className="h-3.5 w-3.5" /> Nova Mensagem Rápida
               </Button>
@@ -131,12 +132,12 @@ function QuickRepliesPage() {
           <EmptyState
             title="Nenhuma mensagem rápida"
             description={
-              canManageCatalog
+              canCreateCatalog
                 ? "Crie atalhos para respostas frequentes."
                 : "Nenhum atalho cadastrado para seu atendimento."
             }
             action={
-              canManageCatalog ? (
+              canCreateCatalog ? (
                 <Button variant="primary" size="sm" onClick={openNew}>
                   <Plus className="h-3.5 w-3.5" /> Criar primeira
                 </Button>
@@ -161,7 +162,7 @@ function QuickRepliesPage() {
                   className="relative h-full overflow-hidden transition hover:border-primary/35 hover:bg-surface-1"
                 >
                   <div
-                    className={`flex h-full min-h-0 min-w-0 flex-col overflow-hidden ${canManageCatalog || canDeleteCatalog ? "pr-32" : ""}`}
+                    className={`flex h-full min-h-0 min-w-0 flex-col overflow-hidden ${canCreateCatalog || canUpdateCatalog || canDeleteCatalog ? "pr-32" : ""}`}
                   >
                     <p className="font-mono text-sm text-primary">
                       /{reply.atalho.replace(/^\//, "")}
@@ -180,9 +181,9 @@ function QuickRepliesPage() {
                       </p>
                     )}
                   </div>
-                  {(canManageCatalog || canDeleteCatalog) && (
+                  {(canCreateCatalog || canUpdateCatalog || canDeleteCatalog) && (
                     <div className="absolute right-4 top-4 flex gap-1 sm:right-6 sm:top-6">
-                      {canManageCatalog && (
+                      {canCreateCatalog && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -193,7 +194,7 @@ function QuickRepliesPage() {
                           <Copy className="h-4 w-4" />
                         </Button>
                       )}
-                      {canManageCatalog && (
+                      {canUpdateCatalog && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -229,18 +230,20 @@ function QuickRepliesPage() {
           </>
         )}
 
-        <QuickReplyEditor
-          open={editor.open}
-          onClose={closeEditor}
-          initial={editing ?? duplicating}
-          clone={!!duplicating}
-          existingReplies={items}
-          onSaved={() => {
-            refresh();
-            qc.invalidateQueries({ queryKey: ["trixus", "quick-replies", "composer"] });
-            closeEditor();
-          }}
-        />
+        {(editing ? canUpdateCatalog : canCreateCatalog) && (
+          <QuickReplyEditor
+            open={editor.open}
+            onClose={closeEditor}
+            initial={editing ?? duplicating}
+            clone={!!duplicating}
+            existingReplies={items}
+            onSaved={() => {
+              refresh();
+              qc.invalidateQueries({ queryKey: ["trixus", "quick-replies", "composer"] });
+              closeEditor();
+            }}
+          />
+        )}
 
         <ConfirmDialog
           open={!!confirming}

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Header,
   HttpCode,
@@ -28,9 +29,12 @@ import { UpdateTicketDepartmentDto } from "./dto/update-ticket-department.dto";
 import { UpdateTicketStatusDto } from "./dto/update-ticket-status.dto";
 import { UpdateTicketDto } from "./dto/update-ticket.dto";
 import { TicketsService } from "./tickets.service";
+import { RequireTenantFeature } from "../platform/tenant-feature.decorator";
+import { TenantFeatureGuard } from "../platform/tenant-feature.guard";
 
 @Controller("tickets")
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@RequireTenantFeature("tickets")
+@UseGuards(JwtAuthGuard, PermissionsGuard, TenantFeatureGuard)
 export class TicketsController {
   constructor(@Inject(TicketsService) private readonly ticketsService: TicketsService) {}
 
@@ -41,8 +45,13 @@ export class TicketsController {
   }
 
   @Post()
-  @RequireAnyPermission("tickets.manage", "tickets.create")
+  @RequireAnyPermission("tickets.create", "chat.tickets.create")
   create(@Body() dto: CreateTicketDto, @CurrentUser() current: AuthenticatedUser) {
+    if (!current.permissions?.includes("tickets.create") && !dto.conversationId) {
+      throw new ForbiddenException(
+        "A permissão Gerar chamado exige que o chamado seja originado de uma conversa.",
+      );
+    }
     return this.ticketsService.create(dto, current);
   }
 
@@ -53,7 +62,7 @@ export class TicketsController {
   }
 
   @Patch(":id")
-  @RequireAnyPermission("tickets.update", "tickets.manage")
+  @RequirePermissions("tickets.update")
   update(
     @Param("id") id: string,
     @Body() dto: UpdateTicketDto,
@@ -63,7 +72,7 @@ export class TicketsController {
   }
 
   @Patch(":id/status")
-  @RequireAnyPermission("tickets.status.update", "tickets.manage")
+  @RequirePermissions("tickets.update")
   updateStatus(
     @Param("id") id: string,
     @Body() dto: UpdateTicketStatusDto,
@@ -73,7 +82,7 @@ export class TicketsController {
   }
 
   @Patch(":id/assignee")
-  @RequireAnyPermission("tickets.assign", "tickets.manage")
+  @RequirePermissions("tickets.update")
   updateAssignee(
     @Param("id") id: string,
     @Body() dto: UpdateTicketAssigneeDto,
@@ -83,7 +92,7 @@ export class TicketsController {
   }
 
   @Patch(":id/department")
-  @RequireAnyPermission("tickets.assign", "tickets.manage")
+  @RequirePermissions("tickets.update")
   updateDepartment(
     @Param("id") id: string,
     @Body() dto: UpdateTicketDepartmentDto,
@@ -93,7 +102,7 @@ export class TicketsController {
   }
 
   @Delete(":id")
-  @RequireAnyPermission("tickets.delete", "tickets.manage")
+  @RequirePermissions("tickets.delete")
   archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.ticketsService.archive(id, current);
   }
@@ -105,7 +114,7 @@ export class TicketsController {
   }
 
   @Post(":id/comments")
-  @RequireAnyPermission("tickets.comment", "tickets.manage")
+  @RequirePermissions("tickets.update")
   createComment(
     @Param("id") id: string,
     @Body() dto: CreateTicketCommentDto,
@@ -116,7 +125,7 @@ export class TicketsController {
 
   @Post(":id/attachments")
   @HttpCode(201)
-  @RequireAnyPermission("tickets.attachments.upload", "tickets.manage")
+  @RequirePermissions("tickets.update")
   uploadAttachment(
     @Param("id") id: string,
     @CurrentUser() current: AuthenticatedUser,
@@ -172,7 +181,7 @@ export class TicketsController {
   }
 
   @Delete(":id/attachments/:attachmentId")
-  @RequireAnyPermission("tickets.attachments.delete", "tickets.manage")
+  @RequirePermissions("tickets.update")
   deleteAttachment(
     @Param("id") id: string,
     @Param("attachmentId") attachmentId: string,

@@ -47,7 +47,7 @@ export class MessagingConnectionsController {
   }
 
   @Post(":id/webhook/ensure")
-  @RequirePermissions("connections.manage")
+  @RequirePermissions("connections.update")
   ensureWebhook(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.connections.ensureWebhookForConnection(id, current);
   }
@@ -65,7 +65,7 @@ export class MessagingConnectionsController {
   }
 
   @Post(":id/imports/retry")
-  @RequirePermissions("connections.manage")
+  @RequirePermissions("connections.update")
   retryImport(
     @Param("id") id: string,
     @Body() dto: { kind?: string },
@@ -87,7 +87,7 @@ export class MessagingConnectionsController {
   }
 
   @Post("evolution")
-  @RequirePermissions("connections.manage")
+  @RequirePermissions("connections.create")
   createEvolution(
     @Body() dto: CreateEvolutionConnectionDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -96,7 +96,7 @@ export class MessagingConnectionsController {
   }
 
   @Patch(":id")
-  @RequirePermissions("connections.manage")
+  @RequirePermissions("connections.update")
   update(
     @Param("id") id: string,
     @Body() dto: UpdateMessagingConnectionDto,
@@ -106,7 +106,7 @@ export class MessagingConnectionsController {
   }
 
   @Post(":id/profile-picture")
-  @RequirePermissions("connections.manage")
+  @RequirePermissions("connections.update")
   updateProfilePicture(
     @Param("id") id: string,
     @Body() dto: { imageDataUrl?: string },
@@ -122,7 +122,7 @@ export class MessagingConnectionsController {
   }
 
   @Delete(":id/profile-picture")
-  @RequirePermissions("connections.manage")
+  @RequirePermissions("connections.update")
   removeProfilePicture(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.connections.removeProfilePicture(id, current);
   }
@@ -134,13 +134,13 @@ export class MessagingConnectionsController {
   }
 
   @Get(":id/qr")
-  @RequirePermissions("connections.manage")
+  @RequirePermissions("connections.update")
   qrCode(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.connections.qrCode(id, current);
   }
 
   @Patch(":id/logout")
-  @RequirePermissions("connections.manage")
+  @RequirePermissions("connections.update")
   logout(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.connections.logout(id, current);
   }

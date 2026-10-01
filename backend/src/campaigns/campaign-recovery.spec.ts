@@ -66,7 +66,9 @@ function fixture() {
     { get: () => undefined } as never,
     queue as never,
     outbox as never,
-    {} as never,
+    {
+      getEntitlements: vi.fn().mockResolvedValue({ features: { campaigns: true } }),
+    } as never,
   );
   const internals = service as unknown as ServiceInternals;
   const count = vi.spyOn(internals, "incrementCampaign").mockResolvedValue(undefined);

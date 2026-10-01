@@ -4,7 +4,6 @@ import { Type } from "class-transformer";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { NotificationStatus, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
@@ -34,7 +33,6 @@ export class NotificationsController {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   @Get()
-  @RequirePermissions("notifications.read")
   async list(@Query() query: ListNotificationsQueryDto, @CurrentUser() current: AuthenticatedUser) {
     const page = integerQueryValue(query.page, 1, 1);
     const pageSize = integerQueryValue(query.pageSize, 25, 1, 100);
@@ -66,7 +64,6 @@ export class NotificationsController {
   }
 
   @Patch(":id/read")
-  @RequirePermissions("notifications.read")
   async markRead(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     await this.prisma.notification.updateMany({
       where: {
@@ -81,7 +78,6 @@ export class NotificationsController {
   }
 
   @Post("read-all")
-  @RequirePermissions("notifications.read")
   async markAllRead(@CurrentUser() current: AuthenticatedUser) {
     const result = await this.prisma.notification.updateMany({
       where: { tenantId: current.tenantId, membershipId: current.membershipId, status: "UNREAD" },

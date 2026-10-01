@@ -60,7 +60,8 @@ function Page() {
 function AutomationsPage() {
   const qc = useQueryClient();
   const permissions = useSession((state) => state.user?.permissions ?? []);
-  const canManage = permissions.includes("automations.manage");
+  const canCreate = permissions.includes("automations.create");
+  const canUpdate = permissions.includes("automations.update");
   const canDelete = permissions.includes("automations.delete");
   const [creating, setCreating] = React.useState(false);
   const { data, isLoading } = useQuery({
@@ -84,7 +85,7 @@ function AutomationsPage() {
           title="Automações"
           subtitle={`${num(rules.length)} regras configuradas no tenant.`}
           actions={
-            canManage ? (
+            canCreate ? (
               <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
                 <Plus className="h-3.5 w-3.5" /> Nova automação
               </Button>
@@ -92,7 +93,7 @@ function AutomationsPage() {
           }
         />
 
-        {canManage && creating && (
+        {canCreate && creating && (
           <AutomationForm
             departments={departments.filter((department) => department.active)}
             onCancel={() => setCreating(false)}
@@ -111,7 +112,7 @@ function AutomationsPage() {
               <AutomationRow
                 key={rule.id}
                 rule={rule}
-                canManage={canManage}
+                canUpdate={canUpdate}
                 canDelete={canDelete}
                 onToggle={async () => {
                   await automationApi.update(rule.id, {
@@ -144,13 +145,13 @@ function AutomationsPage() {
 
 function AutomationRow({
   rule,
-  canManage,
+  canUpdate,
   canDelete,
   onToggle,
   onArchive,
 }: {
   rule: ApiAutomationRule;
-  canManage: boolean;
+  canUpdate: boolean;
   canDelete: boolean;
   onToggle: () => void;
   onArchive: () => void;
@@ -178,7 +179,7 @@ function AutomationRow({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {canManage && (
+        {canUpdate && (
           <Button variant="outline" size="sm" onClick={onToggle}>
             {rule.status === "active" ? "Pausar" : "Ativar"}
           </Button>

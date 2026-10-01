@@ -157,7 +157,7 @@ export class AutomationsController {
   }
 
   @Post()
-  @RequirePermissions("automations.manage")
+  @RequirePermissions("automations.create")
   async create(@Body() dto: CreateAutomationRuleDto, @CurrentUser() current: AuthenticatedUser) {
     await this.assertDepartment(dto.departmentId, current.tenantId);
     const actionType = dto.actionType ?? AutomationActionType.BOT_REPLY;
@@ -180,7 +180,7 @@ export class AutomationsController {
   }
 
   @Patch(":id")
-  @RequirePermissions("automations.manage")
+  @RequirePermissions("automations.update")
   async update(
     @Param("id") id: string,
     @Body() dto: UpdateAutomationRuleDto,

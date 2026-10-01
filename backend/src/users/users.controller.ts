@@ -185,7 +185,8 @@ export class UsersController {
       departments: membership.departments.map((item) => this.serializeDepartment(item.department)),
       permissions,
       capabilities: {
-        canManageTenant: permissions.includes("users.manage"),
+        canManageTenant:
+          permissions.includes("users.create") || permissions.includes("users.update"),
         canOperateInbox: permissions.some((permission) => permission.startsWith("chat.")),
       },
     };
@@ -336,7 +337,7 @@ export class UsersController {
 
   @Get("company")
   @UseGuards(PermissionsGuard)
-  @RequirePermissions("settings.read")
+  @RequirePermissions("settings.manage")
   async company(@CurrentUser() current: AuthenticatedUser) {
     const tenant = await this.prisma.tenant.findUniqueOrThrow({
       where: { id: current.tenantId },
@@ -397,7 +398,7 @@ export class UsersController {
 
   @Get("company/financial")
   @UseGuards(PermissionsGuard)
-  @RequirePermissions("settings.read")
+  @RequirePermissions("settings.manage")
   async financial(@CurrentUser() current: AuthenticatedUser) {
     const invoices = await this.prisma.invoice.findMany({
       where: { tenantId: current.tenantId },
@@ -450,7 +451,7 @@ export class UsersController {
 
   @Post("users")
   @UseGuards(PermissionsGuard)
-  @RequirePermissions("users.manage")
+  @RequirePermissions("users.create")
   async create(@Body() dto: CreateUserDto, @CurrentUser() current: AuthenticatedUser) {
     assertBcryptPasswordLength(dto.password);
     const roleId = dto.roleId ?? (await this.defaultRoleId(current.tenantId));
@@ -509,7 +510,7 @@ export class UsersController {
 
   @Patch("users/:id")
   @UseGuards(PermissionsGuard)
-  @RequirePermissions("users.manage")
+  @RequirePermissions("users.update")
   async update(
     @Param("id") id: string,
     @Body() dto: UpdateUserDto,
@@ -602,7 +603,7 @@ export class UsersController {
 
   @Patch("users/:id/activate")
   @UseGuards(PermissionsGuard)
-  @RequirePermissions("users.manage")
+  @RequirePermissions("users.update")
   activate(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.updateMembership(
       id,
@@ -621,7 +622,7 @@ export class UsersController {
 
   @Get("user-invitations")
   @UseGuards(PermissionsGuard)
-  @RequirePermissions("users.manage")
+  @RequirePermissions("users.read")
   async listInvitations(@CurrentUser() current: AuthenticatedUser) {
     const invitations = await this.prisma.userInvitation.findMany({
       where: { tenantId: current.tenantId },
@@ -643,7 +644,7 @@ export class UsersController {
 
   @Post("user-invitations")
   @UseGuards(PermissionsGuard)
-  @RequirePermissions("users.manage")
+  @RequirePermissions("users.create")
   async createInvitation(
     @Body() dto: CreateInvitationDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -682,7 +683,7 @@ export class UsersController {
 
   @Patch("user-invitations/:id/revoke")
   @UseGuards(PermissionsGuard)
-  @RequirePermissions("users.manage")
+  @RequirePermissions("users.update")
   async revokeInvitation(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     await this.prisma.userInvitation.updateMany({
       where: { id, tenantId: current.tenantId, status: "PENDING" },

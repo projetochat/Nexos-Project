@@ -214,6 +214,30 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
+  it("uses the configured connection limit as the single rule for additional instances", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.create.mockResolvedValue(connection());
+    const evolution = {
+      createInstance: vi.fn().mockResolvedValue({ instance: { status: "connecting" } }),
+      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
+      deleteInstance: vi.fn(),
+    };
+    const entitlements = {
+      assertTenantOperational: vi.fn().mockResolvedValue(undefined),
+      getUsage: vi.fn().mockResolvedValue({ connections: 1 }),
+      assertWithinLimit: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await new MessagingConnectionsService(
+      prisma as never,
+      evolution as never,
+      entitlements as never,
+    ).createEvolution({ name: "Comercial" }, current as never);
+
+    expect(entitlements.assertWithinLimit).toHaveBeenCalledWith("tenant-a", "maxConnections", 1);
+    expect(evolution.createInstance).toHaveBeenCalledOnce();
+  });
+
   it("rejects a duplicate active instance name before calling Evolution", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue({ id: "connection-existing" });

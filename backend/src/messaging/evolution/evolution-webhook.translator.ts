@@ -359,6 +359,40 @@ function extractMessageContent(message: Record<string, unknown> | null): {
       interactive,
     };
   }
+  const listResponse = readRecord(message, "listResponseMessage");
+  if (listResponse) {
+    const selected = readRecord(listResponse, "singleSelectReply");
+    const selectedText =
+      readString(listResponse, "title") ??
+      readString(listResponse, "description") ??
+      readString(selected ?? undefined, "selectedRowId");
+    return { type: MessageType.TEXT, text: selectedText };
+  }
+  const buttonsResponse = readRecord(message, "buttonsResponseMessage");
+  if (buttonsResponse) {
+    return {
+      type: MessageType.TEXT,
+      text:
+        readString(buttonsResponse, "selectedDisplayText") ??
+        readString(buttonsResponse, "selectedButtonId"),
+    };
+  }
+  const templateButtonResponse = readRecord(message, "templateButtonReplyMessage");
+  if (templateButtonResponse) {
+    return {
+      type: MessageType.TEXT,
+      text:
+        readString(templateButtonResponse, "selectedDisplayText") ??
+        readString(templateButtonResponse, "selectedId"),
+    };
+  }
+  const interactiveResponse = readRecord(message, "interactiveResponseMessage");
+  if (interactiveResponse) {
+    return {
+      type: MessageType.TEXT,
+      text: interactiveResponseText(interactiveResponse),
+    };
+  }
   const buttons = readRecord(message, "buttonsMessage");
   if (buttons) return { type: MessageType.TEXT, text: interactiveButtonsText(buttons) };
   const interactive = readRecord(message, "interactiveMessage");
@@ -404,6 +438,30 @@ function extractMessageContent(message: Record<string, unknown> | null): {
     };
   }
   return { type: MessageType.TEXT };
+}
+
+function interactiveResponseText(interactive: Record<string, unknown>) {
+  const nativeFlow = readRecord(interactive, "nativeFlowResponseMessage");
+  const params = readString(nativeFlow ?? undefined, "paramsJson");
+  if (params) {
+    try {
+      const parsed: unknown = JSON.parse(params);
+      if (parsed && typeof parsed === "object") {
+        const record = parsed as Record<string, unknown>;
+        const selected =
+          stringValue(record.title) ??
+          stringValue(record.display_text) ??
+          stringValue(record.name) ??
+          stringValue(record.id);
+        if (selected) return selected;
+      }
+    } catch {
+      // Keep the provider's visible fallback below when paramsJson is malformed.
+    }
+  }
+  return (
+    readNestedString(interactive, ["body", "text"]) ?? readString(nativeFlow ?? undefined, "name")
+  );
 }
 
 function extractLinkPreview(extended: Record<string, unknown> | null, text: string) {
