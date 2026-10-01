@@ -6,7 +6,7 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => ({}),
   lazyRouteComponent: () => () => null,
 }));
-import { AtendenteForm, ReactivateAttendantModal } from "./atendentes";
+import { AtendenteForm } from "./atendentes";
 const initial = {
   id: "blocked",
   userId: "blocked-user",
@@ -28,45 +28,7 @@ async function type(input: HTMLInputElement, value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-it("requires a new password to unlock and submits it only after six characters", async () => {
-  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  const host = document.createElement("div");
-  document.body.append(host);
-  const root = createRoot(host);
-  const submit = vi.fn();
-  try {
-    await React.act(async () =>
-      root.render(
-        <ReactivateAttendantModal
-          open
-          name="Pessoa teste"
-          busy={false}
-          onClose={vi.fn()}
-          onSubmit={submit}
-        />,
-      ),
-    );
-    const input = document.querySelector<HTMLInputElement>(
-      '[aria-label="Nova senha do atendente"]',
-    )!;
-    const button = [...document.querySelectorAll("button")].find(
-      (item) => item.textContent === "Desbloquear",
-    )!;
-    expect(input.required).toBe(true);
-    expect(input.closest("label")?.querySelector(".text-destructive")?.textContent).toBe("*");
-    expect(button.disabled).toBe(true);
-    await type(input, "12345");
-    expect(button.disabled).toBe(true);
-    await type(input, "Nova123!");
-    expect(button.disabled).toBe(false);
-    await React.act(async () => button.click());
-    expect(submit).toHaveBeenCalledWith("Nova123!");
-  } finally {
-    await React.act(async () => root.unmount());
-    host.remove();
-  }
-});
-it("requires password when editing an inactive account to active and preserves active account lock", async () => {
+it("reactivates an inactive account without requesting a password", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const host = document.createElement("div");
   document.body.append(host);
@@ -91,20 +53,13 @@ it("requires password when editing an inactive account to active and preserves a
       document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
     );
     password = document.querySelector<HTMLInputElement>('[aria-label="Senha do atendente"]')!;
-    expect(password.disabled).toBe(false);
-    expect(password.getAttribute("aria-required")).toBe("true");
-    expect(password.closest(".space-y-4")).toBeTruthy();
+    expect(password.disabled).toBe(true);
+    expect(password.getAttribute("aria-required")).toBe("false");
     const save = [...document.querySelectorAll("button")].find(
       (item) => item.textContent === "Salvar",
     )!;
     await React.act(async () => save.click());
-    expect(submit).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Senha mínima de 6 caracteres.");
-    await type(password, "Nova123!");
-    await React.act(async () => save.click());
-    expect(submit).toHaveBeenCalledWith(
-      expect.objectContaining({ ativo: true, senha: "Nova123!" }),
-    );
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ ativo: true, senha: undefined }));
     const active = { ...initial, ativo: true };
     await React.act(async () =>
       root.render(
@@ -128,7 +83,7 @@ it("requires password when editing an inactive account to active and preserves a
   }
 });
 
-it("sends the required password in the activation API body", async () => {
+it("activates without sending a password in the API body", async () => {
   const { organizationApi } = await import("@/lib/trixus-api");
   const mockedFetch = vi
     .spyOn(globalThis, "fetch")
@@ -136,11 +91,12 @@ it("sends the required password in the activation API body", async () => {
       new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
     );
   try {
-    await organizationApi.activateUser("isolated-member", { password: "Nova123!" });
+    await organizationApi.activateUser("isolated-member");
     expect(mockedFetch).toHaveBeenCalledWith(
       expect.stringContaining("/users/isolated-member/activate"),
-      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ password: "Nova123!" }) }),
+      expect.objectContaining({ method: "PATCH" }),
     );
+    expect(mockedFetch.mock.calls[0]?.[1]?.body).toBeUndefined();
   } finally {
     mockedFetch.mockRestore();
   }

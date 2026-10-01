@@ -12,23 +12,12 @@ import {
 } from "@/components/ui-kit";
 import { connectionsApi, crmApi, organizationApi, type OperationalPeriod } from "@/lib/trixus-api";
 import {
+  DASHBOARD_PERIOD_OPTIONS,
   datesForOperationalPeriod,
   type OperationalReportFilters,
 } from "@/lib/operational-filters";
 import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
 import { sortByOptionLabel } from "@/lib/sort-options";
-
-const PERIOD_OPTIONS: Array<{ value: OperationalPeriod; label: string }> = [
-  { value: "today", label: "Hoje" },
-  { value: "yesterday", label: "Ontem" },
-  { value: "week", label: "Essa semana" },
-  { value: "previous_week", label: "Semana passada" },
-  { value: "month", label: "Esse mês" },
-  { value: "previous_month", label: "Mês passado" },
-  { value: "year", label: "Esse ano" },
-  { value: "previous_year", label: "Ano passado" },
-  { value: "custom", label: "Personalizado" },
-];
 
 export function DashboardFiltersBar({
   value,
@@ -149,7 +138,7 @@ export function DashboardFiltersBar({
               onChange({ period, start: dates.start, end: dates.end });
             }}
           >
-            {PERIOD_OPTIONS.map((period) => (
+            {DASHBOARD_PERIOD_OPTIONS.map((period) => (
               <option key={period.value} value={period.value}>
                 {period.label}
               </option>
@@ -190,7 +179,7 @@ export function DashboardFiltersBar({
   );
 }
 
-function DashboardDateInput({
+export function DashboardDateInput({
   value,
   readOnly,
   onChange,

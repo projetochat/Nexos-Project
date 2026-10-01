@@ -76,6 +76,7 @@ const NATIVE_GROUPINGS: Record<DashboardDataSource, DashboardGroupingOption[]> =
 export const DEFAULT_DASHBOARD_COMPONENTS: DashboardComponentConfig[] = [
   component("counters", "Contadores de registro", true, "cards", 4, "records", "queue", "count"),
   component("messages", "Tráfego de mensagens", true, "line", 2, "messages", "hour", "count"),
+  component("tag", "Conversas por etiqueta", true, "columns", 2, "conversations", "tag", "count"),
   component(
     "distribution",
     "Distribuição de conversas",
@@ -87,13 +88,13 @@ export const DEFAULT_DASHBOARD_COMPONENTS: DashboardComponentConfig[] = [
     "percentage",
   ),
   component(
-    "connection",
-    "Conversas por instância",
+    "agent",
+    "Conversas por atendente",
     true,
-    "bars",
+    "columns",
     1,
     "conversations",
-    "connection",
+    "agent",
     "count",
   ),
   component(
@@ -106,28 +107,27 @@ export const DEFAULT_DASHBOARD_COMPONENTS: DashboardComponentConfig[] = [
     "customer",
     "count",
   ),
+  component("recent", "Atividade recente", true, "table", 1, "activity", "recent", "count"),
+  component(
+    "connection",
+    "Conversas por instância",
+    false,
+    "columns",
+    1,
+    "conversations",
+    "connection",
+    "count",
+  ),
   component(
     "department",
     "Conversas por departamento",
-    true,
+    false,
     "bars",
     1,
     "conversations",
     "department",
     "count",
   ),
-  component("tag", "Conversas por etiqueta", true, "columns", 1, "conversations", "tag", "count"),
-  component(
-    "agent",
-    "Conversas por atendente",
-    true,
-    "columns",
-    1,
-    "conversations",
-    "agent",
-    "count",
-  ),
-  component("recent", "Atividade recente", true, "table", 4, "activity", "recent", "count"),
 ];
 
 export function dashboardGroupingOptions(
@@ -170,6 +170,18 @@ export function reorderDashboardComponents(
   const [moved] = next.splice(sourceIndex, 1);
   next.splice(targetIndex, 0, moved);
   return next;
+}
+
+export function restoreNativeDashboardComponents(components: DashboardComponentConfig[]) {
+  const nativeIds = new Set(DEFAULT_DASHBOARD_COMPONENTS.map((component) => component.id));
+  const customComponents = components
+    .filter((component) => !nativeIds.has(component.id))
+    .map((component) => ({ ...component }));
+
+  return [
+    ...DEFAULT_DASHBOARD_COMPONENTS.map((component) => ({ ...component })),
+    ...customComponents,
+  ];
 }
 
 export function dashboardColumnClass(columns: DashboardColumnCount) {

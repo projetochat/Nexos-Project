@@ -1,16 +1,17 @@
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { AdminContainer } from "@/components/admin-shell";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Badge, Card, SearchInput, SectionHeader } from "@/components/ui-kit";
 import { fmtDateTime } from "@/lib/format";
 import { platformApi, type PlatformAuditLog } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/logs")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
-  component: LogsAdmin,
+  beforeLoad: () => {
+    throw redirect({ to: "/admin/configuracoes", search: { tab: "log" } });
+  },
 });
 
-function LogsAdmin() {
+export function LogsSettingsContent() {
   const [q, setQ] = React.useState("");
   const [rows, setRows] = React.useState<PlatformAuditLog[]>([]);
   const [error, setError] = React.useState<string | null>(null);
@@ -26,7 +27,7 @@ function LogsAdmin() {
       .includes(q.toLowerCase()),
   );
   return (
-    <AdminContainer>
+    <>
       <SectionHeader
         title="Logs administrativos"
         subtitle="Eventos persistidos pelo plano de controle. Health detalhado fica em Monitoramento."
@@ -54,6 +55,6 @@ function LogsAdmin() {
           ))}
         </div>
       </Card>
-    </AdminContainer>
+    </>
   );
 }

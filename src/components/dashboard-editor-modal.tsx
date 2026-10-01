@@ -1,7 +1,5 @@
 import * as React from "react";
 import {
-  ArrowDown,
-  ArrowUp,
   ChartBar,
   ChartColumn,
   ChartLine,
@@ -13,7 +11,7 @@ import {
   LayoutGrid,
   Plus,
   RotateCcw,
-  Settings2,
+  Settings,
   Table2,
   Trash2,
 } from "lucide-react";
@@ -32,6 +30,7 @@ import {
   dashboardGroupingOptions,
   duplicateDashboardComponent,
   reorderDashboardComponents,
+  restoreNativeDashboardComponents,
   type DashboardComponentConfig,
   type DashboardDataSource,
   type DashboardVisualization,
@@ -106,6 +105,7 @@ export function DashboardEditorModal({
   const [creating, setCreating] = React.useState(false);
   const [deleting, setDeleting] = React.useState<DashboardComponentConfig | null>(null);
   const [draggingId, setDraggingId] = React.useState<string | null>(null);
+  const touchDraggingId = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
@@ -146,8 +146,14 @@ export function DashboardEditorModal({
   };
 
   const restoreDefaults = () => {
-    apply(DEFAULT_DASHBOARD_COMPONENTS.map((item) => ({ ...item })));
+    apply(restoreNativeDashboardComponents(draft));
     onClose();
+  };
+
+  const reorder = (sourceId: string, targetId: string) => {
+    if (!canManage || sourceId === targetId) return;
+    const next = reorderDashboardComponents(draft, sourceId, targetId);
+    if (next !== draft) apply(next);
   };
 
   return (
@@ -189,13 +195,7 @@ export function DashboardEditorModal({
             return (
               <div
                 key={component.id}
-                draggable={canManage}
-                onDragStart={(event) => {
-                  if (!canManage) return;
-                  event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("text/plain", component.id);
-                  setDraggingId(component.id);
-                }}
+                data-dashboard-component-id={component.id}
                 onDragOver={(event) => {
                   if (canManage) event.preventDefault();
                 }}
@@ -203,7 +203,7 @@ export function DashboardEditorModal({
                   if (!canManage) return;
                   event.preventDefault();
                   const sourceId = event.dataTransfer.getData("text/plain");
-                  apply(reorderDashboardComponents(draft, sourceId, component.id));
+                  reorder(sourceId, component.id);
                   setDraggingId(null);
                 }}
                 onDragEnd={() => setDraggingId(null)}
@@ -215,7 +215,39 @@ export function DashboardEditorModal({
                   <div
                     role="button"
                     tabIndex={0}
-                    aria-label={`Reordenar ${component.title}. Use as setas para cima e para baixo.`}
+                    draggable
+                    aria-label={`Reordenar ${component.title}`}
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", component.id);
+                      setDraggingId(component.id);
+                    }}
+                    onDragEnd={() => setDraggingId(null)}
+                    onPointerDown={(event) => {
+                      if (event.pointerType === "mouse") return;
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                      touchDraggingId.current = component.id;
+                      setDraggingId(component.id);
+                    }}
+                    onPointerMove={(event) => {
+                      if (event.pointerType === "mouse" || touchDraggingId.current !== component.id)
+                        return;
+                      const target = document
+                        .elementFromPoint(event.clientX, event.clientY)
+                        ?.closest<HTMLElement>("[data-dashboard-component-id]")
+                        ?.dataset.dashboardComponentId;
+                      if (target) reorder(component.id, target);
+                    }}
+                    onPointerUp={(event) => {
+                      if (event.pointerType !== "mouse") {
+                        touchDraggingId.current = null;
+                        setDraggingId(null);
+                      }
+                    }}
+                    onPointerCancel={() => {
+                      touchDraggingId.current = null;
+                      setDraggingId(null);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "ArrowUp") {
                         event.preventDefault();
@@ -226,7 +258,7 @@ export function DashboardEditorModal({
                         moveComponent(component.id, 1);
                       }
                     }}
-                    className="flex shrink-0 cursor-grab items-center gap-2 rounded text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary active:cursor-grabbing"
+                    className="flex shrink-0 touch-none cursor-grab items-center gap-2 rounded text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary active:cursor-grabbing"
                   >
                     <GripVertical className="h-4 w-4" />
                     <span className="w-5 text-center font-mono text-xs">{index + 1}</span>
@@ -236,32 +268,6 @@ export function DashboardEditorModal({
                     {index + 1}
                   </span>
                 )}
-
-                {canManage && (
-                  <div className="flex gap-1 sm:hidden" aria-label={`Mover ${component.title}`}>
-                    <button
-                      type="button"
-                      title="Mover para cima"
-                      aria-label={`Mover ${component.title} para cima`}
-                      disabled={index === 0}
-                      onClick={() => moveComponent(component.id, -1)}
-                      className="rounded p-1 text-muted-foreground hover:bg-surface-3 disabled:opacity-30"
-                    >
-                      <ArrowUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      title="Mover para baixo"
-                      aria-label={`Mover ${component.title} para baixo`}
-                      disabled={index === draft.length - 1}
-                      onClick={() => moveComponent(component.id, 1)}
-                      className="rounded p-1 text-muted-foreground hover:bg-surface-3 disabled:opacity-30"
-                    >
-                      <ArrowDown className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                )}
-
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                   <Icon className="h-4 w-4" />
                 </div>
@@ -274,10 +280,20 @@ export function DashboardEditorModal({
                   </p>
                 </div>
 
+                <label className="flex shrink-0 items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <Switch
+                    aria-label={`Exibir ${component.title}`}
+                    checked={component.visible}
+                    disabled
+                  />
+                  Visível
+                </label>
+
                 <div className="ml-auto flex shrink-0 gap-1.5">
                   {canManage && (
                     <IconButton
-                      label={`Duplicar ${component.title}`}
+                      label="Duplicar"
+                      ariaLabel={`Duplicar ${component.title}`}
                       onClick={() =>
                         openConfiguration(duplicateDashboardComponent(component), true)
                       }
@@ -287,7 +303,8 @@ export function DashboardEditorModal({
                   )}
                   {canDelete && !DEFAULT_DASHBOARD_COMPONENT_IDS.has(component.id) && (
                     <IconButton
-                      label={`Excluir ${component.title}`}
+                      label="Excluir"
+                      ariaLabel={`Excluir ${component.title}`}
                       destructive
                       onClick={() => setDeleting(component)}
                     >
@@ -296,10 +313,11 @@ export function DashboardEditorModal({
                   )}
                   {canManage && (
                     <IconButton
-                      label={`Configurar ${component.title}`}
+                      label="Configurar"
+                      ariaLabel={`Configurar ${component.title}`}
                       onClick={() => openConfiguration(component)}
                     >
-                      <Settings2 className="h-4 w-4" />
+                      <Settings className="h-4 w-4" />
                     </IconButton>
                   )}
                 </div>
@@ -433,9 +451,11 @@ function DashboardComponentConfigModal({
         <span>Todos os componentes criados respeitam o painel de filtro do dashboard.</span>
       </div>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-        <Field label="Título do componente" error={error}>
+      <div className="mb-4 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+        <Field label="Título do componente *" error={error}>
           <Input
+            required
+            aria-invalid={!!error}
             value={draft.title}
             onChange={(event) => {
               patch({ title: event.target.value });
@@ -444,7 +464,11 @@ function DashboardComponentConfigModal({
           />
         </Field>
         <label className="flex min-h-10 items-center gap-2 pb-0.5 text-sm font-medium text-foreground">
-          <Switch checked={draft.visible} onCheckedChange={(visible) => patch({ visible })} />
+          <Switch
+            aria-label={`Alterar visibilidade de ${draft.title}`}
+            checked={draft.visible}
+            onCheckedChange={(visible) => patch({ visible })}
+          />
           Visível
         </label>
       </div>
@@ -453,7 +477,7 @@ function DashboardComponentConfigModal({
         <legend className="mb-2 text-xs font-medium text-muted-foreground">
           Tipo de visualização
         </legend>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+        <div className="grid grid-cols-4 gap-1.5 lg:grid-cols-8">
           {DASHBOARD_VISUALIZATIONS.map((visualization) => {
             const Icon = VISUALIZATION_ICONS[visualization];
             const selected = draft.visualization === visualization;
@@ -463,7 +487,7 @@ function DashboardComponentConfigModal({
                 type="button"
                 aria-pressed={selected}
                 onClick={() => patch({ visualization })}
-                className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-lg border px-2 py-2 text-xs transition ${
+                className={`flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[10px] transition sm:text-xs ${
                   selected
                     ? "border-primary bg-primary/10 text-primary shadow-sm"
                     : "border-border bg-surface-1 text-muted-foreground hover:border-primary/50 hover:text-foreground"
@@ -541,14 +565,14 @@ function DashboardComponentConfigModal({
               value={draft.valueMode}
               onChange={(event) => patch({ valueMode: event.target.value as DashboardValueMode })}
             >
-              <option value="count">Quantidade</option>
-              <option value="percentage">(%) Apresentar por percentual</option>
+              <option value="count">Quantidade (∑)</option>
+              <option value="percentage">Percentual (%)</option>
             </Select>
           </Field>
         </div>
 
         <section
-          className="min-w-0 rounded-xl border border-border bg-surface-1 p-3"
+          className="min-w-0 overflow-hidden rounded-xl border border-border bg-surface-1 p-3"
           aria-label="Preview"
         >
           <h3 className="mb-2 text-sm font-semibold text-foreground">Preview</h3>
@@ -569,11 +593,13 @@ function DashboardComponentConfigModal({
 
 function IconButton({
   label,
+  ariaLabel,
   destructive = false,
   children,
   onClick,
 }: {
   label: string;
+  ariaLabel: string;
   destructive?: boolean;
   children: React.ReactNode;
   onClick: () => void;
@@ -582,12 +608,10 @@ function IconButton({
     <button
       type="button"
       title={label}
-      aria-label={label}
+      aria-label={ariaLabel}
       onClick={onClick}
-      className={`flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface-2 transition ${
-        destructive
-          ? "text-muted-foreground hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
-          : "text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+      className={`flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition ${
+        destructive ? "hover:text-destructive" : "hover:text-primary"
       }`}
     >
       {children}

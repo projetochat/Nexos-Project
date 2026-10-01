@@ -154,11 +154,11 @@ function AtendentesPage() {
   });
 
   const remove = useMutation({
-    mutationFn: ({ atendente, password }: { atendente: Atendente; password?: string }) =>
+    mutationFn: (atendente: Atendente) =>
       atendente.ativo
         ? organizationApi.deactivateUser(atendente.id)
-        : organizationApi.activateUser(atendente.id, { password: password ?? "" }),
-    onSuccess: (_membership, { atendente }) => {
+        : organizationApi.activateUser(atendente.id),
+    onSuccess: (_membership, atendente) => {
       qc.invalidateQueries({ queryKey: ["trixus", "users"] });
       toast.success(atendente.ativo ? "Atendente bloqueado" : "Atendente desbloqueado");
       setDeleting(null);
@@ -495,9 +495,9 @@ function AtendentesPage() {
           />
         )}
         <ConfirmDialog
-          open={!!deleting?.ativo}
+          open={!!deleting}
           title={deleting?.ativo ? "Bloquear Atendente?" : "Desbloquear Atendente?"}
-          destructive
+          destructive={deleting?.ativo}
           accent={deleting?.ativo ? "destructive" : "primary"}
           description={
             <p>
@@ -507,78 +507,10 @@ function AtendentesPage() {
           }
           confirmLabel={deleting?.ativo ? "Bloquear" : "Desbloquear"}
           onClose={() => setDeleting(null)}
-          onConfirm={() => deleting && remove.mutate({ atendente: deleting })}
-        />
-        <ReactivateAttendantModal
-          key={deleting?.id ?? "closed"}
-          open={!!deleting && !deleting.ativo}
-          name={deleting?.nome ?? ""}
-          busy={remove.isPending}
-          onClose={() => setDeleting(null)}
-          onSubmit={(password) => deleting && remove.mutate({ atendente: deleting, password })}
+          onConfirm={() => deleting && remove.mutate(deleting)}
         />
       </PageContainer>
     </AppShell>
-  );
-}
-
-export function ReactivateAttendantModal({
-  open,
-  name,
-  busy,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  name: string;
-  busy: boolean;
-  onClose: () => void;
-  onSubmit: (password: string) => void;
-}) {
-  const [password, setPassword] = React.useState("");
-  return (
-    <Modal
-      open={open}
-      onClose={() => {
-        if (!busy) onClose();
-      }}
-      title="Desbloquear Atendente?"
-      size="sm"
-    >
-      <form
-        className="space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!busy && password.trim() && password.length >= 6) onSubmit(password);
-        }}
-      >
-        <p className="text-sm text-muted-foreground">
-          Defina uma nova senha para desbloquear <strong>{name}</strong>.
-        </p>
-        <label className="block text-sm">
-          Nova senha <span className="text-destructive">*</span>
-          <Input
-            aria-label="Nova senha do atendente"
-            type="password"
-            autoComplete="new-password"
-            required
-            minLength={6}
-            value={password}
-            disabled={busy}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </label>
-        <p className="text-xs text-muted-foreground">Senha mínima de 6 caracteres.</p>
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button type="submit" disabled={busy || !password.trim() || password.length < 6}>
-            Desbloquear
-          </Button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 
@@ -606,9 +538,8 @@ export function AtendenteForm({
   const [showPassword, setShowPassword] = React.useState(false);
   const [passwordUnlocked, setPasswordUnlocked] = React.useState(false);
   const isEditing = Boolean(initial && !clone);
-  const reactivating = isEditing && initial?.ativo === false && form.ativo === true;
-  const passwordRequired = !isEditing || reactivating || passwordUnlocked;
-  const passwordLocked = isEditing && !reactivating && !passwordUnlocked;
+  const passwordRequired = !isEditing || passwordUnlocked;
+  const passwordLocked = isEditing && !passwordUnlocked;
   const passwordRef = React.useRef<HTMLInputElement>(null);
   const [photoMenuOpen, setPhotoMenuOpen] = React.useState(false);
   const [cameraOpen, setCameraOpen] = React.useState(false);
@@ -875,7 +806,7 @@ export function AtendenteForm({
                     }}
                     className={isEditing ? "pr-20" : "pr-10"}
                   />
-                  {isEditing && !reactivating && (
+                  {isEditing && (
                     <button
                       type="button"
                       aria-label={

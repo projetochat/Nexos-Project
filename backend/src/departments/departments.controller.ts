@@ -35,7 +35,7 @@ export class DepartmentsController {
   @RequirePermissions("departments.read")
   async list(@CurrentUser() current: AuthenticatedUser) {
     const departments = await this.prisma.department.findMany({
-      where: { tenantId: current.tenantId },
+      where: { tenantId: current.tenantId, active: true },
       orderBy: { name: "asc" },
       include: {
         members: true,
@@ -68,11 +68,6 @@ export class DepartmentsController {
         Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
       );
       await this.entitlements.assertTenantOperational(current.tenantId);
-      await this.entitlements.assertWithinLimit(
-        current.tenantId,
-        "maxDepartments",
-        await tx.department.count({ where: { tenantId: current.tenantId, active: true } }),
-      );
       await this.ensureNameAvailable(tx, current.tenantId, name);
       return tx.department.create({
         data: {

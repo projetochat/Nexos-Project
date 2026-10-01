@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
 import { CampaignDispatchQueue } from "../campaigns/campaign-dispatch.queue";
+import { EmailModule } from "../email/email.module";
 import { PrismaModule } from "../prisma/prisma.module";
 import { QueueModule } from "../queue/queue.module";
 import { RealtimeModule } from "../realtime/realtime.module";
@@ -12,7 +13,7 @@ import { PlanEntitlementService } from "./plan-entitlement.service";
 import { PlatformService } from "./platform.service";
 
 @Module({
-  imports: [AuthModule, PrismaModule, QueueModule, RealtimeModule, StorageModule],
+  imports: [AuthModule, EmailModule, PrismaModule, QueueModule, RealtimeModule, StorageModule],
   controllers: [PlatformController],
   providers: [
     CampaignDispatchQueue,

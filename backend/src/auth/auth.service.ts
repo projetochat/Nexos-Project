@@ -11,9 +11,22 @@ import { ConfigService } from "@nestjs/config";
 import { JwtService, type JwtSignOptions } from "@nestjs/jwt";
 import { createHash, randomBytes } from "crypto";
 import { compare, hash } from "bcryptjs";
+import { Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
-import { JwtPayload } from "./auth.types";
+import { type AuthenticatedUser, JwtPayload } from "./auth.types";
 import { LoginDto } from "./dto/login.dto";
+
+type LoginUserWithMemberships = Prisma.UserGetPayload<{
+  include: {
+    memberships: {
+      include: {
+        user: true;
+        tenant: true;
+        role: { include: { permissions: { select: { permissionId: true } } } };
+      };
+    };
+  };
+}>;
 
 @Injectable()
 export class AuthService {
@@ -100,17 +113,45 @@ export class AuthService {
       };
     }
 
-    const activeMemberships = user.memberships.filter((item) => item.status === "ACTIVE");
-    if (!requestedTenantSlug && activeMemberships.length > 1) {
-      throw new ForbiddenException({
-        code: "TENANT_SELECTION_REQUIRED",
-        message: "Selecione a organização para continuar.",
+    const activeMemberships = user.memberships.filter(
+      (item) => item.status === "ACTIVE" && ["ACTIVE", "TRIAL"].includes(item.tenant.status),
+    );
+    const pendingInitialPassword = await this.prisma.userInvitation.findFirst({
+      where: {
+        email: user.email,
+        status: "PENDING",
+        tenantId: { in: activeMemberships.map((item) => item.tenantId) },
+      },
+      select: { tenantId: true, roleId: true },
+    });
+    if (pendingInitialPassword) {
+      const pendingMembership = activeMemberships.find(
+        (item) =>
+          item.tenantId === pendingInitialPassword.tenantId &&
+          item.roleId === pendingInitialPassword.roleId,
+      );
+      if (pendingMembership) return this.issueTenantLogin(user, pendingMembership);
+    }
+    if (activeMemberships.length > 1) {
+      const selectionPayload = {
+        sub: user.id,
+        tenantId: "",
+        membershipId: "",
+        roleId: "",
+        roleKey: "tenant_selection",
+        platformRole: user.platformRole,
+        iatMs: Date.now(),
+        typ: "tenant_selection" as const,
+      };
+      return {
+        tenantSelectionRequired: true as const,
+        tenantSelectionToken: await this.signToken(selectionPayload, "JWT_SECRET", "10m"),
         tenants: activeMemberships.map((item) => ({
           id: item.tenant.id,
           slug: item.tenant.slug,
           name: item.tenant.name,
         })),
-      });
+      };
     }
     const membership = requestedTenantSlug
       ? activeMemberships.find((item) => item.tenant.slug === requestedTenantSlug)
@@ -129,7 +170,106 @@ export class AuthService {
         message: "Organização suspensa ou encerrada.",
       });
     }
+    return this.issueTenantLogin(user, membership);
+  }
+
+  async selectTenant(selectionToken: string, tenantId: string) {
+    let payload: JwtPayload;
+    try {
+      payload = await this.verifyToken(selectionToken, "JWT_SECRET");
+    } catch {
+      throw new UnauthorizedException("Seleção de Tenant inválida ou expirada.");
+    }
+    if (payload.typ !== "tenant_selection") {
+      throw new UnauthorizedException("Token de seleção de Tenant inválido.");
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: {
+        memberships: {
+          include: {
+            user: true,
+            tenant: true,
+            role: { include: { permissions: { select: { permissionId: true } } } },
+          },
+        },
+      },
+    });
+    if (!user || user.status !== "ACTIVE") throw new UnauthorizedException("Usuário inativo.");
+    const activeMemberships = user.memberships.filter(
+      (item) => item.status === "ACTIVE" && ["ACTIVE", "TRIAL"].includes(item.tenant.status),
+    );
+    const pendingInitialPassword = await this.prisma.userInvitation.findFirst({
+      where: {
+        email: user.email,
+        status: "PENDING",
+        tenantId: { in: activeMemberships.map((item) => item.tenantId) },
+      },
+      select: { tenantId: true, roleId: true },
+    });
+    if (pendingInitialPassword) {
+      const pendingMembership = activeMemberships.find(
+        (item) =>
+          item.tenantId === pendingInitialPassword.tenantId &&
+          item.roleId === pendingInitialPassword.roleId,
+      );
+      if (pendingMembership) return this.issueTenantLogin(user, pendingMembership);
+    }
+    const membership = user.memberships.find(
+      (item) =>
+        item.tenantId === tenantId &&
+        item.status === "ACTIVE" &&
+        ["ACTIVE", "TRIAL"].includes(item.tenant.status),
+    );
+    if (!membership) {
+      throw new ForbiddenException({
+        code: "TENANT_ACCESS_DENIED",
+        message: "Você não possui acesso ativo à Tenant selecionada.",
+      });
+    }
+    return this.issueTenantLogin(user, membership);
+  }
+
+  private async issueTenantLogin(
+    user: LoginUserWithMemberships,
+    membership: LoginUserWithMemberships["memberships"][number],
+  ) {
     const permissions = effectivePermissions(membership.role);
+    const pendingInitialPassword = await this.prisma.userInvitation.findFirst({
+      where: {
+        tenantId: membership.tenantId,
+        email: user.email,
+        roleId: membership.roleId,
+        status: "PENDING",
+      },
+      select: { id: true },
+    });
+    if (pendingInitialPassword) {
+      const setupPayload = {
+        sub: user.id,
+        tenantId: membership.tenantId,
+        membershipId: membership.id,
+        roleId: membership.roleId,
+        roleKey: membership.role.key,
+        platformRole: user.platformRole,
+        iatMs: Date.now(),
+        typ: "password_setup" as const,
+      };
+      return {
+        passwordChangeRequired: true as const,
+        passwordSetupToken: await this.signToken(setupPayload, "JWT_SECRET", "10m"),
+        user: {
+          id: user.id,
+          email: user.email,
+          name: membershipDisplayName(membership, user.name),
+        },
+        tenant: {
+          id: membership.tenant.id,
+          slug: membership.tenant.slug,
+          name: membership.tenant.name,
+        },
+      };
+    }
 
     const basePayload = {
       sub: user.id,
@@ -254,6 +394,11 @@ export class AuthService {
     const email = emailInput.toLowerCase().trim();
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user || user.status !== "ACTIVE") return { ok: true };
+    const pendingInitialPassword = await this.prisma.userInvitation.findFirst({
+      where: { email, status: "PENDING" },
+      select: { id: true },
+    });
+    if (pendingInitialPassword) return { ok: true };
 
     const token = secureToken();
     await this.prisma.passwordResetToken.create({
@@ -279,6 +424,16 @@ export class AuthService {
     });
     if (!record || record.user.status !== "ACTIVE") {
       throw new UnauthorizedException("Token de redefinição inválido ou expirado.");
+    }
+    const pendingInitialPassword = await this.prisma.userInvitation.findFirst({
+      where: { email: record.user.email, status: "PENDING" },
+      select: { id: true },
+    });
+    if (pendingInitialPassword) {
+      throw new ForbiddenException({
+        code: "PASSWORD_CHANGE_REQUIRED",
+        message: "Conclua a troca obrigatória da senha temporária pelo primeiro acesso.",
+      });
     }
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -360,6 +515,118 @@ export class AuthService {
     });
   }
 
+  async completeRequiredPasswordChange(dto: {
+    setupToken: string;
+    newPassword: string;
+    confirmPassword: string;
+  }) {
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new ForbiddenException({
+        code: "PASSWORD_CONFIRMATION_MISMATCH",
+        message: "A confirmação da nova senha não confere.",
+      });
+    }
+    if (Buffer.byteLength(dto.newPassword, "utf8") > 72) {
+      throw new ForbiddenException({
+        code: "PASSWORD_TOO_LONG",
+        message: "A senha deve possuir no máximo 72 bytes.",
+      });
+    }
+    if (dto.newPassword === "Trixus@2026") {
+      throw new ForbiddenException({
+        code: "TEMPORARY_PASSWORD_REUSE",
+        message: "A nova senha deve ser diferente da senha temporária.",
+      });
+    }
+
+    let payload: JwtPayload;
+    try {
+      payload = await this.verifyToken(dto.setupToken, "JWT_SECRET");
+    } catch {
+      throw new UnauthorizedException("Token de troca de senha inválido ou expirado.");
+    }
+    if (payload.typ !== "password_setup") {
+      throw new UnauthorizedException("Token de troca de senha inválido.");
+    }
+    const changedAt = new Date();
+    const loginIdentity = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${payload.sub}))`;
+      const membership = await tx.tenantMembership.findFirst({
+        where: {
+          id: payload.membershipId,
+          tenantId: payload.tenantId,
+          userId: payload.sub,
+          status: "ACTIVE",
+          tenant: { status: { in: ["ACTIVE", "TRIAL"] } },
+        },
+        include: { user: true, tenant: true, role: true },
+      });
+      if (!membership || membership.user.status !== "ACTIVE") {
+        throw new UnauthorizedException("Acesso temporário inválido ou expirado.");
+      }
+      const pending = await tx.userInvitation.findFirst({
+        where: {
+          tenantId: membership.tenantId,
+          email: membership.user.email,
+          roleId: membership.roleId,
+          status: "PENDING",
+        },
+      });
+      if (!pending) {
+        throw new UnauthorizedException("A troca inicial de senha já foi concluída.");
+      }
+      if (await compare(dto.newPassword, membership.user.passwordHash)) {
+        throw new ForbiddenException({
+          code: "PASSWORD_REUSE",
+          message: "A nova senha deve ser diferente da senha temporária.",
+        });
+      }
+
+      await tx.user.update({
+        where: { id: membership.userId },
+        data: { passwordHash: await hash(dto.newPassword, 12) },
+      });
+      await tx.userInvitation.updateMany({
+        where: {
+          tenantId: membership.tenantId,
+          email: membership.user.email,
+          roleId: membership.roleId,
+          status: "PENDING",
+        },
+        data: { status: "ACCEPTED", acceptedAt: changedAt },
+      });
+      await tx.passwordResetToken.updateMany({
+        where: { userId: membership.userId, usedAt: null },
+        data: { usedAt: changedAt },
+      });
+      await tx.tenant.update({
+        where: { id: membership.tenantId },
+        data: { authRevokedAt: changedAt },
+      });
+      await tx.platformAuditLog.create({
+        data: {
+          actorUserId: membership.userId,
+          actorPlatformRole: membership.user.platformRole,
+          action: "tenant_administrator.initial_password_changed",
+          targetType: "tenant_administrator",
+          targetId: membership.userId,
+          tenantId: membership.tenantId,
+          metadataJson: { membershipId: membership.id },
+        },
+      });
+      return {
+        email: membership.user.email,
+        tenantSlug: membership.tenant.slug,
+      };
+    });
+
+    return this.login({
+      email: loginIdentity.email,
+      password: dto.newPassword,
+      tenantSlug: loginIdentity.tenantSlug,
+    });
+  }
+
   async issueImpersonationTokens(input: {
     actorPlatformUserId: string;
     impersonationSessionId: string;
@@ -416,15 +683,40 @@ export class AuthService {
     };
   }
 
-  async me(membershipId: string) {
-    if (!membershipId) {
-      throw new ForbiddenException({
-        code: "PLATFORM_CONTEXT_REQUIRES_PLATFORM_API",
-        message: "Use /api/platform para plano de controle.",
+  async me(current: AuthenticatedUser) {
+    if (!current.membershipId && current.platformRole !== "USER") {
+      const user = await this.prisma.user.findFirst({
+        where: { id: current.userId, status: "ACTIVE", platformRole: { not: "USER" } },
       });
+      if (!user) throw new UnauthorizedException("Sessão expirada.");
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+          keepSidebarCollapsed: user.keepSidebarCollapsed,
+          roleId: "",
+          roleKey: "platform_admin",
+          roleName: "Dono",
+          platformRole: user.platformRole,
+        },
+        tenant: { id: "platform", slug: "platform", name: "Trixus Platform" },
+        membership: { id: "", role: "platform_admin", roleId: "" },
+        departments: [],
+        permissions: [],
+        capabilities: { canManageTenant: false, canOperateInbox: false },
+      };
     }
-    const membership = await this.prisma.tenantMembership.findUniqueOrThrow({
-      where: { id: membershipId },
+    const membership = await this.prisma.tenantMembership.findFirst({
+      where: {
+        id: current.membershipId,
+        tenantId: current.tenantId,
+        userId: current.userId,
+        status: "ACTIVE",
+        user: { status: "ACTIVE" },
+        tenant: { status: { in: ["ACTIVE", "TRIAL"] } },
+      },
       include: {
         user: true,
         tenant: true,
@@ -432,6 +724,27 @@ export class AuthService {
         departments: { include: { department: true } },
       },
     });
+    if (!membership) throw new UnauthorizedException("Membership inativa ou inválida.");
+    if (
+      membership.tenant.authRevokedAt &&
+      current.iatMs &&
+      current.iatMs < membership.tenant.authRevokedAt.getTime()
+    ) {
+      throw new UnauthorizedException("Sessão revogada.");
+    }
+    if (current.impersonationSessionId) {
+      const session = await this.prisma.impersonationSession.findFirst({
+        where: {
+          id: current.impersonationSessionId,
+          actorUserId: current.actorPlatformUserId,
+          tenantId: current.tenantId,
+          impersonatedMembershipId: current.membershipId,
+          status: "ACTIVE",
+          expiresAt: { gt: new Date() },
+        },
+      });
+      if (!session) throw new UnauthorizedException("Sessão de impersonação expirada.");
+    }
     const permissions = effectivePermissions(membership.role);
 
     return {

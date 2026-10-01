@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  acceptTenantInvitationWithTrixusApi,
   activatePlatformImpersonation,
   apiRequest,
   clearTrixusApiSession,
+  hydrateWithTrixusApi,
   loginWithTrixusApi,
+  completeRequiredPasswordChangeWithTrixusApi,
+  selectTenantWithTrixusApi,
   logoutFromTrixusApi,
   platformApi,
   readStoredPlatformImpersonation,
@@ -48,6 +52,185 @@ describe("trixus-api auth client", () => {
 
     expect(localStorage.getItem("trixus.api.accessToken")).toBe("access");
     expect(localStorage.getItem("trixus.api.refreshToken")).toBe("refresh");
+  });
+
+  it("keeps the first-login password challenge out of the authenticated session", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseJson(201, {
+          passwordChangeRequired: true,
+          passwordSetupToken: "setup-token",
+          user: { id: "admin-1", email: "admin@tenant.test", name: "Admin" },
+          tenant: { id: "tenant-1", slug: "tenant", name: "Tenant" },
+        }),
+      ),
+    );
+
+    await expect(loginWithTrixusApi("admin@tenant.test", "Trixus@2026")).resolves.toMatchObject({
+      passwordChangeRequired: true,
+      passwordSetupToken: "setup-token",
+    });
+    expect(localStorage.getItem("trixus.api.accessToken")).toBeNull();
+    expect(localStorage.getItem("trixus.api.refreshToken")).toBeNull();
+  });
+
+  it("returns the Tenant selection challenge without storing a session", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseJson(201, {
+          tenantSelectionRequired: true,
+          tenantSelectionToken: "selection-token",
+          tenants: [
+            { id: "tenant-a", slug: "alpha", name: "Alpha" },
+            { id: "tenant-b", slug: "beta", name: "Beta" },
+          ],
+        }),
+      ),
+    );
+
+    await expect(loginWithTrixusApi("admin@tenant.test", "senha-segura")).resolves.toMatchObject({
+      tenantSelectionRequired: true,
+      tenants: [{ id: "tenant-a" }, { id: "tenant-b" }],
+    });
+    expect(localStorage.getItem("trixus.api.accessToken")).toBeNull();
+  });
+
+  it("stores a normal session only after the required password is changed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseJson(201, {
+          accessToken: "new-access",
+          refreshToken: "new-refresh",
+          user: {
+            id: "admin-1",
+            email: "admin@tenant.test",
+            name: "Admin",
+            roleId: "role-1",
+            roleKey: "tenant_admin",
+            platformRole: "USER",
+          },
+          tenant: { id: "tenant-1", slug: "tenant", name: "Tenant" },
+          membership: { id: "membership-1", role: "tenant_admin", roleId: "role-1" },
+          permissions: ["users.manage"],
+        }),
+      ),
+    );
+
+    await expect(
+      completeRequiredPasswordChangeWithTrixusApi({
+        setupToken: "setup-token",
+        newPassword: "NovaSenha@2026",
+        confirmPassword: "NovaSenha@2026",
+      }),
+    ).resolves.toMatchObject({ role: "admin", empresaId: "tenant-1" });
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("new-access");
+  });
+
+  it("establishes the selected Tenant context only after the server validates it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      responseJson(201, {
+        accessToken: "tenant-access",
+        refreshToken: "tenant-refresh",
+        user: {
+          id: "admin-1",
+          email: "admin@tenant.test",
+          name: "Admin",
+          roleId: "role-b",
+          roleKey: "tenant_admin",
+          platformRole: "USER",
+        },
+        tenant: { id: "tenant-b", slug: "beta", name: "Beta" },
+        membership: { id: "membership-b", role: "tenant_admin", roleId: "role-b" },
+        permissions: ["users.manage"],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      selectTenantWithTrixusApi({ selectionToken: "selection-token", tenantId: "tenant-b" }),
+    ).resolves.toMatchObject({ empresaId: "tenant-b", empresaNome: "Beta" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/auth/tenant/select"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ selectionToken: "selection-token", tenantId: "tenant-b" }),
+      }),
+    );
+  });
+
+  it("accepts an administrator invitation and stores the new tenant session", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      responseJson(201, {
+        accessToken: "invite-access",
+        refreshToken: "invite-refresh",
+        user: {
+          id: "user-invited",
+          email: "admin@empresa.test",
+          name: "Admin Empresa",
+          roleId: "role-admin",
+          roleKey: "tenant_admin",
+          platformRole: "USER",
+        },
+        tenant: { id: "tenant-new", slug: "empresa", name: "Empresa" },
+        membership: {
+          id: "membership-admin",
+          role: "tenant_admin",
+          roleId: "role-admin",
+        },
+        permissions: ["users.manage"],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      acceptTenantInvitationWithTrixusApi({
+        token: "single-use-token",
+        password: "senha-segura",
+        name: "Admin Empresa",
+      }),
+    ).resolves.toMatchObject({ role: "admin", empresaId: "tenant-new" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/auth/invitations/accept"),
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("invite-access");
+    expect(localStorage.getItem("trixus.api.refreshToken")).toBe("invite-refresh");
+  });
+
+  it("restores the owner session without a tenant membership after a page refresh", async () => {
+    localStorage.setItem("trixus.api.accessToken", "owner-access");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer owner-access");
+        return responseJson(200, {
+          user: {
+            id: "owner-user",
+            email: "platform@trixus.app",
+            name: "Dono",
+            roleId: "",
+            roleKey: "platform_admin",
+            roleName: "Dono",
+            platformRole: "ADMIN",
+          },
+          tenant: { id: "platform", slug: "platform", name: "Trixus Platform" },
+          membership: { id: "", role: "platform_admin", roleId: "" },
+          departments: [],
+          permissions: [],
+        });
+      }),
+    );
+
+    await expect(hydrateWithTrixusApi()).resolves.toMatchObject({
+      id: "owner-user",
+      email: "platform@trixus.app",
+      role: "super_admin",
+      empresaId: "platform",
+    });
   });
 
   it("distinguishes invalid credentials", async () => {

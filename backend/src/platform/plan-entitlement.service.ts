@@ -3,19 +3,25 @@ import { PrismaService } from "../prisma/prisma.service";
 
 type Limits = {
   maxUsers: number;
-  maxDepartments: number;
   maxConnections: number;
+  maxCampaigns: number;
   maxContacts: number;
   maxCampaignRecipients: number;
   maxStorageBytes: number;
 };
 
 type Features = {
+  chat: boolean;
   campaigns: boolean;
   tickets: boolean;
   multipleConnections: boolean;
   storage: boolean;
   realtime: boolean;
+  contacts: boolean;
+  groups: boolean;
+  conversationHistory: boolean;
+  quickMessages: boolean;
+  appointments: boolean;
 };
 
 @Injectable()
@@ -26,17 +32,28 @@ export class PlanEntitlementService {
     const subscription = await this.prisma.tenantSubscription.findFirst({
       where: { tenantId, status: { in: ["TRIALING", "ACTIVE", "PAST_DUE", "SUSPENDED"] } },
       orderBy: { createdAt: "desc" },
-      include: { plan: true },
+      include: {
+        plan: true,
+        tenant: { select: { maxUsers: true, maxConnections: true } },
+      },
     });
     if (!subscription) {
       throw new ForbiddenException({ code: "PLAN_FEATURE_NOT_AVAILABLE" });
+    }
+    const limits = coerceLimits(subscription.limitsSnapshot);
+    if (!subscription.tenant) {
+      throw new ForbiddenException({ code: "TENANT_NOT_OPERATIONAL" });
+    }
+    if (subscription.tenant.maxUsers != null) limits.maxUsers = subscription.tenant.maxUsers;
+    if (subscription.tenant.maxConnections != null) {
+      limits.maxConnections = subscription.tenant.maxConnections;
     }
     return {
       subscriptionId: subscription.id,
       planId: subscription.planId,
       planCode: subscription.plan.code,
       status: subscription.status,
-      limits: coerceLimits(subscription.limitsSnapshot),
+      limits,
       features: coerceFeatures(subscription.featuresSnapshot),
     };
   }
@@ -45,7 +62,6 @@ export class PlanEntitlementService {
     const periodStart = startOfMonth(new Date());
     const [
       activeUsers,
-      departments,
       connections,
       contacts,
       customers,
@@ -59,7 +75,6 @@ export class PlanEntitlementService {
       this.prisma.tenantMembership.count({
         where: { tenantId, status: "ACTIVE", user: { status: "ACTIVE" } },
       }),
-      this.prisma.department.count({ where: { tenantId, active: true } }),
       this.prisma.messagingConnection.count({
         where: { tenantId, archivedAt: null, status: { not: "REMOVED" } },
       }),
@@ -77,7 +92,6 @@ export class PlanEntitlementService {
     ]);
     return {
       activeUsers,
-      departments,
       connections,
       contacts,
       customers,
@@ -126,8 +140,8 @@ export function coerceLimits(value: unknown): Limits {
   const raw = asRecord(value);
   return {
     maxUsers: readPositive(raw.maxUsers, 3),
-    maxDepartments: readPositive(raw.maxDepartments, 2),
     maxConnections: readPositive(raw.maxConnections, 1),
+    maxCampaigns: readPositive(raw.maxCampaigns, readPositive(raw.maxCampaignRecipients, 0)),
     maxContacts: readPositive(raw.maxContacts, 1000),
     maxCampaignRecipients: readPositive(raw.maxCampaignRecipients, 0),
     maxStorageBytes: readPositive(raw.maxStorageBytes, 50 * 1024 * 1024),
@@ -137,11 +151,17 @@ export function coerceLimits(value: unknown): Limits {
 export function coerceFeatures(value: unknown): Features {
   const raw = asRecord(value);
   return {
+    chat: raw.chat !== false,
     campaigns: raw.campaigns === true,
     tickets: raw.tickets !== false,
     multipleConnections: raw.multipleConnections === true,
     storage: raw.storage !== false,
     realtime: raw.realtime !== false,
+    contacts: raw.contacts !== false,
+    groups: raw.groups !== false,
+    conversationHistory: raw.conversationHistory !== false,
+    quickMessages: raw.quickMessages !== false,
+    appointments: raw.appointments !== false,
   };
 }
 
@@ -163,8 +183,8 @@ function startOfMonth(date: Date) {
 function limitCode(metric: keyof Limits) {
   const codes: Record<keyof Limits, string> = {
     maxUsers: "PLAN_LIMIT_USERS_REACHED",
-    maxDepartments: "PLAN_LIMIT_DEPARTMENTS_REACHED",
     maxConnections: "PLAN_LIMIT_CONNECTIONS_REACHED",
+    maxCampaigns: "PLAN_LIMIT_CAMPAIGNS_REACHED",
     maxContacts: "PLAN_LIMIT_CONTACTS_REACHED",
     maxCampaignRecipients: "PLAN_LIMIT_CAMPAIGN_RECIPIENTS_REACHED",
     maxStorageBytes: "PLAN_LIMIT_STORAGE_REACHED",

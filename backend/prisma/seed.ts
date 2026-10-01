@@ -141,11 +141,18 @@ const SYSTEM_ROLES = [
 ] as const;
 
 async function main() {
-  await seedPermissionCatalog();
-  await seedPlatformPlans();
-  await seedPlatformAdmin();
   const seedMode =
-    process.env.SEED_MODE ?? (process.env.SEED_DEMO_DATA === "true" ? "demo" : "homologation");
+    process.env.SEED_MODE ?? (process.env.SEED_DEMO_DATA === "true" ? "demo" : "platform");
+  if (seedMode === "platform") {
+    await preparePlatformOnlyDatabase();
+    await seedPermissionCatalog();
+    await seedPlatformAdmin();
+    console.info("seedMode=platform-only");
+    return;
+  }
+  await seedPermissionCatalog();
+  await seedPlatformAdmin();
+  await seedPlatformPlans();
   if (seedMode === "demo") {
     await seedDemoData();
     return;
@@ -160,25 +167,63 @@ async function main() {
   await seedHomologationMinimum();
 }
 
+async function preparePlatformOnlyDatabase() {
+  const [tenants, clients, subscriptions, invoices] = await Promise.all([
+    prisma.tenant.count(),
+    prisma.platformClient.count(),
+    prisma.tenantSubscription.count(),
+    prisma.invoice.count(),
+  ]);
+  if (tenants || clients || subscriptions || invoices) {
+    throw new Error(
+      "SEED_MODE=platform exige uma base de negocio vazia. Recrie a base local antes de executar a seed.",
+    );
+  }
+  await prisma.plan.deleteMany();
+}
+
 async function seedPlatformPlans() {
   await Promise.all([
     prisma.plan.upsert({
       where: { code: "starter" },
       update: {
-        name: "Starter",
+        name: "Basic",
         status: "ACTIVE",
+        priceCents: 19900,
         features: starterFeatures(),
         limits: starterLimits(),
       },
       create: {
         id: "plan_starter_homologation",
         code: "starter",
-        name: "Starter",
+        name: "Basic",
         description: "Plano de homologacao para tenants pequenos.",
         status: "ACTIVE",
         billingPeriod: "MANUAL",
+        priceCents: 19900,
         features: starterFeatures(),
         limits: starterLimits(),
+      },
+    }),
+    prisma.plan.upsert({
+      where: { code: "business" },
+      update: {
+        name: "Business",
+        status: "ACTIVE",
+        priceCents: 49900,
+        features: businessFeatures(),
+        limits: businessLimits(),
+      },
+      create: {
+        id: "711e70d4-58d4-4a3e-8a73-c2eb48e14216",
+        code: "business",
+        name: "Business",
+        description: "Plano intermediario para operacoes em crescimento.",
+        status: "ACTIVE",
+        billingPeriod: "MANUAL",
+        priceCents: 49900,
+        features: businessFeatures(),
+        limits: businessLimits(),
       },
     }),
     prisma.plan.upsert({
@@ -186,6 +231,7 @@ async function seedPlatformPlans() {
       update: {
         name: "Professional",
         status: "ACTIVE",
+        priceCents: 79900,
         features: professionalFeatures(),
         limits: professionalLimits(),
       },
@@ -196,6 +242,7 @@ async function seedPlatformPlans() {
         description: "Plano de homologacao para operacao completa.",
         status: "ACTIVE",
         billingPeriod: "MANUAL",
+        priceCents: 79900,
         features: professionalFeatures(),
         limits: professionalLimits(),
       },
@@ -204,36 +251,16 @@ async function seedPlatformPlans() {
 }
 
 async function seedPlatformAdmin() {
-  const [admin, support, readonly] = await Promise.all([
-    seedPlatformUser({
-      email: seedPlatformEmail("TRIXUS_PLATFORM_ADMIN_EMAIL"),
-      name: "Platform Admin",
-      password: process.env.TRIXUS_PLATFORM_ADMIN_PASSWORD,
-      passwordKey: "TRIXUS_PLATFORM_ADMIN_PASSWORD",
-      platformRole: PlatformRole.ADMIN,
-    }),
-    seedPlatformUser({
-      email: seedPlatformEmail("TRIXUS_PLATFORM_SUPPORT_EMAIL"),
-      name: "Platform Support",
-      password: process.env.TRIXUS_PLATFORM_SUPPORT_PASSWORD,
-      passwordKey: "TRIXUS_PLATFORM_SUPPORT_PASSWORD",
-      platformRole: PlatformRole.SUPPORT,
-    }),
-    seedPlatformUser({
-      email: seedPlatformEmail("TRIXUS_PLATFORM_READONLY_EMAIL"),
-      name: "Platform Readonly",
-      password: process.env.TRIXUS_PLATFORM_READONLY_PASSWORD,
-      passwordKey: "TRIXUS_PLATFORM_READONLY_PASSWORD",
-      platformRole: PlatformRole.READONLY,
-    }),
-  ]);
+  const admin = await seedPlatformUser({
+    email: seedPlatformEmail("TRIXUS_PLATFORM_ADMIN_EMAIL"),
+    name: "Platform Admin",
+    password: process.env.TRIXUS_PLATFORM_ADMIN_PASSWORD,
+    passwordKey: "TRIXUS_PLATFORM_ADMIN_PASSWORD",
+    platformRole: PlatformRole.ADMIN,
+  });
   console.info(`platformAdminEmail=${admin.email}`);
-  console.info(`platformSupportEmail=${support.email}`);
-  console.info(`platformReadonlyEmail=${readonly.email}`);
   console.info("passwordSource=environment");
-  console.info(
-    `seedResult=${summarizePlatformSeed([admin.result, support.result, readonly.result])}`,
-  );
+  console.info(`seedResult=${summarizePlatformSeed([admin.result])}`);
 }
 
 async function seedHomologationMinimum() {
@@ -262,7 +289,22 @@ async function seedHomologationMinimum() {
     departments.map(({ id }) => id),
   );
   await seedHomologationOperationalData(prisma, tenant.id, roles, departments);
-  await seedTenantSubscription(tenant.id, "plan_professional_homologation");
+  const client = await seedPlatformClient({
+    tenantId: tenant.id,
+    name: "Homologacao Trixus",
+    document: "11222333000181",
+    responsibleName: "Administrador Homologacao",
+    responsibleEmail: adminEmail,
+    city: "Goiania",
+    state: "GO",
+  });
+  const subscription = await seedTenantSubscription(
+    tenant.id,
+    "plan_professional_homologation",
+    client.id,
+    79900,
+  );
+  await seedInvoice(tenant.id, subscription.id, "INV-HML-000001", 79900, "HML/2026");
 }
 
 async function seedProductionStaging() {
@@ -424,9 +466,33 @@ async function seedDemoData() {
       },
     }),
   ]);
+  const [acmeClient, orbitClient] = await Promise.all([
+    seedPlatformClient({
+      tenantId: acme.id,
+      name: "Acme Corp",
+      document: "11222333000181",
+      responsibleName: "Ana Ribeiro",
+      responsibleEmail: "admin@trixus.app",
+      city: "Sao Paulo",
+      state: "SP",
+    }),
+    seedPlatformClient({
+      tenantId: orbit.id,
+      name: "Orbit Labs",
+      document: "11444777000161",
+      responsibleName: "Bruna Martins",
+      responsibleEmail: "admin-orbit@trixus.app",
+      city: "Belo Horizonte",
+      state: "MG",
+    }),
+  ]);
+  const [acmeSubscription, orbitSubscription] = await Promise.all([
+    seedTenantSubscription(acme.id, "plan_professional_homologation", acmeClient.id, 79900),
+    seedTenantSubscription(orbit.id, "plan_professional_homologation", orbitClient.id, 79900),
+  ]);
   await Promise.all([
-    seedTenantSubscription(acme.id, "plan_professional_homologation"),
-    seedTenantSubscription(orbit.id, "plan_professional_homologation"),
+    seedInvoice(acme.id, acmeSubscription.id, "INV-DEMO-000001", 79900, "ACME/2026"),
+    seedInvoice(orbit.id, orbitSubscription.id, "INV-DEMO-000002", 79900, "ORBIT/2026"),
   ]);
 
   const acmeRoles = await seedRoles(acme.id);
@@ -443,13 +509,12 @@ async function seedDemoData() {
   ]);
 
   const passwordHash = await hash("demo1234", 12);
-  const [adminA, supervisorA, agentA, adminB, agentB, platformAdmin] = await Promise.all([
+  const [adminA, supervisorA, agentA, adminB, agentB] = await Promise.all([
     seedUser("admin@trixus.app", "Ana Ribeiro", passwordHash),
     seedUser("supervisor@trixus.app", "Pedro Camargo", passwordHash),
     seedUser("atendente@trixus.app", "Camila Duarte", passwordHash),
     seedUser("admin-orbit@trixus.app", "Bruna Martins", passwordHash),
     seedUser("agent-orbit@trixus.app", "Otavio Silva", passwordHash),
-    seedUser("platform@trixus.app", "Paula Plataforma", passwordHash, PlatformRole.ADMIN),
   ]);
 
   await Promise.all([
@@ -468,7 +533,6 @@ async function seedDemoData() {
       orbitDepartments.map((d) => d.id),
     ),
     seedMembership(orbit.id, agentB.id, orbitRoles.agent.id, [orbitDepartments[0].id]),
-    seedMembership(acme.id, platformAdmin.id, acmeRoles.agent.id, [acmeDepartments[0].id]),
   ]);
 
   await Promise.all([seedCrm(acme.id, acmeDepartments), seedCrm(orbit.id, orbitDepartments)]);
@@ -842,21 +906,129 @@ async function seedMembershipWithClient(
   return membership;
 }
 
-async function seedTenantSubscription(tenantId: string, planId: string) {
+async function seedPlatformClient(input: {
+  tenantId: string;
+  name: string;
+  document: string;
+  responsibleName: string;
+  responsibleEmail: string;
+  city: string;
+  state: string;
+}) {
+  await prisma.tenant.update({
+    where: { id: input.tenantId },
+    data: {
+      responsibleName: input.responsibleName,
+      responsibleEmail: input.responsibleEmail,
+      notes: "Tenant vinculado ao cliente da seed local.",
+    },
+  });
+  return prisma.platformClient.upsert({
+    where: { tenantId: input.tenantId },
+    update: {
+      name: input.name,
+      document: input.document,
+      responsibleName: input.responsibleName,
+      responsibleEmail: input.responsibleEmail,
+      city: input.city,
+      state: input.state,
+      status: "ACTIVE",
+      notes: "Cliente criado pela seed local para validacao do fluxo Platform.",
+    },
+    create: {
+      ...input,
+      status: "ACTIVE",
+      notes: "Cliente criado pela seed local para validacao do fluxo Platform.",
+    },
+  });
+}
+
+async function seedTenantSubscription(
+  tenantId: string,
+  planId: string,
+  clientId?: string,
+  monthlyValueCents?: number,
+) {
   const existing = await prisma.tenantSubscription.findFirst({
     where: { tenantId, status: { in: ["TRIALING", "ACTIVE", "PAST_DUE", "SUSPENDED"] } },
   });
-  if (existing) return existing;
   const plan = await prisma.plan.findUniqueOrThrow({ where: { id: planId } });
+  const limits = plan.limits as Record<string, unknown>;
+  await prisma.tenant.update({
+    where: { id: tenantId },
+    data: {
+      maxUsers: Number(limits.maxUsers ?? 0),
+      maxConnections: Number(limits.maxConnections ?? 0),
+    },
+  });
+  if (existing) {
+    return prisma.tenantSubscription.update({
+      where: { id: existing.id },
+      data: {
+        planId: plan.id,
+        clientId,
+        status: "ACTIVE",
+        indefinite: true,
+        monthlyValueCents: monthlyValueCents ?? plan.priceCents,
+        discountCents: 0,
+        currentPeriodEnd: addDays(new Date(), 3650),
+        limitsSnapshot: plan.limits ?? professionalLimits(),
+        featuresSnapshot: plan.features ?? professionalFeatures(),
+      },
+    });
+  }
   return prisma.tenantSubscription.create({
     data: {
       id: `sub_${tenantId}`,
       tenantId,
       planId: plan.id,
+      clientId,
       status: "ACTIVE",
-      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60_000),
+      indefinite: true,
+      monthlyValueCents: monthlyValueCents ?? plan.priceCents,
+      currentPeriodEnd: addDays(new Date(), 3650),
       limitsSnapshot: plan.limits ?? professionalLimits(),
       featuresSnapshot: plan.features ?? professionalFeatures(),
+    },
+  });
+}
+
+async function seedInvoice(
+  tenantId: string,
+  subscriptionId: string,
+  number: string,
+  totalCents: number,
+  reference: string,
+) {
+  const referenceDate = new Date("2026-09-01T12:00:00.000Z");
+  return prisma.invoice.upsert({
+    where: { number },
+    update: {
+      tenantId,
+      subscriptionId,
+      status: "OPEN",
+      subtotalCents: totalCents,
+      discountCents: 0,
+      totalCents,
+      dueAt: new Date("2026-10-05T12:00:00.000Z"),
+      paidAt: null,
+      cancelledAt: null,
+      referenceDate,
+      reference,
+      notes: "Fatura criada pela seed local.",
+    },
+    create: {
+      tenantId,
+      subscriptionId,
+      number,
+      status: "OPEN",
+      subtotalCents: totalCents,
+      discountCents: 0,
+      totalCents,
+      dueAt: new Date("2026-10-05T12:00:00.000Z"),
+      referenceDate,
+      reference,
+      notes: "Fatura criada pela seed local.",
     },
   });
 }
@@ -1405,40 +1577,79 @@ function summarizePlatformSeed(results: Array<"created" | "updated" | "unchanged
 
 function starterFeatures() {
   return {
+    chat: true,
     campaigns: false,
     tickets: true,
     multipleConnections: false,
     storage: true,
     realtime: true,
+    contacts: true,
+    groups: true,
+    conversationHistory: true,
+    quickMessages: true,
+    appointments: true,
   };
 }
 
-function professionalFeatures() {
+function businessFeatures() {
   return {
+    chat: true,
     campaigns: true,
     tickets: true,
     multipleConnections: true,
     storage: true,
     realtime: true,
+    contacts: true,
+    groups: true,
+    conversationHistory: true,
+    quickMessages: true,
+    appointments: true,
+  };
+}
+
+function professionalFeatures() {
+  return {
+    chat: true,
+    campaigns: true,
+    tickets: true,
+    multipleConnections: true,
+    storage: true,
+    realtime: true,
+    contacts: true,
+    groups: true,
+    conversationHistory: true,
+    quickMessages: true,
+    appointments: true,
   };
 }
 
 function starterLimits() {
   return {
     maxUsers: 3,
-    maxDepartments: 2,
     maxConnections: 1,
+    maxCampaigns: 0,
     maxContacts: 1000,
     maxCampaignRecipients: 0,
     maxStorageBytes: 50 * 1024 * 1024,
   };
 }
 
+function businessLimits() {
+  return {
+    maxUsers: 10,
+    maxConnections: 5,
+    maxCampaigns: 20,
+    maxContacts: 5000,
+    maxCampaignRecipients: 250,
+    maxStorageBytes: 256 * 1024 * 1024,
+  };
+}
+
 function professionalLimits() {
   return {
     maxUsers: 20,
-    maxDepartments: 10,
     maxConnections: 10,
+    maxCampaigns: 50,
     maxContacts: 10000,
     maxCampaignRecipients: 500,
     maxStorageBytes: 512 * 1024 * 1024,

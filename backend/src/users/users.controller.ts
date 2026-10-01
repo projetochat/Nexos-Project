@@ -34,7 +34,6 @@ import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
-import { ActivateUserDto } from "./dto/activate-user.dto";
 
 class CreateInvitationDto {
   @IsEmail()
@@ -530,8 +529,6 @@ export class UsersController {
         (latest.status !== "ACTIVE" && dto.membershipStatus === "ACTIVE") ||
         (latest.user.status === "DISABLED" && dto.status === "ACTIVE");
       if (reactivationOnly && !reactivating) return latest;
-      if (reactivating)
-        await this.assertReactivationPassword(tx, latest, current.tenantId, dto.password);
       if (dto.name !== undefined) {
         await this.assertNameAvailable(tx, current.tenantId, dto.name, existing.id);
       }
@@ -564,14 +561,10 @@ export class UsersController {
   @Patch("users/:id/activate")
   @UseGuards(PermissionsGuard)
   @RequirePermissions("users.manage")
-  activate(
-    @Param("id") id: string,
-    @Body() dto: ActivateUserDto,
-    @CurrentUser() current: AuthenticatedUser,
-  ) {
+  activate(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.updateMembership(
       id,
-      { password: dto.password, membershipStatus: "ACTIVE", status: "ACTIVE" },
+      { membershipStatus: "ACTIVE", status: "ACTIVE" },
       current,
       true,
     );
@@ -765,31 +758,6 @@ export class UsersController {
       memberships.some((membership) => normalizeUserName(membership.user.name) === normalizedName)
     ) {
       throw new BadRequestException("Já existe um atendente com este nome.");
-    }
-  }
-
-  private async assertReactivationPassword(
-    tx: Prisma.TransactionClient,
-    membership: { userId: string; user: { passwordHash: string } },
-    tenantId: string,
-    password?: string,
-  ) {
-    if (typeof password !== "string" || password.length < 6 || !password.trim()) {
-      throw new BadRequestException(
-        "Informe uma nova senha com pelo menos 6 caracteres para desbloquear o atendente.",
-      );
-    }
-    const otherMembership = await tx.tenantMembership.findFirst({
-      where: { userId: membership.userId, tenantId: { not: tenantId } },
-      select: { id: true },
-    });
-    if (otherMembership) {
-      throw new BadRequestException(
-        "Esta conta possui vínculo com outra empresa. A reativação exige recuperação explícita da conta global pelo titular.",
-      );
-    }
-    if (await compare(password, membership.user.passwordHash)) {
-      throw new BadRequestException("A nova senha deve ser diferente da senha anterior.");
     }
   }
 

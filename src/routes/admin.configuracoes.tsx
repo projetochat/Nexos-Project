@@ -1,12 +1,31 @@
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminContainer } from "@/components/admin-shell";
 import { Card, SectionHeader, Field, Input, Button } from "@/components/ui-kit";
 import { toast } from "sonner";
 import { platformApi, type PlatformSettings } from "@/lib/trixus-api";
+import { LicencasSettingsContent } from "./admin.licencas";
+import { MonitoramentoSettingsContent } from "./admin.monitoramento";
+import { LogsSettingsContent } from "./admin.logs";
+import { AuditoriaSettingsContent } from "./admin.auditoria";
+
+const settingsTabs = [
+  { value: "plataforma", label: "Configuração da Plataforma" },
+  { value: "licencas", label: "Licenças" },
+  { value: "monitoramento", label: "Monitoramento" },
+  { value: "log", label: "Log" },
+  { value: "auditoria", label: "Auditoria" },
+] as const;
+
+type SettingsTab = (typeof settingsTabs)[number]["value"];
+
+function normalizeTab(value: unknown): SettingsTab {
+  return settingsTabs.some((tab) => tab.value === value) ? (value as SettingsTab) : "plataforma";
+}
 
 export const Route = createFileRoute("/admin/configuracoes")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
+  validateSearch: (search: Record<string, unknown>) => ({ tab: normalizeTab(search.tab) }),
   component: PlatformSettingsPage,
 });
 
@@ -17,6 +36,43 @@ const fallbackSettings: PlatformSettings = {
 };
 
 function PlatformSettingsPage() {
+  const { tab } = Route.useSearch();
+
+  return (
+    <AdminContainer>
+      <nav
+        aria-label="Seções de configurações"
+        className="mb-7 overflow-x-auto border-b border-border"
+      >
+        <div className="flex min-w-max gap-1">
+          {settingsTabs.map((item) => (
+            <Link
+              key={item.value}
+              to="/admin/configuracoes"
+              search={{ tab: item.value }}
+              aria-current={tab === item.value ? "page" : undefined}
+              className={`relative px-4 py-3 text-sm font-medium transition-colors hover:text-foreground ${
+                tab === item.value ? "text-foreground" : "text-muted-foreground"
+              }`}
+            >
+              {item.label}
+              {tab === item.value && (
+                <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" />
+              )}
+            </Link>
+          ))}
+        </div>
+      </nav>
+      {tab === "plataforma" && <PlatformSettingsContent />}
+      {tab === "licencas" && <LicencasSettingsContent />}
+      {tab === "monitoramento" && <MonitoramentoSettingsContent />}
+      {tab === "log" && <LogsSettingsContent />}
+      {tab === "auditoria" && <AuditoriaSettingsContent />}
+    </AdminContainer>
+  );
+}
+
+function PlatformSettingsContent() {
   const [form, setForm] = React.useState<PlatformSettings>(fallbackSettings);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
@@ -46,7 +102,7 @@ function PlatformSettingsPage() {
   }
 
   return (
-    <AdminContainer>
+    <>
       <SectionHeader
         title="Configurações da plataforma"
         subtitle="Valores aplicados nas novas tenants, assinaturas e faturas."
@@ -104,6 +160,6 @@ function PlatformSettingsPage() {
           </Button>
         </div>
       </Card>
-    </AdminContainer>
+    </>
   );
 }

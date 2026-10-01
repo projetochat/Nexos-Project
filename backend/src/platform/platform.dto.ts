@@ -11,7 +11,10 @@ import {
   IsString,
   Matches,
   Max,
+  MaxLength,
   Min,
+  MinLength,
+  ValidateIf,
   ValidateNested,
 } from "class-validator";
 import { Type } from "class-transformer";
@@ -42,6 +45,113 @@ export class PlatformListQueryDto {
   @IsOptional()
   @IsString()
   tenantId?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  state?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  createdAt?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  dateFrom?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  dateTo?: string;
+
+  @IsOptional()
+  @IsString()
+  period?: string;
+}
+
+export class CreatePlatformClientDto {
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @ValidateIf((dto: CreatePlatformClientDto) => dto.status !== "PROSPECTING")
+  @IsString()
+  @Matches(/^\d{14}$/)
+  document?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  responsibleName!: string;
+
+  @IsEmail()
+  responsibleEmail!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  city!: string;
+
+  @IsString()
+  @Matches(/^[A-Z]{2}$/)
+  state!: string;
+
+  @IsOptional()
+  @IsISO8601()
+  registeredAt?: string;
+
+  @IsOptional()
+  @IsIn(["ACTIVE", "SUSPENDED", "CANCELLED", "PROSPECTING"])
+  status?: "ACTIVE" | "SUSPENDED" | "CANCELLED" | "PROSPECTING";
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+export class UpdatePlatformClientDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  name?: string;
+
+  @ValidateIf(
+    (dto: UpdatePlatformClientDto) => dto.document !== undefined && dto.status !== "PROSPECTING",
+  )
+  @IsString()
+  @Matches(/^\d{14}$/)
+  document?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  responsibleName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  responsibleEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Z]{2}$/)
+  state?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  registeredAt?: string;
+
+  @IsOptional()
+  @IsIn(["ACTIVE", "SUSPENDED", "CANCELLED", "PROSPECTING"])
+  status?: "ACTIVE" | "SUSPENDED" | "CANCELLED" | "PROSPECTING";
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 export class InitialAdminDto {
@@ -82,9 +192,42 @@ export class CreateTenantDto {
   @IsIn(["TRIAL", "ACTIVE"])
   initialStatus?: "TRIAL" | "ACTIVE";
 
+  @IsOptional()
   @ValidateNested()
   @Type(() => InitialAdminDto)
-  admin!: InitialAdminDto;
+  admin?: InitialAdminDto;
+
+  @IsOptional()
+  @IsString()
+  responsibleName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  responsibleEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  responsiblePhone?: string;
+
+  @IsOptional()
+  @IsString()
+  responsibleTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxUsers?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxConnections?: number;
 }
 
 export class UpdateTenantDto {
@@ -107,6 +250,55 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsEmail()
   technicalEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  responsibleName?: string;
+
+  @IsOptional()
+  @IsEmail()
+  responsibleEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  responsiblePhone?: string;
+
+  @IsOptional()
+  @IsString()
+  responsibleTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxUsers?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxConnections?: number;
+}
+
+export class UpdateTenantAdministratorCredentialsDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  responsibleName!: string;
+
+  @IsEmail()
+  @MaxLength(254)
+  responsibleEmail!: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  @MaxLength(72)
+  newPassword?: string;
 }
 
 export class UpdatePlatformSettingsDto {
@@ -141,10 +333,6 @@ export class TerminateTenantDto extends ReasonDto {
 
 export class CreatePlanDto {
   @IsString()
-  @Matches(/^[a-z0-9][a-z0-9-_]{1,62}$/)
-  code!: string;
-
-  @IsString()
   @IsNotEmpty()
   name!: string;
 
@@ -153,8 +341,8 @@ export class CreatePlanDto {
   description?: string;
 
   @IsOptional()
-  @IsIn(["DRAFT", "ACTIVE"])
-  status?: "DRAFT" | "ACTIVE";
+  @IsIn(["ACTIVE", "SUSPENDED", "INACTIVE"])
+  status?: "ACTIVE" | "SUSPENDED" | "INACTIVE";
 
   @IsOptional()
   @IsIn(["MONTHLY", "YEARLY", "MANUAL"])
@@ -190,8 +378,8 @@ export class UpdatePlanDto {
   description?: string;
 
   @IsOptional()
-  @IsIn(["DRAFT", "ACTIVE"])
-  status?: "DRAFT" | "ACTIVE";
+  @IsIn(["ACTIVE", "SUSPENDED", "INACTIVE"])
+  status?: "ACTIVE" | "SUSPENDED" | "INACTIVE";
 
   @IsOptional()
   @Type(() => Number)
@@ -214,12 +402,36 @@ export class CreateSubscriptionDto {
   planId!: string;
 
   @IsOptional()
-  @IsIn(["TRIALING", "ACTIVE"])
-  status?: "TRIALING" | "ACTIVE";
+  @IsISO8601()
+  currentPeriodEnd?: string;
 
   @IsOptional()
   @IsISO8601()
-  currentPeriodEnd?: string;
+  startsAt?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  indefinite?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  monthlyValueCents?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  discountCents?: number;
+
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 
   @IsOptional()
   @IsString()
@@ -238,17 +450,42 @@ export class UpdateSubscriptionDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  monthlyValueCents?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  discountCents?: number;
+
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
-export class CancelSubscriptionDto extends ReasonDto {
+export class CancelSubscriptionDto {
+  @IsOptional()
+  @IsString()
+  reason?: string;
+
   @IsOptional()
   @IsBoolean()
   cancelAtPeriodEnd?: boolean;
 }
 
 export class CreateInvoiceDto {
+  @IsOptional()
   @IsString()
-  tenantId!: string;
+  tenantId?: string;
 
   @IsString()
   subscriptionId!: string;
@@ -270,11 +507,81 @@ export class CreateInvoiceDto {
 
   @IsISO8601()
   dueAt!: string;
+
+  @IsOptional()
+  @IsISO8601()
+  referenceDate?: string;
+
+  @IsOptional()
+  @IsString()
+  reference?: string;
+
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  paidCents?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  released?: boolean;
 }
 
 export class InvoiceStatusDto {
-  @IsIn(["DRAFT", "OPEN", "PAID", "VOID", "OVERDUE"])
-  status!: "DRAFT" | "OPEN" | "PAID" | "VOID" | "OVERDUE";
+  @IsIn(["DRAFT", "OPEN", "PAID", "VOID", "OVERDUE", "RELEASED"])
+  status!: "DRAFT" | "OPEN" | "PAID" | "VOID" | "OVERDUE" | "RELEASED";
+}
+
+export class UpdateInvoiceDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  subtotalCents?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  discountCents?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  paidCents?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  released?: boolean;
+
+  @IsOptional()
+  @IsISO8601()
+  dueAt?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  referenceDate?: string;
+
+  @IsOptional()
+  @IsString()
+  reference?: string;
+
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 export class StartImpersonationDto extends ReasonDto {

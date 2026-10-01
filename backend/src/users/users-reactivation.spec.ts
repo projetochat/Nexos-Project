@@ -1,11 +1,8 @@
 import "reflect-metadata";
 import { describe, expect, it, vi } from "vitest";
 import { compare, hashSync } from "bcryptjs";
-import { validate } from "class-validator";
 import { UsersController } from "./users.controller";
-import { ActivateUserDto } from "./dto/activate-user.dto";
 import type { AuthenticatedUser } from "../auth/auth.types";
-import type { UpdateUserDto } from "./dto/update-user.dto";
 
 const current = {
   tenantId: "tenant-a",
@@ -94,94 +91,57 @@ function setup(
   };
 }
 
-describe("atendente reactivation password", () => {
-  it.each([undefined, "", "12345", "      "])(
-    "rejects missing/invalid password %s before any write",
-    async (password) => {
-      const test = setup();
-      await expect(
-        test.controller.activate("membership-a", { password } as ActivateUserDto, current),
-      ).rejects.toThrow("nova senha");
-      expect(test.tx.user.update).not.toHaveBeenCalled();
-      expect(test.tx.tenantMembership.update).not.toHaveBeenCalled();
-    },
-  );
-
-  it("validates activate body before the route", async () => {
-    expect(await validate(new ActivateUserDto())).not.toHaveLength(0);
-    expect(
-      await validate(Object.assign(new ActivateUserDto(), { password: "Nova123" })),
-    ).toHaveLength(0);
-  });
-
-  it("requires a password different from the existing credential", async () => {
-    const test = setup();
-    await expect(
-      test.controller.activate("membership-a", { password: "Anterior123" }, current),
-    ).rejects.toThrow("diferente");
-    expect(test.tx.user.update).not.toHaveBeenCalled();
-  });
-
-  it("hashes the new password and activates user/membership in one transaction", async () => {
+describe("atendente reactivation without password", () => {
+  it("activates user and membership without changing the credential", async () => {
     const test = setup({ userStatus: "DISABLED" });
-    const response = await test.controller.activate(
-      "membership-a",
-      { password: "Nova123" },
-      current,
-    );
+    const response = await test.controller.activate("membership-a", current);
     expect(response.status).toBe("ACTIVE");
     expect(response.user.status).toBe("ACTIVE");
     expect(response.user).not.toHaveProperty("passwordHash");
-    expect(await compare("Nova123", test.state().user.passwordHash)).toBe(true);
+    expect(test.state().user.passwordHash).toBe(oldHash);
     expect(test.prisma.$transaction).toHaveBeenCalledOnce();
     expect(test.tx.$queryRaw).toHaveBeenCalledTimes(3);
   });
 
-  it.each([{ membershipStatus: "ACTIVE" }, { status: "ACTIVE" }] as UpdateUserDto[])(
-    "rejects bypass through update %j without password",
-    async (dto) => {
-      const test = setup({ userStatus: "DISABLED" });
-      await expect(test.controller.update("membership-a", dto, current)).rejects.toThrow(
-        "nova senha",
-      );
-      expect(test.tx.user.update).not.toHaveBeenCalled();
-    },
-  );
+  it("allows reactivation through edit without changing the credential", async () => {
+    const test = setup({ userStatus: "DISABLED" });
+    const response = await test.controller.update(
+      "membership-a",
+      { membershipStatus: "ACTIVE", status: "ACTIVE" },
+      current,
+    );
+    expect(response.status).toBe("ACTIVE");
+    expect(response.user.status).toBe("ACTIVE");
+    expect(test.state().user.passwordHash).toBe(oldHash);
+  });
 
-  it("does not allow INVITED as a detour around a blocked membership", async () => {
+  it("reactivates an invited membership without changing the credential", async () => {
     const test = setup({ status: "INVITED" });
-    await expect(
-      test.controller.update("membership-a", { membershipStatus: "ACTIVE" }, current),
-    ).rejects.toThrow("nova senha");
+    await test.controller.update("membership-a", { membershipStatus: "ACTIVE" }, current);
+    expect(test.state().status).toBe("ACTIVE");
+    expect(test.state().user.passwordHash).toBe(oldHash);
   });
 
   it("rechecks the blocked state inside the transaction instead of trusting an older active snapshot", async () => {
     const test = setup();
     test.prisma.tenantMembership.findFirst.mockResolvedValue({ ...test.state(), status: "ACTIVE" });
-    await expect(
-      test.controller.update("membership-a", { membershipStatus: "ACTIVE" }, current),
-    ).rejects.toThrow("nova senha");
+    await test.controller.update("membership-a", { membershipStatus: "ACTIVE" }, current);
     expect(test.tx.tenantMembership.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "membership-a", tenantId: "tenant-a" } }),
     );
-    expect(test.tx.user.update).not.toHaveBeenCalled();
+    expect(test.state().status).toBe("ACTIVE");
   });
 
-  it("rejects reactivation of a shared global account without modifying either credential or membership", async () => {
+  it("reactivates a shared global account without replacing its credential", async () => {
     const test = setup({ shared: true });
-    await expect(
-      test.controller.activate("membership-a", { password: "Nova123" }, current),
-    ).rejects.toThrow("outra empresa");
-    expect(test.tx.user.update).not.toHaveBeenCalled();
-    expect(test.state().status).toBe("DISABLED");
+    await test.controller.activate("membership-a", current);
+    expect(test.state().status).toBe("ACTIVE");
     expect(test.state().user.passwordHash).toBe(oldHash);
   });
 
-  it("rolls back password change if membership update fails in the transaction model", async () => {
+  it("rolls back activation if the membership update fails in the transaction model", async () => {
     const test = setup({ failMembership: true });
-    await expect(
-      test.controller.activate("membership-a", { password: "Nova123" }, current),
-    ).rejects.toThrow("simulated");
+    await expect(test.controller.activate("membership-a", current)).rejects.toThrow("simulated");
     expect(test.tx.user.update).toHaveBeenCalledOnce();
     expect(test.state().user.passwordHash).toBe(oldHash);
     expect(test.state().status).toBe("DISABLED");
@@ -189,8 +149,14 @@ describe("atendente reactivation password", () => {
 
   it("keeps already-active activation idempotent even for a shared account", async () => {
     const test = setup({ status: "ACTIVE", shared: true });
-    await test.controller.activate("membership-a", { password: "Nova123" }, current);
+    await test.controller.activate("membership-a", current);
     expect(test.tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it("keeps explicit password editing available as a separate action", async () => {
+    const test = setup({ status: "ACTIVE" });
+    await test.controller.update("membership-a", { password: "Nova123" }, current);
+    expect(await compare("Nova123", test.state().user.passwordHash)).toBe(true);
   });
 
   it("preserves normal active profile editing and master protection", async () => {
@@ -199,9 +165,7 @@ describe("atendente reactivation password", () => {
     expect(test.state().user.name).toBe("Nome novo");
     expect(test.state().user.passwordHash).toBe(oldHash);
     const master = setup({ master: true });
-    await expect(
-      master.controller.activate("membership-a", { password: "Nova123" }, current),
-    ).rejects.toThrow("master");
+    await expect(master.controller.activate("membership-a", current)).rejects.toThrow("master");
     expect(master.prisma.$transaction).not.toHaveBeenCalled();
   });
 });

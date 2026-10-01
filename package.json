@@ -8,7 +8,7 @@
     "backend"
   ],
   "scripts": {
-    "dev": "vite dev",
+    "dev": "node node_modules/vite/bin/vite.js",
     "build": "vite build",
     "backend:dev": "node scripts/ensure-prisma-client.mjs && node --env-file=.env backend/node_modules/tsx/dist/cli.mjs watch --tsconfig backend/tsconfig.json backend/src/main.ts",
     "backend:build": "bun run --cwd backend build",

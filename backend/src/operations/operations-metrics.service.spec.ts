@@ -40,4 +40,40 @@ describe("dashboard instance metrics", () => {
       expect.objectContaining({ where: expect.objectContaining({ id: { in: ["vocical"] } }) }),
     );
   });
+
+  it("applies the selected period to the closed and total conversation counters", async () => {
+    const model = () => ({
+      count: vi.fn().mockResolvedValue(0),
+      findMany: vi.fn().mockResolvedValue([]),
+    });
+    const prisma = {
+      $transaction: (queries: Promise<unknown>[]) => Promise.all(queries),
+      conversation: model(),
+      message: model(),
+      lead: model(),
+      ticket: model(),
+      customer: model(),
+      contact: model(),
+      department: model(),
+      messagingConnection: model(),
+    };
+    const service = new OperationsMetricsService(prisma as never);
+    const range = { start: new Date("2026-09-01"), end: new Date("2026-10-01") };
+
+    await service.snapshot("tenant-a", range);
+
+    expect(prisma.conversation.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        status: "FECHADA",
+        closedAt: { gte: range.start, lt: range.end },
+        archivedAt: null,
+      }),
+    });
+    expect(prisma.conversation.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        createdAt: { gte: range.start, lt: range.end },
+        archivedAt: null,
+      }),
+    });
+  });
 });

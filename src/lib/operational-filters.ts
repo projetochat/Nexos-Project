@@ -15,6 +15,18 @@ export const DEFAULT_OPERATIONAL_FILTERS: OperationalReportFilters = {
   period: "30d",
 };
 
+export const DASHBOARD_PERIOD_OPTIONS: Array<{ value: OperationalPeriod; label: string }> = [
+  { value: "today", label: "Hoje" },
+  { value: "yesterday", label: "Ontem" },
+  { value: "week", label: "Essa semana" },
+  { value: "previous_week", label: "Semana passada" },
+  { value: "month", label: "Esse mês" },
+  { value: "previous_month", label: "Mês passado" },
+  { value: "year", label: "Esse ano" },
+  { value: "previous_year", label: "Ano passado" },
+  { value: "custom", label: "Personalizado" },
+];
+
 function dateValue(date: Date) {
   const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return offsetDate.toISOString().slice(0, 10);

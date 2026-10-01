@@ -13,6 +13,19 @@ const current = {
 };
 
 describe("RolesController permission delegation", () => {
+  it("uses the assigned permissions, not the temporarily expanded runtime catalog", async () => {
+    const prisma = { messagingConnection: { count: vi.fn() } };
+    const controller = new RolesController(prisma as never, {} as never);
+
+    await expect(
+      controller.create({ name: "Superior", permissionIds: ["contacts.read", "contacts.delete"] }, {
+        ...current,
+        permissions: ["roles.manage", "contacts.read", "contacts.delete"],
+        assignedPermissionIds: ["roles.manage", "contacts.read"],
+      } as never),
+    ).rejects.toThrow("Você não pode adicionar ou remover uma permissão que não possui.");
+  });
+
   it("rejects creating a role with a permission the author does not own", async () => {
     const prisma = { messagingConnection: { count: vi.fn() } };
     const controller = new RolesController(prisma as never, {} as never);
@@ -85,6 +98,30 @@ describe("RolesController permission delegation", () => {
     await expect(
       controller.update("role-a", { metadata: { connectionIds: [] } }, current as never),
     ).rejects.toThrow("Você não pode adicionar ou remover uma instância fora do seu escopo.");
+  });
+
+  it("allows an edit to preserve a previously archived instance reference", async () => {
+    const prisma = {
+      messagingConnection: { count: vi.fn() },
+    };
+    const controller = new RolesController(prisma as never, {} as never);
+
+    await expect(
+      (
+        controller as unknown as {
+          assertMetadataScope: (
+            metadata: unknown,
+            actor: unknown,
+            existingMetadata?: unknown,
+          ) => Promise<void>;
+        }
+      ).assertMetadataScope(
+        { connectionIds: ["archived-connection"] },
+        { ...current, roleKey: "tenant_admin" },
+        { connectionIds: ["archived-connection"] },
+      ),
+    ).resolves.toBeUndefined();
+    expect(prisma.messagingConnection.count).not.toHaveBeenCalled();
   });
 
   it("requires the read permission when an access profile enables a child action", async () => {

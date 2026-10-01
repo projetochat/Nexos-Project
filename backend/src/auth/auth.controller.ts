@@ -1,8 +1,7 @@
 import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
-import { IsEmail, IsOptional, IsString, MinLength } from "class-validator";
+import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import { CurrentUser } from "./current-user.decorator";
 import { JwtAuthGuard } from "./jwt-auth.guard";
-import { PermissionsGuard } from "./permissions.guard";
 import type { AuthenticatedUser } from "./auth.types";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
@@ -35,6 +34,27 @@ class AcceptInvitationDto {
   name?: string;
 }
 
+class CompleteRequiredPasswordChangeDto {
+  @IsString()
+  setupToken!: string;
+
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  newPassword!: string;
+
+  @IsString()
+  confirmPassword!: string;
+}
+
+class SelectTenantDto {
+  @IsString()
+  selectionToken!: string;
+
+  @IsString()
+  tenantId!: string;
+}
+
 @Controller("auth")
 export class AuthController {
   constructor(@Inject(AuthService) private readonly auth: AuthService) {}
@@ -64,10 +84,20 @@ export class AuthController {
     return this.auth.acceptInvitation(dto);
   }
 
+  @Post("password/required-change")
+  completeRequiredPasswordChange(@Body() dto: CompleteRequiredPasswordChangeDto) {
+    return this.auth.completeRequiredPasswordChange(dto);
+  }
+
+  @Post("tenant/select")
+  selectTenant(@Body() dto: SelectTenantDto) {
+    return this.auth.selectTenant(dto.selectionToken, dto.tenantId);
+  }
+
   @Get("me")
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard)
   me(@CurrentUser() current: AuthenticatedUser) {
-    return this.auth.me(current.membershipId);
+    return this.auth.me(current);
   }
 
   @Post("logout")

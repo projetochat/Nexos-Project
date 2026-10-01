@@ -60,6 +60,7 @@ export class OperationsMetricsService {
       contadorLeadsAtuais,
       contadorFechadasAtuais,
       conversasTotalAtual,
+      conversasTotalPeriodo,
       firstResponseRows,
       attendanceRows,
     ] = await this.prisma.$transaction([
@@ -239,6 +240,13 @@ export class OperationsMetricsService {
       this.prisma.conversation.count({
         where: { ...conversationScope, archivedAt: null },
       }),
+      this.prisma.conversation.count({
+        where: {
+          ...conversationScope,
+          createdAt: { gte: range.start, lt: range.end },
+          archivedAt: null,
+        },
+      }),
       this.prisma.conversation.findMany({
         where: {
           ...conversationScope,
@@ -304,6 +312,7 @@ export class OperationsMetricsService {
       contadorLeadsAtuais,
       contadorFechadasAtuais,
       conversasTotalAtual,
+      conversasTotalPeriodo,
     };
   }
 

@@ -55,6 +55,7 @@ const grants: Record<string, PlatformPermission[]> = {
 };
 
 const highRiskPermissions = new Set<PlatformPermission>([
+  "platform.tenants.update",
   "platform.tenants.suspend",
   "platform.tenants.terminate",
   "platform.plans.create",

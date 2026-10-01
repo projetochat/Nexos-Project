@@ -1,17 +1,18 @@
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { ShieldAlert } from "lucide-react";
-import { AdminContainer } from "@/components/admin-shell";
 import { Avatar, Card, SearchInput, SectionHeader } from "@/components/ui-kit";
 import { fmtDateTime } from "@/lib/format";
 import { platformApi, type PlatformAuditLog } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/auditoria")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
-  component: AuditoriaAdmin,
+  beforeLoad: () => {
+    throw redirect({ to: "/admin/configuracoes", search: { tab: "auditoria" } });
+  },
 });
 
-function AuditoriaAdmin() {
+export function AuditoriaSettingsContent() {
   const [q, setQ] = React.useState("");
   const [rows, setRows] = React.useState<PlatformAuditLog[]>([]);
   const [error, setError] = React.useState<string | null>(null);
@@ -30,7 +31,7 @@ function AuditoriaAdmin() {
   );
 
   return (
-    <AdminContainer>
+    <>
       <SectionHeader
         title="Auditoria"
         subtitle="Ações administrativas persistidas no backend. Não há endpoint de remoção."
@@ -75,6 +76,6 @@ function AuditoriaAdmin() {
           )}
         </div>
       </Card>
-    </AdminContainer>
+    </>
   );
 }

@@ -122,6 +122,13 @@ export class CampaignsService {
 
   async create(dto: CreateCampaignDto, current: AuthenticatedUser) {
     await this.entitlements.assertFeature(current.tenantId, "campaigns");
+    await this.entitlements.assertWithinLimit(
+      current.tenantId,
+      "maxCampaigns",
+      await this.prisma.campaign.count({
+        where: { tenantId: current.tenantId, archivedAt: null },
+      }),
+    );
     const audience = this.normalizeAudience(dto.audience);
     await this.assertConnection(dto.connectionId, current.tenantId);
     await this.assertAudienceReferences(audience, current.tenantId);

@@ -7,7 +7,7 @@ describe("catálogo do Perfil de Acesso", () => {
     const source = readFileSync(new URL("./perfis.tsx", import.meta.url), "utf8");
     const catalog = source.slice(
       source.indexOf("const PERMISSION_GROUPS"),
-      source.indexOf("const TIMEZONE_OPTIONS"),
+      source.indexOf("const DEFAULT_ROLE_COLOR"),
     );
 
     for (const permission of TENANT_ADMIN_PERMISSIONS) {

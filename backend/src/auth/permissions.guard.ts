@@ -88,6 +88,9 @@ export class PermissionsGuard implements CanActivate {
     request.user.roleKey = membership.role.key;
     request.user.connectionIds = roleConnectionIds(membership.role);
     request.user.permissions = permissions;
+    request.user.assignedPermissionIds = membership.role.permissions.map(
+      (permission) => permission.permissionId,
+    );
     const connectionId = /\/messaging\/connections\//.test(request.originalUrl)
       ? request.params.id
       : undefined;

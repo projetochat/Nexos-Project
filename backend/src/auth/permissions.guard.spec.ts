@@ -35,6 +35,7 @@ describe("instance-only profile enforcement", () => {
     expect(request.user).toMatchObject({
       connectionIds: ["vocical"],
       permissions: expect.arrayContaining(["messages.send", "conversations.manage"]),
+      assignedPermissionIds: ["messages.send"],
     });
     membership.role.metadata.connectionIds = [];
     await guard.canActivate(context as never);
