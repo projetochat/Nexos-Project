@@ -9,6 +9,7 @@ import {
 } from "../generated/prisma";
 import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
 import { MessagingOutboundService, OutboundDispatchError } from "./messaging-outbound.service";
+import { OUTBOUND_PROVIDER_OUTCOME_UNKNOWN } from "../queue/messaging-outbound.queue";
 
 const current = {
   userId: "user-a",
@@ -71,7 +72,12 @@ describe("MessagingOutboundService", () => {
     expect(provider.send).not.toHaveBeenCalled();
     expect(prisma.message.updateMany).toHaveBeenLastCalledWith({
       where: { id: "message-a", tenantId: "tenant-a", status: MessageStatus.SENDING },
-      data: { status: MessageStatus.QUEUED, sendAttempts: { decrement: 1 } },
+      data: {
+        status: MessageStatus.QUEUED,
+        sendAttempts: { decrement: 1 },
+        providerErrorCode: null,
+        providerErrorMessage: null,
+      },
     });
   });
 
@@ -139,7 +145,12 @@ describe("MessagingOutboundService", () => {
     );
     expect(prisma.message.updateMany).toHaveBeenNthCalledWith(2, {
       where: { id: "message-a", tenantId: "tenant-a", status: MessageStatus.SENDING },
-      data: { status: MessageStatus.QUEUED, sendAttempts: { decrement: 1 } },
+      data: {
+        status: MessageStatus.QUEUED,
+        sendAttempts: { decrement: 1 },
+        providerErrorCode: null,
+        providerErrorMessage: null,
+      },
     });
     expect(prisma.messagingConnection.findFirst).toHaveBeenCalledWith({
       where: { id: "connection-a", tenantId: "tenant-a" },
@@ -379,6 +390,149 @@ describe("MessagingOutboundService", () => {
     expect(prisma.message.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.not.objectContaining({ status: MessageStatus.FAILED }),
+      }),
+    );
+  });
+
+  it("blocks automatic retry when the provider outcome is ambiguous", async () => {
+    const provider = {
+      send: vi
+        .fn()
+        .mockRejectedValue(
+          new MessagingProviderError(
+            MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+            "Connection closed after request write.",
+            true,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+          ),
+        ),
+    };
+    const prisma = prismaMock();
+    prisma.message.findFirst.mockResolvedValueOnce(message({ status: MessageStatus.QUEUED }));
+    prisma.message.findFirst.mockResolvedValueOnce(null);
+
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock(provider) as never,
+      dispatcherMock() as never,
+    );
+
+    await expect(
+      service.dispatchQueuedMessage({
+        tenantId: "tenant-a",
+        messageId: "message-a",
+        attempt: 1,
+        finalAttempt: false,
+      }),
+    ).rejects.toMatchObject({ retryable: false, unknownOutcome: true });
+    expect(prisma.message.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: MessageStatus.FAILED,
+          providerErrorCode: OUTBOUND_PROVIDER_OUTCOME_UNKNOWN,
+        }),
+      }),
+    );
+    expect(provider.send).toHaveBeenCalledOnce();
+  });
+
+  it("persists an accepted provider response locally without sending it again", async () => {
+    const provider = {
+      send: vi.fn().mockResolvedValue({ accepted: true, providerMessageId: "wa-accepted" }),
+    };
+    const prisma = prismaMock();
+    prisma.message.findFirst.mockResolvedValueOnce(message({ status: MessageStatus.QUEUED }));
+    prisma.message.findFirst.mockResolvedValueOnce(null);
+    prisma.message.update
+      .mockRejectedValueOnce(
+        Object.assign(new Error("database connection lost"), { code: "P1017" }),
+      )
+      .mockResolvedValueOnce(message({ status: MessageStatus.SENT }));
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock(provider) as never,
+      dispatcherMock() as never,
+    );
+
+    await expect(
+      service.dispatchQueuedMessage({
+        tenantId: "tenant-a",
+        messageId: "message-a",
+        attempt: 1,
+        finalAttempt: false,
+      }),
+    ).resolves.toMatchObject({ status: MessageStatus.SENT, recovered: true });
+
+    expect(provider.send).toHaveBeenCalledOnce();
+    expect(prisma.message.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: MessageStatus.SENT,
+          providerMessageId: "wa-accepted",
+        }),
+      }),
+    );
+  });
+
+  it("blocks retry when the provider reports acceptance without a provider message id", async () => {
+    const provider = { send: vi.fn().mockResolvedValue({ accepted: true }) };
+    const prisma = prismaMock();
+    prisma.message.findFirst.mockResolvedValueOnce(message({ status: MessageStatus.QUEUED }));
+    prisma.message.findFirst.mockResolvedValueOnce(null);
+    prisma.message.update.mockResolvedValue(message({ status: MessageStatus.FAILED }));
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock(provider) as never,
+      dispatcherMock() as never,
+    );
+
+    await expect(
+      service.dispatchQueuedMessage({
+        tenantId: "tenant-a",
+        messageId: "message-a",
+        attempt: 1,
+        finalAttempt: false,
+      }),
+    ).rejects.toMatchObject({ retryable: false, unknownOutcome: true });
+    expect(provider.send).toHaveBeenCalledOnce();
+  });
+
+  it("keeps provider acceptance non-retryable when acknowledgement persistence stays down", async () => {
+    const provider = {
+      send: vi.fn().mockResolvedValue({ accepted: true, providerMessageId: "wa-accepted" }),
+    };
+    const prisma = prismaMock();
+    prisma.message.findFirst.mockResolvedValueOnce(message({ status: MessageStatus.QUEUED }));
+    prisma.message.findFirst.mockResolvedValueOnce(null);
+    prisma.message.update
+      .mockRejectedValueOnce(new Error("database unavailable"))
+      .mockRejectedValueOnce(new Error("database still unavailable"))
+      .mockResolvedValueOnce(message({ status: MessageStatus.FAILED }));
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock(provider) as never,
+      dispatcherMock() as never,
+    );
+
+    await expect(
+      service.dispatchQueuedMessage({
+        tenantId: "tenant-a",
+        messageId: "message-a",
+        attempt: 1,
+        finalAttempt: false,
+      }),
+    ).rejects.toMatchObject({ retryable: false, unknownOutcome: true });
+    expect(provider.send).toHaveBeenCalledOnce();
+    expect(prisma.message.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: MessageStatus.FAILED,
+          providerErrorCode: OUTBOUND_PROVIDER_OUTCOME_UNKNOWN,
+        }),
       }),
     );
   });

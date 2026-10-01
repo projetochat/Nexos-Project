@@ -66,9 +66,9 @@ it("filters system events in the database while preserving tenant and instance s
   const prisma = {
     conversation: {
       groupBy: vi.fn().mockResolvedValue([]),
-      findMany: vi.fn().mockResolvedValue([]),
     },
     message: { findMany: vi.fn().mockResolvedValue([]) },
+    contact: { findMany: vi.fn().mockResolvedValue([]) },
     department: { findMany: vi.fn().mockResolvedValue([]) },
     tenantMembership: { findMany: vi.fn().mockResolvedValue([]) },
     messagingConnection: { findMany: vi.fn().mockResolvedValue([]) },
@@ -95,4 +95,82 @@ it("filters system events in the database while preserving tenant and instance s
   expect(result.messageContactsTotal).toBe(0);
   expect(result.messageAttendancesTotal).toBe(0);
   expect(result.messagesByHour).toHaveLength(24);
+});
+
+it("aggregates high-volume customer and tag charts by contact before loading metadata", async () => {
+  const groupBy = vi
+    .fn()
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([
+      { contactId: "contact-a", _count: { _all: 30_000 } },
+      { contactId: "contact-b", _count: { _all: 20_000 } },
+    ])
+    .mockResolvedValueOnce([]);
+  const prisma = {
+    conversation: { groupBy },
+    message: { findMany: vi.fn().mockResolvedValue([]) },
+    contact: {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          id: "contact-a",
+          customer: { id: "customer-a", name: "Cliente A", color: "#111111" },
+          tags: [{ tag: { id: "tag-a", name: "VIP", color: "#222222" } }],
+        },
+        {
+          id: "contact-b",
+          customer: { id: "customer-a", name: "Cliente A", color: "#111111" },
+          tags: [],
+        },
+      ]),
+    },
+    department: { findMany: vi.fn().mockResolvedValue([]) },
+    tenantMembership: { findMany: vi.fn().mockResolvedValue([]) },
+    messagingConnection: { findMany: vi.fn().mockResolvedValue([]) },
+  };
+
+  const result = await new OperationsMetricsService(prisma as never).chartData("tenant-a", {
+    start: new Date("2026-09-01"),
+    end: new Date("2026-10-01"),
+  });
+
+  expect(prisma.contact.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: { tenantId: "tenant-a", id: { in: ["contact-a", "contact-b"] } },
+    }),
+  );
+  expect(result.byCustomer).toEqual([{ nome: "Cliente A", cor: "#111111", total: 50_000 }]);
+  expect(result.byTag).toEqual([{ nome: "VIP", cor: "#222222", total: 30_000, percentual: 100 }]);
+});
+
+it("batches contact metadata lookups instead of exceeding PostgreSQL bind limits", async () => {
+  const contactRows = Array.from({ length: 10_001 }, (_, index) => ({
+    contactId: `contact-${index}`,
+    _count: { _all: 1 },
+  }));
+  const groupBy = vi
+    .fn()
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce(contactRows)
+    .mockResolvedValueOnce([]);
+  const contactFindMany = vi.fn().mockResolvedValue([]);
+  const prisma = {
+    conversation: { groupBy },
+    message: { findMany: vi.fn().mockResolvedValue([]) },
+    contact: { findMany: contactFindMany },
+    department: { findMany: vi.fn().mockResolvedValue([]) },
+    tenantMembership: { findMany: vi.fn().mockResolvedValue([]) },
+    messagingConnection: { findMany: vi.fn().mockResolvedValue([]) },
+  };
+
+  await new OperationsMetricsService(prisma as never).chartData("tenant-a", {
+    start: new Date("2026-09-01"),
+    end: new Date("2026-10-01"),
+  });
+
+  expect(contactFindMany).toHaveBeenCalledTimes(2);
+  expect(contactFindMany.mock.calls.every(([query]) => query.where.id.in.length <= 10_000)).toBe(
+    true,
+  );
 });

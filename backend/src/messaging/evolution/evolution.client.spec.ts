@@ -180,12 +180,51 @@ describe("EvolutionClient", () => {
       "http://evolution.local/chat/getBase64FromMediaMessage/instance-a",
       expect.objectContaining({
         method: "POST",
+        redirect: "error",
         headers: expect.objectContaining({ apikey: "test-key" }),
         body: JSON.stringify({
           message: { key: { id: "IMG-1" }, message: { imageMessage: { directPath: "/media" } } },
         }),
       }),
     );
+  });
+
+  it("stops an oversized encoded media response before decoding it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ base64: "A".repeat(70_000) }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      new EvolutionClient().getBase64FromMediaMessage({
+        instanceName: "instance-a",
+        message: { key: { id: "IMG-LARGE" } },
+        maxBytes: 4,
+      }),
+    ).rejects.toMatchObject({ code: MessagingErrorCode.MEDIA_DOWNLOAD_FAILED });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("rejects decoded base64 media larger than its message-type limit", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ base64: Buffer.alloc(20, 1).toString("base64") }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      new EvolutionClient().getBase64FromMediaMessage({
+        instanceName: "instance-a",
+        message: { key: { id: "IMG-DECODED-LARGE" } },
+        maxBytes: 4,
+      }),
+    ).rejects.toMatchObject({ code: MessagingErrorCode.MEDIA_DOWNLOAD_FAILED });
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("fetches group info with Evolution v2.3.7 query contract", async () => {

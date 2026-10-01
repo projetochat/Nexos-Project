@@ -14,6 +14,8 @@ import { RedisConnectionFactory } from "../queue/messaging-outbound.queue";
 export class CampaignDispatchWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CampaignDispatchWorker.name);
   private worker: Worker<CampaignDispatchJob> | null = null;
+  private recoveryTimer: NodeJS.Timeout | null = null;
+  private recoveryRunning = false;
 
   constructor(
     @Inject(ConfigService) private readonly config: ConfigService,
@@ -27,7 +29,7 @@ export class CampaignDispatchWorker implements OnModuleInit, OnModuleDestroy {
       this.logger.warn({ event: "campaign.worker.disabled", reason: "queue_disabled" });
       return;
     }
-    await this.campaigns.reconcileScheduledCampaigns();
+    await this.recoverStaleRecipients();
     const runtimeConfig = readCampaignRuntimeConfig(this.config);
     this.logger.log({
       event: "campaign.worker.config",
@@ -57,10 +59,30 @@ export class CampaignDispatchWorker implements OnModuleInit, OnModuleDestroy {
         error: sanitizeError(error),
       });
     });
+    this.recoveryTimer = setInterval(() => void this.recoverStaleRecipients(), 30_000);
+    this.recoveryTimer.unref?.();
   }
 
   async onModuleDestroy() {
+    if (this.recoveryTimer) clearInterval(this.recoveryTimer);
+    this.recoveryTimer = null;
     await this.worker?.close();
+  }
+
+  private async recoverStaleRecipients() {
+    if (this.recoveryRunning) return;
+    this.recoveryRunning = true;
+    try {
+      await this.campaigns.recoverStaleRecipients();
+      await this.campaigns.reconcileScheduledCampaigns();
+    } catch (error) {
+      this.logger.warn({
+        event: "campaign.recovery.failed",
+        error: sanitizeError(error),
+      });
+    } finally {
+      this.recoveryRunning = false;
+    }
   }
 
   private async handle(job: Job<CampaignDispatchJob>) {

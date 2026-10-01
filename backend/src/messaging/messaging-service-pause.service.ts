@@ -16,6 +16,7 @@ import { MessagingStatusService } from "./messaging-status.service";
 
 import { lockMessagingServiceState } from "./service-availability";
 import { maxSizeBytes } from "./media/messaging-media-storage.service";
+import { downloadRemoteMedia } from "./media/remote-media-downloader";
 import { EvolutionClient } from "./evolution/evolution.client";
 
 export const DEFERRED_MESSAGING_EVENT = "messaging.service.deferred";
@@ -280,31 +281,13 @@ export class MessagingServicePauseService implements OnModuleInit, OnModuleDestr
         const downloaded = await this.evolution.getBase64FromMediaMessage({
           instanceName: current.externalReference,
           message: media.rawMessage,
+          maxBytes: limit,
         });
         body = downloaded.body;
         media.mimetype ??= downloaded.mimeType;
         media.fileName ??= downloaded.fileName;
       } else if (media.url?.startsWith("http")) {
-        const response = await fetch(media.url, { signal: AbortSignal.timeout(15000) });
-        if (!response.ok) throw new Error("Media capture unavailable");
-        if (Number(response.headers.get("content-length")) > limit)
-          throw new Error("Media capture too large");
-        if (!response.body) throw new Error("Empty media response");
-        const reader = response.body.getReader();
-        const chunks: Buffer[] = [];
-        let size = 0;
-        try {
-          while (true) {
-            const chunk = await reader.read();
-            if (chunk.done) break;
-            size += chunk.value.byteLength;
-            if (size > limit) throw new Error("Media capture too large");
-            chunks.push(Buffer.from(chunk.value));
-          }
-          body = Buffer.concat(chunks);
-        } finally {
-          await reader.cancel();
-        }
+        body = await downloadRemoteMedia(media.url, { maxBytes: limit });
       } else throw new Error("Media capture source unavailable");
       if (!body.length || body.length > limit) throw new Error("Invalid media capture size");
       media.inlineBody = body;
