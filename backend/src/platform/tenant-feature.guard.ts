@@ -8,7 +8,7 @@ import { TENANT_FEATURE_KEY } from "./tenant-feature.decorator";
 @Injectable()
 export class TenantFeatureGuard implements CanActivate {
   constructor(
-    private readonly reflector: Reflector,
+    @Inject(Reflector) private readonly reflector: Reflector,
     @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
   ) {}
 
