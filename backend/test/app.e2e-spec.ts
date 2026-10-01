@@ -2891,13 +2891,21 @@ describe("Trixus API organization and RBAC", () => {
     const adminToken = await login("admin@trixus.app", "demo1234", "acme");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
     const staleCampaigns = await prisma.campaign.findMany({
-      where: { tenantId: tenant.id, name: "Campaign E2E" },
+      where: {
+        tenantId: tenant.id,
+        name: { in: ["Campaign E2E", "Campaign Cancel E2E"] },
+      },
       select: { id: true },
     });
     await prisma.message.deleteMany({
       where: { tenantId: tenant.id, campaignId: { in: staleCampaigns.map((item) => item.id) } },
     });
-    await prisma.campaign.deleteMany({ where: { tenantId: tenant.id, name: "Campaign E2E" } });
+    await prisma.campaign.deleteMany({
+      where: {
+        tenantId: tenant.id,
+        name: { in: ["Campaign E2E", "Campaign Cancel E2E"] },
+      },
+    });
     const staleContacts = await prisma.contact.findMany({
       where: { tenantId: tenant.id, normalizedPhone: "+5511999998888" },
       select: { id: true },
@@ -3007,12 +3015,23 @@ describe("Trixus API organization and RBAC", () => {
     expect(recipients.body.items).toHaveLength(1);
     expect(recipients.body.items[0].phoneMasked).not.toContain("999998888");
 
+    const cancellable = await request(app.getHttpServer())
+      .post("/api/campaigns")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        name: "Campaign Cancel E2E",
+        messageText: previewPayload.messageText,
+        connectionId: connection.id,
+        audience: previewPayload.audience,
+      })
+      .expect(201);
+
     await prisma.campaign.update({
-      where: { id: created.body.id },
-      data: { status: CampaignStatus.RUNNING },
+      where: { id: cancellable.body.id },
+      data: { status: CampaignStatus.SCHEDULED },
     });
     await request(app.getHttpServer())
-      .post(`/api/campaigns/${created.body.id}/cancel`)
+      .post(`/api/campaigns/${cancellable.body.id}/cancel`)
       .set("Authorization", `Bearer ${adminToken}`)
       .expect(201)
       .expect(({ body }) => {
@@ -3020,10 +3039,15 @@ describe("Trixus API organization and RBAC", () => {
       });
 
     await prisma.message.deleteMany({
-      where: { tenantId: tenant.id, campaignId: created.body.id },
+      where: {
+        tenantId: tenant.id,
+        campaignId: { in: [created.body.id, cancellable.body.id] },
+      },
     });
     await prisma.conversation.deleteMany({ where: { tenantId: tenant.id, contactId: contact.id } });
-    await prisma.campaign.deleteMany({ where: { id: created.body.id } });
+    await prisma.campaign.deleteMany({
+      where: { id: { in: [created.body.id, cancellable.body.id] } },
+    });
     await prisma.contact.deleteMany({ where: { id: contact.id } });
     await prisma.messagingConnection.delete({ where: { id: connection.id } });
   });
