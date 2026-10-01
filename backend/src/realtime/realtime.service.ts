@@ -366,8 +366,8 @@ function realtimeEventPermission(event: RealtimeServerEvent): PermissionKey | nu
   }
   if (event.startsWith("connection.")) return "connections.read";
   if (event.startsWith("contact.")) return "contacts.read";
-  if (event.startsWith("lead.")) return "chat.leads.read";
-  if (event.startsWith("notification.")) return "notifications.read";
+  if (event.startsWith("lead.")) return "conversations.read";
+  if (event.startsWith("notification.")) return null;
   if (event.startsWith("ticket.")) return "tickets.read";
   if (event.startsWith("campaign.")) return "campaigns.read";
   return null;

@@ -8,7 +8,7 @@ const current = {
   roleId: "role-a",
   roleKey: "custom",
   platformRole: "USER",
-  permissions: ["users.read", "users.manage", "users.delete"],
+  permissions: ["users.read", "users.update", "users.delete"],
 };
 
 function setup() {

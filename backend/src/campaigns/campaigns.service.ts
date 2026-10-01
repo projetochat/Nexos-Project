@@ -559,6 +559,7 @@ export class CampaignsService {
         ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
       });
       for (const campaign of campaigns) {
+        if (!(await this.campaignModuleEnabled(campaign.tenantId))) continue;
         if (campaign.status === CampaignStatus.CANCELLING) {
           await this.campaignQueue.enqueue(
             { kind: "campaign.cancel", tenantId: campaign.tenantId, campaignId: campaign.id },
@@ -590,6 +591,9 @@ export class CampaignsService {
   async prepareDispatch(campaignId: string) {
     const campaign = await this.prisma.campaign.findUnique({ where: { id: campaignId } });
     if (!campaign || campaign.archivedAt) return { skipped: true };
+    if (!(await this.campaignModuleEnabled(campaign.tenantId))) {
+      return { skipped: true, reason: "CAMPAIGNS_MODULE_DISABLED" };
+    }
     if (
       campaign.status === CampaignStatus.SCHEDULED &&
       campaign.scheduledAt &&
@@ -666,6 +670,9 @@ export class CampaignsService {
     if (recipient.status === CampaignRecipientStatus.SENT || recipient.messageId)
       return { skipped: true };
     const campaign = recipient.campaign;
+    if (!(await this.campaignModuleEnabled(campaign.tenantId))) {
+      return { skipped: true, reason: "CAMPAIGNS_MODULE_DISABLED" };
+    }
     if (campaign.status === CampaignStatus.PAUSED) {
       await this.prisma.campaignRecipient.update({
         where: { id: recipient.id },
@@ -920,6 +927,14 @@ export class CampaignsService {
     });
     this.publishCampaign(updated, "campaign.cancelled");
     return this.counters(updated);
+  }
+
+  private async campaignModuleEnabled(tenantId: string) {
+    try {
+      return (await this.entitlements.getEntitlements(tenantId)).features.campaigns;
+    } catch {
+      return false;
+    }
   }
 
   private async finalizeCreatedRecipient(

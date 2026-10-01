@@ -1098,6 +1098,7 @@ export async function healthCheck() {
 }
 
 export const organizationApi = {
+  entitlements: () => apiRequest<TenantEntitlements>("/tenant/entitlements"),
   getCompany: () => apiRequest<ApiCompanyProfile>("/company"),
   updateCompany: (data: { timezone: string }) =>
     apiRequest<{ timezone: string }>("/company", {
@@ -1996,6 +1997,23 @@ export type PlatformTenant = {
   updatedAt: string;
 };
 
+export type TenantEntitlements = {
+  tenantId: string;
+  features: Record<string, boolean>;
+  limits: Record<string, number>;
+};
+
+export type PlatformTenantConfiguration = {
+  tenantId: string;
+  modules: { chat: true; campaigns: boolean; tickets: boolean };
+  lockedModules: Array<"chat">;
+  limits: Record<string, number>;
+  overrides: {
+    modules: Partial<{ campaigns: boolean; tickets: boolean }>;
+    limits: Record<string, number | null>;
+  };
+};
+
 export type PlatformClient = {
   id: string;
   name: string;
@@ -2311,6 +2329,19 @@ export const platformApi = {
     } = {},
   ) => apiRequest<PaginatedResponse<PlatformTenant>>(`/platform/tenants${queryString(params)}`),
   tenant: (id: string) => apiRequest<PlatformTenantDetail>(`/platform/tenants/${id}`),
+  tenantConfiguration: (id: string) =>
+    apiRequest<PlatformTenantConfiguration>(`/platform/tenants/${id}/configuration`),
+  updateTenantConfiguration: (
+    id: string,
+    data: {
+      modules?: { chat?: true; campaigns?: boolean; tickets?: boolean };
+      limits?: Record<string, number | null>;
+    },
+  ) =>
+    apiRequest<PlatformTenantConfiguration>(`/platform/tenants/${id}/configuration`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   updateTenantAdministratorCredentials: (
     id: string,
     data: { responsibleName: string; responsibleEmail: string; newPassword?: string },

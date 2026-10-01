@@ -298,6 +298,9 @@ describe("PlatformService health", () => {
         findUnique: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockResolvedValue(createdTenant),
       },
+      department: {
+        upsert: vi.fn().mockResolvedValue({ id: "tenant-1:atendimento" }),
+      },
       permission: { upsert: vi.fn().mockResolvedValue({}) },
       role: {
         upsert: vi.fn().mockImplementation(({ create }) => Promise.resolve({ id: create.id })),
@@ -393,6 +396,9 @@ describe("PlatformService health", () => {
       tenant: {
         findUnique: vi.fn().mockResolvedValueOnce({ id: "tenant-1" }).mockResolvedValueOnce(null),
         create: vi.fn().mockImplementation(({ data }) => ({ id: "tenant-2", ...data })),
+      },
+      department: {
+        upsert: vi.fn().mockResolvedValue({ id: "tenant-2:atendimento" }),
       },
       permission: { upsert: vi.fn().mockResolvedValue({}) },
       role: {

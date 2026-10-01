@@ -244,7 +244,7 @@ describe("MessagingOutboundService scheduled messages", () => {
     );
   });
 
-  it("keeps scheduled audio enabled while individual permissions are paused", async () => {
+  it("keeps scheduled audio enabled when the creator retains the audio permission", async () => {
     const mediaStorage = {
       storeDownloaded: vi.fn().mockResolvedValue({
         objectKey: "tenants/tenant-a/messages/audio",
@@ -261,7 +261,7 @@ describe("MessagingOutboundService scheduled messages", () => {
       role: {
         key: "agent",
         metadata: { connectionIds: ["connection-a"] },
-        permissions: [],
+        permissions: [{ permissionId: "chat.audio.send" }],
       },
     });
 

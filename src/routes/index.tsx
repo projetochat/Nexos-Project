@@ -113,15 +113,23 @@ function Dashboard() {
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const user = useSession((state) => state.user);
-  const canManageDashboard =
+  const canCreateDashboard =
     user?.role === "admin" ||
     user?.role === "super_admin" ||
-    user?.permissions?.includes("dashboard.manage");
+    user?.permissions?.includes("dashboard.create");
+  const canUpdateDashboard =
+    user?.role === "admin" ||
+    user?.role === "super_admin" ||
+    user?.permissions?.includes("dashboard.update");
   const canDeleteDashboard =
     user?.role === "admin" ||
     user?.role === "super_admin" ||
     user?.permissions?.includes("dashboard.delete");
-  const canEditDashboard = canManageDashboard || canDeleteDashboard;
+  const canReadAdditionalFields =
+    user?.role === "admin" ||
+    user?.role === "super_admin" ||
+    user?.permissions?.includes("contacts.additional_fields.read");
+  const canEditDashboard = canCreateDashboard || canUpdateDashboard || canDeleteDashboard;
   const storageKey = `trixus.dashboard.bis.${user?.id ?? "anonymous"}`;
   const filtersStorageKey = `trixus.dashboard.filters.${user?.id ?? "anonymous"}`;
   const [editingDashboard, setEditingDashboard] = React.useState(false);
@@ -158,7 +166,7 @@ function Dashboard() {
   const customFieldsQuery = useQuery({
     queryKey: ["trixus", "contact-custom-fields"],
     queryFn: crmApi.listContactCustomFields,
-    enabled: !!canEditDashboard,
+    enabled: !!canEditDashboard && !!canReadAdditionalFields,
   });
   const contactGroups = [
     ...new Set([
@@ -500,7 +508,8 @@ function Dashboard() {
             ) : undefined
           }
           onPreviewConfigChange={setPreviewComponent}
-          canManage={canManageDashboard}
+          canCreate={canCreateDashboard}
+          canUpdate={canUpdateDashboard}
           canDelete={canDeleteDashboard}
           onChange={updateDashboardComponents}
           onClose={() => setEditingDashboard(false)}

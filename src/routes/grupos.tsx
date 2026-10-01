@@ -147,7 +147,8 @@ function ContactPickerPager({
 function GroupsPage() {
   const navigate = useNavigate();
   const permissions = useSession((state) => state.user?.permissions ?? []);
-  const canManage = permissions.includes("groups.manage");
+  const canCreate = permissions.includes("groups.create");
+  const canUpdate = permissions.includes("groups.update");
   const create = useDisclosure();
   const [groups, setGroups] = React.useState<ApiWhatsappGroupSummary[]>([]);
   const [instances, setInstances] = React.useState<ApiContactInstanceOption[]>([]);
@@ -303,7 +304,7 @@ function GroupsPage() {
           subtitle={`${num(total)} grupos de WhatsApp.`}
           actions={
             <div className="flex gap-2">
-              {canManage && (
+              {canUpdate && (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -315,7 +316,7 @@ function GroupsPage() {
                   {syncing ? "Atualizando..." : "Atualizar"}
                 </Button>
               )}
-              {canManage && (
+              {canCreate && (
                 <Button variant="primary" size="sm" onClick={create.show}>
                   <Plus className="h-3.5 w-3.5" /> Criar Grupo
                 </Button>
@@ -362,7 +363,7 @@ function GroupsPage() {
                   group={group}
                   onOpenChat={() => void openGroupChat(group)}
                   onDetail={() => void openGroupDetail(group)}
-                  onLeave={canManage ? () => setLeavingGroup(group) : undefined}
+                  onLeave={canUpdate ? () => setLeavingGroup(group) : undefined}
                 />
               ))}
             {!loading && groups.length === 0 && (
@@ -413,7 +414,7 @@ function GroupsPage() {
           </div>
         </Card>
 
-        {canManage && (
+        {canCreate && (
           <CreateGroupModal
             open={create.open}
             onClose={create.hide}
@@ -442,9 +443,9 @@ function GroupsPage() {
             );
           }}
           onOpenChat={(group) => void openGroupChat(group)}
-          canManage={canManage}
+          canManage={canUpdate}
         />
-        {canManage && (
+        {canUpdate && (
           <ConfirmDialog
             open={!!leavingGroup}
             title="Sair do Grupo?"

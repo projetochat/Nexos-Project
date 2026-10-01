@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { PermissionsGuard } from "./permissions.guard";
 
-describe("instance-only profile enforcement", () => {
-  it("reloads selected instances and keeps individual switches paused", async () => {
+describe("profile permission enforcement", () => {
+  it("reloads selected instances and the assigned permission set", async () => {
     const membership = {
       roleId: "role-a",
       tenant: {},
@@ -39,7 +39,7 @@ describe("instance-only profile enforcement", () => {
     await expect(guard.canActivate(context as never)).resolves.toBe(true);
     expect(request.user).toMatchObject({
       connectionIds: ["vocical"],
-      permissions: expect.arrayContaining(["messages.send", "conversations.manage"]),
+      permissions: ["messages.send"],
       assignedPermissionIds: ["messages.send"],
     });
     membership.role.metadata.connectionIds = [];
@@ -47,7 +47,7 @@ describe("instance-only profile enforcement", () => {
     expect(request.user).toMatchObject({ connectionIds: [] });
   });
 
-  it("permits a known required permission while individual switches are paused", async () => {
+  it("rejects a required permission that is not assigned", async () => {
     const prisma = {
       tenantMembership: {
         findFirst: vi.fn().mockResolvedValue({
@@ -80,7 +80,7 @@ describe("instance-only profile enforcement", () => {
       }),
     };
 
-    await expect(guard.canActivate(context as never)).resolves.toBe(true);
+    await expect(guard.canActivate(context as never)).rejects.toThrow("Permissão insuficiente");
   });
 
   it("rejects an expired impersonation while revalidating a permissionless endpoint", async () => {
@@ -122,7 +122,7 @@ describe("instance-only profile enforcement", () => {
     );
   });
 
-  it("accepts an endpoint with alternative known permissions while switches are paused", async () => {
+  it("accepts an endpoint with an assigned alternative permission", async () => {
     const prisma = {
       tenantMembership: {
         findFirst: vi.fn().mockResolvedValue({
@@ -139,7 +139,7 @@ describe("instance-only profile enforcement", () => {
     const guard = new PermissionsGuard(
       {
         getAllAndOverride: (key: string) =>
-          key === "any-permissions" ? ["tickets.manage", "tickets.create"] : undefined,
+          key === "any-permissions" ? ["chat.tickets.create", "tickets.create"] : undefined,
       } as never,
       prisma as never,
     );

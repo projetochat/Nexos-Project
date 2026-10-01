@@ -38,6 +38,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useSession } from "@/lib/session";
 import { Switch } from "@/components/ui/switch";
+import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
 import {
   delegatedPermissionIds,
   permissionDependencyIssue,
@@ -68,9 +69,14 @@ const PERMISSION_GROUPS: Array<{
     items: [
       { id: "dashboard.read", label: "Ver", description: "Permite visualizar o dashboard." },
       {
-        id: "dashboard.manage",
-        label: "Criar/Editar",
-        description: "Permite criar/editar os componentes do dashboard.",
+        id: "dashboard.create",
+        label: "Criar",
+        description: "Permite criar componentes do dashboard.",
+      },
+      {
+        id: "dashboard.update",
+        label: "Editar",
+        description: "Permite editar os componentes do dashboard.",
       },
       {
         id: "dashboard.delete",
@@ -124,9 +130,14 @@ const PERMISSION_GROUPS: Array<{
         description: "Permite enviar mensagens de áudio.",
       },
       {
-        id: "tickets.create",
+        id: "chat.tickets.create",
         label: "Gerar chamado",
         description: "Permite gerar chamados a partir da conversa.",
+      },
+      {
+        id: "history.read",
+        label: "Ver histórico de conversas",
+        description: "Permite visualizar o histórico de conversas.",
       },
       {
         id: "conversations.assign",
@@ -176,11 +187,21 @@ const PERMISSION_GROUPS: Array<{
     items: [
       { id: "contacts.read", label: "Ver", description: "Permite visualizar os contatos." },
       {
-        id: "contacts.manage",
-        label: "Criar/Editar",
-        description: "Permite criar/editar os contatos.",
+        id: "contacts.create",
+        label: "Criar",
+        description: "Permite criar contatos.",
+      },
+      {
+        id: "contacts.update",
+        label: "Editar",
+        description: "Permite editar contatos.",
       },
       { id: "contacts.delete", label: "Excluir", description: "Permite excluir os contatos." },
+      {
+        id: "contacts.additional_fields.read",
+        label: "Ver campos adicionais",
+        description: "Permite visualizar os campos adicionais dos contatos.",
+      },
     ],
   },
   {
@@ -189,102 +210,114 @@ const PERMISSION_GROUPS: Array<{
     items: [
       { id: "groups.read", label: "Ver", description: "Permite visualizar os grupos." },
       {
-        id: "groups.manage",
-        label: "Criar/Editar",
-        description: "Permite adicionar ou excluir participantes dos grupos.",
-      },
-    ],
-  },
-  {
-    title: "Histórico de Conversas",
-    tab: "chat",
-    items: [
-      {
-        id: "history.read",
-        label: "Ver",
-        description: "Permite visualizar o histórico de conversas.",
-      },
-    ],
-  },
-  {
-    title: "Clientes e Campos Adicionais",
-    tab: "administracao",
-    items: [
-      {
-        id: "crm.read",
-        label: "Ver",
-        description: "Permite visualizar clientes, catálogos e campos adicionais.",
+        id: "groups.create",
+        label: "Criar",
+        description: "Permite criar grupos.",
       },
       {
-        id: "crm.manage",
-        label: "Criar/Editar",
-        description: "Permite criar, editar e excluir clientes, catálogos e campos adicionais.",
-      },
-    ],
-  },
-  {
-    title: "Leads",
-    tab: "chat",
-    items: [
-      { id: "chat.leads.read", label: "Ver", description: "Permite visualizar os leads." },
-      {
-        id: "leads.manage",
-        label: "Criar/Editar",
-        description: "Permite criar e editar os leads.",
-      },
-    ],
-  },
-  {
-    title: "Notificações",
-    tab: "administracao",
-    items: [
-      {
-        id: "notifications.read",
-        label: "Ver",
-        description: "Permite visualizar as notificações.",
-      },
-      {
-        id: "notifications.manage",
-        label: "Gerenciar",
-        description: "Permite gerenciar as notificações.",
+        id: "groups.update",
+        label: "Editar",
+        description: "Permite editar grupos e seus participantes.",
       },
     ],
   },
   ...(
     [
-      ["Atendentes", "users.read", "users.manage", "users.delete", "atendentes"],
-      ["Perfil de Acesso", "roles.read", "roles.manage", "roles.delete", "perfis de acesso"],
+      ["Atendentes", "users.read", "users.create", "users.update", "users.delete", "atendentes"],
+      [
+        "Perfil de Acesso",
+        "roles.read",
+        "roles.create",
+        "roles.update",
+        "roles.delete",
+        "perfis de acesso",
+      ],
       [
         "Departamentos",
         "departments.read",
-        "departments.manage",
+        "departments.create",
+        "departments.update",
         "departments.delete",
         "departamentos",
       ],
-      ["Etiquetas", "chat.tags.read", "chat.tags.manage", "chat.tags.delete", "etiquetas"],
+      [
+        "Etiquetas",
+        "chat.tags.read",
+        "chat.tags.create",
+        "chat.tags.update",
+        "chat.tags.delete",
+        "etiquetas",
+      ],
       [
         "Mensagens Rápidas",
         "chat.quick_replies.read",
-        "chat.quick_replies.manage",
+        "chat.quick_replies.create",
+        "chat.quick_replies.update",
         "chat.quick_replies.delete",
         "mensagens rápidas",
       ],
-      ["Agendamentos", "schedules.read", "schedules.manage", "schedules.delete", "agendamentos"],
-      ["Instâncias", "connections.read", "connections.manage", "connections.delete", "instâncias"],
-      ["Fluxo de Bot", "bot_flows.read", "bot_flows.manage", "bot_flows.delete", "fluxos de bot"],
-      ["Automações", "automations.read", "automations.manage", "automations.delete", "automações"],
-      ["Agente de IA", "ai_agents.read", "ai_agents.manage", "ai_agents.delete", "agentes de IA"],
-      ["Configurações", "settings.read", "settings.manage", "settings.delete", "configurações"],
+      [
+        "Agendamentos",
+        "schedules.read",
+        "schedules.create",
+        "schedules.update",
+        "schedules.delete",
+        "agendamentos",
+      ],
+      [
+        "Instâncias",
+        "connections.read",
+        "connections.create",
+        "connections.update",
+        "connections.delete",
+        "instâncias",
+      ],
+      [
+        "Fluxo de Bot",
+        "bot_flows.read",
+        "bot_flows.create",
+        "bot_flows.update",
+        "bot_flows.delete",
+        "fluxos de bot",
+      ],
+      [
+        "Automações",
+        "automations.read",
+        "automations.create",
+        "automations.update",
+        "automations.delete",
+        "automações",
+      ],
+      [
+        "Agente de IA",
+        "ai_agents.read",
+        "ai_agents.create",
+        "ai_agents.update",
+        "ai_agents.delete",
+        "agentes de IA",
+      ],
     ] as const
-  ).map(([title, read, manage, remove, resource]) => ({
+  ).map(([title, read, create, update, remove, resource]) => ({
     title,
     tab: "administracao" as const,
     items: [
       { id: read, label: "Ver", description: `Permite visualizar ${resource}.` },
-      { id: manage, label: "Criar/Editar", description: `Permite criar/editar ${resource}.` },
+      { id: create, label: "Criar", description: `Permite criar ${resource}.` },
+      { id: update, label: "Editar", description: `Permite editar ${resource}.` },
       { id: remove, label: "Excluir", description: `Permite excluir ${resource}.` },
     ],
   })),
+  {
+    title: "Configurações",
+    tab: "administracao",
+    items: [
+      {
+        id: "settings.manage",
+        label: "Configurar",
+        description: "Permite acesso geral às configurações.",
+      },
+    ],
+  },
   {
     title: "Campanhas",
     tab: "administracao",
@@ -296,33 +329,6 @@ const PERMISSION_GROUPS: Array<{
         label: "Editar",
         description: "Permite editar campanhas.",
       },
-      {
-        id: "campaigns.schedule",
-        label: "Agendar",
-        description: "Permite agendar campanhas.",
-      },
-      { id: "campaigns.start", label: "Iniciar", description: "Permite iniciar campanhas." },
-      { id: "campaigns.pause", label: "Pausar", description: "Permite pausar campanhas." },
-      {
-        id: "campaigns.cancel",
-        label: "Cancelar",
-        description: "Permite cancelar campanhas.",
-      },
-      {
-        id: "campaigns.duplicate",
-        label: "Duplicar",
-        description: "Permite duplicar campanhas.",
-      },
-      {
-        id: "campaigns.recipients.read",
-        label: "Ver destinatários",
-        description: "Permite visualizar os destinatários das campanhas.",
-      },
-      {
-        id: "campaigns.manage",
-        label: "Gerenciar",
-        description: "Permite executar ações administrativas nas campanhas.",
-      },
       { id: "campaigns.delete", label: "Excluir", description: "Permite excluir campanhas." },
     ],
   },
@@ -331,40 +337,11 @@ const PERMISSION_GROUPS: Array<{
     tab: "chamados",
     items: [
       { id: "tickets.read", label: "Ver", description: "Permite visualizar os chamados." },
+      { id: "tickets.create", label: "Criar", description: "Permite criar chamados." },
       {
         id: "tickets.update",
         label: "Editar",
         description: "Permite editar os chamados.",
-      },
-      {
-        id: "tickets.assign",
-        label: "Atribuir",
-        description: "Permite atribuir chamados a atendentes.",
-      },
-      {
-        id: "tickets.status.update",
-        label: "Alterar status",
-        description: "Permite alterar o status dos chamados.",
-      },
-      {
-        id: "tickets.comment",
-        label: "Comentar",
-        description: "Permite adicionar comentários aos chamados.",
-      },
-      {
-        id: "tickets.attachments.upload",
-        label: "Enviar anexos",
-        description: "Permite adicionar anexos aos chamados.",
-      },
-      {
-        id: "tickets.attachments.delete",
-        label: "Excluir anexos",
-        description: "Permite excluir anexos dos chamados.",
-      },
-      {
-        id: "tickets.manage",
-        label: "Gerenciar",
-        description: "Permite executar todas as ações administrativas dos chamados.",
       },
       { id: "tickets.delete", label: "Excluir", description: "Permite excluir os chamados." },
     ],
@@ -461,11 +438,27 @@ function Page() {
   const navigate = useNavigate({ from: "/perfis" });
   const search = Route.useSearch();
   const currentUser = useSession((state) => state.user);
+  const entitlements = useTenantEntitlements();
+  const enabledModules = tenantModules(entitlements.data?.features);
+  const permissionGroups = React.useMemo(
+    () =>
+      PERMISSION_GROUPS.filter(
+        (group) =>
+          (group.title !== "Campanhas" || enabledModules.campaigns) &&
+          (group.title !== "Chamados" || enabledModules.tickets),
+      ).map((group) =>
+        enabledModules.tickets
+          ? group
+          : { ...group, items: group.items.filter((item) => item.id !== "chat.tickets.create") },
+      ),
+    [enabledModules.campaigns, enabledModules.tickets],
+  );
   const grantedPermissions = React.useMemo(
     () => currentUser?.permissions ?? [],
     [currentUser?.permissions],
   );
-  const canManageRoles = grantedPermissions.includes("roles.manage");
+  const canCreateRoles = grantedPermissions.includes("roles.create");
+  const canUpdateRoles = grantedPermissions.includes("roles.update");
   const canDeleteRoles = grantedPermissions.includes("roles.delete");
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["trixus", "roles"],
@@ -506,11 +499,11 @@ function Page() {
   }, [navigate, search.edit]);
 
   React.useEffect(() => {
-    if (!search.edit || !canManageRoles) return;
+    if (!search.edit || !canUpdateRoles) return;
     const requestedRole = items.find((role) => role.id === search.edit);
     if (!requestedRole || isAdministratorRole(requestedRole)) return;
     setEditing((current) => (current?.id === requestedRole.id ? current : requestedRole));
-  }, [canManageRoles, items, search.edit]);
+  }, [canUpdateRoles, items, search.edit]);
 
   const filtered = sortByOptionLabel(items, (perfil) => perfil.name).filter((p) => {
     if (
@@ -583,7 +576,7 @@ function Page() {
           title="Perfil de Acesso"
           subtitle={`${num(items.length)} perfis cadastrados.`}
           actions={
-            canManageRoles ? (
+            canCreateRoles ? (
               <Button variant="primary" size="sm" onClick={novo.show}>
                 <Plus className="h-3.5 w-3.5" /> Novo Perfil de Acesso
               </Button>
@@ -631,30 +624,30 @@ function Page() {
                       </div>
                     </div>
 
-                    {!isAdministrator && (canManageRoles || canDeleteRoles) && (
+                    {!isAdministrator && (canCreateRoles || canUpdateRoles || canDeleteRoles) && (
                       <div className="flex shrink-0 gap-1">
-                        {canManageRoles && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="duplicate-action-button"
-                              onClick={() => setDuplicating(duplicateRoleDraft(p, items))}
-                              title="Duplicar Perfil de Acesso"
-                              aria-label={`Duplicar Perfil de Acesso ${p.name}`}
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setEditing(p)}
-                              title="Editar perfil"
-                              aria-label={`Editar perfil ${p.name}`}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                          </>
+                        {canCreateRoles && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="duplicate-action-button"
+                            onClick={() => setDuplicating(duplicateRoleDraft(p, items))}
+                            title="Duplicar Perfil de Acesso"
+                            aria-label={`Duplicar Perfil de Acesso ${p.name}`}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {canUpdateRoles && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditing(p)}
+                            title="Editar perfil"
+                            aria-label={`Editar perfil ${p.name}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
                         )}
                         {canDeleteRoles && (
                           <Button
@@ -683,6 +676,7 @@ function Page() {
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
           grantablePermissionIds={grantablePermissionIds}
+          permissionGroups={permissionGroups}
           onClose={novo.hide}
           onSubmit={(data) => save.mutate({ data })}
         />
@@ -692,6 +686,7 @@ function Page() {
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
           grantablePermissionIds={grantablePermissionIds}
+          permissionGroups={permissionGroups}
           initial={editing ?? undefined}
           initialTab={
             search.edit === editing?.id
@@ -707,6 +702,7 @@ function Page() {
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
           grantablePermissionIds={grantablePermissionIds}
+          permissionGroups={permissionGroups}
           initial={duplicating ?? undefined}
           clone
           onClose={() => setDuplicating(null)}
@@ -742,6 +738,7 @@ function PerfilForm({
   departamentos,
   connections,
   grantablePermissionIds,
+  permissionGroups,
 }: {
   open: boolean;
   onClose: () => void;
@@ -753,6 +750,7 @@ function PerfilForm({
   departamentos: { id: string; name: string }[];
   connections: ApiMessagingConnection[];
   grantablePermissionIds: string[];
+  permissionGroups: typeof PERMISSION_GROUPS;
 }) {
   const [form, setForm] = React.useState<PerfilFormData>({
     name: "",
@@ -789,8 +787,12 @@ function PerfilForm({
             language: metadata.language ?? "system",
             timezone: metadata.timezone ?? "America/Sao_Paulo",
             permissionIds: clone
-              ? initial.permissionIds.filter((permissionId) =>
-                  grantablePermissionIds.includes(permissionId),
+              ? initial.permissionIds.filter(
+                  (permissionId) =>
+                    grantablePermissionIds.includes(permissionId) &&
+                    permissionGroups.some((group) =>
+                      group.items.some((permission) => permission.id === permissionId),
+                    ),
                 )
               : initial.permissionIds,
             departmentIds: metadata.departmentIds ?? [],
@@ -816,7 +818,7 @@ function PerfilForm({
     );
     setError("");
     setActiveTab(initialTab);
-  }, [clone, grantablePermissionIds, initial, initialTab, open]);
+  }, [clone, grantablePermissionIds, initial, initialTab, open, permissionGroups]);
 
   const submit = () => {
     if (!form.name || form.name.trim().length < 2) {
@@ -840,7 +842,7 @@ function PerfilForm({
       originalIds: initial && !clone ? initial.permissionIds : [],
       grantablePermissionIds,
     });
-    const dependencyIssue = permissionDependencyIssue(permissionIds, PERMISSION_GROUPS);
+    const dependencyIssue = permissionDependencyIssue(permissionIds, permissionGroups);
     if (dependencyIssue) {
       setActiveTab("acessos");
       toast.error(dependencyIssue);
@@ -963,6 +965,7 @@ function PerfilForm({
             />
             <PermissionSettings
               form={form}
+              permissionGroups={permissionGroups}
               togglePermission={togglePermission}
               togglePermissionGroup={togglePermissionGroup}
               grantablePermissionIds={grantablePermissionIds}
@@ -1131,11 +1134,13 @@ function ScopeSettings({
 
 function PermissionSettings({
   form,
+  permissionGroups,
   togglePermission,
   togglePermissionGroup,
   grantablePermissionIds,
 }: {
   form: PerfilFormData;
+  permissionGroups: typeof PERMISSION_GROUPS;
   togglePermission: (
     group: (typeof PERMISSION_GROUPS)[number],
     id: string,
@@ -1151,7 +1156,7 @@ function PermissionSettings({
           Permissões
         </h3>
         <div className="space-y-4">
-          {PERMISSION_GROUPS.map((group) => (
+          {permissionGroups.map((group) => (
             <PermissionGroupBlock
               key={group.title}
               group={group}

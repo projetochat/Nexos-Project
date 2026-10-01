@@ -306,7 +306,7 @@ export class GroupsController {
   }
 
   @Post()
-  @RequirePermissions("groups.manage")
+  @RequirePermissions("groups.create")
   async create(@Body() dto: CreateGroupDto, @CurrentUser() current: AuthenticatedUser) {
     if (dto.participantContactIds.length < 1) {
       throw new BadRequestException("Selecione ao menos um participante.");
@@ -483,7 +483,7 @@ export class GroupsController {
   }
 
   @Patch(":id/name")
-  @RequirePermissions("groups.manage")
+  @RequirePermissions("groups.update")
   async updateName(
     @Param("id") id: string,
     @Body() dto: UpdateGroupNameDto,
@@ -509,7 +509,7 @@ export class GroupsController {
   }
 
   @Patch(":id/description")
-  @RequirePermissions("groups.manage")
+  @RequirePermissions("groups.update")
   async updateDescription(
     @Param("id") id: string,
     @Body() dto: UpdateGroupDescriptionDto,
@@ -531,7 +531,7 @@ export class GroupsController {
   }
 
   @Post(":id/participants")
-  @RequirePermissions("groups.manage")
+  @RequirePermissions("groups.update")
   async updateParticipants(
     @Param("id") id: string,
     @Body() dto: UpdateGroupParticipantsDto,
@@ -611,7 +611,7 @@ export class GroupsController {
   }
 
   @Post(":id/admins")
-  @RequirePermissions("groups.manage")
+  @RequirePermissions("groups.update")
   async updateAdmins(
     @Param("id") id: string,
     @Body() dto: UpdateGroupAdminsDto,
@@ -640,7 +640,7 @@ export class GroupsController {
   }
 
   @Post(":id/leave")
-  @RequirePermissions("groups.manage")
+  @RequirePermissions("groups.update")
   async leave(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const group = await this.resolveManagedGroup(id, current);
     await this.evolution.leaveGroup({
@@ -656,7 +656,7 @@ export class GroupsController {
   }
 
   @Post("sync")
-  @RequirePermissions("groups.manage")
+  @RequirePermissions("groups.update")
   async sync(@Body() dto: SyncGroupsDto | undefined, @CurrentUser() current: AuthenticatedUser) {
     if (current.roleKey === "tenant_admin")
       return this.groupsSync.sync({ tenantId: current.tenantId, connectionId: dto?.connectionId });

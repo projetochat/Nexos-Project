@@ -91,15 +91,14 @@ const STATUS_TONE: Record<
 function Page() {
   const queryClient = useQueryClient();
   const permissions = useSession((state) => state.user?.permissions ?? []);
-  const canAdminister = permissions.includes("campaigns.manage");
-  const canUpdate = canAdminister || permissions.includes("campaigns.update");
-  const canCreate = canAdminister || canUpdate || permissions.includes("campaigns.create");
-  const canStart = canAdminister || canUpdate || permissions.includes("campaigns.start");
-  const canPause = canAdminister || canUpdate || permissions.includes("campaigns.pause");
-  const canCancel = canAdminister || canUpdate || permissions.includes("campaigns.cancel");
-  const canDuplicate = canAdminister || canUpdate || permissions.includes("campaigns.duplicate");
-  const canDelete = canAdminister || permissions.includes("campaigns.delete");
-  const canReadRecipients = canAdminister || permissions.includes("campaigns.recipients.read");
+  const canUpdate = permissions.includes("campaigns.update");
+  const canCreate = permissions.includes("campaigns.create");
+  const canStart = canUpdate;
+  const canPause = canUpdate;
+  const canCancel = canUpdate;
+  const canDuplicate = canCreate;
+  const canDelete = permissions.includes("campaigns.delete");
+  const canReadRecipients = permissions.includes("campaigns.read");
   const createModal = useDisclosure();
   const [filters, setFilters] = React.useState<CampaignFilters>(DEFAULT_CAMPAIGN_FILTERS);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);

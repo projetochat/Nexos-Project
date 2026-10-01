@@ -68,3 +68,35 @@ it("prepares a contact card with escaped name and WhatsApp-style phone", async (
   expect(content).toContain("TEL;TYPE=CELL:+55 62 99999-1234\r\n");
   expect(content).toContain("END:VCARD\r\n");
 });
+
+it("hides the ticket action when the tenant module is unavailable", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <InboxMobileActions
+          disabled={false}
+          allowQuickReplies
+          ticketDisabled={false}
+          onQuickReplies={() => undefined}
+          onAttach={() => undefined}
+          onCamera={() => undefined}
+          onContact={() => undefined}
+          onSchedule={() => undefined}
+        />,
+      ),
+    );
+    await act(async () =>
+      host
+        .querySelector("button")!
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    expect(document.body.textContent).not.toContain("Gerar Chamado");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

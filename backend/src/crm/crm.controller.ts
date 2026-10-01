@@ -232,7 +232,7 @@ export class CrmController {
   ) {}
 
   @Get("customers")
-  @RequirePermissions("crm.read")
+  @RequirePermissions("contacts.read")
   async listCustomers(@Query() query: PaginationDto, @CurrentUser() current: AuthenticatedUser) {
     const { page, pageSize, skip } = pagination(query);
     const q = query.q?.trim();
@@ -271,14 +271,14 @@ export class CrmController {
   }
 
   @Get("customers/:id")
-  @RequirePermissions("crm.read")
+  @RequirePermissions("contacts.read")
   async findCustomer(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const customer = await this.findCustomerOrThrow(id, current.tenantId);
     return this.serializeCustomer(customer);
   }
 
   @Post("customers")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.create")
   async createCustomer(@Body() dto: CreateCustomerDto, @CurrentUser() current: AuthenticatedUser) {
     await this.assertCustomerNameAvailable(dto.name, current.tenantId);
     const customer = await this.prisma.customer.create({
@@ -297,7 +297,7 @@ export class CrmController {
   }
 
   @Patch("customers/:id")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.update")
   async updateCustomer(
     @Param("id") id: string,
     @Body() dto: UpdateCustomerDto,
@@ -321,7 +321,7 @@ export class CrmController {
   }
 
   @Delete("customers/:id")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.delete")
   async deleteCustomer(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     await this.findCustomerOrThrow(id, current.tenantId);
     const customer = await this.prisma.$transaction(async (tx) => {
@@ -339,7 +339,7 @@ export class CrmController {
   }
 
   @Get("customers/:id/contacts")
-  @RequirePermissions("crm.read")
+  @RequirePermissions("contacts.read")
   async listCustomerContacts(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     await this.findCustomerOrThrow(id, current.tenantId);
     const contacts = await this.prisma.contact.findMany({
@@ -356,7 +356,11 @@ export class CrmController {
       tenantId: current.tenantId,
       contacts,
     });
-    return contacts.map((contact) => this.serializeContact(contact));
+    return contacts.map((contact) =>
+      this.serializeContact(contact, {
+        includeAdditionalFields: this.canReadAdditionalFields(current),
+      }),
+    );
   }
 
   @Get("contacts")
@@ -412,7 +416,11 @@ export class CrmController {
       });
 
       return paginated(
-        items.map((contact) => this.serializeContact(contact)),
+        items.map((contact) =>
+          this.serializeContact(contact, {
+            includeAdditionalFields: this.canReadAdditionalFields(current),
+          }),
+        ),
         total,
         page,
         pageSize,
@@ -436,7 +444,11 @@ export class CrmController {
     });
 
     return paginated(
-      items.map((contact) => this.serializeContact(contact)),
+      items.map((contact) =>
+        this.serializeContact(contact, {
+          includeAdditionalFields: this.canReadAdditionalFields(current),
+        }),
+      ),
       total,
       page,
       pageSize,
@@ -548,7 +560,7 @@ export class CrmController {
   }
 
   @Get("contact-custom-fields")
-  @RequirePermissions("crm.read")
+  @RequirePermissions("contacts.additional_fields.read")
   async listContactCustomFields(@CurrentUser() current: AuthenticatedUser) {
     const fields = await this.prisma.contactCustomField.findMany({
       where: { tenantId: current.tenantId, archivedAt: null },
@@ -558,7 +570,7 @@ export class CrmController {
   }
 
   @Post("contact-custom-fields")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.create")
   async createContactCustomField(
     @Body() dto: ContactCustomFieldDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -598,7 +610,7 @@ export class CrmController {
   }
 
   @Patch("contact-custom-fields/reorder")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.update")
   async reorderContactCustomFields(
     @Body() dto: ReorderContactCustomFieldsDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -625,7 +637,7 @@ export class CrmController {
   }
 
   @Patch("contact-custom-fields/:id")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.update")
   async updateContactCustomField(
     @Param("id") id: string,
     @Body() dto: ContactCustomFieldDto,
@@ -642,7 +654,7 @@ export class CrmController {
   }
 
   @Delete("contact-custom-fields/:id")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.delete")
   async deleteContactCustomField(
     @Param("id") id: string,
     @CurrentUser() current: AuthenticatedUser,
@@ -659,7 +671,7 @@ export class CrmController {
   }
 
   @Patch("contacts/bulk")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.update")
   async bulkUpdateContacts(
     @Body() dto: BulkUpdateContactsDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -747,11 +759,13 @@ export class CrmController {
   @RequirePermissions("contacts.read")
   async findContact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const contact = await this.findContactOrThrow(id, current.tenantId);
-    return this.serializeContact(contact);
+    return this.serializeContact(contact, {
+      includeAdditionalFields: this.canReadAdditionalFields(current),
+    });
   }
 
   @Post("contacts/import/agenda")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.create")
   async importContactsFromAgenda(
     @Body() dto: ImportContactsFromAgendaDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -918,7 +932,7 @@ export class CrmController {
   }
 
   @Post("contacts/import/agenda/preview")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.create")
   async previewContactsFromAgenda(
     @Body() dto: ImportContactsFromAgendaDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -1036,7 +1050,7 @@ export class CrmController {
   }
 
   @Get("contact-departments")
-  @RequirePermissions("crm.read")
+  @RequirePermissions("contacts.read")
   async listContactDepartments(@CurrentUser() current: AuthenticatedUser) {
     const rows = await this.prisma.contactDepartment.findMany({
       where: { tenantId: current.tenantId, archivedAt: null },
@@ -1046,7 +1060,7 @@ export class CrmController {
   }
 
   @Post("contact-departments")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.create")
   async createContactDepartment(
     @Body() dto: ContactCatalogDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -1067,7 +1081,7 @@ export class CrmController {
   }
 
   @Patch("contact-departments/:id")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.update")
   async updateContactDepartment(
     @Param("id") id: string,
     @Body() dto: ContactCatalogDto,
@@ -1089,7 +1103,7 @@ export class CrmController {
   }
 
   @Delete("contact-departments/:id")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.delete")
   async deleteContactDepartment(
     @Param("id") id: string,
     @CurrentUser() current: AuthenticatedUser,
@@ -1107,7 +1121,7 @@ export class CrmController {
   }
 
   @Get("contact-profiles")
-  @RequirePermissions("crm.read")
+  @RequirePermissions("contacts.read")
   async listContactProfiles(@CurrentUser() current: AuthenticatedUser) {
     const rows = await this.prisma.contactProfile.findMany({
       where: { tenantId: current.tenantId, archivedAt: null },
@@ -1117,7 +1131,7 @@ export class CrmController {
   }
 
   @Post("contact-profiles")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.create")
   async createContactProfile(
     @Body() dto: ContactCatalogDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -1138,7 +1152,7 @@ export class CrmController {
   }
 
   @Patch("contact-profiles/:id")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.update")
   async updateContactProfile(
     @Param("id") id: string,
     @Body() dto: ContactCatalogDto,
@@ -1160,7 +1174,7 @@ export class CrmController {
   }
 
   @Delete("contact-profiles/:id")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.delete")
   async deleteContactProfile(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     await this.assertContactCatalog("profile", id, current.tenantId);
     const item = await this.prisma.contactProfile.update({
@@ -1175,7 +1189,7 @@ export class CrmController {
   }
 
   @Post("contacts")
-  @RequireAnyPermission("contacts.manage", "chat.contacts.create")
+  @RequireAnyPermission("contacts.create", "chat.contacts.create")
   async createContact(@Body() dto: CreateContactDto, @CurrentUser() current: AuthenticatedUser) {
     await this.entitlements.assertTenantOperational(current.tenantId);
     await this.entitlements.assertWithinLimit(
@@ -1203,7 +1217,9 @@ export class CrmController {
             },
             include: contactInclude,
           });
-          return this.serializeContact(contact);
+          return this.serializeContact(contact, {
+            includeAdditionalFields: this.canReadAdditionalFields(current),
+          });
         }
       }
       throw new ConflictException({
@@ -1247,7 +1263,10 @@ export class CrmController {
           include: contactInclude,
         });
       });
-      return this.serializeContact(contact, { lifecycle: "restored" });
+      return this.serializeContact(contact, {
+        lifecycle: "restored",
+        includeAdditionalFields: this.canReadAdditionalFields(current),
+      });
     }
     try {
       const contact = await this.prisma.$transaction(async (tx) => {
@@ -1280,14 +1299,17 @@ export class CrmController {
         await this.saveContactCustomFields(tx, current.tenantId, created.id, dto.customFields);
         return tx.contact.findUniqueOrThrow({ where: { id: created.id }, include: contactInclude });
       });
-      return this.serializeContact(contact, { lifecycle: "created" });
+      return this.serializeContact(contact, {
+        lifecycle: "created",
+        includeAdditionalFields: this.canReadAdditionalFields(current),
+      });
     } catch (error) {
       handlePrismaError(error);
     }
   }
 
   @Patch("contacts/:id")
-  @RequireAnyPermission("contacts.manage", "chat.contacts.edit")
+  @RequireAnyPermission("contacts.update", "chat.contacts.edit")
   async updateContact(
     @Param("id") id: string,
     @Body() dto: UpdateContactDto,
@@ -1372,9 +1394,13 @@ export class CrmController {
       this.realtime.publishContactUpdated({
         tenantId: current.tenantId,
         contactId: contact.id,
-        contact: this.serializeContact(contact),
+        contact: this.serializeContact(contact, {
+          includeAdditionalFields: this.canReadAdditionalFields(current),
+        }),
       });
-      return this.serializeContact(contact);
+      return this.serializeContact(contact, {
+        includeAdditionalFields: this.canReadAdditionalFields(current),
+      });
     } catch (error) {
       handlePrismaError(error);
     }
@@ -1389,11 +1415,13 @@ export class CrmController {
       data: { archivedAt: new Date() },
       include: contactInclude,
     });
-    return this.serializeContact(contact);
+    return this.serializeContact(contact, {
+      includeAdditionalFields: this.canReadAdditionalFields(current),
+    });
   }
 
   @Get("tags")
-  @RequirePermissions("crm.read")
+  @RequirePermissions("contacts.read")
   async listTags(@CurrentUser() current: AuthenticatedUser) {
     const tags = await this.prisma.tag.findMany({
       where: { tenantId: current.tenantId, archivedAt: null },
@@ -2028,7 +2056,10 @@ export class CrmController {
 
   private serializeContact(
     contact: Prisma.ContactGetPayload<{ include: typeof contactInclude }>,
-    meta?: { lifecycle?: "created" | "restored" },
+    meta?: {
+      lifecycle?: "created" | "restored";
+      includeAdditionalFields?: boolean;
+    },
   ) {
     const instanceIds = contact.instanceIds.length
       ? contact.instanceIds
@@ -2069,22 +2100,33 @@ export class CrmController {
         ? { id: contact.customer.id, nome: contact.customer.name, cor: contact.customer.color }
         : null,
       tags: contact.tags.map((item) => this.serializeTag(item.tag)),
-      customFields: Object.fromEntries(
-        contact.customFieldValues.map((item) => [
-          item.fieldId,
-          sanitizeContactCustomFieldValueForOutput(item.field, item.value),
-        ]),
-      ),
-      customFieldValues: contact.customFieldValues.map((item) => ({
-        fieldId: item.fieldId,
-        label: item.field.label,
-        type: item.field.type,
-        value: sanitizeContactCustomFieldValueForOutput(item.field, item.value),
-      })),
+      customFields: meta?.includeAdditionalFields
+        ? Object.fromEntries(
+            contact.customFieldValues.map((item) => [
+              item.fieldId,
+              sanitizeContactCustomFieldValueForOutput(item.field, item.value),
+            ]),
+          )
+        : {},
+      customFieldValues: meta?.includeAdditionalFields
+        ? contact.customFieldValues.map((item) => ({
+            fieldId: item.fieldId,
+            label: item.field.label,
+            type: item.field.type,
+            value: sanitizeContactCustomFieldValueForOutput(item.field, item.value),
+          }))
+        : [],
       lifecycle: meta?.lifecycle,
       createdAt: contact.createdAt,
       updatedAt: contact.updatedAt,
     };
+  }
+
+  private canReadAdditionalFields(current: AuthenticatedUser) {
+    return (
+      current.roleKey === "tenant_admin" ||
+      current.permissions?.includes("contacts.additional_fields.read") === true
+    );
   }
 
   private serializeContactCatalog(item: {

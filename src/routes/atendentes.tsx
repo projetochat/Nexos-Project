@@ -77,7 +77,8 @@ function normalizeAtendenteName(value: string) {
 function AtendentesPage() {
   const qc = useQueryClient();
   const sessionUser = useSession((state) => state.user);
-  const canManage = sessionUser?.permissions?.includes("users.manage") ?? false;
+  const canCreate = sessionUser?.permissions?.includes("users.create") ?? false;
+  const canUpdate = sessionUser?.permissions?.includes("users.update") ?? false;
   const canDelete = sessionUser?.permissions?.includes("users.delete") ?? false;
   const { data: memberships = [], isLoading } = useQuery({
     queryKey: ["trixus", "users"],
@@ -189,7 +190,7 @@ function AtendentesPage() {
           subtitle={`${num(atendentes.length)} atendentes cadastrados.`}
           subtitleClassName="hidden sm:block"
           actions={
-            canManage ? (
+            canCreate ? (
               <Button variant="primary" size="sm" onClick={novo.show}>
                 <Plus className="h-3.5 w-3.5" /> Novo Atendente
               </Button>
@@ -244,9 +245,9 @@ function AtendentesPage() {
                         <p className="truncate text-xs text-muted-foreground">{a.email}</p>
                       </div>
                     </div>
-                    {a.perfilKey !== "tenant_admin" && (canManage || canDelete) && (
+                    {a.perfilKey !== "tenant_admin" && (canCreate || canUpdate || canDelete) && (
                       <div className="flex shrink-0 gap-1">
-                        {canManage && (
+                        {canCreate && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -256,7 +257,7 @@ function AtendentesPage() {
                             <Copy className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {canManage && (
+                        {canUpdate && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -341,52 +342,53 @@ function AtendentesPage() {
                         </Badge>
                       </td>
                       <td className="px-3 py-3 sm:px-4">
-                        {a.perfilKey !== "tenant_admin" && (canManage || canDelete) && (
-                          <div className="flex justify-center gap-1">
-                            {canManage && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setDuplicating(a)}
-                                title="Duplicar"
-                                aria-label="Duplicar"
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                            {canManage && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setEditing(a)}
-                                title="Editar"
-                                aria-label="Editar"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                            {canDelete && !isCurrentUser && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className={
-                                  a.ativo
-                                    ? "text-amber-600 hover:text-amber-700"
-                                    : "text-emerald-600 hover:text-emerald-700"
-                                }
-                                onClick={() => setDeleting(a)}
-                                title={a.ativo ? "Bloquear" : "Desbloquear"}
-                                aria-label={a.ativo ? "Bloquear" : "Desbloquear"}
-                              >
-                                {a.ativo ? (
-                                  <Ban className="h-3.5 w-3.5" />
-                                ) : (
-                                  <Unlock className="h-3.5 w-3.5" />
-                                )}
-                              </Button>
-                            )}
-                          </div>
-                        )}
+                        {a.perfilKey !== "tenant_admin" &&
+                          (canCreate || canUpdate || canDelete) && (
+                            <div className="flex justify-center gap-1">
+                              {canCreate && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setDuplicating(a)}
+                                  title="Duplicar"
+                                  aria-label="Duplicar"
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                              {canUpdate && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setEditing(a)}
+                                  title="Editar"
+                                  aria-label="Editar"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                              {canDelete && !isCurrentUser && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className={
+                                    a.ativo
+                                      ? "text-amber-600 hover:text-amber-700"
+                                      : "text-emerald-600 hover:text-emerald-700"
+                                  }
+                                  onClick={() => setDeleting(a)}
+                                  title={a.ativo ? "Bloquear" : "Desbloquear"}
+                                  aria-label={a.ativo ? "Bloquear" : "Desbloquear"}
+                                >
+                                  {a.ativo ? (
+                                    <Ban className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <Unlock className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                              )}
+                            </div>
+                          )}
                       </td>
                     </tr>
                   );
@@ -447,7 +449,7 @@ function AtendentesPage() {
           </div>
         </Card>
 
-        {canManage && (
+        {canCreate && (
           <AtendenteForm
             open={novo.open}
             atendentes={atendentes}
@@ -459,7 +461,7 @@ function AtendentesPage() {
             onSubmit={(data) => create.mutate(data)}
           />
         )}
-        {canManage && (
+        {canUpdate && (
           <AtendenteForm
             open={!!editing}
             atendentes={atendentes}
@@ -480,7 +482,7 @@ function AtendentesPage() {
             }
           />
         )}
-        {canManage && (
+        {canCreate && (
           <AtendenteForm
             open={!!duplicating}
             atendentes={atendentes}

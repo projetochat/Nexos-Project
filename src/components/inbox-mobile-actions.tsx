@@ -32,7 +32,7 @@ export function InboxMobileActions({
   onAttach: () => void;
   onCamera: () => void;
   onContact: () => void;
-  onTicket: () => void;
+  onTicket?: () => void;
   onSchedule?: () => void;
 }) {
   return (
@@ -66,10 +66,12 @@ export function InboxMobileActions({
           <ContactRound />
           Contato
         </DropdownMenuItem>
-        <DropdownMenuItem className="min-h-11" disabled={ticketDisabled} onSelect={onTicket}>
-          <Ticket />
-          Gerar Chamado
-        </DropdownMenuItem>
+        {onTicket && (
+          <DropdownMenuItem className="min-h-11" disabled={ticketDisabled} onSelect={onTicket}>
+            <Ticket />
+            Gerar Chamado
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem className="min-h-11" disabled={disabled} onSelect={() => onSchedule?.()}>
           <CalendarClock />
           Agendar mensagem

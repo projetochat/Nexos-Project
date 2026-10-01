@@ -102,8 +102,8 @@ describe("TicketsService tenant-wide temporary access policy", () => {
       "tickets.read",
     ]);
     expect(Reflect.getMetadata(ANY_PERMISSIONS_KEY, TicketsController.prototype.create)).toEqual([
-      "tickets.manage",
       "tickets.create",
+      "chat.tickets.create",
     ]);
   });
 });

@@ -286,6 +286,83 @@ export class UpdateTenantDto {
   maxConnections?: number;
 }
 
+export class TenantModulesConfigurationDto {
+  @IsOptional()
+  @IsIn([true])
+  chat?: true;
+
+  @IsOptional()
+  @IsBoolean()
+  campaigns?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  tickets?: boolean;
+}
+
+export class TenantLimitsConfigurationDto {
+  @IsOptional()
+  @ValidateIf((_dto, value) => value !== null)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxUsers?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_dto, value) => value !== null)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxDepartments?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_dto, value) => value !== null)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxConnections?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_dto, value) => value !== null)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxCampaigns?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_dto, value) => value !== null)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxContacts?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_dto, value) => value !== null)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxCampaignRecipients?: number | null;
+
+  @IsOptional()
+  @ValidateIf((_dto, value) => value !== null)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxStorageBytes?: number | null;
+}
+
+export class UpdateTenantConfigurationDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TenantModulesConfigurationDto)
+  modules?: TenantModulesConfigurationDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TenantLimitsConfigurationDto)
+  limits?: TenantLimitsConfigurationDto;
+}
+
 export class UpdateTenantAdministratorCredentialsDto {
   @IsString()
   @IsNotEmpty()

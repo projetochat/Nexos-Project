@@ -61,7 +61,8 @@ function departmentWithLogFallback(department: ApiDepartment, previous?: ApiDepa
 function Page() {
   const qc = useQueryClient();
   const permissions = useSession((state) => state.user?.permissions ?? []);
-  const canManage = permissions.includes("departments.manage");
+  const canCreate = permissions.includes("departments.create");
+  const canUpdate = permissions.includes("departments.update");
   const canDelete = permissions.includes("departments.delete");
   const [editing, setEditing] = React.useState<ApiDepartment | null>(null);
   const [duplicating, setDuplicating] = React.useState<ApiDepartment | null>(null);
@@ -138,7 +139,7 @@ function Page() {
           title="Departamentos"
           subtitle={`${num(departamentos.length)} departamentos cadastrados.`}
           actions={
-            canManage ? (
+            canCreate ? (
               <Button variant="primary" size="sm" onClick={novo.show}>
                 <Plus className="h-3.5 w-3.5" /> Criar Departamento
               </Button>
@@ -176,7 +177,7 @@ function Page() {
                     <p className="min-w-0 truncate font-semibold">{d.name}</p>
                   </div>
                   <div className="flex shrink-0 gap-1">
-                    {canManage && (
+                    {canCreate && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -187,7 +188,7 @@ function Page() {
                         <Copy className="h-3.5 w-3.5" />
                       </Button>
                     )}
-                    {canManage && (
+                    {canUpdate && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -222,27 +223,33 @@ function Page() {
           </div>
         )}
 
-        <DepartamentoForm
-          open={novo.open}
-          departments={departamentos}
-          onClose={novo.hide}
-          onSubmit={(data) => save.mutate({ data })}
-        />
-        <DepartamentoForm
-          open={!!duplicating}
-          initial={duplicating ?? undefined}
-          clone
-          departments={departamentos}
-          onClose={() => setDuplicating(null)}
-          onSubmit={(data) => save.mutate({ data })}
-        />
-        <DepartamentoForm
-          open={!!editing}
-          initial={editing ?? undefined}
-          departments={departamentos}
-          onClose={() => setEditing(null)}
-          onSubmit={(data) => editing && save.mutate({ id: editing.id, data })}
-        />
+        {canCreate && (
+          <DepartamentoForm
+            open={novo.open}
+            departments={departamentos}
+            onClose={novo.hide}
+            onSubmit={(data) => save.mutate({ data })}
+          />
+        )}
+        {canCreate && (
+          <DepartamentoForm
+            open={!!duplicating}
+            initial={duplicating ?? undefined}
+            clone
+            departments={departamentos}
+            onClose={() => setDuplicating(null)}
+            onSubmit={(data) => save.mutate({ data })}
+          />
+        )}
+        {canUpdate && (
+          <DepartamentoForm
+            open={!!editing}
+            initial={editing ?? undefined}
+            departments={departamentos}
+            onClose={() => setEditing(null)}
+            onSubmit={(data) => editing && save.mutate({ id: editing.id, data })}
+          />
+        )}
         <ConfirmDialog
           open={!!deleting}
           title="Excluir Departamento?"

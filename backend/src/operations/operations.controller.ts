@@ -150,7 +150,7 @@ export class OperationsController {
   }
 
   @Get("queues")
-  @RequirePermissions("chat.leads.read")
+  @RequirePermissions("conversations.read")
   queues(@Query() query: OperationalQueryDto, @CurrentUser() current: AuthenticatedUser) {
     return this.operations.queues(current, query);
   }

@@ -580,9 +580,9 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   const canStartConversation =
     permissions.includes("conversations.assign") && permissions.includes("contacts.read");
   const canCreateContact =
-    permissions.includes("chat.contacts.create") || permissions.includes("contacts.manage");
+    permissions.includes("chat.contacts.create") || permissions.includes("contacts.create");
   const canEditContact =
-    permissions.includes("chat.contacts.edit") || permissions.includes("contacts.manage");
+    permissions.includes("chat.contacts.edit") || permissions.includes("contacts.update");
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [q, setQ] = React.useState("");

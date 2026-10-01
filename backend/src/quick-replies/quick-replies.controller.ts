@@ -48,7 +48,7 @@ export class QuickRepliesController {
   }
 
   @Post()
-  @RequirePermissions("chat.quick_replies.manage")
+  @RequirePermissions("chat.quick_replies.create")
   async create(@Body() dto: CreateQuickReplyDto, @CurrentUser() current: AuthenticatedUser) {
     const messages = normalizeMessages(dto.messages);
     const departmentId = await this.resolveDepartmentId(dto.departmentId ?? null, current);
@@ -81,7 +81,7 @@ export class QuickRepliesController {
   }
 
   @Patch(":id")
-  @RequirePermissions("chat.quick_replies.manage")
+  @RequirePermissions("chat.quick_replies.update")
   async update(
     @Param("id") id: string,
     @Body() dto: UpdateQuickReplyDto,
@@ -160,7 +160,7 @@ export class QuickRepliesController {
           }
         : {}),
     };
-    if (query.scope === "catalog" && current.permissions?.includes("chat.quick_replies.manage")) {
+    if (query.scope === "catalog" && current.permissions?.includes("chat.quick_replies.update")) {
       return where;
     }
     const allowed = await this.allowedDepartmentIds(current);

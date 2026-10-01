@@ -56,6 +56,7 @@ import {
 import { currentAppSurface, platformAppOrigin } from "@/lib/app-surface";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { useInstanceAccessUpdates } from "@/lib/realtime/hooks";
+import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
 
 /* ============================================================
    Trixus · App Shell (Painel Administrativo da Empresa)
@@ -118,11 +119,12 @@ function canSeeNavItem(item: NavItem, permissions?: string[]) {
 function filterAdminGroupsByPermissions(
   groups: { title: string; items: NavItem[] }[],
   permissions?: string[],
+  modules?: Partial<Record<"campaigns" | "tickets", boolean>>,
 ) {
   return groups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => canSeeNavItem(item, permissions)),
+      items: group.items.filter((item) => canAccessTenantRoute(item.to, permissions, modules)),
     }))
     .filter((group) => group.items.length > 0);
 }
@@ -434,9 +436,11 @@ function SidebarUser({ collapsed }: { collapsed: boolean }) {
 /* ---------- Sidebar ---------- */
 function Sidebar({ collapsed }: { collapsed: boolean }) {
   const permissions = useSession((s) => s.user?.permissions);
+  const entitlements = useTenantEntitlements();
+  const modules = tenantModules(entitlements.data?.features);
   const sysNav = sistemaNav.filter((item) => canSeeNavItem(item, permissions));
   const visibleTopNav = topNav.filter((item) => canSeeNavItem(item, permissions));
-  const visibleAdminGroups = filterAdminGroupsByPermissions(adminGroups, permissions);
+  const visibleAdminGroups = filterAdminGroupsByPermissions(adminGroups, permissions, modules);
   return (
     <aside
       className={`hidden shrink-0 border-r border-border bg-surface-1 transition-[width] duration-200 ease-out lg:flex lg:flex-col ${
@@ -448,7 +452,10 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
           collapsed ? "justify-center" : "px-4"
         }`}
       >
-        <Link to={tenantHomeForPermissions(permissions)} className="flex items-center gap-2">
+        <Link
+          to={tenantHomeForPermissions(permissions, modules)}
+          className="flex items-center gap-2"
+        >
           <LogoMark size={36} />
           {!collapsed && <span className="text-sm font-semibold tracking-tight">Trixus</span>}
         </Link>
@@ -667,7 +674,7 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
   const user = useSession((s) => s.user);
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
-  const enabled = !!user?.permissions?.includes("notifications.read");
+  const enabled = !!user;
   const notifications = useQuery({
     queryKey: ["trixus", "notifications", "unread"],
     queryFn: () => notificationApi.list({ status: "UNREAD", pageSize: 10 }),
@@ -774,11 +781,13 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
 /* ---------- Mobile side nav ---------- */
 function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
   const permissions = useSession((s) => s.user?.permissions);
+  const entitlements = useTenantEntitlements();
+  const modules = tenantModules(entitlements.data?.features);
   const logout = useSession((s) => s.logout);
   const navigate = useNavigate();
   const sysNav = sistemaNav.filter((item) => canSeeNavItem(item, permissions));
   const visibleTopNav = topNav.filter((item) => canSeeNavItem(item, permissions));
-  const visibleAdminGroups = filterAdminGroupsByPermissions(adminGroups, permissions);
+  const visibleAdminGroups = filterAdminGroupsByPermissions(adminGroups, permissions, modules);
   return (
     <>
       {open && (
@@ -796,7 +805,7 @@ function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
           <Link
-            to={tenantHomeForPermissions(permissions)}
+            to={tenantHomeForPermissions(permissions, modules)}
             className="flex items-center gap-2"
             onClick={onClose}
           >
@@ -888,12 +897,24 @@ function useTenantAuthGate() {
   const navigate = useNavigate();
   const user = useSession((s) => s.user);
   const hydrated = useSession((s) => s.hydrated);
+  const entitlements = useTenantEntitlements(hydrated && !!user && user.role !== "super_admin");
+  const modules = React.useMemo(
+    () => tenantModules(entitlements.data?.features),
+    [entitlements.data?.features],
+  );
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const waitingForModule =
+    (pathname === "/campanhas" ||
+      pathname.startsWith("/campanhas/") ||
+      pathname === "/chamados" ||
+      pathname.startsWith("/chamados/")) &&
+    entitlements.isPending;
   const authorized =
     hydrated &&
     !!user &&
     user.role !== "super_admin" &&
-    canAccessTenantRoute(pathname, user.permissions);
+    !waitingForModule &&
+    canAccessTenantRoute(pathname, user.permissions, modules);
   React.useEffect(() => {
     if (!hydrated) return; // aguarda hidratação da sessão para não redirecionar em F5
     if (!user) {
@@ -904,10 +925,11 @@ function useTenantAuthGate() {
       navigate({ to: "/admin" });
       return;
     }
-    if (!canAccessTenantRoute(pathname, user.permissions)) {
-      navigate({ to: tenantHomeForPermissions(user.permissions) as never });
+    if (waitingForModule) return;
+    if (!canAccessTenantRoute(pathname, user.permissions, modules)) {
+      navigate({ to: tenantHomeForPermissions(user.permissions, modules) as never });
     }
-  }, [user, hydrated, navigate, pathname]);
+  }, [user, hydrated, navigate, pathname, waitingForModule, modules]);
   return authorized;
 }
 

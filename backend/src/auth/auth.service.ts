@@ -864,7 +864,8 @@ export class AuthService {
       })),
       permissions,
       capabilities: {
-        canManageTenant: permissions.includes("users.manage"),
+        canManageTenant:
+          permissions.includes("users.create") || permissions.includes("users.update"),
         canOperateInbox: permissions.some((permission) => permission.startsWith("chat.")),
       },
     };

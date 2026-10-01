@@ -13,9 +13,11 @@ import {
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
+import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { CampaignsService } from "./campaigns.service";
+import { RequireTenantFeature } from "../platform/tenant-feature.decorator";
+import { TenantFeatureGuard } from "../platform/tenant-feature.guard";
 import {
   AudiencePreviewDto,
   CreateCampaignDto,
@@ -28,7 +30,8 @@ import {
 } from "./dto/campaign.dto";
 
 @Controller()
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@RequireTenantFeature("campaigns")
+@UseGuards(JwtAuthGuard, PermissionsGuard, TenantFeatureGuard)
 export class CampaignsController {
   constructor(@Inject(CampaignsService) private readonly campaigns: CampaignsService) {}
 
@@ -39,13 +42,13 @@ export class CampaignsController {
   }
 
   @Post("campaigns")
-  @RequireAnyPermission("campaigns.create", "campaigns.update", "campaigns.manage")
+  @RequirePermissions("campaigns.create")
   create(@Body() dto: CreateCampaignDto, @CurrentUser() current: AuthenticatedUser) {
     return this.campaigns.create(dto, current);
   }
 
   @Post("campaigns/audience-preview")
-  @RequireAnyPermission("campaigns.create", "campaigns.update", "campaigns.manage")
+  @RequirePermissions("campaigns.create")
   preview(@Body() dto: AudiencePreviewDto, @CurrentUser() current: AuthenticatedUser) {
     return this.campaigns.preview(dto, current);
   }
@@ -57,7 +60,7 @@ export class CampaignsController {
   }
 
   @Patch("campaigns/:id")
-  @RequireAnyPermission("campaigns.update", "campaigns.manage")
+  @RequirePermissions("campaigns.update")
   update(
     @Param("id") id: string,
     @Body() dto: UpdateCampaignDto,
@@ -67,13 +70,13 @@ export class CampaignsController {
   }
 
   @Delete("campaigns/:id")
-  @RequireAnyPermission("campaigns.delete", "campaigns.manage")
+  @RequirePermissions("campaigns.delete")
   archive(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.campaigns.archive(id, current);
   }
 
   @Post("campaigns/:id/start")
-  @RequireAnyPermission("campaigns.start", "campaigns.update", "campaigns.manage")
+  @RequirePermissions("campaigns.update")
   start(
     @Param("id") id: string,
     @Body() dto: StartCampaignDto,
@@ -83,7 +86,7 @@ export class CampaignsController {
   }
 
   @Post("campaigns/:id/schedule")
-  @RequireAnyPermission("campaigns.schedule", "campaigns.update", "campaigns.manage")
+  @RequirePermissions("campaigns.update")
   schedule(
     @Param("id") id: string,
     @Body() dto: ScheduleCampaignDto,
@@ -93,31 +96,31 @@ export class CampaignsController {
   }
 
   @Post("campaigns/:id/pause")
-  @RequireAnyPermission("campaigns.pause", "campaigns.update", "campaigns.manage")
+  @RequirePermissions("campaigns.update")
   pause(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.campaigns.pause(id, current);
   }
 
   @Post("campaigns/:id/resume")
-  @RequireAnyPermission("campaigns.pause", "campaigns.update", "campaigns.manage")
+  @RequirePermissions("campaigns.update")
   resume(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.campaigns.resume(id, current);
   }
 
   @Post("campaigns/:id/cancel")
-  @RequireAnyPermission("campaigns.cancel", "campaigns.update", "campaigns.manage")
+  @RequirePermissions("campaigns.update")
   cancel(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.campaigns.cancel(id, current);
   }
 
   @Post("campaigns/:id/duplicate")
-  @RequireAnyPermission("campaigns.duplicate", "campaigns.update", "campaigns.manage")
+  @RequirePermissions("campaigns.update")
   duplicate(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.campaigns.duplicate(id, current);
   }
 
   @Get("campaigns/:id/recipients")
-  @RequireAnyPermission("campaigns.recipients.read", "campaigns.manage")
+  @RequirePermissions("campaigns.read")
   recipients(
     @Param("id") id: string,
     @Query() query: ListCampaignRecipientsQueryDto,
@@ -133,7 +136,7 @@ export class CampaignsController {
   }
 
   @Patch("contacts/:id/marketing-preference")
-  @RequirePermissions("crm.manage")
+  @RequirePermissions("contacts.update")
   updateMarketingPreference(
     @Param("id") id: string,
     @Body() dto: UpdateMarketingPreferenceDto,

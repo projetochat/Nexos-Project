@@ -84,7 +84,7 @@ describe("profile and company session enforcement", () => {
     const { guard, context } = setup({ tenant: { authRevokedAt: new Date(200) } });
     await expect(guard.canActivate(context as never)).rejects.toThrow("Sessão revogada");
   });
-  it("refreshes the instance scope while individual permissions remain paused", async () => {
+  it("refreshes the instance scope and assigned permissions", async () => {
     const { guard, context, user } = setup({
       roleId: "r",
       tenant: {},
@@ -98,7 +98,7 @@ describe("profile and company session enforcement", () => {
     expect(user).toMatchObject({
       roleKey: "agent",
       connectionIds: ["c1"],
-      permissions: expect.arrayContaining(["messages.send", "conversations.manage"]),
+      permissions: ["messages.send"],
     });
   });
 });

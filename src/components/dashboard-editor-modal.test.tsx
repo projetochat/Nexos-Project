@@ -295,6 +295,52 @@ describe("DashboardEditorModal", () => {
       "counters",
     ]);
   });
+
+  it("allows creating without exposing update controls", async () => {
+    await act(async () => {
+      root.render(
+        <DashboardEditorModal
+          open
+          components={DEFAULT_DASHBOARD_COMPONENTS}
+          customFields={[]}
+          resolveData={() => []}
+          onChange={vi.fn()}
+          onClose={vi.fn()}
+          canCreate
+          canUpdate={false}
+          canDelete={false}
+        />,
+      );
+    });
+
+    expect(buttonByText("Novo componente")).toBeTruthy();
+    expect(document.querySelector('[aria-label^="Duplicar "]')).toBeTruthy();
+    expect(document.querySelector('[aria-label^="Configurar "]')).toBeNull();
+    expect(document.querySelector('[aria-label^="Reordenar "]')).toBeNull();
+  });
+
+  it("allows updating without exposing create controls", async () => {
+    await act(async () => {
+      root.render(
+        <DashboardEditorModal
+          open
+          components={DEFAULT_DASHBOARD_COMPONENTS}
+          customFields={[]}
+          resolveData={() => []}
+          onChange={vi.fn()}
+          onClose={vi.fn()}
+          canCreate={false}
+          canUpdate
+          canDelete={false}
+        />,
+      );
+    });
+
+    expect(document.body.textContent).not.toContain("Novo componente");
+    expect(document.querySelector('[aria-label^="Duplicar "]')).toBeNull();
+    expect(document.querySelector('[aria-label^="Configurar "]')).toBeTruthy();
+    expect(document.querySelector('[aria-label^="Reordenar "]')).toBeTruthy();
+  });
 });
 
 async function click(element: Element | null) {

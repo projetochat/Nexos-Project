@@ -45,7 +45,7 @@ export const ROLE_META: Record<Role, { label: string; scope: string }> = {
 export const TENANT_ROUTE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   "/": ["dashboard.read"],
   "/inbox": ["conversations.read"],
-  "/clientes": ["crm.read", "crm.manage"],
+  "/clientes": ["contacts.read"],
   "/contatos": ["contacts.read"],
   "/historico": ["history.read"],
   "/atendentes": ["users.read"],
@@ -56,15 +56,15 @@ export const TENANT_ROUTE_PERMISSIONS: Readonly<Record<string, readonly string[]
   "/agendamentos": ["schedules.read"],
   "/campanhas": ["campaigns.read"],
   "/filas": ["conversations.manage"],
-  "/bi": ["crm.read", "conversations.read", "campaigns.read", "tickets.read"],
+  "/bi": ["contacts.read", "conversations.read", "campaigns.read", "tickets.read"],
   "/instancias": ["connections.read"],
   "/grupos": ["groups.read"],
   "/chatbot": ["bot_flows.read"],
   "/automacoes": ["automations.read"],
   "/agente-ia": ["ai_agents.read"],
   "/chamados": ["tickets.read"],
-  "/configuracoes": ["settings.read"],
-  "/relatorios": ["crm.read", "conversations.read", "campaigns.read", "tickets.read"],
+  "/configuracoes": ["settings.manage"],
+  "/relatorios": ["contacts.read", "conversations.read", "campaigns.read", "tickets.read"],
 };
 
 const TENANT_PUBLIC_ROUTES = new Set(["/perfil", "/ajuda"]);
@@ -101,17 +101,27 @@ function matchingTenantRoute(pathname: string) {
     .sort((left, right) => right.length - left.length)[0];
 }
 
-export function canAccessTenantRoute(pathname: string, permissions?: readonly string[]): boolean {
+export function canAccessTenantRoute(
+  pathname: string,
+  permissions?: readonly string[],
+  modules?: Partial<Record<"campaigns" | "tickets", boolean>>,
+): boolean {
   if (TENANT_PUBLIC_ROUTES.has(pathname)) return true;
   const route = matchingTenantRoute(pathname);
   if (!route) return false;
+  if (route === "/campanhas" && modules?.campaigns === false) return false;
+  if (route === "/chamados" && modules?.tickets === false) return false;
   const required = TENANT_ROUTE_PERMISSIONS[route];
   return required.some((permission) => permissions?.includes(permission));
 }
 
-export function tenantHomeForPermissions(permissions?: readonly string[]): string {
+export function tenantHomeForPermissions(
+  permissions?: readonly string[],
+  modules?: Partial<Record<"campaigns" | "tickets", boolean>>,
+): string {
   return (
-    TENANT_HOME_CANDIDATES.find((route) => canAccessTenantRoute(route, permissions)) ?? "/perfil"
+    TENANT_HOME_CANDIDATES.find((route) => canAccessTenantRoute(route, permissions, modules)) ??
+    "/perfil"
   );
 }
 

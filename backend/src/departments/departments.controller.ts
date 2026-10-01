@@ -60,7 +60,7 @@ export class DepartmentsController {
   }
 
   @Post()
-  @RequirePermissions("departments.manage")
+  @RequirePermissions("departments.create")
   async create(@Body() dto: CreateDepartmentDto, @CurrentUser() current: AuthenticatedUser) {
     const name = dto.name.trim();
     await this.entitlements.assertTenantOperational(current.tenantId);
@@ -83,7 +83,7 @@ export class DepartmentsController {
   }
 
   @Patch(":id")
-  @RequirePermissions("departments.manage")
+  @RequirePermissions("departments.update")
   async update(
     @Param("id") id: string,
     @Body() dto: UpdateDepartmentDto,
@@ -119,7 +119,7 @@ export class DepartmentsController {
   }
 
   @Post(":id/members")
-  @RequirePermissions("departments.manage")
+  @RequirePermissions("departments.update")
   async assignMember(
     @Param("id") id: string,
     @Body() dto: AssignDepartmentMemberDto,
@@ -139,7 +139,7 @@ export class DepartmentsController {
   }
 
   @Delete(":id/members/:membershipId")
-  @RequirePermissions("departments.manage")
+  @RequirePermissions("departments.update")
   async removeMember(
     @Param("id") id: string,
     @Param("membershipId") membershipId: string,

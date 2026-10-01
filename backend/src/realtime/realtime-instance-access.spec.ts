@@ -80,6 +80,6 @@ describe("realtime instance access", () => {
     });
     expect(allowed.emit).toHaveBeenCalledOnce();
     expect(denied.emit).not.toHaveBeenCalled();
-    expect(withoutPermission.emit).toHaveBeenCalledOnce();
+    expect(withoutPermission.emit).not.toHaveBeenCalled();
   });
 });

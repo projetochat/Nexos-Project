@@ -76,7 +76,8 @@ const STATUS_TONE: Record<
 function Page() {
   const qc = useQueryClient();
   const permissions = useSession((state) => state.user?.permissions ?? []);
-  const canManage = permissions.includes("connections.manage");
+  const canCreate = permissions.includes("connections.create");
+  const canUpdate = permissions.includes("connections.update");
   const canDelete = permissions.includes("connections.delete");
   const novo = useDisclosure();
   const [qr, setQr] = React.useState<{
@@ -295,7 +296,7 @@ function Page() {
           title="Instâncias"
           subtitle={`${num(visibleItems.length)} instâncias cadastradas.`}
           actions={
-            canManage ? (
+            canCreate ? (
               <Button variant="primary" size="sm" onClick={novo.show}>
                 <Plus className="h-3.5 w-3.5" /> Nova Instância
               </Button>
@@ -372,7 +373,7 @@ function Page() {
                     )}
                   </div>
                   <div className="mt-4 flex flex-wrap justify-end gap-2">
-                    {canManage && connection.status !== "connected" && (
+                    {canUpdate && connection.status !== "connected" && (
                       <Button
                         variant="secondary"
                         size="sm"
@@ -385,7 +386,7 @@ function Page() {
                         <QrCode className="h-3.5 w-3.5" /> QR
                       </Button>
                     )}
-                    {canManage && (
+                    {canUpdate && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -397,7 +398,7 @@ function Page() {
                         <RefreshCw className="h-3.5 w-3.5 transition-transform duration-500 group-hover:rotate-[720deg]" />
                       </Button>
                     )}
-                    {canManage && (
+                    {canUpdate && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -410,7 +411,7 @@ function Page() {
                         <Power className="h-3.5 w-3.5" />
                       </Button>
                     )}
-                    {canManage && (
+                    {canUpdate && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -442,7 +443,7 @@ function Page() {
           </div>
         )}
 
-        {canManage && (
+        {canCreate && (
           <ConnectionForm
             open={novo.open}
             busy={create.isPending}
@@ -451,7 +452,7 @@ function Page() {
             onSubmit={(data) => create.mutate(data)}
           />
         )}
-        {canManage && (
+        {canUpdate && (
           <ConnectionSettingsModal
             connection={editing}
             connections={visibleItems}
@@ -471,7 +472,7 @@ function Page() {
             onConfirm={(connection, options) => remove.mutate({ connection, options })}
           />
         )}
-        {canManage && (
+        {canUpdate && (
           <ConfirmDialog
             open={!!disconnecting}
             title="Desligar Instância?"

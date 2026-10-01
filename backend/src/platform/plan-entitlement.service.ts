@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 
-type Limits = {
+export type Limits = {
   maxUsers: number;
   maxDepartments: number;
   maxConnections: number;
@@ -11,7 +11,7 @@ type Limits = {
   maxStorageBytes: number;
 };
 
-type Features = {
+export type Features = {
   chat: boolean;
   campaigns: boolean;
   tickets: boolean;
@@ -35,7 +35,14 @@ export class PlanEntitlementService {
       orderBy: { createdAt: "desc" },
       include: {
         plan: true,
-        tenant: { select: { maxUsers: true, maxConnections: true } },
+        tenant: {
+          select: {
+            maxUsers: true,
+            maxConnections: true,
+            featureOverrides: true,
+            limitOverrides: true,
+          },
+        },
       },
     });
     if (!subscription) {
@@ -49,13 +56,18 @@ export class PlanEntitlementService {
     if (subscription.tenant.maxConnections != null) {
       limits.maxConnections = subscription.tenant.maxConnections;
     }
+    Object.assign(limits, coerceLimitOverrides(subscription.tenant.limitOverrides));
+    const features = mergeFeatureOverrides(
+      coerceFeatures(subscription.featuresSnapshot),
+      subscription.tenant.featureOverrides,
+    );
     return {
       subscriptionId: subscription.id,
       planId: subscription.planId,
       planCode: subscription.plan.code,
       status: subscription.status,
       limits,
-      features: coerceFeatures(subscription.featuresSnapshot),
+      features,
     };
   }
 
@@ -140,6 +152,28 @@ export class PlanEntitlementService {
   }
 }
 
+export function mergeFeatureOverrides(base: Features, value: unknown): Features {
+  const overrides = asRecord(value);
+  return {
+    ...base,
+    // Chat is the core module and cannot be disabled at tenant level.
+    chat: true,
+    campaigns: typeof overrides.campaigns === "boolean" ? overrides.campaigns : base.campaigns,
+    tickets: typeof overrides.tickets === "boolean" ? overrides.tickets : base.tickets,
+  };
+}
+
+export function coerceLimitOverrides(value: unknown): Partial<Limits> {
+  const raw = asRecord(value);
+  const result: Partial<Limits> = {};
+  for (const key of LIMIT_KEYS) {
+    if (!(key in raw)) continue;
+    const parsed = typeof raw[key] === "number" ? raw[key] : Number.parseInt(String(raw[key]), 10);
+    if (Number.isFinite(parsed) && parsed >= 0) result[key] = parsed;
+  }
+  return result;
+}
+
 export function coerceLimits(value: unknown): Limits {
   const raw = asRecord(value);
   return {
@@ -197,3 +231,13 @@ function limitCode(metric: keyof Limits) {
   };
   return codes[metric];
 }
+
+export const LIMIT_KEYS: (keyof Limits)[] = [
+  "maxUsers",
+  "maxDepartments",
+  "maxConnections",
+  "maxCampaigns",
+  "maxContacts",
+  "maxCampaignRecipients",
+  "maxStorageBytes",
+];

@@ -41,7 +41,7 @@ export class TagsController {
   }
 
   @Post("tags")
-  @RequirePermissions("chat.tags.manage")
+  @RequirePermissions("chat.tags.create")
   async create(@Body() dto: CreateTagDto, @CurrentUser() current: AuthenticatedUser) {
     await this.assertTagNameAvailable(dto.name, current.tenantId);
     const archived = await this.prisma.tag.findFirst({
@@ -79,7 +79,7 @@ export class TagsController {
   }
 
   @Patch("tags/:id")
-  @RequirePermissions("chat.tags.manage")
+  @RequirePermissions("chat.tags.update")
   async update(
     @Param("id") id: string,
     @Body() dto: UpdateTagDto,

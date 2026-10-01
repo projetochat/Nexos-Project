@@ -29,7 +29,8 @@ function tagWithLogFallback(tag: ApiTag, previous?: ApiTag | null) {
 function Page() {
   const qc = useQueryClient();
   const perms = useChatPerms();
-  const canManageCatalog = perms.pode_editar_etiquetas;
+  const canCreateCatalog = perms.pode_criar_etiquetas;
+  const canUpdateCatalog = perms.pode_editar_etiquetas;
   const canDeleteCatalog = useSession((state) =>
     state.user?.permissions?.includes("chat.tags.delete"),
   );
@@ -59,7 +60,7 @@ function Page() {
           title="Etiquetas"
           subtitle={`${num(etiquetas.length)} etiquetas cadastradas.`}
           actions={
-            canManageCatalog ? (
+            canCreateCatalog ? (
               <Button variant="primary" size="sm" onClick={nova.show}>
                 <Plus className="h-3.5 w-3.5" /> Nova Etiqueta
               </Button>
@@ -90,9 +91,9 @@ function Page() {
                   {etiqueta.nome}
                 </p>
               </div>
-              {(canManageCatalog || canDeleteCatalog) && (
+              {(canCreateCatalog || canUpdateCatalog || canDeleteCatalog) && (
                 <div className="flex shrink-0 items-center gap-1">
-                  {canManageCatalog && (
+                  {canCreateCatalog && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -103,7 +104,7 @@ function Page() {
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
                   )}
-                  {canManageCatalog && (
+                  {canUpdateCatalog && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -142,59 +143,65 @@ function Page() {
           )}
         </div>
 
-        <EtiquetaForm
-          open={nova.open}
-          tags={etiquetas}
-          onClose={nova.hide}
-          onSubmit={async (data) => {
-            const created = await crmApi.createTag(data);
-            qc.setQueryData<ApiTag[]>(tagsQueryKey, (current = []) => [
-              tagWithLogFallback(created),
-              ...current,
-            ]);
-            toast.success("Etiqueta criada");
-            setQuery("");
-            await refresh();
-            nova.hide();
-          }}
-        />
-        <EtiquetaForm
-          open={!!duplicating}
-          tags={etiquetas}
-          initial={duplicating ?? undefined}
-          clone
-          onClose={() => setDuplicating(null)}
-          onSubmit={async (data) => {
-            const created = await crmApi.createTag(data);
-            qc.setQueryData<ApiTag[]>(tagsQueryKey, (current = []) => [
-              tagWithLogFallback(created),
-              ...current,
-            ]);
-            toast.success("Etiqueta criada");
-            setQuery("");
-            await refresh();
-            setDuplicating(null);
-          }}
-        />
-        <EtiquetaForm
-          open={!!editing}
-          tags={etiquetas}
-          initial={editing ?? undefined}
-          onClose={() => setEditing(null)}
-          onSubmit={async (data) => {
-            if (!editing) return;
-            const updated = await crmApi.updateTag(editing.id, data);
-            qc.setQueryData<ApiTag[]>(tagsQueryKey, (current = []) =>
-              current.map((tag) =>
-                tag.id === updated.id ? tagWithLogFallback(updated, tag) : tag,
-              ),
-            );
-            toast.success("Etiqueta atualizada");
-            setQuery("");
-            await refresh();
-            setEditing(null);
-          }}
-        />
+        {canCreateCatalog && (
+          <EtiquetaForm
+            open={nova.open}
+            tags={etiquetas}
+            onClose={nova.hide}
+            onSubmit={async (data) => {
+              const created = await crmApi.createTag(data);
+              qc.setQueryData<ApiTag[]>(tagsQueryKey, (current = []) => [
+                tagWithLogFallback(created),
+                ...current,
+              ]);
+              toast.success("Etiqueta criada");
+              setQuery("");
+              await refresh();
+              nova.hide();
+            }}
+          />
+        )}
+        {canCreateCatalog && (
+          <EtiquetaForm
+            open={!!duplicating}
+            tags={etiquetas}
+            initial={duplicating ?? undefined}
+            clone
+            onClose={() => setDuplicating(null)}
+            onSubmit={async (data) => {
+              const created = await crmApi.createTag(data);
+              qc.setQueryData<ApiTag[]>(tagsQueryKey, (current = []) => [
+                tagWithLogFallback(created),
+                ...current,
+              ]);
+              toast.success("Etiqueta criada");
+              setQuery("");
+              await refresh();
+              setDuplicating(null);
+            }}
+          />
+        )}
+        {canUpdateCatalog && (
+          <EtiquetaForm
+            open={!!editing}
+            tags={etiquetas}
+            initial={editing ?? undefined}
+            onClose={() => setEditing(null)}
+            onSubmit={async (data) => {
+              if (!editing) return;
+              const updated = await crmApi.updateTag(editing.id, data);
+              qc.setQueryData<ApiTag[]>(tagsQueryKey, (current = []) =>
+                current.map((tag) =>
+                  tag.id === updated.id ? tagWithLogFallback(updated, tag) : tag,
+                ),
+              );
+              toast.success("Etiqueta atualizada");
+              setQuery("");
+              await refresh();
+              setEditing(null);
+            }}
+          />
+        )}
         <ConfirmDialog
           open={!!deleting}
           title="Excluir Etiqueta?"

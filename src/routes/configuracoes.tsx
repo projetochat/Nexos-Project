@@ -41,7 +41,7 @@ function ConfiguracoesLayout() {
                 if (
                   (t.to === "/configuracoes/campos-contato" ||
                     t.to === "/configuracoes/variaveis") &&
-                  !permissions.includes("crm.read")
+                  !permissions.includes("contacts.read")
                 ) {
                   return null;
                 }

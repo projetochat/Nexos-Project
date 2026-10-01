@@ -51,7 +51,7 @@ describe("Platform Financeiro", () => {
 });
 
 describe("Platform Tenants", () => {
-  it("preserva a consulta e limita a mutação ao gerenciamento de credenciais", () => {
+  it("preserva a consulta e oferece credenciais e configuração individual da tenant", () => {
     expect(tenantsSource).toContain("Consulta das tenants cadastradas.");
     expect(tenantsSource).toContain("Visualizar");
     expect(tenantsSource).not.toContain("Novo tenant");
@@ -73,6 +73,10 @@ describe("Platform Tenants", () => {
     expect(tenantsSource).toContain("Gerenciar credenciais do usuário administrador");
     expect(tenantsSource).toContain('tenant.status === "ACTIVE"');
     expect(tenantsSource).toContain("updateTenantAdministratorCredentials");
+    expect(tenantsSource).toContain("Configuração da Tenant");
+    expect(tenantsSource).toContain("updateTenantConfiguration");
+    expect(tenantsSource).toContain("Módulo obrigatório e sempre habilitado");
+    expect(tenantsSource).toContain("Deixe vazio para herdar o limite atual do plano contratado");
     expect(tenantsSource).toContain("hover:text-blue-600");
     expect(tenantsSource).toContain("hover:text-red-600");
   });
