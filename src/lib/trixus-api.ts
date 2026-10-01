@@ -1,11 +1,18 @@
 import { scheduleWritePayload, type ApiSchedule } from "./schedule-types";
 import type { Role, SessionUser } from "@/lib/session";
+import {
+  currentAppSurface,
+  loginEndpointForSurface,
+  tenantAppOrigin,
+  type AppSurface,
+} from "@/lib/app-surface";
 import { effectiveSessionPermissions } from "@/lib/access-permissions";
 
 const ACCESS_KEY = "trixus.api.accessToken";
 const REFRESH_KEY = "trixus.api.refreshToken";
 const TENANT_KEY = "trixus.api.tenant";
 const IMPERSONATION_KEY = "trixus.api.impersonation";
+const HANDOFF_IMPERSONATION_KEY = "trixus.api.handoffImpersonation";
 let refreshPromise: Promise<boolean> | null = null;
 let sessionAlreadyCleared = false;
 
@@ -36,6 +43,19 @@ type LoginResponse = {
     roleId: string;
   };
   permissions: string[];
+};
+
+export type RequiredPasswordChange = {
+  passwordChangeRequired: true;
+  passwordSetupToken: string;
+  user: { id: string; email: string; name: string };
+  tenant: { id: string; slug: string; name: string };
+};
+
+export type TenantSelectionRequired = {
+  tenantSelectionRequired: true;
+  tenantSelectionToken: string;
+  tenants: Array<{ id: string; slug: string; name: string }>;
 };
 
 type MeResponse = {
@@ -928,12 +948,68 @@ export async function refreshTrixusAccessToken() {
   return (await refreshAccessToken()) ? getTrixusAccessToken() : null;
 }
 
-export async function loginWithTrixusApi(email: string, password: string, tenantSlug?: string) {
+export async function loginWithTrixusApi(
+  email: string,
+  password: string,
+  tenantSlug?: string,
+  surface?: AppSurface,
+) {
   const body: { email: string; password: string; tenantSlug?: string } = { email, password };
   if (tenantSlug) body.tenantSlug = tenantSlug;
-  const response = await fetchTrixus("/auth/login", {
+  const response = await fetchTrixus(loginEndpointForSurface(surface), {
     method: "POST",
     body: JSON.stringify(body),
+  });
+  if (!response.ok) throw await authErrorFromResponse(response);
+
+  const data = (await response.json()) as
+    | LoginResponse
+    | RequiredPasswordChange
+    | TenantSelectionRequired;
+  if ("passwordChangeRequired" in data || "tenantSelectionRequired" in data) return data;
+  storeTrixusSession(data);
+  return loginResponseToSessionUser(data);
+}
+
+export async function completeRequiredPasswordChangeWithTrixusApi(input: {
+  setupToken: string;
+  newPassword: string;
+  confirmPassword: string;
+}) {
+  const response = await fetchTrixus("/auth/password/required-change", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await authErrorFromResponse(response);
+  const data = (await response.json()) as LoginResponse | TenantSelectionRequired;
+  if ("tenantSelectionRequired" in data) return data;
+  storeTrixusSession(data);
+  return loginResponseToSessionUser(data);
+}
+
+export async function selectTenantWithTrixusApi(input: {
+  selectionToken: string;
+  tenantId: string;
+}) {
+  const response = await fetchTrixus("/auth/tenant/select", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw await authErrorFromResponse(response);
+  const data = (await response.json()) as LoginResponse | RequiredPasswordChange;
+  if ("passwordChangeRequired" in data) return data;
+  storeTrixusSession(data);
+  return loginResponseToSessionUser(data);
+}
+
+export async function acceptTenantInvitationWithTrixusApi(input: {
+  token: string;
+  password: string;
+  name?: string;
+}) {
+  const response = await fetchTrixus("/auth/invitations/accept", {
+    method: "POST",
+    body: JSON.stringify(input),
   });
   if (!response.ok) throw await authErrorFromResponse(response);
 
@@ -947,6 +1023,7 @@ export async function hydrateWithTrixusApi() {
   const role = roleMap[data.user.roleKey] ?? "operator";
   return {
     id: data.user.id,
+    roleId: data.user.roleId,
     nome: data.user.name,
     email: data.user.email,
     role,
@@ -1085,10 +1162,9 @@ export const organizationApi = {
     },
   ) =>
     apiRequest<ApiUserMembership>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  activateUser: (id: string, data: { password: string }) =>
+  activateUser: (id: string) =>
     apiRequest<ApiUserMembership>(`/users/${id}/activate`, {
       method: "PATCH",
-      body: JSON.stringify(data),
     }),
   deactivateUser: (id: string) =>
     apiRequest<ApiUserMembership>(`/users/${id}/deactivate`, { method: "PATCH" }),
@@ -1902,8 +1978,52 @@ export type PlatformTenant = {
   subscriptionStatus: string | null;
   activeUsers: number;
   connections: number;
+  responsibleName: string | null;
+  responsibleEmail: string | null;
+  responsiblePhone: string | null;
+  responsibleTitle: string | null;
+  notes: string | null;
+  maxUsers: number | null;
+  maxConnections: number | null;
+  maxCampaigns: number;
+  client: {
+    id: string;
+    name: string;
+    responsibleName: string;
+    responsibleEmail: string;
+  } | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type PlatformClient = {
+  id: string;
+  name: string;
+  document: string | null;
+  responsibleName: string;
+  responsibleEmail: string;
+  city: string;
+  state: string;
+  registeredAt: string;
+  status: "ACTIVE" | "SUSPENDED" | "CANCELLED" | "PROSPECTING";
+  notes: string | null;
+  tenantId: string | null;
+  tenant?: { id: string; name: string; slug: string; status: string } | null;
+  _count?: { subscriptions: number };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PlatformClientPayload = {
+  name: string;
+  document: string;
+  responsibleName: string;
+  responsibleEmail: string;
+  city: string;
+  state: string;
+  registeredAt?: string;
+  status?: "ACTIVE" | "SUSPENDED" | "CANCELLED" | "PROSPECTING";
+  notes?: string;
 };
 
 export type PlatformTenantDetail = PlatformTenant & {
@@ -1949,11 +2069,94 @@ export type PlatformPlan = {
 
 export type PlatformSubscription = {
   id: string;
-  tenant: { id: string; name: string; slug: string };
-  plan: { id: string; code: string; name: string };
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    platformClient?: { city: string; state: string } | null;
+  } | null;
+  plan: { id: string; code: string; name: string; billingPeriod?: string };
   status: string;
+  startsAt: string;
+  currentPeriodStart: string;
   currentPeriodEnd: string;
   cancelAtPeriodEnd: boolean;
+  indefinite: boolean;
+  monthlyValueCents: number | null;
+  discountCents: number;
+  couponCode: string | null;
+  notes: string | null;
+  client?: {
+    id: string;
+    name: string;
+    responsibleName: string;
+    responsibleEmail: string;
+    city: string;
+    state: string;
+  } | null;
+  type?: string;
+  grossValueCents?: number;
+  netValueCents?: number;
+  createdAt?: string;
+  latestInvoice?: {
+    status: string;
+    paidCents: number;
+    totalCents: number;
+    released: boolean;
+  } | null;
+};
+
+export type PlatformSubscriptionDetail = Omit<
+  PlatformSubscription,
+  "tenant" | "plan" | "client"
+> & {
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    status: string;
+    responsibleName: string | null;
+    responsibleEmail: string | null;
+  } | null;
+  plan: PlatformPlan;
+  client: PlatformClient | null;
+  trialEndsAt: string | null;
+  cancelledAt: string | null;
+  suspensionReason: string | null;
+  limitsSnapshot: Record<string, number>;
+  featuresSnapshot: Record<string, boolean>;
+  updatedAt: string;
+  history: Array<{
+    id: string;
+    previousPlanId: string | null;
+    nextPlanId: string | null;
+    previousStatus: string | null;
+    nextStatus: string | null;
+    startsAt: string | null;
+    endsAt: string | null;
+    reason: string;
+    createdAt: string;
+  }>;
+  invoices: Array<{
+    id: string;
+    number: string;
+    status: string;
+    currency: string;
+    subtotalCents: number;
+    discountCents: number;
+    totalCents: number;
+    paidCents: number;
+    released: boolean;
+    releasedAt: string | null;
+    dueAt: string;
+    paidAt: string | null;
+    cancelledAt: string | null;
+    referenceDate: string | null;
+    reference: string | null;
+    couponCode: string | null;
+    notes: string | null;
+    createdAt: string;
+  }>;
 };
 
 export type PlatformInvoice = {
@@ -1963,7 +2166,29 @@ export type PlatformInvoice = {
   totalCents: number;
   currency: string;
   dueAt: string;
-  tenant: { id: string; name: string; slug: string };
+  referenceDate: string | null;
+  reference: string | null;
+  couponCode: string | null;
+  notes: string | null;
+  subtotalCents: number;
+  discountCents: number;
+  paidCents: number;
+  released: boolean;
+  releasedAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    platformClient?: { city: string; state: string } | null;
+  } | null;
+  client?: { id: string; name: string; city: string; state: string } | null;
+  subscription?: {
+    id: string;
+    plan: { id: string; code: string; name: string } | null;
+    client?: { id: string; name: string; city: string; state: string } | null;
+  } | null;
 };
 
 export type PlatformAuditLog = {
@@ -2028,6 +2253,29 @@ export type StoredImpersonation = {
   actorUser: SessionUser;
 };
 
+export type StoredHandoffImpersonation = {
+  id: string;
+  tenant: { id: string; name: string; slug: string };
+  membershipId: string;
+  expiresAt: string;
+  actorUser: { id: string; name: string; email: string };
+};
+
+type ImpersonationHandoff = {
+  code: string;
+  expiresAt: string;
+  tenant: { id: string; name: string; slug: string };
+};
+
+type ExchangedImpersonationHandoff = LoginResponse & {
+  impersonation: {
+    id: string;
+    expiresAt: string;
+    actorUser: { id: string; name: string; email: string };
+    tenant: { id: string; name: string; slug: string };
+  };
+};
+
 export const platformApi = {
   dashboard: () => apiRequest<PlatformDashboard>("/platform/dashboard"),
   health: () => apiRequest<PlatformHealth>("/platform/health"),
@@ -2037,9 +2285,45 @@ export const platformApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  tenants: (params: ListParams = {}) =>
-    apiRequest<PaginatedResponse<PlatformTenant>>(`/platform/tenants${queryString(params)}`),
+  clients: (params: ListParams & { status?: string; city?: string; state?: string } = {}) =>
+    apiRequest<PaginatedResponse<PlatformClient>>(`/platform/clients${queryString(params)}`),
+  createClient: (data: PlatformClientPayload) =>
+    apiRequest<PlatformClient>("/platform/clients", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateClient: (id: string, data: Partial<PlatformClientPayload>) =>
+    apiRequest<PlatformClient>(`/platform/clients/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteClient: (id: string) =>
+    apiRequest<{ id: string; deleted: true }>(`/platform/clients/${id}`, { method: "DELETE" }),
+  cancelClient: (id: string) =>
+    apiRequest<PlatformClient>(`/platform/clients/${id}/cancel`, { method: "POST" }),
+  tenants: (
+    params: ListParams & {
+      status?: string;
+      planId?: string;
+      createdAt?: string;
+      dateFrom?: string;
+      dateTo?: string;
+    } = {},
+  ) => apiRequest<PaginatedResponse<PlatformTenant>>(`/platform/tenants${queryString(params)}`),
   tenant: (id: string) => apiRequest<PlatformTenantDetail>(`/platform/tenants/${id}`),
+  updateTenantAdministratorCredentials: (
+    id: string,
+    data: { responsibleName: string; responsibleEmail: string; newPassword?: string },
+  ) =>
+    apiRequest<{
+      ok: true;
+      responsibleName: string;
+      responsibleEmail: string;
+      credentialsUpdatedAt: string;
+    }>(`/platform/tenants/${id}/administrator-credentials`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   createTenant: (data: {
     name: string;
     slug: string;
@@ -2047,7 +2331,14 @@ export const platformApi = {
     locale?: string;
     planId: string;
     initialStatus?: "TRIAL" | "ACTIVE";
-    admin: { email: string; name: string; password: string };
+    admin?: { email: string; name: string; password: string };
+    responsibleName?: string;
+    responsibleEmail?: string;
+    responsiblePhone?: string;
+    responsibleTitle?: string;
+    notes?: string;
+    maxUsers?: number;
+    maxConnections?: number;
   }) =>
     apiRequest<PlatformTenantDetail>("/platform/tenants", {
       method: "POST",
@@ -2061,6 +2352,13 @@ export const platformApi = {
       displayName?: string;
       billingEmail?: string;
       technicalEmail?: string;
+      responsibleName?: string;
+      responsibleEmail?: string;
+      responsiblePhone?: string;
+      responsibleTitle?: string;
+      notes?: string;
+      maxUsers?: number;
+      maxConnections?: number;
     },
   ) =>
     apiRequest<PlatformTenant>(`/platform/tenants/${id}`, {
@@ -2086,10 +2384,9 @@ export const platformApi = {
     apiRequest<PaginatedResponse<PlatformPlan>>(`/platform/plans${queryString(params)}`),
   plan: (id: string) => apiRequest<PlatformPlan>(`/platform/plans/${id}`),
   createPlan: (data: {
-    code: string;
     name: string;
     description?: string;
-    status?: "DRAFT" | "ACTIVE";
+    status?: "ACTIVE" | "SUSPENDED" | "INACTIVE";
     billingPeriod?: "MONTHLY" | "YEARLY" | "MANUAL";
     priceCents?: number;
     trialDays?: number;
@@ -2101,7 +2398,7 @@ export const platformApi = {
     data: {
       name?: string;
       description?: string;
-      status?: "DRAFT" | "ACTIVE";
+      status?: "ACTIVE" | "SUSPENDED" | "INACTIVE";
       trialDays?: number;
       features?: Record<string, boolean>;
       limits?: Record<string, number>;
@@ -2112,22 +2409,54 @@ export const platformApi = {
       body: JSON.stringify(data),
     }),
   archivePlan: (id: string) =>
-    apiRequest<PlatformPlan>(`/platform/plans/${id}`, { method: "DELETE" }),
+    apiRequest<PlatformPlan>(`/platform/plans/${id}/archive`, { method: "POST" }),
+  unarchivePlan: (id: string) =>
+    apiRequest<PlatformPlan>(`/platform/plans/${id}/unarchive`, { method: "POST" }),
+  deactivatePlan: (id: string) =>
+    apiRequest<PlatformPlan>(`/platform/plans/${id}/deactivate`, { method: "POST" }),
+  activatePlan: (id: string) =>
+    apiRequest<PlatformPlan>(`/platform/plans/${id}/activate`, { method: "POST" }),
+  deletePlan: (id: string) =>
+    apiRequest<{ id: string; deleted: true }>(`/platform/plans/${id}`, { method: "DELETE" }),
   subscriptions: (params: ListParams = {}) =>
     apiRequest<PaginatedResponse<PlatformSubscription>>(
       `/platform/subscriptions${queryString(params)}`,
     ),
-  subscription: (id: string) => apiRequest<PlatformSubscription>(`/platform/subscriptions/${id}`),
+  subscription: (id: string) =>
+    apiRequest<PlatformSubscriptionDetail>(`/platform/subscriptions/${id}`),
   createSubscription: (
     tenantId: string,
     data: {
       planId: string;
-      status?: "TRIALING" | "ACTIVE";
       currentPeriodEnd?: string;
       reason?: string;
+      startsAt?: string;
+      indefinite?: boolean;
+      monthlyValueCents?: number;
+      discountCents?: number;
+      couponCode?: string;
+      notes?: string;
     },
   ) =>
     apiRequest<PlatformSubscription>(`/platform/tenants/${tenantId}/subscriptions`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  createClientSubscription: (
+    clientId: string,
+    data: {
+      planId: string;
+      startsAt?: string;
+      currentPeriodEnd?: string;
+      indefinite?: boolean;
+      monthlyValueCents?: number;
+      discountCents?: number;
+      couponCode?: string;
+      notes?: string;
+      reason?: string;
+    },
+  ) =>
+    apiRequest<PlatformSubscription>(`/platform/clients/${clientId}/subscriptions`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
@@ -2137,13 +2466,30 @@ export const platformApi = {
       planId?: string;
       status?: "TRIALING" | "ACTIVE" | "PAST_DUE" | "SUSPENDED" | "EXPIRED";
       reason?: string;
+      monthlyValueCents?: number;
+      discountCents?: number;
+      couponCode?: string;
+      notes?: string;
     },
   ) =>
     apiRequest<PlatformSubscription>(`/platform/subscriptions/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  cancelSubscription: (id: string, data: { reason: string; cancelAtPeriodEnd?: boolean }) =>
+  generateSubscriptionFinance: (id: string) =>
+    apiRequest<PlatformSubscription>(`/platform/subscriptions/${id}/generate-finance`, {
+      method: "POST",
+    }),
+  activateSubscription: (id: string) =>
+    apiRequest<PlatformSubscription>(`/platform/subscriptions/${id}/activate`, {
+      method: "POST",
+    }),
+  suspendSubscription: (id: string, data: { reason: string }) =>
+    apiRequest<PlatformSubscription>(`/platform/subscriptions/${id}/suspend`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  cancelSubscription: (id: string, data: { reason?: string; cancelAtPeriodEnd?: boolean } = {}) =>
     apiRequest<PlatformSubscription>(`/platform/subscriptions/${id}/cancel`, {
       method: "POST",
       body: JSON.stringify(data),
@@ -2152,18 +2498,47 @@ export const platformApi = {
     apiRequest<PaginatedResponse<PlatformInvoice>>(`/platform/invoices${queryString(params)}`),
   invoice: (id: string) => apiRequest<PlatformInvoice>(`/platform/invoices/${id}`),
   createInvoice: (data: {
-    tenantId: string;
+    tenantId?: string;
     subscriptionId: string;
     currency?: string;
     subtotalCents: number;
     discountCents?: number;
     dueAt: string;
+    referenceDate?: string;
+    reference?: string;
+    couponCode?: string;
+    notes?: string;
+    paidCents?: number;
+    released?: boolean;
   }) =>
     apiRequest<PlatformInvoice>("/platform/invoices", {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  updateInvoiceStatus: (id: string, status: "DRAFT" | "OPEN" | "PAID" | "VOID" | "OVERDUE") =>
+  updateInvoice: (
+    id: string,
+    data: {
+      subtotalCents?: number;
+      discountCents?: number;
+      paidCents?: number;
+      released?: boolean;
+      dueAt?: string;
+      referenceDate?: string;
+      reference?: string;
+      couponCode?: string;
+      notes?: string;
+    },
+  ) =>
+    apiRequest<PlatformInvoice>(`/platform/invoices/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteInvoice: (id: string) =>
+    apiRequest<{ id: string; deleted: true }>(`/platform/invoices/${id}`, { method: "DELETE" }),
+  updateInvoiceStatus: (
+    id: string,
+    status: "DRAFT" | "OPEN" | "PAID" | "VOID" | "OVERDUE" | "RELEASED",
+  ) =>
     apiRequest<PlatformInvoice>(`/platform/invoices/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
@@ -2176,11 +2551,95 @@ export const platformApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  startImpersonationHandoff: (data: {
+    tenantId: string;
+    membershipId: string;
+    reason: string;
+    codeChallenge: string;
+  }) =>
+    apiRequest<ImpersonationHandoff>("/platform/impersonation/handoff", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   stopImpersonation: (id: string) =>
     apiRequest<{ id: string }>(`/platform/impersonation/${id}/stop`, { method: "POST" }),
   currentImpersonation: () =>
     apiRequest<PlatformImpersonation | null>("/platform/impersonation/current"),
 };
+
+function bytesToBase64Url(bytes: Uint8Array) {
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+export async function createImpersonationHandoff(input: {
+  tenantId: string;
+  membershipId: string;
+  reason: string;
+}) {
+  const verifierBytes = crypto.getRandomValues(new Uint8Array(32));
+  const verifier = bytesToBase64Url(verifierBytes);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  const codeChallenge = bytesToBase64Url(new Uint8Array(digest));
+  const handoff = await platformApi.startImpersonationHandoff({ ...input, codeChallenge });
+  const callbackOrigin =
+    currentAppSurface() === "unified" && typeof window !== "undefined"
+      ? window.location.origin
+      : tenantAppOrigin();
+  const callback = new URL("/impersonation/callback", callbackOrigin);
+  callback.searchParams.set("code", handoff.code);
+  callback.hash = new URLSearchParams({ verifier }).toString();
+  return { url: callback.toString(), expiresAt: handoff.expiresAt };
+}
+
+export async function exchangeImpersonationHandoff(code: string, codeVerifier: string) {
+  const response = await fetchTrixus("/auth/impersonation/exchange", {
+    method: "POST",
+    body: JSON.stringify({ code, codeVerifier }),
+  });
+  if (!response.ok) throw await readError(response);
+  const data = (await response.json()) as ExchangedImpersonationHandoff;
+  storeTrixusSession(data);
+  const stored: StoredHandoffImpersonation = {
+    id: data.impersonation.id,
+    tenant: data.impersonation.tenant,
+    membershipId: data.membership.id,
+    expiresAt: data.impersonation.expiresAt,
+    actorUser: data.impersonation.actorUser,
+  };
+  localStorage.setItem(HANDOFF_IMPERSONATION_KEY, JSON.stringify(stored));
+  return { user: loginResponseToSessionUser(data), impersonation: stored };
+}
+
+export function readStoredHandoffImpersonation(options: { includeExpired?: boolean } = {}) {
+  try {
+    const raw = localStorage.getItem(HANDOFF_IMPERSONATION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredHandoffImpersonation;
+    if (new Date(parsed.expiresAt).getTime() <= Date.now() && !options.includeExpired) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    localStorage.removeItem(HANDOFF_IMPERSONATION_KEY);
+    return null;
+  }
+}
+
+export async function stopHandoffImpersonation() {
+  const stored = readStoredHandoffImpersonation({ includeExpired: true });
+  try {
+    if (localStorage.getItem(ACCESS_KEY)) {
+      await apiRequest<{ id: string }>("/auth/impersonation/stop", { method: "POST" });
+    }
+  } finally {
+    clearTrixusApiSession();
+  }
+  return stored;
+}
 
 export function activatePlatformImpersonation(data: PlatformImpersonation, actorUser: SessionUser) {
   const actorAccessToken = localStorage.getItem(ACCESS_KEY);
@@ -2238,12 +2697,21 @@ export function clearTrixusApiSession() {
   localStorage.removeItem(REFRESH_KEY);
   localStorage.removeItem(TENANT_KEY);
   localStorage.removeItem(IMPERSONATION_KEY);
+  localStorage.removeItem(HANDOFF_IMPERSONATION_KEY);
 }
 
 export async function logoutFromTrixusApi() {
+  const handoffImpersonation = readStoredHandoffImpersonation({ includeExpired: true });
   const storedImpersonation = readStoredPlatformImpersonation({ includeExpired: true });
   try {
-    if (storedImpersonation) {
+    if (handoffImpersonation) {
+      try {
+        await fetchTrixus("/auth/impersonation/stop", { method: "POST" }, true);
+      } catch {
+        // A sessão temporária pode já ter expirado; o logout local ainda deve prosseguir.
+      }
+      return;
+    } else if (storedImpersonation) {
       restorePlatformTokens(storedImpersonation);
       try {
         await platformApi.stopImpersonation(storedImpersonation.id);
@@ -2396,6 +2864,7 @@ function loginResponseToSessionUser(data: LoginResponse): SessionUser {
   const role = roleMap[data.user.roleKey] ?? "operator";
   return {
     id: data.user.id,
+    roleId: data.user.roleId,
     nome: data.user.name,
     email: data.user.email,
     role,

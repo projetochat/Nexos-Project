@@ -55,6 +55,7 @@ const grants: Record<string, PlatformPermission[]> = {
 };
 
 const highRiskPermissions = new Set<PlatformPermission>([
+  "platform.tenants.update",
   "platform.tenants.suspend",
   "platform.tenants.terminate",
   "platform.plans.create",
@@ -82,6 +83,12 @@ export class PlatformAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const current = request.user;
     if (!current) throw new UnauthorizedException("Token ausente.");
+    if (current.surface !== "platform") {
+      throw new ForbiddenException({
+        code: "PLATFORM_SURFACE_REQUIRED",
+        message: "Esta sessão não pertence ao plano de controle.",
+      });
+    }
 
     const user = await this.prisma.user.findFirst({
       where: { id: current.userId, status: "ACTIVE", platformRole: { not: "USER" } },

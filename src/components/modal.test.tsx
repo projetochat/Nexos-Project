@@ -2,7 +2,7 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { ConfirmDialog } from "./modal";
+import { ConfirmDialog, Modal } from "./modal";
 
 it("focuses the delete action each time a confirmation opens", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -38,6 +38,29 @@ it("focuses the delete action each time a confirmation opens", async () => {
     await React.act(() => render(false));
     await React.act(() => render(true));
     expect(document.activeElement?.textContent).toBe("Excluir");
+  } finally {
+    await React.act(() => root.unmount());
+    container.remove();
+  }
+});
+
+it("does not expose close affordances for a mandatory modal", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onClose = vi.fn();
+  try {
+    await React.act(() =>
+      root.render(
+        <Modal open title="Troca obrigatória" onClose={onClose} dismissible={false}>
+          Conteúdo
+        </Modal>,
+      ),
+    );
+    expect(document.querySelector('button[aria-label="Fechar"]')).toBeNull();
+    await React.act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(onClose).not.toHaveBeenCalled();
   } finally {
     await React.act(() => root.unmount());
     container.remove();

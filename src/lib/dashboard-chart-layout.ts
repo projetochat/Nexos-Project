@@ -12,3 +12,18 @@ export const MOBILE_MESSAGE_HOUR_TICKS = [...DESKTOP_MESSAGE_HOUR_TICKS];
 export function messageHourTicks(isMobile: boolean) {
   return isMobile ? MOBILE_MESSAGE_HOUR_TICKS : DESKTOP_MESSAGE_HOUR_TICKS;
 }
+
+export function messageTrafficSummary(
+  data: Array<{ recebidas: number; enviadas: number; total: number }>,
+  contactsTotal: number,
+) {
+  return data.reduce<{ recebidas: number; enviadas: number; total: number; contatos: number }>(
+    (summary, item) => ({
+      recebidas: summary.recebidas + item.recebidas,
+      enviadas: summary.enviadas + item.enviadas,
+      total: summary.total + item.total,
+      contatos: summary.contatos,
+    }),
+    { recebidas: 0, enviadas: 0, total: 0, contatos: contactsTotal },
+  );
+}

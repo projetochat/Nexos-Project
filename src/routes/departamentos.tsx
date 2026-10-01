@@ -11,7 +11,6 @@ import {
   Field,
   Input,
   Textarea,
-  Select,
   SearchInput,
 } from "@/components/ui-kit";
 import { Modal, ConfirmDialog } from "@/components/modal";
@@ -68,7 +67,6 @@ function Page() {
   const [duplicating, setDuplicating] = React.useState<ApiDepartment | null>(null);
   const [deleting, setDeleting] = React.useState<ApiDepartment | null>(null);
   const [query, setQuery] = React.useState("");
-  const [activeFilter, setActiveFilter] = React.useState("all");
   const novo = useDisclosure();
 
   const {
@@ -113,17 +111,18 @@ function Page() {
 
   const remove = useMutation({
     mutationFn: (id: string) => organizationApi.deleteDepartment(id),
-    onSuccess: () => {
+    onSuccess: (_department, deletedId) => {
+      qc.setQueryData<ApiDepartment[]>(["trixus", "departments"], (current = []) =>
+        current.filter((department) => department.id !== deletedId),
+      );
       qc.invalidateQueries({ queryKey: ["trixus", "departments"] });
-      toast.success("Departamento desativado");
+      toast.success("Departamento excluído");
       setDeleting(null);
     },
     onError: (error) => toast.error((error as Error).message),
   });
 
   const filtered = sortByOptionLabel(departamentos, (department) => department.name).filter((d) => {
-    if (activeFilter === "active" && !d.active) return false;
-    if (activeFilter === "inactive" && d.active) return false;
     if (
       query &&
       !(d.name + " " + (d.description ?? "")).toLowerCase().includes(query.toLowerCase())
@@ -148,24 +147,9 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="col-span-2 md:col-span-1">
-              <Field label="Busca">
-                <SearchInput
-                  value={query}
-                  onChange={setQuery}
-                  placeholder="Buscar departamento..."
-                />
-              </Field>
-            </div>
-            <Field label="Status">
-              <Select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value)}>
-                <option value="all">Todos</option>
-                <option value="active">Ativos</option>
-                <option value="inactive">Inativos</option>
-              </Select>
-            </Field>
-          </div>
+          <Field label="Busca">
+            <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
+          </Field>
         </Card>
 
         {isLoading ? (

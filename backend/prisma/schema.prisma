@@ -35,9 +35,18 @@ enum TenantStatus {
   TERMINATED
 }
 
+enum PlatformClientStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+  PROSPECTING
+}
+
 enum PlanStatus {
   DRAFT
   ACTIVE
+  SUSPENDED
+  INACTIVE
   ARCHIVED
 }
 
@@ -48,6 +57,9 @@ enum PlanBillingPeriod {
 }
 
 enum SubscriptionStatus {
+  REGISTERING
+  AWAITING_FINANCE
+  FINANCE_RELEASED
   TRIALING
   ACTIVE
   PAST_DUE
@@ -62,6 +74,7 @@ enum InvoiceStatus {
   PAID
   VOID
   OVERDUE
+  RELEASED
 }
 
 enum ImpersonationStatus {
@@ -330,6 +343,13 @@ model Tenant {
   document                    String?
   billingEmail                String?
   technicalEmail              String?
+  responsibleName             String?
+  responsibleEmail            String?
+  responsiblePhone            String?
+  responsibleTitle            String?
+  notes                       String?
+  maxUsers                    Int?
+  maxConnections              Int?
   authRevokedAt               DateTime?
   activatedAt                 DateTime?
   suspendedAt                 DateTime?
@@ -368,13 +388,38 @@ model Tenant {
   usageSnapshots              TenantUsageSnapshot[]
   auditLogs                   PlatformAuditLog[]
   impersonationSessions       ImpersonationSession[]
+  authSessions                AuthSession[]
   invitations                 UserInvitation[]
   leads                       Lead[]
   notifications               Notification[]
   automationRules             AutomationRule[]
+  platformClient              PlatformClient?
 
   @@index([status])
   @@map("tenants")
+}
+
+model PlatformClient {
+  id               String               @id @default(uuid())
+  name             String
+  document         String?              @unique
+  responsibleName  String
+  responsibleEmail String
+  city             String
+  state            String
+  registeredAt     DateTime             @default(now())
+  status           PlatformClientStatus @default(ACTIVE)
+  notes            String?
+  tenantId         String?              @unique
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  tenant           Tenant?              @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  subscriptions    TenantSubscription[]
+
+  @@index([name])
+  @@index([city, state])
+  @@index([status])
+  @@map("platform_clients")
 }
 
 model User {
@@ -394,6 +439,7 @@ model User {
   platformAuditLogs     PlatformAuditLog[]
   impersonationSessions ImpersonationSession[]
   passwordResetTokens   PasswordResetToken[]
+  authSessions          AuthSession[]
 
   @@index([status])
   @@index([platformRole])
@@ -425,35 +471,44 @@ model Plan {
 
 model TenantSubscription {
   id                 String                @id @default(uuid())
-  tenantId           String
+  tenantId           String?
   planId             String
+  clientId           String?
   status             SubscriptionStatus    @default(ACTIVE)
   startsAt           DateTime              @default(now())
   trialEndsAt        DateTime?
   currentPeriodStart DateTime              @default(now())
   currentPeriodEnd   DateTime
   cancelAtPeriodEnd  Boolean               @default(false)
+  indefinite         Boolean               @default(false)
+  monthlyValueCents  Int?
+  discountCents      Int                   @default(0)
+  couponCode         String?
+  notes              String?
   cancelledAt        DateTime?
+  suspensionReason   String?
   limitsSnapshot     Json
   featuresSnapshot   Json
   createdByUserId    String?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
-  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant             Tenant?               @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   plan               Plan                  @relation(fields: [planId], references: [id], onDelete: Restrict)
+  client             PlatformClient?       @relation(fields: [clientId], references: [id], onDelete: Restrict)
   createdByUser      User?                 @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
   history            SubscriptionHistory[]
   invoices           Invoice[]
 
   @@index([tenantId, status])
   @@index([planId, status])
+  @@index([clientId, status])
   @@map("tenant_subscriptions")
 }
 
 model SubscriptionHistory {
   id             String              @id @default(uuid())
   subscriptionId String
-  tenantId       String
+  tenantId       String?
   previousPlanId String?
   nextPlanId     String?
   previousStatus SubscriptionStatus?
@@ -474,7 +529,7 @@ model SubscriptionHistory {
 
 model Invoice {
   id                String             @id @default(uuid())
-  tenantId          String
+  tenantId          String?
   subscriptionId    String
   number            String             @unique
   status            InvoiceStatus      @default(DRAFT)
@@ -482,13 +537,20 @@ model Invoice {
   subtotalCents     Int                @default(0)
   discountCents     Int                @default(0)
   totalCents        Int                @default(0)
+  paidCents         Int                @default(0)
+  released          Boolean            @default(false)
+  releasedAt        DateTime?
   dueAt             DateTime
   paidAt            DateTime?
   cancelledAt       DateTime?
   externalReference String?
+  referenceDate     DateTime?
+  reference         String?
+  couponCode        String?
+  notes             String?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
-  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant            Tenant?            @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   subscription      TenantSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, status])
@@ -537,14 +599,20 @@ model ImpersonationSession {
   reason                   String
   status                   ImpersonationStatus @default(ACTIVE)
   expiresAt                DateTime
+  handoffCodeHash          String?             @unique
+  handoffChallenge         String?
+  handoffExpiresAt         DateTime?
+  handoffConsumedAt        DateTime?
   stoppedAt                DateTime?
   createdAt                DateTime            @default(now())
   actor                    User                @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
   tenant                   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   auditLogs                PlatformAuditLog[]
+  authSessions             AuthSession[]
 
   @@index([actorUserId, status, expiresAt])
   @@index([tenantId, status])
+  @@index([handoffExpiresAt, handoffConsumedAt])
   @@map("impersonation_sessions")
 }
 
@@ -601,6 +669,7 @@ model TenantMembership {
   assignedLeads      Lead[]                 @relation("LeadAssignee")
   notifications      Notification[]
   automationRules    AutomationRule[]       @relation("AutomationCreator")
+  authSessions       AuthSession[]
 
   @@unique([tenantId, userId])
   @@unique([tenantId, id])
@@ -608,6 +677,29 @@ model TenantMembership {
   @@index([roleId])
   @@index([status])
   @@map("tenant_memberships")
+}
+
+model AuthSession {
+  id                     String                @id @default(uuid())
+  userId                 String
+  tenantId               String?
+  membershipId           String?
+  impersonationSessionId String?
+  expiresAt              DateTime
+  revokedAt              DateTime?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  user                   User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant                 Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  membership             TenantMembership?     @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  impersonationSession   ImpersonationSession? @relation(fields: [impersonationSessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, expiresAt])
+  @@index([tenantId, membershipId, revokedAt, expiresAt])
+  @@index([impersonationSessionId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("auth_sessions")
 }
 
 model Department {

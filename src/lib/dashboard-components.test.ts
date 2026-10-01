@@ -6,9 +6,30 @@ import {
   duplicateDashboardComponent,
   parseDashboardPreferences,
   reorderDashboardComponents,
+  restoreNativeDashboardComponents,
 } from "./dashboard-components";
 
 describe("dashboard component preferences", () => {
+  it("uses the approved native dashboard order and defaults", () => {
+    expect(
+      DEFAULT_DASHBOARD_COMPONENTS.slice(1).map(({ id, visible, visualization, columns }) => ({
+        id,
+        visible,
+        visualization,
+        columns,
+      })),
+    ).toEqual([
+      { id: "messages", visible: true, visualization: "line", columns: 2 },
+      { id: "tag", visible: true, visualization: "columns", columns: 2 },
+      { id: "distribution", visible: true, visualization: "donut", columns: 1 },
+      { id: "agent", visible: true, visualization: "columns", columns: 1 },
+      { id: "customer", visible: true, visualization: "bars", columns: 1 },
+      { id: "recent", visible: true, visualization: "table", columns: 1 },
+      { id: "connection", visible: false, visualization: "columns", columns: 1 },
+      { id: "department", visible: false, visualization: "bars", columns: 1 },
+    ]);
+  });
+
   it("migrates the legacy preferences without losing labels, order or visibility", () => {
     const migrated = parseDashboardPreferences({
       visible: ["messages", "counters"],
@@ -41,11 +62,37 @@ describe("dashboard component preferences", () => {
   });
 
   it("reorders component instances without mutating the source", () => {
-    const source = DEFAULT_DASHBOARD_COMPONENTS.slice(0, 3);
+    const source = DEFAULT_DASHBOARD_COMPONENTS.slice(0, 4);
     const reordered = reorderDashboardComponents(source, "distribution", "counters");
 
-    expect(reordered.map((item) => item.id)).toEqual(["distribution", "counters", "messages"]);
-    expect(source.map((item) => item.id)).toEqual(["counters", "messages", "distribution"]);
+    expect(reordered.map((item) => item.id)).toEqual([
+      "distribution",
+      "counters",
+      "messages",
+      "tag",
+    ]);
+    expect(source.map((item) => item.id)).toEqual(["counters", "messages", "tag", "distribution"]);
+  });
+
+  it("restores native settings and order without deleting custom components", () => {
+    const custom = {
+      ...DEFAULT_DASHBOARD_COMPONENTS[0],
+      id: "custom-component",
+      title: "Meu componente",
+    };
+    const changedNative = {
+      ...DEFAULT_DASHBOARD_COMPONENTS[1],
+      title: "Título alterado",
+      columns: 4 as const,
+    };
+
+    const restored = restoreNativeDashboardComponents([custom, changedNative]);
+
+    expect(restored.slice(0, DEFAULT_DASHBOARD_COMPONENTS.length)).toEqual(
+      DEFAULT_DASHBOARD_COMPONENTS,
+    );
+    expect(restored.at(-1)).toEqual(custom);
+    expect(restored.at(-1)).not.toBe(custom);
   });
 
   it("separates native and personalized contact fields", () => {

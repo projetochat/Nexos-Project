@@ -21,7 +21,6 @@ import {
   Button,
   Field,
   Input,
-  Select,
   Textarea,
   SearchInput,
 } from "@/components/ui-kit";
@@ -49,12 +48,12 @@ import {
 export const Route = createFileRoute("/perfis")({
   validateSearch: (search) => ({
     edit: typeof search.edit === "string" ? search.edit : undefined,
-    tab: search.tab === "acessos" ? "acessos" : undefined,
+    tab: search.tab === "acessos" || search.tab === "jornada" ? search.tab : undefined,
   }),
   component: Page,
 });
 
-type PerfilTab = "geral" | "acessos";
+type PerfilTab = "geral" | "acessos" | "jornada";
 type PermissionTab = "chat" | "administracao" | "chamados";
 type PermissionField = { id: string; label: string; description: string };
 
@@ -372,20 +371,6 @@ const PERMISSION_GROUPS: Array<{
   },
 ];
 
-const TIMEZONE_OPTIONS = [
-  { value: "America/Sao_Paulo", label: "Fuso horário de São Paulo (GMT-3)" },
-  { value: "America/Manaus", label: "Fuso horário de Manaus (GMT-4)" },
-  { value: "America/Rio_Branco", label: "Fuso horário do Acre (GMT-5)" },
-  { value: "America/Fortaleza", label: "Fuso horário de Fortaleza (GMT-3)" },
-  { value: "America/Noronha", label: "Fuso horário de Fernando de Noronha (GMT-2)" },
-  { value: "UTC", label: "UTC (GMT+0)" },
-];
-const LANGUAGE_OPTIONS = [
-  { value: "system", label: "Padrão do Sistema" },
-  { value: "pt-BR", label: "Portugues (Brasil)" },
-  { value: "en-US", label: "Ingles" },
-  { value: "es", label: "Espanhol" },
-];
 const DEFAULT_ROLE_COLOR = "#3B82F6";
 function countRoleMembers(memberships: ApiUserMembership[]) {
   return memberships.reduce<Record<string, number>>((acc, membership) => {
@@ -471,28 +456,6 @@ type RoleMetadata = {
   timezone?: string;
 };
 
-function CheckField({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm hover:bg-surface-2">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 accent-primary"
-      />
-      <span>{label}</span>
-    </label>
-  );
-}
-
 function Page() {
   const qc = useQueryClient();
   const navigate = useNavigate({ from: "/perfis" });
@@ -523,6 +486,10 @@ function Page() {
     queryFn: organizationApi.listUsers,
     enabled: grantedPermissions.includes("users.read"),
   });
+  const grantablePermissionIds = React.useMemo(() => {
+    if (currentUser?.role === "admin") return grantedPermissions;
+    return items.find((role) => role.id === currentUser?.roleId)?.permissionIds ?? [];
+  }, [currentUser?.role, currentUser?.roleId, grantedPermissions, items]);
 
   const [editing, setEditing] = React.useState<ApiRole | null>(null);
   const [duplicating, setDuplicating] = React.useState<ApiRole | null>(null);
@@ -715,7 +682,7 @@ function Page() {
           roles={items}
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
-          grantablePermissionIds={grantedPermissions}
+          grantablePermissionIds={grantablePermissionIds}
           onClose={novo.hide}
           onSubmit={(data) => save.mutate({ data })}
         />
@@ -724,9 +691,13 @@ function Page() {
           roles={items}
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
-          grantablePermissionIds={grantedPermissions}
+          grantablePermissionIds={grantablePermissionIds}
           initial={editing ?? undefined}
-          initialTab={search.edit === editing?.id && search.tab === "acessos" ? "acessos" : "geral"}
+          initialTab={
+            search.edit === editing?.id
+              ? ((search.tab as PerfilTab | undefined) ?? "geral")
+              : "geral"
+          }
           onClose={closeEditing}
           onSubmit={(data) => editing && save.mutate({ id: editing.id, data })}
         />
@@ -735,7 +706,7 @@ function Page() {
           roles={items}
           departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
-          grantablePermissionIds={grantedPermissions}
+          grantablePermissionIds={grantablePermissionIds}
           initial={duplicating ?? undefined}
           clone
           onClose={() => setDuplicating(null)}
@@ -860,7 +831,7 @@ function PerfilForm({
     }
     const scheduleError = workScheduleError(form.workSchedule);
     if (scheduleError) {
-      setActiveTab("geral");
+      setActiveTab("jornada");
       toast.error(scheduleError);
       return;
     }
@@ -970,33 +941,39 @@ function PerfilForm({
       <div className="space-y-5">
         <PerfilTabs active={activeTab} onChange={setActiveTab} />
         {activeTab === "geral" && (
+          <GeneralTab
+            form={form}
+            error={error}
+            onChange={(patch) => {
+              setForm((current) => ({ ...current, ...patch }));
+              if (patch.name !== undefined) setError(duplicateNameError(patch.name));
+            }}
+          />
+        )}
+
+        {activeTab === "acessos" && (
           <div className="space-y-6">
-            <GeneralTab
+            <ScopeSettings
               form={form}
-              error={error}
               departamentos={departamentos}
               connections={connections}
-              onChange={(patch) => {
-                setForm((current) => ({ ...current, ...patch }));
-                if (patch.name !== undefined) setError(duplicateNameError(patch.name));
-              }}
               toggleDepartment={toggleDepartment}
               toggleConnection={toggleConnection}
               toggleMany={toggleMany}
             />
-            <WorkScheduleEditor
-              value={form.workSchedule}
-              onChange={(workSchedule) => setForm((current) => ({ ...current, workSchedule }))}
+            <PermissionSettings
+              form={form}
+              togglePermission={togglePermission}
+              togglePermissionGroup={togglePermissionGroup}
+              grantablePermissionIds={grantablePermissionIds}
             />
           </div>
         )}
 
-        {activeTab === "acessos" && (
-          <PermissionSettings
-            form={form}
-            togglePermission={togglePermission}
-            togglePermissionGroup={togglePermissionGroup}
-            grantablePermissionIds={grantablePermissionIds}
+        {activeTab === "jornada" && (
+          <WorkScheduleEditor
+            value={form.workSchedule}
+            onChange={(workSchedule) => setForm((current) => ({ ...current, workSchedule }))}
           />
         )}
       </div>
@@ -1014,6 +991,7 @@ function PerfilTabs({
   const tabs: Array<{ id: PerfilTab; label: string }> = [
     { id: "geral", label: "Geral" },
     { id: "acessos", label: "Acessos" },
+    { id: "jornada", label: "Jornada de Trabalho" },
   ];
 
   return (
@@ -1040,33 +1018,12 @@ function PerfilTabs({
 function GeneralTab({
   form,
   error,
-  departamentos,
-  connections,
   onChange,
-  toggleDepartment,
-  toggleConnection,
-  toggleMany,
 }: {
   form: PerfilFormData;
   error: string;
-  departamentos: { id: string; name: string }[];
-  connections: ApiMessagingConnection[];
   onChange: (patch: Partial<PerfilFormData>) => void;
-  toggleDepartment: (id: string, checked: boolean) => void;
-  toggleConnection: (id: string, checked: boolean) => void;
-  toggleMany: (
-    field: "permissionIds" | "departmentIds" | "connectionIds",
-    ids: string[],
-    checked: boolean,
-  ) => void;
 }) {
-  const sortedConnections = sortByOptionLabel(
-    selectableConnections(connections, { includePaused: true }),
-    (connection) => connection.name,
-  );
-  const connectionIds = sortedConnections.map((connection) => connection.id);
-  const departmentIds = departamentos.map((department) => department.id);
-
   return (
     <section className="space-y-4">
       <div className="grid grid-cols-[minmax(7rem,1fr)_8.5rem] gap-3 md:gap-4 md:grid-cols-[minmax(0,1fr)_9rem]">
@@ -1095,33 +1052,6 @@ function GeneralTab({
         </Field>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Idioma">
-          <Select
-            value={form.language}
-            onChange={(event) => onChange({ language: event.target.value })}
-          >
-            {LANGUAGE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Timezone">
-          <Select
-            value={form.timezone}
-            onChange={(event) => onChange({ timezone: event.target.value })}
-          >
-            {TIMEZONE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      </div>
-
       <Field label="Nota">
         <Textarea
           rows={4}
@@ -1129,42 +1059,72 @@ function GeneralTab({
           onChange={(event) => onChange({ description: event.target.value })}
         />
       </Field>
+    </section>
+  );
+}
 
-      <div className="grid items-start gap-4 md:grid-cols-2">
-        <SelectionSection
-          title="Instâncias"
-          ids={connectionIds}
-          selectedIds={form.connectionIds}
-          emptyLabel="Nenhuma instância cadastrada."
-          onToggleAll={(checked) => toggleMany("connectionIds", connectionIds, checked)}
-        >
-          {sortedConnections.map((connection) => (
-            <CheckField
-              key={connection.id}
-              label={connection.name}
-              checked={form.connectionIds.includes(connection.id)}
-              onChange={(checked) => toggleConnection(connection.id, checked)}
-            />
-          ))}
-        </SelectionSection>
+function ScopeSettings({
+  form,
+  departamentos,
+  connections,
+  toggleDepartment,
+  toggleConnection,
+  toggleMany,
+}: {
+  form: PerfilFormData;
+  departamentos: { id: string; name: string }[];
+  connections: ApiMessagingConnection[];
+  toggleDepartment: (id: string, checked: boolean) => void;
+  toggleConnection: (id: string, checked: boolean) => void;
+  toggleMany: (
+    field: "permissionIds" | "departmentIds" | "connectionIds",
+    ids: string[],
+    checked: boolean,
+  ) => void;
+}) {
+  const sortedConnections = sortByOptionLabel(
+    selectableConnections(connections, { includePaused: true }),
+    (connection) => connection.name,
+  );
+  const sortedDepartments = sortByOptionLabel(departamentos, (department) => department.name);
+  const connectionIds = sortedConnections.map((connection) => connection.id);
+  const departmentIds = sortedDepartments.map((department) => department.id);
 
-        <SelectionSection
-          title="Departamentos"
-          ids={departmentIds}
-          selectedIds={form.departmentIds}
-          emptyLabel="Nenhum departamento cadastrado."
-          onToggleAll={(checked) => toggleMany("departmentIds", departmentIds, checked)}
-        >
-          {departamentos.map((department) => (
-            <CheckField
-              key={department.id}
-              label={department.name}
-              checked={form.departmentIds.includes(department.id)}
-              onChange={(checked) => toggleDepartment(department.id, checked)}
-            />
-          ))}
-        </SelectionSection>
-      </div>
+  return (
+    <section className="space-y-4">
+      <SelectionSection
+        title="Instâncias"
+        ids={connectionIds}
+        selectedIds={form.connectionIds}
+        emptyLabel="Nenhuma instância cadastrada."
+        onToggleAll={(checked) => toggleMany("connectionIds", connectionIds, checked)}
+      >
+        {sortedConnections.map((connection) => (
+          <PermissionSwitch
+            key={connection.id}
+            label={connection.name}
+            checked={form.connectionIds.includes(connection.id)}
+            onChange={(checked) => toggleConnection(connection.id, checked)}
+          />
+        ))}
+      </SelectionSection>
+
+      <SelectionSection
+        title="Departamentos"
+        ids={departmentIds}
+        selectedIds={form.departmentIds}
+        emptyLabel="Nenhum departamento cadastrado."
+        onToggleAll={(checked) => toggleMany("departmentIds", departmentIds, checked)}
+      >
+        {sortedDepartments.map((department) => (
+          <PermissionSwitch
+            key={department.id}
+            label={department.name}
+            checked={form.departmentIds.includes(department.id)}
+            onChange={(checked) => toggleDepartment(department.id, checked)}
+          />
+        ))}
+      </SelectionSection>
     </section>
   );
 }
@@ -1225,17 +1185,25 @@ function SelectionSection({
   const allSelected = ids.length > 0 && ids.every((id) => selectedIds.includes(id));
 
   return (
-    <section>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          {title}
-        </h3>
-        <CheckField label="Todos" checked={allSelected} onChange={onToggleAll} />
+    <section className="overflow-hidden rounded-xl border border-border bg-surface-1">
+      <div className="flex items-center justify-between gap-3 bg-primary/[0.06] px-4 py-2.5">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground">{title}</h3>
+        <PermissionSwitch
+          label="Todos"
+          compact
+          checked={allSelected}
+          disabled={ids.length === 0}
+          onChange={onToggleAll}
+        />
       </div>
       {ids.length === 0 ? (
-        <p className="text-xs text-muted-foreground">{emptyLabel}</p>
+        <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
+          {emptyLabel}
+        </p>
       ) : (
-        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">{children}</div>
+        <div className="grid sm:grid-cols-2 [&>*]:border-t [&>*]:border-border sm:[&>*:nth-child(odd)]:border-r">
+          {children}
+        </div>
       )}
     </section>
   );

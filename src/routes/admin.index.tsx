@@ -93,7 +93,7 @@ function AdminDashboard() {
                 <Row label="Faturas abertas" value={data.openInvoices} />
                 <Row label="Faturas vencidas" value={data.overdueInvoices} />
               </div>
-              <Link to="/admin/empresas" className="mt-5 inline-flex text-sm text-primary">
+              <Link to="/admin/tenants" className="mt-5 inline-flex text-sm text-primary">
                 Ver tenants
               </Link>
             </Card>

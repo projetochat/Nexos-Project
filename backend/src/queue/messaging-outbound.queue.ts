@@ -6,6 +6,8 @@ import IORedis from "ioredis";
 export const MESSAGING_OUTBOUND_QUEUE = "messaging-outbound";
 export const MESSAGING_OUTBOUND_JOB = "send-message";
 export const OUTBOX_MESSAGING_OUTBOUND_REQUESTED = "MESSAGING_OUTBOUND_REQUESTED";
+export const OUTBOUND_DISPATCH_CLAIMED = "OUTBOUND_DISPATCH_CLAIMED";
+export const OUTBOUND_PROVIDER_OUTCOME_UNKNOWN = "OUTBOUND_PROVIDER_OUTCOME_UNKNOWN";
 
 export type MessagingOutboundJob = {
   tenantId: string;
@@ -52,9 +54,16 @@ export class MessagingOutboundQueue implements OnModuleDestroy {
   constructor(@Inject(RedisConnectionFactory) private readonly redis: RedisConnectionFactory) {}
 
   async enqueue(job: MessagingOutboundJob) {
-    return this.getQueue().add(MESSAGING_OUTBOUND_JOB, job, {
+    const queue = this.getQueue();
+    const jobId = outboundJobId(job.messageId);
+    const existing = await queue.getJob(jobId);
+    if (existing) {
+      const state = await existing.getState();
+      if (state === "completed" || state === "failed") await existing.remove();
+    }
+    return queue.add(MESSAGING_OUTBOUND_JOB, job, {
       ...OUTBOUND_JOB_OPTIONS,
-      jobId: outboundJobId(job.messageId),
+      jobId,
     });
   }
 

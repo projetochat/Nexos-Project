@@ -26,11 +26,12 @@ describe("MessagingOutboundQueue", () => {
 
   it("enqueues the minimal payload with the deterministic job id", async () => {
     const add = vi.fn().mockResolvedValue({ id: "message-message-a" });
+    const getJob = vi.fn().mockResolvedValue(null);
     const queue = new MessagingOutboundQueue({
       enabled: vi.fn().mockReturnValue(true),
       createConnection: vi.fn(),
     } as unknown as RedisConnectionFactory);
-    vi.spyOn(queue, "getQueue").mockReturnValue({ add } as never);
+    vi.spyOn(queue, "getQueue").mockReturnValue({ add, getJob } as never);
 
     await queue.enqueue({ tenantId: "tenant-a", messageId: "message-a" });
 
@@ -39,5 +40,46 @@ describe("MessagingOutboundQueue", () => {
       { tenantId: "tenant-a", messageId: "message-a" },
       expect.objectContaining({ jobId: "message-message-a", attempts: 5 }),
     );
+  });
+
+  it.each(["completed", "failed"])(
+    "rearms a retained %s job for a queued message",
+    async (state) => {
+      const remove = vi.fn().mockResolvedValue(undefined);
+      const existing = { getState: vi.fn().mockResolvedValue(state), remove };
+      const add = vi.fn().mockResolvedValue({ id: "message-message-a" });
+      const queue = new MessagingOutboundQueue({
+        enabled: vi.fn().mockReturnValue(true),
+        createConnection: vi.fn(),
+      } as unknown as RedisConnectionFactory);
+      vi.spyOn(queue, "getQueue").mockReturnValue({
+        getJob: vi.fn().mockResolvedValue(existing),
+        add,
+      } as never);
+
+      await queue.enqueue({ tenantId: "tenant-a", messageId: "message-a" });
+
+      expect(remove).toHaveBeenCalledOnce();
+      expect(add).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("never removes an active job while recovering", async () => {
+    const remove = vi.fn();
+    const existing = { getState: vi.fn().mockResolvedValue("active"), remove };
+    const add = vi.fn().mockResolvedValue({ id: "message-message-a" });
+    const queue = new MessagingOutboundQueue({
+      enabled: vi.fn().mockReturnValue(true),
+      createConnection: vi.fn(),
+    } as unknown as RedisConnectionFactory);
+    vi.spyOn(queue, "getQueue").mockReturnValue({
+      getJob: vi.fn().mockResolvedValue(existing),
+      add,
+    } as never);
+
+    await queue.enqueue({ tenantId: "tenant-a", messageId: "message-a" });
+
+    expect(remove).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledOnce();
   });
 });

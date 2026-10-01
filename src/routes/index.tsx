@@ -51,6 +51,7 @@ import {
   DASHBOARD_CHART_MARGIN,
   DASHBOARD_CHART_TEXT_COLOR,
   messageHourTicks,
+  messageTrafficSummary,
 } from "@/lib/dashboard-chart-layout";
 
 export const Route = createFileRoute("/")({ component: Dashboard });
@@ -239,11 +240,12 @@ function Dashboard() {
       value: kpiValue(kpis[queueKpiById[queue.id][0]] ?? kpis[queueKpiById[queue.id][1]]),
       Icon: queueIconById[queue.id],
     }));
-  const closedConversations = kpiValue(kpis.contadorFechadasAtuais ?? kpis.conversasEncerradas);
+  const closedConversations = kpiValue(kpis.conversasEncerradas ?? kpis.contadorFechadasAtuais);
   const totalConversations =
-    kpis.conversasTotalAtual === undefined
-      ? queueCards.reduce((total, queue) => total + queue.value, 0) + closedConversations
-      : kpiValue(kpis.conversasTotalAtual);
+    kpis.conversasTotalPeriodo === undefined
+      ? kpiValue(kpis.conversasTotalAtual) ||
+        queueCards.reduce((total, queue) => total + queue.value, 0) + closedConversations
+      : kpiValue(kpis.conversasTotalPeriodo);
   const messageTraffic = data?.charts.messagesByHour ?? [];
   const messageTrafficTotals = messageTraffic.reduce(
     (totals, item) => ({
@@ -403,6 +405,7 @@ function Dashboard() {
                   <MessageTrafficWidget
                     title={component.title}
                     data={messageTraffic}
+                    contactsTotal={data?.charts.messageContactsTotal ?? 0}
                     columns={component.columns}
                     isMobile={isMobile}
                   />
@@ -490,6 +493,7 @@ function Dashboard() {
               <MessageTrafficWidget
                 title={component.title}
                 data={messageTraffic}
+                contactsTotal={data?.charts.messageContactsTotal ?? 0}
                 columns={component.columns}
                 isMobile={isMobile}
               />
@@ -509,6 +513,7 @@ function Dashboard() {
 function MessageTrafficWidget({
   title,
   data,
+  contactsTotal,
   columns,
   isMobile,
 }: {
@@ -519,21 +524,15 @@ function MessageTrafficWidget({
     enviadas: number;
     total: number;
     atendimentos: number;
+    contatosAtendidos: number;
   }>;
+  contactsTotal: number;
   columns: 1 | 2 | 3 | 4;
   isMobile: boolean;
 }) {
   const compact = isMobile || columns <= 2;
   const ticks = messageHourTicks(isMobile);
-  const totals = data.reduce(
-    (current, item) => ({
-      recebidas: current.recebidas + item.recebidas,
-      enviadas: current.enviadas + item.enviadas,
-      total: current.total + item.total,
-      atendimentos: current.atendimentos + item.atendimentos,
-    }),
-    { recebidas: 0, enviadas: 0, total: 0, atendimentos: 0 },
-  );
+  const totals = messageTrafficSummary(data, contactsTotal);
   return (
     <Card className="h-full">
       <p className="mb-4 text-xs uppercase tracking-widest text-muted-foreground">{title}</p>
@@ -594,8 +593,8 @@ function MessageTrafficWidget({
           />
           <Line
             type="monotone"
-            dataKey="atendimentos"
-            name="Atendimentos"
+            dataKey="contatosAtendidos"
+            name="Contatos"
             stroke="#16a34a"
             strokeWidth={2}
             dot={false}
@@ -611,7 +610,7 @@ function MessageTrafficWidget({
             <MessageTrafficLegendHeader label="Recebidos" color="#2563eb" />
             <MessageTrafficLegendHeader label="Enviados" color="#dc2626" />
             <MessageTrafficLegendHeader label="Total" color="#94a3b8" />
-            <MessageTrafficLegendHeader label="Atendimentos" color="#16a34a" />
+            <MessageTrafficLegendHeader label="Contatos" color="#16a34a" />
           </tr>
         </thead>
         <tbody>
@@ -619,7 +618,7 @@ function MessageTrafficWidget({
             <MessageTrafficTotalCell label="Recebidos" value={totals.recebidas} />
             <MessageTrafficTotalCell label="Enviados" value={totals.enviadas} />
             <MessageTrafficTotalCell label="Total" value={totals.total} emphasized />
-            <MessageTrafficTotalCell label="Atendimentos" value={totals.atendimentos} />
+            <MessageTrafficTotalCell label="Contatos" value={totals.contatos} />
           </tr>
         </tbody>
       </table>

@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { MessageStatus, OutboxEventStatus } from "../generated/prisma";
 import { OUTBOX_MESSAGING_OUTBOUND_REQUESTED } from "./messaging-outbound.queue";
+import {
+  OUTBOUND_DISPATCH_CLAIMED,
+  OUTBOUND_PROVIDER_OUTCOME_UNKNOWN,
+} from "./messaging-outbound.queue";
 import { OutboxDispatcherService } from "./outbox-dispatcher.service";
 
 describe("OutboxDispatcherService", () => {
   it("enqueues pending outbox events and marks them processed", async () => {
     const event = outboxEvent();
     const prisma = prismaMock();
-    prisma.outboxEvent.findMany.mockResolvedValueOnce([]);
     prisma.outboxEvent.findMany.mockResolvedValue([event]);
     prisma.outboxEvent.updateMany.mockResolvedValue({ count: 1 });
     prisma.outboxEvent.findUniqueOrThrow.mockResolvedValue(event);
@@ -15,7 +18,12 @@ describe("OutboxDispatcherService", () => {
 
     await expect(
       new OutboxDispatcherService(prisma as never, queue as never).dispatchPending(),
-    ).resolves.toEqual({ scanned: 1, dispatched: 1, recovered: 0 });
+    ).resolves.toEqual({
+      scanned: 1,
+      dispatched: 1,
+      recovered: 0,
+      staleMessages: { safelyRequeued: 0, blockedAsAmbiguous: 0 },
+    });
 
     expect(queue.enqueue).toHaveBeenCalledWith({ tenantId: "tenant-a", messageId: "message-a" });
     expect(prisma.outboxEvent.update).toHaveBeenCalledWith(
@@ -66,26 +74,83 @@ describe("OutboxDispatcherService", () => {
   });
 
   it("rebuilds jobs from PROCESSED outbox events when the Message is still QUEUED", async () => {
-    const event = outboxEvent({ status: OutboxEventStatus.PROCESSED });
     const prisma = prismaMock();
-    prisma.outboxEvent.findMany.mockResolvedValue([event]);
-    prisma.message.findFirst.mockResolvedValue({ id: "message-a" });
+    prisma.$queryRaw.mockResolvedValue([{ id: "message-a", tenantId: "tenant-a" }]);
     const queue = { enqueue: vi.fn().mockResolvedValue({ id: "message-message-a" }) };
     const service = new OutboxDispatcherService(prisma as never, queue as never);
 
     await expect(service.recoverQueuedMessages()).resolves.toBe(1);
 
-    expect(prisma.message.findFirst).toHaveBeenCalledWith(
+    expect(queue.enqueue).toHaveBeenCalledWith({ tenantId: "tenant-a", messageId: "message-a" });
+  });
+
+  it("does not let an older queued message without a processed event starve later work", async () => {
+    const prisma = prismaMock();
+    // The SQL join excludes any older orphan before LIMIT and returns the later recoverable row.
+    prisma.$queryRaw.mockResolvedValue([{ id: "later-message", tenantId: "tenant-a" }]);
+    const queue = { enqueue: vi.fn().mockResolvedValue({ id: "message-later-message" }) };
+
+    await expect(
+      new OutboxDispatcherService(prisma as never, queue as never).recoverQueuedMessages(1),
+    ).resolves.toBe(1);
+
+    expect(queue.enqueue).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      messageId: "later-message",
+    });
+  });
+
+  it("requeues a stale message only when it crashed before the provider boundary", async () => {
+    const prisma = prismaMock();
+    prisma.message.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    const service = new OutboxDispatcherService(prisma as never, { enqueue: vi.fn() } as never);
+
+    await expect(service.recoverStaleSendingMessages(1)).resolves.toEqual({
+      safelyRequeued: 1,
+      blockedAsAmbiguous: 0,
+    });
+
+    expect(prisma.message.updateMany).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
-        where: expect.objectContaining({ status: MessageStatus.QUEUED }),
+        where: expect.objectContaining({
+          providerErrorCode: OUTBOUND_DISPATCH_CLAIMED,
+          OR: [{ lastAttemptAt: null }, { lastAttemptAt: { lt: expect.any(Date) } }],
+        }),
+        data: expect.objectContaining({ status: MessageStatus.QUEUED }),
       }),
     );
-    expect(queue.enqueue).toHaveBeenCalledWith({ tenantId: "tenant-a", messageId: "message-a" });
+  });
+
+  it("marks a stale post-boundary message explicit and never requeues it", async () => {
+    const prisma = prismaMock();
+    prisma.message.updateMany
+      .mockResolvedValueOnce({ count: 0 })
+      .mockResolvedValueOnce({ count: 1 });
+    const service = new OutboxDispatcherService(prisma as never, { enqueue: vi.fn() } as never);
+
+    await expect(service.recoverStaleSendingMessages(1)).resolves.toEqual({
+      safelyRequeued: 0,
+      blockedAsAmbiguous: 1,
+    });
+
+    expect(prisma.message.updateMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: MessageStatus.FAILED,
+          providerErrorCode: OUTBOUND_PROVIDER_OUTCOME_UNKNOWN,
+        }),
+      }),
+    );
   });
 });
 
 function prismaMock() {
   return {
+    $queryRaw: vi.fn().mockResolvedValue([]),
     outboxEvent: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -93,7 +158,11 @@ function prismaMock() {
       findUniqueOrThrow: vi.fn(),
       update: vi.fn(),
     },
-    message: { findFirst: vi.fn() },
+    message: {
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
   };
 }
 

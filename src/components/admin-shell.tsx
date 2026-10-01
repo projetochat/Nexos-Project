@@ -5,10 +5,6 @@ import {
   Building2,
   CreditCard,
   Receipt,
-  KeyRound,
-  ScrollText,
-  ShieldAlert,
-  Activity,
   Settings,
   ChevronRight,
   PanelLeftClose,
@@ -17,6 +13,7 @@ import {
   LogOut,
   ShieldCheck,
   Sparkles,
+  Layers3,
   Command,
   Moon,
   Sun,
@@ -40,26 +37,21 @@ type NavItem = {
 
 const negocioNav: NavItem[] = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/admin/empresas", label: "Empresas", icon: Building2 },
+  { to: "/admin/empresas", label: "Clientes", icon: Building2 },
   { to: "/admin/planos", label: "Planos", icon: Sparkles },
   { to: "/admin/assinaturas", label: "Assinaturas", icon: CreditCard },
   { to: "/admin/financeiro", label: "Financeiro", icon: Receipt },
-];
-
-const operacoesNav: NavItem[] = [
-  { to: "/admin/licencas", label: "Licenças", icon: KeyRound },
-  { to: "/admin/monitoramento", label: "Monitoramento", icon: Activity },
+  { to: "/admin/tenants", label: "Tenant", icon: Layers3 },
 ];
 
 const seguranca: NavItem[] = [
-  { to: "/admin/logs", label: "Logs", icon: ScrollText },
-  { to: "/admin/auditoria", label: "Auditoria", icon: ShieldAlert },
   { to: "/admin/configuracoes", label: "Configurações", icon: Settings },
 ];
 
 const LABELS: Record<string, string> = {
   admin: "Trixus Admin",
-  empresas: "Empresas",
+  empresas: "Clientes",
+  tenants: "Tenant",
   planos: "Planos",
   assinaturas: "Assinaturas",
   financeiro: "Financeiro",
@@ -182,7 +174,6 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
         className={`flex flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden py-3 ${collapsed ? "px-2" : "px-3"}`}
       >
         <NavSection title="Negócio" items={negocioNav} collapsed={collapsed} />
-        <NavSection title="Operações" items={operacoesNav} collapsed={collapsed} />
         <div className="mt-auto">
           {collapsed && <div className="my-2 h-px w-6 self-center bg-border" />}
           <NavSection title="Sistema" items={seguranca} collapsed={collapsed} />
@@ -309,7 +300,7 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         <Search className="h-4 w-4 text-muted-foreground" />
         <input
           className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          placeholder="Buscar empresa, fatura, log…"
+          placeholder="Buscar cliente, CNPJ, responsável..."
         />
         <kbd className="hidden items-center gap-0.5 rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground lg:inline-flex">
           <Command className="h-3 w-3" />K
@@ -328,18 +319,21 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
 function useAdminGate() {
   const navigate = useNavigate();
   const user = useSession((s) => s.user);
+  const hydrated = useSession((s) => s.hydrated);
   React.useEffect(() => {
+    if (!hydrated) return;
     if (!user) navigate({ to: "/login" });
     else if (user.role !== "super_admin") navigate({ to: "/" });
-  }, [user, navigate]);
-  return user;
+  }, [user, hydrated, navigate]);
+  return hydrated && user?.role === "super_admin";
 }
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
-  useAdminGate();
+  const authorized = useAdminGate();
   const { collapsed, toggle } = useSidebar();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
+  if (!authorized) return null;
   return (
     <div className="flex min-h-dvh bg-background text-foreground">
       <TopProgress active={isNavigating} />

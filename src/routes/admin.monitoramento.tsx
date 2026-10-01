@@ -1,5 +1,5 @@
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import {
   Activity,
   Cpu,
@@ -10,16 +10,17 @@ import {
   Server,
   Zap,
 } from "lucide-react";
-import { AdminContainer } from "@/components/admin-shell";
 import { Alert, Badge, Button, Card, SectionHeader } from "@/components/ui-kit";
 import { platformApi, type PlatformHealth } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/monitoramento")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
-  component: Monitoramento,
+  beforeLoad: () => {
+    throw redirect({ to: "/admin/configuracoes", search: { tab: "monitoramento" } });
+  },
 });
 
-function Monitoramento() {
+export function MonitoramentoSettingsContent() {
   const [health, setHealth] = React.useState<PlatformHealth | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -91,7 +92,7 @@ function Monitoramento() {
     : [];
 
   return (
-    <AdminContainer>
+    <>
       <SectionHeader
         title="Monitoramento de infraestrutura"
         subtitle="Health administrativo protegido. REST permanece a fonte da verdade; polling/refetch oficial: PLATFORM_REALTIME_DEFERRED_TO_POST_MVP."
@@ -144,7 +145,7 @@ function Monitoramento() {
           )}
         </div>
       </Card>
-    </AdminContainer>
+    </>
   );
 }
 

@@ -41,11 +41,17 @@ import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { SendMessageDto } from "../conversations/dto/send-message.dto";
 import {
   OUTBOX_MESSAGING_OUTBOUND_REQUESTED,
+  OUTBOUND_DISPATCH_CLAIMED,
+  OUTBOUND_PROVIDER_OUTCOME_UNKNOWN,
   type MessagingOutboundJob,
 } from "../queue/messaging-outbound.queue";
 import { OutboxDispatcherService } from "../queue/outbox-dispatcher.service";
 import { MessagingProviderRegistry } from "./messaging-provider.registry";
-import { MessagingErrorCode, MessagingProviderError } from "./messaging.contracts";
+import {
+  MessagingErrorCode,
+  MessagingProviderError,
+  type SendMessageResult,
+} from "./messaging.contracts";
 import {
   MessagingMediaStorageService,
   resolveMessageType,
@@ -898,6 +904,8 @@ export class MessagingOutboundService {
         status: MessageStatus.SENDING,
         sendAttempts: { increment: 1 },
         lastAttemptAt: new Date(),
+        providerErrorCode: OUTBOUND_DISPATCH_CLAIMED,
+        providerErrorMessage: null,
       },
     });
     if (claim.count !== 1) {
@@ -922,6 +930,7 @@ export class MessagingOutboundService {
       ? await this.mediaStorage?.readObject(message.mediaStorageKey)
       : undefined;
 
+    let acceptedProviderResult: SendMessageResult | null = null;
     try {
       this.logger.log({
         event: "messaging.outbound.provider_request",
@@ -952,10 +961,36 @@ export class MessagingOutboundService {
       if (currentConnection.serviceEnabled === false) {
         await this.prisma.message.updateMany({
           where: { id: message.id, tenantId: input.tenantId, status: MessageStatus.SENDING },
-          data: { status: MessageStatus.QUEUED, sendAttempts: { decrement: 1 } },
+          data: {
+            status: MessageStatus.QUEUED,
+            sendAttempts: { decrement: 1 },
+            providerErrorCode: null,
+            providerErrorMessage: null,
+          },
         });
         this.publishStatus(message, MessageStatus.QUEUED, MessageStatus.SENDING, new Date());
         return { skipped: true, status: MessageStatus.QUEUED, reason: "SERVICE_PAUSED" };
+      }
+      // This persisted boundary is deliberately conservative. Once crossed, a process crash or
+      // connection loss may mean the provider accepted the request. Recovery must not resend it.
+      const providerBoundary = await this.prisma.message.updateMany({
+        where: {
+          id: message.id,
+          tenantId: input.tenantId,
+          status: MessageStatus.SENDING,
+          providerErrorCode: OUTBOUND_DISPATCH_CLAIMED,
+        },
+        data: {
+          providerErrorCode: OUTBOUND_PROVIDER_OUTCOME_UNKNOWN,
+          providerErrorMessage: "Provider request outcome is not confirmed yet.",
+        },
+      });
+      if (providerBoundary.count !== 1) {
+        throw new OutboundDispatchError(
+          MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+          "Outbound provider boundary was lost before dispatch.",
+          false,
+        );
       }
       const result = await withMessagingServiceEnabled(
         this.prisma,
@@ -1004,10 +1039,16 @@ export class MessagingOutboundService {
             mentions,
           }),
       );
+      if (result.accepted) acceptedProviderResult = result;
       if (result.accepted && !result.providerMessageId) {
         throw new MessagingProviderError(
           MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
           "Messaging provider accepted the request without a provider message id.",
+          false,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
           true,
         );
       }
@@ -1058,14 +1099,73 @@ export class MessagingOutboundService {
       if (error instanceof MessagingServicePausedError) {
         await this.prisma.message.updateMany({
           where: { id: message.id, tenantId: input.tenantId, status: MessageStatus.SENDING },
-          data: { status: MessageStatus.QUEUED, sendAttempts: { decrement: 1 } },
+          data: {
+            status: MessageStatus.QUEUED,
+            sendAttempts: { decrement: 1 },
+            providerErrorCode: null,
+            providerErrorMessage: null,
+          },
         });
         this.publishStatus(message, MessageStatus.QUEUED, MessageStatus.SENDING, new Date());
         return { skipped: true, status: MessageStatus.QUEUED, reason: "SERVICE_PAUSED" };
       }
-      const canonical = canonicalProviderError(error);
-      if (!canonical.retryable || input.finalAttempt) {
-        const failed = await this.failMessage(message.id, input.tenantId, canonical);
+      let providerFailure = error;
+      // The provider has explicitly accepted this message. A database failure while storing
+      // that response must never turn it back into retryable work. First retry only the local
+      // persistence; if it remains unavailable, keep the persisted provider boundary ambiguous.
+      if (acceptedProviderResult?.providerMessageId) {
+        try {
+          const recovered = await this.prisma.message.update({
+            where: { id: message.id },
+            data: {
+              status: MessageStatus.SENT,
+              providerMessageId: acceptedProviderResult.providerMessageId,
+              providerStatus: acceptedProviderResult.providerStatus ?? null,
+              providerAcceptedAt: acceptedProviderResult.providerTimestamp ?? null,
+              sentAt: acceptedProviderResult.providerTimestamp ?? new Date(),
+              failedAt: null,
+              providerErrorCode: null,
+              providerErrorMessage: null,
+            },
+          });
+          this.publishStatus(
+            message,
+            MessageStatus.SENT,
+            MessageStatus.SENDING,
+            recovered.updatedAt,
+          );
+          this.logger.warn({
+            event: "messaging.outbound.acceptance_persisted_after_retry",
+            tenantId: input.tenantId,
+            messageId: message.id,
+            conversationId: message.conversationId,
+            connectionId: connection.id,
+            providerType: connection.providerType,
+          });
+          return { skipped: false, status: MessageStatus.SENT, recovered: true };
+        } catch {
+          providerFailure = new MessagingProviderError(
+            MessagingErrorCode.TEMPORARY_PROVIDER_FAILURE,
+            "Provider accepted the message, but its local acknowledgement could not be persisted.",
+            false,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+          );
+        }
+      }
+      const canonical = canonicalProviderError(providerFailure);
+      const retryable = canonical.retryable && !canonical.unknownOutcome;
+      const persistedError = canonical.unknownOutcome
+        ? {
+            code: OUTBOUND_PROVIDER_OUTCOME_UNKNOWN,
+            message: "Provider request outcome is unknown; automatic resend is blocked.",
+          }
+        : canonical;
+      if (!retryable || input.finalAttempt) {
+        const failed = await this.failMessage(message.id, input.tenantId, persistedError);
         this.publishStatus(
           message,
           MessageStatus.FAILED,
@@ -1091,8 +1191,9 @@ export class MessagingOutboundService {
         );
       }
       this.logger.warn({
-        event:
-          input.finalAttempt || !canonical.retryable
+        event: canonical.unknownOutcome
+          ? "messaging.outbound.outcome_unknown"
+          : input.finalAttempt || !retryable
             ? "messaging.outbound.failed_final"
             : "messaging.outbound.retry_scheduled",
         tenantId: input.tenantId,
@@ -1110,15 +1211,19 @@ export class MessagingOutboundService {
         messageType: message.type,
         attempt: input.attempt,
         maxAttempts: input.finalAttempt ? input.attempt : undefined,
-        retryable: canonical.retryable,
+        retryable,
         unknownOutcome: canonical.unknownOutcome,
-        result: input.finalAttempt || !canonical.retryable ? "failed" : "retrying",
-        errorCode: canonical.code,
+        result: canonical.unknownOutcome
+          ? "manual_reconciliation_required"
+          : input.finalAttempt || !retryable
+            ? "failed"
+            : "retrying",
+        errorCode: canonical.unknownOutcome ? OUTBOUND_PROVIDER_OUTCOME_UNKNOWN : canonical.code,
       });
       throw new OutboundDispatchError(
         canonical.code,
         canonical.message,
-        canonical.retryable,
+        retryable,
         canonical.httpStatus,
         canonical.providerCode,
         sanitizeErrorMessage(canonical.message),

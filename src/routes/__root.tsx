@@ -4,16 +4,18 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
 import { FAVICON_HREF } from "../lib/favicon";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { ThemeProvider } from "../components/theme-provider";
+import { surfaceRedirect } from "../lib/app-surface";
 
 function NotFoundComponent() {
   return (
@@ -159,19 +161,38 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <SessionHydrator />
-        <Outlet />
-        <Toaster
-          position="top-right"
-          richColors
-          closeButton
-          toastOptions={{
-            classNames: {
-              toast: "!bg-card !text-foreground !border !border-border !shadow-elevated",
-            },
-          }}
-        />
+        <HostSurfaceGate>
+          <SessionHydrator />
+          <Outlet />
+          <Toaster
+            position="top-right"
+            richColors
+            closeButton
+            toastOptions={{
+              classNames: {
+                toast: "!bg-card !text-foreground !border !border-border !shadow-elevated",
+              },
+            }}
+          />
+        </HostSurfaceGate>
       </ThemeProvider>
     </QueryClientProvider>
   );
+}
+
+function HostSurfaceGate({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(false);
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const destination =
+    typeof window === "undefined"
+      ? null
+      : surfaceRedirect({ hostname: window.location.hostname, pathname });
+  useEffect(() => {
+    if (destination && destination !== window.location.href) {
+      window.location.replace(destination);
+      return;
+    }
+    setReady(true);
+  }, [destination]);
+  return ready && !destination ? children : null;
 }

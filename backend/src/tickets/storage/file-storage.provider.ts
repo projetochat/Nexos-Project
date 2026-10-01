@@ -12,6 +12,7 @@ export type StoredObject = {
 
 export abstract class FileStorageProvider {
   abstract readonly provider: "local" | "r2";
+  abstract readiness(): Promise<{ ok: boolean }>;
   abstract createUpload(request: UploadRequest): Promise<{ uploadUrl: string; objectKey: string }>;
   abstract completeUpload(request: UploadRequest & { body: Buffer }): Promise<void>;
   abstract getDownloadObject(objectKey: string): Promise<StoredObject>;

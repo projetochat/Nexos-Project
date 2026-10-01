@@ -1,10 +1,9 @@
 import * as React from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Building2, CheckCircle2, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
+import { createFileRoute } from "@tanstack/react-router";
+import { Copy, Pencil, Plus, PowerOff, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminContainer } from "@/components/admin-shell";
 import {
-  Alert,
   Badge,
   Button,
   Card,
@@ -13,390 +12,530 @@ import {
   SearchInput,
   SectionHeader,
   Select,
+  Textarea,
 } from "@/components/ui-kit";
-import { platformApi, type PlatformPlan, type PlatformTenant } from "@/lib/trixus-api";
+import { ConfirmDialog, Modal } from "@/components/modal";
 import { fmtDate } from "@/lib/format";
-import { sortByOptionLabel } from "@/lib/sort-options";
+import { maskCnpj, onlyDigits } from "@/lib/input-masks";
+import { platformApi, type PlatformClient, type PlatformClientPayload } from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/empresas")({
-  head: () => ({ meta: [{ title: "Trixus" }] }),
-  component: EmpresasSaaS,
+  head: () => ({ meta: [{ title: "Clientes | Trixus" }] }),
+  component: ClientesAdmin,
 });
 
-const steps = ["Empresa", "Slug", "Região", "Admin", "Plano", "Vigência", "Revisão", "Confirmação"];
-
-type TenantForm = {
-  name: string;
-  slug: string;
-  timezone: string;
-  locale: string;
-  adminName: string;
-  adminEmail: string;
-  adminPassword: string;
-  planId: string;
-  trial: string;
-};
-
-const initialForm: TenantForm = {
+const STATES = [
+  "AC",
+  "AL",
+  "AP",
+  "AM",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MT",
+  "MS",
+  "MG",
+  "PA",
+  "PB",
+  "PR",
+  "PE",
+  "PI",
+  "RJ",
+  "RN",
+  "RS",
+  "RO",
+  "RR",
+  "SC",
+  "SP",
+  "SE",
+  "TO",
+];
+const EMPTY_FORM: PlatformClientPayload = {
   name: "",
-  slug: "",
-  timezone: "America/Sao_Paulo",
-  locale: "pt-BR",
-  adminName: "",
-  adminEmail: "",
-  adminPassword: "",
-  planId: "",
-  trial: "trial",
+  document: "",
+  responsibleName: "",
+  responsibleEmail: "",
+  city: "",
+  state: "",
+  registeredAt: toLocalDateTimeValue(new Date()),
+  status: "ACTIVE",
+  notes: "",
 };
 
-function EmpresasSaaS() {
+function ClientesAdmin() {
   const [q, setQ] = React.useState("");
-  const [rows, setRows] = React.useState<PlatformTenant[]>([]);
-  const [plans, setPlans] = React.useState<PlatformPlan[]>([]);
+  const [city, setCity] = React.useState("");
+  const [state, setState] = React.useState("");
+  const [status, setStatus] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
+  const [data, setData] = React.useState({
+    items: [] as PlatformClient[],
+    total: 0,
+    totalPages: 1,
+  });
   const [error, setError] = React.useState<string | null>(null);
+  const [editing, setEditing] = React.useState<PlatformClient | null>(null);
   const [creating, setCreating] = React.useState(false);
-  const [step, setStep] = React.useState(0);
-  const [form, setForm] = React.useState<TenantForm>(initialForm);
-  const [created, setCreated] = React.useState<PlatformTenant | null>(null);
+  const [clientAction, setClientAction] = React.useState<{
+    client: PlatformClient;
+    kind: "delete" | "cancel";
+  } | null>(null);
 
   const load = React.useCallback(() => {
-    Promise.all([platformApi.tenants({ q, pageSize: 50 }), platformApi.plans({ pageSize: 50 })])
-      .then(([tenants, planList]) => {
-        setRows(sortByOptionLabel(tenants.items, (tenant) => tenant.name));
-        setPlans(planList.items.filter((plan) => plan.status === "ACTIVE"));
-        setError(null);
-        setForm((current) => ({
-          ...current,
-          planId:
-            current.planId || planList.items.find((plan) => plan.status === "ACTIVE")?.id || "",
-        }));
+    platformApi
+      .clients({
+        q: q || undefined,
+        city: city || undefined,
+        state: state || undefined,
+        status: status || undefined,
+        page,
+        pageSize,
       })
-      .catch((err) => setError((err as Error).message));
-  }, [q]);
-
-  React.useEffect(() => {
-    load();
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === "visible") load();
-    }, 30_000);
-    return () => window.clearInterval(interval);
-  }, [load]);
-
-  function update<K extends keyof TenantForm>(key: K, value: TenantForm[K]) {
-    setForm((current) => ({
-      ...current,
-      [key]: key === "slug" ? normalizeSlug(value) : value,
-      ...(key === "name" && !current.slug ? { slug: normalizeSlug(value) } : {}),
-    }));
-  }
-
-  async function submit() {
-    setCreating(true);
-    setError(null);
-    try {
-      const result = await platformApi.createTenant({
-        name: form.name,
-        slug: form.slug,
-        timezone: form.timezone,
-        locale: form.locale,
-        planId: form.planId,
-        initialStatus: form.trial === "active" ? "ACTIVE" : "TRIAL",
-        admin: {
-          name: form.adminName,
-          email: form.adminEmail,
-          password: form.adminPassword,
-        },
-      });
-      setCreated(result);
-      setStep(7);
-      toast.success("Tenant criado com assinatura e tenant_admin inicial");
-      load();
-    } catch (err) {
-      setError((err as Error).message);
-      toast.error("Criação transacional não concluída");
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  const selectedPlan = plans.find((plan) => plan.id === form.planId);
-  const canContinue = stepIsValid(step, form);
+      .then((response) => {
+        setData(response);
+        setError(null);
+      })
+      .catch((reason) => setError((reason as Error).message));
+  }, [city, page, pageSize, q, state, status]);
+  React.useEffect(() => void load(), [load]);
+  React.useEffect(() => setPage(1), [q, city, state, status, pageSize]);
+  const cities = React.useMemo(
+    () =>
+      Array.from(new Set(data.items.map((item) => item.city))).sort((a, b) =>
+        a.localeCompare(b, "pt-BR"),
+      ),
+    [data.items],
+  );
 
   return (
     <AdminContainer>
       <SectionHeader
-        title="Tenants"
-        subtitle="Gestão de organizações, planos, status e limites pela Plataforma Trixus."
+        title="Clientes"
+        subtitle={`${data.total} ${data.total === 1 ? "cliente cadastrado" : "clientes cadastrados"}.`}
         actions={
-          <Button onClick={() => setStep(0)}>
-            <Plus className="h-4 w-4" /> Novo tenant
+          <Button onClick={() => setCreating(true)}>
+            <Plus className="h-4 w-4" /> Novo cliente
           </Button>
         }
       />
-
-      {error && (
-        <Alert tone="destructive" title="Operação não concluída">
-          {error}
-        </Alert>
-      )}
-
-      <div className="mt-4 grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <Card>
-          <div className="mb-4 flex items-center gap-2">
+      <Card className="mb-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <Field label="Busca">
             <SearchInput
               value={q}
               onChange={setQ}
-              placeholder="Buscar tenant..."
-              className="max-w-md flex-1"
+              placeholder="Buscar por nome, CNPJ ou responsável..."
             />
-            <Button variant="secondary" onClick={load}>
-              <RefreshCw className="h-4 w-4" /> Atualizar
-            </Button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full table-fixed text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                  <th className="pb-2">Tenant</th>
-                  <th className="pb-2">Plano</th>
-                  <th className="pb-2">Status</th>
-                  <th className="pb-2">Usuarios</th>
-                  <th className="pb-2">Connections</th>
-                  <th className="pb-2">Criado</th>
-                  <th className="pb-2 text-center">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((tenant) => (
-                  <tr key={tenant.id} className="border-b border-border/60 hover:bg-surface-1">
-                    <td className="py-3">
-                      <div className="font-medium">{tenant.name}</div>
-                      <div className="text-xs text-muted-foreground">{tenant.slug}</div>
-                    </td>
-                    <td className="py-3">{tenant.plan?.name ?? "Sem plano"}</td>
-                    <td className="py-3">
-                      <TenantStatus status={tenant.status} />
-                    </td>
-                    <td className="py-3 font-mono text-xs">{tenant.activeUsers}</td>
-                    <td className="py-3 font-mono text-xs">{tenant.connections}</td>
-                    <td className="py-3 text-xs text-muted-foreground">
-                      {fmtDate(new Date(tenant.createdAt).getTime())}
-                    </td>
-                    <td className="py-3 text-center">
-                      <Link
-                        to="/admin/empresas/$tenantId"
-                        params={{ tenantId: tenant.id }}
-                        className="inline-flex items-center justify-center rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2"
-                      >
-                        Abrir detalhe
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!rows.length && (
-              <div className="py-12 text-center text-sm text-muted-foreground">
-                Nenhum tenant encontrado.
-              </div>
-            )}
-          </div>
-        </Card>
-
-        <Card>
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-semibold">Criação de tenant</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Etapa {step + 1} de {steps.length}: {steps[step]}
-              </p>
-            </div>
-            <Building2 className="h-5 w-5 text-muted-foreground" />
-          </div>
-          <div className="mb-4 grid grid-cols-8 gap-1">
-            {steps.map((label, index) => (
-              <div
-                key={label}
-                className={`h-1.5 rounded-full ${index <= step ? "bg-primary" : "bg-surface-3"}`}
-              />
-            ))}
-          </div>
-
-          {step === 0 && (
-            <Field label="Nome da empresa">
-              <Input
-                value={form.name}
-                onChange={(e) => update("name", e.target.value)}
-                placeholder="Nome da empresa"
-              />
-            </Field>
-          )}
-          {step === 1 && (
-            <Field label="Slug imutavel">
-              <Input
-                value={form.slug}
-                onChange={(e) => update("slug", e.target.value)}
-                placeholder="slug da empresa"
-              />
-            </Field>
-          )}
-          {step === 2 && (
-            <div className="grid gap-3">
-              <Field label="Timezone">
-                <Input value={form.timezone} onChange={(e) => update("timezone", e.target.value)} />
-              </Field>
-              <Field label="Locale">
-                <Input value={form.locale} onChange={(e) => update("locale", e.target.value)} />
-              </Field>
-            </div>
-          )}
-          {step === 3 && (
-            <div className="grid gap-3">
-              <Field label="Nome do tenant_admin">
-                <Input
-                  value={form.adminName}
-                  onChange={(e) => update("adminName", e.target.value)}
-                />
-              </Field>
-              <Field label="E-mail do tenant_admin">
-                <Input
-                  value={form.adminEmail}
-                  onChange={(e) => update("adminEmail", e.target.value)}
-                />
-              </Field>
-              <Field label="Senha inicial">
-                <Input
-                  type="password"
-                  value={form.adminPassword}
-                  onChange={(e) => update("adminPassword", e.target.value)}
-                />
-              </Field>
-            </div>
-          )}
-          {step === 4 && (
-            <Field label="Plano inicial">
-              <Select value={form.planId} onChange={(e) => update("planId", e.target.value)}>
-                {sortByOptionLabel(plans, (plan) => plan.name).map((plan) => (
-                  <option key={plan.id} value={plan.id}>
-                    {plan.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          )}
-          {step === 5 && (
-            <Field label="Vigência">
-              <Select value={form.trial} onChange={(e) => update("trial", e.target.value)}>
-                <option value="trial">Trial conforme plano</option>
-                <option value="active">Ativar administrativamente após criação</option>
-              </Select>
-            </Field>
-          )}
-          {step === 6 && (
-            <div className="space-y-2 text-sm">
-              <Review label="Tenant" value={form.name} />
-              <Review label="Slug" value={form.slug} />
-              <Review label="Região" value={`${form.timezone} / ${form.locale}`} />
-              <Review label="Admin" value={`${form.adminName} - ${form.adminEmail}`} />
-              <Review label="Plano" value={selectedPlan?.name ?? "Não selecionado"} />
-            </div>
-          )}
-          {step === 7 && created && (
-            <Alert tone="success" title="Tenant criado">
-              Subscription criada, tenant_admin inicial provisionado, status {created.status}, plano{" "}
-              {created.plan?.name ?? "sem plano"}.
-              <div className="mt-3">
-                <Link
-                  to="/admin/empresas/$tenantId"
-                  params={{ tenantId: created.id }}
-                  className="inline-flex items-center rounded-md border border-success/40 px-2 py-1 text-xs font-medium"
+          </Field>
+          <Field label="Cidade">
+            <Select value={city} onChange={(event) => setCity(event.target.value)}>
+              <option value="">Todas</option>
+              {cities.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="UF">
+            <Select value={state} onChange={(event) => setState(event.target.value)}>
+              <option value="">Todas</option>
+              {STATES.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Situação">
+            <Select value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="">Todas</option>
+              <option value="ACTIVE">Ativo</option>
+              <option value="SUSPENDED">Suspenso</option>
+              <option value="CANCELLED">Cancelado</option>
+              <option value="PROSPECTING">Prospecção</option>
+            </Select>
+          </Field>
+        </div>
+      </Card>
+      <Card className="p-0">
+        {error && (
+          <div className="border-b border-border px-4 py-3 text-sm text-destructive">{error}</div>
+        )}
+        <div className="overflow-x-auto px-4 pt-2">
+          <table className="w-full min-w-[1050px] text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <th className="px-2 py-3">Nome do cliente</th>
+                <th className="px-2 py-3">CNPJ</th>
+                <th className="px-2 py-3">Responsável</th>
+                <th className="px-2 py-3">Cidade - UF</th>
+                <th className="px-2 py-3">Dt. cadastro</th>
+                <th className="px-2 py-3">Situação</th>
+                <th className="px-2 py-3 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((client) => (
+                <tr
+                  key={client.id}
+                  className="border-b border-border/70 transition hover:bg-surface-1"
                 >
-                  Abrir detalhe
-                </Link>
-              </div>
-            </Alert>
+                  <td className="px-2 py-3">
+                    <div className="font-medium">{client.name}</div>
+                    {client.tenant?.slug && (
+                      <div className="text-xs text-muted-foreground">{client.tenant.slug}</div>
+                    )}
+                  </td>
+                  <td className="px-2 py-3 text-muted-foreground">
+                    {client.document ? maskCnpj(client.document) : "Não informado"}
+                  </td>
+                  <td className="px-2 py-3">
+                    <div className="font-medium">{client.responsibleName}</div>
+                    <div className="text-xs text-muted-foreground">{client.responsibleEmail}</div>
+                  </td>
+                  <td className="px-2 py-3">
+                    {client.city} - {client.state}
+                  </td>
+                  <td className="px-2 py-3 text-muted-foreground">
+                    {fmtDate(new Date(client.registeredAt).getTime())}
+                  </td>
+                  <td className="px-2 py-3">
+                    <ClientStatus status={client.status} />
+                  </td>
+                  <td className="px-2 py-3">
+                    <div className="flex justify-center gap-2">
+                      <IconAction
+                        label="Duplicar"
+                        onClick={() => {
+                          setEditing({
+                            ...client,
+                            id: "",
+                            name: `${client.name} - Cópia`,
+                            document: "",
+                            tenantId: null,
+                            tenant: null,
+                          });
+                          setCreating(true);
+                        }}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </IconAction>
+                      <IconAction label="Editar" onClick={() => setEditing(client)}>
+                        <Pencil className="h-4 w-4" />
+                      </IconAction>
+                      {(client._count?.subscriptions ?? 0) === 0 ? (
+                        <IconAction
+                          label="Excluir"
+                          onClick={() => setClientAction({ client, kind: "delete" })}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </IconAction>
+                      ) : (
+                        <IconAction
+                          label="Cancelar"
+                          onClick={() => setClientAction({ client, kind: "cancel" })}
+                          disabled={client.status === "CANCELLED"}
+                        >
+                          <PowerOff className="h-4 w-4" />
+                        </IconAction>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!data.items.length && (
+            <div className="py-14 text-center text-sm text-muted-foreground">
+              Nenhum cliente encontrado.
+            </div>
           )}
-
-          <div className="mt-5 flex items-center justify-between gap-2">
+        </div>
+        <div className="flex flex-col gap-3 border-t border-border px-4 py-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <span>
+              Mostrando {data.items.length} de {data.total}
+            </span>
+            <Select
+              value={pageSize}
+              onChange={(event) => setPageSize(Number(event.target.value))}
+              className="h-8 min-h-8 w-20 py-1"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
             <Button
               variant="secondary"
-              disabled={step === 0 || creating}
-              onClick={() => setStep((value) => Math.max(0, value - 1))}
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((value) => value - 1)}
             >
-              <ChevronLeft className="h-4 w-4" /> Voltar
+              ‹
             </Button>
-            {step < 6 ? (
-              <Button
-                disabled={!canContinue || creating}
-                onClick={() => setStep((value) => Math.min(6, value + 1))}
-              >
-                Avancar <ChevronRight className="h-4 w-4" />
-              </Button>
-            ) : step === 6 ? (
-              <Button disabled={!canContinue || creating} onClick={submit}>
-                <CheckCircle2 className="h-4 w-4" /> Confirmar criação
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setForm(initialForm);
-                  setCreated(null);
-                  setStep(0);
-                }}
-              >
-                Nova criação
-              </Button>
-            )}
+            <span>
+              {page} / {data.totalPages}
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={page >= data.totalPages}
+              onClick={() => setPage((value) => value + 1)}
+            >
+              ›
+            </Button>
           </div>
-        </Card>
-      </div>
+        </div>
+      </Card>
+      <ClientForm
+        open={creating || Boolean(editing)}
+        initial={editing ?? undefined}
+        forceCreate={creating}
+        onClose={() => {
+          setCreating(false);
+          setEditing(null);
+        }}
+        onSaved={() => {
+          setCreating(false);
+          setEditing(null);
+          load();
+        }}
+      />
+      <ConfirmDialog
+        open={Boolean(clientAction)}
+        title={clientAction?.kind === "delete" ? "Excluir cliente?" : "Cancelar cliente?"}
+        description={
+          clientAction?.kind === "delete"
+            ? "Esta exclusão é definitiva e só é permitida porque o cliente nunca foi utilizado em uma assinatura."
+            : "O registro será preservado e ficará com situação Cancelado. Tenants e assinaturas existentes não serão apagados."
+        }
+        destructive
+        confirmLabel={clientAction?.kind === "delete" ? "Excluir cliente" : "Cancelar cliente"}
+        onClose={() => setClientAction(null)}
+        onConfirm={() => {
+          if (!clientAction) return;
+          const request =
+            clientAction.kind === "delete"
+              ? platformApi.deleteClient(clientAction.client.id)
+              : platformApi.cancelClient(clientAction.client.id);
+          request
+            .then(() => {
+              toast.success(
+                clientAction.kind === "delete"
+                  ? "Cliente excluído definitivamente."
+                  : "Cliente cancelado.",
+              );
+              load();
+            })
+            .catch((reason) => toast.error((reason as Error).message));
+        }}
+      />
     </AdminContainer>
   );
 }
 
-function Review({ label, value }: { label: string; value: string }) {
+function ClientForm({
+  open,
+  initial,
+  forceCreate,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  initial?: PlatformClient;
+  forceCreate: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = React.useState<PlatformClientPayload>(EMPTY_FORM);
+  const [saving, setSaving] = React.useState(false);
+  React.useEffect(() => {
+    setForm(
+      initial
+        ? {
+            name: initial.name,
+            document: initial.document ? maskCnpj(initial.document) : "",
+            responsibleName: initial.responsibleName,
+            responsibleEmail: initial.responsibleEmail,
+            city: initial.city,
+            state: initial.state,
+            registeredAt: toLocalDateTimeValue(new Date(initial.registeredAt)),
+            status: initial.status,
+            notes: initial.notes ?? "",
+          }
+        : { ...EMPTY_FORM, registeredAt: toLocalDateTimeValue(new Date()) },
+    );
+  }, [initial, open]);
+  const isEditing = Boolean(initial?.id) && !forceCreate;
+  const update = (key: keyof PlatformClientPayload, value: string) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  async function save() {
+    const document = onlyDigits(form.document);
+    const requiresDocument = form.status !== "PROSPECTING";
+    if (
+      !form.name.trim() ||
+      (requiresDocument && document.length !== 14) ||
+      !form.responsibleName.trim() ||
+      !form.responsibleEmail.includes("@") ||
+      !form.city.trim() ||
+      !form.state ||
+      !form.registeredAt
+    ) {
+      toast.error("Preencha corretamente todos os campos obrigatórios.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        ...form,
+        document,
+        registeredAt: new Date(form.registeredAt).toISOString(),
+      };
+      if (isEditing && initial) await platformApi.updateClient(initial.id, payload);
+      else await platformApi.createClient(payload);
+      toast.success(isEditing ? "Cliente atualizado." : "Cliente criado.");
+      onSaved();
+    } catch (reason) {
+      toast.error((reason as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-surface-1 px-3 py-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="truncate font-medium">{value}</span>
-    </div>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={isEditing ? "Editar Cliente" : "Novo Cliente"}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button disabled={saving} onClick={save}>
+            {saving ? "Salvando..." : "Salvar"}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Nome do cliente *">
+          <Input
+            value={form.name}
+            onChange={(event) => update("name", event.target.value)}
+            placeholder="Digite o nome do cliente..."
+          />
+        </Field>
+        <Field label="Situação *">
+          <Select value={form.status} onChange={(event) => update("status", event.target.value)}>
+            <option value="ACTIVE">Ativo</option>
+            <option value="SUSPENDED">Suspenso</option>
+            <option value="CANCELLED">Cancelado</option>
+            <option value="PROSPECTING">Prospecção</option>
+          </Select>
+        </Field>
+        <Field label={`CNPJ${form.status === "PROSPECTING" ? "" : " *"}`}>
+          <Input
+            value={form.document}
+            onChange={(event) => update("document", maskCnpj(event.target.value))}
+            placeholder="00.000.000/0000-00"
+            inputMode="numeric"
+          />
+        </Field>
+        <Field label="Responsável *">
+          <Input
+            value={form.responsibleName}
+            onChange={(event) => update("responsibleName", event.target.value)}
+            placeholder="Nome do contato responsável..."
+          />
+        </Field>
+        <Field label="E-mail do responsável *">
+          <Input
+            type="email"
+            value={form.responsibleEmail}
+            onChange={(event) => update("responsibleEmail", event.target.value)}
+            placeholder="exemplo@empresa.com.br"
+          />
+        </Field>
+        <Field label="Cidade *">
+          <Input
+            value={form.city}
+            onChange={(event) => update("city", event.target.value)}
+            placeholder="Digite a cidade..."
+          />
+        </Field>
+        <Field label="UF *">
+          <Select value={form.state} onChange={(event) => update("state", event.target.value)}>
+            <option value="">Selecione...</option>
+            {STATES.map((item) => (
+              <option key={item}>{item}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Data de cadastro *">
+          <Input
+            type="datetime-local"
+            value={form.registeredAt}
+            onChange={(event) => update("registeredAt", event.target.value)}
+          />
+        </Field>
+        <div className="sm:col-span-2">
+          <Field label="Observações">
+            <Textarea
+              rows={4}
+              value={form.notes}
+              onChange={(event) => update("notes", event.target.value)}
+              placeholder="Informações adicionais sobre o cliente..."
+            />
+          </Field>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
-function TenantStatus({ status }: { status: string }) {
-  const tone =
+function ClientStatus({ status }: { status: string }) {
+  const data =
     status === "ACTIVE"
-      ? "success"
-      : status === "TRIAL"
-        ? "info"
-        : status === "SUSPENDED"
-          ? "warning"
-          : status === "TERMINATED"
-            ? "destructive"
-            : "default";
-  return <Badge tone={tone}>{status}</Badge>;
+      ? ["success", "ATIVO"]
+      : status === "SUSPENDED"
+        ? ["info", "SUSPENSO"]
+        : status === "PROSPECTING"
+          ? ["warning", "PROSPECÇÃO"]
+          : ["destructive", "CANCELADO"];
+  return <Badge tone={data[0] as "success" | "info" | "warning" | "destructive"}>{data[1]}</Badge>;
 }
 
-function normalizeSlug(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 63);
+function toLocalDateTimeValue(value: Date) {
+  const offset = value.getTimezoneOffset() * 60_000;
+  return new Date(value.getTime() - offset).toISOString().slice(0, 16);
 }
+function IconAction({
+  label,
+  children,
+  ...props
+}: { label: string; children: React.ReactNode } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const actionClass =
+    label.includes("Excluir") || label.includes("Cancelar")
+      ? "action-hover-destructive"
+      : label.includes("Editar")
+        ? "action-hover-warning"
+        : label.includes("Duplicar")
+          ? "action-hover-success"
+          : "action-hover-primary";
 
-function stepIsValid(step: number, form: TenantForm) {
-  if (step === 0) return form.name.trim().length >= 2;
-  if (step === 1) return /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(form.slug);
-  if (step === 2) return Boolean(form.timezone.trim() && form.locale.trim());
-  if (step === 3)
-    return Boolean(
-      form.adminName.trim() && form.adminEmail.includes("@") && form.adminPassword.length >= 6,
-    );
-  if (step === 4) return Boolean(form.planId);
-  return true;
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className={`flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface-1 text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-40 ${actionClass}`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
 }

@@ -23,6 +23,7 @@ export class JwtAuthGuard implements CanActivate {
 
     const payload = await this.verifyAccessToken(token);
     if (payload.typ !== "access") throw new UnauthorizedException("Token inválido.");
+    await this.auth.assertAccessSession(payload);
 
     request.user = {
       userId: payload.sub,
@@ -31,7 +32,9 @@ export class JwtAuthGuard implements CanActivate {
       roleId: payload.roleId,
       roleKey: payload.roleKey,
       platformRole: payload.platformRole,
+      surface: payload.surface,
       iatMs: payload.iatMs,
+      sid: payload.sid,
       impersonationSessionId: payload.impersonationSessionId,
       actorPlatformUserId: payload.actorPlatformUserId,
     };

@@ -50,7 +50,7 @@ export function DashboardComponentRenderer({
     () => normalizeDashboardData(data, valueMode, columns, visualization, preserveOrder),
     [columns, data, preserveOrder, valueMode, visualization],
   );
-  const height = compact ? 220 : 270;
+  const height = compact ? 200 : 270;
   const valueSuffix = valueMode === "percentage" ? "%" : "";
 
   return (
@@ -166,10 +166,14 @@ export function DashboardComponentRenderer({
 
           {(visualization === "pie" || visualization === "donut") && (
             <div
-              className="flex min-w-0 flex-col items-center gap-3 sm:flex-row"
+              className={`min-w-0 items-center gap-2 ${
+                columns > 1
+                  ? "grid sm:grid-cols-[minmax(0,1fr)_minmax(9rem,0.7fr)]"
+                  : "flex flex-col"
+              }`}
               style={{ minHeight: height }}
             >
-              <div className="min-w-0 flex-1 self-stretch">
+              <div className="min-w-0 self-stretch">
                 <ResponsiveContainer width="100%" height={height}>
                   <PieChart>
                     <Tooltip content={<DashboardValueTooltip suffix={valueSuffix} />} />
@@ -177,8 +181,8 @@ export function DashboardComponentRenderer({
                       data={normalized}
                       dataKey="valor"
                       nameKey="nome"
-                      innerRadius={visualization === "donut" ? "43%" : 0}
-                      outerRadius="78%"
+                      innerRadius={visualization === "donut" ? "48%" : 0}
+                      outerRadius="94%"
                       paddingAngle={2}
                     >
                       {normalized.map((item, index) => (
@@ -188,7 +192,7 @@ export function DashboardComponentRenderer({
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <DashboardPieLegend data={normalized} />
+              <DashboardPieLegend data={normalized} besideChart={columns > 1} />
             </div>
           )}
 
@@ -244,14 +248,18 @@ export function DashboardComponentRenderer({
 
 function DashboardPieLegend({
   data,
+  besideChart,
 }: {
   data: Array<DashboardVisualDatum & { valor: number; cor: string }>;
+  besideChart: boolean;
 }) {
   const items = dashboardPieLegendItems(data);
 
   return (
     <ul
-      className="grid w-full shrink-0 gap-2 text-xs sm:w-[42%] sm:max-w-56"
+      className={`grid w-full min-w-0 shrink-0 grid-cols-2 gap-x-3 gap-y-2 text-xs ${
+        besideChart ? "sm:grid-cols-1" : ""
+      }`}
       aria-label="Legenda do gráfico"
     >
       {items.map((item) => {

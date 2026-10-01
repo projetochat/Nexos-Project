@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { createReadStream, promises as fs } from "node:fs";
+import { constants, createReadStream, promises as fs } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import { FileStorageProvider, StoredObject, UploadRequest } from "./file-storage.provider";
 
@@ -7,6 +7,16 @@ import { FileStorageProvider, StoredObject, UploadRequest } from "./file-storage
 export class LocalPrivateStorageProvider extends FileStorageProvider {
   readonly provider = "local" as const;
   private readonly root = resolve(process.env.TRIXUS_STORAGE_LOCAL_PATH ?? ".trixus-storage");
+
+  async readiness() {
+    try {
+      await fs.mkdir(this.root, { recursive: true });
+      await fs.access(this.root, constants.R_OK | constants.W_OK);
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  }
 
   async createUpload(request: UploadRequest) {
     this.pathFor(request.objectKey);

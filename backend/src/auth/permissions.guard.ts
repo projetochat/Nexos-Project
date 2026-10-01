@@ -37,6 +37,13 @@ export class PermissionsGuard implements CanActivate {
     const current = request.user;
     if (!current) throw new UnauthorizedException("Token ausente.");
 
+    if (current.surface !== "tenant") {
+      throw new ForbiddenException({
+        code: "TENANT_SURFACE_REQUIRED",
+        message: "Esta sessão não pertence à superfície de atendimento.",
+      });
+    }
+
     const membership = await this.prisma.tenantMembership.findFirst({
       where: {
         id: current.membershipId,
@@ -88,6 +95,9 @@ export class PermissionsGuard implements CanActivate {
     request.user.roleKey = membership.role.key;
     request.user.connectionIds = roleConnectionIds(membership.role);
     request.user.permissions = permissions;
+    request.user.assignedPermissionIds = membership.role.permissions.map(
+      (permission) => permission.permissionId,
+    );
     const connectionId = /\/messaging\/connections\//.test(request.originalUrl)
       ? request.params.id
       : undefined;

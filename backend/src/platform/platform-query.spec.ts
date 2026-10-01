@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { describe, expect, it } from "vitest";
 import {
+  optionalIdentifier,
   optionalPlanStatus,
   optionalSubscriptionStatus,
   optionalTenantStatus,
@@ -59,5 +60,13 @@ describe("platform query helpers", () => {
     );
     expect(optionalUuidLike("", "tenantId")).toBeUndefined();
     expect(() => optionalUuidLike("not-a-uuid", "tenantId")).toThrow(BadRequestException);
+  });
+
+  it("accepts legacy plan identifiers without relaxing tenant UUID validation", () => {
+    expect(optionalIdentifier("plan_professional_homologation", "planId")).toBe(
+      "plan_professional_homologation",
+    );
+    expect(optionalIdentifier("", "planId")).toBeUndefined();
+    expect(() => optionalIdentifier("plan id com espaco", "planId")).toThrow(BadRequestException);
   });
 });

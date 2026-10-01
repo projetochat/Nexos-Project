@@ -40,6 +40,7 @@ describe("CampaignDispatchWorker", () => {
       createConnection: vi.fn().mockReturnValue({ connectionName: "campaign-worker" }),
     };
     const campaigns = {
+      recoverStaleRecipients: vi.fn().mockResolvedValue({ scanned: 0 }),
       reconcileScheduledCampaigns: vi.fn().mockResolvedValue({ scheduled: 0 }),
     };
 
@@ -50,6 +51,7 @@ describe("CampaignDispatchWorker", () => {
       campaigns as never,
     ).onModuleInit();
 
+    expect(campaigns.recoverStaleRecipients).toHaveBeenCalledOnce();
     expect(campaigns.reconcileScheduledCampaigns).toHaveBeenCalledOnce();
     expect(workerCalls).toHaveLength(1);
     const options = workerCalls[0]?.options as {

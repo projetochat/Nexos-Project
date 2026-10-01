@@ -24,7 +24,12 @@ describe("instance-only profile enforcement", () => {
     const request = {
       originalUrl: "/api/conversations/chat-a/messages",
       params: {},
-      user: { userId: "user-a", tenantId: "tenant-a", membershipId: "member-a" },
+      user: {
+        userId: "user-a",
+        tenantId: "tenant-a",
+        membershipId: "member-a",
+        surface: "tenant",
+      },
     };
     const context = {
       getHandler() {},
@@ -35,6 +40,7 @@ describe("instance-only profile enforcement", () => {
     expect(request.user).toMatchObject({
       connectionIds: ["vocical"],
       permissions: expect.arrayContaining(["messages.send", "conversations.manage"]),
+      assignedPermissionIds: ["messages.send"],
     });
     membership.role.metadata.connectionIds = [];
     await guard.canActivate(context as never);
@@ -64,7 +70,12 @@ describe("instance-only profile enforcement", () => {
         getRequest: () => ({
           originalUrl: "/api/conversations/chat-a/messages",
           params: {},
-          user: { userId: "user-a", tenantId: "tenant-a", membershipId: "member-a" },
+          user: {
+            userId: "user-a",
+            tenantId: "tenant-a",
+            membershipId: "member-a",
+            surface: "tenant",
+          },
         }),
       }),
     };
@@ -100,6 +111,7 @@ describe("instance-only profile enforcement", () => {
             membershipId: "member-a",
             impersonationSessionId: "expired-session",
             actorPlatformUserId: "platform-user",
+            surface: "tenant",
           },
         }),
       }),
@@ -138,7 +150,12 @@ describe("instance-only profile enforcement", () => {
         getRequest: () => ({
           originalUrl: "/api/tickets",
           params: {},
-          user: { userId: "user-a", tenantId: "tenant-a", membershipId: "member-a" },
+          user: {
+            userId: "user-a",
+            tenantId: "tenant-a",
+            membershipId: "member-a",
+            surface: "tenant",
+          },
         }),
       }),
     };

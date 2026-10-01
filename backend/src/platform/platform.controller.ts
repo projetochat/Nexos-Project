@@ -20,19 +20,21 @@ import { PlatformService } from "./platform.service";
 import { PlatformExceptionFilter } from "./platform-exception.filter";
 import {
   CancelSubscriptionDto,
+  CreatePlatformClientDto,
   CreateInvoiceDto,
   CreatePlanDto,
   CreateSubscriptionDto,
-  CreateTenantDto,
   InvoiceStatusDto,
+  UpdateInvoiceDto,
   PlatformListQueryDto,
   ReasonDto,
+  StartImpersonationHandoffDto,
   StartImpersonationDto,
-  TerminateTenantDto,
   UpdatePlanDto,
+  UpdatePlatformClientDto,
   UpdatePlatformSettingsDto,
   UpdateSubscriptionDto,
-  UpdateTenantDto,
+  UpdateTenantAdministratorCredentialsDto,
 } from "./platform.dto";
 
 @Controller("platform")
@@ -68,16 +70,44 @@ export class PlatformController {
     return this.platform.updateSettings(dto, current);
   }
 
+  @Get("clients")
+  @RequirePlatformPermissions("platform.tenants.read")
+  clients(@Query() query: PlatformListQueryDto) {
+    return this.platform.listClients(query);
+  }
+
+  @Post("clients")
+  @RequirePlatformPermissions("platform.tenants.create")
+  createClient(@Body() dto: CreatePlatformClientDto, @CurrentUser() current: AuthenticatedUser) {
+    return this.platform.createClient(dto, current);
+  }
+
+  @Patch("clients/:id")
+  @RequirePlatformPermissions("platform.tenants.update")
+  updateClient(
+    @Param("id") id: string,
+    @Body() dto: UpdatePlatformClientDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.platform.updateClient(id, dto, current);
+  }
+
+  @Delete("clients/:id")
+  @RequirePlatformPermissions("platform.tenants.terminate")
+  deleteClient(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.platform.deleteClient(id, current);
+  }
+
+  @Post("clients/:id/cancel")
+  @RequirePlatformPermissions("platform.tenants.terminate")
+  cancelClient(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.platform.cancelClient(id, current);
+  }
+
   @Get("tenants")
   @RequirePlatformPermissions("platform.tenants.read")
   tenants(@Query() query: PlatformListQueryDto) {
     return this.platform.listTenants(query);
-  }
-
-  @Post("tenants")
-  @RequirePlatformPermissions("platform.tenants.create")
-  createTenant(@Body() dto: CreateTenantDto, @CurrentUser() current: AuthenticatedUser) {
-    return this.platform.createTenant(dto, current);
   }
 
   @Get("tenants/:id")
@@ -86,44 +116,14 @@ export class PlatformController {
     return this.platform.tenantDetail(id);
   }
 
-  @Patch("tenants/:id")
+  @Patch("tenants/:id/administrator-credentials")
   @RequirePlatformPermissions("platform.tenants.update")
-  updateTenant(
+  updateTenantAdministratorCredentials(
     @Param("id") id: string,
-    @Body() dto: UpdateTenantDto,
+    @Body() dto: UpdateTenantAdministratorCredentialsDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.platform.updateTenant(id, dto, current);
-  }
-
-  @Post("tenants/:id/suspend")
-  @RequirePlatformPermissions("platform.tenants.suspend")
-  suspendTenant(
-    @Param("id") id: string,
-    @Body() dto: ReasonDto,
-    @CurrentUser() current: AuthenticatedUser,
-  ) {
-    return this.platform.suspendTenant(id, dto, current);
-  }
-
-  @Post("tenants/:id/reactivate")
-  @RequirePlatformPermissions("platform.tenants.suspend")
-  reactivateTenant(
-    @Param("id") id: string,
-    @Body() dto: ReasonDto,
-    @CurrentUser() current: AuthenticatedUser,
-  ) {
-    return this.platform.reactivateTenant(id, dto, current);
-  }
-
-  @Post("tenants/:id/terminate")
-  @RequirePlatformPermissions("platform.tenants.terminate")
-  terminateTenant(
-    @Param("id") id: string,
-    @Body() dto: TerminateTenantDto,
-    @CurrentUser() current: AuthenticatedUser,
-  ) {
-    return this.platform.terminateTenant(id, dto, current);
+    return this.platform.updateTenantAdministratorCredentials(id, dto, current);
   }
 
   @Get("tenants/:id/usage")
@@ -160,10 +160,34 @@ export class PlatformController {
     return this.platform.updatePlan(id, dto, current);
   }
 
-  @Delete("plans/:id")
+  @Post("plans/:id/archive")
   @RequirePlatformPermissions("platform.plans.archive")
   archivePlan(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.platform.archivePlan(id, current);
+  }
+
+  @Post("plans/:id/unarchive")
+  @RequirePlatformPermissions("platform.plans.archive")
+  unarchivePlan(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.platform.unarchivePlan(id, current);
+  }
+
+  @Post("plans/:id/deactivate")
+  @RequirePlatformPermissions("platform.plans.update")
+  deactivatePlan(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.platform.deactivatePlan(id, current);
+  }
+
+  @Post("plans/:id/activate")
+  @RequirePlatformPermissions("platform.plans.update")
+  activatePlan(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.platform.activatePlan(id, current);
+  }
+
+  @Delete("plans/:id")
+  @RequirePlatformPermissions("platform.plans.archive")
+  deletePlan(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.platform.deletePlan(id, current);
   }
 
   @Get("subscriptions")
@@ -178,14 +202,14 @@ export class PlatformController {
     return this.platform.subscriptionDetail(id);
   }
 
-  @Post("tenants/:tenantId/subscriptions")
+  @Post("clients/:clientId/subscriptions")
   @RequirePlatformPermissions("platform.subscriptions.create")
-  createSubscription(
-    @Param("tenantId") tenantId: string,
+  createClientSubscription(
+    @Param("clientId") clientId: string,
     @Body() dto: CreateSubscriptionDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.platform.createSubscription(tenantId, dto, current);
+    return this.platform.createClientSubscription(clientId, dto, current);
   }
 
   @Patch("subscriptions/:id")
@@ -206,6 +230,28 @@ export class PlatformController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     return this.platform.cancelSubscription(id, dto, current);
+  }
+
+  @Post("subscriptions/:id/generate-finance")
+  @RequirePlatformPermissions("platform.subscriptions.update")
+  generateSubscriptionFinance(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.platform.generateSubscriptionFinance(id, current);
+  }
+
+  @Post("subscriptions/:id/activate")
+  @RequirePlatformPermissions("platform.subscriptions.update")
+  activateSubscription(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.platform.activateSubscription(id, current);
+  }
+
+  @Post("subscriptions/:id/suspend")
+  @RequirePlatformPermissions("platform.subscriptions.update")
+  suspendSubscription(
+    @Param("id") id: string,
+    @Body() dto: ReasonDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.platform.suspendSubscription(id, dto, current);
   }
 
   @Get("subscriptions/:id/history")
@@ -242,6 +288,22 @@ export class PlatformController {
     return this.platform.updateInvoiceStatus(id, dto, current);
   }
 
+  @Patch("invoices/:id")
+  @RequirePlatformPermissions("platform.subscriptions.update")
+  editInvoice(
+    @Param("id") id: string,
+    @Body() dto: UpdateInvoiceDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.platform.updateInvoice(id, dto, current);
+  }
+
+  @Delete("invoices/:id")
+  @RequirePlatformPermissions("platform.subscriptions.update")
+  deleteInvoice(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    return this.platform.deleteInvoice(id, current);
+  }
+
   @Get("audit-logs")
   @RequirePlatformPermissions("platform.audit.read")
   audit(@Query() query: PlatformListQueryDto) {
@@ -261,6 +323,15 @@ export class PlatformController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     return this.platform.startImpersonation(dto, current);
+  }
+
+  @Post("impersonation/handoff")
+  @RequirePlatformPermissions("platform.impersonation.start")
+  startImpersonationHandoff(
+    @Body() dto: StartImpersonationHandoffDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.platform.startImpersonationHandoff(dto, current);
   }
 
   @Post("impersonation/:id/stop")

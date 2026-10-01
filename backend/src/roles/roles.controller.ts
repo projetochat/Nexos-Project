@@ -190,7 +190,9 @@ export class RolesController {
     existingPermissionIds: string[] = [],
   ) {
     if (current.roleKey === "tenant_admin") return;
-    const granted = new Set<string>(current.permissions ?? []);
+    // D-001 mantém as permissões efetivas liberadas em runtime, mas a delegação
+    // de um perfil continua limitada às permissões realmente atribuídas ao autor.
+    const granted = new Set<string>(current.assignedPermissionIds ?? current.permissions ?? []);
     const requested = new Set(permissionIds);
     const existing = new Set(existingPermissionIds);
     const changed = [
@@ -233,15 +235,6 @@ export class RolesController {
       throw new BadRequestException("Escopo de instâncias inválido.");
     }
     const requested = [...new Set(requestedValue as string[])];
-    if (requested.length) {
-      const count = await this.prisma.messagingConnection.count({
-        where: { tenantId: current.tenantId, id: { in: requested }, archivedAt: null },
-      });
-      if (count !== requested.length) {
-        throw new BadRequestException("Instância inexistente para esta organização.");
-      }
-    }
-    if (current.roleKey === "tenant_admin") return;
     const existing = new Set(
       Array.isArray((existingMetadata as { connectionIds?: unknown } | null)?.connectionIds)
         ? ((existingMetadata as { connectionIds: unknown[] }).connectionIds.filter(
@@ -249,6 +242,16 @@ export class RolesController {
           ) as string[])
         : [],
     );
+    const added = requested.filter((id) => !existing.has(id));
+    if (added.length) {
+      const count = await this.prisma.messagingConnection.count({
+        where: { tenantId: current.tenantId, id: { in: added }, archivedAt: null },
+      });
+      if (count !== added.length) {
+        throw new BadRequestException("Instância inexistente para esta organização.");
+      }
+    }
+    if (current.roleKey === "tenant_admin") return;
     const allowed = new Set(current.connectionIds ?? []);
     const requestedSet = new Set(requested);
     const changed = [

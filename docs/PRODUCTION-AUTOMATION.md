@@ -23,7 +23,11 @@ variavel de repositorio.
 
 - Environment `production`, somente main.
 - Variables: `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER=trixus-deploy`,
-  `VITE_TRIXUS_API_URL` e variaveis publicas opcionais Supabase.
+  `VITE_TRIXUS_API_URL`, `VITE_TRIXUS_PLATFORM_APP_URL`,
+  `VITE_TRIXUS_TENANT_APP_URL` e variaveis publicas opcionais Supabase. O
+  ambiente privado da VPS deve definir
+  `TENANT_ADMIN_PROVISIONING_MODE=invitation_email`; a API recusa inicializar
+  em producao com o modo de senha temporaria.
 - Secrets: `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` (host key conferida).
 - VPS: `/opt/trixus/app/docker-compose.vps.yml`, ambiente privado `.env.vps`,
   projeto `trixus-vps`, anexos `/srv/trixus-data`, linux/amd64.

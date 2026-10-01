@@ -50,6 +50,13 @@ describe("DashboardEditorModal", () => {
     expect(document.querySelector('[role="dialog"]')?.className).toContain("sm:max-w-2xl");
     expect(document.body.textContent).toContain("Contadores de registro");
     expect(document.querySelector('[aria-label="Configurar Contadores de registro"]')).toBeTruthy();
+    expect(
+      document
+        .querySelector('[aria-label="Configurar Contadores de registro"]')
+        ?.getAttribute("title"),
+    ).toBe("Configurar");
+    expect(document.querySelector(".lucide-settings")).toBeTruthy();
+    expect(document.querySelector('[title^="Mover para"]')).toBeNull();
     expect(document.querySelector('[aria-label^="Editar "]')).toBeNull();
 
     await click(buttonByText("Novo componente"));
@@ -59,6 +66,10 @@ describe("DashboardEditorModal", () => {
       "Todos os componentes criados respeitam o painel de filtro do dashboard.",
     );
     expect(document.querySelectorAll("button[aria-pressed]")).toHaveLength(8);
+    expect(document.querySelector('input[required][aria-invalid="false"]')).toBeTruthy();
+    expect(document.body.textContent).toContain("Título do componente *");
+    expect(document.body.textContent).toContain("Quantidade (∑)");
+    expect(document.body.textContent).toContain("Percentual (%)");
     expect(buttonByText("Criar")).toBeTruthy();
   });
 
@@ -174,7 +185,7 @@ describe("DashboardEditorModal", () => {
     expect(next.some((component: { id: string }) => component.id === created.id)).toBe(false);
   });
 
-  it("removes the visibility selection control from the component list", async () => {
+  it("shows visibility as read-only in the component list", async () => {
     const onChange = vi.fn();
     await act(async () => {
       root.render(
@@ -189,19 +200,57 @@ describe("DashboardEditorModal", () => {
       );
     });
 
-    expect(document.querySelector('[aria-label="Exibir Contadores de registro"]')).toBeNull();
-    expect(document.querySelector('[role="checkbox"]')).toBeNull();
+    const visibility = document.querySelector('[aria-label="Exibir Contadores de registro"]');
+    expect((visibility as HTMLButtonElement | null)?.disabled).toBe(true);
+
+    await click(visibility);
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("restores defaults, persists them and closes the editor", async () => {
+  it("changes visibility only from the component configuration", async () => {
+    const onChange = vi.fn();
+    await act(async () => {
+      root.render(
+        <DashboardEditorModal
+          open
+          components={DEFAULT_DASHBOARD_COMPONENTS}
+          customFields={[]}
+          resolveData={() => []}
+          onChange={onChange}
+          onClose={vi.fn()}
+        />,
+      );
+    });
+
+    await click(document.querySelector('[aria-label="Configurar Contadores de registro"]'));
+
+    const visibility = document.querySelector(
+      '[aria-label="Alterar visibilidade de Contadores de registro"]',
+    ) as HTMLButtonElement | null;
+    expect(visibility?.disabled).toBe(false);
+
+    await click(visibility);
+    expect(onChange).not.toHaveBeenCalled();
+
+    await click(buttonByText("Salvar"));
+
+    const next = onChange.mock.calls.at(-1)?.[0];
+    expect(next.find((component: { id: string }) => component.id === "counters")?.visible).toBe(
+      false,
+    );
+  });
+
+  it("restores native defaults without deleting custom components", async () => {
     const onChange = vi.fn();
     const onClose = vi.fn();
     await act(async () => {
       root.render(
         <DashboardEditorModal
           open
-          components={DEFAULT_DASHBOARD_COMPONENTS.slice(0, 1)}
+          components={[
+            { ...DEFAULT_DASHBOARD_COMPONENTS[1], title: "Alterado" },
+            { ...DEFAULT_DASHBOARD_COMPONENTS[0], id: "custom", title: "Personalizado" },
+          ]}
           customFields={[]}
           resolveData={() => []}
           onChange={onChange}
@@ -212,7 +261,11 @@ describe("DashboardEditorModal", () => {
 
     await click(buttonByText("Restaurar padrão"));
 
-    expect(onChange).toHaveBeenCalledWith(DEFAULT_DASHBOARD_COMPONENTS);
+    const restored = onChange.mock.calls.at(-1)?.[0];
+    expect(restored.slice(0, DEFAULT_DASHBOARD_COMPONENTS.length)).toEqual(
+      DEFAULT_DASHBOARD_COMPONENTS,
+    );
+    expect(restored.at(-1)).toMatchObject({ id: "custom", title: "Personalizado" });
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -231,9 +284,7 @@ describe("DashboardEditorModal", () => {
       );
     });
 
-    const handle = document.querySelector(
-      '[aria-label="Reordenar Contadores de registro. Use as setas para cima e para baixo."]',
-    );
+    const handle = document.querySelector('[aria-label="Reordenar Contadores de registro"]');
     await act(async () => {
       handle?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     });

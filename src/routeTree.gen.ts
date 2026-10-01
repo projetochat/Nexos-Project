@@ -42,6 +42,7 @@ import { Route as ConfiguracoesIndexRouteImport } from './routes/configuracoes.i
 import { Route as AtendimentoIndexRouteImport } from './routes/atendimento.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as InboxConversationIdRouteImport } from './routes/inbox.$conversationId'
+import { Route as ImpersonationCallbackRouteImport } from './routes/impersonation.callback'
 import { Route as ConfiguracoesVariaveisRouteImport } from './routes/configuracoes.variaveis'
 import { Route as ConfiguracoesSegurancaRouteImport } from './routes/configuracoes.seguranca'
 import { Route as ConfiguracoesPermissoesRouteImport } from './routes/configuracoes.permissoes'
@@ -56,6 +57,7 @@ import { Route as AtendimentoInboxRouteImport } from './routes/atendimento.inbox
 import { Route as AtendimentoHistoricoRouteImport } from './routes/atendimento.historico'
 import { Route as AtendimentoFavoritosRouteImport } from './routes/atendimento.favoritos'
 import { Route as AtendimentoClientesRouteImport } from './routes/atendimento.clientes'
+import { Route as AdminTenantsRouteImport } from './routes/admin.tenants'
 import { Route as AdminSuporteRouteImport } from './routes/admin.suporte'
 import { Route as AdminPlanosRouteImport } from './routes/admin.planos'
 import { Route as AdminMonitoramentoRouteImport } from './routes/admin.monitoramento'
@@ -66,7 +68,7 @@ import { Route as AdminEmpresasRouteImport } from './routes/admin.empresas'
 import { Route as AdminConfiguracoesRouteImport } from './routes/admin.configuracoes'
 import { Route as AdminAuditoriaRouteImport } from './routes/admin.auditoria'
 import { Route as AdminAssinaturasRouteImport } from './routes/admin.assinaturas'
-import { Route as AdminEmpresasTenantIdRouteImport } from './routes/admin.empresas.$tenantId'
+import { Route as AdminTenantsTenantIdRouteImport } from './routes/admin.tenants.$tenantId'
 
 const RelatoriosRoute = RelatoriosRouteImport.update({
   id: '/relatorios',
@@ -233,6 +235,11 @@ const InboxConversationIdRoute = InboxConversationIdRouteImport.update({
   path: '/$conversationId',
   getParentRoute: () => InboxRoute,
 } as any)
+const ImpersonationCallbackRoute = ImpersonationCallbackRouteImport.update({
+  id: '/impersonation/callback',
+  path: '/impersonation/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConfiguracoesVariaveisRoute = ConfiguracoesVariaveisRouteImport.update({
   id: '/variaveis',
   path: '/variaveis',
@@ -305,6 +312,11 @@ const AtendimentoClientesRoute = AtendimentoClientesRouteImport.update({
   path: '/clientes',
   getParentRoute: () => AtendimentoRoute,
 } as any)
+const AdminTenantsRoute = AdminTenantsRouteImport.update({
+  id: '/tenants',
+  path: '/tenants',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminSuporteRoute = AdminSuporteRouteImport.update({
   id: '/suporte',
   path: '/suporte',
@@ -355,10 +367,10 @@ const AdminAssinaturasRoute = AdminAssinaturasRouteImport.update({
   path: '/assinaturas',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminEmpresasTenantIdRoute = AdminEmpresasTenantIdRouteImport.update({
+const AdminTenantsTenantIdRoute = AdminTenantsTenantIdRouteImport.update({
   id: '/$tenantId',
   path: '/$tenantId',
-  getParentRoute: () => AdminEmpresasRoute,
+  getParentRoute: () => AdminTenantsRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -393,13 +405,14 @@ export interface FileRoutesByFullPath {
   '/admin/assinaturas': typeof AdminAssinaturasRoute
   '/admin/auditoria': typeof AdminAuditoriaRoute
   '/admin/configuracoes': typeof AdminConfiguracoesRoute
-  '/admin/empresas': typeof AdminEmpresasRouteWithChildren
+  '/admin/empresas': typeof AdminEmpresasRoute
   '/admin/financeiro': typeof AdminFinanceiroRoute
   '/admin/licencas': typeof AdminLicencasRoute
   '/admin/logs': typeof AdminLogsRoute
   '/admin/monitoramento': typeof AdminMonitoramentoRoute
   '/admin/planos': typeof AdminPlanosRoute
   '/admin/suporte': typeof AdminSuporteRoute
+  '/admin/tenants': typeof AdminTenantsRouteWithChildren
   '/atendimento/clientes': typeof AtendimentoClientesRoute
   '/atendimento/favoritos': typeof AtendimentoFavoritosRoute
   '/atendimento/historico': typeof AtendimentoHistoricoRoute
@@ -414,12 +427,13 @@ export interface FileRoutesByFullPath {
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
+  '/impersonation/callback': typeof ImpersonationCallbackRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin/': typeof AdminIndexRoute
   '/atendimento/': typeof AtendimentoIndexRoute
   '/configuracoes/': typeof ConfiguracoesIndexRoute
   '/inbox/': typeof InboxIndexRoute
-  '/admin/empresas/$tenantId': typeof AdminEmpresasTenantIdRoute
+  '/admin/tenants/$tenantId': typeof AdminTenantsTenantIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -449,13 +463,14 @@ export interface FileRoutesByTo {
   '/admin/assinaturas': typeof AdminAssinaturasRoute
   '/admin/auditoria': typeof AdminAuditoriaRoute
   '/admin/configuracoes': typeof AdminConfiguracoesRoute
-  '/admin/empresas': typeof AdminEmpresasRouteWithChildren
+  '/admin/empresas': typeof AdminEmpresasRoute
   '/admin/financeiro': typeof AdminFinanceiroRoute
   '/admin/licencas': typeof AdminLicencasRoute
   '/admin/logs': typeof AdminLogsRoute
   '/admin/monitoramento': typeof AdminMonitoramentoRoute
   '/admin/planos': typeof AdminPlanosRoute
   '/admin/suporte': typeof AdminSuporteRoute
+  '/admin/tenants': typeof AdminTenantsRouteWithChildren
   '/atendimento/clientes': typeof AtendimentoClientesRoute
   '/atendimento/favoritos': typeof AtendimentoFavoritosRoute
   '/atendimento/historico': typeof AtendimentoHistoricoRoute
@@ -470,12 +485,13 @@ export interface FileRoutesByTo {
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
+  '/impersonation/callback': typeof ImpersonationCallbackRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin': typeof AdminIndexRoute
   '/atendimento': typeof AtendimentoIndexRoute
   '/configuracoes': typeof ConfiguracoesIndexRoute
   '/inbox': typeof InboxIndexRoute
-  '/admin/empresas/$tenantId': typeof AdminEmpresasTenantIdRoute
+  '/admin/tenants/$tenantId': typeof AdminTenantsTenantIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -510,13 +526,14 @@ export interface FileRoutesById {
   '/admin/assinaturas': typeof AdminAssinaturasRoute
   '/admin/auditoria': typeof AdminAuditoriaRoute
   '/admin/configuracoes': typeof AdminConfiguracoesRoute
-  '/admin/empresas': typeof AdminEmpresasRouteWithChildren
+  '/admin/empresas': typeof AdminEmpresasRoute
   '/admin/financeiro': typeof AdminFinanceiroRoute
   '/admin/licencas': typeof AdminLicencasRoute
   '/admin/logs': typeof AdminLogsRoute
   '/admin/monitoramento': typeof AdminMonitoramentoRoute
   '/admin/planos': typeof AdminPlanosRoute
   '/admin/suporte': typeof AdminSuporteRoute
+  '/admin/tenants': typeof AdminTenantsRouteWithChildren
   '/atendimento/clientes': typeof AtendimentoClientesRoute
   '/atendimento/favoritos': typeof AtendimentoFavoritosRoute
   '/atendimento/historico': typeof AtendimentoHistoricoRoute
@@ -531,12 +548,13 @@ export interface FileRoutesById {
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
+  '/impersonation/callback': typeof ImpersonationCallbackRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin/': typeof AdminIndexRoute
   '/atendimento/': typeof AtendimentoIndexRoute
   '/configuracoes/': typeof ConfiguracoesIndexRoute
   '/inbox/': typeof InboxIndexRoute
-  '/admin/empresas/$tenantId': typeof AdminEmpresasTenantIdRoute
+  '/admin/tenants/$tenantId': typeof AdminTenantsTenantIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -579,6 +597,7 @@ export interface FileRouteTypes {
     | '/admin/monitoramento'
     | '/admin/planos'
     | '/admin/suporte'
+    | '/admin/tenants'
     | '/atendimento/clientes'
     | '/atendimento/favoritos'
     | '/atendimento/historico'
@@ -593,12 +612,13 @@ export interface FileRouteTypes {
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/variaveis'
+    | '/impersonation/callback'
     | '/inbox/$conversationId'
     | '/admin/'
     | '/atendimento/'
     | '/configuracoes/'
     | '/inbox/'
-    | '/admin/empresas/$tenantId'
+    | '/admin/tenants/$tenantId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -635,6 +655,7 @@ export interface FileRouteTypes {
     | '/admin/monitoramento'
     | '/admin/planos'
     | '/admin/suporte'
+    | '/admin/tenants'
     | '/atendimento/clientes'
     | '/atendimento/favoritos'
     | '/atendimento/historico'
@@ -649,12 +670,13 @@ export interface FileRouteTypes {
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/variaveis'
+    | '/impersonation/callback'
     | '/inbox/$conversationId'
     | '/admin'
     | '/atendimento'
     | '/configuracoes'
     | '/inbox'
-    | '/admin/empresas/$tenantId'
+    | '/admin/tenants/$tenantId'
   id:
     | '__root__'
     | '/'
@@ -695,6 +717,7 @@ export interface FileRouteTypes {
     | '/admin/monitoramento'
     | '/admin/planos'
     | '/admin/suporte'
+    | '/admin/tenants'
     | '/atendimento/clientes'
     | '/atendimento/favoritos'
     | '/atendimento/historico'
@@ -709,12 +732,13 @@ export interface FileRouteTypes {
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/variaveis'
+    | '/impersonation/callback'
     | '/inbox/$conversationId'
     | '/admin/'
     | '/atendimento/'
     | '/configuracoes/'
     | '/inbox/'
-    | '/admin/empresas/$tenantId'
+    | '/admin/tenants/$tenantId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -746,6 +770,7 @@ export interface RootRouteChildren {
   PerfilRoute: typeof PerfilRoute
   PerfisRoute: typeof PerfisRoute
   RelatoriosRoute: typeof RelatoriosRoute
+  ImpersonationCallbackRoute: typeof ImpersonationCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -981,6 +1006,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InboxConversationIdRouteImport
       parentRoute: typeof InboxRoute
     }
+    '/impersonation/callback': {
+      id: '/impersonation/callback'
+      path: '/impersonation/callback'
+      fullPath: '/impersonation/callback'
+      preLoaderRoute: typeof ImpersonationCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/configuracoes/variaveis': {
       id: '/configuracoes/variaveis'
       path: '/variaveis'
@@ -1079,6 +1111,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AtendimentoClientesRouteImport
       parentRoute: typeof AtendimentoRoute
     }
+    '/admin/tenants': {
+      id: '/admin/tenants'
+      path: '/tenants'
+      fullPath: '/admin/tenants'
+      preLoaderRoute: typeof AdminTenantsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/suporte': {
       id: '/admin/suporte'
       path: '/suporte'
@@ -1149,39 +1188,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAssinaturasRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/empresas/$tenantId': {
-      id: '/admin/empresas/$tenantId'
+    '/admin/tenants/$tenantId': {
+      id: '/admin/tenants/$tenantId'
       path: '/$tenantId'
-      fullPath: '/admin/empresas/$tenantId'
-      preLoaderRoute: typeof AdminEmpresasTenantIdRouteImport
-      parentRoute: typeof AdminEmpresasRoute
+      fullPath: '/admin/tenants/$tenantId'
+      preLoaderRoute: typeof AdminTenantsTenantIdRouteImport
+      parentRoute: typeof AdminTenantsRoute
     }
   }
 }
 
-interface AdminEmpresasRouteChildren {
-  AdminEmpresasTenantIdRoute: typeof AdminEmpresasTenantIdRoute
+interface AdminTenantsRouteChildren {
+  AdminTenantsTenantIdRoute: typeof AdminTenantsTenantIdRoute
 }
 
-const AdminEmpresasRouteChildren: AdminEmpresasRouteChildren = {
-  AdminEmpresasTenantIdRoute: AdminEmpresasTenantIdRoute,
+const AdminTenantsRouteChildren: AdminTenantsRouteChildren = {
+  AdminTenantsTenantIdRoute: AdminTenantsTenantIdRoute,
 }
 
-const AdminEmpresasRouteWithChildren = AdminEmpresasRoute._addFileChildren(
-  AdminEmpresasRouteChildren,
+const AdminTenantsRouteWithChildren = AdminTenantsRoute._addFileChildren(
+  AdminTenantsRouteChildren,
 )
 
 interface AdminRouteChildren {
   AdminAssinaturasRoute: typeof AdminAssinaturasRoute
   AdminAuditoriaRoute: typeof AdminAuditoriaRoute
   AdminConfiguracoesRoute: typeof AdminConfiguracoesRoute
-  AdminEmpresasRoute: typeof AdminEmpresasRouteWithChildren
+  AdminEmpresasRoute: typeof AdminEmpresasRoute
   AdminFinanceiroRoute: typeof AdminFinanceiroRoute
   AdminLicencasRoute: typeof AdminLicencasRoute
   AdminLogsRoute: typeof AdminLogsRoute
   AdminMonitoramentoRoute: typeof AdminMonitoramentoRoute
   AdminPlanosRoute: typeof AdminPlanosRoute
   AdminSuporteRoute: typeof AdminSuporteRoute
+  AdminTenantsRoute: typeof AdminTenantsRouteWithChildren
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -1189,13 +1229,14 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminAssinaturasRoute: AdminAssinaturasRoute,
   AdminAuditoriaRoute: AdminAuditoriaRoute,
   AdminConfiguracoesRoute: AdminConfiguracoesRoute,
-  AdminEmpresasRoute: AdminEmpresasRouteWithChildren,
+  AdminEmpresasRoute: AdminEmpresasRoute,
   AdminFinanceiroRoute: AdminFinanceiroRoute,
   AdminLicencasRoute: AdminLicencasRoute,
   AdminLogsRoute: AdminLogsRoute,
   AdminMonitoramentoRoute: AdminMonitoramentoRoute,
   AdminPlanosRoute: AdminPlanosRoute,
   AdminSuporteRoute: AdminSuporteRoute,
+  AdminTenantsRoute: AdminTenantsRouteWithChildren,
   AdminIndexRoute: AdminIndexRoute,
 }
 
@@ -1294,6 +1335,7 @@ const rootRouteChildren: RootRouteChildren = {
   PerfilRoute: PerfilRoute,
   PerfisRoute: PerfisRoute,
   RelatoriosRoute: RelatoriosRoute,
+  ImpersonationCallbackRoute: ImpersonationCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

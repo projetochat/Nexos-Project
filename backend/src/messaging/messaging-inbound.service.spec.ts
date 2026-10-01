@@ -986,6 +986,7 @@ describe("MessagingInboundService", () => {
     expect(evolution.getBase64FromMediaMessage).toHaveBeenCalledWith({
       instanceName: "tenant-a-suporte",
       message: { key: { id: "image-1" } },
+      maxBytes: 8 * 1024 * 1024,
     });
     expect(fetchSpy).not.toHaveBeenCalledWith("https://mmg.whatsapp.net/v/media.enc");
     expect(prisma.message.create).toHaveBeenCalledWith({

@@ -14,7 +14,11 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { InboundMessageEvent, MessageEditEvent, MessageDeletionEvent } from "./messaging.contracts";
-import { MessagingMediaStorageService } from "./media/messaging-media-storage.service";
+import {
+  maxSizeBytes,
+  MessagingMediaStorageService,
+} from "./media/messaging-media-storage.service";
+import { downloadRemoteMedia } from "./media/remote-media-downloader";
 import { normalizeRemotePhoneCandidates } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
 import { MessagingOutboundService } from "./messaging-outbound.service";
@@ -889,14 +893,15 @@ export class MessagingInboundService {
       const downloaded = await this.evolution.getBase64FromMediaMessage({
         instanceName: providerConnectionRef,
         message: event.media.rawMessage,
+        maxBytes: maxSizeBytes(event.type),
       });
       body = downloaded.body;
       mimeType = mimeType ?? downloaded.mimeType ?? null;
       fileName = fileName ?? downloaded.fileName ?? null;
     } else if (!body && event.media.url?.startsWith("http")) {
-      const response = await fetch(event.media.url);
-      if (!response.ok) throw new Error(`Evolution media download failed: ${response.status}`);
-      body = Buffer.from(await response.arrayBuffer());
+      body = await downloadRemoteMedia(event.media.url, {
+        maxBytes: maxSizeBytes(event.type),
+      });
     }
     if (!body) return null;
     return this.mediaStorage.storeDownloaded({

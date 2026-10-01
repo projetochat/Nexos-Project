@@ -1,17 +1,18 @@
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { KeyRound } from "lucide-react";
-import { AdminContainer } from "@/components/admin-shell";
 import { Badge, Card, SectionHeader } from "@/components/ui-kit";
 import { platformApi, type PlatformTenant } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 
 export const Route = createFileRoute("/admin/licencas")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
-  component: LicencasAdmin,
+  beforeLoad: () => {
+    throw redirect({ to: "/admin/configuracoes", search: { tab: "licencas" } });
+  },
 });
 
-function LicencasAdmin() {
+export function LicencasSettingsContent() {
   const [rows, setRows] = React.useState<PlatformTenant[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   React.useEffect(() => {
@@ -22,7 +23,7 @@ function LicencasAdmin() {
   }, []);
 
   return (
-    <AdminContainer>
+    <>
       <SectionHeader
         title="Licenças"
         subtitle="Resumo real de plano, assinatura e uso por tenant. Chaves secretas não são exibidas."
@@ -63,6 +64,6 @@ function LicencasAdmin() {
           </table>
         </div>
       </Card>
-    </AdminContainer>
+    </>
   );
 }

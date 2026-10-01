@@ -24,6 +24,7 @@ import {
   MembershipStatus,
   MessagingConnectionStatus,
   MessagingProviderType,
+  MessageDirection,
   MessageType,
   Prisma,
 } from "../generated/prisma";
@@ -38,6 +39,8 @@ import { UpdateConversationStatusDto } from "./dto/update-conversation-status.dt
 import { MessagesService } from "./messages.service";
 import { conversationQueueScope } from "./conversation-queue-scope";
 import { BulkCloseConversationsDto } from "./dto/bulk-close-conversations.dto";
+
+const BULK_CLOSE_WRITE_BATCH_SIZE = 500;
 
 const conversationInclude = {
   contact: {
@@ -407,61 +410,112 @@ export class ConversationsController {
               select: { id: true, protocol: true },
               orderBy: { id: "asc" },
             });
+            if (conversations.length === 0) return [];
+
             const now = new Date();
-            for (const conversation of conversations) {
+            const closedAt = new Date(now.getTime() + 1);
+            const missingProtocolCount = conversations.reduce(
+              (total, conversation) => total + (conversation.protocol ? 0 : 1),
+              0,
+            );
+            let nextReservedProtocol = 0;
+            if (missingProtocolCount > 0) {
+              const counter = await tx.conversationProtocolCounter.upsert({
+                where: { tenantId: current.tenantId },
+                update: { lastNumber: { increment: missingProtocolCount } },
+                create: { tenantId: current.tenantId, lastNumber: missingProtocolCount },
+              });
+              nextReservedProtocol = counter.lastNumber - missingProtocolCount + 1;
+            }
+            const rows = conversations.map((conversation) => {
               const protocol =
-                conversation.protocol ?? (await this.nextProtocol(tx, current.tenantId));
-              const startNote = `Conversa iniciada - protocolo ${protocol}.`;
-              const start = await tx.message.findFirst({
+                conversation.protocol ?? String(nextReservedProtocol++).padStart(6, "0");
+              return {
+                id: conversation.id,
+                protocol,
+                startNote: `Conversa iniciada - protocolo ${protocol}.`,
+                endNote: `Conversa encerrada - protocolo ${protocol}.`,
+              };
+            });
+
+            for (const batch of chunk(rows, BULK_CLOSE_WRITE_BATCH_SIZE)) {
+              const expectedStarts = new Map(batch.map((row) => [row.id, row.startNote]));
+              const existingStarts = await tx.message.findMany({
                 where: {
                   tenantId: current.tenantId,
-                  conversationId: conversation.id,
-                  type: "SYSTEM",
-                  content: startNote,
+                  conversationId: { in: batch.map((row) => row.id) },
+                  type: MessageType.SYSTEM,
+                  content: { startsWith: "Conversa iniciada - protocolo " },
                 },
-                select: { id: true },
+                select: { conversationId: true, content: true },
               });
-              if (!start) {
-                await this.messages.createSystemMessage(
-                  tx,
-                  conversation.id,
-                  current,
-                  startNote,
-                  now,
-                  { updateConversation: false },
-                );
-              }
-              const endNote = `Conversa encerrada - protocolo ${protocol}.`;
-              await this.messages.createSystemMessage(
-                tx,
-                conversation.id,
-                current,
-                endNote,
-                new Date(now.getTime() + 1),
-                { updateConversation: false },
+              const conversationsWithStart = new Set(
+                existingStarts
+                  .filter(
+                    (message) => message.content === expectedStarts.get(message.conversationId),
+                  )
+                  .map((message) => message.conversationId),
               );
-              await tx.conversation.update({
-                where: { tenantId_id: { tenantId: current.tenantId, id: conversation.id } },
-                data: {
-                  status: ConversationStatus.FECHADA,
-                  protocol,
-                  closedAt: new Date(now.getTime() + 1),
-                  unreadCount: 0,
-                  inboxArchivedAt: null,
-                  lastMessageAt: new Date(now.getTime() + 1),
-                  lastMessagePreview: endNote,
+              const messages = batch.flatMap((row) => [
+                ...(conversationsWithStart.has(row.id)
+                  ? []
+                  : [
+                      {
+                        tenantId: current.tenantId,
+                        conversationId: row.id,
+                        direction: MessageDirection.SYSTEM,
+                        type: MessageType.SYSTEM,
+                        authorMembershipId: current.membershipId,
+                        content: row.startNote,
+                        createdAt: now,
+                      },
+                    ]),
+                {
+                  tenantId: current.tenantId,
+                  conversationId: row.id,
+                  direction: MessageDirection.SYSTEM,
+                  type: MessageType.SYSTEM,
+                  authorMembershipId: current.membershipId,
+                  content: row.endNote,
+                  createdAt: closedAt,
                 },
-              });
+              ]);
+              if (messages.length > 0) {
+                await tx.message.createMany({ data: messages });
+              }
+
+              const values = Prisma.join(
+                batch.map(
+                  (row) =>
+                    Prisma.sql`(${row.id}::text, ${row.protocol}::text, ${row.endNote}::text)`,
+                ),
+              );
+              await tx.$executeRaw(Prisma.sql`
+                UPDATE "conversations" AS conversation
+                SET
+                  "status" = 'FECHADA'::"ConversationStatus",
+                  "protocol" = source.protocol,
+                  "closedAt" = ${closedAt},
+                  "unreadCount" = 0,
+                  "inboxArchivedAt" = NULL,
+                  "lastMessageAt" = ${closedAt},
+                  "lastMessagePreview" = source.end_note,
+                  "updatedAt" = ${closedAt}
+                FROM (VALUES ${values}) AS source(id, protocol, end_note)
+                WHERE conversation."tenantId" = ${current.tenantId}
+                  AND conversation.id = source.id
+              `);
+
               await tx.lead.updateMany({
                 where: {
                   tenantId: current.tenantId,
-                  conversationId: conversation.id,
+                  conversationId: { in: batch.map((row) => row.id) },
                   status: { in: ["NEW", "QUEUED", "ASSIGNED"] },
                 },
                 data: { status: "DISCARDED", discardedAt: now },
               });
             }
-            return conversations.map((conversation) => conversation.id);
+            return rows.map((row) => row.id);
           },
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 60_000 },
         );
@@ -896,6 +950,14 @@ export class ConversationsController {
         : null,
     };
   }
+}
+
+function chunk<T>(items: T[], size: number) {
+  const batches: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    batches.push(items.slice(index, index + size));
+  }
+  return batches;
 }
 
 function pagination(query: ListConversationsQueryDto) {

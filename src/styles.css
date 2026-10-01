@@ -556,6 +556,40 @@ button.trash-action:hover svg.lucide-trash-2 {
   color: var(--color-destructive);
 }
 
+/* Hovers semanticos das acoes administrativas do acesso Dono. */
+button.action-hover-primary:hover {
+  border-color: color-mix(in oklab, var(--color-primary) 45%, var(--border));
+  background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+
+button.action-hover-warning:hover {
+  border-color: color-mix(in oklab, var(--color-warning) 45%, var(--border));
+  background-color: color-mix(in oklab, var(--color-warning) 12%, transparent);
+  color: var(--color-warning);
+}
+
+button.action-hover-success:hover {
+  border-color: color-mix(in oklab, var(--color-success) 45%, var(--border));
+  background-color: color-mix(in oklab, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+}
+
+button.action-hover-destructive:hover,
+button.trash-action:hover {
+  border-color: color-mix(in oklab, var(--color-destructive) 45%, var(--border));
+  background-color: color-mix(in oklab, var(--color-destructive) 12%, transparent);
+  color: var(--color-destructive);
+}
+
+button.action-hover-primary:hover svg,
+button.action-hover-warning:hover svg,
+button.action-hover-success:hover svg,
+button.action-hover-destructive:hover svg,
+button.trash-action:hover svg {
+  color: currentColor;
+}
+
 button[title*="Abrir conversa"]:hover svg,
 button[aria-label*="Abrir conversa"]:hover svg,
 button[title*="Selecionar"]:hover svg,

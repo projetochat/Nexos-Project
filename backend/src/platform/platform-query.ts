@@ -41,6 +41,15 @@ export function optionalUuidLike(value: unknown, label: string) {
   return trimmed;
 }
 
+export function optionalIdentifier(value: unknown, label: string) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return undefined;
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(trimmed)) {
+    throw invalidQuery(`${label} invalido.`);
+  }
+  return trimmed;
+}
+
 function readPositiveInteger(value: unknown, fallback: number) {
   const parsed = parseInteger(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;

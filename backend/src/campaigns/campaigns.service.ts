@@ -51,6 +51,8 @@ import {
 const OUTBOX_CAMPAIGN_DISPATCH_REQUESTED = "campaign.dispatch.requested";
 const OUTBOX_CAMPAIGN_CANCEL_REQUESTED = "campaign.cancel.requested";
 const OUTBOX_CAMPAIGN_RESUME_REQUESTED = "campaign.resume.requested";
+export const CAMPAIGN_RECIPIENT_CLAIMED = "CAMPAIGN_RECIPIENT_CLAIMED";
+export const CAMPAIGN_COMMIT_OUTCOME_UNKNOWN = "CAMPAIGN_COMMIT_OUTCOME_UNKNOWN";
 const MUTABLE_STATUSES = [CampaignStatus.DRAFT, CampaignStatus.SCHEDULED] as const;
 const EXECUTION_LOCKED_STATUSES = [
   CampaignStatus.QUEUED,
@@ -122,6 +124,13 @@ export class CampaignsService {
 
   async create(dto: CreateCampaignDto, current: AuthenticatedUser) {
     await this.entitlements.assertFeature(current.tenantId, "campaigns");
+    await this.entitlements.assertWithinLimit(
+      current.tenantId,
+      "maxCampaigns",
+      await this.prisma.campaign.count({
+        where: { tenantId: current.tenantId, archivedAt: null },
+      }),
+    );
     const audience = this.normalizeAudience(dto.audience);
     await this.assertConnection(dto.connectionId, current.tenantId);
     await this.assertAudienceReferences(audience, current.tenantId);
@@ -526,19 +535,56 @@ export class CampaignsService {
   }
 
   async reconcileScheduledCampaigns() {
-    if (!this.campaignQueue.enabled()) return { scheduled: 0 };
-    const campaigns = await this.prisma.campaign.findMany({
-      where: { status: CampaignStatus.SCHEDULED, archivedAt: null, scheduledAt: { not: null } },
-      select: { id: true, tenantId: true, scheduledAt: true },
-      take: 100,
-    });
-    for (const campaign of campaigns) {
-      await this.campaignQueue.enqueue(
-        { kind: "campaign.prepare", tenantId: campaign.tenantId, campaignId: campaign.id },
-        { delay: positiveDelayMs(campaign.scheduledAt?.getTime() ?? Date.now()) },
-      );
+    if (!this.campaignQueue.enabled()) {
+      return { scheduled: 0, queued: 0, running: 0, cancelling: 0 };
     }
-    return { scheduled: campaigns.length };
+    const counts = { scheduled: 0, queued: 0, running: 0, cancelling: 0 };
+    let cursorId: string | undefined;
+    for (;;) {
+      const campaigns = await this.prisma.campaign.findMany({
+        where: {
+          status: {
+            in: [
+              CampaignStatus.SCHEDULED,
+              CampaignStatus.QUEUED,
+              CampaignStatus.RUNNING,
+              CampaignStatus.CANCELLING,
+            ],
+          },
+          archivedAt: null,
+        },
+        select: { id: true, tenantId: true, status: true, scheduledAt: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        take: 100,
+        ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+      });
+      for (const campaign of campaigns) {
+        if (campaign.status === CampaignStatus.CANCELLING) {
+          await this.campaignQueue.enqueue(
+            { kind: "campaign.cancel", tenantId: campaign.tenantId, campaignId: campaign.id },
+            { jobId: `campaign-reconcile-cancel-${campaign.id}` },
+          );
+          counts.cancelling += 1;
+          continue;
+        }
+        await this.campaignQueue.enqueue(
+          { kind: "campaign.prepare", tenantId: campaign.tenantId, campaignId: campaign.id },
+          {
+            delay:
+              campaign.status === CampaignStatus.SCHEDULED
+                ? positiveDelayMs(campaign.scheduledAt?.getTime() ?? Date.now())
+                : 0,
+            jobId: `campaign-reconcile-prepare-${campaign.id}`,
+          },
+        );
+        if (campaign.status === CampaignStatus.SCHEDULED) counts.scheduled += 1;
+        else if (campaign.status === CampaignStatus.QUEUED) counts.queued += 1;
+        else counts.running += 1;
+      }
+      if (campaigns.length < 100) break;
+      cursorId = campaigns[campaigns.length - 1].id;
+    }
+    return counts;
   }
 
   async prepareDispatch(campaignId: string) {
@@ -647,6 +693,7 @@ export class CampaignsService {
         status: CampaignRecipientStatus.PROCESSING,
         processingAt: new Date(),
         attempts: { increment: 1 },
+        lastErrorCode: CAMPAIGN_RECIPIENT_CLAIMED,
       },
     });
     if (claim.count !== 1) return { skipped: true };
@@ -654,16 +701,7 @@ export class CampaignsService {
     try {
       const messageId = await this.createCampaignMessage(recipient, attempt);
       createdMessageId = messageId;
-      await this.prisma.campaignRecipient.update({
-        where: { id: recipient.id },
-        data: {
-          status: CampaignRecipientStatus.SENT,
-          sentAt: new Date(),
-          messageId,
-          lastErrorCode: null,
-        },
-      });
-      await this.incrementCampaign(campaign.id, { sentCount: 1 });
+      await this.finalizeCreatedRecipient(recipient.id, campaign.id, messageId);
       await this.outboxDispatcher.dispatchMessage(messageId);
       await this.campaignQueue.enqueue({
         kind: "campaign.prepare",
@@ -674,31 +712,45 @@ export class CampaignsService {
     } catch (error) {
       // Retry only failures that establish no transaction committed. Connection loss/timeouts
       // and any failure after message creation keep the existing conservative failure path.
-      if (!createdMessageId && attempt < 3 && isSafeCampaignTransactionRetry(error)) {
-        const persistedMessage = await this.prisma.message.findFirst({
-          where: { tenantId: campaign.tenantId, campaignRecipientId: recipient.id },
-          select: { id: true },
-        });
-        if (!persistedMessage) {
-          await this.prisma.campaignRecipient.updateMany({
-            where: { id: recipient.id, status: CampaignRecipientStatus.PROCESSING },
-            data: {
-              status: CampaignRecipientStatus.QUEUED,
-              lastErrorCode: canonicalErrorCode(error),
-            },
+      const persistedMessage = createdMessageId
+        ? { id: createdMessageId }
+        : await this.prisma.message.findFirst({
+            where: { tenantId: campaign.tenantId, campaignRecipientId: recipient.id },
+            select: { id: true },
           });
-          throw error;
-        }
+      if (persistedMessage) {
+        await this.finalizeCreatedRecipient(recipient.id, campaign.id, persistedMessage.id);
+        await this.outboxDispatcher.dispatchMessage(persistedMessage.id);
+        this.logger.warn({
+          event: "campaign.recipient.persisted_reconciled",
+          tenantId: campaign.tenantId,
+          campaignId: campaign.id,
+          recipientId: recipient.id,
+          messageId: persistedMessage.id,
+        });
+        return { messageId: persistedMessage.id, recovered: true };
       }
-      await this.prisma.campaignRecipient.update({
-        where: { id: recipient.id },
+      if (attempt < 3 && isSafeCampaignTransactionRetry(error)) {
+        await this.prisma.campaignRecipient.updateMany({
+          where: { id: recipient.id, status: CampaignRecipientStatus.PROCESSING },
+          data: {
+            status: CampaignRecipientStatus.QUEUED,
+            lastErrorCode: canonicalErrorCode(error),
+          },
+        });
+        throw error;
+      }
+      const failed = await this.prisma.campaignRecipient.updateMany({
+        where: { id: recipient.id, status: CampaignRecipientStatus.PROCESSING },
         data: {
           status: CampaignRecipientStatus.FAILED,
           failedAt: new Date(),
-          lastErrorCode: canonicalErrorCode(error),
+          lastErrorCode: isAmbiguousCampaignError(error)
+            ? CAMPAIGN_COMMIT_OUTCOME_UNKNOWN
+            : canonicalErrorCode(error),
         },
       });
-      await this.incrementCampaign(campaign.id, { failedCount: 1 });
+      if (failed.count === 1) await this.incrementCampaign(campaign.id, { failedCount: 1 });
       this.logger.warn({
         event: "campaign.recipient.failed",
         tenantId: campaign.tenantId,
@@ -709,6 +761,102 @@ export class CampaignsService {
       });
       throw error;
     }
+  }
+
+  async recoverStaleRecipients(staleAfterMs = 60_000, limit = 100) {
+    const staleBefore = new Date(Date.now() - staleAfterMs);
+    const recipients = await this.prisma.campaignRecipient.findMany({
+      where: {
+        status: CampaignRecipientStatus.PROCESSING,
+        processingAt: { lt: staleBefore },
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        campaignId: true,
+        lastErrorCode: true,
+        processingAt: true,
+      },
+      orderBy: [{ processingAt: "asc" }, { id: "asc" }],
+      take: limit,
+    });
+    let safelyRequeued = 0;
+    let persistedReconciled = 0;
+    let blockedAsAmbiguous = 0;
+    for (const recipient of recipients) {
+      const message = await this.prisma.message.findFirst({
+        where: { tenantId: recipient.tenantId, campaignRecipientId: recipient.id },
+        select: { id: true },
+      });
+      if (message) {
+        const finalized = await this.finalizeCreatedRecipient(
+          recipient.id,
+          recipient.campaignId,
+          message.id,
+        );
+        if (finalized) {
+          await this.outboxDispatcher.dispatchMessage(message.id);
+          persistedReconciled += 1;
+        }
+        continue;
+      }
+      if (recipient.lastErrorCode === CAMPAIGN_RECIPIENT_CLAIMED) {
+        const released = await this.prisma.campaignRecipient.updateMany({
+          where: {
+            id: recipient.id,
+            status: CampaignRecipientStatus.PROCESSING,
+            lastErrorCode: CAMPAIGN_RECIPIENT_CLAIMED,
+          },
+          data: { status: CampaignRecipientStatus.QUEUED, lastErrorCode: null },
+        });
+        if (released.count === 1) {
+          try {
+            await this.campaignQueue.enqueue({
+              kind: "campaign.recipient.send",
+              tenantId: recipient.tenantId,
+              campaignId: recipient.campaignId,
+              recipientId: recipient.id,
+            });
+          } catch (error) {
+            // Queue acknowledgement may itself be ambiguous. Restore the stale claim so the
+            // next reconciliation retries the same deterministic job id instead of losing it.
+            await this.prisma.campaignRecipient.updateMany({
+              where: { id: recipient.id, status: CampaignRecipientStatus.QUEUED },
+              data: {
+                status: CampaignRecipientStatus.PROCESSING,
+                processingAt: recipient.processingAt,
+                lastErrorCode: CAMPAIGN_RECIPIENT_CLAIMED,
+              },
+            });
+            throw error;
+          }
+          safelyRequeued += 1;
+        }
+        continue;
+      }
+      const failed = await this.prisma.campaignRecipient.updateMany({
+        where: { id: recipient.id, status: CampaignRecipientStatus.PROCESSING },
+        data: {
+          status: CampaignRecipientStatus.FAILED,
+          failedAt: new Date(),
+          lastErrorCode: CAMPAIGN_COMMIT_OUTCOME_UNKNOWN,
+        },
+      });
+      if (failed.count === 1) {
+        await this.incrementCampaign(recipient.campaignId, { failedCount: 1 });
+        blockedAsAmbiguous += 1;
+      }
+    }
+    if (recipients.length) {
+      this.logger.warn({
+        event: "campaign.recipients.stale_reconciled",
+        scanned: recipients.length,
+        safelyRequeued,
+        persistedReconciled,
+        blockedAsAmbiguous,
+      });
+    }
+    return { scanned: recipients.length, safelyRequeued, persistedReconciled, blockedAsAmbiguous };
   }
 
   async finalizeDispatch(campaignId: string) {
@@ -774,6 +922,35 @@ export class CampaignsService {
     return this.counters(updated);
   }
 
+  private async finalizeCreatedRecipient(
+    recipientId: string,
+    campaignId: string,
+    messageId: string,
+  ) {
+    const finalized = await this.prisma.$transaction(async (tx) => {
+      const recipient = await tx.campaignRecipient.updateMany({
+        where: { id: recipientId, status: CampaignRecipientStatus.PROCESSING },
+        data: {
+          status: CampaignRecipientStatus.SENT,
+          sentAt: new Date(),
+          messageId,
+          lastErrorCode: null,
+        },
+      });
+      if (recipient.count !== 1) return false;
+      await tx.campaign.update({
+        where: { id: campaignId },
+        data: { sentCount: { increment: 1 } },
+      });
+      return true;
+    });
+    if (finalized) {
+      const campaign = await this.prisma.campaign.findUnique({ where: { id: campaignId } });
+      if (campaign) this.publishProgress(campaign);
+    }
+    return finalized;
+  }
+
   private async createCampaignMessage(
     recipient: Prisma.CampaignRecipientGetPayload<{
       include: { campaign: true; contact: { include: { customer: true } } };
@@ -790,6 +967,19 @@ export class CampaignsService {
       );
     const now = new Date();
     const message = await this.prisma.$transaction(async (tx) => {
+      // The ambiguity marker commits atomically with Message + outbox. A crash before commit
+      // rolls all three back and leaves the outer CLAIMED marker safe to retry.
+      const commitBoundary = await tx.campaignRecipient.updateMany({
+        where: {
+          id: recipient.id,
+          status: CampaignRecipientStatus.PROCESSING,
+          lastErrorCode: CAMPAIGN_RECIPIENT_CLAIMED,
+        },
+        data: { lastErrorCode: CAMPAIGN_COMMIT_OUTCOME_UNKNOWN },
+      });
+      if (commitBoundary.count !== 1) {
+        throw new Error("Campaign recipient claim was lost before message creation.");
+      }
       const conversation = await this.resolveConversation(tx, {
         tenantId: campaign.tenantId,
         contactId: recipient.contactId,
@@ -1390,4 +1580,9 @@ function isSafeCampaignTransactionRetry(error: unknown) {
   if (!error || typeof error !== "object" || !("code" in error)) return false;
   // P2034: transaction rolled back; P2024: timed out acquiring a connection.
   return error.code === "P2034" || error.code === "P2024";
+}
+
+function isAmbiguousCampaignError(error: unknown) {
+  if (!error || typeof error !== "object" || !("code" in error)) return false;
+  return ["P1001", "P1002", "P1011", "P1017"].includes(String(error.code));
 }

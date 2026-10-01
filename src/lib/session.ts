@@ -1,10 +1,16 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
+  acceptTenantInvitationWithTrixusApi,
+  completeRequiredPasswordChangeWithTrixusApi,
   hydrateWithTrixusApi,
   loginWithTrixusApi,
   logoutFromTrixusApi,
+  readStoredHandoffImpersonation,
   readStoredPlatformImpersonation,
+  selectTenantWithTrixusApi,
+  type RequiredPasswordChange,
+  type TenantSelectionRequired,
 } from "@/lib/trixus-api";
 import { effectiveSessionPermissions } from "@/lib/access-permissions";
 
@@ -18,6 +24,7 @@ export type Role = "super_admin" | "admin" | "supervisor" | "operator";
 
 export type SessionUser = {
   id: string;
+  roleId?: string;
   nome: string;
   email: string;
   role: Role;
@@ -177,21 +184,32 @@ export function currentRoleHome(
 
 export async function hydrateSession(): Promise<void> {
   const impersonation = readStoredPlatformImpersonation();
+  const handoffImpersonation = readStoredHandoffImpersonation();
   try {
     const user = await hydrateWithTrixusApi();
     useSession.setState({
       user,
-      impersonating: impersonation
+      impersonating: handoffImpersonation
         ? {
-            sessionId: impersonation.id,
-            empresaId: impersonation.tenant.id,
-            empresaNome: impersonation.tenant.name,
-            membershipId: impersonation.membershipId,
-            expiresAt: impersonation.expiresAt,
-            actorName: impersonation.actorUser.nome,
-            actorEmail: impersonation.actorUser.email,
+            sessionId: handoffImpersonation.id,
+            empresaId: handoffImpersonation.tenant.id,
+            empresaNome: handoffImpersonation.tenant.name,
+            membershipId: handoffImpersonation.membershipId,
+            expiresAt: handoffImpersonation.expiresAt,
+            actorName: handoffImpersonation.actorUser.name,
+            actorEmail: handoffImpersonation.actorUser.email,
           }
-        : null,
+        : impersonation
+          ? {
+              sessionId: impersonation.id,
+              empresaId: impersonation.tenant.id,
+              empresaNome: impersonation.tenant.name,
+              membershipId: impersonation.membershipId,
+              expiresAt: impersonation.expiresAt,
+              actorName: impersonation.actorUser.nome,
+              actorEmail: impersonation.actorUser.email,
+            }
+          : null,
       hydrated: true,
       error: null,
     });
@@ -200,8 +218,43 @@ export async function hydrateSession(): Promise<void> {
   }
 }
 
-export async function signIn(email: string, password: string): Promise<void> {
-  const user = await loginWithTrixusApi(email, password);
+export async function signIn(
+  email: string,
+  password: string,
+): Promise<RequiredPasswordChange | TenantSelectionRequired | null> {
+  const result = await loginWithTrixusApi(email, password);
+  if ("passwordChangeRequired" in result || "tenantSelectionRequired" in result) return result;
+  useSession.getState().loginAs(result);
+  return null;
+}
+
+export async function completeRequiredPasswordChange(input: {
+  setupToken: string;
+  newPassword: string;
+  confirmPassword: string;
+}): Promise<TenantSelectionRequired | null> {
+  const result = await completeRequiredPasswordChangeWithTrixusApi(input);
+  if ("tenantSelectionRequired" in result) return result;
+  useSession.getState().loginAs(result);
+  return null;
+}
+
+export async function selectTenant(input: {
+  selectionToken: string;
+  tenantId: string;
+}): Promise<RequiredPasswordChange | null> {
+  const result = await selectTenantWithTrixusApi(input);
+  if ("passwordChangeRequired" in result) return result;
+  useSession.getState().loginAs(result);
+  return null;
+}
+
+export async function acceptTenantInvitation(input: {
+  token: string;
+  password: string;
+  name?: string;
+}): Promise<void> {
+  const user = await acceptTenantInvitationWithTrixusApi(input);
   useSession.getState().loginAs(user);
 }
 

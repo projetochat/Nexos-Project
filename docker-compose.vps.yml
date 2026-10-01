@@ -85,6 +85,12 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     env_file:
       # Defaults to the real, ignored VPS file. TRIXUS_ENV_FILE lets CI validate
       # this Compose file against the tracked example without creating secrets.
@@ -119,7 +125,7 @@ services:
           "CMD",
           "bun",
           "-e",
-          "fetch('http://127.0.0.1:3001/api/health').then(r => { if (!r.ok) process.exit(1) })",
+          "fetch('http://127.0.0.1:3001/api/health/ready').then(r => { if (!r.ok) process.exit(1) })",
         ]
       interval: 15s
       timeout: 5s
@@ -132,6 +138,8 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         VITE_TRIXUS_API_URL: ${VITE_TRIXUS_API_URL:?Set VITE_TRIXUS_API_URL in .env.vps}
+        VITE_TRIXUS_PLATFORM_APP_URL: ${VITE_TRIXUS_PLATFORM_APP_URL:?Set VITE_TRIXUS_PLATFORM_APP_URL in .env.vps}
+        VITE_TRIXUS_TENANT_APP_URL: ${VITE_TRIXUS_TENANT_APP_URL:?Set VITE_TRIXUS_TENANT_APP_URL in .env.vps}
         VITE_APP_MODE: ${VITE_APP_MODE:-production}
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
         VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:-}

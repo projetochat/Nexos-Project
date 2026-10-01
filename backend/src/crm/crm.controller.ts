@@ -38,6 +38,11 @@ import {
   Prisma,
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import {
+  isHtmlContactCustomField,
+  sanitizeContactCustomFieldHtml,
+  sanitizeContactCustomFieldValueForOutput,
+} from "./contact-custom-field-html";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
 import { ContactProfilePictureSyncService } from "../messaging/contact-profile-picture-sync.service";
@@ -2065,13 +2070,16 @@ export class CrmController {
         : null,
       tags: contact.tags.map((item) => this.serializeTag(item.tag)),
       customFields: Object.fromEntries(
-        contact.customFieldValues.map((item) => [item.fieldId, item.value]),
+        contact.customFieldValues.map((item) => [
+          item.fieldId,
+          sanitizeContactCustomFieldValueForOutput(item.field, item.value),
+        ]),
       ),
       customFieldValues: contact.customFieldValues.map((item) => ({
         fieldId: item.fieldId,
         label: item.field.label,
         type: item.field.type,
-        value: item.value,
+        value: sanitizeContactCustomFieldValueForOutput(item.field, item.value),
       })),
       lifecycle: meta?.lifecycle,
       createdAt: contact.createdAt,
@@ -2133,6 +2141,9 @@ function normalizeContactCustomFieldValue(
   if (field.type === ContactCustomFieldType.LIST && isMultiListField(field.mask)) {
     const selected = parseMultiListValue(value);
     return selected.length ? JSON.stringify(selected) : "";
+  }
+  if (field.type === ContactCustomFieldType.TEXT && isHtmlContactCustomField(field.mask)) {
+    return sanitizeContactCustomFieldHtml(value);
   }
   if (!value || field.type !== ContactCustomFieldType.DATE) return value;
   return parseContactCustomDateValue(value, field.mask) ?? value;

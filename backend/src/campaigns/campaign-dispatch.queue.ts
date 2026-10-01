@@ -28,8 +28,16 @@ export class CampaignDispatchQueue implements OnModuleDestroy {
   }
 
   async enqueue(job: CampaignDispatchJob, options: JobsOptions = {}) {
-    const jobId = campaignJobId(job);
-    return this.getQueue().add(job.kind, job, {
+    const jobId = campaignJobId(job) ?? (options.jobId ? String(options.jobId) : undefined);
+    const queue = this.getQueue();
+    if (jobId) {
+      const existing = await queue.getJob(jobId);
+      if (existing) {
+        const state = await existing.getState();
+        if (state === "completed" || state === "failed") await existing.remove();
+      }
+    }
+    return queue.add(job.kind, job, {
       ...CAMPAIGN_JOB_OPTIONS,
       ...options,
       ...(jobId ? { jobId } : {}),

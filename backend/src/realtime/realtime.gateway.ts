@@ -10,7 +10,7 @@ import {
   WebSocketServer,
 } from "@nestjs/websockets";
 import type { Server, Socket } from "socket.io";
-import { realtimeConfig } from "./realtime.config";
+import { realtimeConfig, realtimeCorsOrigin } from "./realtime.config";
 import { REALTIME_NAMESPACE, REALTIME_PATH } from "./realtime-events";
 import {
   RealtimeAuthError,
@@ -32,7 +32,7 @@ type RealtimeSocket = Socket & {
 @WebSocketGateway({
   namespace: REALTIME_NAMESPACE,
   path: REALTIME_PATH,
-  cors: { origin: true, credentials: true },
+  cors: { origin: realtimeCorsOrigin, credentials: true },
 })
 export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(RealtimeGateway.name);
@@ -89,7 +89,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @ConnectedSocket() socket: RealtimeSocket,
     @MessageBody() body: { conversationId?: string },
   ) {
-    const context = this.requireContext(socket);
+    const context = await this.requireContext(socket);
     this.assertRate(socket, "conversation.subscribe", 20);
     const conversationId = validId(body?.conversationId);
     if (!conversationId) return { ok: false, code: "NOT_FOUND" };
@@ -109,7 +109,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @ConnectedSocket() socket: RealtimeSocket,
     @MessageBody() body: { conversationId?: string },
   ) {
-    this.requireContext(socket);
+    await this.requireContext(socket);
     const conversationId = validId(body?.conversationId);
     if (!conversationId) return { ok: false, code: "NOT_FOUND" };
     const room = realtimeRooms.conversation(conversationId);
@@ -123,7 +123,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @ConnectedSocket() socket: RealtimeSocket,
     @MessageBody() body: { conversationId?: string },
   ) {
-    const context = this.requireContext(socket);
+    const context = await this.requireContext(socket);
     this.assertRate(socket, "typing.start", 40);
     const conversationId = validId(body?.conversationId);
     if (!conversationId) return { ok: false, code: "NOT_FOUND" };
@@ -138,7 +138,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @ConnectedSocket() socket: RealtimeSocket,
     @MessageBody() body: { conversationId?: string },
   ) {
-    const context = this.requireContext(socket);
+    const context = await this.requireContext(socket);
     this.assertRate(socket, "typing.stop", 60);
     const conversationId = validId(body?.conversationId);
     if (!conversationId) return { ok: false, code: "NOT_FOUND" };
@@ -153,17 +153,23 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @ConnectedSocket() socket: RealtimeSocket,
     @MessageBody() body: { status?: "online" | "away" },
   ) {
-    const context = this.requireContext(socket);
+    const context = await this.requireContext(socket);
     this.assertRate(socket, "presence.heartbeat", 30);
     await this.realtime.heartbeat(context, body?.status === "away" ? "away" : "online");
     return { ok: true };
   }
 
-  private requireContext(socket: RealtimeSocket) {
+  private async requireContext(socket: RealtimeSocket) {
     const context = socket.data.context;
     if (!context) {
       socket.disconnect(true);
       throw new Error("Missing realtime context.");
+    }
+    try {
+      await this.auth.assertSession(context);
+    } catch (error) {
+      socket.disconnect(true);
+      throw error;
     }
     return context;
   }

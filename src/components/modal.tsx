@@ -14,6 +14,7 @@ export function Modal({
   footer,
   initialFocus,
   closeOnBackdrop = true,
+  dismissible = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -25,6 +26,7 @@ export function Modal({
   footer?: React.ReactNode;
   initialFocus?: string;
   closeOnBackdrop?: boolean;
+  dismissible?: boolean;
 }) {
   const dialogRef = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
@@ -39,7 +41,8 @@ export function Modal({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
-      if (e.key === "Escape" && dialogs[dialogs.length - 1] === dialogRef.current) onClose();
+      if (dismissible && e.key === "Escape" && dialogs[dialogs.length - 1] === dialogRef.current)
+        onClose();
     };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -48,7 +51,7 @@ export function Modal({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, onClose]);
+  }, [dismissible, open, onClose]);
 
   if (!open) return null;
 
@@ -65,7 +68,7 @@ export function Modal({
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4">
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={closeOnBackdrop ? onClose : undefined}
+        onClick={dismissible && closeOnBackdrop ? onClose : undefined}
       />
       <div
         role="dialog"
@@ -80,13 +83,15 @@ export function Modal({
               <p className="mt-0.5 truncate text-xs text-muted-foreground">{description}</p>
             )}
           </div>
-          <button
-            onClick={onClose}
-            aria-label="Fechar"
-            className="rounded-md border border-border bg-surface-2 p-1.5 text-muted-foreground transition hover:bg-surface-3 hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          {dismissible && (
+            <button
+              onClick={onClose}
+              aria-label="Fechar"
+              className="rounded-md border border-border bg-surface-2 p-1.5 text-muted-foreground transition hover:bg-surface-3 hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           {children}

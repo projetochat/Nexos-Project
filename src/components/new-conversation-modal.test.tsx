@@ -20,7 +20,23 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
 }));
 vi.mock("@/components/app-shell", () => ({ AppShellFull: () => null }));
-vi.mock("@/lib/session", () => ({ useSession: () => ({ id: "user" }) }));
+vi.mock("@/lib/session", () => ({
+  useSession: (selector: (state: unknown) => unknown) =>
+    selector({
+      user: {
+        id: "user",
+        nome: "Usuário de teste",
+        email: "user@trixus.test",
+        role: "operator",
+        permissions: [
+          "conversations.assign",
+          "contacts.read",
+          "chat.contacts.create",
+          "chat.contacts.edit",
+        ],
+      },
+    }),
+}));
 vi.mock("@/lib/realtime/hooks", () => ({ useRealtimeInbox: vi.fn() }));
 vi.mock("@/lib/queue-prefs", () => ({ useQueuePrefs: vi.fn() }));
 vi.mock("@/lib/perms", () => ({ useChatPerms: vi.fn() }));

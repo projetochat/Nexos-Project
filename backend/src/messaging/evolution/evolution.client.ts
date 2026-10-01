@@ -16,6 +16,7 @@ import type { EvolutionMediaKind, EvolutionQuotedKey } from "./evolution-outboun
 type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
+  maxResponseBytes?: number;
 };
 
 @Injectable()
@@ -394,8 +395,14 @@ export class EvolutionClient {
   async getBase64FromMediaMessage(input: {
     instanceName: string;
     message: unknown;
+    maxBytes?: number;
   }): Promise<{ body: Buffer; mimeType?: string | null; fileName?: string | null }> {
     const endpoint = `/chat/getBase64FromMediaMessage/${input.instanceName}`;
+    const maxBytes =
+      Number.isSafeInteger(input.maxBytes) && input.maxBytes! > 0
+        ? input.maxBytes!
+        : 32 * 1024 * 1024;
+    const maxResponseBytes = Math.ceil((maxBytes * 4) / 3) + 64 * 1024;
     const payloads = [
       { message: input.message },
       { message: input.message, convertToMp4: false },
@@ -404,10 +411,20 @@ export class EvolutionClient {
     let lastError: unknown;
     for (const payload of payloads) {
       try {
-        const response = await this.request<unknown>(endpoint, { method: "POST", body: payload });
-        const extracted = extractBase64Media(response);
+        const response = await this.request<unknown>(endpoint, {
+          method: "POST",
+          body: payload,
+          maxResponseBytes,
+        });
+        const extracted = extractBase64Media(response, maxBytes);
         if (extracted) return extracted;
       } catch (error) {
+        if (
+          error instanceof MessagingProviderError &&
+          error.code === MessagingErrorCode.MEDIA_DOWNLOAD_FAILED
+        ) {
+          throw error;
+        }
         lastError = error;
       }
     }
@@ -424,6 +441,7 @@ export class EvolutionClient {
       method: options.method ?? "GET",
       headers: { "Content-Type": "application/json" },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      maxResponseBytes: options.maxResponseBytes,
     });
   }
 
@@ -433,7 +451,12 @@ export class EvolutionClient {
 
   private async fetchJson<T>(
     path: string,
-    options: { method: string; headers?: Record<string, string>; body?: RequestInit["body"] },
+    options: {
+      method: string;
+      headers?: Record<string, string>;
+      body?: RequestInit["body"];
+      maxResponseBytes?: number;
+    },
   ): Promise<T> {
     const config = evolutionConfigFromEnv();
     if (!assertEvolutionConfigured(config)) {
@@ -454,9 +477,10 @@ export class EvolutionClient {
         },
         body: options.body,
         signal: controller.signal,
+        redirect: "error",
       });
 
-      const data = await readJson(response);
+      const data = await readJson(response, options.maxResponseBytes);
       if (!response.ok) {
         throw classifyEvolutionProviderError({
           status: response.status,
@@ -488,7 +512,7 @@ export class EvolutionClient {
   }
 }
 
-async function readJson(response: Response) {
+async function readJson(response: Response, maxBytes?: number) {
   if (typeof response.text !== "function") {
     try {
       return (await response.json()) as unknown;
@@ -496,13 +520,52 @@ async function readJson(response: Response) {
       return null;
     }
   }
-  const text = await response.text();
+  const text = maxBytes ? await readResponseTextLimited(response, maxBytes) : await response.text();
   if (!text) return null;
   try {
     return JSON.parse(text) as unknown;
   } catch {
     return text;
   }
+}
+
+async function readResponseTextLimited(response: Response, maxBytes: number) {
+  const declaredLength = response.headers?.get?.("content-length");
+  if (declaredLength && /^\d+$/.test(declaredLength) && Number(declaredLength) > maxBytes) {
+    throw mediaResponseTooLarge();
+  }
+  if (!response.body || typeof response.body.getReader !== "function") {
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > maxBytes) throw mediaResponseTooLarge();
+    return text;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let size = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel();
+        throw mediaResponseTooLarge();
+      }
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function mediaResponseTooLarge() {
+  return new MessagingProviderError(
+    MessagingErrorCode.MEDIA_DOWNLOAD_FAILED,
+    "Evolution media response exceeds the configured limit.",
+    false,
+  );
 }
 
 function rawBase64Image(value: string) {
@@ -801,8 +864,9 @@ function extractProfilePictureUrl(value: unknown): string | null {
 
 function extractBase64Media(
   value: unknown,
+  maxBytes?: number,
 ): { body: Buffer; mimeType?: string | null; fileName?: string | null } | null {
-  if (typeof value === "string") return decodeBase64Media(value);
+  if (typeof value === "string") return decodeBase64Media(value, undefined, undefined, maxBytes);
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
   const mimeType =
@@ -811,11 +875,11 @@ function extractBase64Media(
     stringField(record, "contentType");
   const fileName = stringField(record, "fileName") ?? stringField(record, "filename");
   for (const key of ["base64", "media", "data"]) {
-    const decoded = decodeBase64Media(record[key], mimeType, fileName);
+    const decoded = decodeBase64Media(record[key], mimeType, fileName, maxBytes);
     if (decoded) return decoded;
   }
   for (const nested of Object.values(record)) {
-    const decoded = extractBase64Media(nested);
+    const decoded = extractBase64Media(nested, maxBytes);
     if (decoded) {
       return {
         body: decoded.body,
@@ -831,20 +895,27 @@ function decodeBase64Media(
   value: unknown,
   fallbackMimeType?: string | null,
   fallbackFileName?: string | null,
+  maxBytes?: number,
 ) {
   if (typeof value !== "string" || value.length < 16) return null;
   const dataUri = /^data:([^;]+);base64,(.+)$/i.exec(value);
   const base64 = dataUri ? dataUri[2] : value;
   if (!/^[A-Za-z0-9+/=\r\n]+$/.test(base64)) return null;
   try {
-    const body = Buffer.from(base64.replace(/\s+/g, ""), "base64");
+    const normalized = base64.replace(/\s+/g, "");
+    const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
+    const decodedLength = Math.floor((normalized.length * 3) / 4) - padding;
+    if (maxBytes && decodedLength > maxBytes) throw mediaResponseTooLarge();
+    const body = Buffer.from(normalized, "base64");
+    if (maxBytes && body.length > maxBytes) throw mediaResponseTooLarge();
     if (body.length === 0) return null;
     return {
       body,
       mimeType: dataUri?.[1] ?? fallbackMimeType ?? null,
       fileName: fallbackFileName ?? null,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof MessagingProviderError) throw error;
     return null;
   }
 }

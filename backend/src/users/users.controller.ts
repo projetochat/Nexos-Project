@@ -34,7 +34,6 @@ import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
-import { ActivateUserDto } from "./dto/activate-user.dto";
 
 class CreateInvitationDto {
   @IsEmail()
@@ -75,6 +74,7 @@ class UpdateMyProfileDto {
   @IsOptional()
   @IsString()
   @MinLength(6)
+  @MaxLength(72)
   newPassword?: string;
 }
 
@@ -86,6 +86,7 @@ class UpdateAdministratorCredentialsDto {
   @IsOptional()
   @IsString()
   @MinLength(6)
+  @MaxLength(72)
   newPassword?: string;
 
   @IsOptional()
@@ -214,23 +215,34 @@ export class UsersController {
       throw new ForbiddenException("O nome do Administrador não pode ser alterado.");
     }
     if (dto.newPassword) {
+      assertBcryptPasswordLength(dto.newPassword);
       if (!dto.currentPassword) throw new BadRequestException("Informe a senha atual.");
+      assertBcryptPasswordLength(dto.currentPassword);
       const validPassword = await compare(dto.currentPassword, membership.user.passwordHash);
       if (!validPassword) throw new BadRequestException("Senha atual invalida.");
       if (dto.newPassword === dto.currentPassword) {
         throw new BadRequestException("A nova senha deve ser diferente da senha atual.");
       }
     }
-    await this.prisma.user.update({
-      where: { id: membership.userId },
-      data: {
-        name: dto.name?.trim() || undefined,
-        ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
-        ...(dto.keepSidebarCollapsed !== undefined
-          ? { keepSidebarCollapsed: dto.keepSidebarCollapsed }
-          : {}),
-        ...(dto.newPassword ? { passwordHash: await hash(dto.newPassword, 12) } : {}),
-      },
+    const passwordHash = dto.newPassword ? await hash(dto.newPassword, 12) : undefined;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: membership.userId },
+        data: {
+          name: dto.name?.trim() || undefined,
+          ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
+          ...(dto.keepSidebarCollapsed !== undefined
+            ? { keepSidebarCollapsed: dto.keepSidebarCollapsed }
+            : {}),
+          ...(passwordHash ? { passwordHash } : {}),
+        },
+      });
+      if (passwordHash) {
+        await tx.authSession.updateMany({
+          where: { userId: membership.userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
     });
     const updated = await this.prisma.tenantMembership.findUniqueOrThrow({
       where: { id: current.membershipId },
@@ -258,9 +270,11 @@ export class UsersController {
     if (!dto.currentPassword) {
       throw new BadRequestException("Informe a senha atual.");
     }
+    assertBcryptPasswordLength(dto.currentPassword);
     if (isChangingPassword && (!dto.currentPassword || !dto.newPassword || !dto.confirmPassword)) {
       throw new BadRequestException("Preencha todos os campos de senha.");
     }
+    if (dto.newPassword) assertBcryptPasswordLength(dto.newPassword);
     if (isChangingPassword && dto.newPassword !== dto.confirmPassword) {
       throw new BadRequestException("A confirmação da nova senha não confere.");
     }
@@ -294,6 +308,10 @@ export class UsersController {
         await tx.user.update({
           where: { id: membership.userId },
           data: { passwordHash },
+        });
+        await tx.authSession.updateMany({
+          where: { userId: membership.userId, revokedAt: null },
+          data: { revokedAt: new Date() },
         });
       }
       if (dto.presentationName !== undefined) {
@@ -434,6 +452,7 @@ export class UsersController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions("users.manage")
   async create(@Body() dto: CreateUserDto, @CurrentUser() current: AuthenticatedUser) {
+    assertBcryptPasswordLength(dto.password);
     const roleId = dto.roleId ?? (await this.defaultRoleId(current.tenantId));
     await this.assertAssignableRole(roleId, current);
     await this.assertDepartmentsInTenant(dto.departmentIds ?? [], current.tenantId);
@@ -505,6 +524,7 @@ export class UsersController {
     current: AuthenticatedUser,
     reactivationOnly = false,
   ) {
+    if (dto.password) assertBcryptPasswordLength(dto.password);
     const existing = await this.findMembershipOrThrow(id, current.tenantId);
     this.assertMasterMembershipProtected(existing);
     this.assertSelfAccessPreserved(existing, dto, current);
@@ -530,24 +550,43 @@ export class UsersController {
         (latest.status !== "ACTIVE" && dto.membershipStatus === "ACTIVE") ||
         (latest.user.status === "DISABLED" && dto.status === "ACTIVE");
       if (reactivationOnly && !reactivating) return latest;
-      if (reactivating)
-        await this.assertReactivationPassword(tx, latest, current.tenantId, dto.password);
       if (dto.name !== undefined) {
         await this.assertNameAvailable(tx, current.tenantId, dto.name, existing.id);
       }
-      await tx.user.update({
-        where: { id: existing.userId },
-        data: {
-          email: dto.email?.toLowerCase().trim(),
-          name: dto.name?.trim(),
-          passwordHash: dto.password ? await hash(dto.password, 12) : undefined,
-          status: dto.status,
-          ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
-        },
+      const otherMembership = await tx.tenantMembership.findFirst({
+        where: { userId: latest.userId, tenantId: { not: current.tenantId } },
+        select: { id: true },
       });
+      const changesSharedGlobalIdentity =
+        Boolean(otherMembership) &&
+        (dto.password !== undefined ||
+          (dto.email !== undefined && dto.email.toLowerCase().trim() !== latest.user.email) ||
+          (dto.status !== undefined && dto.status !== latest.user.status) ||
+          (dto.avatarUrl !== undefined && avatarUrl !== (latest.user.avatarUrl ?? null)));
+      if (changesSharedGlobalIdentity) {
+        throw new BadRequestException(
+          "Esta conta pertence a mais de uma empresa. Credenciais e dados globais só podem ser alterados pelo próprio usuário.",
+        );
+      }
+      const userData = {
+        email: dto.email?.toLowerCase().trim(),
+        passwordHash: dto.password ? await hash(dto.password, 12) : undefined,
+        status: dto.status,
+        ...(dto.avatarUrl !== undefined ? { avatarUrl } : {}),
+      };
+      if (Object.values(userData).some((value) => value !== undefined)) {
+        await tx.user.update({
+          where: { id: existing.userId },
+          data: userData,
+        });
+      }
       await tx.tenantMembership.update({
         where: { id: existing.id },
-        data: { roleId: dto.roleId, status: dto.membershipStatus },
+        data: {
+          roleId: dto.roleId,
+          status: dto.membershipStatus,
+          ...(dto.name !== undefined ? { presentationName: dto.name.trim() } : {}),
+        },
       });
       if (dto.departmentIds) {
         await this.replaceDepartments(tx, current.tenantId, existing.id, dto.departmentIds);
@@ -564,14 +603,10 @@ export class UsersController {
   @Patch("users/:id/activate")
   @UseGuards(PermissionsGuard)
   @RequirePermissions("users.manage")
-  activate(
-    @Param("id") id: string,
-    @Body() dto: ActivateUserDto,
-    @CurrentUser() current: AuthenticatedUser,
-  ) {
+  activate(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.updateMembership(
       id,
-      { password: dto.password, membershipStatus: "ACTIVE", status: "ACTIVE" },
+      { membershipStatus: "ACTIVE", status: "ACTIVE" },
       current,
       true,
     );
@@ -640,7 +675,7 @@ export class UsersController {
       status: invitation.status.toLowerCase(),
       expiresAt: invitation.expiresAt,
       ...(exposeLocalTokens()
-        ? { acceptUrl: `${publicAppUrl()}/login?invite=${token}` }
+        ? { acceptUrl: `${tenantAppUrl()}/login?invite=${token}` }
         : { delivery: "provider_required" }),
     };
   }
@@ -759,37 +794,16 @@ export class UsersController {
     const normalizedName = normalizeUserName(name);
     const memberships = await tx.tenantMembership.findMany({
       where: { tenantId, ...(excludeMembershipId ? { id: { not: excludeMembershipId } } : {}) },
-      select: { user: { select: { name: true } } },
+      select: { presentationName: true, user: { select: { name: true } } },
     });
     if (
-      memberships.some((membership) => normalizeUserName(membership.user.name) === normalizedName)
+      memberships.some(
+        (membership) =>
+          normalizeUserName(membership.presentationName?.trim() || membership.user.name) ===
+          normalizedName,
+      )
     ) {
       throw new BadRequestException("Já existe um atendente com este nome.");
-    }
-  }
-
-  private async assertReactivationPassword(
-    tx: Prisma.TransactionClient,
-    membership: { userId: string; user: { passwordHash: string } },
-    tenantId: string,
-    password?: string,
-  ) {
-    if (typeof password !== "string" || password.length < 6 || !password.trim()) {
-      throw new BadRequestException(
-        "Informe uma nova senha com pelo menos 6 caracteres para desbloquear o atendente.",
-      );
-    }
-    const otherMembership = await tx.tenantMembership.findFirst({
-      where: { userId: membership.userId, tenantId: { not: tenantId } },
-      select: { id: true },
-    });
-    if (otherMembership) {
-      throw new BadRequestException(
-        "Esta conta possui vínculo com outra empresa. A reativação exige recuperação explícita da conta global pelo titular.",
-      );
-    }
-    if (await compare(password, membership.user.passwordHash)) {
-      throw new BadRequestException("A nova senha deve ser diferente da senha anterior.");
     }
   }
 
@@ -877,8 +891,12 @@ function exposeLocalTokens() {
   return process.env.NODE_ENV !== "production" || process.env.TRIXUS_EXPOSE_LOCAL_TOKENS === "true";
 }
 
-function publicAppUrl() {
-  return (process.env.TRIXUS_PUBLIC_APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
+function tenantAppUrl() {
+  return (
+    process.env.TRIXUS_TENANT_APP_URL ??
+    process.env.TRIXUS_PUBLIC_APP_URL ??
+    "http://localhost:5173"
+  ).replace(/\/$/, "");
 }
 
 function normalizeAvatarUrl(value: string | null | undefined) {
@@ -898,4 +916,10 @@ function normalizeUserName(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ")
     .toLocaleLowerCase("pt-BR");
+}
+
+function assertBcryptPasswordLength(value: string) {
+  if (Buffer.byteLength(value, "utf8") > 72) {
+    throw new BadRequestException("A senha deve possuir no máximo 72 bytes.");
+  }
 }

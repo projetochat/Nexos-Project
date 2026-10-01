@@ -4,6 +4,7 @@ import {
   DASHBOARD_CHART_TEXT_COLOR,
   DESKTOP_MESSAGE_HOUR_TICKS,
   messageHourTicks,
+  messageTrafficSummary,
   MOBILE_MESSAGE_HOUR_TICKS,
 } from "./dashboard-chart-layout";
 
@@ -26,5 +27,17 @@ describe("dashboard chart layout", () => {
   it("shows every hour from 00h through 23h on mobile", () => {
     expect(MOBILE_MESSAGE_HOUR_TICKS).toHaveLength(24);
     expect(messageHourTicks(true)).toEqual(DESKTOP_MESSAGE_HOUR_TICKS);
+  });
+
+  it("uses the unique period contact total instead of adding hourly duplicates", () => {
+    expect(
+      messageTrafficSummary(
+        [
+          { recebidas: 8, enviadas: 2, total: 10 },
+          { recebidas: 4, enviadas: 1, total: 5 },
+        ],
+        1,
+      ),
+    ).toEqual({ recebidas: 12, enviadas: 3, total: 15, contatos: 1 });
   });
 });
