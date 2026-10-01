@@ -3,6 +3,7 @@ import { PrismaService } from "../prisma/prisma.service";
 
 type Limits = {
   maxUsers: number;
+  maxDepartments: number;
   maxConnections: number;
   maxCampaigns: number;
   maxContacts: number;
@@ -62,6 +63,7 @@ export class PlanEntitlementService {
     const periodStart = startOfMonth(new Date());
     const [
       activeUsers,
+      departments,
       connections,
       contacts,
       customers,
@@ -75,6 +77,7 @@ export class PlanEntitlementService {
       this.prisma.tenantMembership.count({
         where: { tenantId, status: "ACTIVE", user: { status: "ACTIVE" } },
       }),
+      this.prisma.department.count({ where: { tenantId, active: true } }),
       this.prisma.messagingConnection.count({
         where: { tenantId, archivedAt: null, status: { not: "REMOVED" } },
       }),
@@ -92,6 +95,7 @@ export class PlanEntitlementService {
     ]);
     return {
       activeUsers,
+      departments,
       connections,
       contacts,
       customers,
@@ -140,6 +144,7 @@ export function coerceLimits(value: unknown): Limits {
   const raw = asRecord(value);
   return {
     maxUsers: readPositive(raw.maxUsers, 3),
+    maxDepartments: readPositive(raw.maxDepartments, 2),
     maxConnections: readPositive(raw.maxConnections, 1),
     maxCampaigns: readPositive(raw.maxCampaigns, readPositive(raw.maxCampaignRecipients, 0)),
     maxContacts: readPositive(raw.maxContacts, 1000),
@@ -183,6 +188,7 @@ function startOfMonth(date: Date) {
 function limitCode(metric: keyof Limits) {
   const codes: Record<keyof Limits, string> = {
     maxUsers: "PLAN_LIMIT_USERS_REACHED",
+    maxDepartments: "PLAN_LIMIT_DEPARTMENTS_REACHED",
     maxConnections: "PLAN_LIMIT_CONNECTIONS_REACHED",
     maxCampaigns: "PLAN_LIMIT_CAMPAIGNS_REACHED",
     maxContacts: "PLAN_LIMIT_CONTACTS_REACHED",

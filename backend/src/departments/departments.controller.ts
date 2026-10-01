@@ -69,6 +69,14 @@ export class DepartmentsController {
       );
       await this.entitlements.assertTenantOperational(current.tenantId);
       await this.ensureNameAvailable(tx, current.tenantId, name);
+      const activeDepartments = await tx.department.count({
+        where: { tenantId: current.tenantId, active: true },
+      });
+      await this.entitlements.assertWithinLimit(
+        current.tenantId,
+        "maxDepartments",
+        activeDepartments,
+      );
       return tx.department.create({
         data: {
           tenantId: current.tenantId,

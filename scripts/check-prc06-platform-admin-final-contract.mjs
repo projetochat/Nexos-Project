@@ -62,6 +62,7 @@ check(
     "auditLogs",
     "auditLog",
     "startImpersonation",
+    "startImpersonationHandoff",
     "stopImpersonation",
     "currentImpersonation",
   ]),
@@ -82,10 +83,9 @@ check(
 check(
   "tenant detail starts impersonation through Platform API only",
   includesAll(tenantDetailRoute, [
-    "platformApi.startImpersonation",
-    "activatePlatformImpersonation",
-    "impersonationReason",
-    "O banner permanente mostra tenant",
+    "createImpersonationHandoff",
+    "window.location.assign(handoff.url)",
+    "reason:",
   ]),
 );
 

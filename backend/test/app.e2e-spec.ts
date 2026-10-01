@@ -907,6 +907,35 @@ describe("Trixus API organization and RBAC", () => {
     await expect(prisma.department.count({ where: { tenantId, active: true } })).resolves.toBe(2);
   });
 
+  it("serializes concurrent department creation at the last plan slot", async () => {
+    const { token, tenantId } = await createStarterTenant("department-limit");
+    await request(app.getHttpServer())
+      .post("/api/departments")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Departamento Seed", color: "#2563eb" })
+      .expect(201);
+
+    const suffix = Date.now();
+    const responses = await Promise.all([
+      request(app.getHttpServer())
+        .post("/api/departments")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: `Departamento A ${suffix}`, color: "#2563eb" }),
+      request(app.getHttpServer())
+        .post("/api/departments")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ name: `Departamento B ${suffix}`, color: "#16a34a" }),
+    ]);
+    expect(responses.filter((response) => response.status === 201)).toHaveLength(1);
+    expect(
+      responses.some(
+        (response) =>
+          response.status === 409 && response.body.code === "PLAN_LIMIT_DEPARTMENTS_REACHED",
+      ),
+    ).toBe(true);
+    await expect(prisma.department.count({ where: { tenantId, active: true } })).resolves.toBe(2);
+  });
+
   it("allows agents to read and write CRM while individual permissions are paused", async () => {
     const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     const customerName = `Cliente do atendente ${Date.now()}`;

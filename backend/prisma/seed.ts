@@ -1626,6 +1626,7 @@ function professionalFeatures() {
 function starterLimits() {
   return {
     maxUsers: 3,
+    maxDepartments: 2,
     maxConnections: 1,
     maxCampaigns: 0,
     maxContacts: 1000,
@@ -1637,6 +1638,7 @@ function starterLimits() {
 function businessLimits() {
   return {
     maxUsers: 10,
+    maxDepartments: 5,
     maxConnections: 5,
     maxCampaigns: 20,
     maxContacts: 5000,
@@ -1648,6 +1650,7 @@ function businessLimits() {
 function professionalLimits() {
   return {
     maxUsers: 20,
+    maxDepartments: 10,
     maxConnections: 10,
     maxCampaigns: 50,
     maxContacts: 10000,

@@ -2363,6 +2363,7 @@ export class PlatformService {
     const limits = coerceLimits(nextLimits);
     const exceeded = Object.entries({
       maxUsers: usage.activeUsers,
+      maxDepartments: usage.departments,
       maxConnections: usage.connections,
       maxCampaigns: usage.campaignsThisPeriod,
       maxContacts: usage.contacts,
