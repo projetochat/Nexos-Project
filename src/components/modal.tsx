@@ -64,11 +64,29 @@ export function Modal({
 
   if (typeof document === "undefined") return null;
 
+  const handleBackdropClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const activeElement = document.activeElement;
+    if (
+      activeElement instanceof HTMLInputElement &&
+      activeElement.type === "color" &&
+      dialogRef.current?.contains(activeElement)
+    ) {
+      // Native color pickers live outside the DOM. A click used to dismiss the
+      // picker can therefore reach this backdrop; consume that click and only
+      // release the color input's focus, keeping the parent modal open.
+      event.preventDefault();
+      activeElement.blur();
+      return;
+    }
+    onClose();
+  };
+
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4">
       <div
+        data-modal-backdrop
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={dismissible && closeOnBackdrop ? onClose : undefined}
+        onClick={dismissible && closeOnBackdrop ? handleBackdropClick : undefined}
       />
       <div
         role="dialog"

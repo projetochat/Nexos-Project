@@ -66,3 +66,59 @@ it("does not expose close affordances for a mandatory modal", async () => {
     container.remove();
   }
 });
+
+it("dismisses a focused native color picker before dismissing its parent modal", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onClose = vi.fn();
+  try {
+    await React.act(() =>
+      root.render(
+        <Modal open title="Editar cor" onClose={onClose}>
+          <input aria-label="Cor" type="color" defaultValue="#3b82f6" />
+        </Modal>,
+      ),
+    );
+    const colorInput = document.querySelector<HTMLInputElement>('input[type="color"]')!;
+    const backdrop = document.querySelector<HTMLElement>("[data-modal-backdrop]")!;
+    colorInput.focus();
+
+    await React.act(() => backdrop.click());
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(colorInput);
+
+    await React.act(() => backdrop.click());
+    expect(onClose).toHaveBeenCalledOnce();
+  } finally {
+    await React.act(() => root.unmount());
+    container.remove();
+  }
+});
+
+it("still dismisses the modal when a non-color field is focused", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onClose = vi.fn();
+  try {
+    await React.act(() =>
+      root.render(
+        <Modal open title="Editar nome" onClose={onClose}>
+          <input aria-label="Nome" />
+        </Modal>,
+      ),
+    );
+    document.querySelector<HTMLInputElement>('input[aria-label="Nome"]')!.focus();
+
+    await React.act(() => document.querySelector<HTMLElement>("[data-modal-backdrop]")!.click());
+
+    expect(onClose).toHaveBeenCalledOnce();
+  } finally {
+    await React.act(() => root.unmount());
+    container.remove();
+  }
+});

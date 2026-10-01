@@ -507,12 +507,9 @@ export class TicketsService {
   }
 
   private async applyVisibility(where: Prisma.TicketWhereInput, current: AuthenticatedUser) {
-    if (current.roleKey === "tenant_admin") return where;
-    const allowed = await this.allowedDepartmentIds(current);
-    return {
-      ...where,
-      OR: [{ departmentId: { in: allowed } }, { assignedMembershipId: current.membershipId }],
-    };
+    // Temporary approved policy: ticket permissions grant tenant-wide visibility.
+    // The controller/guard remains responsible for requiring the appropriate ticket permission.
+    return where;
   }
 
   private async resolveDepartment(
@@ -524,12 +521,6 @@ export class TicketsService {
       where: { tenantId: current.tenantId, id: departmentId, active: true },
     });
     if (!department) throw new BadRequestException("Departamento inválido.");
-    if (
-      current.roleKey !== "tenant_admin" &&
-      !(await this.allowedDepartmentIds(current)).includes(departmentId)
-    ) {
-      throw new ForbiddenException("Departamento fora do escopo do usuário.");
-    }
     return departmentId;
   }
 
@@ -596,17 +587,6 @@ export class TicketsService {
         include: { contact: { select: { id: true, customerId: true } } },
       });
       if (!conversation) throw new BadRequestException("Conversation invalida.");
-      if (current.roleKey !== "tenant_admin") {
-        const allowed = await this.allowedDepartmentIds(current);
-        if (
-          !(
-            (conversation.departmentId && allowed.includes(conversation.departmentId)) ||
-            conversation.assignedMembershipId === current.membershipId
-          )
-        ) {
-          throw new ForbiddenException("Conversation fora do escopo do usuário.");
-        }
-      }
       if (data.requesterContactId && data.requesterContactId !== conversation.contactId) {
         throw new BadRequestException("Contact não pertence a Conversation.");
       }
@@ -617,14 +597,6 @@ export class TicketsService {
       data.conversationId = conversation.id;
     } else if (dto.conversationId === null) data.conversationId = null;
     return data;
-  }
-
-  private async allowedDepartmentIds(current: AuthenticatedUser) {
-    const rows = await this.prisma.departmentMembership.findMany({
-      where: { tenantId: current.tenantId, membershipId: current.membershipId },
-      select: { departmentId: true },
-    });
-    return rows.map((row) => row.departmentId);
   }
 
   private async recordHistory(
