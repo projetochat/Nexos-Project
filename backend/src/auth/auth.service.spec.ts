@@ -58,6 +58,8 @@ describe("AuthService session hydration", () => {
         roleId: "role-a",
         roleKey: "agent",
         platformRole: "USER",
+        surface: "tenant",
+        aud: "trixus-tenant",
         typ: "refresh",
         sid: "session-a",
       }),
@@ -122,6 +124,7 @@ describe("AuthService session hydration", () => {
         roleId: "role-1",
         roleKey: "tenant_admin",
         platformRole: "USER",
+        surface: "tenant",
       }),
     ).rejects.toThrow("Membership inativa ou inválida.");
   });
@@ -254,11 +257,13 @@ describe("AuthService session hydration", () => {
         roleKey: "tenant_admin",
         platformRole: "USER",
         typ: "password_setup",
+        surface: "tenant",
+        aud: "trixus-tenant",
       }),
     };
     const config = { get: vi.fn().mockReturnValue("test-secret-with-at-least-32-characters") };
     const service = new AuthService(prisma as never, jwt as never, config as never);
-    vi.spyOn(service, "login").mockResolvedValue({ accessToken: "normal-access" } as never);
+    vi.spyOn(service, "loginTenant").mockResolvedValue({ accessToken: "normal-access" } as never);
 
     await expect(
       service.completeRequiredPasswordChange({
@@ -277,7 +282,7 @@ describe("AuthService session hydration", () => {
       where: { userId: "admin-1", revokedAt: null },
       data: { revokedAt: expect.any(Date) },
     });
-    expect(service.login).toHaveBeenCalledWith({
+    expect(service.loginTenant).toHaveBeenCalledWith({
       email: "admin@tenant.test",
       password: "NovaSenha@2026",
       tenantSlug: "tenant",
@@ -321,7 +326,7 @@ describe("AuthService session hydration", () => {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     };
     const service = new AuthService(prisma as never, {} as never, {} as never);
-    vi.spyOn(service, "login").mockResolvedValue({ accessToken: "access" } as never);
+    vi.spyOn(service, "loginTenant").mockResolvedValue({ accessToken: "access" } as never);
 
     await expect(
       service.acceptInvitation({
@@ -421,6 +426,103 @@ describe("AuthService session hydration", () => {
     });
     expect(prisma.$transaction).toHaveBeenCalledOnce();
   });
+
+  it("issues an explicitly scoped platform session only through the platform surface", async () => {
+    const platformUser = {
+      id: "platform-1",
+      email: "platform@example.test",
+      name: "Platform",
+      passwordHash: await hash("SenhaPlatform@2026", 4),
+      status: "ACTIVE",
+      platformRole: "ADMIN",
+      avatarUrl: null,
+      keepSidebarCollapsed: false,
+      memberships: [],
+    };
+    const jwt = {
+      signAsync: vi.fn().mockResolvedValueOnce("access").mockResolvedValueOnce("refresh"),
+    };
+    const prisma = {
+      user: { findUnique: vi.fn().mockResolvedValue(platformUser) },
+      authSession: { create: vi.fn().mockResolvedValue({ id: "platform-session" }) },
+    };
+    const config = { get: vi.fn().mockReturnValue("test-secret-with-at-least-32-characters") };
+    const service = new AuthService(prisma as never, jwt as never, config as never);
+
+    await expect(
+      service.loginPlatform({ email: platformUser.email, password: "SenhaPlatform@2026" }),
+    ).resolves.toMatchObject({ accessToken: "access", tenant: { id: "platform" } });
+    expect(jwt.signAsync).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ surface: "platform", aud: "trixus-platform", typ: "access" }),
+      expect.anything(),
+    );
+    expect(jwt.signAsync).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ surface: "platform", aud: "trixus-platform", typ: "refresh" }),
+      expect.anything(),
+    );
+  });
+
+  it("rejects tenant-only identities on the platform surface", async () => {
+    const user = {
+      id: "tenant-user",
+      email: "tenant@example.test",
+      passwordHash: await hash("SenhaTenant@2026", 4),
+      status: "ACTIVE",
+      platformRole: "USER",
+      memberships: [],
+    };
+    const prisma = { user: { findUnique: vi.fn().mockResolvedValue(user) } };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+
+    await expect(
+      service.loginPlatform({ email: user.email, password: "SenhaTenant@2026" }),
+    ).rejects.toMatchObject({ response: { code: "PLATFORM_ACCESS_DENIED" } });
+  });
+
+  it("rejects platform-only identities on the tenant surface", async () => {
+    const user = {
+      id: "platform-user",
+      email: "platform@example.test",
+      passwordHash: await hash("SenhaPlatform@2026", 4),
+      status: "ACTIVE",
+      platformRole: "ADMIN",
+      memberships: [],
+    };
+    const prisma = {
+      user: { findUnique: vi.fn().mockResolvedValue(user) },
+      userInvitation: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+    const service = new AuthService(prisma as never, {} as never, {} as never);
+
+    await expect(
+      service.loginTenant({ email: user.email, password: "SenhaPlatform@2026" }),
+    ).rejects.toMatchObject({ response: { code: "USER_WITHOUT_ACTIVE_MEMBERSHIP" } });
+  });
+
+  it("rejects crossed surface and audience claims during refresh", async () => {
+    const jwt = {
+      verifyAsync: vi.fn().mockResolvedValue({
+        sub: "platform-1",
+        tenantId: "",
+        membershipId: "",
+        roleId: "",
+        roleKey: "platform_admin",
+        platformRole: "ADMIN",
+        surface: "platform",
+        aud: "trixus-tenant",
+        typ: "refresh",
+        sid: "session-a",
+      }),
+    };
+    const config = { get: vi.fn().mockReturnValue("test-secret-with-at-least-32-characters") };
+    const service = new AuthService({} as never, jwt as never, config as never);
+
+    await expect(service.refresh("crossed-refresh")).rejects.toThrow(
+      "Superfície de autenticação inválida",
+    );
+  });
 });
 
 function owner(): AuthenticatedUser {
@@ -431,6 +533,7 @@ function owner(): AuthenticatedUser {
     roleId: "",
     roleKey: "platform_admin",
     platformRole: "ADMIN",
+    surface: "platform",
     iatMs: Date.now(),
   };
 }

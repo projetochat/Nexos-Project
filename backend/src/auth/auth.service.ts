@@ -43,6 +43,18 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto) {
+    return this.loginForSurface(dto, "legacy");
+  }
+
+  async loginPlatform(dto: LoginDto) {
+    return this.loginForSurface(dto, "platform");
+  }
+
+  async loginTenant(dto: LoginDto) {
+    return this.loginForSurface(dto, "tenant");
+  }
+
+  private async loginForSurface(dto: LoginDto, surface: "legacy" | "platform" | "tenant") {
     const email = dto.email.toLowerCase().trim();
     this.assertLoginRateLimit(email);
     if (Buffer.byteLength(dto.password, "utf8") > 72) throw this.invalidCredentials(email);
@@ -75,7 +87,16 @@ export class AuthService {
     this.failedLoginAttempts.delete(email);
 
     const requestedTenantSlug = dto.tenantSlug?.trim().toLowerCase();
-    if (!requestedTenantSlug && user.platformRole !== "USER") {
+    if (surface === "platform" && user.platformRole === "USER") {
+      throw new ForbiddenException({
+        code: "PLATFORM_ACCESS_DENIED",
+        message: "Usuário sem papel ativo no plano de controle.",
+      });
+    }
+    if (
+      surface === "platform" ||
+      (surface === "legacy" && !requestedTenantSlug && user.platformRole !== "USER")
+    ) {
       const sid = await this.createSession({ userId: user.id });
       const basePayload = {
         sub: user.id,
@@ -86,6 +107,8 @@ export class AuthService {
         platformRole: user.platformRole,
         iatMs: Date.now(),
         sid,
+        surface: "platform" as const,
+        aud: "trixus-platform" as const,
       };
       return {
         accessToken: await this.signToken({ ...basePayload, typ: "access" }, "JWT_SECRET", "15m"),
@@ -147,6 +170,8 @@ export class AuthService {
         platformRole: user.platformRole,
         iatMs: Date.now(),
         typ: "tenant_selection" as const,
+        surface: "tenant" as const,
+        aud: "trixus-tenant" as const,
       };
       return {
         tenantSelectionRequired: true as const,
@@ -186,6 +211,9 @@ export class AuthService {
       throw new UnauthorizedException("Seleção de Tenant inválida ou expirada.");
     }
     if (payload.typ !== "tenant_selection") {
+      throw new UnauthorizedException("Token de seleção de Tenant inválido.");
+    }
+    if (payload.surface !== "tenant" || payload.aud !== "trixus-tenant") {
       throw new UnauthorizedException("Token de seleção de Tenant inválido.");
     }
     const user = await this.prisma.user.findUnique({
@@ -259,6 +287,8 @@ export class AuthService {
         platformRole: user.platformRole,
         iatMs: Date.now(),
         typ: "password_setup" as const,
+        surface: "tenant" as const,
+        aud: "trixus-tenant" as const,
       };
       return {
         passwordChangeRequired: true as const,
@@ -290,6 +320,8 @@ export class AuthService {
       platformRole: user.platformRole,
       iatMs: Date.now(),
       sid,
+      surface: "tenant" as const,
+      aud: "trixus-tenant" as const,
     };
 
     return {
@@ -326,6 +358,7 @@ export class AuthService {
   async refresh(refreshToken: string) {
     const payload = await this.verifyToken(refreshToken, "JWT_REFRESH_SECRET");
     if (payload.typ !== "refresh") throw new UnauthorizedException("Refresh token inválido.");
+    this.assertSurfaceClaims(payload);
     await this.assertRefreshSession(payload);
 
     if (!payload.membershipId && payload.platformRole !== "USER") {
@@ -345,6 +378,8 @@ export class AuthService {
             iatMs: Date.now(),
             sid: payload.sid,
             typ: "access",
+            surface: "platform",
+            aud: "trixus-platform",
           },
           "JWT_SECRET",
           "15m",
@@ -401,6 +436,8 @@ export class AuthService {
           typ: "access",
           impersonationSessionId: payload.impersonationSessionId,
           actorPlatformUserId: payload.actorPlatformUserId,
+          surface: "tenant",
+          aud: "trixus-tenant",
         },
         "JWT_SECRET",
         "15m",
@@ -429,7 +466,7 @@ export class AuthService {
     return {
       ok: true,
       ...(this.exposeLocalTokens()
-        ? { resetUrl: `${this.publicAppUrl()}/login?reset=${token}` }
+        ? { resetUrl: `${this.tenantAppUrl()}/login?reset=${token}` }
         : {}),
     };
   }
@@ -529,7 +566,7 @@ export class AuthService {
       });
     });
 
-    return this.login({
+    return this.loginTenant({
       email: invitation.email,
       password: dto.password,
       tenantSlug: invitation.tenant.slug,
@@ -567,6 +604,9 @@ export class AuthService {
       throw new UnauthorizedException("Token de troca de senha inválido ou expirado.");
     }
     if (payload.typ !== "password_setup") {
+      throw new UnauthorizedException("Token de troca de senha inválido.");
+    }
+    if (payload.surface !== "tenant" || payload.aud !== "trixus-tenant") {
       throw new UnauthorizedException("Token de troca de senha inválido.");
     }
     const changedAt = new Date();
@@ -645,7 +685,7 @@ export class AuthService {
       };
     });
 
-    return this.login({
+    return this.loginTenant({
       email: loginIdentity.email,
       password: dto.newPassword,
       tenantSlug: loginIdentity.tenantSlug,
@@ -683,6 +723,8 @@ export class AuthService {
       sid,
       impersonationSessionId: input.impersonationSessionId,
       actorPlatformUserId: input.actorPlatformUserId,
+      surface: "tenant" as const,
+      aud: "trixus-tenant" as const,
     };
     return {
       accessToken: await this.signToken({ ...basePayload, typ: "access" }, "JWT_SECRET", "15m"),
@@ -717,6 +759,9 @@ export class AuthService {
 
   async me(current: AuthenticatedUser) {
     if (!current.membershipId && current.platformRole !== "USER") {
+      if (current.surface !== "platform") {
+        throw new UnauthorizedException("Superfície de autenticação inválida.");
+      }
       const user = await this.prisma.user.findFirst({
         where: { id: current.userId, status: "ACTIVE", platformRole: { not: "USER" } },
       });
@@ -739,6 +784,9 @@ export class AuthService {
         permissions: [],
         capabilities: { canManageTenant: false, canOperateInbox: false },
       };
+    }
+    if (current.surface !== "tenant") {
+      throw new UnauthorizedException("Superfície de autenticação inválida.");
     }
     const membership = await this.prisma.tenantMembership.findFirst({
       where: {
@@ -823,6 +871,7 @@ export class AuthService {
   }
 
   async assertAccessSession(payload: JwtPayload) {
+    this.assertSurfaceClaims(payload);
     // Tokens issued before this migration have no sid. They receive only the
     // remainder of their existing 15-minute access lifetime and cannot refresh.
     if (!payload.sid) return;
@@ -839,6 +888,7 @@ export class AuthService {
       throw new UnauthorizedException("Token inválido.");
     }
     if (payload.typ !== "access") throw new UnauthorizedException("Token inválido.");
+    this.assertSurfaceClaims(payload);
     if (payload.sid) {
       await this.prisma.authSession.updateMany({
         where: {
@@ -860,6 +910,23 @@ export class AuthService {
       throw new UnauthorizedException("Sessão legada expirada. Entre novamente.");
     }
     await this.assertPersistedSession(payload);
+  }
+
+  private assertSurfaceClaims(payload: JwtPayload) {
+    const validPlatform =
+      payload.surface === "platform" &&
+      payload.aud === "trixus-platform" &&
+      !payload.tenantId &&
+      !payload.membershipId &&
+      payload.platformRole !== "USER";
+    const validTenant =
+      payload.surface === "tenant" &&
+      payload.aud === "trixus-tenant" &&
+      Boolean(payload.tenantId) &&
+      Boolean(payload.membershipId);
+    if (!validPlatform && !validTenant) {
+      throw new UnauthorizedException("Superfície de autenticação inválida.");
+    }
   }
 
   private async assertPersistedSession(payload: JwtPayload) {
@@ -978,11 +1045,12 @@ export class AuthService {
     );
   }
 
-  private publicAppUrl() {
-    return (this.config.get<string>("TRIXUS_PUBLIC_APP_URL") ?? "http://localhost:5173").replace(
-      /\/$/,
-      "",
-    );
+  private tenantAppUrl() {
+    return (
+      this.config.get<string>("TRIXUS_TENANT_APP_URL") ??
+      this.config.get<string>("TRIXUS_PUBLIC_APP_URL") ??
+      "http://localhost:5173"
+    ).replace(/\/$/, "");
   }
 }
 

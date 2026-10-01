@@ -28,6 +28,7 @@ import {
   UpdateInvoiceDto,
   PlatformListQueryDto,
   ReasonDto,
+  StartImpersonationHandoffDto,
   StartImpersonationDto,
   UpdatePlanDto,
   UpdatePlatformClientDto,
@@ -322,6 +323,15 @@ export class PlatformController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     return this.platform.startImpersonation(dto, current);
+  }
+
+  @Post("impersonation/handoff")
+  @RequirePlatformPermissions("platform.impersonation.start")
+  startImpersonationHandoff(
+    @Body() dto: StartImpersonationHandoffDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.platform.startImpersonationHandoff(dto, current);
   }
 
   @Post("impersonation/:id/stop")

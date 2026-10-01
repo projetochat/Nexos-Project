@@ -1,11 +1,18 @@
 import { scheduleWritePayload, type ApiSchedule } from "./schedule-types";
 import type { Role, SessionUser } from "@/lib/session";
+import {
+  currentAppSurface,
+  loginEndpointForSurface,
+  tenantAppOrigin,
+  type AppSurface,
+} from "@/lib/app-surface";
 import { effectiveSessionPermissions } from "@/lib/access-permissions";
 
 const ACCESS_KEY = "trixus.api.accessToken";
 const REFRESH_KEY = "trixus.api.refreshToken";
 const TENANT_KEY = "trixus.api.tenant";
 const IMPERSONATION_KEY = "trixus.api.impersonation";
+const HANDOFF_IMPERSONATION_KEY = "trixus.api.handoffImpersonation";
 let refreshPromise: Promise<boolean> | null = null;
 let sessionAlreadyCleared = false;
 
@@ -941,10 +948,15 @@ export async function refreshTrixusAccessToken() {
   return (await refreshAccessToken()) ? getTrixusAccessToken() : null;
 }
 
-export async function loginWithTrixusApi(email: string, password: string, tenantSlug?: string) {
+export async function loginWithTrixusApi(
+  email: string,
+  password: string,
+  tenantSlug?: string,
+  surface?: AppSurface,
+) {
   const body: { email: string; password: string; tenantSlug?: string } = { email, password };
   if (tenantSlug) body.tenantSlug = tenantSlug;
-  const response = await fetchTrixus("/auth/login", {
+  const response = await fetchTrixus(loginEndpointForSurface(surface), {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -2241,6 +2253,29 @@ export type StoredImpersonation = {
   actorUser: SessionUser;
 };
 
+export type StoredHandoffImpersonation = {
+  id: string;
+  tenant: { id: string; name: string; slug: string };
+  membershipId: string;
+  expiresAt: string;
+  actorUser: { id: string; name: string; email: string };
+};
+
+type ImpersonationHandoff = {
+  code: string;
+  expiresAt: string;
+  tenant: { id: string; name: string; slug: string };
+};
+
+type ExchangedImpersonationHandoff = LoginResponse & {
+  impersonation: {
+    id: string;
+    expiresAt: string;
+    actorUser: { id: string; name: string; email: string };
+    tenant: { id: string; name: string; slug: string };
+  };
+};
+
 export const platformApi = {
   dashboard: () => apiRequest<PlatformDashboard>("/platform/dashboard"),
   health: () => apiRequest<PlatformHealth>("/platform/health"),
@@ -2516,11 +2551,95 @@ export const platformApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  startImpersonationHandoff: (data: {
+    tenantId: string;
+    membershipId: string;
+    reason: string;
+    codeChallenge: string;
+  }) =>
+    apiRequest<ImpersonationHandoff>("/platform/impersonation/handoff", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   stopImpersonation: (id: string) =>
     apiRequest<{ id: string }>(`/platform/impersonation/${id}/stop`, { method: "POST" }),
   currentImpersonation: () =>
     apiRequest<PlatformImpersonation | null>("/platform/impersonation/current"),
 };
+
+function bytesToBase64Url(bytes: Uint8Array) {
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+export async function createImpersonationHandoff(input: {
+  tenantId: string;
+  membershipId: string;
+  reason: string;
+}) {
+  const verifierBytes = crypto.getRandomValues(new Uint8Array(32));
+  const verifier = bytesToBase64Url(verifierBytes);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  const codeChallenge = bytesToBase64Url(new Uint8Array(digest));
+  const handoff = await platformApi.startImpersonationHandoff({ ...input, codeChallenge });
+  const callbackOrigin =
+    currentAppSurface() === "unified" && typeof window !== "undefined"
+      ? window.location.origin
+      : tenantAppOrigin();
+  const callback = new URL("/impersonation/callback", callbackOrigin);
+  callback.searchParams.set("code", handoff.code);
+  callback.hash = new URLSearchParams({ verifier }).toString();
+  return { url: callback.toString(), expiresAt: handoff.expiresAt };
+}
+
+export async function exchangeImpersonationHandoff(code: string, codeVerifier: string) {
+  const response = await fetchTrixus("/auth/impersonation/exchange", {
+    method: "POST",
+    body: JSON.stringify({ code, codeVerifier }),
+  });
+  if (!response.ok) throw await readError(response);
+  const data = (await response.json()) as ExchangedImpersonationHandoff;
+  storeTrixusSession(data);
+  const stored: StoredHandoffImpersonation = {
+    id: data.impersonation.id,
+    tenant: data.impersonation.tenant,
+    membershipId: data.membership.id,
+    expiresAt: data.impersonation.expiresAt,
+    actorUser: data.impersonation.actorUser,
+  };
+  localStorage.setItem(HANDOFF_IMPERSONATION_KEY, JSON.stringify(stored));
+  return { user: loginResponseToSessionUser(data), impersonation: stored };
+}
+
+export function readStoredHandoffImpersonation(options: { includeExpired?: boolean } = {}) {
+  try {
+    const raw = localStorage.getItem(HANDOFF_IMPERSONATION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredHandoffImpersonation;
+    if (new Date(parsed.expiresAt).getTime() <= Date.now() && !options.includeExpired) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    localStorage.removeItem(HANDOFF_IMPERSONATION_KEY);
+    return null;
+  }
+}
+
+export async function stopHandoffImpersonation() {
+  const stored = readStoredHandoffImpersonation({ includeExpired: true });
+  try {
+    if (localStorage.getItem(ACCESS_KEY)) {
+      await apiRequest<{ id: string }>("/auth/impersonation/stop", { method: "POST" });
+    }
+  } finally {
+    clearTrixusApiSession();
+  }
+  return stored;
+}
 
 export function activatePlatformImpersonation(data: PlatformImpersonation, actorUser: SessionUser) {
   const actorAccessToken = localStorage.getItem(ACCESS_KEY);
@@ -2578,12 +2697,21 @@ export function clearTrixusApiSession() {
   localStorage.removeItem(REFRESH_KEY);
   localStorage.removeItem(TENANT_KEY);
   localStorage.removeItem(IMPERSONATION_KEY);
+  localStorage.removeItem(HANDOFF_IMPERSONATION_KEY);
 }
 
 export async function logoutFromTrixusApi() {
+  const handoffImpersonation = readStoredHandoffImpersonation({ includeExpired: true });
   const storedImpersonation = readStoredPlatformImpersonation({ includeExpired: true });
   try {
-    if (storedImpersonation) {
+    if (handoffImpersonation) {
+      try {
+        await fetchTrixus("/auth/impersonation/stop", { method: "POST" }, true);
+      } catch {
+        // A sessão temporária pode já ter expirado; o logout local ainda deve prosseguir.
+      }
+      return;
+    } else if (storedImpersonation) {
       restorePlatformTokens(storedImpersonation);
       try {
         await platformApi.stopImpersonation(storedImpersonation.id);

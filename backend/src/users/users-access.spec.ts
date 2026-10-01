@@ -10,7 +10,7 @@ describe("profile and company session enforcement", () => {
   it("revalidates the session on /auth/me", () => {
     const guards = Reflect.getMetadata(GUARDS_METADATA, AuthController.prototype.me) ?? [];
     expect(guards).toContain(JwtAuthGuard);
-    expect(guards).toContain(PermissionsGuard);
+    expect(guards).not.toContain(PermissionsGuard);
   });
   for (const method of [
     "me",
@@ -30,7 +30,7 @@ describe("profile and company session enforcement", () => {
   }
   function setup(membership: unknown, iatMs = 100) {
     const query = vi.fn().mockResolvedValue(membership);
-    const user = { userId: "u", tenantId: "t", membershipId: "m", iatMs };
+    const user = { userId: "u", tenantId: "t", membershipId: "m", iatMs, surface: "tenant" };
     const guard = new PermissionsGuard(
       { getAllAndOverride: () => undefined } as never,
       { tenantMembership: { findFirst: query } } as never,
@@ -55,13 +55,14 @@ describe("profile and company session enforcement", () => {
       }),
     );
   });
-  it("revalidates an owner session without requiring a tenant membership", async () => {
+  it("rejects a platform session in the tenant permissions guard", async () => {
     const query = vi.fn().mockResolvedValue({ platformRole: "ADMIN" });
     const user = {
       userId: "owner",
       tenantId: "",
       membershipId: "",
       platformRole: "ADMIN",
+      surface: "platform",
     };
     const guard = new PermissionsGuard(
       { getAllAndOverride: () => undefined } as never,
@@ -74,12 +75,10 @@ describe("profile and company session enforcement", () => {
         getRequest: () => ({ user, originalUrl: "/api/auth/me", params: {} }),
       }),
     };
-    await expect(guard.canActivate(context as never)).resolves.toBe(true);
-    expect(query).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ id: "owner", status: "ACTIVE" }),
-      }),
+    await expect(guard.canActivate(context as never)).rejects.toThrow(
+      "Esta sessão não pertence à superfície de atendimento",
     );
+    expect(query).not.toHaveBeenCalled();
   });
   it("rejects revoked session without individual permission metadata", async () => {
     const { guard, context } = setup({ tenant: { authRevokedAt: new Date(200) } });

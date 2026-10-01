@@ -6,6 +6,7 @@ import {
   hydrateWithTrixusApi,
   loginWithTrixusApi,
   logoutFromTrixusApi,
+  readStoredHandoffImpersonation,
   readStoredPlatformImpersonation,
   selectTenantWithTrixusApi,
   type RequiredPasswordChange,
@@ -183,21 +184,32 @@ export function currentRoleHome(
 
 export async function hydrateSession(): Promise<void> {
   const impersonation = readStoredPlatformImpersonation();
+  const handoffImpersonation = readStoredHandoffImpersonation();
   try {
     const user = await hydrateWithTrixusApi();
     useSession.setState({
       user,
-      impersonating: impersonation
+      impersonating: handoffImpersonation
         ? {
-            sessionId: impersonation.id,
-            empresaId: impersonation.tenant.id,
-            empresaNome: impersonation.tenant.name,
-            membershipId: impersonation.membershipId,
-            expiresAt: impersonation.expiresAt,
-            actorName: impersonation.actorUser.nome,
-            actorEmail: impersonation.actorUser.email,
+            sessionId: handoffImpersonation.id,
+            empresaId: handoffImpersonation.tenant.id,
+            empresaNome: handoffImpersonation.tenant.name,
+            membershipId: handoffImpersonation.membershipId,
+            expiresAt: handoffImpersonation.expiresAt,
+            actorName: handoffImpersonation.actorUser.name,
+            actorEmail: handoffImpersonation.actorUser.email,
           }
-        : null,
+        : impersonation
+          ? {
+              sessionId: impersonation.id,
+              empresaId: impersonation.tenant.id,
+              empresaNome: impersonation.tenant.name,
+              membershipId: impersonation.membershipId,
+              expiresAt: impersonation.expiresAt,
+              actorName: impersonation.actorUser.nome,
+              actorEmail: impersonation.actorUser.email,
+            }
+          : null,
       hydrated: true,
       error: null,
     });

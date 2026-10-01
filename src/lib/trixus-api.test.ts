@@ -5,15 +5,19 @@ import {
   activatePlatformImpersonation,
   apiRequest,
   clearTrixusApiSession,
+  createImpersonationHandoff,
+  exchangeImpersonationHandoff,
   hydrateWithTrixusApi,
   loginWithTrixusApi,
   completeRequiredPasswordChangeWithTrixusApi,
   selectTenantWithTrixusApi,
   logoutFromTrixusApi,
   platformApi,
+  readStoredHandoffImpersonation,
   readStoredPlatformImpersonation,
   connectionsApi,
   stopStoredPlatformImpersonation,
+  stopHandoffImpersonation,
 } from "./trixus-api";
 
 describe("trixus-api auth client", () => {
@@ -52,6 +56,28 @@ describe("trixus-api auth client", () => {
 
     expect(localStorage.getItem("trixus.api.accessToken")).toBe("access");
     expect(localStorage.getItem("trixus.api.refreshToken")).toBe("refresh");
+  });
+
+  it.each([
+    ["platform", "/auth/platform/login"],
+    ["tenant", "/auth/tenant/login"],
+  ] as const)("uses the explicit %s authentication endpoint", async (surface, endpoint) => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      responseJson(201, {
+        passwordChangeRequired: true,
+        passwordSetupToken: "setup-token",
+        user: { id: "user-1", email: "user@trixus.app", name: "User" },
+        tenant: { id: "tenant-1", slug: "tenant", name: "Tenant" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await loginWithTrixusApi("user@trixus.app", "safe-password", undefined, surface);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(new RegExp(`${endpoint.replaceAll("/", "\\/")}$`)),
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("keeps the first-login password challenge out of the authenticated session", async () => {
@@ -417,6 +443,85 @@ describe("trixus-api auth client", () => {
     });
     expect(localStorage.getItem("trixus.api.accessToken")).toBe("platform-access");
     expect(readStoredPlatformImpersonation()).toBeNull();
+  });
+
+  it("creates a cross-domain handoff without placing tokens in the URL", async () => {
+    localStorage.setItem("trixus.api.accessToken", "platform-access-secret");
+    localStorage.setItem("trixus.api.refreshToken", "platform-refresh-secret");
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { codeChallenge: string };
+      expect(body.codeChallenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      return responseJson(201, {
+        code: "c".repeat(43),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        tenant: { id: "tenant-a", name: "Tenant A", slug: "tenant-a" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const handoff = await createImpersonationHandoff({
+      tenantId: "tenant-a",
+      membershipId: "membership-a",
+      reason: "Suporte solicitado",
+    });
+
+    const url = new URL(handoff.url);
+    expect(url.origin).toBe(window.location.origin);
+    expect(url.pathname).toBe("/impersonation/callback");
+    expect(url.searchParams.get("code")).toBe("c".repeat(43));
+    expect(url.hash).toMatch(/^#verifier=[A-Za-z0-9_-]{43}$/);
+    expect(handoff.url).not.toContain("platform-access-secret");
+    expect(handoff.url).not.toContain("platform-refresh-secret");
+  });
+
+  it("exchanges and stops a cross-domain impersonation only with tenant credentials", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/auth/impersonation/exchange")) {
+        expect(new Headers(init?.headers).get("Authorization")).toBeNull();
+        return responseJson(201, {
+          accessToken: "tenant-access",
+          refreshToken: "tenant-refresh",
+          user: {
+            id: "user-a",
+            email: "admin@tenant.test",
+            name: "Admin Tenant",
+            roleId: "role-a",
+            roleKey: "tenant_admin",
+            platformRole: "USER",
+          },
+          tenant: { id: "tenant-a", slug: "tenant-a", name: "Tenant A" },
+          membership: { id: "membership-a", role: "tenant_admin", roleId: "role-a" },
+          permissions: ["users.manage"],
+          impersonation: {
+            id: "session-a",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            actorUser: { id: "actor-a", name: "Platform Admin", email: "admin@trixus.test" },
+            tenant: { id: "tenant-a", slug: "tenant-a", name: "Tenant A" },
+          },
+        });
+      }
+      expect(url).toContain("/auth/impersonation/stop");
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer tenant-access");
+      return responseJson(201, { id: "session-a" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      exchangeImpersonationHandoff("c".repeat(43), "v".repeat(43)),
+    ).resolves.toMatchObject({
+      user: { role: "admin", empresaId: "tenant-a" },
+      impersonation: { id: "session-a", actorUser: { email: "admin@trixus.test" } },
+    });
+    expect(localStorage.getItem("trixus.api.accessToken")).toBe("tenant-access");
+    expect(readStoredHandoffImpersonation()?.id).toBe("session-a");
+    expect(localStorage.getItem("trixus.api.handoffImpersonation")).not.toContain(
+      "platform-access",
+    );
+
+    await stopHandoffImpersonation();
+    expect(localStorage.getItem("trixus.api.accessToken")).toBeNull();
+    expect(readStoredHandoffImpersonation()).toBeNull();
   });
 
   it("expires a local impersonation and restores platform credentials", async () => {

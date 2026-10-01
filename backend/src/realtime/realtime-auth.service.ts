@@ -25,6 +25,7 @@ export type RealtimeSocketContext = {
   roleId: string;
   roleKey: string;
   platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
+  surface: "tenant";
   departmentIds: string[];
   permissions: string[];
   sid?: string;
@@ -49,6 +50,9 @@ export class RealtimeAuthService {
 
     const payload = await this.verifyAccessToken(accessToken.trim());
     if (payload.typ !== "access") throw new RealtimeAuthError("REALTIME_TOKEN_INVALID");
+    if (payload.surface !== "tenant" || payload.aud !== "trixus-tenant") {
+      throw new RealtimeAuthError("REALTIME_TOKEN_INVALID");
+    }
     const exp = this.assertNotExpired(payload.exp);
     if (payload.sid) {
       await this.assertPersistedSession({
@@ -109,6 +113,7 @@ export class RealtimeAuthService {
       roleId: membership.roleId,
       roleKey: membership.role.key,
       platformRole: membership.user.platformRole,
+      surface: "tenant",
       departmentIds: membership.departments.map((item) => item.departmentId),
       permissions: effectivePermissions(membership.role),
       sid: payload.sid,

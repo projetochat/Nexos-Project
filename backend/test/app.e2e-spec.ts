@@ -332,7 +332,7 @@ describe("Trixus API organization and RBAC", () => {
       .set("Authorization", `Bearer ${tenantAdminToken}`)
       .expect(403)
       .expect(({ body }) => {
-        expect(body.code).toBe("PLATFORM_ACCESS_DENIED");
+        expect(body.code).toBe("PLATFORM_SURFACE_REQUIRED");
       });
 
     const platformToken = await login("platform@trixus.app", "demo1234");
@@ -406,7 +406,7 @@ describe("Trixus API organization and RBAC", () => {
       .set("Authorization", `Bearer ${tenantAdminToken}`)
       .expect(403)
       .expect(({ body }) => {
-        expect(body.code).toBe("PLATFORM_ACCESS_DENIED");
+        expect(body.code).toBe("PLATFORM_SURFACE_REQUIRED");
       });
   });
 

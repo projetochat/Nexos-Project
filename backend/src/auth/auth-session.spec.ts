@@ -14,6 +14,8 @@ function tenantPayload(overrides: Partial<JwtPayload> = {}): JwtPayload {
     roleId: "role-a",
     roleKey: "agent",
     platformRole: "USER",
+    surface: "tenant",
+    aud: "trixus-tenant",
     typ: "access",
     sid: "session-a",
     iatMs: Date.now(),

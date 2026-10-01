@@ -6,11 +6,14 @@ const validProductionEnvironment = {
   DATABASE_URL: "postgresql://trixus:password@postgres:5432/trixus",
   JWT_SECRET: "access-secret-with-at-least-32-characters",
   JWT_REFRESH_SECRET: "refresh-secret-with-at-least-32-characters",
-  FRONTEND_ORIGIN: "https://app.example.com",
-  TRIXUS_PUBLIC_APP_URL: "https://app.example.com",
+  FRONTEND_ORIGIN: "https://app.example.com,https://chat.example.com",
+  TRIXUS_REALTIME_CORS_ORIGIN: "https://chat.example.com",
+  TRIXUS_PLATFORM_APP_URL: "https://app.example.com",
+  TRIXUS_TENANT_APP_URL: "https://chat.example.com",
   REDIS_URL: "redis://redis:6379",
   RESEND_API_KEY: "re_example",
   TRIXUS_EMAIL_FROM: "Trixus <access@example.com>",
+  TENANT_ADMIN_PROVISIONING_MODE: "invitation_email",
   TRIXUS_STORAGE_PROVIDER: "local",
   TRIXUS_STORAGE_LOCAL_PATH: "/var/lib/trixus/storage/tickets",
   TRIXUS_MESSAGE_STORAGE_PROVIDER: "local",
@@ -27,6 +30,29 @@ describe("production environment validation", () => {
     expect(validateEnvironment({ NODE_ENV: "development" })).toEqual({ NODE_ENV: "development" });
   });
 
+  it("keeps the legacy public URL as a production fallback", () => {
+    const { TRIXUS_PLATFORM_APP_URL, TRIXUS_TENANT_APP_URL, ...environment } =
+      validProductionEnvironment;
+    expect(
+      validateEnvironment({
+        ...environment,
+        TRIXUS_PUBLIC_APP_URL: "https://legacy.example.com",
+      }),
+    ).toMatchObject({ TRIXUS_PUBLIC_APP_URL: "https://legacy.example.com" });
+  });
+
+  it("requires exact HTTPS origins for the HTTP and realtime trust boundaries", () => {
+    for (const [name, value] of [
+      ["FRONTEND_ORIGIN", "https://app.example.com/path"],
+      ["TRIXUS_REALTIME_CORS_ORIGIN", "https://chat.example.com/path"],
+      ["TRIXUS_TENANT_APP_URL", "https://chat.example.com/login"],
+    ]) {
+      expect(() => validateEnvironment({ ...validProductionEnvironment, [name]: value })).toThrow(
+        new RegExp(name),
+      );
+    }
+  });
+
   it("fails before startup when security and dependency settings are unsafe", () => {
     expect(() =>
       validateEnvironment({
@@ -38,6 +64,30 @@ describe("production environment validation", () => {
         TRIXUS_STORAGE_LOCAL_PATH: "relative/storage",
       }),
     ).toThrow(/JWT_SECRET must contain at least 32 characters/);
+  });
+
+  it("rejects the known temporary-password provisioning mode in production", () => {
+    expect(() =>
+      validateEnvironment({
+        ...validProductionEnvironment,
+        TENANT_ADMIN_PROVISIONING_MODE: "temporary_password",
+      }),
+    ).toThrow(/TENANT_ADMIN_PROVISIONING_MODE must be invitation_email in production/);
+  });
+
+  it("rejects development secrets and local token exposure in production", () => {
+    expect(() =>
+      validateEnvironment({
+        ...validProductionEnvironment,
+        JWT_SECRET: "trixus-homologation-access-2026-08-11-local-secret",
+      }),
+    ).toThrow(/JWT_SECRET must not use a known placeholder value/);
+    expect(() =>
+      validateEnvironment({
+        ...validProductionEnvironment,
+        TRIXUS_EXPOSE_LOCAL_TOKENS: "true",
+      }),
+    ).toThrow(/TRIXUS_EXPOSE_LOCAL_TOKENS must not be true in production/);
   });
 
   it("requires the complete Evolution trust boundary when any part is enabled", () => {

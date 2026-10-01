@@ -37,22 +37,11 @@ export class PermissionsGuard implements CanActivate {
     const current = request.user;
     if (!current) throw new UnauthorizedException("Token ausente.");
 
-    if (!current.membershipId && current.platformRole !== "USER") {
-      if (required?.length || anyRequired?.length) {
-        throw new ForbiddenException("Permissão insuficiente.");
-      }
-      const platformUser = await this.prisma.user.findFirst({
-        where: {
-          id: current.userId,
-          status: "ACTIVE",
-          platformRole: { not: "USER" },
-        },
-        select: { platformRole: true },
+    if (current.surface !== "tenant") {
+      throw new ForbiddenException({
+        code: "TENANT_SURFACE_REQUIRED",
+        message: "Esta sessão não pertence à superfície de atendimento.",
       });
-      if (!platformUser) throw new UnauthorizedException("Sessão expirada.");
-      current.platformRole = platformUser.platformRole;
-      current.context = "platform";
-      return true;
     }
 
     const membership = await this.prisma.tenantMembership.findFirst({

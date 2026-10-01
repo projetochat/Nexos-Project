@@ -100,6 +100,8 @@ jobs:
             --target migrate -t "trixus-pr/migrate:$GITHUB_SHA" .
           docker build --platform linux/amd64 -f Dockerfile.frontend \
             --build-arg VITE_TRIXUS_API_URL=https://ci.invalid/api \
+            --build-arg VITE_TRIXUS_PLATFORM_APP_URL=https://app.ci.invalid \
+            --build-arg VITE_TRIXUS_TENANT_APP_URL=https://chat.ci.invalid \
             --build-arg VITE_APP_MODE=production \
             -t "trixus-pr/frontend:$GITHUB_SHA" .
       - name: Verify non-root backend targets and expected artifacts
@@ -123,6 +125,8 @@ jobs:
     environment: production
     env:
       VITE_TRIXUS_API_URL: ${{ vars.VITE_TRIXUS_API_URL }}
+      VITE_TRIXUS_PLATFORM_APP_URL: ${{ vars.VITE_TRIXUS_PLATFORM_APP_URL }}
+      VITE_TRIXUS_TENANT_APP_URL: ${{ vars.VITE_TRIXUS_TENANT_APP_URL }}
       VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
       VITE_SUPABASE_PROJECT_ID: ${{ vars.VITE_SUPABASE_PROJECT_ID }}
@@ -135,13 +139,19 @@ jobs:
         run: |
           set -Eeuo pipefail
           : "${VITE_TRIXUS_API_URL:?Set the production Environment variable VITE_TRIXUS_API_URL}"
+          : "${VITE_TRIXUS_PLATFORM_APP_URL:?Set VITE_TRIXUS_PLATFORM_APP_URL}"
+          : "${VITE_TRIXUS_TENANT_APP_URL:?Set VITE_TRIXUS_TENANT_APP_URL}"
           [[ "$VITE_TRIXUS_API_URL" == https://* ]]
+          [[ "$VITE_TRIXUS_PLATFORM_APP_URL" == https://* ]]
+          [[ "$VITE_TRIXUS_TENANT_APP_URL" == https://* ]]
           docker build --platform linux/amd64 -f backend/Dockerfile \
             --target runtime -t "trixus-release/backend:$GITHUB_SHA" .
           docker build --platform linux/amd64 -f backend/Dockerfile \
             --target migrate -t "trixus-release/migrate:$GITHUB_SHA" .
           docker build --platform linux/amd64 -f Dockerfile.frontend \
             --build-arg VITE_TRIXUS_API_URL \
+            --build-arg VITE_TRIXUS_PLATFORM_APP_URL \
+            --build-arg VITE_TRIXUS_TENANT_APP_URL \
             --build-arg VITE_APP_MODE=production \
             --build-arg VITE_SUPABASE_URL \
             --build-arg VITE_SUPABASE_PUBLISHABLE_KEY \

@@ -9,12 +9,13 @@ import { StorageModule } from "../tickets/storage/storage.module";
 import { PlatformAuthGuard } from "./platform-auth.guard";
 import { PlatformAuditService } from "./platform-audit.service";
 import { PlatformController } from "./platform.controller";
+import { ImpersonationHandoffController } from "./impersonation-handoff.controller";
 import { PlanEntitlementService } from "./plan-entitlement.service";
 import { PlatformService } from "./platform.service";
 
 @Module({
   imports: [AuthModule, EmailModule, PrismaModule, QueueModule, RealtimeModule, StorageModule],
-  controllers: [PlatformController],
+  controllers: [PlatformController, ImpersonationHandoffController],
   providers: [
     CampaignDispatchQueue,
     PlatformAuthGuard,

@@ -48,9 +48,12 @@ import {
 import {
   conversationApi,
   notificationApi,
+  readStoredHandoffImpersonation,
+  stopHandoffImpersonation,
   stopStoredPlatformImpersonation,
   TrixusApiError,
 } from "@/lib/trixus-api";
+import { currentAppSurface, platformAppOrigin } from "@/lib/app-surface";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { useInstanceAccessUpdates } from "@/lib/realtime/hooks";
 
@@ -915,17 +918,30 @@ function ImpersonationBanner() {
   const loginAs = useSession((s) => s.loginAs);
   const navigate = useNavigate();
   const expired = imp ? new Date(imp.expiresAt).getTime() <= Date.now() : false;
+  const finish = React.useCallback(async () => {
+    const handoff = readStoredHandoffImpersonation({ includeExpired: true });
+    if (handoff) {
+      try {
+        await stopHandoffImpersonation();
+      } finally {
+        stop();
+        const platformOrigin =
+          currentAppSurface() === "unified" ? window.location.origin : platformAppOrigin();
+        window.location.assign(`${platformOrigin}/admin`);
+      }
+      return;
+    }
+    const restored = await stopStoredPlatformImpersonation();
+    if (restored) loginAs(restored);
+    stop();
+    navigate({ to: "/admin" });
+  }, [loginAs, navigate, stop]);
   React.useEffect(() => {
     if (!imp) return;
     const delay = Math.max(0, new Date(imp.expiresAt).getTime() - Date.now());
-    const timer = window.setTimeout(async () => {
-      const restored = await stopStoredPlatformImpersonation();
-      if (restored) loginAs(restored);
-      stop();
-      navigate({ to: "/admin" });
-    }, delay);
+    const timer = window.setTimeout(finish, delay);
     return () => window.clearTimeout(timer);
-  }, [imp, loginAs, navigate, stop]);
+  }, [finish, imp]);
   if (!imp) return null;
   return (
     <div className="flex items-center gap-3 border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning-foreground md:px-6">
@@ -937,12 +953,7 @@ function ImpersonationBanner() {
       </span>
       <button
         disabled={expired}
-        onClick={async () => {
-          const restored = await stopStoredPlatformImpersonation();
-          if (restored) loginAs(restored);
-          stop();
-          navigate({ to: "/admin" });
-        }}
+        onClick={finish}
         className="rounded-md border border-warning/50 bg-background/40 px-2.5 py-1 text-xs font-medium hover:bg-background/60"
       >
         Encerrar acesso

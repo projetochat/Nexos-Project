@@ -21,6 +21,13 @@ describe("RealtimeAuthService", () => {
     });
   });
 
+  it("rejects platform access tokens on the tenant realtime surface", async () => {
+    const service = serviceWith({ surface: "platform", aud: "trixus-platform" });
+    await expect(service.authenticate("platform-access-token")).rejects.toMatchObject({
+      code: "REALTIME_TOKEN_INVALID",
+    });
+  });
+
   it("rejects inactive users", async () => {
     const service = serviceWith({ userStatus: "DISABLED" });
     await expect(service.authenticate("access-token")).rejects.toBeInstanceOf(RealtimeAuthError);
@@ -92,6 +99,8 @@ function serviceWith(
     sid?: string;
     exp?: number;
     impersonationSessionId?: string;
+    surface?: "platform" | "tenant";
+    aud?: "trixus-platform" | "trixus-tenant";
   } = {},
 ) {
   const jwt = {
@@ -102,6 +111,8 @@ function serviceWith(
       roleId: "role-a",
       roleKey: "agent",
       platformRole: "USER",
+      surface: options.surface ?? "tenant",
+      aud: options.aud ?? "trixus-tenant",
       typ: "access",
       sid: options.sid === undefined && "sid" in options ? undefined : "session-a",
       exp: options.exp ?? Math.floor(Date.now() / 1000) + 900,

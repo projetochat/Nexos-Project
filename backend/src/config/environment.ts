@@ -7,10 +7,11 @@ const REQUIRED_PRODUCTION_VALUES = [
   "JWT_SECRET",
   "JWT_REFRESH_SECRET",
   "FRONTEND_ORIGIN",
-  "TRIXUS_PUBLIC_APP_URL",
+  "TRIXUS_REALTIME_CORS_ORIGIN",
   "REDIS_URL",
   "RESEND_API_KEY",
   "TRIXUS_EMAIL_FROM",
+  "TENANT_ADMIN_PROVISIONING_MODE",
 ] as const;
 
 export function validateEnvironment(input: Environment): Environment {
@@ -24,11 +25,37 @@ export function validateEnvironment(input: Environment): Environment {
 
   validateUrl(environment.DATABASE_URL, "DATABASE_URL", ["postgres:", "postgresql:"], errors);
   validateHttpsList(environment.FRONTEND_ORIGIN, "FRONTEND_ORIGIN", errors);
-  validateUrl(environment.TRIXUS_PUBLIC_APP_URL, "TRIXUS_PUBLIC_APP_URL", ["https:"], errors);
+  validateExactOrigins(environment.FRONTEND_ORIGIN, "FRONTEND_ORIGIN", errors);
+  validateHttpsList(environment.TRIXUS_REALTIME_CORS_ORIGIN, "TRIXUS_REALTIME_CORS_ORIGIN", errors);
+  validateExactOrigins(
+    environment.TRIXUS_REALTIME_CORS_ORIGIN,
+    "TRIXUS_REALTIME_CORS_ORIGIN",
+    errors,
+  );
+  const legacyPublicAppUrl = environment.TRIXUS_PUBLIC_APP_URL;
+  const platformAppUrl = environment.TRIXUS_PLATFORM_APP_URL || legacyPublicAppUrl;
+  const tenantAppUrl = environment.TRIXUS_TENANT_APP_URL || legacyPublicAppUrl;
+  if (!platformAppUrl) {
+    errors.push("TRIXUS_PLATFORM_APP_URL or TRIXUS_PUBLIC_APP_URL is required");
+  }
+  if (!tenantAppUrl) {
+    errors.push("TRIXUS_TENANT_APP_URL or TRIXUS_PUBLIC_APP_URL is required");
+  }
+  validateUrl(platformAppUrl, "TRIXUS_PLATFORM_APP_URL", ["https:"], errors);
+  validateExactOrigins(platformAppUrl, "TRIXUS_PLATFORM_APP_URL", errors);
+  validateUrl(tenantAppUrl, "TRIXUS_TENANT_APP_URL", ["https:"], errors);
+  validateExactOrigins(tenantAppUrl, "TRIXUS_TENANT_APP_URL", errors);
   validateUrl(environment.REDIS_URL, "REDIS_URL", ["redis:", "rediss:"], errors);
+  if (environment.TENANT_ADMIN_PROVISIONING_MODE !== "invitation_email") {
+    errors.push("TENANT_ADMIN_PROVISIONING_MODE must be invitation_email in production");
+  }
 
   validateSecret(environment.JWT_SECRET, "JWT_SECRET", errors);
   validateSecret(environment.JWT_REFRESH_SECRET, "JWT_REFRESH_SECRET", errors);
+  validateNonPlaceholder(environment.RESEND_API_KEY, "RESEND_API_KEY", errors);
+  if (environment.TRIXUS_EXPOSE_LOCAL_TOKENS === "true") {
+    errors.push("TRIXUS_EXPOSE_LOCAL_TOKENS must not be true in production");
+  }
   if (
     environment.JWT_SECRET &&
     environment.JWT_REFRESH_SECRET &&
@@ -71,6 +98,12 @@ export function validateEnvironment(input: Environment): Environment {
     for (const name of evolutionValues) {
       if (!environment[name]) errors.push(`${name} is required when Evolution is configured`);
     }
+    validateNonPlaceholder(environment.EVOLUTION_API_KEY, "EVOLUTION_API_KEY", errors);
+    validateNonPlaceholder(
+      environment.EVOLUTION_WEBHOOK_SECRET,
+      "EVOLUTION_WEBHOOK_SECRET",
+      errors,
+    );
     validateUrl(environment.EVOLUTION_BASE_URL, "EVOLUTION_BASE_URL", ["http:", "https:"], errors);
     validateUrl(
       environment.EVOLUTION_WEBHOOK_PUBLIC_URL,
@@ -110,6 +143,18 @@ function normalizedEnvironment(input: Environment): Record<string, string> {
 
 function validateSecret(value: string, name: string, errors: string[]) {
   if (value && value.length < 32) errors.push(`${name} must contain at least 32 characters`);
+  validateNonPlaceholder(value, name, errors);
+}
+
+function validateNonPlaceholder(value: string, name: string, errors: string[]) {
+  if (
+    value &&
+    (/^<[^>]+>$/.test(value) ||
+      value.toLowerCase().startsWith("change-me") ||
+      value.toLowerCase().startsWith("trixus-homologation-"))
+  ) {
+    errors.push(`${name} must not use a known placeholder value`);
+  }
 }
 
 function validateHttpsList(value: string, name: string, errors: string[]) {

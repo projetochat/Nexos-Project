@@ -2,7 +2,6 @@ import { Body, Controller, Get, Headers, Inject, Post, UseGuards } from "@nestjs
 import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import { CurrentUser } from "./current-user.decorator";
 import { JwtAuthGuard } from "./jwt-auth.guard";
-import { PermissionsGuard } from "./permissions.guard";
 import type { AuthenticatedUser } from "./auth.types";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
@@ -67,6 +66,16 @@ export class AuthController {
     return this.auth.login(dto);
   }
 
+  @Post("platform/login")
+  platformLogin(@Body() dto: LoginDto) {
+    return this.auth.loginPlatform(dto);
+  }
+
+  @Post("tenant/login")
+  tenantLogin(@Body() dto: LoginDto) {
+    return this.auth.loginTenant(dto);
+  }
+
   @Post("refresh")
   refresh(@Body() dto: RefreshDto) {
     return this.auth.refresh(dto.refreshToken);
@@ -98,7 +107,7 @@ export class AuthController {
   }
 
   @Get("me")
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard)
   me(@CurrentUser() current: AuthenticatedUser) {
     return this.auth.me(current);
   }

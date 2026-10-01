@@ -594,3 +594,19 @@ export class StartImpersonationDto extends ReasonDto {
   @IsString()
   membershipId!: string;
 }
+
+export class StartImpersonationHandoffDto extends StartImpersonationDto {
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{43}$/)
+  codeChallenge!: string;
+}
+
+export class ExchangeImpersonationHandoffDto {
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{43}$/)
+  code!: string;
+
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{43,128}$/)
+  codeVerifier!: string;
+}

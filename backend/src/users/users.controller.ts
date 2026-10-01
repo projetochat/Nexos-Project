@@ -675,7 +675,7 @@ export class UsersController {
       status: invitation.status.toLowerCase(),
       expiresAt: invitation.expiresAt,
       ...(exposeLocalTokens()
-        ? { acceptUrl: `${publicAppUrl()}/login?invite=${token}` }
+        ? { acceptUrl: `${tenantAppUrl()}/login?invite=${token}` }
         : { delivery: "provider_required" }),
     };
   }
@@ -891,8 +891,12 @@ function exposeLocalTokens() {
   return process.env.NODE_ENV !== "production" || process.env.TRIXUS_EXPOSE_LOCAL_TOKENS === "true";
 }
 
-function publicAppUrl() {
-  return (process.env.TRIXUS_PUBLIC_APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
+function tenantAppUrl() {
+  return (
+    process.env.TRIXUS_TENANT_APP_URL ??
+    process.env.TRIXUS_PUBLIC_APP_URL ??
+    "http://localhost:5173"
+  ).replace(/\/$/, "");
 }
 
 function normalizeAvatarUrl(value: string | null | undefined) {

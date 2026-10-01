@@ -7,6 +7,8 @@ export type JwtPayload = {
   roleId: string;
   roleKey: string;
   platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
+  surface: "platform" | "tenant";
+  aud: "trixus-platform" | "trixus-tenant";
   typ: "access" | "refresh" | "password_setup" | "tenant_selection";
   iatMs?: number;
   exp?: number;
@@ -22,6 +24,7 @@ export type AuthenticatedUser = {
   roleId: string;
   roleKey: string;
   platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
+  surface?: "platform" | "tenant";
   context?: "tenant" | "platform";
   platformPermissions?: string[];
   permissions?: PermissionKey[];

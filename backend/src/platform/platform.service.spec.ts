@@ -701,6 +701,53 @@ describe("PlatformService health", () => {
     );
   });
 
+  it("does not fall back to the known temporary password in invitation-only mode", async () => {
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      tenant: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "tenant-1",
+          status: "ACTIVE",
+          responsibleName: "Responsável",
+          responsibleEmail: "responsavel@example.com",
+          users: [],
+        }),
+      },
+      user: { findUnique: vi.fn(), create: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const service = new PlatformService(
+      prisma as never,
+      { record: vi.fn() } as never,
+      {} as never,
+      {
+        get: vi.fn((name: string) =>
+          name === "TENANT_ADMIN_PROVISIONING_MODE" ? "invitation_email" : undefined,
+        ),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.updateTenantAdministratorCredentials(
+        "tenant-1",
+        {
+          responsibleName: "Responsável",
+          responsibleEmail: "responsavel@example.com",
+        },
+        actor(),
+      ),
+    ).rejects.toThrow("Informe uma senha inicial ou utilize o fluxo de convite");
+    expect(tx.user.findUnique).not.toHaveBeenCalled();
+    expect(tx.user.create).not.toHaveBeenCalled();
+  });
+
   it("selects only safe user fields when returning tenant details", async () => {
     const findUnique = vi.fn().mockResolvedValue({
       id: "tenant-1",

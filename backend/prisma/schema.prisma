@@ -599,6 +599,10 @@ model ImpersonationSession {
   reason                   String
   status                   ImpersonationStatus @default(ACTIVE)
   expiresAt                DateTime
+  handoffCodeHash          String?             @unique
+  handoffChallenge         String?
+  handoffExpiresAt         DateTime?
+  handoffConsumedAt        DateTime?
   stoppedAt                DateTime?
   createdAt                DateTime            @default(now())
   actor                    User                @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
@@ -608,6 +612,7 @@ model ImpersonationSession {
 
   @@index([actorUserId, status, expiresAt])
   @@index([tenantId, status])
+  @@index([handoffExpiresAt, handoffConsumedAt])
   @@map("impersonation_sessions")
 }
 

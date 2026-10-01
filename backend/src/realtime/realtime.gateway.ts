@@ -10,7 +10,7 @@ import {
   WebSocketServer,
 } from "@nestjs/websockets";
 import type { Server, Socket } from "socket.io";
-import { realtimeConfig } from "./realtime.config";
+import { realtimeConfig, realtimeCorsOrigin } from "./realtime.config";
 import { REALTIME_NAMESPACE, REALTIME_PATH } from "./realtime-events";
 import {
   RealtimeAuthError,
@@ -32,7 +32,7 @@ type RealtimeSocket = Socket & {
 @WebSocketGateway({
   namespace: REALTIME_NAMESPACE,
   path: REALTIME_PATH,
-  cors: { origin: true, credentials: true },
+  cors: { origin: realtimeCorsOrigin, credentials: true },
 })
 export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(RealtimeGateway.name);

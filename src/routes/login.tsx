@@ -14,6 +14,7 @@ import {
   type Role,
 } from "@/lib/session";
 import type { RequiredPasswordChange, TenantSelectionRequired } from "@/lib/trixus-api";
+import { currentAppSurface } from "@/lib/app-surface";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Trixus" }] }),
@@ -24,6 +25,8 @@ function LoginPage() {
   const navigate = useNavigate();
   const { invite } = Route.useSearch() as { invite?: string };
   const user = useSession((s) => s.user);
+  const surface = currentAppSurface();
+  const surfaceLabel = surface === "platform" ? "Platform" : surface === "tenant" ? "Chat" : null;
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -202,6 +205,11 @@ function LoginPage() {
 
         <div className="row-start-2 mx-auto mt-4 w-full max-w-[420px] self-start lg:col-start-2 lg:row-auto lg:mt-0 lg:max-w-[460px] lg:self-center">
           <div className="login-bank-gothic rounded-2xl border border-slate-200/90 bg-white/90 p-5 shadow-[0_18px_52px_rgba(15,42,90,0.13)] backdrop-blur sm:p-7 lg:rounded-[1.5rem] lg:p-8">
+            {surfaceLabel && !invite && (
+              <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-700">
+                {surfaceLabel}
+              </span>
+            )}
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#071535] sm:text-4xl">
               {invite ? "Defina sua senha" : "Entrar no Trixus"}
             </h1>

@@ -1,9 +1,14 @@
 import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminContainer } from "@/components/admin-shell";
-import { Alert, Badge, Card, SectionHeader } from "@/components/ui-kit";
+import { Modal } from "@/components/modal";
+import { Alert, Badge, Button, Card, SectionHeader } from "@/components/ui-kit";
 import { fmtDate } from "@/lib/format";
-import { platformApi, type PlatformTenantDetail } from "@/lib/trixus-api";
+import {
+  createImpersonationHandoff,
+  platformApi,
+  type PlatformTenantDetail,
+} from "@/lib/trixus-api";
 
 export const Route = createFileRoute("/admin/tenants/$tenantId")({
   head: () => ({ meta: [{ title: "Tenant | Trixus" }] }),
@@ -14,6 +19,10 @@ function TenantDetailPage() {
   const { tenantId } = Route.useParams();
   const [tenant, setTenant] = React.useState<PlatformTenantDetail | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [accessOpen, setAccessOpen] = React.useState(false);
+  const [accessReason, setAccessReason] = React.useState("");
+  const [accessError, setAccessError] = React.useState<string | null>(null);
+  const [accessBusy, setAccessBusy] = React.useState(false);
 
   React.useEffect(() => {
     platformApi
@@ -50,6 +59,29 @@ function TenantDetailPage() {
       } | null;
     }
   ).client;
+  const activeMemberships = details.users.filter(
+    (membership) => membership.status === "ACTIVE" && membership.user.status === "ACTIVE",
+  );
+  const accessMembership =
+    activeMemberships.find((membership) => membership.role.key === "tenant_admin") ??
+    activeMemberships[0];
+
+  const beginTenantAccess = async () => {
+    if (!accessMembership || !accessReason.trim()) return;
+    setAccessBusy(true);
+    setAccessError(null);
+    try {
+      const handoff = await createImpersonationHandoff({
+        tenantId: tenant.id,
+        membershipId: accessMembership.id,
+        reason: accessReason.trim(),
+      });
+      window.location.assign(handoff.url);
+    } catch (reason) {
+      setAccessError((reason as Error).message);
+      setAccessBusy(false);
+    }
+  };
 
   return (
     <AdminContainer>
@@ -57,12 +89,23 @@ function TenantDetailPage() {
         title="Visualizar Tenant"
         subtitle="Consulta das informações e configurações da tenant."
         actions={
-          <Link
-            to="/admin/tenants"
-            className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-surface-2"
-          >
-            Voltar
-          </Link>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setAccessOpen(true)}
+              disabled={!accessMembership}
+              title={!accessMembership ? "Nenhum usuário ativo disponível" : undefined}
+            >
+              Acessar tenant
+            </Button>
+            <Link
+              to="/admin/tenants"
+              className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-surface-2"
+            >
+              Voltar
+            </Link>
+          </div>
         }
       />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -133,6 +176,68 @@ function TenantDetailPage() {
           </div>
         </Card>
       </div>
+      <Modal
+        open={accessOpen}
+        onClose={() => !accessBusy && setAccessOpen(false)}
+        title="Acessar tenant como suporte"
+        description={tenant.name}
+        dismissible={!accessBusy}
+        initialFocus="#tenant-access-reason"
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAccessOpen(false)}
+              disabled={accessBusy}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={beginTenantAccess}
+              disabled={accessBusy || !accessMembership || !accessReason.trim()}
+            >
+              {accessBusy ? "Abrindo…" : "Continuar"}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          O acesso é temporário e auditado. Durante a sessão, o Chat exibirá permanentemente o
+          tenant, o ator real e o horário de expiração.
+        </p>
+        <label htmlFor="tenant-access-reason" className="mt-4 block text-sm font-medium">
+          Motivo do acesso
+        </label>
+        <textarea
+          id="tenant-access-reason"
+          value={accessReason}
+          onChange={(event) => setAccessReason(event.target.value)}
+          maxLength={500}
+          rows={4}
+          placeholder="Descreva por que este acesso é necessário"
+          className="mt-2 w-full resize-y rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none focus:border-primary"
+        />
+        {accessMembership ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Perfil utilizado: {accessMembership.user.name} ({accessMembership.role.name}).
+          </p>
+        ) : (
+          <div className="mt-4">
+            <Alert tone="warning" title="Acesso indisponível">
+              Este tenant não possui um usuário ativo disponível para o suporte.
+            </Alert>
+          </div>
+        )}
+        {accessError && (
+          <div className="mt-4">
+            <Alert tone="destructive" title="Não foi possível iniciar o acesso">
+              {accessError}
+            </Alert>
+          </div>
+        )}
+      </Modal>
     </AdminContainer>
   );
 }

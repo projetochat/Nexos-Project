@@ -42,6 +42,7 @@ import { Route as ConfiguracoesIndexRouteImport } from './routes/configuracoes.i
 import { Route as AtendimentoIndexRouteImport } from './routes/atendimento.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as InboxConversationIdRouteImport } from './routes/inbox.$conversationId'
+import { Route as ImpersonationCallbackRouteImport } from './routes/impersonation.callback'
 import { Route as ConfiguracoesVariaveisRouteImport } from './routes/configuracoes.variaveis'
 import { Route as ConfiguracoesSegurancaRouteImport } from './routes/configuracoes.seguranca'
 import { Route as ConfiguracoesPermissoesRouteImport } from './routes/configuracoes.permissoes'
@@ -234,6 +235,11 @@ const InboxConversationIdRoute = InboxConversationIdRouteImport.update({
   path: '/$conversationId',
   getParentRoute: () => InboxRoute,
 } as any)
+const ImpersonationCallbackRoute = ImpersonationCallbackRouteImport.update({
+  id: '/impersonation/callback',
+  path: '/impersonation/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConfiguracoesVariaveisRoute = ConfiguracoesVariaveisRouteImport.update({
   id: '/variaveis',
   path: '/variaveis',
@@ -421,6 +427,7 @@ export interface FileRoutesByFullPath {
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
+  '/impersonation/callback': typeof ImpersonationCallbackRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin/': typeof AdminIndexRoute
   '/atendimento/': typeof AtendimentoIndexRoute
@@ -478,6 +485,7 @@ export interface FileRoutesByTo {
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
+  '/impersonation/callback': typeof ImpersonationCallbackRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin': typeof AdminIndexRoute
   '/atendimento': typeof AtendimentoIndexRoute
@@ -540,6 +548,7 @@ export interface FileRoutesById {
   '/configuracoes/permissoes': typeof ConfiguracoesPermissoesRoute
   '/configuracoes/seguranca': typeof ConfiguracoesSegurancaRoute
   '/configuracoes/variaveis': typeof ConfiguracoesVariaveisRoute
+  '/impersonation/callback': typeof ImpersonationCallbackRoute
   '/inbox/$conversationId': typeof InboxConversationIdRoute
   '/admin/': typeof AdminIndexRoute
   '/atendimento/': typeof AtendimentoIndexRoute
@@ -603,6 +612,7 @@ export interface FileRouteTypes {
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/variaveis'
+    | '/impersonation/callback'
     | '/inbox/$conversationId'
     | '/admin/'
     | '/atendimento/'
@@ -660,6 +670,7 @@ export interface FileRouteTypes {
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/variaveis'
+    | '/impersonation/callback'
     | '/inbox/$conversationId'
     | '/admin'
     | '/atendimento'
@@ -721,6 +732,7 @@ export interface FileRouteTypes {
     | '/configuracoes/permissoes'
     | '/configuracoes/seguranca'
     | '/configuracoes/variaveis'
+    | '/impersonation/callback'
     | '/inbox/$conversationId'
     | '/admin/'
     | '/atendimento/'
@@ -758,6 +770,7 @@ export interface RootRouteChildren {
   PerfilRoute: typeof PerfilRoute
   PerfisRoute: typeof PerfisRoute
   RelatoriosRoute: typeof RelatoriosRoute
+  ImpersonationCallbackRoute: typeof ImpersonationCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -992,6 +1005,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/inbox/$conversationId'
       preLoaderRoute: typeof InboxConversationIdRouteImport
       parentRoute: typeof InboxRoute
+    }
+    '/impersonation/callback': {
+      id: '/impersonation/callback'
+      path: '/impersonation/callback'
+      fullPath: '/impersonation/callback'
+      preLoaderRoute: typeof ImpersonationCallbackRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/configuracoes/variaveis': {
       id: '/configuracoes/variaveis'
@@ -1315,6 +1335,7 @@ const rootRouteChildren: RootRouteChildren = {
   PerfilRoute: PerfilRoute,
   PerfisRoute: PerfisRoute,
   RelatoriosRoute: RelatoriosRoute,
+  ImpersonationCallbackRoute: ImpersonationCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

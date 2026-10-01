@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
@@ -8,7 +10,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { hash } from "bcryptjs";
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { CampaignDispatchQueue } from "../campaigns/campaign-dispatch.queue";
 import { readPositiveInteger } from "../campaigns/campaign-config";
 import { AuthService } from "../auth/auth.service";
@@ -42,9 +44,11 @@ import type {
   CreatePlatformClientDto,
   CreateSubscriptionDto,
   CreateTenantDto,
+  ExchangeImpersonationHandoffDto,
   InvoiceStatusDto,
   PlatformListQueryDto,
   ReasonDto,
+  StartImpersonationHandoffDto,
   StartImpersonationDto,
   TerminateTenantDto,
   UpdatePlanDto,
@@ -82,6 +86,9 @@ const tenantTransitions: Record<TenantStatus, TenantStatus[]> = {
 
 @Injectable()
 export class PlatformService {
+  private static readonly MAX_TRACKED_HANDOFF_CODES = 1_000;
+  private readonly failedHandoffAttempts = new Map<string, { count: number; resetAt: number }>();
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(PlatformAuditService) private readonly audit: PlatformAuditService,
@@ -507,6 +514,11 @@ export class PlatformService {
         }
 
         if (tenant.users.length === 0) {
+          if (!passwordHash && this.tenantAdministratorInvitationEmailEnabled()) {
+            throw new BadRequestException(
+              "Informe uma senha inicial ou utilize o fluxo de convite do administrador.",
+            );
+          }
           const emailOwner = await tx.user.findUnique({
             where: { email: responsibleEmail },
             select: { id: true },
@@ -1682,7 +1694,7 @@ export class PlatformService {
             to: refreshedClient.responsibleEmail,
             administratorName: refreshedClient.responsibleName,
             tenantName: created.name,
-            acceptUrl: `${this.publicAppUrl()}/login?invite=${encodeURIComponent(invitationToken)}`,
+            acceptUrl: `${this.tenantAppUrl()}/login?invite=${encodeURIComponent(invitationToken)}`,
             expiresAt: invitationExpiresAt,
           });
         }
@@ -2061,6 +2073,143 @@ export class PlatformService {
   }
 
   async startImpersonation(dto: StartImpersonationDto, current: AuthenticatedUser) {
+    const { session, membership } = await this.createImpersonation(dto, current);
+    const tokens = await this.auth.issueImpersonationTokens({
+      actorPlatformUserId: current.userId,
+      impersonationSessionId: session.id,
+      membershipId: dto.membershipId,
+    });
+    return { ...session, tenant: membership.tenant, membership, tokens };
+  }
+
+  async startImpersonationHandoff(dto: StartImpersonationHandoffDto, current: AuthenticatedUser) {
+    const code = randomBytes(32).toString("base64url");
+    const handoffExpiresAt = new Date(Date.now() + 60_000);
+    const { session, membership } = await this.createImpersonation(dto, current, {
+      handoffCodeHash: hashPlatformToken(code),
+      handoffChallenge: dto.codeChallenge,
+      handoffExpiresAt,
+    });
+    return {
+      code,
+      expiresAt: handoffExpiresAt,
+      impersonationExpiresAt: session.expiresAt,
+      tenant: membership.tenant,
+    };
+  }
+
+  async exchangeImpersonationHandoff(dto: ExchangeImpersonationHandoffDto) {
+    const now = new Date();
+    const codeHash = hashPlatformToken(dto.code);
+    this.assertHandoffRateLimit(codeHash, now.getTime());
+    const session = await this.prisma.impersonationSession.findUnique({
+      where: { handoffCodeHash: codeHash },
+      include: {
+        actor: { select: { id: true, name: true, email: true } },
+        tenant: { select: { id: true, slug: true, name: true } },
+      },
+    });
+    const challenge = pkceChallenge(dto.codeVerifier);
+    if (
+      !session ||
+      !session.handoffChallenge ||
+      !safeTokenEquals(session.handoffChallenge, challenge) ||
+      !session.handoffExpiresAt ||
+      session.handoffExpiresAt <= now ||
+      session.expiresAt <= now ||
+      session.handoffConsumedAt ||
+      session.status !== "ACTIVE"
+    ) {
+      this.recordFailedHandoff(codeHash, now.getTime());
+      throw new BadRequestException({
+        code: "IMPERSONATION_HANDOFF_INVALID",
+        message: "Acesso temporário inválido ou expirado.",
+      });
+    }
+    const consumed = await this.prisma.impersonationSession.updateMany({
+      where: {
+        id: session.id,
+        status: "ACTIVE",
+        handoffConsumedAt: null,
+        handoffExpiresAt: { gt: now },
+        expiresAt: { gt: now },
+      },
+      data: { handoffConsumedAt: now },
+    });
+    if (consumed.count !== 1) {
+      this.recordFailedHandoff(codeHash, now.getTime());
+      throw new BadRequestException({
+        code: "IMPERSONATION_HANDOFF_INVALID",
+        message: "Acesso temporário inválido ou expirado.",
+      });
+    }
+    this.failedHandoffAttempts.delete(codeHash);
+    const tokens = await this.auth.issueImpersonationTokens({
+      actorPlatformUserId: session.actorUserId,
+      impersonationSessionId: session.id,
+      membershipId: session.impersonatedMembershipId,
+    });
+    return {
+      ...tokens,
+      impersonation: {
+        id: session.id,
+        expiresAt: session.expiresAt,
+        actorUser: session.actor,
+        tenant: session.tenant,
+      },
+    };
+  }
+
+  async stopCurrentImpersonation(current: AuthenticatedUser) {
+    if (!current.impersonationSessionId || !current.actorPlatformUserId) {
+      throw new BadRequestException({
+        code: "IMPERSONATION_SESSION_REQUIRED",
+        message: "Nenhuma impersonação ativa foi encontrada.",
+      });
+    }
+    const stoppedAt = new Date();
+    const stopped = await this.prisma.impersonationSession.updateMany({
+      where: {
+        id: current.impersonationSessionId,
+        actorUserId: current.actorPlatformUserId,
+        status: "ACTIVE",
+      },
+      data: { status: "STOPPED", stoppedAt },
+    });
+    if (stopped.count !== 1) {
+      throw new BadRequestException({
+        code: "IMPERSONATION_SESSION_INACTIVE",
+        message: "A impersonação já foi encerrada ou expirou.",
+      });
+    }
+    const actor = await this.prisma.user.findUnique({
+      where: { id: current.actorPlatformUserId },
+      select: { platformRole: true },
+    });
+    await this.prisma.platformAuditLog.create({
+      data: {
+        actorUserId: current.actorPlatformUserId,
+        actorPlatformRole: actor?.platformRole ?? "SUPPORT",
+        action: "impersonation.stopped",
+        targetType: "impersonation",
+        targetId: current.impersonationSessionId,
+        tenantId: current.tenantId,
+        impersonationSessionId: current.impersonationSessionId,
+        metadataJson: { source: "tenant_handoff" },
+      },
+    });
+    return { id: current.impersonationSessionId, stoppedAt };
+  }
+
+  private async createImpersonation(
+    dto: StartImpersonationDto,
+    current: AuthenticatedUser,
+    handoff?: {
+      handoffCodeHash: string;
+      handoffChallenge: string;
+      handoffExpiresAt: Date;
+    },
+  ) {
     const membership = await this.prisma.tenantMembership.findFirst({
       where: {
         id: dto.membershipId,
@@ -2084,6 +2233,7 @@ export class PlatformService {
           impersonatedMembershipId: dto.membershipId,
           reason: dto.reason.trim(),
           expiresAt: new Date(Date.now() + ttl * 60_000),
+          ...handoff,
         },
       });
     });
@@ -2096,12 +2246,7 @@ export class PlatformService {
       impersonationSessionId: session.id,
       metadata: { reason: dto.reason },
     });
-    const tokens = await this.auth.issueImpersonationTokens({
-      actorPlatformUserId: current.userId,
-      impersonationSessionId: session.id,
-      membershipId: dto.membershipId,
-    });
-    return { ...session, tenant: membership.tenant, membership, tokens };
+    return { session, membership };
   }
 
   async stopImpersonation(id: string, current: AuthenticatedUser) {
@@ -2239,11 +2384,12 @@ export class PlatformService {
     return `INV-${year}-${String(counter.lastNumber).padStart(6, "0")}`;
   }
 
-  private publicAppUrl() {
-    return (this.config.get<string>("TRIXUS_PUBLIC_APP_URL") ?? "http://localhost:5173").replace(
-      /\/$/,
-      "",
-    );
+  private tenantAppUrl() {
+    return (
+      this.config.get<string>("TRIXUS_TENANT_APP_URL") ??
+      this.config.get<string>("TRIXUS_PUBLIC_APP_URL") ??
+      "http://localhost:5173"
+    ).replace(/\/$/, "");
   }
 
   private tenantAdministratorInvitationEmailEnabled() {
@@ -2252,10 +2398,57 @@ export class PlatformService {
       "invitation_email"
     );
   }
+
+  private assertHandoffRateLimit(codeHash: string, now: number) {
+    this.pruneExpiredHandoffAttempts(now);
+    const attempt = this.failedHandoffAttempts.get(codeHash);
+    if (
+      (attempt && attempt.count >= 5) ||
+      (!attempt && this.failedHandoffAttempts.size >= PlatformService.MAX_TRACKED_HANDOFF_CODES)
+    ) {
+      throw new HttpException(
+        {
+          code: "TOO_MANY_HANDOFF_ATTEMPTS",
+          message: "Muitas tentativas de acesso temporário. Tente novamente em instantes.",
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  private recordFailedHandoff(codeHash: string, now: number) {
+    const attempt = this.failedHandoffAttempts.get(codeHash);
+    if (attempt) {
+      attempt.count += 1;
+      return;
+    }
+    this.pruneExpiredHandoffAttempts(now);
+    if (this.failedHandoffAttempts.size < PlatformService.MAX_TRACKED_HANDOFF_CODES) {
+      this.failedHandoffAttempts.set(codeHash, { count: 1, resetAt: now + 60_000 });
+    }
+  }
+
+  private pruneExpiredHandoffAttempts(now: number) {
+    for (const [codeHash, attempt] of this.failedHandoffAttempts) {
+      if (attempt.resetAt <= now) this.failedHandoffAttempts.delete(codeHash);
+    }
+  }
 }
 
 function hashPlatformToken(token: string) {
   return createHash("sha256").update(token.trim(), "utf8").digest("hex");
+}
+
+function pkceChallenge(verifier: string) {
+  return createHash("sha256").update(verifier, "utf8").digest("base64url");
+}
+
+function safeTokenEquals(expected: string, actual: string) {
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const actualBuffer = Buffer.from(actual, "utf8");
+  return (
+    expectedBuffer.length === actualBuffer.length && timingSafeEqual(expectedBuffer, actualBuffer)
+  );
 }
 
 function validatePlanConfig(features: unknown, limits: unknown) {
