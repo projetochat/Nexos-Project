@@ -40,11 +40,17 @@ expectAbsent("runtime ticket API/page", `${contents.api}\n${contents.page}`, [
 
 expectPresent("backend controller", contents.controller, [
   [/@Post\(":id\/attachments"\)/, "binary attachment upload endpoint"],
-  [/tickets\.attachments\.upload/, "upload permission enforcement"],
+  [
+    /@Post\(":id\/attachments"\)[\s\S]{0,240}@RequirePermissions\("tickets\.update"\)/,
+    "upload permission enforcement",
+  ],
   [/@Get\(":id\/attachments\/:attachmentId\/inline"\)/, "inline preview endpoint"],
   [/@Get\(":id\/attachments\/:attachmentId\/download"\)/, "download endpoint"],
   [/@Delete\(":id\/attachments\/:attachmentId"\)/, "delete endpoint"],
-  [/tickets\.attachments\.delete/, "delete permission enforcement"],
+  [
+    /@Delete\(":id\/attachments\/:attachmentId"\)[\s\S]{0,240}@RequirePermissions\("tickets\.update"\)/,
+    "delete permission enforcement",
+  ],
 ]);
 
 expectPresent("backend service", contents.service, [

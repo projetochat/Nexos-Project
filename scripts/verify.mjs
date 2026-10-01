@@ -21,6 +21,7 @@ const gates = bunAvailable
   ? [
       ["frontend:typecheck", bunx(), ["tsc", "--noEmit"]],
       ["frontend:lint-baseline", bun(), ["run", "lint"]],
+      ["frontend:test", bun(), ["run", "test:frontend"]],
       ["frontend:build", bun(), ["run", "build"]],
       ["inbox:legacy-runtime", bun(), ["run", "test:inbox-legacy-runtime"]],
       ["ticket:legacy-runtime", bun(), ["run", "test:ticket-legacy-runtime"]],
@@ -58,6 +59,11 @@ const gates = bunAvailable
   : [
       ["frontend:typecheck", bin("tsc"), ["--noEmit"]],
       ["frontend:lint-baseline", process.execPath, ["scripts/check-eslint-baseline.mjs"]],
+      [
+        "frontend:test",
+        bin("vitest"),
+        ["run", "--exclude", ".continuity/**", "--exclude", "tmp/**", "--exclude", "backend/**"],
+      ],
       ["frontend:build", bin("vite"), ["build"]],
       ["inbox:legacy-runtime", process.execPath, ["scripts/check-inbox-legacy-runtime.mjs"]],
       ["ticket:legacy-runtime", process.execPath, ["scripts/check-ticket-legacy-runtime.mjs"]],

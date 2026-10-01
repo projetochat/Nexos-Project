@@ -397,10 +397,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       <Sidebar collapsed={collapsed} />
       <div className="flex min-w-0 flex-1 flex-col">
         <OfflineBanner />
-        <Topbar
-          onToggleSidebar={toggle}
-          onOpenMobileNav={() => setMobileNavOpen(true)}
-        />
+        <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
         <main key={pathname} className="min-w-0 flex-1 animate-fade-in-soft">
           {children}
         </main>

@@ -37,8 +37,9 @@ check(
     '@Get("reports/attendance")',
     '@Get("reports/attendance/export")',
     '@Get("queues")',
+    '@RequirePermissions("dashboard.read")',
+    '@RequirePermissions("history.read")',
     '@RequirePermissions("conversations.read")',
-    '@RequirePermissions("chat.leads.read")',
   ]),
 );
 

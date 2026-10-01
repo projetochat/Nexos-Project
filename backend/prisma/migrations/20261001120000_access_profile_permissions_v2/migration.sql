@@ -8,7 +8,7 @@ WITH permission_ids("id") AS (
     ('contacts.create'), ('contacts.update'), ('contacts.additional_fields.read'),
     ('connections.create'), ('connections.update'),
     ('groups.create'), ('groups.update'),
-    ('chat.tickets.create'),
+    ('chat.tickets.create'), ('chat.tags.use'),
     ('chat.tags.create'), ('chat.tags.update'),
     ('chat.quick_replies.create'), ('chat.quick_replies.update'),
     ('automations.create'), ('automations.update'),
@@ -60,6 +60,24 @@ FROM permission_map
 JOIN "role_permissions" existing ON existing."permissionId" = permission_map."sourceId"
 ON CONFLICT ("roleId", "permissionId") DO NOTHING;
 
+-- Reuse a logically equivalent department before creating the initial Atendimento
+-- department. The application compares department names ignoring case, accents and
+-- repeated whitespace, while the database unique key is case-sensitive.
+WITH normalized_departments AS (
+  SELECT DISTINCT ON (department."tenantId") department."id"
+  FROM "departments" department
+  WHERE lower(translate(
+    regexp_replace(btrim(department."name"), '\s+', ' ', 'g'),
+    'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+    'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'
+  )) = 'atendimento'
+  ORDER BY department."tenantId", department."active" DESC, department."createdAt", department."id"
+)
+UPDATE "departments" department
+SET "active" = true, "updatedAt" = CURRENT_TIMESTAMP
+FROM normalized_departments normalized
+WHERE department."id" = normalized."id";
+
 -- Every tenant receives the idempotent initial department used by the Atendente profile.
 INSERT INTO "departments" (
   "id", "tenantId", "name", "description", "color", "active", "createdAt", "updatedAt"
@@ -68,6 +86,16 @@ SELECT
   tenant."id" || ':atendimento', tenant."id", 'Atendimento',
   'Departamento padrão de atendimento.', '#3B82F6', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM "tenants" tenant
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM "departments" department
+  WHERE department."tenantId" = tenant."id"
+    AND lower(translate(
+      regexp_replace(btrim(department."name"), '\s+', ' ', 'g'),
+      'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+      'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'
+    )) = 'atendimento'
+)
 ON CONFLICT ("tenantId", "name") DO UPDATE SET "active" = true;
 
 -- Existing system Atendente profiles receive the same minimal seed as new tenants.
@@ -93,12 +121,30 @@ ON CONFLICT ("roleId", "permissionId") DO NOTHING;
 
 UPDATE "roles" role
 SET "metadata" = COALESCE(role."metadata", '{}'::jsonb) || jsonb_build_object(
-  'departmentIds', jsonb_build_array(department."id")
+  'departmentIds', jsonb_build_array((
+    SELECT department."id"
+    FROM "departments" department
+    WHERE department."tenantId" = role."tenantId"
+      AND lower(translate(
+        regexp_replace(btrim(department."name"), '\s+', ' ', 'g'),
+        'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+        'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'
+      )) = 'atendimento'
+    ORDER BY department."active" DESC, department."createdAt", department."id"
+    LIMIT 1
+  ))
 )
-FROM "departments" department
 WHERE role."key" = 'agent'
-  AND department."tenantId" = role."tenantId"
-  AND department."name" = 'Atendimento';
+  AND EXISTS (
+    SELECT 1
+    FROM "departments" department
+    WHERE department."tenantId" = role."tenantId"
+      AND lower(translate(
+        regexp_replace(btrim(department."name"), '\s+', ' ', 'g'),
+        'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+        'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'
+      )) = 'atendimento'
+  );
 
 -- Administrators retain the complete approved catalog.
 INSERT INTO "role_permissions" ("roleId", "permissionId")
