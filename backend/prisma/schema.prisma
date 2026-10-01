@@ -388,6 +388,7 @@ model Tenant {
   usageSnapshots              TenantUsageSnapshot[]
   auditLogs                   PlatformAuditLog[]
   impersonationSessions       ImpersonationSession[]
+  authSessions                AuthSession[]
   invitations                 UserInvitation[]
   leads                       Lead[]
   notifications               Notification[]
@@ -438,6 +439,7 @@ model User {
   platformAuditLogs     PlatformAuditLog[]
   impersonationSessions ImpersonationSession[]
   passwordResetTokens   PasswordResetToken[]
+  authSessions          AuthSession[]
 
   @@index([status])
   @@index([platformRole])
@@ -602,6 +604,7 @@ model ImpersonationSession {
   actor                    User                @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
   tenant                   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   auditLogs                PlatformAuditLog[]
+  authSessions             AuthSession[]
 
   @@index([actorUserId, status, expiresAt])
   @@index([tenantId, status])
@@ -661,6 +664,7 @@ model TenantMembership {
   assignedLeads      Lead[]                 @relation("LeadAssignee")
   notifications      Notification[]
   automationRules    AutomationRule[]       @relation("AutomationCreator")
+  authSessions       AuthSession[]
 
   @@unique([tenantId, userId])
   @@unique([tenantId, id])
@@ -668,6 +672,29 @@ model TenantMembership {
   @@index([roleId])
   @@index([status])
   @@map("tenant_memberships")
+}
+
+model AuthSession {
+  id                     String                @id @default(uuid())
+  userId                 String
+  tenantId               String?
+  membershipId           String?
+  impersonationSessionId String?
+  expiresAt              DateTime
+  revokedAt              DateTime?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  user                   User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant                 Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  membership             TenantMembership?     @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  impersonationSession   ImpersonationSession? @relation(fields: [impersonationSessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, expiresAt])
+  @@index([tenantId, membershipId, revokedAt, expiresAt])
+  @@index([impersonationSessionId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("auth_sessions")
 }
 
 model Department {

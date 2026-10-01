@@ -470,6 +470,7 @@ export class PlatformService {
     dto: UpdateTenantAdministratorCredentialsDto,
     current: AuthenticatedUser,
   ) {
+    if (dto.newPassword !== undefined) assertBcryptPasswordLength(dto.newPassword);
     const responsibleName = dto.responsibleName.trim();
     const responsibleEmail = dto.responsibleEmail.toLowerCase().trim();
     const passwordHash = dto.newPassword ? await hash(dto.newPassword, 12) : undefined;
@@ -632,6 +633,10 @@ export class PlatformService {
             where: { userId: administrator.userId, usedAt: null },
             data: { usedAt: credentialsUpdatedAt },
           });
+          await tx.authSession.updateMany({
+            where: { userId: administrator.userId, revokedAt: null },
+            data: { revokedAt: credentialsUpdatedAt },
+          });
         }
         await tx.platformAuditLog.create({
           data: {
@@ -667,6 +672,7 @@ export class PlatformService {
   }
 
   async createTenant(dto: CreateTenantDto, current: AuthenticatedUser) {
+    if (dto.admin) assertBcryptPasswordLength(dto.admin.password);
     const slug = normalizeSlug(dto.slug);
     const plan = await this.activePlanOrThrow(dto.planId);
     const administratorEmail = dto.admin?.email.toLowerCase().trim();
@@ -2284,6 +2290,12 @@ function tenantStatusForSubscription(status: string): "TRIAL" | "ACTIVE" | "SUSP
 function nullable(value?: string | null) {
   if (value === undefined) return undefined;
   return value?.trim() || null;
+}
+
+function assertBcryptPasswordLength(value: string) {
+  if (Buffer.byteLength(value, "utf8") > 72) {
+    throw new BadRequestException("A senha deve possuir no máximo 72 bytes.");
+  }
 }
 
 function normalizePlatformSettings(value: unknown) {

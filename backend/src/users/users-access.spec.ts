@@ -55,6 +55,32 @@ describe("profile and company session enforcement", () => {
       }),
     );
   });
+  it("revalidates an owner session without requiring a tenant membership", async () => {
+    const query = vi.fn().mockResolvedValue({ platformRole: "ADMIN" });
+    const user = {
+      userId: "owner",
+      tenantId: "",
+      membershipId: "",
+      platformRole: "ADMIN",
+    };
+    const guard = new PermissionsGuard(
+      { getAllAndOverride: () => undefined } as never,
+      { user: { findFirst: query } } as never,
+    );
+    const context = {
+      getHandler() {},
+      getClass() {},
+      switchToHttp: () => ({
+        getRequest: () => ({ user, originalUrl: "/api/auth/me", params: {} }),
+      }),
+    };
+    await expect(guard.canActivate(context as never)).resolves.toBe(true);
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "owner", status: "ACTIVE" }),
+      }),
+    );
+  });
   it("rejects revoked session without individual permission metadata", async () => {
     const { guard, context } = setup({ tenant: { authRevokedAt: new Date(200) } });
     await expect(guard.canActivate(context as never)).rejects.toThrow("Sessão revogada");

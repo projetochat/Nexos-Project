@@ -27,6 +27,8 @@ export type RealtimeSocketContext = {
   platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   departmentIds: string[];
   permissions: string[];
+  sid?: string;
+  exp: number;
   iatMs?: number;
   impersonationSessionId?: string;
   actorPlatformUserId?: string;
@@ -47,6 +49,16 @@ export class RealtimeAuthService {
 
     const payload = await this.verifyAccessToken(accessToken.trim());
     if (payload.typ !== "access") throw new RealtimeAuthError("REALTIME_TOKEN_INVALID");
+    const exp = this.assertNotExpired(payload.exp);
+    if (payload.sid) {
+      await this.assertPersistedSession({
+        userId: payload.sub,
+        tenantId: payload.tenantId,
+        membershipId: payload.membershipId,
+        sid: payload.sid,
+        impersonationSessionId: payload.impersonationSessionId,
+      });
+    }
 
     const membership = await this.prisma.tenantMembership.findFirst({
       where: {
@@ -99,10 +111,90 @@ export class RealtimeAuthService {
       platformRole: membership.user.platformRole,
       departmentIds: membership.departments.map((item) => item.departmentId),
       permissions: effectivePermissions(membership.role),
+      sid: payload.sid,
+      exp,
       iatMs: payload.iatMs,
       impersonationSessionId: payload.impersonationSessionId,
       actorPlatformUserId: payload.actorPlatformUserId,
     };
+  }
+
+  async assertSession(
+    context: Pick<
+      RealtimeSocketContext,
+      | "userId"
+      | "tenantId"
+      | "membershipId"
+      | "sid"
+      | "exp"
+      | "iatMs"
+      | "impersonationSessionId"
+      | "actorPlatformUserId"
+    >,
+  ) {
+    this.assertNotExpired(context.exp);
+    if (context.sid) await this.assertPersistedSession(context);
+    const membership = await this.prisma.tenantMembership.findFirst({
+      where: {
+        id: context.membershipId,
+        tenantId: context.tenantId,
+        userId: context.userId,
+        status: "ACTIVE",
+        user: { status: "ACTIVE" },
+        tenant: { status: { in: ["ACTIVE", "TRIAL"] } },
+      },
+      select: { tenant: { select: { authRevokedAt: true } } },
+    });
+    if (!membership) throw new RealtimeAuthError("REALTIME_MEMBERSHIP_INACTIVE");
+    if (
+      membership.tenant.authRevokedAt &&
+      context.iatMs &&
+      context.iatMs < membership.tenant.authRevokedAt.getTime()
+    ) {
+      throw new RealtimeAuthError("REALTIME_TOKEN_INVALID");
+    }
+    if (context.impersonationSessionId) {
+      const impersonation = await this.prisma.impersonationSession.findFirst({
+        where: {
+          id: context.impersonationSessionId,
+          actorUserId: context.actorPlatformUserId,
+          tenantId: context.tenantId,
+          impersonatedMembershipId: context.membershipId,
+          status: "ACTIVE",
+          expiresAt: { gt: new Date() },
+        },
+        select: { id: true },
+      });
+      if (!impersonation) throw new RealtimeAuthError("REALTIME_TOKEN_INVALID");
+    }
+  }
+
+  private async assertPersistedSession(
+    context: Pick<
+      RealtimeSocketContext,
+      "userId" | "tenantId" | "membershipId" | "sid" | "impersonationSessionId"
+    >,
+  ) {
+    const session = await this.prisma.authSession.findFirst({
+      where: {
+        id: context.sid,
+        userId: context.userId,
+        tenantId: context.tenantId,
+        membershipId: context.membershipId,
+        impersonationSessionId: context.impersonationSessionId ?? null,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    });
+    if (!session) throw new RealtimeAuthError("REALTIME_TOKEN_INVALID");
+  }
+
+  private assertNotExpired(exp?: number) {
+    if (!exp || exp * 1000 <= Date.now()) {
+      throw new RealtimeAuthError("REALTIME_TOKEN_EXPIRED");
+    }
+    return exp;
   }
 
   private async verifyAccessToken(token: string) {

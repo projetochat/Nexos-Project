@@ -38,6 +38,48 @@ describe("RealtimeAuthService", () => {
       code: "REALTIME_TOKEN_INVALID",
     });
   });
+
+  it("rejects a revoked persisted session", async () => {
+    const service = serviceWith({ sessionActive: false });
+    await expect(service.authenticate("access-token")).rejects.toMatchObject({
+      code: "REALTIME_TOKEN_INVALID",
+    });
+  });
+
+  it("rejects events after the access token expiration, including legacy sidless sockets", async () => {
+    const service = serviceWith({ sid: undefined, exp: Math.floor(Date.now() / 1000) - 1 });
+    await expect(service.authenticate("access-token")).rejects.toMatchObject({
+      code: "REALTIME_TOKEN_EXPIRED",
+    });
+  });
+
+  it("revalidates membership state for every established socket event", async () => {
+    const service = serviceWith();
+    const context = await service.authenticate("access-token");
+    const prisma = (
+      service as unknown as {
+        prisma: { tenantMembership: { findFirst: ReturnType<typeof vi.fn> } };
+      }
+    ).prisma;
+    prisma.tenantMembership.findFirst.mockResolvedValueOnce(null);
+    await expect(service.assertSession(context)).rejects.toMatchObject({
+      code: "REALTIME_MEMBERSHIP_INACTIVE",
+    });
+  });
+
+  it("revalidates impersonation state for every established socket event", async () => {
+    const service = serviceWith({ impersonationSessionId: "impersonation-a" });
+    const context = await service.authenticate("access-token");
+    const prisma = (
+      service as unknown as {
+        prisma: { impersonationSession: { findFirst: ReturnType<typeof vi.fn> } };
+      }
+    ).prisma;
+    prisma.impersonationSession.findFirst.mockResolvedValueOnce(null);
+    await expect(service.assertSession(context)).rejects.toMatchObject({
+      code: "REALTIME_TOKEN_INVALID",
+    });
+  });
 });
 
 function serviceWith(
@@ -46,6 +88,10 @@ function serviceWith(
     membershipStatus?: string;
     iatMs?: number;
     authRevokedAt?: Date | null;
+    sessionActive?: boolean;
+    sid?: string;
+    exp?: number;
+    impersonationSessionId?: string;
   } = {},
 ) {
   const jwt = {
@@ -57,11 +103,20 @@ function serviceWith(
       roleKey: "agent",
       platformRole: "USER",
       typ: "access",
+      sid: options.sid === undefined && "sid" in options ? undefined : "session-a",
+      exp: options.exp ?? Math.floor(Date.now() / 1000) + 900,
+      impersonationSessionId: options.impersonationSessionId,
+      actorPlatformUserId: options.impersonationSessionId ? "actor-a" : undefined,
       iatMs: options.iatMs,
     }),
   };
   const config = { get: vi.fn().mockReturnValue("test-access-secret-minimum-32-chars") };
   const prisma = {
+    authSession: {
+      findFirst: vi
+        .fn()
+        .mockResolvedValue(options.sessionActive === false ? null : { id: "session-a" }),
+    },
     tenantMembership: {
       findFirst: vi.fn().mockResolvedValue({
         id: "membership-a",
@@ -78,7 +133,7 @@ function serviceWith(
         departments: [{ departmentId: "department-a" }],
       }),
     },
-    impersonationSession: { findFirst: vi.fn() },
+    impersonationSession: { findFirst: vi.fn().mockResolvedValue({ id: "impersonation-a" }) },
   };
   return new RealtimeAuthService(jwt as never, config as never, prisma as never);
 }

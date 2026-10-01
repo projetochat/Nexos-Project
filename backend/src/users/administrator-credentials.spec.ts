@@ -16,11 +16,13 @@ describe("administrator credential confirmation", () => {
 
   const membershipUpdate = vi.fn();
   const userUpdate = vi.fn();
+  const authSessionUpdate = vi.fn();
   const findFirstOrThrow = vi.fn();
   const transaction = vi.fn(async (callback: (tx: unknown) => unknown) =>
     callback({
       tenantMembership: { update: membershipUpdate },
       user: { update: userUpdate },
+      authSession: { updateMany: authSessionUpdate },
     }),
   );
   const controller = new UsersController(
@@ -77,6 +79,29 @@ describe("administrator credential confirmation", () => {
     expect(transaction).not.toHaveBeenCalled();
   });
 
+  it("does not accept a password that only matches after bcrypt truncation", async () => {
+    const bcryptBoundaryPassword = "a".repeat(72);
+    findFirstOrThrow.mockResolvedValue({
+      id: "membership-1",
+      userId: "user-1",
+      presentationName: "Antes",
+      role: { key: "tenant_admin" },
+      user: { passwordHash: await hash(bcryptBoundaryPassword, 4), avatarUrl: null },
+    });
+
+    await expect(
+      controller.updateAdministratorCredentials(
+        {
+          presentationName: "Depois",
+          currentPassword: `${bcryptBoundaryPassword}x`,
+        },
+        currentUser,
+      ),
+    ).rejects.toThrow("72 bytes");
+    expect(findFirstOrThrow).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
   it("updates the trimmed presentation name only after password confirmation", async () => {
     findFirstOrThrow.mockResolvedValue({
       id: "membership-1",
@@ -122,5 +147,32 @@ describe("administrator credential confirmation", () => {
       data: { avatarUrl: null },
     });
     expect(membershipUpdate).not.toHaveBeenCalled();
+  });
+
+  it("revokes all sessions in the same transaction when changing the password", async () => {
+    findFirstOrThrow.mockResolvedValue({
+      id: "membership-1",
+      userId: "user-1",
+      presentationName: "Administrador",
+      role: { key: "tenant_admin" },
+      user: { passwordHash: await hash("senha-correta", 4), avatarUrl: null },
+    });
+
+    await expect(
+      controller.updateAdministratorCredentials(
+        {
+          currentPassword: "senha-correta",
+          newPassword: "senha-nova-segura",
+          confirmPassword: "senha-nova-segura",
+        },
+        currentUser,
+      ),
+    ).resolves.toMatchObject({ ok: true });
+
+    expect(authSessionUpdate).toHaveBeenCalledWith({
+      where: { userId: "user-1", revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(transaction).toHaveBeenCalledOnce();
   });
 });

@@ -68,7 +68,16 @@ function setup(
     $queryRaw: vi.fn(),
     user: { update: userUpdate },
     tenantMembership: {
-      findFirst: scopedFind,
+      findFirst: vi.fn(async (query: { where: { tenantId?: unknown; userId?: string } }) => {
+        if (
+          query.where.userId &&
+          query.where.tenantId &&
+          typeof query.where.tenantId === "object"
+        ) {
+          return options.shared ? { id: "other-membership" } : null;
+        }
+        return scopedFind(query);
+      }),
       update: membershipUpdate,
       findUniqueOrThrow: vi.fn(async () => structuredClone(draft)),
       findMany: vi.fn().mockResolvedValue([]),
@@ -153,16 +162,32 @@ describe("atendente reactivation without password", () => {
     expect(test.tx.user.update).not.toHaveBeenCalled();
   });
 
-  it("keeps explicit password editing available as a separate action", async () => {
+  it("keeps explicit password editing available for a non-shared account", async () => {
     const test = setup({ status: "ACTIVE" });
     await test.controller.update("membership-a", { password: "Nova123" }, current);
     expect(await compare("Nova123", test.state().user.passwordHash)).toBe(true);
   });
 
+  it("rejects global credential changes for an account shared with another tenant", async () => {
+    const test = setup({ status: "ACTIVE", shared: true });
+    await expect(
+      test.controller.update("membership-a", { password: "Nova123" }, current),
+    ).rejects.toThrow("mais de uma empresa");
+    expect(test.state().user.passwordHash).toBe(oldHash);
+  });
+
+  it("stores a shared account name on the membership without changing global identity", async () => {
+    const test = setup({ status: "ACTIVE", shared: true });
+    await test.controller.update("membership-a", { name: "Nome local" }, current);
+    expect(test.state().presentationName).toBe("Nome local");
+    expect(test.state().user.name).toBe("Teste");
+  });
+
   it("preserves normal active profile editing and master protection", async () => {
     const test = setup({ status: "ACTIVE" });
     await test.controller.update("membership-a", { name: "Nome novo" }, current);
-    expect(test.state().user.name).toBe("Nome novo");
+    expect(test.state().presentationName).toBe("Nome novo");
+    expect(test.state().user.name).toBe("Teste");
     expect(test.state().user.passwordHash).toBe(oldHash);
     const master = setup({ master: true });
     await expect(master.controller.activate("membership-a", current)).rejects.toThrow("master");

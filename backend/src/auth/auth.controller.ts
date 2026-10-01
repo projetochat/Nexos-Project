@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Inject, Post, UseGuards } from "@nestjs/common";
 import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 import { CurrentUser } from "./current-user.decorator";
 import { JwtAuthGuard } from "./jwt-auth.guard";
+import { PermissionsGuard } from "./permissions.guard";
 import type { AuthenticatedUser } from "./auth.types";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
@@ -18,6 +19,7 @@ class ResetPasswordDto {
 
   @IsString()
   @MinLength(8)
+  @MaxLength(72)
   password!: string;
 }
 
@@ -27,6 +29,7 @@ class AcceptInvitationDto {
 
   @IsString()
   @MinLength(8)
+  @MaxLength(72)
   password!: string;
 
   @IsOptional()
@@ -95,13 +98,13 @@ export class AuthController {
   }
 
   @Get("me")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   me(@CurrentUser() current: AuthenticatedUser) {
     return this.auth.me(current);
   }
 
   @Post("logout")
-  logout() {
-    return { ok: true };
+  logout(@Headers("authorization") authorization?: string) {
+    return this.auth.logout(authorization);
   }
 }

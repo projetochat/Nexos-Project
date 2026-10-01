@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsBoolean,
+  IsByteLength,
   IsEmail,
   IsIn,
   IsInt,
@@ -164,6 +165,7 @@ export class InitialAdminDto {
 
   @IsString()
   @IsNotEmpty()
+  @IsByteLength(1, 72, { message: "A senha deve possuir no máximo 72 bytes." })
   password!: string;
 }
 
@@ -298,6 +300,7 @@ export class UpdateTenantAdministratorCredentialsDto {
   @IsString()
   @MinLength(6)
   @MaxLength(72)
+  @IsByteLength(0, 72, { message: "A senha deve possuir no máximo 72 bytes." })
   newPassword?: string;
 }
 

@@ -507,6 +507,7 @@ describe("PlatformService health", () => {
       user: { findUnique: vi.fn().mockResolvedValue(null), update: userUpdate },
       tenantMembership: { update: membershipUpdate },
       passwordResetToken: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      authSession: { updateMany: vi.fn().mockResolvedValue({ count: 2 }) },
       platformAuditLog: { create: auditCreate },
     };
     const prisma = {
@@ -1014,6 +1015,48 @@ describe("PlatformService health", () => {
         data: expect.objectContaining({ code: "plano_promocional", name: "Plano Promocional" }),
       }),
     );
+  });
+
+  it("rejects a multibyte administrator password above bcrypt's 72-byte limit before hashing", async () => {
+    const transaction = vi.fn();
+    const service = platformService({ $transaction: transaction }, { record: vi.fn() });
+
+    await expect(
+      service.updateTenantAdministratorCredentials(
+        "tenant-1",
+        {
+          responsibleName: "Responsável",
+          responsibleEmail: "responsavel@example.com",
+          newPassword: "😀".repeat(19),
+        },
+        actor(),
+      ),
+    ).rejects.toThrow("72 bytes");
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects an initial multibyte administrator password above 72 bytes before tenant work", async () => {
+    const transaction = vi.fn();
+    const service = platformService({ $transaction: transaction }, { record: vi.fn() });
+    const planLookup = vi.spyOn(service as never, "activePlanOrThrow" as never);
+
+    await expect(
+      service.createTenant(
+        {
+          name: "Empresa",
+          slug: "empresa-teste",
+          planId: "plan-1",
+          admin: {
+            name: "Administrador",
+            email: "admin@example.com",
+            password: "😀".repeat(19),
+          },
+        },
+        actor(),
+      ),
+    ).rejects.toThrow("72 bytes");
+    expect(planLookup).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
   });
 });
 

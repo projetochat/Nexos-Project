@@ -9,6 +9,8 @@ export type JwtPayload = {
   platformRole: "USER" | "ADMIN" | "SUPPORT" | "READONLY";
   typ: "access" | "refresh" | "password_setup" | "tenant_selection";
   iatMs?: number;
+  exp?: number;
+  sid?: string;
   impersonationSessionId?: string;
   actorPlatformUserId?: string;
 };
@@ -26,6 +28,7 @@ export type AuthenticatedUser = {
   assignedPermissionIds?: string[];
   connectionIds?: string[] | null;
   iatMs?: number;
+  sid?: string;
   impersonationSessionId?: string;
   actorPlatformUserId?: string;
 };

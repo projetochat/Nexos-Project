@@ -30,6 +30,7 @@ type LoginUserWithMemberships = Prisma.UserGetPayload<{
 
 @Injectable()
 export class AuthService {
+  private static readonly MAX_TRACKED_LOGIN_IDENTITIES = 10_000;
   private readonly failedLoginAttempts = new Map<string, { count: number; resetAt: number }>();
 
   constructor(
@@ -44,6 +45,7 @@ export class AuthService {
   async login(dto: LoginDto) {
     const email = dto.email.toLowerCase().trim();
     this.assertLoginRateLimit(email);
+    if (Buffer.byteLength(dto.password, "utf8") > 72) throw this.invalidCredentials(email);
 
     const user = await this.prisma.user.findUnique({
       where: { email },
@@ -70,9 +72,11 @@ export class AuthService {
 
     const validPassword = await compare(dto.password, user.passwordHash);
     if (!validPassword) throw this.invalidCredentials(email);
+    this.failedLoginAttempts.delete(email);
 
     const requestedTenantSlug = dto.tenantSlug?.trim().toLowerCase();
     if (!requestedTenantSlug && user.platformRole !== "USER") {
+      const sid = await this.createSession({ userId: user.id });
       const basePayload = {
         sub: user.id,
         tenantId: "",
@@ -81,6 +85,7 @@ export class AuthService {
         roleKey: "platform_admin",
         platformRole: user.platformRole,
         iatMs: Date.now(),
+        sid,
       };
       return {
         accessToken: await this.signToken({ ...basePayload, typ: "access" }, "JWT_SECRET", "15m"),
@@ -271,6 +276,11 @@ export class AuthService {
       };
     }
 
+    const sid = await this.createSession({
+      userId: user.id,
+      tenantId: membership.tenantId,
+      membershipId: membership.id,
+    });
     const basePayload = {
       sub: user.id,
       tenantId: membership.tenantId,
@@ -279,6 +289,7 @@ export class AuthService {
       roleKey: membership.role.key,
       platformRole: user.platformRole,
       iatMs: Date.now(),
+      sid,
     };
 
     return {
@@ -315,6 +326,7 @@ export class AuthService {
   async refresh(refreshToken: string) {
     const payload = await this.verifyToken(refreshToken, "JWT_REFRESH_SECRET");
     if (payload.typ !== "refresh") throw new UnauthorizedException("Refresh token inválido.");
+    await this.assertRefreshSession(payload);
 
     if (!payload.membershipId && payload.platformRole !== "USER") {
       const user = await this.prisma.user.findFirst({
@@ -331,6 +343,7 @@ export class AuthService {
             roleKey: "platform_admin",
             platformRole: user.platformRole,
             iatMs: Date.now(),
+            sid: payload.sid,
             typ: "access",
           },
           "JWT_SECRET",
@@ -339,8 +352,12 @@ export class AuthService {
       };
     }
 
-    const membership = await this.prisma.tenantMembership.findUnique({
-      where: { id: payload.membershipId },
+    const membership = await this.prisma.tenantMembership.findFirst({
+      where: {
+        id: payload.membershipId,
+        tenantId: payload.tenantId,
+        userId: payload.sub,
+      },
       include: { user: true, tenant: true, role: true },
     });
     if (!membership || membership.status !== "ACTIVE" || membership.user.status !== "ACTIVE") {
@@ -380,6 +397,7 @@ export class AuthService {
           roleKey: membership.role.key,
           platformRole: membership.user.platformRole,
           iatMs: Date.now(),
+          sid: payload.sid,
           typ: "access",
           impersonationSessionId: payload.impersonationSessionId,
           actorPlatformUserId: payload.actorPlatformUserId,
@@ -417,6 +435,7 @@ export class AuthService {
   }
 
   async resetPassword(token: string, password: string) {
+    this.assertPasswordLength(password);
     const tokenHash = hashToken(token);
     const record = await this.prisma.passwordResetToken.findFirst({
       where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
@@ -444,11 +463,16 @@ export class AuthService {
         where: { id: record.id },
         data: { usedAt: new Date() },
       }),
+      this.prisma.authSession.updateMany({
+        where: { userId: record.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
     ]);
     return { ok: true };
   }
 
   async acceptInvitation(dto: { token: string; password: string; name?: string }) {
+    this.assertPasswordLength(dto.password);
     const tokenHash = hashToken(dto.token);
     const invitation = await this.prisma.userInvitation.findFirst({
       where: { tokenHash, status: "PENDING", expiresAt: { gt: new Date() } },
@@ -458,22 +482,18 @@ export class AuthService {
 
     await this.prisma.$transaction(async (tx) => {
       let user = await tx.user.findUnique({ where: { email: invitation.email } });
-      const passwordHash = await hash(dto.password, 12);
       if (user) {
-        user = await tx.user.update({
-          where: { id: user.id },
-          data: {
-            name: dto.name?.trim() || user.name,
-            passwordHash,
-            status: "ACTIVE",
-          },
-        });
+        if (user.status !== "ACTIVE" || !(await compare(dto.password, user.passwordHash))) {
+          throw new UnauthorizedException(
+            "Este e-mail já possui uma conta. Informe a senha atual para aceitar o vínculo.",
+          );
+        }
       } else {
         user = await tx.user.create({
           data: {
             email: invitation.email,
             name: dto.name?.trim() || invitation.email,
-            passwordHash,
+            passwordHash: await hash(dto.password, 12),
           },
         });
       }
@@ -486,6 +506,7 @@ export class AuthService {
           tenantId: invitation.tenantId,
           userId: user.id,
           roleId: invitation.roleId,
+          presentationName: dto.name?.trim() || null,
           status: "ACTIVE",
         },
       });
@@ -599,6 +620,10 @@ export class AuthService {
         where: { userId: membership.userId, usedAt: null },
         data: { usedAt: changedAt },
       });
+      await tx.authSession.updateMany({
+        where: { userId: membership.userId, revokedAt: null },
+        data: { revokedAt: changedAt },
+      });
       await tx.tenant.update({
         where: { id: membership.tenantId },
         data: { authRevokedAt: changedAt },
@@ -641,6 +666,12 @@ export class AuthService {
       },
     });
     const permissions = effectivePermissions(membership.role);
+    const sid = await this.createSession({
+      userId: membership.userId,
+      tenantId: membership.tenantId,
+      membershipId: membership.id,
+      impersonationSessionId: input.impersonationSessionId,
+    });
     const basePayload = {
       sub: membership.userId,
       tenantId: membership.tenantId,
@@ -649,6 +680,7 @@ export class AuthService {
       roleKey: membership.role.key,
       platformRole: membership.user.platformRole,
       iatMs: Date.now(),
+      sid,
       impersonationSessionId: input.impersonationSessionId,
       actorPlatformUserId: input.actorPlatformUserId,
     };
@@ -790,6 +822,81 @@ export class AuthService {
     });
   }
 
+  async assertAccessSession(payload: JwtPayload) {
+    // Tokens issued before this migration have no sid. They receive only the
+    // remainder of their existing 15-minute access lifetime and cannot refresh.
+    if (!payload.sid) return;
+    await this.assertPersistedSession(payload);
+  }
+
+  async logout(authorization?: string) {
+    const [scheme, token] = authorization?.split(" ") ?? [];
+    if (scheme !== "Bearer" || !token) throw new UnauthorizedException("Token ausente.");
+    let payload: JwtPayload;
+    try {
+      payload = await this.verifyToken(token, "JWT_SECRET");
+    } catch {
+      throw new UnauthorizedException("Token inválido.");
+    }
+    if (payload.typ !== "access") throw new UnauthorizedException("Token inválido.");
+    if (payload.sid) {
+      await this.prisma.authSession.updateMany({
+        where: {
+          id: payload.sid,
+          userId: payload.sub,
+          tenantId: payload.tenantId || null,
+          membershipId: payload.membershipId || null,
+          impersonationSessionId: payload.impersonationSessionId ?? null,
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
+    }
+    return { ok: true };
+  }
+
+  private async assertRefreshSession(payload: JwtPayload) {
+    if (!payload.sid) {
+      throw new UnauthorizedException("Sessão legada expirada. Entre novamente.");
+    }
+    await this.assertPersistedSession(payload);
+  }
+
+  private async assertPersistedSession(payload: JwtPayload) {
+    const session = await this.prisma.authSession.findFirst({
+      where: {
+        id: payload.sid,
+        userId: payload.sub,
+        tenantId: payload.tenantId || null,
+        membershipId: payload.membershipId || null,
+        impersonationSessionId: payload.impersonationSessionId ?? null,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    });
+    if (!session) throw new UnauthorizedException("Sessão expirada.");
+  }
+
+  private async createSession(input: {
+    userId: string;
+    tenantId?: string;
+    membershipId?: string;
+    impersonationSessionId?: string;
+  }) {
+    const session = await this.prisma.authSession.create({
+      data: {
+        userId: input.userId,
+        tenantId: input.tenantId,
+        membershipId: input.membershipId,
+        impersonationSessionId: input.impersonationSessionId,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000),
+      },
+      select: { id: true },
+    });
+    return session.id;
+  }
+
   private signToken(
     payload: JwtPayload,
     secretName: "JWT_SECRET" | "JWT_REFRESH_SECRET",
@@ -819,16 +926,11 @@ export class AuthService {
 
   private assertLoginRateLimit(email: string) {
     const now = Date.now();
+    this.pruneExpiredLoginAttempts(now);
     const entry = this.failedLoginAttempts.get(email);
-    if (!entry || entry.resetAt <= now) return;
-    if (entry.count >= 5) {
-      throw new HttpException(
-        {
-          code: "TOO_MANY_LOGIN_ATTEMPTS",
-          message: "Muitas tentativas de acesso. Aguarde é tente novamente.",
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+    if (entry?.count && entry.count >= 5) throw this.loginRateLimitException();
+    if (!entry && this.failedLoginAttempts.size >= AuthService.MAX_TRACKED_LOGIN_IDENTITIES) {
+      throw this.loginRateLimitException();
     }
   }
 
@@ -836,10 +938,37 @@ export class AuthService {
     const now = Date.now();
     const entry = this.failedLoginAttempts.get(email);
     if (!entry || entry.resetAt <= now) {
+      this.pruneExpiredLoginAttempts(now);
+      if (this.failedLoginAttempts.size >= AuthService.MAX_TRACKED_LOGIN_IDENTITIES) return;
       this.failedLoginAttempts.set(email, { count: 1, resetAt: now + 60_000 });
       return;
     }
     entry.count += 1;
+  }
+
+  private pruneExpiredLoginAttempts(now: number) {
+    for (const [identity, attempt] of this.failedLoginAttempts) {
+      if (attempt.resetAt <= now) this.failedLoginAttempts.delete(identity);
+    }
+  }
+
+  private loginRateLimitException() {
+    return new HttpException(
+      {
+        code: "TOO_MANY_LOGIN_ATTEMPTS",
+        message: "Muitas tentativas de acesso. Aguarde é tente novamente.",
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+
+  private assertPasswordLength(password: string) {
+    if (Buffer.byteLength(password, "utf8") > 72) {
+      throw new ForbiddenException({
+        code: "PASSWORD_TOO_LONG",
+        message: "A senha deve possuir no máximo 72 bytes.",
+      });
+    }
   }
 
   private exposeLocalTokens() {
