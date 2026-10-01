@@ -63,20 +63,12 @@ export class DepartmentsController {
   @RequirePermissions("departments.manage")
   async create(@Body() dto: CreateDepartmentDto, @CurrentUser() current: AuthenticatedUser) {
     const name = dto.name.trim();
+    await this.entitlements.assertTenantOperational(current.tenantId);
     const department = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
       );
-      await this.entitlements.assertTenantOperational(current.tenantId);
       await this.ensureNameAvailable(tx, current.tenantId, name);
-      const activeDepartments = await tx.department.count({
-        where: { tenantId: current.tenantId, active: true },
-      });
-      await this.entitlements.assertWithinLimit(
-        current.tenantId,
-        "maxDepartments",
-        activeDepartments,
-      );
       return tx.department.create({
         data: {
           tenantId: current.tenantId,

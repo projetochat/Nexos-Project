@@ -122,9 +122,7 @@ export class MessagingInboundService {
                 ? groupDisplayName && existingContact.name === "Grupo WhatsApp"
                   ? groupDisplayName
                   : existingContact.name
-                : event.fromMe
-                  ? undefined
-                  : (event.metadata?.displayName ?? event.sender.displayName ?? undefined),
+                : undefined,
               departmentId: existingContact.departmentId ?? defaultDepartmentId,
               instance: connection.externalReference ?? existingContact.instance,
             },
@@ -140,7 +138,7 @@ export class MessagingInboundService {
               name: isGroup
                 ? (groupDisplayName ?? "Grupo WhatsApp")
                 : event.fromMe
-                  ? event.sender.phone
+                  ? undefined
                   : (event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone),
               phone: isGroup ? event.externalChatId : event.sender.phone,
               departmentId: defaultDepartmentId,

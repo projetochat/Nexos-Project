@@ -119,3 +119,49 @@ it("uses the approved destructive copy for deleting an outgoing message", async 
     qc.clear();
   }
 });
+
+it("opens on a context-menu request and allows editing an outgoing image caption", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const qc = new QueryClient();
+  const message = {
+    id: "m3",
+    conversation_id: "c1",
+    sender: "agent",
+    type: "image",
+    content: "Legenda da imagem",
+    status: "sent",
+    created_at: "2026-09-27T12:00:00Z",
+    media_data: { state: "ready" },
+  } as ApiMessage;
+  try {
+    await React.act(() =>
+      root.render(
+        <QueryClientProvider client={qc}>
+          <MessageActionsMenu
+            message={message}
+            onReply={vi.fn()}
+            onReact={vi.fn().mockResolvedValue(undefined)}
+            onDownload={vi.fn().mockResolvedValue(undefined)}
+            openRequest={1}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    const editAction = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Editar",
+    );
+    expect(editAction?.disabled).toBe(false);
+    await React.act(() => editAction?.click());
+    expect(document.body.textContent).toContain("Editar mensagem");
+    expect((document.querySelector("textarea") as HTMLTextAreaElement).value).toBe(
+      "Legenda da imagem",
+    );
+  } finally {
+    await React.act(() => root.unmount());
+    host.remove();
+    qc.clear();
+  }
+});

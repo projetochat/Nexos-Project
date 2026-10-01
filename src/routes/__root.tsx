@@ -15,7 +15,7 @@ import appCss from "../styles.css?url";
 import { FAVICON_HREF } from "../lib/favicon";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { ThemeProvider } from "../components/theme-provider";
-import { surfaceRedirect } from "../lib/app-surface";
+import { appTitleForHostname, surfaceRedirect } from "../lib/app-surface";
 
 function NotFoundComponent() {
   return (
@@ -194,5 +194,8 @@ function HostSurfaceGate({ children }: { children: ReactNode }) {
     }
     setReady(true);
   }, [destination]);
+  useEffect(() => {
+    document.title = appTitleForHostname(window.location.hostname);
+  }, [pathname]);
   return ready && !destination ? children : null;
 }

@@ -918,6 +918,7 @@ export function MessageBubble({
   const [imagePreviewOpen, setImagePreviewOpen] = React.useState(false);
   const [mediaError, setMediaError] = React.useState(false);
   const [resendRequest, setResendRequest] = React.useState(0);
+  const [actionsOpenRequest, setActionsOpenRequest] = React.useState(0);
   const mediaState = m.media_data?.state ?? null;
   const mediaReady = !!m.media_data && (!mediaState || mediaState === "ready");
   React.useEffect(() => {
@@ -1072,6 +1073,11 @@ export function MessageBubble({
       )}
       <div
         tabIndex={0}
+        onContextMenu={(event) => {
+          if (readOnly) return;
+          event.preventDefault();
+          setActionsOpenRequest((request) => request + 1);
+        }}
         onClick={(event) => {
           if (
             !(event.target as HTMLElement).closest("button, a, input, video, audio, [role=dialog]")
@@ -1091,6 +1097,7 @@ export function MessageBubble({
             onReact={react}
             onDownload={() => download()}
             resendRequest={resendRequest}
+            openRequest={actionsOpenRequest}
           />
         )}
         {m.participant?.name && !mine && (

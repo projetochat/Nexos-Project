@@ -8,6 +8,46 @@ import { GreetingMessageEditor, ServiceHoursTable } from "../routes/instancias";
 import { sameServiceHours, serviceHoursError } from "./instance-validation";
 
 describe("service hours editor", () => {
+  it("confirms a greeting edit with Enter and preserves Shift+Enter for a new line", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const onSubmit = vi.fn();
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+      await act(async () =>
+        root.render(
+          <GreetingMessageEditor
+            value="Olá"
+            attachment={null}
+            variables={[]}
+            disabled={false}
+            invalid={false}
+            placeholder="Mensagem"
+            showAttachment={false}
+            onChange={() => {}}
+            onSubmit={onSubmit}
+          />,
+        ),
+      );
+      const textarea = host.querySelector("textarea")!;
+      await act(async () => {
+        textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      });
+      expect(onSubmit).toHaveBeenCalledOnce();
+
+      await act(async () => {
+        textarea.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true }),
+        );
+      });
+      expect(onSubmit).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  });
+
   it("shows and clears an inline error while typing, without blur or saving", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     function Editor() {
@@ -28,14 +68,13 @@ describe("service hours editor", () => {
       expect(
         Array.from(host.querySelectorAll("colgroup col"), (column) => column.className),
       ).toEqual([
-        "w-[20%] sm:w-[42%]",
-        "w-[23%] sm:w-[18%]",
-        "w-[23%] sm:w-[18%]",
-        "w-[34%] sm:w-[22%]",
+        "w-[20%] sm:w-[30%]",
+        "w-[23%] sm:w-[20%]",
+        "w-[23%] sm:w-[20%]",
+        "w-[34%] sm:w-[30%]",
       ]);
       expect(host.querySelectorAll("thead th")).toHaveLength(4);
-      expect(host.querySelector("table")?.className).toContain("sm:min-w-[580px]");
-      expect(host.querySelector("table")?.className).not.toContain(" min-w-[580px]");
+      expect(host.querySelector("table")?.className).not.toContain("min-w-[580px]");
       expect(host.querySelector('p[aria-label="Terça"] .sm\\:hidden')?.textContent).toBe("Ter");
       expect(
         host

@@ -2,6 +2,40 @@ import { describe, expect, it, vi } from "vitest";
 import { OperationsMetricsService } from "./operations-metrics.service";
 
 describe("dashboard instance metrics", () => {
+  it("uses the tenant membership presentation name in conversations by attendant", async () => {
+    const prisma = {
+      conversation: {
+        groupBy: vi
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([{ assignedMembershipId: "membership-a", _count: { _all: 2 } }])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([]),
+      },
+      message: { findMany: vi.fn().mockResolvedValue([]) },
+      department: { findMany: vi.fn().mockResolvedValue([]) },
+      tenantMembership: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "membership-a",
+            presentationName: "Ana Atendente",
+            user: { name: "ana@example.test" },
+          },
+        ]),
+      },
+      messagingConnection: { findMany: vi.fn().mockResolvedValue([]) },
+      contact: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const service = new OperationsMetricsService(prisma as never);
+
+    const result = await service.chartData("tenant-a", {
+      start: new Date("2026-09-01"),
+      end: new Date("2026-10-01"),
+    });
+
+    expect(result.byAgent).toEqual([{ nome: "Ana Atendente", total: 2 }]);
+  });
+
   it("intersects the requested instance with the profile scope in conversation, message and lead totals", async () => {
     const model = () => ({
       count: vi.fn().mockResolvedValue(0),

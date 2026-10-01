@@ -17,6 +17,8 @@ import {
   Command,
   Moon,
   Sun,
+  Menu,
+  X,
 } from "lucide-react";
 import { LogoMark, Avatar } from "./ui-kit";
 import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
@@ -257,7 +259,13 @@ function ThemeModeMenuItem() {
   );
 }
 
-function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
+function Topbar({
+  onToggleSidebar,
+  onOpenMobileNav,
+}: {
+  onToggleSidebar: () => void;
+  onOpenMobileNav: () => void;
+}) {
   const crumbs = useBreadcrumbs();
   const conn = useConnectionStatus();
   return (
@@ -290,6 +298,15 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         })}
       </nav>
       <div className="flex min-w-0 flex-1 items-center gap-2 md:hidden">
+        <button
+          type="button"
+          onClick={onOpenMobileNav}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+          aria-label="Abrir menu"
+          title="Abrir menu"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
         <LogoMark size={33} />
         <span className="truncate text-sm font-semibold">Trixus Admin</span>
       </div>
@@ -316,6 +333,45 @@ function Topbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   );
 }
 
+function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <>
+      {open && (
+        <button
+          type="button"
+          aria-label="Fechar menu"
+          className="fixed inset-0 z-[190] bg-black/45 backdrop-blur-[1px] lg:hidden"
+          onClick={onClose}
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-[200] flex w-72 max-w-[86vw] flex-col border-r border-border bg-surface-1 shadow-2xl transition-transform duration-200 lg:hidden ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
+          <Link to="/admin" className="flex items-center gap-2" onClick={onClose}>
+            <LogoMark size={36} />
+            <span className="text-sm font-semibold tracking-tight">Trixus Admin</span>
+          </Link>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground"
+            aria-label="Fechar menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-3">
+          <NavSection title="Negócio" items={negocioNav} collapsed={false} />
+          <NavSection title="Sistema" items={seguranca} collapsed={false} />
+        </nav>
+      </aside>
+    </>
+  );
+}
+
 function useAdminGate() {
   const navigate = useNavigate();
   const user = useSession((s) => s.user);
@@ -331,6 +387,7 @@ function useAdminGate() {
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const authorized = useAdminGate();
   const { collapsed, toggle } = useSidebar();
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   if (!authorized) return null;
@@ -340,10 +397,14 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       <Sidebar collapsed={collapsed} />
       <div className="flex min-w-0 flex-1 flex-col">
         <OfflineBanner />
-        <Topbar onToggleSidebar={toggle} />
+        <Topbar
+          onToggleSidebar={toggle}
+          onOpenMobileNav={() => setMobileNavOpen(true)}
+        />
         <main key={pathname} className="min-w-0 flex-1 animate-fade-in-soft">
           {children}
         </main>
+        <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       </div>
     </div>
   );

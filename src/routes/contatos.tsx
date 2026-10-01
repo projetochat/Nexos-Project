@@ -3043,9 +3043,16 @@ export function ContactFormModal({
   const customersManager = useDisclosure();
   const departmentsManager = useDisclosure();
   const profilesManager = useDisclosure();
+  const initializedFormSession = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedFormSession.current = null;
+      return;
+    }
+    const sessionKey = initial?.id ?? "new-contact";
+    if (initializedFormSession.current === sessionKey) return;
+    initializedFormSession.current = sessionKey;
     setNome(initial?.nome ?? "");
     const initialPhone = splitPhoneByCountry(initial?.telefone ?? "");
     setCountryCode(initialPhone.countryCode);

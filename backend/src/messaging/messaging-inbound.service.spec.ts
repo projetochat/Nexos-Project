@@ -14,6 +14,46 @@ beforeEach(() =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe("MessagingInboundService", () => {
+  it("preserves an existing contact name when the provider sends a different display name", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue({ ...contact(), name: "Nome editado" });
+    prisma.contact.update.mockResolvedValue({ ...contact(), name: "Nome editado" });
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.create.mockResolvedValue({
+      id: "message-inbound",
+      conversationId: "conversation-a",
+      status: MessageStatus.CREATED,
+      createdAt: new Date("2026-10-01T12:00:00.000Z"),
+    });
+    prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 1 }));
+
+    await new MessagingInboundService(prisma as never).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "inbound-preserve-contact-name",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: false,
+      sender: {
+        phone: "5511987654321",
+        normalizedPhone: "+5511987654321",
+        displayName: "Nome da API",
+      },
+      type: MessageType.TEXT,
+      content: "Oi",
+      occurredAt: new Date("2026-10-01T12:00:00.000Z"),
+      metadata: { displayName: "Nome da API" },
+    });
+
+    expect(prisma.contact.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ name: undefined }),
+      }),
+    );
+  });
+
   it("rejects required retained media failures before the transaction can commit a message", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
@@ -827,6 +867,46 @@ describe("MessagingInboundService", () => {
         externalMessageId: "inbound-race",
       }),
     });
+  });
+
+  it("does not replace a contact name when an outbound echo races with contact lookup", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(null);
+    prisma.contact.upsert.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.create.mockResolvedValue({
+      id: "message-outbound-echo",
+      conversationId: "conversation-a",
+      status: MessageStatus.CREATED,
+      createdAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+    prisma.conversation.update.mockResolvedValue(conversation());
+
+    await new MessagingInboundService(prisma as never).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "outbound-echo-race",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: true,
+      sender: {
+        phone: "5511987654321@s.whatsapp.net",
+        normalizedPhone: "+5511987654321",
+        displayName: "Nome do atendente",
+      },
+      type: MessageType.TEXT,
+      content: "Mensagem iniciada pelo atendimento",
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+      metadata: { displayName: "Nome do atendente" },
+    });
+
+    expect(prisma.contact.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ name: undefined }),
+      }),
+    );
   });
 
   it("does not block inbound messages while looking up WhatsApp profile pictures", async () => {

@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { appSurfaceForHostname, loginEndpointForSurface, surfaceRedirect } from "./app-surface";
+import {
+  appSurfaceForHostname,
+  appTitleForHostname,
+  loginEndpointForSurface,
+  surfaceRedirect,
+} from "./app-surface";
 
 describe("app surface routing", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -14,6 +19,8 @@ describe("app surface routing", () => {
   it("uses an explicit login endpoint for each production surface", () => {
     expect(appSurfaceForHostname("app.trixus.com.br")).toBe("platform");
     expect(appSurfaceForHostname("chat.trixus.com.br")).toBe("tenant");
+    expect(appTitleForHostname("app.trixus.com.br")).toBe("Trixus|App");
+    expect(appTitleForHostname("chat.trixus.com.br")).toBe("Trixus|Chat");
     expect(loginEndpointForSurface("platform")).toBe("/auth/platform/login");
     expect(loginEndpointForSurface("tenant")).toBe("/auth/tenant/login");
   });

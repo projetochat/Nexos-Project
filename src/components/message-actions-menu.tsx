@@ -25,12 +25,14 @@ export function MessageActionsMenu({
   onReact,
   onDownload,
   resendRequest = 0,
+  openRequest = 0,
 }: {
   message: ApiMessage;
   onReply?: () => void;
   onReact: (emoji: string | null) => Promise<void>;
   onDownload: () => Promise<void>;
   resendRequest?: number;
+  openRequest?: number;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -45,6 +47,13 @@ export function MessageActionsMenu({
   const running = useRef(false);
   const resendId = useRef<string | null>(null);
   const handledResendRequest = useRef(0);
+  const handledOpenRequest = useRef(0);
+  useEffect(() => {
+    if (!openRequest || openRequest === handledOpenRequest.current) return;
+    handledOpenRequest.current = openRequest;
+    setError("");
+    setOpen(true);
+  }, [openRequest]);
   useEffect(() => {
     if (!resendRequest || resendRequest === handledResendRequest.current) return;
     handledResendRequest.current = resendRequest;
@@ -160,7 +169,8 @@ export function MessageActionsMenu({
               disabled={
                 busy ||
                 message.sender !== "agent" ||
-                message.type !== "text" ||
+                (message.type !== "text" &&
+                  !(message.type === "image" && !!message.content.trim())) ||
                 !!message.deleted_for_everyone
               }
               onClick={() => {

@@ -1591,6 +1591,7 @@ function ConnectionSettingsModal({
                     showWelcomeValidation && form.welcomeEnabled && !form.welcomeNewMessage?.trim()
                   }
                   placeholder={NEW_CONTACT_MESSAGE_PLACEHOLDER}
+                  onSubmit={save}
                   onChange={(welcomeNewMessage, welcomeNewAttachment) =>
                     setForm({ ...form, welcomeNewMessage, welcomeNewAttachment })
                   }
@@ -1626,6 +1627,7 @@ function ConnectionSettingsModal({
                     !form.welcomeExistingMessage?.trim()
                   }
                   placeholder={EXISTING_CONTACT_MESSAGE_PLACEHOLDER}
+                  onSubmit={save}
                   onChange={(welcomeExistingMessage, welcomeExistingAttachment) =>
                     setForm({ ...form, welcomeExistingMessage, welcomeExistingAttachment })
                   }
@@ -2148,12 +2150,12 @@ export function ServiceHoursTable({
     <div className="space-y-2">
       <p className="text-xs font-medium text-muted-foreground">Horário de Atendimento</p>
       <div className="overflow-hidden rounded-lg border border-border sm:overflow-x-auto">
-        <table className="w-full table-fixed border-collapse text-sm sm:min-w-[580px]">
+        <table className="w-full table-fixed border-collapse text-sm">
           <colgroup>
-            <col className="w-[20%] sm:w-[42%]" />
-            <col className="w-[23%] sm:w-[18%]" />
-            <col className="w-[23%] sm:w-[18%]" />
-            <col className="w-[34%] sm:w-[22%]" />
+            <col className="w-[20%] sm:w-[30%]" />
+            <col className="w-[23%] sm:w-[20%]" />
+            <col className="w-[23%] sm:w-[20%]" />
+            <col className="w-[34%] sm:w-[30%]" />
           </colgroup>
           <thead className="bg-surface-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground sm:text-[11px] sm:tracking-widest">
             <tr>
