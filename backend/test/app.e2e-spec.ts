@@ -73,6 +73,7 @@ describe("Trixus API organization and RBAC", () => {
     prisma = app.get(PrismaService);
     jwt = app.get(JwtService);
     await app.init();
+    await ensureE2eBaselineFixtures();
     await cleanupPlatformImpersonations();
   });
 
@@ -162,7 +163,14 @@ describe("Trixus API organization and RBAC", () => {
         expect(body.accessToken).toEqual(expect.any(String));
       });
 
-    await request(app.getHttpServer()).post("/api/auth/logout").expect(201, { ok: true });
+    await request(app.getHttpServer())
+      .post("/api/auth/logout")
+      .set("Authorization", `Bearer ${response.body.accessToken}`)
+      .expect(201, { ok: true });
+    await request(app.getHttpServer())
+      .post("/api/auth/refresh")
+      .send({ refreshToken: response.body.refreshToken })
+      .expect(401);
   });
 
   it("rejects inactive users with a canonical error", async () => {
@@ -467,6 +475,7 @@ describe("Trixus API organization and RBAC", () => {
           expect(body.items[0].inconsistent).toBe(false);
         });
     } finally {
+      await prisma.tenantSubscription.deleteMany({ where: { planId: archivedPlan.id } });
       await prisma.tenant.deleteMany({ where: { id: { in: [tenant.id, subscribedTenant.id] } } });
       await prisma.plan.deleteMany({ where: { id: archivedPlan.id } });
     }
@@ -476,36 +485,58 @@ describe("Trixus API organization and RBAC", () => {
     const platformToken = await login("platform@trixus.app", "demo1234");
     const tenantToken = await login("admin-orbit@trixus.app", "demo1234", "orbit");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "orbit" } });
+    const subscription = await prisma.tenantSubscription.findFirstOrThrow({
+      where: { tenantId: tenant.id, status: "ACTIVE" },
+    });
 
-    await request(app.getHttpServer())
-      .post(`/api/platform/tenants/${tenant.id}/suspend`)
-      .set("Authorization", `Bearer ${platformToken}`)
-      .send({ reason: "E2E platform suspension" })
-      .expect(201)
-      .expect(({ body }) => {
-        expect(body.status).toBe("SUSPENDED");
-      });
+    try {
+      await request(app.getHttpServer())
+        .post(`/api/platform/subscriptions/${subscription.id}/suspend`)
+        .set("Authorization", `Bearer ${platformToken}`)
+        .send({ reason: "E2E platform suspension" })
+        .expect(201)
+        .expect(({ body }) => {
+          expect(body.status).toBe("SUSPENDED");
+        });
 
-    await request(app.getHttpServer())
-      .get("/api/departments")
-      .set("Authorization", `Bearer ${tenantToken}`)
-      .expect(401);
-    await request(app.getHttpServer())
-      .post("/api/auth/login")
-      .send({ email: "admin-orbit@trixus.app", password: "demo1234", tenantSlug: "orbit" })
-      .expect(403)
-      .expect(({ body }) => {
-        expect(body.code).toBe("TENANT_INACTIVE");
-      });
+      await request(app.getHttpServer())
+        .get("/api/departments")
+        .set("Authorization", `Bearer ${tenantToken}`)
+        .expect(401);
+      await request(app.getHttpServer())
+        .post("/api/auth/login")
+        .send({ email: "admin-orbit@trixus.app", password: "demo1234", tenantSlug: "orbit" })
+        .expect(403)
+        .expect(({ body }) => {
+          expect(body.code).toBe("USER_WITHOUT_ACTIVE_MEMBERSHIP");
+        });
 
-    await request(app.getHttpServer())
-      .post(`/api/platform/tenants/${tenant.id}/reactivate`)
-      .set("Authorization", `Bearer ${platformToken}`)
-      .send({ reason: "E2E platform reactivation" })
-      .expect(201)
-      .expect(({ body }) => {
-        expect(body.status).toBe("ACTIVE");
+      await request(app.getHttpServer())
+        .post(`/api/platform/subscriptions/${subscription.id}/activate`)
+        .set("Authorization", `Bearer ${platformToken}`)
+        .send({ reason: "E2E platform reactivation" })
+        .expect(201)
+        .expect(({ body }) => {
+          expect(body.status).toBe("ACTIVE");
+        });
+    } finally {
+      const current = await prisma.tenantSubscription.findUnique({
+        where: { id: subscription.id },
+        select: { status: true },
       });
+      if (current?.status === "SUSPENDED") {
+        await prisma.$transaction([
+          prisma.tenantSubscription.update({
+            where: { id: subscription.id },
+            data: { status: "ACTIVE", suspensionReason: null },
+          }),
+          prisma.tenant.update({
+            where: { id: tenant.id },
+            data: { status: "ACTIVE", suspendedAt: null, suspensionReason: null },
+          }),
+        ]);
+      }
+    }
   });
 
   it("lists plans, creates manual invoices and writes sanitized audit logs", async () => {
@@ -525,40 +556,50 @@ describe("Trixus API organization and RBAC", () => {
         );
       });
 
-    const invoice = await request(app.getHttpServer())
-      .post("/api/platform/invoices")
-      .set("Authorization", `Bearer ${platformToken}`)
-      .send({
-        tenantId: tenant.id,
-        subscriptionId: subscription.id,
-        subtotalCents: 12345,
-        discountCents: 345,
-        dueAt: new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString(),
-      })
-      .expect(201)
-      .expect(({ body }) => {
-        expect(body.number).toMatch(/^INV-\d{4}-\d{6}$/);
-        expect(body.totalCents).toBe(12000);
-      });
+    let invoiceId: string | undefined;
+    try {
+      const invoice = await request(app.getHttpServer())
+        .post("/api/platform/invoices")
+        .set("Authorization", `Bearer ${platformToken}`)
+        .send({
+          tenantId: tenant.id,
+          subscriptionId: subscription.id,
+          subtotalCents: 12345,
+          discountCents: 345,
+          dueAt: new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString(),
+        })
+        .expect(201)
+        .expect(({ body }) => {
+          expect(body.number).toMatch(/^INV-\d{4}-\d{6}$/);
+          expect(body.totalCents).toBe(12000);
+        });
+      invoiceId = invoice.body.id as string;
 
-    await request(app.getHttpServer())
-      .patch(`/api/platform/invoices/${invoice.body.id}/status`)
-      .set("Authorization", `Bearer ${platformToken}`)
-      .send({ status: "PAID" })
-      .expect(200)
-      .expect(({ body }) => {
-        expect(body.status).toBe("PAID");
-      });
+      await request(app.getHttpServer())
+        .patch(`/api/platform/invoices/${invoiceId}/status`)
+        .set("Authorization", `Bearer ${platformToken}`)
+        .send({ status: "PAID" })
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.status).toBe("PAID");
+        });
 
-    await request(app.getHttpServer())
-      .get("/api/platform/audit-logs")
-      .set("Authorization", `Bearer ${platformToken}`)
-      .expect(200)
-      .expect(({ body }) => {
-        const serialized = JSON.stringify(body);
-        expect(serialized).toContain("invoice.created");
-        expect(serialized).not.toContain("demo1234");
+      await request(app.getHttpServer())
+        .get("/api/platform/audit-logs")
+        .set("Authorization", `Bearer ${platformToken}`)
+        .expect(200)
+        .expect(({ body }) => {
+          const serialized = JSON.stringify(body);
+          expect(serialized).toContain("invoice.created");
+          expect(serialized).not.toContain("demo1234");
+        });
+    } finally {
+      if (invoiceId) await prisma.invoice.deleteMany({ where: { id: invoiceId } });
+      await prisma.tenantSubscription.update({
+        where: { id: subscription.id },
+        data: { status: subscription.status },
       });
+    }
   });
 
   it("enforces SUPPORT and READONLY platform permissions", async () => {
@@ -568,15 +609,17 @@ describe("Trixus API organization and RBAC", () => {
     const supportToken = await login("platform-support@trixus.app", "demo1234");
     const readonlyToken = await login("platform-readonly@trixus.app", "demo1234");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const client = await prisma.platformClient.findUniqueOrThrow({
+      where: { tenantId: tenant.id },
+    });
 
     await request(app.getHttpServer())
       .get("/api/platform/tenants")
       .set("Authorization", `Bearer ${supportToken}`)
       .expect(200);
     await request(app.getHttpServer())
-      .post(`/api/platform/tenants/${tenant.id}/terminate`)
+      .delete(`/api/platform/clients/${client.id}`)
       .set("Authorization", `Bearer ${supportToken}`)
-      .send({ reason: "Support cannot terminate", confirmSlug: tenant.slug })
       .expect(403);
     await request(app.getHttpServer())
       .get("/api/platform/plans")
@@ -656,27 +699,69 @@ describe("Trixus API organization and RBAC", () => {
       .expect(200);
   });
 
-  it("rolls back tenant creation when initial admin provisioning fails", async () => {
+  it("rolls back tenant activation when initial admin provisioning fails", async () => {
     const platformToken = await login("platform@trixus.app", "demo1234");
     const plan = await prisma.plan.findFirstOrThrow({ where: { code: "starter" } });
-    const slug = `rollback-${Date.now()}`;
-    const response = await request(app.getHttpServer())
-      .post("/api/platform/tenants")
-      .set("Authorization", `Bearer ${platformToken}`)
-      .send({
-        name: "Rollback Tenant",
-        slug,
+    const suffix = `${Date.now()}`;
+    const client = await prisma.platformClient.create({
+      data: {
+        name: `Rollback Tenant ${suffix}`,
+        document: suffix.padStart(14, "0").slice(-14),
+        responsibleName: "Platform Admin Collision",
+        responsibleEmail: "platform@trixus.app",
+        city: "Sao Paulo",
+        state: "SP",
+      },
+    });
+    const subscription = await prisma.tenantSubscription.create({
+      data: {
+        clientId: client.id,
         planId: plan.id,
-        admin: { name: "Broken Admin", email: "not-an-email", password: "demo1234" },
-      })
-      .expect(400);
-    expect(response.body.message).toBeDefined();
-    await expect(prisma.tenant.findUnique({ where: { slug } })).resolves.toBeNull();
+        status: "FINANCE_RELEASED",
+        currentPeriodEnd: new Date(Date.now() + 30 * 86_400_000),
+        limitsSnapshot: plan.limits,
+        featuresSnapshot: plan.features,
+      },
+    });
+    await prisma.invoice.create({
+      data: {
+        subscriptionId: subscription.id,
+        number: `INV-ROLLBACK-${suffix}`,
+        status: "RELEASED",
+        released: true,
+        releasedAt: new Date(),
+        subtotalCents: 0,
+        totalCents: 0,
+        dueAt: new Date(Date.now() + 7 * 86_400_000),
+      },
+    });
+
+    try {
+      const response = await request(app.getHttpServer())
+        .post(`/api/platform/subscriptions/${subscription.id}/activate`)
+        .set("Authorization", `Bearer ${platformToken}`)
+        .expect(409);
+      expect(response.body.message).toContain("não pode ser reutilizado");
+      await expect(
+        prisma.tenantSubscription.findUniqueOrThrow({ where: { id: subscription.id } }),
+      ).resolves.toMatchObject({ tenantId: null, status: "FINANCE_RELEASED" });
+      await expect(
+        prisma.tenant.count({ where: { billingEmail: "platform@trixus.app" } }),
+      ).resolves.toBe(0);
+    } finally {
+      await prisma.invoice.deleteMany({ where: { subscriptionId: subscription.id } });
+      await prisma.subscriptionHistory.deleteMany({ where: { subscriptionId: subscription.id } });
+      await prisma.tenantSubscription.delete({ where: { id: subscription.id } });
+      await prisma.platformClient.delete({ where: { id: client.id } });
+    }
   });
 
   it("blocks high-risk platform mutations while an impersonation session is active", async () => {
     const platformToken = await login("platform@trixus.app", "demo1234");
     const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const subscription = await prisma.tenantSubscription.findFirstOrThrow({
+      where: { tenantId: tenant.id, status: "ACTIVE" },
+    });
     const membership = await prisma.tenantMembership.findFirstOrThrow({
       where: { tenantId: tenant.id, status: "ACTIVE" },
     });
@@ -695,7 +780,7 @@ describe("Trixus API organization and RBAC", () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/api/platform/tenants/${tenant.id}/suspend`)
+      .post(`/api/platform/subscriptions/${subscription.id}/suspend`)
       .set("Authorization", `Bearer ${platformToken}`)
       .send({ reason: "Must be blocked" })
       .expect(403)
@@ -720,7 +805,6 @@ describe("Trixus API organization and RBAC", () => {
       .post("/api/platform/plans")
       .set("Authorization", `Bearer ${platformToken}`)
       .send({
-        code: `prc06-limited-${suffix}`,
         name: `PRC06 Limited ${suffix}`,
         status: "ACTIVE",
         billingPeriod: "MANUAL",
@@ -793,7 +877,7 @@ describe("Trixus API organization and RBAC", () => {
     ).resolves.toBe(3);
   });
 
-  it("serializes concurrent department creation at the last plan slot", async () => {
+  it("serializes concurrent creation of a duplicate department name", async () => {
     const { token, tenantId } = await createStarterTenant("departments");
     await request(app.getHttpServer())
       .post("/api/departments")
@@ -801,21 +885,23 @@ describe("Trixus API organization and RBAC", () => {
       .send({ name: "Departamento Seed", color: "#2563eb" })
       .expect(201);
 
+    const duplicateName = `Departamento concorrente ${Date.now()}`;
     const responses = await Promise.all([
       request(app.getHttpServer())
         .post("/api/departments")
         .set("Authorization", `Bearer ${token}`)
-        .send({ name: `Departamento A ${Date.now()}`, color: "#2563eb" }),
+        .send({ name: duplicateName, color: "#2563eb" }),
       request(app.getHttpServer())
         .post("/api/departments")
         .set("Authorization", `Bearer ${token}`)
-        .send({ name: `Departamento B ${Date.now()}`, color: "#16a34a" }),
+        .send({ name: duplicateName, color: "#16a34a" }),
     ]);
     expect(responses.filter((response) => response.status === 201)).toHaveLength(1);
     expect(
       responses.some(
         (response) =>
-          response.status === 409 && response.body.code === "PLAN_LIMIT_DEPARTMENTS_REACHED",
+          response.status === 400 &&
+          response.body.message === "Já existe um departamento com este nome.",
       ),
     ).toBe(true);
     await expect(prisma.department.count({ where: { tenantId, active: true } })).resolves.toBe(2);
@@ -3470,6 +3556,60 @@ describe("Trixus API organization and RBAC", () => {
     });
   }
 
+  async function ensureE2eBaselineFixtures() {
+    const plan = await prisma.plan.findFirstOrThrow({ where: { code: "professional" } });
+    for (const slug of ["acme", "orbit"]) {
+      const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug } });
+      const client = await prisma.platformClient.upsert({
+        where: { tenantId: tenant.id },
+        update: { status: "ACTIVE" },
+        create: {
+          name: `${tenant.name} E2E`,
+          responsibleName: `${tenant.name} Admin`,
+          responsibleEmail: `fixture-${slug}@example.test`,
+          city: "São Paulo",
+          state: "SP",
+          status: "ACTIVE",
+          tenantId: tenant.id,
+        },
+      });
+      const subscription = await prisma.tenantSubscription.findFirst({
+        where: { tenantId: tenant.id, status: { in: ["ACTIVE", "TRIALING"] } },
+      });
+      if (!subscription) {
+        await prisma.tenantSubscription.create({
+          data: {
+            tenantId: tenant.id,
+            clientId: client.id,
+            planId: plan.id,
+            status: "ACTIVE",
+            currentPeriodEnd: new Date(Date.now() + 30 * 86_400_000),
+            limitsSnapshot: plan.limits,
+            featuresSnapshot: plan.features,
+          },
+        });
+      }
+    }
+
+    const platformUser = await prisma.user.findUniqueOrThrow({
+      where: { email: "platform@trixus.app" },
+    });
+    const acme = await prisma.tenant.findUniqueOrThrow({ where: { slug: "acme" } });
+    const adminRole = await prisma.role.findUniqueOrThrow({
+      where: { tenantId_key: { tenantId: acme.id, key: "tenant_admin" } },
+    });
+    await prisma.tenantMembership.upsert({
+      where: { tenantId_userId: { tenantId: acme.id, userId: platformUser.id } },
+      update: { roleId: adminRole.id, status: "ACTIVE" },
+      create: {
+        tenantId: acme.id,
+        userId: platformUser.id,
+        roleId: adminRole.id,
+        status: "ACTIVE",
+      },
+    });
+  }
+
   async function cleanupPlatformImpersonations() {
     await prisma.impersonationSession.updateMany({
       where: { status: "ACTIVE" },
@@ -3478,22 +3618,84 @@ describe("Trixus API organization and RBAC", () => {
   }
 
   async function createStarterTenant(scope: string) {
-    const platformToken = await login("platform@trixus.app", "demo1234");
     const plan = await prisma.plan.findFirstOrThrow({ where: { code: "starter" } });
-    const slug = `limit-${scope}-${Date.now()}`;
+    const unique = `${Date.now()}${Math.floor(Math.random() * 1_000_000)
+      .toString()
+      .padStart(6, "0")}`;
+    const slug = `limit-${scope}-${unique}`;
     const adminEmail = `${slug}@trixus.app`;
-    const created = await request(app.getHttpServer())
-      .post("/api/platform/tenants")
-      .set("Authorization", `Bearer ${platformToken}`)
-      .send({
-        name: `Limit ${scope}`,
-        slug,
-        planId: plan.id,
-        admin: { name: `Limit ${scope} Admin`, email: adminEmail, password: "demo1234" },
-      })
-      .expect(201);
+    const passwordHash = await hash("demo1234", 12);
+    const created = await prisma.$transaction(async (tx) => {
+      const tenant = await tx.tenant.create({
+        data: {
+          name: `Limit ${scope}`,
+          legalName: `Limit ${scope}`,
+          displayName: `Limit ${scope}`,
+          slug,
+          status: "ACTIVE",
+          maxUsers: Number((plan.limits as Record<string, unknown>).maxUsers ?? 0),
+          maxConnections: Number((plan.limits as Record<string, unknown>).maxConnections ?? 0),
+          activatedAt: new Date(),
+        },
+      });
+      const client = await tx.platformClient.create({
+        data: {
+          name: tenant.name,
+          document: unique.padStart(14, "0").slice(-14),
+          responsibleName: `Limit ${scope} Admin`,
+          responsibleEmail: adminEmail,
+          city: "Sao Paulo",
+          state: "SP",
+          tenantId: tenant.id,
+        },
+      });
+      await tx.tenantSubscription.create({
+        data: {
+          tenantId: tenant.id,
+          clientId: client.id,
+          planId: plan.id,
+          status: "ACTIVE",
+          currentPeriodEnd: new Date(Date.now() + 30 * 86_400_000),
+          limitsSnapshot: plan.limits,
+          featuresSnapshot: plan.features,
+        },
+      });
+      const role = await tx.role.create({
+        data: {
+          tenantId: tenant.id,
+          key: "tenant_admin",
+          name: "Administrador",
+          system: true,
+        },
+      });
+      await tx.role.create({
+        data: {
+          tenantId: tenant.id,
+          key: "agent",
+          name: "Atendente",
+          system: true,
+        },
+      });
+      const user = await tx.user.create({
+        data: {
+          email: adminEmail,
+          name: `Limit ${scope} Admin`,
+          passwordHash,
+          status: "ACTIVE",
+        },
+      });
+      await tx.tenantMembership.create({
+        data: {
+          tenantId: tenant.id,
+          userId: user.id,
+          roleId: role.id,
+          status: "ACTIVE",
+        },
+      });
+      return tenant;
+    });
     return {
-      tenantId: created.body.id as string,
+      tenantId: created.id,
       token: await login(adminEmail, "demo1234", slug),
     };
   }

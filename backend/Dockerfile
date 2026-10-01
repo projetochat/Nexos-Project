@@ -14,6 +14,7 @@ RUN rm -rf backend/dist && rm -f backend/*.tsbuildinfo && bun run --cwd backend 
 FROM build AS migrate
 
 WORKDIR /app/backend
+USER bun
 CMD ["bun", "run", "prisma:migrate:deploy"]
 
 FROM oven/bun:1.3.14-alpine AS runtime
@@ -30,6 +31,9 @@ RUN bun install --frozen-lockfile --production
 COPY --from=build /app/backend/dist backend/dist
 COPY backend/prisma backend/prisma
 
+RUN mkdir -p /var/lib/trixus/storage && chown -R bun:bun /var/lib/trixus/storage
+
 WORKDIR /app/backend
+USER bun
 EXPOSE 3001
 CMD ["bun", "run", "start"]

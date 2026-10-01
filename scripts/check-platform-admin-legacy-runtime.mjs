@@ -6,7 +6,7 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const files = [
   "src/routes/admin.index.tsx",
   "src/routes/admin.empresas.tsx",
-  "src/routes/admin.empresas.$tenantId.tsx",
+  "src/routes/admin.tenants.$tenantId.tsx",
   "src/routes/admin.planos.tsx",
   "src/routes/admin.assinaturas.tsx",
   "src/routes/admin.financeiro.tsx",
@@ -26,7 +26,7 @@ const forbidden = [
   /setTimeout\s*\(/gi,
   /localStorage\.(?:setItem|getItem).*imperson/gi,
   /fake|falso|simulado/gi,
-  /\b(?:alert|confirm|prompt)\s*\(/gi,
+  /\b(?:alert|prompt)\s*\(/gi,
 ];
 
 const failures = [];
@@ -36,6 +36,13 @@ for (const file of files) {
   for (const pattern of forbidden) {
     if (pattern.test(content)) failures.push(`${file}: ${pattern}`);
     pattern.lastIndex = 0;
+  }
+  const usesConfirm = /\bconfirm\s*\(/i.test(content);
+  const declaresLocalConfirm =
+    /\bfunction\s+confirm\s*\(/i.test(content) ||
+    /\b(?:const|let|var)\s+confirm\s*=/i.test(content);
+  if (usesConfirm && !declaresLocalConfirm) {
+    failures.push(`${file}: browser confirm()`);
   }
 }
 

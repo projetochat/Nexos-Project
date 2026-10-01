@@ -20,10 +20,15 @@ import { RealtimeModule } from "./realtime/realtime.module";
 import { RolesModule } from "./roles/roles.module";
 import { TicketsModule } from "./tickets/tickets.module";
 import { UsersModule } from "./users/users.module";
+import { validateEnvironment } from "./config/environment";
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ envFilePath: [".env", "../.env"], isGlobal: true }),
+    ConfigModule.forRoot({
+      envFilePath: [".env", "../.env"],
+      isGlobal: true,
+      validate: validateEnvironment,
+    }),
     PrismaModule,
     AuthModule,
     UsersModule,

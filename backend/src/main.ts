@@ -6,12 +6,14 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import helmet from "helmet";
 import { AppModule } from "./app.module";
 import { ApiExceptionFilter } from "./common/api-exception.filter";
+import { requestObservability } from "./common/request-observability.middleware";
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const config = app.get(ConfigService);
   const bodyLimit = config.get<string>("TRIXUS_HTTP_BODY_LIMIT") ?? "100mb";
 
+  app.use(requestObservability);
   app.use(helmet());
   app.useBodyParser("json", { limit: bodyLimit });
   app.useBodyParser("urlencoded", { extended: true, limit: bodyLimit });

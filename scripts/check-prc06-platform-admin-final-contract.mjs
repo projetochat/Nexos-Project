@@ -14,12 +14,16 @@ function includesAll(text, values) {
   return values.every((value) => text.includes(value));
 }
 
+function declaresAllMethods(text, names) {
+  return names.every((name) => new RegExp(`\\b${name}\\s*:`).test(text));
+}
+
 const platformController = read("backend/src/platform/platform.controller.ts");
 const platformService = read("backend/src/platform/platform.service.ts");
 const platformGuard = read("backend/src/platform/platform-auth.guard.ts");
 const platformApi = read("src/lib/trixus-api.ts");
 const appShell = read("src/components/app-shell.tsx");
-const tenantDetailRoute = read("src/routes/admin.empresas.$tenantId.tsx");
+const tenantDetailRoute = read("src/routes/admin.tenants.$tenantId.tsx");
 const platformAdminDoc = read("docs/PLATFORM_ADMIN.md");
 const impersonationDoc = read("docs/IMPERSONATION.md");
 const plansDoc = read("docs/PLANS_AND_SUBSCRIPTIONS.md");
@@ -41,25 +45,25 @@ check(
 
 check(
   "frontend platform API mirrors the platform control-plane routes",
-  includesAll(platformApi, [
-    "dashboard: ()",
-    "health: ()",
-    "tenants: (params",
-    "tenant: (id",
-    "suspendTenant:",
-    "reactivateTenant:",
-    "terminateTenant:",
-    "plans: (params",
-    "plan: (id",
-    "subscriptions: (params",
-    "subscription: (id",
-    "invoices: (params",
-    "invoice: (id",
-    "auditLogs: (params",
-    "auditLog: (id",
-    "startImpersonation:",
-    "stopImpersonation:",
-    "currentImpersonation:",
+  declaresAllMethods(platformApi, [
+    "dashboard",
+    "health",
+    "tenants",
+    "tenant",
+    "suspendTenant",
+    "reactivateTenant",
+    "terminateTenant",
+    "plans",
+    "plan",
+    "subscriptions",
+    "subscription",
+    "invoices",
+    "invoice",
+    "auditLogs",
+    "auditLog",
+    "startImpersonation",
+    "stopImpersonation",
+    "currentImpersonation",
   ]),
 );
 

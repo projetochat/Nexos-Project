@@ -2,6 +2,8 @@ name: Build Trixus production images
 
 # Publication requires explicit mode, or a repository-level opt-in for pushes.
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       release_mode:
@@ -21,7 +23,7 @@ concurrency:
 
 jobs:
   validate:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -79,8 +81,43 @@ jobs:
       - name: Run project verification with disposable databases
         run: bun run verify
 
+  pr-images:
+    needs: validate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build every production image target without publishing
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker build --platform linux/amd64 -f backend/Dockerfile \
+            --target runtime -t "trixus-pr/backend:$GITHUB_SHA" .
+          docker build --platform linux/amd64 -f backend/Dockerfile \
+            --target migrate -t "trixus-pr/migrate:$GITHUB_SHA" .
+          docker build --platform linux/amd64 -f Dockerfile.frontend \
+            --build-arg VITE_TRIXUS_API_URL=https://ci.invalid/api \
+            --build-arg VITE_APP_MODE=production \
+            -t "trixus-pr/frontend:$GITHUB_SHA" .
+      - name: Verify non-root backend targets and expected artifacts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(docker image inspect "trixus-pr/backend:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
+          test "$(docker image inspect "trixus-pr/migrate:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
+          docker run --rm --entrypoint sh "trixus-pr/backend:$GITHUB_SHA" \
+            -c 'command -v node && test -s /app/backend/dist/src/main.js'
+          docker run --rm --entrypoint bun "trixus-pr/migrate:$GITHUB_SHA" \
+            run prisma:migrate:deploy --help
+          docker run --rm --entrypoint sh "trixus-pr/frontend:$GITHUB_SHA" \
+            -c 'command -v bun && test -s /app/.output/server/index.mjs'
+
   build:
     needs: validate
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: production
