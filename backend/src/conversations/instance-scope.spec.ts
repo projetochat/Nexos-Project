@@ -11,6 +11,7 @@ const current: AuthenticatedUser = {
   roleKey: "agent",
   membershipId: "member-a",
   connectionIds: ["vocical"],
+  chatDepartmentIds: ["department-a"],
   permissions: ["chat.conversations.view_all_active"],
 };
 
@@ -25,12 +26,14 @@ describe("chat instance isolation", () => {
     const buildWhere = controller["buildWhere"].bind(controller);
     for (const tab of ["ativas", "standby", "fila", "leads"] as const) {
       const where = await buildWhere(current, { tab });
-      expect(where.AND).toContainEqual({ connectionId: { in: ["vocical"] } });
+      expect(JSON.stringify(where)).toContain('"connectionId":{"in":["vocical"]}');
+      expect(JSON.stringify(where)).toContain('"departmentId":{"in":["department-a"]}');
       expect(JSON.stringify(where)).not.toContain("inboxArchivedAt");
       expect(JSON.stringify(where)).not.toContain("member-a");
     }
     const counts = await buildWhere(current, {}, { omitTab: true });
-    expect(counts.AND).toContainEqual({ connectionId: { in: ["vocical"] } });
+    expect(JSON.stringify(counts)).toContain('"connectionId":{"in":["vocical"]}');
+    expect(JSON.stringify(counts)).toContain('"departmentId":{"in":["department-a"]}');
   });
   it("limits an attendant without view-all to their conversations and the unassigned queue", async () => {
     const controller = new ConversationsController(
@@ -46,6 +49,7 @@ describe("chat instance isolation", () => {
     expect(where.AND).toContainEqual({
       AND: [
         { connectionId: { in: ["vocical"] } },
+        { departmentId: { in: ["department-a"] } },
         {
           OR: [{ assignedMembershipId: "member-a" }, { assignedMembershipId: null }],
         },
@@ -63,7 +67,10 @@ describe("chat instance isolation", () => {
         where: {
           AND: [
             { id: "other-chat", tenantId: "tenant-a", archivedAt: null },
-            { connectionId: { in: ["vocical"] } },
+            {
+              connectionId: { in: ["vocical"] },
+              departmentId: { in: ["department-a"] },
+            },
           ],
         },
       }),

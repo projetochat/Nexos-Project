@@ -51,6 +51,7 @@ export class NotificationsController {
       tenantId: current.tenantId,
       membershipId: current.membershipId,
       ...(query.status ? { status: query.status } : {}),
+      ...notificationAccess(current),
     };
     const [items, total, unread] = await this.prisma.$transaction([
       this.prisma.notification.findMany({
@@ -61,7 +62,7 @@ export class NotificationsController {
       }),
       this.prisma.notification.count({ where }),
       this.prisma.notification.count({
-        where: { tenantId: current.tenantId, membershipId: current.membershipId, status: "UNREAD" },
+        where: { ...where, status: "UNREAD" },
       }),
     ]);
     return {
@@ -82,6 +83,7 @@ export class NotificationsController {
         tenantId: current.tenantId,
         membershipId: current.membershipId,
         status: "UNREAD",
+        ...notificationAccess(current),
       },
       data: { status: "READ", readAt: new Date() },
     });
@@ -130,11 +132,32 @@ export class NotificationsController {
   @Post("read-all")
   async markAllRead(@CurrentUser() current: AuthenticatedUser) {
     const result = await this.prisma.notification.updateMany({
-      where: { tenantId: current.tenantId, membershipId: current.membershipId, status: "UNREAD" },
+      where: {
+        tenantId: current.tenantId,
+        membershipId: current.membershipId,
+        status: "UNREAD",
+        ...notificationAccess(current),
+      },
       data: { status: "READ", readAt: new Date() },
     });
     return { ok: true, updated: result.count };
   }
+}
+
+function notificationAccess(current: AuthenticatedUser): Prisma.NotificationWhereInput {
+  if (current.roleKey === "tenant_admin") return {};
+  return {
+    OR: [
+      {
+        AND: [
+          { entityType: { in: ["conversation", "lead"] } },
+          { connectionId: { in: current.connectionIds ?? [] } },
+          { departmentId: { in: current.chatDepartmentIds ?? [] } },
+        ],
+      },
+      { OR: [{ entityType: null }, { entityType: { notIn: ["conversation", "lead"] } }] },
+    ],
+  };
 }
 
 function integerQueryValue(

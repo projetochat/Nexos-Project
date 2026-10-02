@@ -14,6 +14,7 @@ type GroupSyncInput = {
   tenantId: string;
   connectionId?: string;
   includeParticipants?: boolean;
+  departmentIds?: string[];
 };
 
 type GroupPictureTarget = {
@@ -42,7 +43,11 @@ export class GroupsSyncService implements OnModuleDestroy {
     if (this.pictureDrainTimer) clearTimeout(this.pictureDrainTimer);
   }
 
-  async reconcileGroupParticipantNames(input: { tenantId: string }) {
+  async reconcileGroupParticipantNames(input: {
+    tenantId: string;
+    connectionIds?: string[];
+    departmentIds?: string[];
+  }) {
     const participants = await this.prisma.conversationParticipant.findMany({
       where: {
         tenantId: input.tenantId,
@@ -51,6 +56,8 @@ export class GroupsSyncService implements OnModuleDestroy {
           tenantId: input.tenantId,
           archivedAt: null,
           conversationType: ConversationType.GROUP,
+          ...(input.connectionIds ? { connectionId: { in: input.connectionIds } } : {}),
+          ...(input.departmentIds ? { departmentId: { in: input.departmentIds } } : {}),
         },
       },
       select: {
@@ -139,6 +146,11 @@ export class GroupsSyncService implements OnModuleDestroy {
       let connectionFailed = false;
       let connectionSynced = 0;
       try {
+        const departmentId = await this.groupDepartmentId(
+          input.tenantId,
+          connection.defaultDepartmentId,
+          input.departmentIds,
+        );
         const groups = await this.evolution.fetchGroups({
           instanceName: connection.externalReference,
           getParticipants: includeParticipants,
@@ -156,6 +168,8 @@ export class GroupsSyncService implements OnModuleDestroy {
               input.tenantId,
               connection.id,
               connection.externalReference!,
+              departmentId,
+              input.departmentIds,
               detailedGroup,
             );
           },
@@ -163,6 +177,7 @@ export class GroupsSyncService implements OnModuleDestroy {
 
         for (const groupResult of groupResults) {
           if (groupResult.status === "fulfilled") {
+            if (groupResult.value.skipped) continue;
             result.synced += 1;
             connectionSynced += 1;
             result.participants += groupResult.value.participants;
@@ -211,6 +226,8 @@ export class GroupsSyncService implements OnModuleDestroy {
     if (includeParticipants) {
       const reconciliation = await this.reconcileGroupParticipantNames({
         tenantId: input.tenantId,
+        ...(input.connectionId ? { connectionIds: [input.connectionId] } : {}),
+        ...(input.departmentIds ? { departmentIds: input.departmentIds } : {}),
       });
       result.participantNamesUpdated = reconciliation.updated;
     }
@@ -368,10 +385,37 @@ export class GroupsSyncService implements OnModuleDestroy {
     tenantId: string,
     connectionId: string,
     instanceName: string,
+    departmentId: string | null,
+    allowedDepartmentIds: string[] | undefined,
     group: EvolutionGroupSnapshot,
   ) {
     const now = new Date();
     const result = await this.prisma.$transaction(async (tx) => {
+      const existingConversation = await tx.conversation.findFirst({
+        where: {
+          tenantId,
+          connectionId,
+          externalChatId: group.groupJid,
+          conversationType: ConversationType.GROUP,
+        },
+      });
+      if (
+        allowedDepartmentIds &&
+        (existingConversation
+          ? !existingConversation.departmentId ||
+            !allowedDepartmentIds.includes(existingConversation.departmentId)
+          : !departmentId)
+      ) {
+        return {
+          skipped: true as const,
+          contactId: "",
+          conversationId: "",
+          created: false,
+          participants: 0,
+          inactiveParticipants: 0,
+        };
+      }
+
       const contact = await tx.contact.upsert({
         where: {
           tenantId_normalizedPhone: {
@@ -396,15 +440,6 @@ export class GroupsSyncService implements OnModuleDestroy {
         },
       });
 
-      const existingConversation = await tx.conversation.findFirst({
-        where: {
-          tenantId,
-          connectionId,
-          externalChatId: group.groupJid,
-          conversationType: ConversationType.GROUP,
-        },
-      });
-
       const metadata = {
         syncedAt: now.toISOString(),
         createdAt: group.createdAt?.toISOString() ?? null,
@@ -419,6 +454,7 @@ export class GroupsSyncService implements OnModuleDestroy {
               groupMetadataJson: metadata,
               isGroup: true,
               conversationType: ConversationType.GROUP,
+              departmentId: existingConversation.departmentId ?? departmentId,
               archivedAt: null,
             },
           })
@@ -430,6 +466,7 @@ export class GroupsSyncService implements OnModuleDestroy {
               status: ConversationStatus.ABERTA,
               isGroup: true,
               conversationType: ConversationType.GROUP,
+              departmentId,
               externalChatId: group.groupJid,
               externalGroupId: group.groupJid,
               groupName: group.subject,
@@ -489,6 +526,7 @@ export class GroupsSyncService implements OnModuleDestroy {
       }
 
       return {
+        skipped: false as const,
         contactId: contact.id,
         conversationId: conversation.id,
         created: !existingConversation,
@@ -497,6 +535,7 @@ export class GroupsSyncService implements OnModuleDestroy {
       };
     });
 
+    if (result.skipped) return result;
     if (!group.imageUrl) {
       this.enqueueGroupPicture({
         tenantId,
@@ -508,6 +547,33 @@ export class GroupsSyncService implements OnModuleDestroy {
     }
 
     return result;
+  }
+
+  private async groupDepartmentId(
+    tenantId: string,
+    preferredDepartmentId: string | null,
+    allowedDepartmentIds?: string[],
+  ) {
+    if (
+      preferredDepartmentId &&
+      (!allowedDepartmentIds || allowedDepartmentIds.includes(preferredDepartmentId))
+    ) {
+      const preferred = await this.prisma.department.findFirst({
+        where: { id: preferredDepartmentId, tenantId, active: true },
+        select: { id: true },
+      });
+      if (preferred) return preferred.id;
+    }
+    const department = await this.prisma.department.findFirst({
+      where: {
+        tenantId,
+        active: true,
+        ...(allowedDepartmentIds ? { id: { in: allowedDepartmentIds } } : {}),
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    return department?.id ?? null;
   }
 }
 

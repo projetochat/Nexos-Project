@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ConversationsController } from "../conversations/conversations.controller";
+import { ContactActionsController } from "../conversations/contact-actions.controller";
 import { CrmController } from "../crm/crm.controller";
+import { LeadsController } from "../leads/leads.controller";
 import { MessagingConnectionsController } from "../messaging/messaging-connections.controller";
 import { SchedulesController } from "../schedules/schedules.module";
 import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from "./permissions.decorator";
@@ -34,12 +36,17 @@ describe("chat permission alignment", () => {
     ]);
   });
 
-  it("keeps customer linking dedicated and requires send permission for schedules", () => {
+  it("uses contact editing for customer linking and send permission for schedules", () => {
     const crm = new CrmController({} as never, {} as never, {} as never, {} as never);
+    const contactActions = new ContactActionsController({} as never, {} as never);
+    const leads = new LeadsController({} as never, {} as never);
     const schedules = new SchedulesController({} as never);
-    expect(metadata(crm, "updateContactCustomer", PERMISSIONS_KEY)).toEqual([
-      "chat.customer_link.edit",
+    expect(metadata(crm, "updateContactCustomer", PERMISSIONS_KEY)).toEqual(["contacts.update"]);
+    expect(metadata(contactActions, "blockContact", PERMISSIONS_KEY)).toEqual([
+      "conversations.read",
+      "contacts.update",
     ]);
+    expect(metadata(leads, "assign", PERMISSIONS_KEY)).toEqual(["conversations.assign"]);
     expect(metadata(schedules, "save", PERMISSIONS_KEY)).toEqual(["messages.send"]);
   });
 });

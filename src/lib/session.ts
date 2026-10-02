@@ -55,7 +55,7 @@ export const TENANT_ROUTE_PERMISSIONS: Readonly<Record<string, readonly string[]
   "/mensagens-rapidas": ["chat.quick_replies.read"],
   "/agendamentos": ["schedules.read"],
   "/campanhas": ["campaigns.read"],
-  "/filas": ["conversations.manage"],
+  "/filas": ["conversations.read"],
   "/bi": ["contacts.read", "conversations.read", "campaigns.read", "tickets.read"],
   "/instancias": ["connections.read"],
   "/grupos": ["groups.read"],

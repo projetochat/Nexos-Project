@@ -13,6 +13,7 @@ describe("message status access", () => {
         tenantId: "tenant",
         roleKey: "agent",
         connectionIds: ["allowed"],
+        chatDepartmentIds: ["department-allowed"],
         permissions: ["chat.conversations.view_all_active"],
       } as never),
     ).rejects.toThrow("Conversa não encontrada");
@@ -21,7 +22,10 @@ describe("message status access", () => {
         where: {
           AND: [
             { id: "conversation", tenantId: "tenant", archivedAt: null },
-            { connectionId: { in: ["allowed"] } },
+            {
+              connectionId: { in: ["allowed"] },
+              departmentId: { in: ["department-allowed"] },
+            },
           ],
         },
       }),

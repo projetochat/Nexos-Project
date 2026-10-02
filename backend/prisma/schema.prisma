@@ -1490,6 +1490,7 @@ model Notification {
   tenantId     String
   membershipId String?
   departmentId String?
+  connectionId String?
   kind         NotificationKind
   status       NotificationStatus @default(UNREAD)
   title        String
@@ -1505,6 +1506,7 @@ model Notification {
   @@unique([tenantId, id])
   @@index([tenantId, membershipId, status, createdAt])
   @@index([tenantId, departmentId, status])
+  @@index([tenantId, connectionId, status])
   @@index([tenantId, kind, createdAt])
   @@map("notifications")
 }

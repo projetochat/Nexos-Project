@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { connectionAccess, connectionIdAccess, roleConnectionIds } from "./connection-access";
+import {
+  connectionAccess,
+  connectionIdAccess,
+  departmentAccess,
+  departmentIdAccess,
+  roleChatDepartmentIds,
+  roleConnectionIds,
+} from "./connection-access";
 
 describe("instance access", () => {
   it("limits custom profiles to their selected instances even with all chat permissions", () => {
@@ -22,5 +29,24 @@ describe("instance access", () => {
   it("keeps the tenant administrator unrestricted within their tenant", () => {
     expect(roleConnectionIds({ key: "tenant_admin" })).toBeNull();
     expect(connectionAccess({ roleKey: "tenant_admin" })).toEqual({});
+  });
+
+  it("limits Chat conversations and options to the profile departments", () => {
+    const chatDepartmentIds = roleChatDepartmentIds({
+      key: "custom",
+      metadata: { departmentIds: ["department-a", "department-a", 1] },
+    });
+    expect(chatDepartmentIds).toEqual(["department-a"]);
+    expect(departmentAccess({ roleKey: "custom", chatDepartmentIds })).toEqual({
+      departmentId: { in: ["department-a"] },
+    });
+    expect(departmentIdAccess({ roleKey: "custom", chatDepartmentIds })).toEqual({
+      id: { in: ["department-a"] },
+    });
+  });
+
+  it("fails closed when a non-administrator has no Chat department scope", () => {
+    expect(departmentAccess({ roleKey: "custom" })).toEqual({ departmentId: { in: [] } });
+    expect(departmentIdAccess({ roleKey: "custom" })).toEqual({ id: { in: [] } });
   });
 });

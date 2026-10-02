@@ -332,6 +332,20 @@ describe("trixus-api auth client", () => {
     );
   });
 
+  it("translates the tenant attendant limit code", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseJson(409, {
+          code: "PLAN_LIMIT_USERS_REACHED",
+          details: { limit: 5, currentValue: 5 },
+        }),
+      ),
+    );
+
+    await expect(apiRequest("/users")).rejects.toThrow("Número máximo de atendentes atingido");
+  });
+
   it("uses one refresh request for concurrent 401 responses and retries each request once", async () => {
     localStorage.setItem("trixus.api.accessToken", "old-access");
     localStorage.setItem("trixus.api.refreshToken", "refresh");

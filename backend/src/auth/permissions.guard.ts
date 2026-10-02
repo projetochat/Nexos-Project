@@ -11,7 +11,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuthenticatedRequest } from "./jwt-auth.guard";
 import { PermissionKey } from "./permissions.constants";
 import { effectivePermissions } from "./effective-permissions";
-import { roleConnectionIds } from "./connection-access";
+import { roleChatDepartmentIds, roleConnectionIds } from "./connection-access";
 import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from "./permissions.decorator";
 
 @Injectable()
@@ -94,20 +94,11 @@ export class PermissionsGuard implements CanActivate {
     request.user.roleId = membership.roleId;
     request.user.roleKey = membership.role.key;
     request.user.connectionIds = roleConnectionIds(membership.role);
+    request.user.chatDepartmentIds = roleChatDepartmentIds(membership.role);
     request.user.permissions = permissions;
     request.user.assignedPermissionIds = membership.role.permissions.map(
       (permission) => permission.permissionId,
     );
-    const connectionId = /\/messaging\/connections\//.test(request.originalUrl)
-      ? request.params.id
-      : undefined;
-    if (
-      typeof connectionId === "string" &&
-      membership.role.key !== "tenant_admin" &&
-      !request.user.connectionIds?.includes(connectionId)
-    ) {
-      throw new ForbiddenException("Instância não permitida pelo perfil.");
-    }
     return true;
   }
 }

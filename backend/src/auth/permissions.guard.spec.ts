@@ -8,7 +8,7 @@ describe("profile permission enforcement", () => {
       tenant: {},
       role: {
         key: "agent",
-        metadata: { connectionIds: ["vocical"] },
+        metadata: { connectionIds: ["vocical"], departmentIds: ["department-a"] },
         permissions: [{ permissionId: "messages.send" }],
       },
     };
@@ -39,12 +39,14 @@ describe("profile permission enforcement", () => {
     await expect(guard.canActivate(context as never)).resolves.toBe(true);
     expect(request.user).toMatchObject({
       connectionIds: ["vocical"],
+      chatDepartmentIds: ["department-a"],
       permissions: ["messages.send"],
       assignedPermissionIds: ["messages.send"],
     });
     membership.role.metadata.connectionIds = [];
+    membership.role.metadata.departmentIds = [];
     await guard.canActivate(context as never);
-    expect(request.user).toMatchObject({ connectionIds: [] });
+    expect(request.user).toMatchObject({ connectionIds: [], chatDepartmentIds: [] });
   });
 
   it("rejects a required permission that is not assigned", async () => {

@@ -1,4 +1,9 @@
-import { connectionIdAccess } from "../auth/connection-access";
+import {
+  connectionIdAccess,
+  departmentIdAccess,
+  roleChatDepartmentIds,
+  roleConnectionIds,
+} from "../auth/connection-access";
 import {
   BadRequestException,
   Body,
@@ -175,6 +180,7 @@ export class ConversationsController {
           tx,
           current.membershipId,
           current.tenantId,
+          existing.connectionId,
           existing.departmentId,
         );
         const updated = await tx.conversation.update({
@@ -290,6 +296,7 @@ export class ConversationsController {
           tx,
           targetMembershipId,
           current.tenantId,
+          conversation.connectionId,
           conversation.departmentId,
         );
       }
@@ -344,9 +351,18 @@ export class ConversationsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const conversation = await this.findVisibleConversation(id, current);
-    await this.assertDepartmentInTenant(dto.departmentId, current.tenantId);
+    await this.assertDepartmentInTenant(dto.departmentId, current);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      if (conversation.assignedMembershipId) {
+        await this.assertAssignableMembership(
+          tx,
+          conversation.assignedMembershipId,
+          current.tenantId,
+          conversation.connectionId,
+          dto.departmentId,
+        );
+      }
       const saved = await tx.conversation.update({
         where: { id: conversation.id },
         data: {
@@ -581,6 +597,7 @@ export class ConversationsController {
           tx,
           assignedMembershipId,
           current.tenantId,
+          conversation.connectionId,
           conversation.departmentId,
         );
       }
@@ -733,12 +750,16 @@ export class ConversationsController {
     current: AuthenticatedUser,
   ) {
     if (departmentId) {
-      await this.assertDepartmentInTenant(departmentId, current.tenantId);
+      await this.assertDepartmentInTenant(departmentId, current);
       return departmentId;
     }
 
     const department = await this.prisma.department.findFirst({
-      where: { tenantId: current.tenantId, active: true },
+      where: {
+        tenantId: current.tenantId,
+        active: true,
+        ...departmentIdAccess(current),
+      },
       orderBy: { createdAt: "asc" },
     });
     if (!department) throw new BadRequestException("Tenant sem departamento ativo para conversa.");
@@ -810,9 +831,13 @@ export class ConversationsController {
     return connection;
   }
 
-  private async assertDepartmentInTenant(departmentId: string, tenantId: string) {
+  private async assertDepartmentInTenant(departmentId: string, current: AuthenticatedUser) {
     const department = await this.prisma.department.findFirst({
-      where: { id: departmentId, tenantId, active: true },
+      where: {
+        tenantId: current.tenantId,
+        active: true,
+        AND: [{ id: departmentId }, departmentIdAccess(current)],
+      },
     });
     if (!department) throw new BadRequestException("Departamento inexistente para este tenant.");
   }
@@ -821,6 +846,7 @@ export class ConversationsController {
     tx: Prisma.TransactionClient,
     membershipId: string,
     tenantId: string,
+    connectionId: string | null,
     departmentId: string | null,
   ) {
     const membership = await tx.tenantMembership.findFirst({
@@ -834,6 +860,13 @@ export class ConversationsController {
     });
     if (!membership)
       throw new BadRequestException("Atendente inexistente ou inativo para este tenant.");
+    if (membership.role.key === "tenant_admin") return;
+    if (connectionId && !(roleConnectionIds(membership.role) ?? []).includes(connectionId)) {
+      throw new BadRequestException("O perfil do atendente não permite esta instância no Chat.");
+    }
+    if (departmentId && !(roleChatDepartmentIds(membership.role) ?? []).includes(departmentId)) {
+      throw new BadRequestException("O perfil do atendente não permite este departamento no Chat.");
+    }
   }
 
   private async nextProtocol(tx: Prisma.TransactionClient, tenantId: string) {

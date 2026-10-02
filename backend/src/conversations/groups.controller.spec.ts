@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ConversationType, MessagingConnectionStatus } from "../generated/prisma";
+import { PERMISSIONS_KEY } from "../auth/permissions.decorator";
 import { GroupsController } from "./groups.controller";
 
 const current = {
@@ -55,6 +56,17 @@ const baseGroup = {
 };
 
 describe("GroupsController", () => {
+  it("separates leaving a group from editing it", () => {
+    const leave = Object.getOwnPropertyDescriptor(GroupsController.prototype, "leave")?.value;
+    const updateName = Object.getOwnPropertyDescriptor(
+      GroupsController.prototype,
+      "updateName",
+    )?.value;
+
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, leave)).toEqual(["groups.leave"]);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, updateName)).toEqual(["groups.update"]);
+  });
+
   it("keeps manual group synchronization available through the sync endpoint", async () => {
     const groupsSync = {
       sync: vi.fn().mockResolvedValue({
@@ -79,6 +91,108 @@ describe("GroupsController", () => {
       connectionId: "connection-a",
     });
     expect(result).toMatchObject({ synced: 3, participants: 42 });
+  });
+
+  it("passes the profile department scope to a non-administrator group sync", async () => {
+    const groupsSync = {
+      sync: vi.fn().mockResolvedValue({ synced: 0, participants: 0 }),
+    };
+    const controller = new GroupsController({} as never, {} as never, groupsSync as never);
+
+    await controller.sync({ connectionId: "connection-a" }, {
+      ...current,
+      roleKey: "agent",
+      connectionIds: ["connection-a"],
+      chatDepartmentIds: ["department-a"],
+    } as never);
+
+    expect(groupsSync.sync).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      departmentIds: ["department-a"],
+    });
+  });
+
+  it("uses the preferred group department when it is allowed by the Chat scope", async () => {
+    const prisma = {
+      department: {
+        findFirst: vi.fn().mockResolvedValue({ id: "department-preferred" }),
+      },
+    };
+    const controller = new GroupsController(prisma as never, {} as never, {} as never);
+
+    const departmentId = await controller["resolveGroupDepartmentId"]("department-preferred", {
+      ...current,
+      roleKey: "agent",
+      chatDepartmentIds: ["department-preferred"],
+    } as never);
+
+    expect(departmentId).toBe("department-preferred");
+    expect(prisma.department.findFirst).toHaveBeenCalledOnce();
+    expect(prisma.department.findFirst).toHaveBeenCalledWith({
+      where: {
+        AND: [{ id: "department-preferred" }, { id: { in: ["department-preferred"] } }],
+        tenantId: "tenant-a",
+        active: true,
+      },
+      select: { id: true },
+    });
+  });
+
+  it("rejects an explicit preferred group department outside the Chat scope", async () => {
+    const prisma = {
+      department: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+    };
+    const controller = new GroupsController(prisma as never, {} as never, {} as never);
+
+    await expect(
+      controller["resolveGroupDepartmentId"]("department-preferred", {
+        ...current,
+        roleKey: "agent",
+        chatDepartmentIds: ["department-allowed"],
+      } as never),
+    ).rejects.toThrow(
+      "O departamento padrão da instância não está disponível para este perfil no Chat.",
+    );
+
+    expect(prisma.department.findFirst).toHaveBeenCalledOnce();
+    expect(prisma.department.findFirst).toHaveBeenCalledWith({
+      where: {
+        AND: [{ id: "department-preferred" }, { id: { in: ["department-allowed"] } }],
+        tenantId: "tenant-a",
+        active: true,
+      },
+      select: { id: true },
+    });
+  });
+
+  it("falls back to the first allowed department only when none was preferred", async () => {
+    const prisma = {
+      department: {
+        findFirst: vi.fn().mockResolvedValue({ id: "department-fallback" }),
+      },
+    };
+    const controller = new GroupsController(prisma as never, {} as never, {} as never);
+
+    const departmentId = await controller["resolveGroupDepartmentId"](null, {
+      ...current,
+      roleKey: "agent",
+      chatDepartmentIds: ["department-fallback"],
+    } as never);
+
+    expect(departmentId).toBe("department-fallback");
+    expect(prisma.department.findFirst).toHaveBeenCalledOnce();
+    expect(prisma.department.findFirst).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        active: true,
+        id: { in: ["department-fallback"] },
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
   });
 
   it("returns only the instance fields required by the group filter", async () => {
@@ -154,6 +268,35 @@ describe("GroupsController", () => {
       participantsCount: 1015,
     });
     expect(result.items[0]).not.toHaveProperty("participants");
+  });
+
+  it("applies both instance and department Chat scopes to group lists", async () => {
+    const prisma = {
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([]),
+        count: vi.fn().mockResolvedValue(0),
+      },
+      $transaction: vi.fn().mockResolvedValue([[], 0]),
+    };
+    const controller = new GroupsController(prisma as never, {} as never, {} as never);
+
+    await controller.list({}, {
+      ...current,
+      roleKey: "agent",
+      connectionIds: ["connection-a"],
+      chatDepartmentIds: ["department-a"],
+    } as never);
+
+    expect(prisma.conversation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            { connectionId: { in: ["connection-a"] } },
+            { departmentId: { in: ["department-a"] } },
+          ]),
+        }),
+      }),
+    );
   });
 
   it("preserves participants in the original paginated list contract", async () => {

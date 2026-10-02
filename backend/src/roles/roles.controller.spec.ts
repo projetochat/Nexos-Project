@@ -10,6 +10,7 @@ const current = {
   platformRole: "USER",
   permissions: ["roles.create", "roles.update", "contacts.read"],
   connectionIds: ["connection-a"],
+  chatDepartmentIds: ["department-a"],
 };
 
 describe("RolesController permission delegation", () => {
@@ -87,6 +88,10 @@ describe("RolesController permission delegation", () => {
         { permissionId: "chat.contacts.create" },
         { permissionId: "chat.contacts.edit" },
         { permissionId: "chat.tickets.create" },
+        { permissionId: "chat.contacts.read" },
+        { permissionId: "chat.customer_link.edit" },
+        { permissionId: "chat.contacts.block" },
+        { permissionId: "conversations.manage" },
       ],
     };
     const createMany = vi.fn();
@@ -118,6 +123,10 @@ describe("RolesController permission delegation", () => {
           "chat.contacts.create",
           "chat.contacts.edit",
           "chat.tickets.create",
+          "chat.contacts.read",
+          "chat.customer_link.edit",
+          "chat.contacts.block",
+          "conversations.manage",
         ],
       },
       { ...current, roleKey: "tenant_admin" } as never,
@@ -132,6 +141,7 @@ describe("RolesController permission delegation", () => {
         { roleId: "role-a", permissionId: "contacts.update" },
         { roleId: "role-a", permissionId: "tickets.read" },
         { roleId: "role-a", permissionId: "tickets.create" },
+        { roleId: "role-a", permissionId: "conversations.assign" },
       ],
       skipDuplicates: true,
     });
@@ -143,6 +153,7 @@ describe("RolesController permission delegation", () => {
       "contacts.update",
       "tickets.read",
       "tickets.create",
+      "conversations.assign",
     ]);
   });
 
@@ -190,6 +201,57 @@ describe("RolesController permission delegation", () => {
         current as never,
       ),
     ).rejects.toThrow("Você não pode adicionar ou remover uma instância fora do seu escopo.");
+  });
+
+  it("rejects expanding a role to a Chat department outside the author's scope", async () => {
+    const prisma = {
+      messagingConnection: { count: vi.fn() },
+      department: { count: vi.fn().mockResolvedValue(1) },
+    };
+    const controller = new RolesController(prisma as never, {} as never);
+
+    await expect(
+      controller.create(
+        {
+          name: "Escopo de departamento ampliado",
+          permissionIds: ["contacts.read"],
+          metadata: { departmentIds: ["department-b"] },
+        },
+        current as never,
+      ),
+    ).rejects.toThrow("Você não pode adicionar ou remover um departamento fora do seu escopo.");
+  });
+
+  it("lists only the Chat scopes the profile editor is allowed to delegate", async () => {
+    const prisma = {
+      messagingConnection: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: "connection-a", name: "WhatsApp A", status: "CONNECTED" }]),
+      },
+      department: {
+        findMany: vi.fn().mockResolvedValue([{ id: "department-a", name: "Atendimento" }]),
+      },
+    };
+    const controller = new RolesController(prisma as never, {} as never);
+
+    await expect(controller.scopeOptions(current as never)).resolves.toEqual({
+      connections: [{ id: "connection-a", name: "WhatsApp A", status: "connected" }],
+      departments: [{ id: "department-a", name: "Atendimento" }],
+    });
+    expect(prisma.messagingConnection.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ["connection-a"] },
+          providerType: "EVOLUTION",
+        }),
+      }),
+    );
+    expect(prisma.department.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ["department-a"] } }),
+      }),
+    );
   });
 
   it("rejects removing a permission the author does not own", async () => {

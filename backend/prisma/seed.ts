@@ -536,9 +536,29 @@ async function seedDemoData() {
   ]);
 
   await Promise.all([seedCrm(acme.id, acmeDepartments), seedCrm(orbit.id, orbitDepartments)]);
-  await Promise.all([
+  const [acmeConnection, orbitConnection] = await Promise.all([
     seedMessagingConnection(acme.id, "FLOWID"),
     seedMessagingConnection(orbit.id, "ORBIT"),
+  ]);
+  await Promise.all([
+    prisma.role.updateMany({
+      where: { id: { in: [acmeRoles.supervisor.id, acmeRoles.agent.id] } },
+      data: {
+        metadata: {
+          connectionIds: [acmeConnection.id],
+          departmentIds: [acmeDepartments[0].id],
+        },
+      },
+    }),
+    prisma.role.updateMany({
+      where: { id: { in: [orbitRoles.supervisor.id, orbitRoles.agent.id] } },
+      data: {
+        metadata: {
+          connectionIds: [orbitConnection.id],
+          departmentIds: [orbitDepartments[0].id],
+        },
+      },
+    }),
   ]);
   await Promise.all([
     seedConversations(acme.id, acmeDepartments),

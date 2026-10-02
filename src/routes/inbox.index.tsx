@@ -621,8 +621,11 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
     enabled: open && canStartConversation,
   });
   const instances = React.useMemo(
-    () => contactOptions?.instances ?? [],
-    [contactOptions?.instances],
+    () => {
+      const allowedIds = new Set(availableConnections.map((connection) => connection.id));
+      return (contactOptions?.instances ?? []).filter((instance) => allowedIds.has(instance.id));
+    },
+    [availableConnections, contactOptions?.instances],
   );
   const contacts = contactsPage?.items ?? [];
   const formReady = !!contactOptions && !!customersPage;

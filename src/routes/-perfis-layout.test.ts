@@ -31,8 +31,8 @@ describe("organização do editor de Perfil de Acesso", () => {
       source.indexOf("function ScopeSettings"),
       source.indexOf("function PermissionSettings"),
     );
-    expect(scopes).toContain('title="Instâncias"');
-    expect(scopes).toContain('title="Departamentos"');
+    expect(scopes).toContain('title="Visualização de instância - Chat"');
+    expect(scopes).toContain('title="Visualização de departamento - Chat"');
     expect(scopes.match(/<PermissionSwitch/g)).toHaveLength(2);
 
     const selection = source.slice(
@@ -41,5 +41,31 @@ describe("organização do editor de Perfil de Acesso", () => {
     );
     expect(selection).toContain('label="Todos"');
     expect(selection).toContain("sm:grid-cols-2");
+    expect(selection).toContain("ids.length === 1");
+    expect(selection).toContain('"sm:grid-cols-1"');
+  });
+
+  it("faz agrupadores com um único acesso ocuparem as duas colunas", () => {
+    const permissions = source.slice(source.indexOf("function PermissionGroupBlock"));
+
+    expect(permissions).toContain("group.items.length === 1");
+    expect(permissions).toContain('"sm:col-span-2"');
+  });
+
+  it("explica como instâncias e departamentos se relacionam com o Chat", () => {
+    const scopes = source.slice(
+      source.indexOf("function ScopeSettings"),
+      source.indexOf("function PermissionSettings"),
+    );
+
+    expect(scopes).toContain("Escopo do Chat");
+    expect(scopes).toContain("quais instâncias, departamentos e conversas");
+    expect(scopes).toContain("independentes dos acessos aos módulos");
+  });
+
+  it("carrega opções de escopo sem depender dos catálogos CRUD", () => {
+    expect(source).toContain("organizationApi.roleScopeOptions");
+    expect(source).toContain('["trixus", "role-scope-options"]');
+    expect(source).not.toContain("queryFn: connectionsApi.list");
   });
 });

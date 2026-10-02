@@ -364,8 +364,8 @@ function ConversationPage() {
     [mensagens],
   );
   const { data: apiDepartments = [] } = useQuery({
-    queryKey: ["trixus", "departments", "conversation-transfer"],
-    queryFn: organizationApi.listDepartments,
+    queryKey: ["trixus", "chat-departments", "conversation-transfer"],
+    queryFn: organizationApi.listChatDepartments,
   });
   const departments = React.useMemo(
     () =>

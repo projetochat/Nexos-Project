@@ -40,12 +40,12 @@ export function DashboardFiltersBar({
   });
   const { data: departments = [] } = useQuery({
     queryKey: ["operations", "filters", "departments"],
-    queryFn: organizationApi.listDepartments,
+    queryFn: organizationApi.listChatDepartments,
     enabled: showDepartment,
   });
   const { data: connections = [] } = useQuery({
     queryKey: ["operations", "filters", "connections"],
-    queryFn: connectionsApi.list,
+    queryFn: connectionsApi.listChatScope,
   });
   const sortedCustomers = React.useMemo(
     () => sortByOptionLabel(customers?.items ?? [], (customer) => customer.nome),

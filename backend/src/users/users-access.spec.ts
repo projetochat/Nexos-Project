@@ -90,7 +90,7 @@ describe("profile and company session enforcement", () => {
       tenant: {},
       role: {
         key: "agent",
-        metadata: { connectionIds: ["c1"] },
+        metadata: { connectionIds: ["c1"], departmentIds: ["d1"] },
         permissions: [{ permissionId: "messages.send" }],
       },
     });
@@ -98,6 +98,7 @@ describe("profile and company session enforcement", () => {
     expect(user).toMatchObject({
       roleKey: "agent",
       connectionIds: ["c1"],
+      chatDepartmentIds: ["d1"],
       permissions: ["messages.send"],
     });
   });

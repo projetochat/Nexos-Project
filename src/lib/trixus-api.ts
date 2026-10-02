@@ -1108,6 +1108,7 @@ export const organizationApi = {
     }),
   listFinancialPayments: () => apiRequest<ApiFinancialPayment[]>("/company/financial"),
   listDepartments: () => apiRequest<ApiDepartment[]>("/departments"),
+  listChatDepartments: () => apiRequest<ApiDepartment[]>("/departments/chat-scope"),
   createDepartment: (data: { name: string; description?: string | null; color?: string }) =>
     apiRequest<ApiDepartment>("/departments", { method: "POST", body: JSON.stringify(data) }),
   updateDepartment: (
@@ -1122,6 +1123,11 @@ export const organizationApi = {
     apiRequest<ApiDepartment>(`/departments/${id}`, { method: "DELETE" }),
 
   listRoles: () => apiRequest<ApiRole[]>("/roles"),
+  roleScopeOptions: () =>
+    apiRequest<{
+      connections: Array<{ id: string; name: string; status: string }>;
+      departments: Array<Pick<ApiDepartment, "id" | "name">>;
+    }>("/roles/scope-options"),
   createRole: (data: {
     name: string;
     key?: string;
@@ -1696,6 +1702,7 @@ export const operationsApi = {
 
 export const connectionsApi = {
   list: () => apiRequest<ApiMessagingConnection[]>("/messaging/connections"),
+  listChatScope: () => apiRequest<ApiMessagingConnection[]>("/messaging/connections/chat-scope"),
   createEvolution: (data: {
     name: string;
     color?: string;
@@ -2805,6 +2812,9 @@ async function authErrorFromResponse(response: Response) {
 }
 
 function trixusMessageFromCode(code?: string) {
+  if (code === "PLAN_LIMIT_USERS_REACHED") {
+    return "Número máximo de atendentes atingido";
+  }
   if (code === "PLAN_LIMIT_CONNECTIONS_REACHED") {
     return "Número máximo de conexões atingidas";
   }

@@ -6,12 +6,12 @@ import {
 } from "@/lib/connection-options";
 import { connectionsApi } from "@/lib/trixus-api";
 
-export const MESSAGING_CONNECTIONS_QUERY_KEY = ["trixus", "messaging-connections"] as const;
+export const MESSAGING_CONNECTIONS_QUERY_KEY = ["trixus", "chat-messaging-connections"] as const;
 
 export function useConnectedMessagingConnections(options: { enabled?: boolean } = {}) {
   const query = useQuery({
     queryKey: MESSAGING_CONNECTIONS_QUERY_KEY,
-    queryFn: connectionsApi.list,
+    queryFn: connectionsApi.listChatScope,
     enabled: options.enabled ?? true,
     staleTime: 0,
     refetchOnMount: "always",

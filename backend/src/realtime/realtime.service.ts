@@ -1,4 +1,5 @@
-import { connectionAccess, roleConnectionIds } from "../auth/connection-access";
+import { roleChatDepartmentIds, roleConnectionIds } from "../auth/connection-access";
+import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
 import { effectivePermissions } from "../auth/effective-permissions";
 import type { PermissionKey } from "../auth/permissions.constants";
 import { Inject, Injectable, Logger } from "@nestjs/common";
@@ -158,8 +159,10 @@ export class RealtimeService {
       if (!session) return null;
     }
     return {
+      membershipId: membership.id,
       roleKey: membership.role.key,
       connectionIds: roleConnectionIds(membership.role),
+      chatDepartmentIds: roleChatDepartmentIds(membership.role),
       permissions: effectivePermissions(membership.role),
     };
   }
@@ -172,7 +175,7 @@ export class RealtimeService {
         id: conversationId,
         tenantId: context.tenantId,
         archivedAt: null,
-        ...connectionAccess(scope),
+        ...conversationVisibilityWhere(scope),
       },
       select: { id: true },
     }));
@@ -195,7 +198,7 @@ export class RealtimeService {
             where: {
               id: payload.conversationId,
               tenantId: context.tenantId,
-              ...connectionAccess(scope),
+              ...conversationVisibilityWhere(scope),
             },
             select: { id: true },
           });
@@ -207,7 +210,7 @@ export class RealtimeService {
             where: {
               id: payload.contactId,
               tenantId: context.tenantId,
-              conversations: { some: connectionAccess(scope) },
+              conversations: { some: conversationVisibilityWhere(scope) },
             },
             select: { id: true },
           });

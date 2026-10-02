@@ -14,8 +14,9 @@ import {
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequirePermissions } from "../auth/permissions.decorator";
+import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
+import { departmentIdAccess } from "../auth/connection-access";
 import { ConversationStatus, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
@@ -50,6 +51,27 @@ export class DepartmentsController {
       memberCount: department.members.length,
       openConversationCount: department.conversations.length,
     }));
+  }
+
+  @Get("chat-scope")
+  @RequireAnyPermission(
+    "conversations.read",
+    "dashboard.read",
+    "history.read",
+    "contacts.read",
+    "campaigns.read",
+    "tickets.read",
+  )
+  async listChatScope(@CurrentUser() current: AuthenticatedUser) {
+    const departments = await this.prisma.department.findMany({
+      where: {
+        tenantId: current.tenantId,
+        active: true,
+        ...departmentIdAccess(current),
+      },
+      orderBy: { name: "asc" },
+    });
+    return departments.map((department) => this.serialize(department));
   }
 
   @Get(":id")

@@ -27,6 +27,7 @@ describe("dashboard week ranges", () => {
           tenantId: "tenant-a",
           roleKey: "agent",
           connectionIds: ["vocical"],
+          chatDepartmentIds: ["department-a"],
           permissions: ["chat.conversations.view_all_active"],
         } as never,
         { period },
@@ -39,7 +40,11 @@ describe("dashboard week ranges", () => {
           start: new Date(start),
           end: new Date(end),
         },
-        { period, allowedConnectionIds: ["vocical"] },
+        {
+          period,
+          allowedConnectionIds: ["vocical"],
+          allowedDepartmentIds: ["department-a"],
+        },
       );
       expect(metrics.chartData).toHaveBeenCalledWith(
         "tenant-a",
@@ -47,12 +52,18 @@ describe("dashboard week ranges", () => {
         {
           period,
           allowedConnectionIds: ["vocical"],
+          allowedDepartmentIds: ["department-a"],
         },
         "America/Sao_Paulo",
       );
       expect(prisma.conversation.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { tenantId: "tenant-a", archivedAt: null, connectionId: { in: ["vocical"] } },
+          where: {
+            tenantId: "tenant-a",
+            archivedAt: null,
+            connectionId: { in: ["vocical"] },
+            departmentId: { in: ["department-a"] },
+          },
           orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
           take: 7,
         }),
@@ -79,6 +90,7 @@ describe("conversation visibility in operational history", () => {
         membershipId: "membership-a",
         roleKey: "agent",
         connectionIds: ["connection-a"],
+        chatDepartmentIds: ["department-a"],
         permissions: [],
       } as never,
       { period: "30d" },
@@ -92,6 +104,7 @@ describe("conversation visibility in operational history", () => {
             {
               AND: [
                 { connectionId: { in: ["connection-a"] } },
+                { departmentId: { in: ["department-a"] } },
                 {
                   OR: [{ assignedMembershipId: "membership-a" }, { assignedMembershipId: null }],
                 },
@@ -129,6 +142,7 @@ describe("dashboard configurable contact data", () => {
         tenantId: "tenant-a",
         roleKey: "agent",
         connectionIds: ["connection-a"],
+        chatDepartmentIds: ["department-a"],
       } as never,
       {
         period: "today",
@@ -143,7 +157,7 @@ describe("dashboard configurable contact data", () => {
         where: expect.objectContaining({
           tenantId: "tenant-a",
           archivedAt: null,
-          departmentId: "department-a",
+          departmentId: { in: ["department-a"] },
           instanceIds: { hasSome: ["connection-a"] },
         }),
         take: 20,

@@ -87,6 +87,8 @@ export function useRealtimeInbox(conversationId?: string | null) {
       }
       if (event.event === "connection.status.updated") {
         void queryClient.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "chat-messaging-connections"] });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] });
       }
       if (event.event === "contact.updated" || event.event === "contact.tags.updated") {
         const data = event.data as { contactId?: string };
@@ -107,6 +109,7 @@ export function useRealtimeInbox(conversationId?: string | null) {
     if (realtime.status !== "connected" || previousStatus === "connected") return;
     void invalidateConversationQueries(queryClient, conversationId);
     void queryClient.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
+    void queryClient.invalidateQueries({ queryKey: ["trixus", "chat-messaging-connections"] });
   }, [conversationId, queryClient, realtime.status]);
 
   return realtime;

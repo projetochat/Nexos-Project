@@ -49,6 +49,42 @@ export class RolesController {
     return roles.map((role) => this.serialize(role));
   }
 
+  @Get("roles/scope-options")
+  @RequirePermissions("roles.read")
+  async scopeOptions(@CurrentUser() current: AuthenticatedUser) {
+    const connectionIds = current.roleKey === "tenant_admin" ? null : (current.connectionIds ?? []);
+    const departmentIds =
+      current.roleKey === "tenant_admin" ? null : (current.chatDepartmentIds ?? []);
+    const [connections, departments] = await Promise.all([
+      this.prisma.messagingConnection.findMany({
+        where: {
+          tenantId: current.tenantId,
+          providerType: "EVOLUTION",
+          archivedAt: null,
+          ...(connectionIds === null ? {} : { id: { in: connectionIds } }),
+        },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, status: true },
+      }),
+      this.prisma.department.findMany({
+        where: {
+          tenantId: current.tenantId,
+          active: true,
+          ...(departmentIds === null ? {} : { id: { in: departmentIds } }),
+        },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+    ]);
+    return {
+      connections: connections.map((connection) => ({
+        ...connection,
+        status: connection.status.toLowerCase(),
+      })),
+      departments,
+    };
+  }
+
   @Get("roles/:id")
   @RequirePermissions("roles.read")
   async findOne(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
@@ -231,39 +267,85 @@ export class RolesController {
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
       throw new BadRequestException("Configuração do perfil inválida.");
     }
-    const requestedValue = (metadata as { connectionIds?: unknown }).connectionIds;
-    if (requestedValue === undefined) return;
-    if (!Array.isArray(requestedValue) || requestedValue.some((id) => typeof id !== "string")) {
-      throw new BadRequestException("Escopo de instâncias inválido.");
+    const requestedMetadata = metadata as {
+      connectionIds?: unknown;
+      departmentIds?: unknown;
+    };
+    const existing = (existingMetadata ?? {}) as {
+      connectionIds?: unknown;
+      departmentIds?: unknown;
+    };
+    await this.assertScopeIds(
+      {
+        requestedValue: requestedMetadata.connectionIds,
+        existingValue: existing.connectionIds,
+        allowedIds: current.connectionIds,
+        label: "instâncias",
+        count: (ids) =>
+          this.prisma.messagingConnection.count({
+            where: { tenantId: current.tenantId, id: { in: ids }, archivedAt: null },
+          }),
+      },
+      current,
+    );
+    await this.assertScopeIds(
+      {
+        requestedValue: requestedMetadata.departmentIds,
+        existingValue: existing.departmentIds,
+        allowedIds: current.chatDepartmentIds,
+        label: "departamentos",
+        count: (ids) =>
+          this.prisma.department.count({
+            where: { tenantId: current.tenantId, id: { in: ids }, active: true },
+          }),
+      },
+      current,
+    );
+  }
+
+  private async assertScopeIds(
+    input: {
+      requestedValue: unknown;
+      existingValue: unknown;
+      allowedIds: string[] | null | undefined;
+      label: string;
+      count: (ids: string[]) => Promise<number>;
+    },
+    current: AuthenticatedUser,
+  ) {
+    if (input.requestedValue === undefined) return;
+    if (
+      !Array.isArray(input.requestedValue) ||
+      input.requestedValue.some((id) => typeof id !== "string")
+    ) {
+      throw new BadRequestException(`Escopo de ${input.label} inválido.`);
     }
-    const requested = [...new Set(requestedValue as string[])];
+    const requested = [...new Set(input.requestedValue as string[])];
     const existing = new Set(
-      Array.isArray((existingMetadata as { connectionIds?: unknown } | null)?.connectionIds)
-        ? ((existingMetadata as { connectionIds: unknown[] }).connectionIds.filter(
-            (id): id is string => typeof id === "string",
-          ) as string[])
+      Array.isArray(input.existingValue)
+        ? input.existingValue.filter((id): id is string => typeof id === "string")
         : [],
     );
     const added = requested.filter((id) => !existing.has(id));
-    if (added.length) {
-      const count = await this.prisma.messagingConnection.count({
-        where: { tenantId: current.tenantId, id: { in: added }, archivedAt: null },
-      });
-      if (count !== added.length) {
-        throw new BadRequestException("Instância inexistente para esta organização.");
-      }
+    if (added.length && (await input.count(added)) !== added.length) {
+      throw new BadRequestException(
+        input.label === "instâncias"
+          ? "Instância inexistente para esta organização."
+          : "Departamento inexistente para esta organização.",
+      );
     }
     if (current.roleKey === "tenant_admin") return;
-    const allowed = new Set(current.connectionIds ?? []);
     const requestedSet = new Set(requested);
     const changed = [
       ...requested.filter((id) => !existing.has(id)),
       ...[...existing].filter((id) => !requestedSet.has(id)),
     ];
-    const forbidden = changed.find((id) => !allowed.has(id));
-    if (forbidden) {
+    const allowed = new Set(input.allowedIds ?? []);
+    if (changed.some((id) => !allowed.has(id))) {
       throw new ForbiddenException(
-        "Você não pode adicionar ou remover uma instância fora do seu escopo.",
+        input.label === "instâncias"
+          ? "Você não pode adicionar ou remover uma instância fora do seu escopo."
+          : "Você não pode adicionar ou remover um departamento fora do seu escopo.",
       );
     }
   }
@@ -347,20 +429,16 @@ const PERMISSION_DEPENDENCIES: Record<string, readonly string[]> = {
   ],
   "conversations.read": [
     "conversations.assign",
-    "conversations.manage",
     "messages.send",
-    "chat.contacts.read",
     "chat.phone.read",
-    "chat.customer_link.edit",
     "chat.tags.use",
-    "chat.contacts.block",
     "chat.messages.delete",
     "chat.messages.edit",
     "chat.agent_name.show",
     "chat.conversations.view_all_active",
   ],
   "connections.read": ["connections.create", "connections.update", "connections.delete"],
-  "groups.read": ["groups.create", "groups.update"],
+  "groups.read": ["groups.create", "groups.update", "groups.leave"],
   "chat.tags.read": ["chat.tags.use", "chat.tags.create", "chat.tags.update", "chat.tags.delete"],
   "chat.quick_replies.read": [
     "chat.quick_replies.create",
@@ -379,7 +457,11 @@ const LEGACY_PERMISSION_REPLACEMENTS: Record<string, readonly string[]> = {
   "chat.audio.send": ["messages.send"],
   "chat.contacts.create": ["contacts.read", "contacts.create"],
   "chat.contacts.edit": ["contacts.read", "contacts.update"],
+  "chat.contacts.read": ["contacts.read"],
+  "chat.contacts.block": ["conversations.read", "contacts.read", "contacts.update"],
+  "chat.customer_link.edit": ["contacts.read", "contacts.update"],
   "chat.tickets.create": ["tickets.read", "tickets.create"],
+  "conversations.manage": ["messages.send", "conversations.assign"],
 };
 
 function normalizePermissionIds(permissionIds: readonly string[]) {

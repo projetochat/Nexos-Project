@@ -1189,7 +1189,14 @@ function prismaMock() {
     },
     conversation: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     department: { findFirst: vi.fn().mockResolvedValue({ id: "department-a" }) },
-    tenantMembership: { findMany: vi.fn().mockResolvedValue([{ id: "membership-a" }]) },
+    tenantMembership: {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          id: "membership-a",
+          role: { key: "tenant_admin", metadata: {}, permissions: [] },
+        },
+      ]),
+    },
     lead: { upsert: vi.fn().mockResolvedValue({ id: "lead-a" }) },
     notification: {
       createMany: vi.fn().mockResolvedValue({ count: 1 }),

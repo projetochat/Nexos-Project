@@ -15,7 +15,8 @@ const current = {
   roleKey: "agent",
   platformRole: "USER",
   connectionIds: ["connection-a"],
-  permissions: ["chat.contacts.block"],
+  chatDepartmentIds: ["department-a"],
+  permissions: ["conversations.read", "contacts.update"],
 };
 
 function directConversation() {
@@ -50,6 +51,7 @@ describe("ContactActionsController", () => {
             {
               AND: [
                 { connectionId: { in: ["connection-a"] } },
+                { departmentId: { in: ["department-a"] } },
                 {
                   OR: [{ assignedMembershipId: "membership-a" }, { assignedMembershipId: null }],
                 },
