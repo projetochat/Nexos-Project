@@ -930,14 +930,17 @@ describe("Trixus API organization and RBAC", () => {
     await expect(prisma.department.count({ where: { tenantId, active: true } })).resolves.toBe(3);
   });
 
-  it("blocks the CRM module when the agent profile has only chat permissions", async () => {
+  it("keeps CRM CRUD permissions independent from the Chat scope", async () => {
     const agentToken = await login("atendente@trixus.app", "demo1234", "acme");
     const customerName = `Cliente do atendente ${Date.now()}`;
 
     await request(app.getHttpServer())
       .get("/api/crm/contacts?pageSize=5")
       .set("Authorization", `Bearer ${agentToken}`)
-      .expect(403);
+      .expect(200)
+      .expect(({ body }) => {
+        expect(Array.isArray(body.items)).toBe(true);
+      });
 
     await request(app.getHttpServer())
       .post("/api/crm/customers")
@@ -1394,9 +1397,9 @@ describe("Trixus API organization and RBAC", () => {
       .patch(`/api/conversations/${activeConversation}/department`)
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ departmentId: sales.id })
-      .expect(200)
+      .expect(400)
       .expect(({ body }) => {
-        expect(body.department_id).toBe(sales.id);
+        expect(body.message).toBe("O perfil do atendente não permite este departamento no Chat.");
       });
 
     await request(app.getHttpServer())
@@ -1665,7 +1668,7 @@ describe("Trixus API organization and RBAC", () => {
     });
     await prisma.role.update({
       where: { id: originalRole.id },
-      data: { metadata: { connectionIds: [connection.id] } },
+      data: { metadata: { connectionIds: [connection.id], departmentIds: [department.id] } },
     });
     restoreRoleScopes.push(() =>
       prisma.role.update({

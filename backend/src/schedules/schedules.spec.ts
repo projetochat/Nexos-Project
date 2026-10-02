@@ -114,7 +114,15 @@ it("does not allow a restricted user to overwrite a schedule on another instance
   };
   const controller = new SchedulesController(prisma as never, {} as never);
   await expect(
-    controller.save(item as never, { tenantId: "a", roleKey: "agent", connectionIds: [] } as never),
+    controller.save(
+      item as never,
+      {
+        tenantId: "a",
+        roleKey: "agent",
+        connectionIds: [],
+        chatDepartmentIds: [],
+      } as never,
+    ),
   ).rejects.toThrow("Agendamento não encontrado");
   expect(prisma.schedule.create).not.toHaveBeenCalled();
 });
@@ -132,6 +140,7 @@ it("filters schedules by an authorized conversation on the server", async () => 
     membershipId: "membership-a",
     roleKey: "agent",
     connectionIds: ["connection-a"],
+    chatDepartmentIds: ["department-a"],
     permissions: [],
   } as never;
 
@@ -144,6 +153,7 @@ it("filters schedules by an authorized conversation on the server", async () => 
         {
           AND: [
             { connectionId: { in: ["connection-a"] } },
+            { departmentId: { in: ["department-a"] } },
             {
               OR: [{ assignedMembershipId: "membership-a" }, { assignedMembershipId: null }],
             },
@@ -221,6 +231,7 @@ it("derives the schedule connection from the authorized conversation", async () 
       membershipId: "membership-a",
       roleKey: "agent",
       connectionIds: ["connection-a"],
+      chatDepartmentIds: ["department-a"],
     } as never,
   );
 
@@ -409,7 +420,12 @@ it("rejects listing and saving schedules for a conversation outside the connecti
     },
   };
   const controller = new SchedulesController(prisma as never, {} as never);
-  const user = { tenantId: "tenant-a", roleKey: "agent", connectionIds: [] } as never;
+  const user = {
+    tenantId: "tenant-a",
+    roleKey: "agent",
+    connectionIds: [],
+    chatDepartmentIds: [],
+  } as never;
   const message = { ...item, type: "message", conversationId: "conversation-a" };
 
   await expect(controller.list(user, { conversationId: "conversation-a" })).rejects.toThrow(
@@ -441,6 +457,7 @@ it("does not let an agent delete a legacy message schedule from an inaccessible 
       membershipId: "membership-a",
       roleKey: "agent",
       connectionIds: [],
+      chatDepartmentIds: [],
       permissions: [],
     } as never),
   ).rejects.toThrow("Conversa não encontrada.");
@@ -453,6 +470,7 @@ it("does not let an agent delete a legacy message schedule from an inaccessible 
           {
             AND: [
               { connectionId: { in: [] } },
+              { departmentId: { in: [] } },
               {
                 OR: [{ assignedMembershipId: "membership-a" }, { assignedMembershipId: null }],
               },
