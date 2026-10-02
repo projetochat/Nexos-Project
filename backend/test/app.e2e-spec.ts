@@ -1385,7 +1385,10 @@ describe("Trixus API organization and RBAC", () => {
       .patch(`/api/conversations/${activeConversation}/department`)
       .set("Authorization", `Bearer ${supervisorToken}`)
       .send({ departmentId: sales.id })
-      .expect(404);
+      .expect(400)
+      .expect(({ body }) => {
+        expect(body.message).toBe("Departamento inexistente para este tenant.");
+      });
 
     await request(app.getHttpServer())
       .patch(`/api/conversations/${activeConversation}/department`)
