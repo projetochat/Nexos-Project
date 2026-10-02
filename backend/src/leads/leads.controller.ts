@@ -16,7 +16,7 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
-import { connectionAccess, departmentAccess } from "../auth/connection-access";
+import { conversationChatScopeAccess } from "../auth/connection-access";
 import { ConversationStatus, LeadStatus, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
@@ -72,7 +72,7 @@ export class LeadsController {
     const pageSize = query.pageSize ?? 25;
     const where: Prisma.LeadWhereInput = {
       tenantId: current.tenantId,
-      conversation: { ...connectionAccess(current), ...departmentAccess(current) },
+      conversation: conversationChatScopeAccess(current),
       ...(query.status ? { status: query.status } : { status: { not: LeadStatus.DISCARDED } }),
     };
     const [items, total] = await this.prisma.$transaction([
@@ -110,7 +110,7 @@ export class LeadsController {
           id,
           tenantId: current.tenantId,
           status: { not: LeadStatus.DISCARDED },
-          conversation: { ...connectionAccess(current), ...departmentAccess(current) },
+          conversation: conversationChatScopeAccess(current),
         },
         include: { conversation: true },
       });

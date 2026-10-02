@@ -19,6 +19,7 @@ describe("DepartmentsController", () => {
         id: { in: ["department-a"] },
       },
       orderBy: { name: "asc" },
+      include: { connections: { select: { connectionId: true } } },
     });
   });
 
@@ -30,6 +31,7 @@ describe("DepartmentsController", () => {
       name: "Comercial",
       description: null,
       color: "#3B82F6",
+      icon: "department",
       active: true,
       createdAt,
       updatedAt: createdAt,
@@ -41,6 +43,8 @@ describe("DepartmentsController", () => {
         create: vi.fn().mockResolvedValue(department),
         update: vi.fn(),
       },
+      messagingConnection: { count: vi.fn().mockResolvedValue(0) },
+      departmentConnection: { deleteMany: vi.fn() },
     };
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
@@ -52,7 +56,9 @@ describe("DepartmentsController", () => {
     const controller = new DepartmentsController(prisma as never, entitlements as never);
 
     await expect(
-      controller.create({ name: " Comercial " }, { tenantId: "tenant-a" } as never),
+      controller.create({ name: " Comercial ", connectionIds: [] }, {
+        tenantId: "tenant-a",
+      } as never),
     ).resolves.toMatchObject({ id: "department-a", name: "Comercial" });
 
     expect(entitlements.assertTenantOperational).toHaveBeenCalledWith("tenant-a");
@@ -63,8 +69,11 @@ describe("DepartmentsController", () => {
         name: "Comercial",
         description: null,
         color: "#3B82F6",
+        icon: "department",
         active: true,
+        connections: { create: [] },
       },
+      include: { connections: { select: { connectionId: true } } },
     });
   });
 
@@ -76,6 +85,7 @@ describe("DepartmentsController", () => {
       name: "Financeiro",
       description: "Restaurado",
       color: "#10B981",
+      icon: "department",
       active: true,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -89,6 +99,8 @@ describe("DepartmentsController", () => {
         create: vi.fn(),
         update: vi.fn().mockResolvedValue(restored),
       },
+      messagingConnection: { count: vi.fn().mockResolvedValue(0) },
+      departmentConnection: { deleteMany: vi.fn() },
     };
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
@@ -97,9 +109,15 @@ describe("DepartmentsController", () => {
     const controller = new DepartmentsController(prisma as never, entitlements as never);
 
     await expect(
-      controller.create({ name: "Financeiro", description: "Restaurado", color: "#10B981" }, {
-        tenantId: "tenant-a",
-      } as never),
+      controller.create(
+        {
+          name: "Financeiro",
+          description: "Restaurado",
+          color: "#10B981",
+          connectionIds: [],
+        },
+        { tenantId: "tenant-a" } as never,
+      ),
     ).resolves.toMatchObject({ id: "department-inactive", active: true });
 
     expect(tx.department.create).not.toHaveBeenCalled();
@@ -109,8 +127,11 @@ describe("DepartmentsController", () => {
         name: "Financeiro",
         description: "Restaurado",
         color: "#10B981",
+        icon: "department",
         active: true,
+        connections: { create: [] },
       },
+      include: { connections: { select: { connectionId: true } } },
     });
   });
 });

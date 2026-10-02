@@ -1,4 +1,15 @@
-import { IsBoolean, IsHexColor, IsOptional, IsString, MinLength } from "class-validator";
+import {
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsHexColor,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MinLength,
+} from "class-validator";
+import { DEPARTMENT_ICONS } from "./create-department.dto";
 
 export class UpdateDepartmentDto {
   @IsOptional()
@@ -13,6 +24,17 @@ export class UpdateDepartmentDto {
   @IsOptional()
   @IsHexColor()
   color?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(DEPARTMENT_ICONS)
+  icon?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID("4", { each: true })
+  connectionIds?: string[];
 
   @IsOptional()
   @IsBoolean()

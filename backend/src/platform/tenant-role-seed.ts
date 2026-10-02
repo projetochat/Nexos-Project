@@ -39,7 +39,6 @@ export async function seedTenantRoles(tx: Tx, tenantId: string) {
         update: {
           name,
           system: true,
-          ...(key === "agent" ? { metadata: { departmentIds: [department.id] } } : {}),
         },
         create: {
           id: `${tenantId}:${key}`,

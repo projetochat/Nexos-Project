@@ -878,11 +878,11 @@ describe("Trixus API organization and RBAC", () => {
   });
 
   it("serializes concurrent creation of a duplicate department name", async () => {
-    const { token, tenantId } = await createStarterTenant("departments");
+    const { token, tenantId, connectionId } = await createStarterTenant("departments");
     await request(app.getHttpServer())
       .post("/api/departments")
       .set("Authorization", `Bearer ${token}`)
-      .send({ name: "Departamento Seed", color: "#2563eb" })
+      .send({ name: "Departamento Seed", color: "#2563eb", connectionIds: [connectionId] })
       .expect(201);
 
     const duplicateName = `Departamento concorrente ${Date.now()}`;
@@ -890,11 +890,11 @@ describe("Trixus API organization and RBAC", () => {
       request(app.getHttpServer())
         .post("/api/departments")
         .set("Authorization", `Bearer ${token}`)
-        .send({ name: duplicateName, color: "#2563eb" }),
+        .send({ name: duplicateName, color: "#2563eb", connectionIds: [connectionId] }),
       request(app.getHttpServer())
         .post("/api/departments")
         .set("Authorization", `Bearer ${token}`)
-        .send({ name: duplicateName, color: "#16a34a" }),
+        .send({ name: duplicateName, color: "#16a34a", connectionIds: [connectionId] }),
     ]);
     expect(responses.filter((response) => response.status === 201)).toHaveLength(1);
     expect(
@@ -908,11 +908,11 @@ describe("Trixus API organization and RBAC", () => {
   });
 
   it("allows concurrent department creation without the removed plan limit", async () => {
-    const { token, tenantId } = await createStarterTenant("department-limit");
+    const { token, tenantId, connectionId } = await createStarterTenant("department-limit");
     await request(app.getHttpServer())
       .post("/api/departments")
       .set("Authorization", `Bearer ${token}`)
-      .send({ name: "Departamento Seed", color: "#2563eb" })
+      .send({ name: "Departamento Seed", color: "#2563eb", connectionIds: [connectionId] })
       .expect(201);
 
     const suffix = Date.now();
@@ -920,11 +920,19 @@ describe("Trixus API organization and RBAC", () => {
       request(app.getHttpServer())
         .post("/api/departments")
         .set("Authorization", `Bearer ${token}`)
-        .send({ name: `Departamento A ${suffix}`, color: "#2563eb" }),
+        .send({
+          name: `Departamento A ${suffix}`,
+          color: "#2563eb",
+          connectionIds: [connectionId],
+        }),
       request(app.getHttpServer())
         .post("/api/departments")
         .set("Authorization", `Bearer ${token}`)
-        .send({ name: `Departamento B ${suffix}`, color: "#16a34a" }),
+        .send({
+          name: `Departamento B ${suffix}`,
+          color: "#16a34a",
+          connectionIds: [connectionId],
+        }),
     ]);
     expect(responses.filter((response) => response.status === 201)).toHaveLength(2);
     await expect(prisma.department.count({ where: { tenantId, active: true } })).resolves.toBe(3);
@@ -1387,7 +1395,7 @@ describe("Trixus API organization and RBAC", () => {
       .send({ departmentId: sales.id })
       .expect(400)
       .expect(({ body }) => {
-        expect(body.message).toBe("Departamento inexistente para este tenant.");
+        expect(body.message).toBe("Departamento não liberado para esta instância.");
       });
 
     await request(app.getHttpServer())
@@ -1402,7 +1410,7 @@ describe("Trixus API organization and RBAC", () => {
       .send({ departmentId: sales.id })
       .expect(400)
       .expect(({ body }) => {
-        expect(body.message).toBe("O perfil do atendente não permite este departamento no Chat.");
+        expect(body.message).toBe("Departamento não liberado para esta instância.");
       });
 
     await request(app.getHttpServer())
@@ -1428,12 +1436,29 @@ describe("Trixus API organization and RBAC", () => {
         externalReference: `e2e-status-${Date.now()}`,
       },
     });
+    const department = await prisma.department.findFirstOrThrow({
+      where: { tenantId: contact.tenantId, name: "Suporte" },
+    });
+    await prisma.$transaction([
+      prisma.departmentConnection.create({
+        data: {
+          tenantId: contact.tenantId,
+          departmentId: department.id,
+          connectionId: connection.id,
+        },
+      }),
+      prisma.contact.update({
+        where: { id: contact.id },
+        data: { instanceIds: { push: connection.id } },
+      }),
+    ]);
     const created = await request(app.getHttpServer())
       .post("/api/conversations")
       .set("Authorization", `Bearer ${adminToken}`)
       .send({
         contactId: contact.id,
         connectionId: connection.id,
+        departmentId: department.id,
         assignToSelf: true,
         firstMessagePreview: "Status test",
       })
@@ -1525,11 +1550,32 @@ describe("Trixus API organization and RBAC", () => {
         },
       }),
     ]);
+    const department = await prisma.department.findFirstOrThrow({
+      where: { tenantId: tenant.id, name: "Suporte" },
+    });
+    await prisma.$transaction([
+      prisma.departmentConnection.create({
+        data: {
+          tenantId: tenant.id,
+          departmentId: department.id,
+          connectionId: connected.id,
+        },
+      }),
+      prisma.contact.update({
+        where: { id: contact.id },
+        data: { instanceIds: { push: connected.id } },
+      }),
+    ]);
 
     const created = await request(app.getHttpServer())
       .post("/api/conversations")
       .set("Authorization", `Bearer ${adminToken}`)
-      .send({ contactId: contact.id, connectionId: connected.id, assignToSelf: true })
+      .send({
+        contactId: contact.id,
+        connectionId: connected.id,
+        departmentId: department.id,
+        assignToSelf: true,
+      })
       .expect(201);
 
     expect(created.body.connection_id).toBe(connected.id);
@@ -1539,7 +1585,12 @@ describe("Trixus API organization and RBAC", () => {
     await request(app.getHttpServer())
       .post("/api/conversations")
       .set("Authorization", `Bearer ${adminToken}`)
-      .send({ contactId: contact.id, connectionId: connected.id, assignToSelf: true })
+      .send({
+        contactId: contact.id,
+        connectionId: connected.id,
+        departmentId: department.id,
+        assignToSelf: true,
+      })
       .expect(201)
       .expect(({ body }) => {
         expect(body.id).toBe(created.body.id);
@@ -3744,8 +3795,18 @@ describe("Trixus API organization and RBAC", () => {
       });
       return tenant;
     });
+    const connection = await prisma.messagingConnection.create({
+      data: {
+        tenantId: created.id,
+        name: `Instância ${scope}`,
+        providerType: MessagingProviderType.EVOLUTION,
+        status: MessagingConnectionStatus.CONNECTED,
+        externalReference: `starter-${scope}-${unique}`,
+      },
+    });
     return {
       tenantId: created.id,
+      connectionId: connection.id,
       token: await login(adminEmail, "demo1234", slug),
     };
   }

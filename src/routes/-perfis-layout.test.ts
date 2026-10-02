@@ -26,23 +26,15 @@ describe("organização do editor de Perfil de Acesso", () => {
     expect(source).toContain("timezone: data.timezone");
   });
 
-  it("apresenta instâncias e departamentos com Todos e toggles em duas colunas", () => {
+  it("apresenta a hierarquia de instâncias e departamentos com favorito", () => {
     const scopes = source.slice(
       source.indexOf("function ScopeSettings"),
       source.indexOf("function PermissionSettings"),
     );
-    expect(scopes).toContain('title="Visualização de instância - Chat"');
-    expect(scopes).toContain('title="Visualização de departamento - Chat"');
-    expect(scopes.match(/<PermissionSwitch/g)).toHaveLength(2);
-
-    const selection = source.slice(
-      source.indexOf("function SelectionSection"),
-      source.indexOf("function PermissionGroupBlock"),
-    );
-    expect(selection).toContain('label="Todos"');
-    expect(selection).toContain("sm:grid-cols-2");
-    expect(selection).toContain("ids.length === 1");
-    expect(selection).toContain('"sm:grid-cols-1"');
+    expect(scopes).toContain("Acesso à instância");
+    expect(scopes).toContain("Todos os departamentos");
+    expect(scopes).toContain("favoriteDepartmentId");
+    expect(scopes).toContain("aria-pressed={favorite}");
   });
 
   it("faz agrupadores com um único acesso ocuparem as duas colunas", () => {
@@ -58,9 +50,19 @@ describe("organização do editor de Perfil de Acesso", () => {
       source.indexOf("function PermissionSettings"),
     );
 
-    expect(scopes).toContain("Escopo do Chat");
+    expect(scopes).toContain("Instâncias e departamentos");
     expect(scopes).toContain("quais instâncias, departamentos e conversas");
     expect(scopes).toContain("independentes dos acessos aos módulos");
+  });
+
+  it("mantém a ordem final das quatro abas", () => {
+    const tabs = source.slice(
+      source.indexOf("const tabs:"),
+      source.indexOf("return (", source.indexOf("const tabs:")),
+    );
+    expect(tabs.indexOf('id: "geral"')).toBeLessThan(tabs.indexOf('id: "visualizacao"'));
+    expect(tabs.indexOf('id: "visualizacao"')).toBeLessThan(tabs.indexOf('id: "acessos"'));
+    expect(tabs.indexOf('id: "acessos"')).toBeLessThan(tabs.indexOf('id: "jornada"'));
   });
 
   it("carrega opções de escopo sem depender dos catálogos CRUD", () => {

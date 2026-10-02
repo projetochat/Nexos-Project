@@ -2,6 +2,7 @@ import {
   connectionIdAccess,
   departmentIdAccess,
   roleChatDepartmentIds,
+  roleChatScopes,
   roleConnectionIds,
 } from "../auth/connection-access";
 import {
@@ -143,10 +144,6 @@ export class ConversationsController {
     });
     if (!contact) throw new BadRequestException("Contato inexistente para este tenant.");
 
-    const departmentId = await this.resolveDepartmentId(
-      dto.departmentId ?? contact.departmentId,
-      current,
-    );
     const connection = await this.resolveConversationConnection(dto.connectionId, current, contact);
     const assignToSelf = dto.assignToSelf ?? false;
     if (assignToSelf && !connection) {
@@ -154,6 +151,9 @@ export class ConversationsController {
         "Nenhuma instância WhatsApp conectada para iniciar a conversa.",
       );
     }
+    const departmentId = connection
+      ? await this.resolveDepartmentId(dto.departmentId, current, connection.id)
+      : null;
     const status = assignToSelf ? ConversationStatus.EM_ANDAMENTO : ConversationStatus.ABERTA;
     const now = new Date();
 
@@ -162,6 +162,7 @@ export class ConversationsController {
         where: {
           tenantId: current.tenantId,
           contactId: contact.id,
+          departmentId,
           ...(connection ? { connectionId: connection.id } : {}),
           archivedAt: null,
           status: { not: ConversationStatus.FECHADA },
@@ -186,6 +187,7 @@ export class ConversationsController {
         const updated = await tx.conversation.update({
           where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
           data: {
+            departmentId,
             assignedMembershipId: current.membershipId,
             status: ConversationStatus.EM_ANDAMENTO,
             protocol: existing.protocol ?? (await this.nextProtocol(tx, current.tenantId)),
@@ -292,18 +294,30 @@ export class ConversationsController {
         conversation.protocol ??
         (targetMembershipId ? await this.nextProtocol(tx, current.tenantId) : null);
       if (targetMembershipId) {
+        const departmentId = dto.departmentId ?? conversation.departmentId;
+        if (dto.self && !departmentId) {
+          throw new BadRequestException("Selecione um departamento para iniciar o atendimento.");
+        }
+        if (departmentId && conversation.connectionId) {
+          await this.assertDepartmentForConnection(
+            departmentId,
+            conversation.connectionId,
+            current,
+          );
+        }
         await this.assertAssignableMembership(
           tx,
           targetMembershipId,
           current.tenantId,
           conversation.connectionId,
-          conversation.departmentId,
+          departmentId,
         );
       }
       const updated = await tx.conversation.update({
         where: { id: conversation.id },
         data: {
           assignedMembershipId: targetMembershipId,
+          departmentId: dto.departmentId ?? undefined,
           status: targetMembershipId ? ConversationStatus.EM_ANDAMENTO : ConversationStatus.ABERTA,
           protocol,
           lastMessageAt: conversation.lastMessageAt ?? new Date(),
@@ -351,7 +365,10 @@ export class ConversationsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const conversation = await this.findVisibleConversation(id, current);
-    await this.assertDepartmentInTenant(dto.departmentId, current);
+    if (!conversation.connectionId) {
+      throw new BadRequestException("Conversa sem instância vinculada.");
+    }
+    await this.assertDepartmentForConnection(dto.departmentId, conversation.connectionId, current);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       if (conversation.assignedMembershipId) {
@@ -748,22 +765,20 @@ export class ConversationsController {
   private async resolveDepartmentId(
     departmentId: string | null | undefined,
     current: AuthenticatedUser,
+    connectionId: string,
   ) {
     if (departmentId) {
-      await this.assertDepartmentInTenant(departmentId, current);
+      await this.assertDepartmentForConnection(departmentId, connectionId, current);
       return departmentId;
     }
-
-    const department = await this.prisma.department.findFirst({
-      where: {
-        tenantId: current.tenantId,
-        active: true,
-        ...departmentIdAccess(current),
-      },
-      orderBy: { createdAt: "asc" },
-    });
-    if (!department) throw new BadRequestException("Tenant sem departamento ativo para conversa.");
-    return department.id;
+    const favorite = current.chatScopes?.find(
+      (scope) => scope.connectionId === connectionId,
+    )?.favoriteDepartmentId;
+    if (favorite) {
+      await this.assertDepartmentForConnection(favorite, connectionId, current);
+      return favorite;
+    }
+    throw new BadRequestException("Selecione um departamento para iniciar o atendimento.");
   }
 
   private async resolveConversationConnection(
@@ -785,6 +800,17 @@ export class ConversationsController {
       });
       if (!selectedConnection) {
         throw new BadRequestException("Connection inexistente para este tenant.");
+      }
+      const contactConnections = uniqueValues([...(contact?.instanceIds ?? []), contact?.instance]);
+      if (
+        contactConnections.length > 0 &&
+        !contactConnections.some((value) =>
+          [selectedConnection.id, selectedConnection.externalReference, selectedConnection.name]
+            .filter(Boolean)
+            .includes(value),
+        )
+      ) {
+        throw new BadRequestException("A instância selecionada não está vinculada ao contato.");
       }
       return this.assertUsableConversationConnection(selectedConnection);
     }
@@ -818,6 +844,7 @@ export class ConversationsController {
     providerType: MessagingProviderType;
     externalReference: string | null;
     status: MessagingConnectionStatus;
+    serviceEnabled: boolean;
   }) {
     if (
       connection.providerType !== MessagingProviderType.EVOLUTION ||
@@ -828,18 +855,37 @@ export class ConversationsController {
     if (connection.status !== MessagingConnectionStatus.CONNECTED) {
       throw new BadRequestException("A connection WhatsApp precisa estar conectada.");
     }
+    if (connection.serviceEnabled === false) {
+      throw new BadRequestException("O atendimento desta instância está pausado.");
+    }
     return connection;
   }
 
-  private async assertDepartmentInTenant(departmentId: string, current: AuthenticatedUser) {
+  private async assertDepartmentForConnection(
+    departmentId: string,
+    connectionId: string,
+    current: AuthenticatedUser,
+  ) {
     const department = await this.prisma.department.findFirst({
       where: {
         tenantId: current.tenantId,
         active: true,
         AND: [{ id: departmentId }, departmentIdAccess(current)],
+        connections: { some: { connectionId } },
       },
     });
-    if (!department) throw new BadRequestException("Departamento inexistente para este tenant.");
+    const scoped =
+      current.roleKey === "tenant_admin" ||
+      (current.chatScopes ?? []).some(
+        (scope) =>
+          scope.connectionId === connectionId && scope.departmentIds.includes(departmentId),
+      ) ||
+      (!current.chatScopes &&
+        (current.connectionIds ?? []).includes(connectionId) &&
+        (current.chatDepartmentIds ?? []).includes(departmentId));
+    if (!department || !scoped) {
+      throw new BadRequestException("Departamento não liberado para esta instância.");
+    }
   }
 
   private async assertAssignableMembership(
@@ -864,8 +910,18 @@ export class ConversationsController {
     if (connectionId && !(roleConnectionIds(membership.role) ?? []).includes(connectionId)) {
       throw new BadRequestException("O perfil do atendente não permite esta instância no Chat.");
     }
-    if (departmentId && !(roleChatDepartmentIds(membership.role) ?? []).includes(departmentId)) {
-      throw new BadRequestException("O perfil do atendente não permite este departamento no Chat.");
+    if (departmentId) {
+      const departmentAllowed = connectionId
+        ? roleChatScopes(membership.role).some(
+            (scope) =>
+              scope.connectionId === connectionId && scope.departmentIds.includes(departmentId),
+          )
+        : (roleChatDepartmentIds(membership.role) ?? []).includes(departmentId);
+      if (!departmentAllowed) {
+        throw new BadRequestException(
+          "O perfil do atendente não permite este departamento no Chat.",
+        );
+      }
     }
   }
 

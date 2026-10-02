@@ -82,6 +82,38 @@ describe("ConversationsController connection selection", () => {
       ),
     ).rejects.toThrow("O perfil do atendente não permite esta instância no Chat.");
   });
+
+  it("uses the profile favorite only for its linked instance", async () => {
+    const prisma = {
+      department: { findFirst: vi.fn().mockResolvedValue({ id: "department-favorite" }) },
+    };
+    const controller = new ConversationsController(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const current = {
+      tenantId: "tenant-a",
+      roleKey: "agent",
+      connectionIds: ["connection-a"],
+      chatDepartmentIds: ["department-favorite"],
+      chatScopes: [
+        {
+          connectionId: "connection-a",
+          departmentIds: ["department-favorite"],
+          favoriteDepartmentId: "department-favorite",
+        },
+      ],
+    };
+
+    await expect(
+      controller["resolveDepartmentId"](undefined, current as never, "connection-a"),
+    ).resolves.toBe("department-favorite");
+    await expect(
+      controller["resolveDepartmentId"](undefined, current as never, "connection-b"),
+    ).rejects.toThrow("Selecione um departamento para iniciar o atendimento.");
+  });
 });
 
 describe("ConversationsController department transfer scope", () => {
@@ -184,13 +216,14 @@ describe("ConversationsController department transfer scope", () => {
         { departmentId: "department-target" },
         actorOutsideDepartment as never,
       ),
-    ).rejects.toThrow("Departamento inexistente para este tenant.");
+    ).rejects.toThrow("Departamento não liberado para esta instância.");
 
     expect(context.prisma.department.findFirst).toHaveBeenCalledWith({
       where: {
         tenantId: "tenant-a",
         active: true,
         AND: [{ id: "department-target" }, { id: { in: ["department-other"] } }],
+        connections: { some: { connectionId: "connection-a" } },
       },
     });
     expect(context.prisma.$transaction).not.toHaveBeenCalled();

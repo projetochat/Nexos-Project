@@ -31,8 +31,15 @@ export type AuthenticatedUser = {
   assignedPermissionIds?: string[];
   connectionIds?: string[] | null;
   chatDepartmentIds?: string[] | null;
+  chatScopes?: ChatScope[] | null;
   iatMs?: number;
   sid?: string;
   impersonationSessionId?: string;
   actorPlatformUserId?: string;
+};
+
+export type ChatScope = {
+  connectionId: string;
+  departmentIds: string[];
+  favoriteDepartmentId: string | null;
 };

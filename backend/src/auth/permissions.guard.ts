@@ -11,7 +11,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuthenticatedRequest } from "./jwt-auth.guard";
 import { PermissionKey } from "./permissions.constants";
 import { effectivePermissions } from "./effective-permissions";
-import { roleChatDepartmentIds, roleConnectionIds } from "./connection-access";
+import { roleChatDepartmentIds, roleChatScopes, roleConnectionIds } from "./connection-access";
 import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from "./permissions.decorator";
 
 @Injectable()
@@ -95,6 +95,8 @@ export class PermissionsGuard implements CanActivate {
     request.user.roleKey = membership.role.key;
     request.user.connectionIds = roleConnectionIds(membership.role);
     request.user.chatDepartmentIds = roleChatDepartmentIds(membership.role);
+    request.user.chatScopes =
+      membership.role.key === "tenant_admin" ? null : roleChatScopes(membership.role);
     request.user.permissions = permissions;
     request.user.assignedPermissionIds = membership.role.permissions.map(
       (permission) => permission.permissionId,

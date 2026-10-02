@@ -1,4 +1,8 @@
-import { roleChatDepartmentIds, roleConnectionIds } from "../auth/connection-access";
+import {
+  roleChatDepartmentIds,
+  roleChatScopes,
+  roleConnectionIds,
+} from "../auth/connection-access";
 import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
 import { effectivePermissions } from "../auth/effective-permissions";
 import type { PermissionKey } from "../auth/permissions.constants";
@@ -163,6 +167,7 @@ export class RealtimeService {
       roleKey: membership.role.key,
       connectionIds: roleConnectionIds(membership.role),
       chatDepartmentIds: roleChatDepartmentIds(membership.role),
+      chatScopes: membership.role.key === "tenant_admin" ? null : roleChatScopes(membership.role),
       permissions: effectivePermissions(membership.role),
     };
   }

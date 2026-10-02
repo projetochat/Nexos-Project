@@ -692,7 +692,7 @@ describe("MessagingInboundService", () => {
         tenantId: "tenant-a",
         contactId: "contact-a",
         connectionId: "connection-a",
-        departmentId: "department-a",
+        departmentId: null,
         status: ConversationStatus.ABERTA,
       }),
     });
@@ -707,11 +707,10 @@ describe("MessagingInboundService", () => {
     });
   });
 
-  it("uses the connection default department only when creating a new inbound conversation", async () => {
+  it("keeps a new inbound conversation without department until an attendant starts it", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue({
       ...connection(),
-      defaultDepartmentId: "department-sales",
     });
     prisma.department.findFirst.mockResolvedValue({ id: "department-sales" });
     prisma.message.findFirst.mockResolvedValue(null);
@@ -719,14 +718,14 @@ describe("MessagingInboundService", () => {
     prisma.contact.update.mockResolvedValue(contact());
     prisma.conversation.findFirst.mockResolvedValue(null);
     prisma.conversation.create.mockResolvedValue(
-      conversation({ id: "conversation-default", departmentId: "department-sales" }),
+      conversation({ id: "conversation-default", departmentId: null }),
     );
     prisma.message.create.mockResolvedValue({
       id: "message-inbound",
       conversationId: "conversation-default",
     });
     prisma.conversation.update.mockResolvedValue(
-      conversation({ id: "conversation-default", departmentId: "department-sales" }),
+      conversation({ id: "conversation-default", departmentId: null }),
     );
 
     await new MessagingInboundService(prisma as never).process({
@@ -742,16 +741,12 @@ describe("MessagingInboundService", () => {
       occurredAt: new Date("2026-08-03T12:00:00.000Z"),
     });
 
-    expect(prisma.department.findFirst).toHaveBeenCalledWith({
-      where: { id: "department-sales", tenantId: "tenant-a", active: true },
-      select: { id: true },
-    });
     expect(prisma.conversation.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ departmentId: "department-sales" }),
+      data: expect.objectContaining({ departmentId: null }),
     });
     expect(prisma.contact.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ departmentId: "department-a" }),
+        data: expect.not.objectContaining({ departmentId: expect.anything() }),
       }),
     );
   });

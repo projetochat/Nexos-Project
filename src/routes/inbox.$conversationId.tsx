@@ -39,6 +39,7 @@ import { InboxLayout } from "./inbox.index";
 import { Avatar, Button, Field, Input, Select } from "@/components/ui-kit";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MessageStatusIcon } from "@/components/message-status-icon";
+import { DepartmentIcon } from "@/components/department-icon";
 import { MessageActionsMenu } from "@/components/message-actions-menu";
 import { InboxMobileActions } from "@/components/inbox-mobile-actions";
 import { InboxContactPicker, type SharedContactSelection } from "@/components/inbox-contact-picker";
@@ -415,6 +416,8 @@ function ConversationPage() {
   }, []);
 
   const transferModal = useDisclosure();
+  const startDepartmentModal = useDisclosure();
+  const [startDepartmentId, setStartDepartmentId] = React.useState("");
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [replyTo, setReplyTo] = React.useState<Message | null>(null);
   const queuePrefs = useQueuePrefs();
@@ -460,11 +463,17 @@ function ConversationPage() {
   const wasStarted = !!conv.protocolo;
   const startLabel = isStandby || (!conv.agent_id && wasStarted) ? "Retomar" : "Iniciar";
 
-  const handleAssume = async () => {
+  const handleAssume = async (departmentId?: string) => {
     if (!user) return;
+    if (!conv.protocolo && !departmentId) {
+      setStartDepartmentId("");
+      startDepartmentModal.show();
+      return;
+    }
     try {
       const hadProtocolo = !!conv.protocolo;
-      await conversationApi.assign(conv.id, { self: true });
+      await conversationApi.assign(conv.id, { self: true, departmentId });
+      startDepartmentModal.hide();
       setInboxTab("ativas");
       void invalidateConversationQueries(qc, conv.id);
       toast.success(
@@ -480,6 +489,7 @@ function ConversationPage() {
     try {
       const conversation = await conversationApi.create({
         contactId: conv.contact_id,
+        connectionId: conv.connection_id,
         departmentId: conv.department_id,
         assignToSelf: true,
         firstMessagePreview: "Nova conversa iniciada pelo atendimento.",
@@ -582,7 +592,7 @@ function ConversationPage() {
                       variant="secondary"
                       size="sm"
                       className="group"
-                      onClick={handleAssume}
+                      onClick={() => void handleAssume()}
                       aria-label={`${startLabel} Atendimento`}
                       title={`${startLabel} Atendimento`}
                     >
@@ -837,6 +847,62 @@ function ConversationPage() {
           transferModal.hide();
         }}
       />
+      <Modal
+        open={startDepartmentModal.open}
+        onClose={startDepartmentModal.hide}
+        title="Escolher Departamento"
+        description={`Departamentos liberados para a instância ${conv.connection?.name ?? "selecionada"}.`}
+        size="sm"
+        footer={
+          <div className="flex w-full justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={startDepartmentModal.hide}>
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!startDepartmentId}
+              onClick={() => void handleAssume(startDepartmentId)}
+            >
+              Iniciar Atendimento
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-2">
+          {apiDepartments
+            .filter(
+              (department) =>
+                !!conv.connection_id && department.connectionIds.includes(conv.connection_id),
+            )
+            .map((department) => (
+              <button
+                key={department.id}
+                type="button"
+                onClick={() => setStartDepartmentId(department.id)}
+                className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-4 text-left ${startDepartmentId === department.id ? "border-primary bg-primary/5" : "border-border"}`}
+              >
+                <span
+                  className="flex h-10 w-10 items-center justify-center rounded-lg text-white"
+                  style={{ backgroundColor: department.color }}
+                >
+                  <DepartmentIcon icon={department.icon} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">{department.name}</span>
+                  {department.description && (
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {department.description}
+                    </span>
+                  )}
+                </span>
+                <span
+                  className={`h-4 w-4 rounded-full border-4 ${startDepartmentId === department.id ? "border-primary" : "border-muted-foreground/40"}`}
+                />
+              </button>
+            ))}
+        </div>
+      </Modal>
       <ConfirmDialog
         open={closing}
         title="Encerrar Conversa?"

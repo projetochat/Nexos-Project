@@ -45,8 +45,6 @@ import { useSession } from "@/lib/session";
 import {
   connectionsApi,
   crmApi,
-  organizationApi,
-  type ApiDepartment,
   type ApiContactCustomField,
   type ApiMessagingHistoryImport,
   type ApiMessagingConnection,
@@ -97,10 +95,6 @@ function Page() {
   const { data: contactCustomFields = [] } = useQuery({
     queryKey: ["trixus", "contact-custom-fields"],
     queryFn: crmApi.listContactCustomFields,
-  });
-  const { data: departments = [] } = useQuery({
-    queryKey: ["trixus", "departments"],
-    queryFn: organizationApi.listDepartments,
   });
   const visibleItems = sortByOptionLabel(
     items.filter((item) => item.status !== "removed"),
@@ -456,7 +450,6 @@ function Page() {
           <ConnectionSettingsModal
             connection={editing}
             connections={visibleItems}
-            departments={departments}
             contactCustomFields={contactCustomFields}
             busy={update.isPending}
             onClose={() => setEditing(null)}
@@ -959,7 +952,6 @@ type ConnectionSettingsFormData = {
   timezone?: string;
   serviceHours?: ApiServiceHoursRow[];
   name: string;
-  defaultDepartmentId: string | null;
   color: string | null;
   welcomeEnabled: boolean;
   welcomeNewMessage: string | null;
@@ -1049,7 +1041,6 @@ function serializeServiceHours(rows: ServiceHoursRow[]): ApiServiceHoursRow[] {
 function ConnectionSettingsModal({
   connection,
   connections,
-  departments,
   contactCustomFields,
   busy,
   onClose,
@@ -1057,7 +1048,6 @@ function ConnectionSettingsModal({
 }: {
   connection: ApiMessagingConnection | null;
   connections: ApiMessagingConnection[];
-  departments: ApiDepartment[];
   contactCustomFields: ApiContactCustomField[];
   busy: boolean;
   onClose: () => void;
@@ -1085,7 +1075,6 @@ function ConnectionSettingsModal({
   const [showAbsenceValidation, setShowAbsenceValidation] = React.useState(false);
   const [form, setForm] = React.useState<ConnectionSettingsFormData>({
     name: "",
-    defaultDepartmentId: null,
     color: "#22c55e",
     welcomeEnabled: false,
     welcomeNewMessage: "",
@@ -1141,7 +1130,6 @@ function ConnectionSettingsModal({
     setShowAbsenceValidation(false);
     setForm({
       name: connection.name,
-      defaultDepartmentId: connection.defaultDepartmentId ?? null,
       color: connection.color || "#22c55e",
       welcomeEnabled: connection.welcomeEnabled ?? false,
       welcomeNewMessage: connection.welcomeNewMessage ?? "",
@@ -1454,27 +1442,6 @@ function ConnectionSettingsModal({
                       <TimezoneSelect value={timezone} onChange={setTimezone} />
                     </Field>
                   </div>
-                  <Field label="Departamento Padrão">
-                    <Select
-                      value={form.defaultDepartmentId ?? ""}
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          defaultDepartmentId: event.target.value || null,
-                        })
-                      }
-                    >
-                      <option value="">- Selecione um departamento -</option>
-                      {sortByOptionLabel(
-                        departments.filter((department) => department.active),
-                        (department) => department.name,
-                      ).map((department) => (
-                        <option key={department.id} value={department.id}>
-                          {department.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
                 </div>
               </div>
               <div className="space-y-3">

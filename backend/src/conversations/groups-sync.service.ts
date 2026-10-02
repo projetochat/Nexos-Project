@@ -148,7 +148,7 @@ export class GroupsSyncService implements OnModuleDestroy {
       try {
         const departmentId = await this.groupDepartmentId(
           input.tenantId,
-          connection.defaultDepartmentId,
+          connection.id,
           input.departmentIds,
         );
         const groups = await this.evolution.fetchGroups({
@@ -551,23 +551,14 @@ export class GroupsSyncService implements OnModuleDestroy {
 
   private async groupDepartmentId(
     tenantId: string,
-    preferredDepartmentId: string | null,
+    connectionId: string,
     allowedDepartmentIds?: string[],
   ) {
-    if (
-      preferredDepartmentId &&
-      (!allowedDepartmentIds || allowedDepartmentIds.includes(preferredDepartmentId))
-    ) {
-      const preferred = await this.prisma.department.findFirst({
-        where: { id: preferredDepartmentId, tenantId, active: true },
-        select: { id: true },
-      });
-      if (preferred) return preferred.id;
-    }
     const department = await this.prisma.department.findFirst({
       where: {
         tenantId,
         active: true,
+        connections: { some: { connectionId } },
         ...(allowedDepartmentIds ? { id: { in: allowedDepartmentIds } } : {}),
       },
       orderBy: { createdAt: "asc" },

@@ -20,6 +20,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import type { Prisma } from "../generated/prisma";
+import { roleChatScopes } from "../auth/connection-access";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { UpdateRoleDto } from "./dto/update-role.dto";
@@ -55,6 +56,13 @@ export class RolesController {
     const connectionIds = current.roleKey === "tenant_admin" ? null : (current.connectionIds ?? []);
     const departmentIds =
       current.roleKey === "tenant_admin" ? null : (current.chatDepartmentIds ?? []);
+    const editorScopes =
+      current.chatScopes ??
+      (current.connectionIds ?? []).map((connectionId) => ({
+        connectionId,
+        departmentIds: current.chatDepartmentIds ?? [],
+        favoriteDepartmentId: null,
+      }));
     const [connections, departments] = await Promise.all([
       this.prisma.messagingConnection.findMany({
         where: {
@@ -64,7 +72,19 @@ export class RolesController {
           ...(connectionIds === null ? {} : { id: { in: connectionIds } }),
         },
         orderBy: { name: "asc" },
-        select: { id: true, name: true, status: true },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          departments: {
+            where: { department: { active: true } },
+            select: {
+              department: {
+                select: { id: true, name: true, description: true, color: true, icon: true },
+              },
+            },
+          },
+        },
       }),
       this.prisma.department.findMany({
         where: {
@@ -78,8 +98,20 @@ export class RolesController {
     ]);
     return {
       connections: connections.map((connection) => ({
-        ...connection,
+        id: connection.id,
+        name: connection.name,
         status: connection.status.toLowerCase(),
+        departments: (connection.departments ?? [])
+          .map(({ department }) => department)
+          .filter(
+            (department) =>
+              current.roleKey === "tenant_admin" ||
+              editorScopes.some(
+                (scope) =>
+                  scope.connectionId === connection.id &&
+                  scope.departmentIds.includes(department.id),
+              ),
+          ),
       })),
       departments,
     };
@@ -270,10 +302,12 @@ export class RolesController {
     const requestedMetadata = metadata as {
       connectionIds?: unknown;
       departmentIds?: unknown;
+      chatScopes?: unknown;
     };
     const existing = (existingMetadata ?? {}) as {
       connectionIds?: unknown;
       departmentIds?: unknown;
+      chatScopes?: unknown;
     };
     await this.assertScopeIds(
       {
@@ -301,6 +335,100 @@ export class RolesController {
       },
       current,
     );
+    await this.assertChatScopes(requestedMetadata.chatScopes, existing.chatScopes, current);
+  }
+
+  private async assertChatScopes(
+    requestedValue: unknown,
+    existingValue: unknown,
+    current: AuthenticatedUser,
+  ) {
+    if (requestedValue === undefined) return;
+    if (!Array.isArray(requestedValue)) {
+      throw new BadRequestException("Visualização do atendimento inválida.");
+    }
+    for (const item of requestedValue) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        throw new BadRequestException("Visualização do atendimento inválida.");
+      }
+      const raw = item as Record<string, unknown>;
+      if (
+        typeof raw.connectionId !== "string" ||
+        !Array.isArray(raw.departmentIds) ||
+        raw.departmentIds.some((id) => typeof id !== "string") ||
+        !(
+          raw.favoriteDepartmentId === null ||
+          raw.favoriteDepartmentId === undefined ||
+          typeof raw.favoriteDepartmentId === "string"
+        )
+      ) {
+        throw new BadRequestException("Visualização do atendimento inválida.");
+      }
+      if (
+        typeof raw.favoriteDepartmentId === "string" &&
+        !raw.departmentIds.includes(raw.favoriteDepartmentId)
+      ) {
+        throw new BadRequestException("O departamento favorito precisa estar liberado.");
+      }
+    }
+    const parse = (value: unknown) =>
+      roleChatScopes({ key: "custom", metadata: { chatScopes: value } });
+    const requested = parse(requestedValue);
+    if (requested.length !== requestedValue.length) {
+      throw new BadRequestException("Visualização do atendimento inválida.");
+    }
+    const connectionIds = requested.map((scope) => scope.connectionId);
+    if (new Set(connectionIds).size !== connectionIds.length) {
+      throw new BadRequestException("Cada instância pode aparecer apenas uma vez no perfil.");
+    }
+    for (const scope of requested) {
+      const linked = await this.prisma.departmentConnection.count({
+        where: {
+          tenantId: current.tenantId,
+          connectionId: scope.connectionId,
+          departmentId: { in: scope.departmentIds },
+          department: { active: true },
+          connection: { archivedAt: null },
+        },
+      });
+      if (linked !== new Set(scope.departmentIds).size) {
+        throw new BadRequestException(
+          "Há um departamento que não está vinculado à instância selecionada.",
+        );
+      }
+    }
+    if (current.roleKey === "tenant_admin") return;
+    const currentScopes =
+      current.chatScopes ??
+      (current.connectionIds ?? []).map((connectionId) => ({
+        connectionId,
+        departmentIds: current.chatDepartmentIds ?? [],
+        favoriteDepartmentId: null,
+      }));
+    const allowedPairs = new Set(
+      currentScopes.flatMap((scope) =>
+        scope.departmentIds.map((departmentId) => `${scope.connectionId}:${departmentId}`),
+      ),
+    );
+    const existingPairs = new Set(
+      parse(existingValue).flatMap((scope) =>
+        scope.departmentIds.map((departmentId) => `${scope.connectionId}:${departmentId}`),
+      ),
+    );
+    const requestedPairs = new Set(
+      requested.flatMap((scope) =>
+        scope.departmentIds.map((departmentId) => `${scope.connectionId}:${departmentId}`),
+      ),
+    );
+    const changed = [
+      ...[...requestedPairs].filter((pair) => !existingPairs.has(pair)),
+      ...[...existingPairs].filter((pair) => !requestedPairs.has(pair)),
+    ];
+    if (changed.some((pair) => !allowedPairs.has(pair))) {
+      throw new ForbiddenException(
+        "Você não pode alterar uma visualização fora do seu próprio escopo.",
+      );
+    }
   }
 
   private async assertScopeIds(

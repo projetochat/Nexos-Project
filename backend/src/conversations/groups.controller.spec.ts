@@ -121,10 +121,17 @@ describe("GroupsController", () => {
     };
     const controller = new GroupsController(prisma as never, {} as never, {} as never);
 
-    const departmentId = await controller["resolveGroupDepartmentId"]("department-preferred", {
+    const departmentId = await controller["resolveGroupDepartmentId"]("connection-a", {
       ...current,
       roleKey: "agent",
       chatDepartmentIds: ["department-preferred"],
+      chatScopes: [
+        {
+          connectionId: "connection-a",
+          departmentIds: ["department-preferred"],
+          favoriteDepartmentId: "department-preferred",
+        },
+      ],
     } as never);
 
     expect(departmentId).toBe("department-preferred");
@@ -134,6 +141,7 @@ describe("GroupsController", () => {
         AND: [{ id: "department-preferred" }, { id: { in: ["department-preferred"] } }],
         tenantId: "tenant-a",
         active: true,
+        connections: { some: { connectionId: "connection-a" } },
       },
       select: { id: true },
     });
@@ -148,14 +156,19 @@ describe("GroupsController", () => {
     const controller = new GroupsController(prisma as never, {} as never, {} as never);
 
     await expect(
-      controller["resolveGroupDepartmentId"]("department-preferred", {
+      controller["resolveGroupDepartmentId"]("connection-a", {
         ...current,
         roleKey: "agent",
         chatDepartmentIds: ["department-allowed"],
+        chatScopes: [
+          {
+            connectionId: "connection-a",
+            departmentIds: ["department-allowed"],
+            favoriteDepartmentId: "department-preferred",
+          },
+        ],
       } as never),
-    ).rejects.toThrow(
-      "O departamento padrão da instância não está disponível para este perfil no Chat.",
-    );
+    ).rejects.toThrow("O departamento principal não está disponível para este perfil no Chat.");
 
     expect(prisma.department.findFirst).toHaveBeenCalledOnce();
     expect(prisma.department.findFirst).toHaveBeenCalledWith({
@@ -163,6 +176,7 @@ describe("GroupsController", () => {
         AND: [{ id: "department-preferred" }, { id: { in: ["department-allowed"] } }],
         tenantId: "tenant-a",
         active: true,
+        connections: { some: { connectionId: "connection-a" } },
       },
       select: { id: true },
     });
@@ -176,7 +190,7 @@ describe("GroupsController", () => {
     };
     const controller = new GroupsController(prisma as never, {} as never, {} as never);
 
-    const departmentId = await controller["resolveGroupDepartmentId"](null, {
+    const departmentId = await controller["resolveGroupDepartmentId"]("connection-a", {
       ...current,
       roleKey: "agent",
       chatDepartmentIds: ["department-fallback"],
@@ -189,6 +203,7 @@ describe("GroupsController", () => {
         tenantId: "tenant-a",
         active: true,
         id: { in: ["department-fallback"] },
+        connections: { some: { connectionId: "connection-a" } },
       },
       orderBy: { createdAt: "asc" },
       select: { id: true },
@@ -291,8 +306,10 @@ describe("GroupsController", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           AND: expect.arrayContaining([
-            { connectionId: { in: ["connection-a"] } },
-            { departmentId: { in: ["department-a"] } },
+            {
+              connectionId: { in: ["connection-a"] },
+              departmentId: { in: ["department-a"] },
+            },
           ]),
         }),
       }),

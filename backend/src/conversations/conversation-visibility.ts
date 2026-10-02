@@ -1,6 +1,6 @@
 import type { Prisma } from "../generated/prisma";
 import type { AuthenticatedUser } from "../auth/auth.types";
-import { connectionAccess, departmentAccess } from "../auth/connection-access";
+import { conversationChatScopeAccess } from "../auth/connection-access";
 
 /**
  * Escopo único para listas, detalhes, mensagens e notificações de conversas.
@@ -10,19 +10,34 @@ import { connectionAccess, departmentAccess } from "../auth/connection-access";
 export function conversationVisibilityWhere(
   current: Pick<
     AuthenticatedUser,
-    "roleKey" | "connectionIds" | "chatDepartmentIds" | "permissions" | "membershipId"
+    | "roleKey"
+    | "chatScopes"
+    | "connectionIds"
+    | "chatDepartmentIds"
+    | "permissions"
+    | "membershipId"
   >,
 ): Prisma.ConversationWhereInput {
-  const instanceScope = connectionAccess(current);
-  const departmentScope = departmentAccess(current);
-  const chatScope = { ...instanceScope, ...departmentScope };
+  const chatScope = conversationChatScopeAccess(current);
   if (current.permissions?.includes("chat.conversations.view_all_active")) {
     return chatScope;
   }
+  if (current.roleKey !== "tenant_admin" && current.chatScopes === undefined) {
+    return {
+      AND: [
+        { connectionId: { in: current.connectionIds ?? [] } },
+        ...(current.chatDepartmentIds === undefined
+          ? []
+          : [{ departmentId: { in: current.chatDepartmentIds ?? [] } }]),
+        {
+          OR: [{ assignedMembershipId: current.membershipId }, { assignedMembershipId: null }],
+        },
+      ],
+    };
+  }
   return {
     AND: [
-      instanceScope,
-      ...(Object.keys(departmentScope).length ? [departmentScope] : []),
+      chatScope,
       {
         OR: [{ assignedMembershipId: current.membershipId }, { assignedMembershipId: null }],
       },

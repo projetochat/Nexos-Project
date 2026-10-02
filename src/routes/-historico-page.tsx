@@ -189,6 +189,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
     try {
       const created = await conversationApi.create({
         contactId: active.contact_id,
+        connectionId: active.connection_id,
         departmentId: active.department_id,
         assignToSelf: true,
         firstMessagePreview: active.lastMessagePreview,

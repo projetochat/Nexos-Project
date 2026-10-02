@@ -5,7 +5,6 @@ import {
   IsBoolean,
   IsOptional,
   IsString,
-  IsUUID,
   MaxLength,
   MinLength,
   ValidateNested,
@@ -15,10 +14,6 @@ import { ServiceHoursDto } from "./service-hours.dto";
 import { QuickReplyAttachmentDto } from "../../quick-replies/dto/quick-reply-message.dto";
 
 export class UpdateMessagingConnectionDto {
-  @IsOptional()
-  @IsUUID()
-  defaultDepartmentId?: string | null;
-
   @IsOptional()
   @IsBoolean()
   serviceEnabled?: boolean;

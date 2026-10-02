@@ -26,7 +26,7 @@ import { resolveMessageTemplate } from "./message-template";
 import { selectAutomaticReply } from "./automatic-reply";
 import { conversationQueueForNotification } from "../conversations/conversation-queue-scope";
 import { effectivePermissions } from "../auth/effective-permissions";
-import { roleChatDepartmentIds, roleConnectionIds } from "../auth/connection-access";
+import { roleChatScopes } from "../auth/connection-access";
 
 @Injectable()
 export class MessagingInboundService {
@@ -113,8 +113,6 @@ export class MessagingInboundService {
         },
         orderBy: { updatedAt: "desc" },
       });
-      const defaultDepartmentId =
-        existingContact?.departmentId ?? (await this.defaultDepartmentId(tx, event.tenantId));
       const contact = existingContact
         ? await tx.contact.update({
             where: { tenantId_id: { tenantId: event.tenantId, id: existingContact.id } },
@@ -125,8 +123,10 @@ export class MessagingInboundService {
                   ? groupDisplayName
                   : existingContact.name
                 : undefined,
-              departmentId: existingContact.departmentId ?? defaultDepartmentId,
               instance: connection.externalReference ?? existingContact.instance,
+              instanceIds: Array.from(
+                new Set([...(existingContact.instanceIds ?? []), connection.id]),
+              ),
             },
           })
         : await tx.contact.upsert({
@@ -143,8 +143,8 @@ export class MessagingInboundService {
                   ? undefined
                   : (event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone),
               phone: isGroup ? event.externalChatId : event.sender.phone,
-              departmentId: defaultDepartmentId,
               instance: connection.externalReference,
+              instanceIds: [connection.id],
               archivedAt: null,
             },
             create: {
@@ -154,19 +154,12 @@ export class MessagingInboundService {
                 : (event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone),
               phone: isGroup ? event.externalChatId : event.sender.phone,
               normalizedPhone: canonicalPhone,
-              departmentId: defaultDepartmentId,
               instance: connection.externalReference,
+              instanceIds: [connection.id],
             },
           });
 
-      const initialConversationDepartmentId = historical
-        ? (contact.departmentId ?? null)
-        : await this.initialConversationDepartmentId(
-            tx,
-            event.tenantId,
-            connection.defaultDepartmentId,
-            contact.departmentId ?? null,
-          );
+      const initialConversationDepartmentId = historical ? (contact.departmentId ?? null) : null;
 
       const conversationResult = await this.findOrCreateConversation(
         tx,
@@ -783,29 +776,6 @@ export class MessagingInboundService {
     return { conversation: created, created: true };
   }
 
-  private async defaultDepartmentId(tx: Prisma.TransactionClient, tenantId: string) {
-    const department = await tx.department.findFirst({
-      where: { tenantId, active: true },
-      orderBy: { createdAt: "asc" },
-      select: { id: true },
-    });
-    return department?.id ?? null;
-  }
-
-  private async initialConversationDepartmentId(
-    tx: Prisma.TransactionClient,
-    tenantId: string,
-    configuredDepartmentId: string | null,
-    fallbackDepartmentId: string | null,
-  ) {
-    if (!configuredDepartmentId) return fallbackDepartmentId;
-    const department = await tx.department.findFirst({
-      where: { id: configuredDepartmentId, tenantId, active: true },
-      select: { id: true },
-    });
-    return department?.id ?? fallbackDepartmentId;
-  }
-
   private async notifyLeadCreated(
     tx: Prisma.TransactionClient,
     input: {
@@ -838,12 +808,10 @@ export class MessagingInboundService {
       .filter(({ role }) => {
         if (role.key === "tenant_admin") return true;
         if (!effectivePermissions(role).includes("conversations.read")) return false;
-        if (!input.connectionId || !(roleConnectionIds(role) ?? []).includes(input.connectionId)) {
-          return false;
-        }
-        return Boolean(
-          input.departmentId && (roleChatDepartmentIds(role) ?? []).includes(input.departmentId),
-        );
+        if (!input.connectionId) return false;
+        const scope = roleChatScopes(role).find((item) => item.connectionId === input.connectionId);
+        if (!scope) return false;
+        return input.departmentId === null || scope.departmentIds.includes(input.departmentId);
       })
       .slice(0, 50);
     const uniqueRecipients = [...new Set(recipients.map((item) => item.id))];

@@ -91,12 +91,26 @@ export type ApiDepartment = {
   name: string;
   description: string | null;
   color: string;
+  icon: DepartmentIcon;
+  connectionIds: string[];
+  favoriteConnectionIds?: string[];
   active: boolean;
   createdAt?: string;
   updatedAt?: string;
   memberCount?: number;
   openConversationCount?: number;
 };
+
+export type DepartmentIcon =
+  | "department"
+  | "shopping-cart"
+  | "dollar-sign"
+  | "credit-card"
+  | "truck"
+  | "package"
+  | "receipt"
+  | "headset"
+  | "monitor";
 
 export type ApiRole = {
   id: string;
@@ -533,7 +547,6 @@ export type ApiMessagingConnection = {
   timezone?: string;
   id: string;
   tenantId: string;
-  defaultDepartmentId?: string | null;
   name: string;
   providerType: "development" | "evolution" | "meta_cloud";
   status: "disconnected" | "connecting" | "connected" | "error" | "removed";
@@ -1109,11 +1122,27 @@ export const organizationApi = {
   listFinancialPayments: () => apiRequest<ApiFinancialPayment[]>("/company/financial"),
   listDepartments: () => apiRequest<ApiDepartment[]>("/departments"),
   listChatDepartments: () => apiRequest<ApiDepartment[]>("/departments/chat-scope"),
-  createDepartment: (data: { name: string; description?: string | null; color?: string }) =>
-    apiRequest<ApiDepartment>("/departments", { method: "POST", body: JSON.stringify(data) }),
+  departmentConnectionOptions: () =>
+    apiRequest<Array<Pick<ApiMessagingConnection, "id" | "name" | "status" | "color" | "logoUrl">>>(
+      "/departments/connection-options",
+    ),
+  createDepartment: (data: {
+    name: string;
+    description?: string | null;
+    color?: string;
+    icon?: DepartmentIcon;
+    connectionIds: string[];
+  }) => apiRequest<ApiDepartment>("/departments", { method: "POST", body: JSON.stringify(data) }),
   updateDepartment: (
     id: string,
-    data: { name?: string; description?: string | null; color?: string; active?: boolean },
+    data: {
+      name?: string;
+      description?: string | null;
+      color?: string;
+      icon?: DepartmentIcon;
+      connectionIds?: string[];
+      active?: boolean;
+    },
   ) =>
     apiRequest<ApiDepartment>(`/departments/${id}`, {
       method: "PATCH",
@@ -1125,7 +1154,12 @@ export const organizationApi = {
   listRoles: () => apiRequest<ApiRole[]>("/roles"),
   roleScopeOptions: () =>
     apiRequest<{
-      connections: Array<{ id: string; name: string; status: string }>;
+      connections: Array<{
+        id: string;
+        name: string;
+        status: string;
+        departments: Array<Pick<ApiDepartment, "id" | "name" | "description" | "color" | "icon">>;
+      }>;
       departments: Array<Pick<ApiDepartment, "id" | "name">>;
     }>("/roles/scope-options"),
   createRole: (data: {
@@ -1139,7 +1173,6 @@ export const organizationApi = {
     id: string,
     data: {
       name?: string;
-      defaultDepartmentId?: string | null;
       description?: string | null;
       permissionIds?: string[];
       metadata?: unknown;
@@ -1494,7 +1527,12 @@ export const conversationApi = {
     }),
   assign: (
     id: string,
-    data: { membershipId?: string | null; self?: boolean; unassign?: boolean },
+    data: {
+      membershipId?: string | null;
+      departmentId?: string | null;
+      self?: boolean;
+      unassign?: boolean;
+    },
   ) =>
     apiRequest<ApiConversation>(`/conversations/${id}/assignee`, {
       method: "PATCH",
