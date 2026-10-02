@@ -14,4 +14,13 @@ describe("Gerenciar Grupos performance contract", () => {
 
     expect(source).toContain("/groups/summary");
   });
+
+  it("separates permission to leave a group from permission to edit it", () => {
+    const source = readFileSync(new URL("./grupos.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain('const canLeave = permissions.includes("groups.leave")');
+    expect(source).toContain("canEdit={canUpdate}");
+    expect(source).toContain("onLeave={canLeave ?");
+    expect(source).toContain("{canLeave && (");
+  });
 });

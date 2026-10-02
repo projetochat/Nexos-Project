@@ -1320,7 +1320,7 @@ export class CrmController {
     if (
       dto.customerId !== undefined &&
       dto.customerId !== currentContact.customerId &&
-      !current.permissions?.includes("chat.customer_link.edit")
+      !current.permissions?.includes("contacts.update")
     ) {
       throw new ForbiddenException("Permissão insuficiente para alterar o cliente vinculado.");
     }
@@ -1415,7 +1415,7 @@ export class CrmController {
   }
 
   @Patch("contacts/:id/customer")
-  @RequirePermissions("chat.customer_link.edit")
+  @RequirePermissions("contacts.update")
   async updateContactCustomer(
     @Param("id") id: string,
     @Body() dto: { customerId?: string | null },

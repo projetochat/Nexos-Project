@@ -87,6 +87,10 @@ describe("RolesController permission delegation", () => {
         { permissionId: "chat.contacts.create" },
         { permissionId: "chat.contacts.edit" },
         { permissionId: "chat.tickets.create" },
+        { permissionId: "chat.contacts.read" },
+        { permissionId: "chat.customer_link.edit" },
+        { permissionId: "chat.contacts.block" },
+        { permissionId: "conversations.manage" },
       ],
     };
     const createMany = vi.fn();
@@ -118,6 +122,10 @@ describe("RolesController permission delegation", () => {
           "chat.contacts.create",
           "chat.contacts.edit",
           "chat.tickets.create",
+          "chat.contacts.read",
+          "chat.customer_link.edit",
+          "chat.contacts.block",
+          "conversations.manage",
         ],
       },
       { ...current, roleKey: "tenant_admin" } as never,
@@ -132,6 +140,7 @@ describe("RolesController permission delegation", () => {
         { roleId: "role-a", permissionId: "contacts.update" },
         { roleId: "role-a", permissionId: "tickets.read" },
         { roleId: "role-a", permissionId: "tickets.create" },
+        { roleId: "role-a", permissionId: "conversations.assign" },
       ],
       skipDuplicates: true,
     });
@@ -143,6 +152,7 @@ describe("RolesController permission delegation", () => {
       "contacts.update",
       "tickets.read",
       "tickets.create",
+      "conversations.assign",
     ]);
   });
 

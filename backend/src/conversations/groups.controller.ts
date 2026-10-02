@@ -640,7 +640,7 @@ export class GroupsController {
   }
 
   @Post(":id/leave")
-  @RequirePermissions("groups.update")
+  @RequirePermissions("groups.leave")
   async leave(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const group = await this.resolveManagedGroup(id, current);
     await this.evolution.leaveGroup({

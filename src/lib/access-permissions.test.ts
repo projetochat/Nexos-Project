@@ -10,6 +10,11 @@ describe("effectiveSessionPermissions", () => {
     expect(permissions).toContain("roles.create");
     expect(permissions).toContain("roles.update");
     expect(permissions).toContain("settings.manage");
+    expect(permissions).toContain("groups.leave");
+    expect(permissions).not.toContain("conversations.manage");
+    expect(permissions).not.toContain("chat.contacts.read");
+    expect(permissions).not.toContain("chat.customer_link.edit");
+    expect(permissions).not.toContain("chat.contacts.block");
   });
 
   it("does not elevate a regular user", () => {

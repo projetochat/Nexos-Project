@@ -27,7 +27,7 @@ export class ContactActionsController {
   ) {}
 
   @Post(":id/contact/block")
-  @RequirePermissions("chat.contacts.block")
+  @RequirePermissions("conversations.read", "contacts.update")
   async blockContact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const conversation = await this.prisma.conversation.findFirst({
       where: {

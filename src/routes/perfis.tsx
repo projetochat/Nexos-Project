@@ -12,7 +12,7 @@ import { selectableConnections } from "@/lib/connection-options";
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, ShieldCheck, Check, Copy } from "lucide-react";
+import { Plus, Pencil, Trash2, ShieldCheck, Check, Copy, Info } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -125,16 +125,6 @@ const PERMISSION_GROUPS: Array<{
         description: "Permite transferir conversa para fila, atendente ou departamento.",
       },
       {
-        id: "conversations.manage",
-        label: "Gerenciar conversas",
-        description: "Permite executar operações administrativas em conversas.",
-      },
-      {
-        id: "chat.contacts.read",
-        label: "Ver contatos no chat",
-        description: "Permite visualizar os dados dos contatos no chat.",
-      },
-      {
         id: "chat.phone.read",
         label: "Ver telefone",
         description: "Permite visualizar o telefone dos contatos no chat.",
@@ -163,16 +153,6 @@ const PERMISSION_GROUPS: Array<{
       },
       { id: "contacts.delete", label: "Excluir", description: "Permite excluir os contatos." },
       {
-        id: "chat.customer_link.edit",
-        label: "Alterar cliente vinculado",
-        description: "Permite alterar o cliente vinculado à conversa.",
-      },
-      {
-        id: "chat.contacts.block",
-        label: "Bloquear contatos",
-        description: "Permite bloquear contatos a partir do chat.",
-      },
-      {
         id: "contacts.additional_fields.read",
         label: "Ver campos adicionais",
         description: "Permite visualizar os campos adicionais dos contatos.",
@@ -193,6 +173,11 @@ const PERMISSION_GROUPS: Array<{
         id: "groups.update",
         label: "Editar",
         description: "Permite editar grupos e seus participantes.",
+      },
+      {
+        id: "groups.leave",
+        label: "Sair",
+        description: "Permite sair de grupos do WhatsApp.",
       },
     ],
   },
@@ -1082,6 +1067,19 @@ function ScopeSettings({
 
   return (
     <section className="space-y-4">
+      <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 px-4 py-3 text-sm text-foreground">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" aria-hidden="true" />
+        <div>
+          <p className="font-semibold">Escopo do Chat</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Instâncias definem em quais canais este perfil pode atuar no Chat. Departamentos
+            identificam as equipes relacionadas ao perfil, mas atualmente não limitam a criação nem
+            a visualização de conversas. As permissões abaixo definem quais ações podem ser
+            realizadas.
+          </p>
+        </div>
+      </div>
+
       <SelectionSection
         title="Instâncias"
         ids={connectionIds}
@@ -1193,7 +1191,12 @@ function SelectionSection({
           {emptyLabel}
         </p>
       ) : (
-        <div className="grid sm:grid-cols-2 [&>*]:border-t [&>*]:border-border sm:[&>*:nth-child(odd)]:border-r">
+        <div
+          className={cn(
+            "grid [&>*]:border-t [&>*]:border-border",
+            ids.length === 1 ? "sm:grid-cols-1" : "sm:grid-cols-2 sm:[&>*:nth-child(odd)]:border-r",
+          )}
+        >
           {children}
         </div>
       )}
@@ -1249,7 +1252,10 @@ function PermissionGroupBlock({
           return (
             <div
               key={permission.id}
-              className="border-t border-border sm:[&:nth-child(odd)]:border-r"
+              className={cn(
+                "border-t border-border",
+                group.items.length === 1 ? "sm:col-span-2" : "sm:[&:nth-child(odd)]:border-r",
+              )}
             >
               <PermissionSwitch
                 label={permission.label}

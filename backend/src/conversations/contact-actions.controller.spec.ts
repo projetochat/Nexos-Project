@@ -15,7 +15,7 @@ const current = {
   roleKey: "agent",
   platformRole: "USER",
   connectionIds: ["connection-a"],
-  permissions: ["chat.contacts.block"],
+  permissions: ["conversations.read", "contacts.update"],
 };
 
 function directConversation() {

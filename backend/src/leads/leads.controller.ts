@@ -95,7 +95,7 @@ export class LeadsController {
   }
 
   @Patch(":id/assign")
-  @RequirePermissions("conversations.manage")
+  @RequirePermissions("conversations.assign")
   async assign(
     @Param("id") id: string,
     @Body() dto: AssignLeadDto,

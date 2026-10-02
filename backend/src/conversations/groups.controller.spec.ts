@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ConversationType, MessagingConnectionStatus } from "../generated/prisma";
+import { PERMISSIONS_KEY } from "../auth/permissions.decorator";
 import { GroupsController } from "./groups.controller";
 
 const current = {
@@ -55,6 +56,17 @@ const baseGroup = {
 };
 
 describe("GroupsController", () => {
+  it("separates leaving a group from editing it", () => {
+    const leave = Object.getOwnPropertyDescriptor(GroupsController.prototype, "leave")?.value;
+    const updateName = Object.getOwnPropertyDescriptor(
+      GroupsController.prototype,
+      "updateName",
+    )?.value;
+
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, leave)).toEqual(["groups.leave"]);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, updateName)).toEqual(["groups.update"]);
+  });
+
   it("keeps manual group synchronization available through the sync endpoint", async () => {
     const groupsSync = {
       sync: vi.fn().mockResolvedValue({

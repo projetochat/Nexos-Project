@@ -29,15 +29,11 @@ function permissionLabel(permission: string) {
   const specificLabels: Record<string, string> = {
     "conversations.read": "Ver conversas",
     "conversations.assign": "Transferir conversas",
-    "conversations.manage": "Gerenciar conversas",
     "messages.send": "Enviar mensagens",
-    "chat.contacts.read": "Ver contatos no chat",
-    "chat.contacts.block": "Bloquear contatos",
     "chat.phone.read": "Ver telefone",
     "chat.messages.edit": "Editar mensagens",
     "chat.messages.delete": "Apagar mensagens",
     "chat.agent_name.show": "Assinar mensagem",
-    "chat.customer_link.edit": "Alterar cliente vinculado",
     "chat.tags.use": "Utilizar etiquetas",
     "chat.conversations.view_all_active": "Ver todas as conversas",
     "contacts.additional_fields.read": "Ver campos adicionais",
@@ -63,6 +59,7 @@ function permissionLabel(permission: string) {
     start: "Iniciar",
     pause: "Pausar",
     cancel: "Cancelar",
+    leave: "Sair",
     duplicate: "Duplicar",
     view_all_active: "Ver todas as conversas",
   };
@@ -73,8 +70,6 @@ function permissionGroupTitle(permission: string) {
   if (permission === "history.read") return "Chat";
   if (permission.startsWith("chat.quick_replies.")) return "Mensagens Rápidas";
   if (permission.startsWith("chat.tags.")) return "Etiquetas";
-  if (permission.startsWith("chat.contacts.") || permission === "chat.customer_link.edit")
-    return "Contatos";
   const root = permission.split(".")[0] ?? permission;
   return PERMISSION_GROUP_LABELS[root] ?? "Outras permissões";
 }
@@ -84,8 +79,12 @@ function groupedRolePermissions(role: ApiRole) {
   const deprecatedChatPermissions = new Set([
     "chat.contacts.edit",
     "chat.contacts.create",
+    "chat.contacts.read",
+    "chat.contacts.block",
+    "chat.customer_link.edit",
     "chat.audio.send",
     "chat.tickets.create",
+    "conversations.manage",
   ]);
   for (const permission of role.permissionIds.filter(
     (permission) => !deprecatedChatPermissions.has(permission),

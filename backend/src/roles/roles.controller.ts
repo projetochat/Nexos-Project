@@ -347,20 +347,16 @@ const PERMISSION_DEPENDENCIES: Record<string, readonly string[]> = {
   ],
   "conversations.read": [
     "conversations.assign",
-    "conversations.manage",
     "messages.send",
-    "chat.contacts.read",
     "chat.phone.read",
-    "chat.customer_link.edit",
     "chat.tags.use",
-    "chat.contacts.block",
     "chat.messages.delete",
     "chat.messages.edit",
     "chat.agent_name.show",
     "chat.conversations.view_all_active",
   ],
   "connections.read": ["connections.create", "connections.update", "connections.delete"],
-  "groups.read": ["groups.create", "groups.update"],
+  "groups.read": ["groups.create", "groups.update", "groups.leave"],
   "chat.tags.read": ["chat.tags.use", "chat.tags.create", "chat.tags.update", "chat.tags.delete"],
   "chat.quick_replies.read": [
     "chat.quick_replies.create",
@@ -379,7 +375,11 @@ const LEGACY_PERMISSION_REPLACEMENTS: Record<string, readonly string[]> = {
   "chat.audio.send": ["messages.send"],
   "chat.contacts.create": ["contacts.read", "contacts.create"],
   "chat.contacts.edit": ["contacts.read", "contacts.update"],
+  "chat.contacts.read": ["contacts.read"],
+  "chat.contacts.block": ["conversations.read", "contacts.read", "contacts.update"],
+  "chat.customer_link.edit": ["contacts.read", "contacts.update"],
   "chat.tickets.create": ["tickets.read", "tickets.create"],
+  "conversations.manage": ["messages.send", "conversations.assign"],
 };
 
 function normalizePermissionIds(permissionIds: readonly string[]) {

@@ -150,6 +150,7 @@ function GroupsPage() {
   const canViewChat = permissions.includes("conversations.read");
   const canCreate = permissions.includes("groups.create");
   const canUpdate = permissions.includes("groups.update");
+  const canLeave = permissions.includes("groups.leave");
   const create = useDisclosure();
   const [groups, setGroups] = React.useState<ApiWhatsappGroupSummary[]>([]);
   const [instances, setInstances] = React.useState<ApiContactInstanceOption[]>([]);
@@ -364,7 +365,8 @@ function GroupsPage() {
                   group={group}
                   onOpenChat={canViewChat ? () => void openGroupChat(group) : undefined}
                   onDetail={() => void openGroupDetail(group)}
-                  onLeave={canUpdate ? () => setLeavingGroup(group) : undefined}
+                  canEdit={canUpdate}
+                  onLeave={canLeave ? () => setLeavingGroup(group) : undefined}
                 />
               ))}
             {!loading && groups.length === 0 && (
@@ -446,7 +448,7 @@ function GroupsPage() {
           onOpenChat={canViewChat ? (group) => void openGroupChat(group) : undefined}
           canManage={canUpdate}
         />
-        {canUpdate && (
+        {canLeave && (
           <ConfirmDialog
             open={!!leavingGroup}
             title="Sair do Grupo?"
@@ -489,11 +491,13 @@ function GroupCard({
   group,
   onOpenChat,
   onDetail,
+  canEdit,
   onLeave,
 }: {
   group: ApiWhatsappGroupSummary;
   onOpenChat?: () => void;
   onDetail: () => void;
+  canEdit: boolean;
   onLeave?: () => void;
 }) {
   return (
@@ -544,7 +548,7 @@ function GroupCard({
             <MessageSquareMore className="h-4 w-4" />
           </Button>
         )}
-        {onLeave && (
+        {canEdit && (
           <Button
             variant="ghost"
             size="sm"
