@@ -13,6 +13,139 @@ const current = {
 };
 
 describe("RolesController permission delegation", () => {
+  it("treats a legacy assignment as authority over its canonical replacement", () => {
+    const controller = new RolesController({} as never, {} as never);
+    const assertCanGrantPermissions = (
+      controller as unknown as {
+        assertCanGrantPermissions: (
+          permissionIds: string[],
+          actor: unknown,
+          existingPermissionIds?: string[],
+        ) => void;
+      }
+    ).assertCanGrantPermissions.bind(controller);
+
+    expect(() =>
+      assertCanGrantPermissions(
+        ["messages.send"],
+        { ...current, assignedPermissionIds: ["chat.audio.send"] },
+        [],
+      ),
+    ).not.toThrow();
+  });
+
+  it("returns canonical permissions for roles that still contain legacy chat aliases", async () => {
+    const prisma = {
+      role: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "role-a",
+            tenantId: "tenant-a",
+            key: "custom",
+            name: "Custom",
+            description: null,
+            metadata: {},
+            system: false,
+            createdAt: new Date("2026-10-01T12:00:00.000Z"),
+            updatedAt: new Date("2026-10-01T12:00:00.000Z"),
+            permissions: [
+              { permissionId: "conversations.read" },
+              { permissionId: "chat.audio.send" },
+              { permissionId: "messages.send" },
+              { permissionId: "chat.tickets.create" },
+            ],
+          },
+        ]),
+      },
+    };
+    const controller = new RolesController(prisma as never, {} as never);
+
+    const roles = await controller.list(current as never);
+
+    expect(roles[0]?.permissionIds).toEqual([
+      "conversations.read",
+      "messages.send",
+      "tickets.read",
+      "tickets.create",
+    ]);
+  });
+
+  it("accepts stale legacy aliases and stores only their canonical replacements", async () => {
+    const role = {
+      id: "role-a",
+      tenantId: "tenant-a",
+      key: "custom",
+      name: "Custom",
+      description: null,
+      metadata: {},
+      system: false,
+      createdAt: new Date("2026-10-01T12:00:00.000Z"),
+      updatedAt: new Date("2026-10-01T12:00:00.000Z"),
+      permissions: [
+        { permissionId: "conversations.read" },
+        { permissionId: "chat.audio.send" },
+        { permissionId: "chat.contacts.create" },
+        { permissionId: "chat.contacts.edit" },
+        { permissionId: "chat.tickets.create" },
+      ],
+    };
+    const createMany = vi.fn();
+    const tx = {
+      permission: { upsert: vi.fn() },
+      rolePermission: { deleteMany: vi.fn(), createMany },
+      role: {
+        update: vi.fn().mockImplementation(() => ({
+          ...role,
+          permissions: createMany.mock.calls[0][0].data.map(
+            ({ permissionId }: { permissionId: string }) => ({ permissionId }),
+          ),
+        })),
+      },
+    };
+    const prisma = {
+      role: { findFirst: vi.fn().mockResolvedValue(role) },
+      $transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const realtime = { publish: vi.fn() };
+    const controller = new RolesController(prisma as never, realtime as never);
+
+    const updated = await controller.update(
+      "role-a",
+      {
+        permissionIds: [
+          "conversations.read",
+          "chat.audio.send",
+          "chat.contacts.create",
+          "chat.contacts.edit",
+          "chat.tickets.create",
+        ],
+      },
+      { ...current, roleKey: "tenant_admin" } as never,
+    );
+
+    expect(createMany).toHaveBeenCalledWith({
+      data: [
+        { roleId: "role-a", permissionId: "conversations.read" },
+        { roleId: "role-a", permissionId: "messages.send" },
+        { roleId: "role-a", permissionId: "contacts.read" },
+        { roleId: "role-a", permissionId: "contacts.create" },
+        { roleId: "role-a", permissionId: "contacts.update" },
+        { roleId: "role-a", permissionId: "tickets.read" },
+        { roleId: "role-a", permissionId: "tickets.create" },
+      ],
+      skipDuplicates: true,
+    });
+    expect(updated.permissionIds).toEqual([
+      "conversations.read",
+      "messages.send",
+      "contacts.read",
+      "contacts.create",
+      "contacts.update",
+      "tickets.read",
+      "tickets.create",
+    ]);
+  });
+
   it("uses the assigned permissions, not the temporarily expanded runtime catalog", async () => {
     const prisma = { messagingConnection: { count: vi.fn() } };
     const controller = new RolesController(prisma as never, {} as never);

@@ -59,9 +59,10 @@ export class RolesController {
   @Post("roles")
   @RequirePermissions("roles.create")
   async create(@Body() dto: CreateRoleDto, @CurrentUser() current: AuthenticatedUser) {
-    this.assertPermissions(dto.permissionIds);
-    this.assertPermissionDependencies(dto.permissionIds);
-    this.assertCanGrantPermissions(dto.permissionIds, current);
+    const permissionIds = normalizePermissionIds(dto.permissionIds);
+    this.assertPermissions(permissionIds);
+    this.assertPermissionDependencies(permissionIds);
+    this.assertCanGrantPermissions(permissionIds, current);
     await this.assertMetadataScope(dto.metadata, current);
     const name = dto.name.trim();
     const key = (dto.key ?? name)
@@ -78,7 +79,7 @@ export class RolesController {
 
     const role = await this.prisma.$transaction(async (tx) => {
       await this.ensureNameAvailable(tx, current.tenantId, name);
-      await this.ensurePermissions(tx, dto.permissionIds);
+      await this.ensurePermissions(tx, permissionIds);
       return tx.role.create({
         data: {
           tenantId: current.tenantId,
@@ -89,7 +90,7 @@ export class RolesController {
             dto.metadata === undefined ? undefined : JSON.parse(JSON.stringify(dto.metadata)),
           system: false,
           permissions: {
-            create: [...new Set(dto.permissionIds)].map((permissionId) => ({ permissionId })),
+            create: permissionIds.map((permissionId) => ({ permissionId })),
           },
         },
         include: { permissions: true },
@@ -107,18 +108,19 @@ export class RolesController {
   ) {
     const existing = await this.findRoleOrThrow(id, current.tenantId);
     this.assertAdministratorRoleProtected(existing);
+    const permissionIds = dto.permissionIds ? normalizePermissionIds(dto.permissionIds) : undefined;
     if (dto.name !== undefined && normalizeRoleName(dto.name) === "administrador") {
       throw new BadRequestException("O nome Administrador é reservado para gestão do sistema.");
     }
-    if (dto.permissionIds) {
-      this.assertPermissions(dto.permissionIds);
-      this.assertPermissionDependencies(dto.permissionIds);
+    if (permissionIds) {
+      this.assertPermissions(permissionIds);
+      this.assertPermissionDependencies(permissionIds);
     }
-    if (dto.permissionIds) {
+    if (permissionIds) {
       this.assertCanGrantPermissions(
-        dto.permissionIds,
+        permissionIds,
         current,
-        existing.permissions.map((permission) => permission.permissionId),
+        normalizePermissionIds(existing.permissions.map((permission) => permission.permissionId)),
       );
     }
     await this.assertMetadataScope(dto.metadata, current, existing.metadata);
@@ -126,11 +128,11 @@ export class RolesController {
       if (dto.name !== undefined) {
         await this.ensureNameAvailable(tx, current.tenantId, dto.name.trim(), existing.id);
       }
-      if (dto.permissionIds) {
-        await this.ensurePermissions(tx, dto.permissionIds);
+      if (permissionIds) {
+        await this.ensurePermissions(tx, permissionIds);
         await tx.rolePermission.deleteMany({ where: { roleId: existing.id } });
         await tx.rolePermission.createMany({
-          data: [...new Set(dto.permissionIds)].map((permissionId) => ({
+          data: permissionIds.map((permissionId) => ({
             roleId: existing.id,
             permissionId,
           })),
@@ -190,7 +192,9 @@ export class RolesController {
     existingPermissionIds: string[] = [],
   ) {
     if (current.roleKey === "tenant_admin") return;
-    const granted = new Set<string>(current.assignedPermissionIds ?? current.permissions ?? []);
+    const granted = new Set<string>(
+      normalizePermissionIds(current.assignedPermissionIds ?? current.permissions ?? []),
+    );
     const requested = new Set(permissionIds);
     const existing = new Set(existingPermissionIds);
     const changed = [
@@ -323,7 +327,9 @@ export class RolesController {
       system: role.system,
       createdAt: role.createdAt.toISOString(),
       updatedAt: role.updatedAt.toISOString(),
-      permissionIds: role.permissions.map((permission) => permission.permissionId),
+      permissionIds: normalizePermissionIds(
+        role.permissions.map((permission) => permission.permissionId),
+      ),
     };
   }
 }
@@ -368,6 +374,23 @@ const PERMISSION_DEPENDENCIES: Record<string, readonly string[]> = {
   "bot_flows.read": ["bot_flows.create", "bot_flows.update", "bot_flows.delete"],
   "ai_agents.read": ["ai_agents.create", "ai_agents.update", "ai_agents.delete"],
 };
+
+const LEGACY_PERMISSION_REPLACEMENTS: Record<string, readonly string[]> = {
+  "chat.audio.send": ["messages.send"],
+  "chat.contacts.create": ["contacts.read", "contacts.create"],
+  "chat.contacts.edit": ["contacts.read", "contacts.update"],
+  "chat.tickets.create": ["tickets.read", "tickets.create"],
+};
+
+function normalizePermissionIds(permissionIds: readonly string[]) {
+  return [
+    ...new Set(
+      permissionIds.flatMap(
+        (permissionId) => LEGACY_PERMISSION_REPLACEMENTS[permissionId] ?? [permissionId],
+      ),
+    ),
+  ];
+}
 
 function normalizeRoleName(value: string) {
   return value
