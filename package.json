@@ -19,6 +19,7 @@
     "backend:prisma:migrate:status": "node --env-file=.env backend/node_modules/prisma/build/index.js migrate status --schema backend/prisma/schema.prisma",
     "backend:prisma:seed": "node --env-file=.env backend/node_modules/tsx/dist/cli.mjs backend/prisma/seed.ts",
     "backend:reset:homologation": "node --env-file=.env backend/scripts/reset-homologation.mjs",
+    "backend:sanitize:production-data": "node --env-file=.env backend/scripts/sanitize-production-data.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "node scripts/check-eslint-baseline.mjs",

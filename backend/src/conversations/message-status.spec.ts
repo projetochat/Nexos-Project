@@ -13,6 +13,7 @@ describe("message status access", () => {
         tenantId: "tenant",
         roleKey: "agent",
         connectionIds: ["allowed"],
+        permissions: ["chat.conversations.view_all_active"],
       } as never),
     ).rejects.toThrow("Conversa não encontrada");
     expect(prisma.conversation.findFirst).toHaveBeenCalledWith(

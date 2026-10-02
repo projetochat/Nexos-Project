@@ -1,4 +1,4 @@
-import { connectionAccess } from "../auth/connection-access";
+import { conversationVisibilityWhere } from "./conversation-visibility";
 import { withMessagingServiceEnabled } from "../messaging/service-availability";
 import {
   BadRequestException,
@@ -367,10 +367,7 @@ export class MessagesService {
   ) {
     const conversation = await db.conversation.findFirst({
       where: {
-        AND: [
-          { id, tenantId: current.tenantId, archivedAt: null },
-          await this.visibilityWhere(db, current),
-        ],
+        AND: [{ id, tenantId: current.tenantId, archivedAt: null }, this.visibilityWhere(current)],
       },
       include,
     });
@@ -397,11 +394,8 @@ export class MessagesService {
       throw new BadRequestException("Atendente inexistente ou inativo para este tenant.");
   }
 
-  private async visibilityWhere(
-    db: DbClient,
-    current: AuthenticatedUser,
-  ): Promise<Prisma.ConversationWhereInput> {
-    return connectionAccess(current);
+  private visibilityWhere(current: AuthenticatedUser): Prisma.ConversationWhereInput {
+    return conversationVisibilityWhere(current);
   }
 
   private assertCanSend(

@@ -1,4 +1,4 @@
-import { connectionAccess, connectionIdAccess } from "../auth/connection-access";
+import { connectionIdAccess } from "../auth/connection-access";
 import {
   BadRequestException,
   Body,
@@ -16,7 +16,7 @@ import {
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequirePermissions } from "../auth/permissions.decorator";
+import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import {
   ConversationStatus,
@@ -38,6 +38,7 @@ import { TransferDepartmentDto } from "./dto/transfer-department.dto";
 import { UpdateConversationStatusDto } from "./dto/update-conversation-status.dto";
 import { MessagesService } from "./messages.service";
 import { conversationQueueScope } from "./conversation-queue-scope";
+import { conversationVisibilityWhere } from "./conversation-visibility";
 import { BulkCloseConversationsDto } from "./dto/bulk-close-conversations.dto";
 
 const BULK_CLOSE_WRITE_BATCH_SIZE = 500;
@@ -130,7 +131,7 @@ export class ConversationsController {
   }
 
   @Post()
-  @RequirePermissions("conversations.assign")
+  @RequirePermissions("messages.send")
   async create(@Body() dto: CreateConversationDto, @CurrentUser() current: AuthenticatedUser) {
     const contact = await this.prisma.contact.findFirst({
       where: { id: dto.contactId, tenantId: current.tenantId, archivedAt: null },
@@ -259,12 +260,16 @@ export class ConversationsController {
   }
 
   @Patch(":id/assignee")
-  @RequirePermissions("conversations.assign")
+  @RequireAnyPermission("messages.send", "conversations.assign")
   async assign(
     @Param("id") id: string,
     @Body() dto: AssignConversationDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
+    const requiredPermission = dto.self ? "messages.send" : "conversations.assign";
+    if (!current.permissions?.includes(requiredPermission)) {
+      throw new ForbiddenException("Permissão insuficiente.");
+    }
     const conversation = await this.findVisibleConversation(id, current);
     const targetMembershipId = dto.unassign
       ? null
@@ -332,7 +337,7 @@ export class ConversationsController {
   }
 
   @Patch(":id/department")
-  @RequirePermissions("conversations.manage")
+  @RequirePermissions("conversations.assign")
   async transferDepartment(
     @Param("id") id: string,
     @Body() dto: TransferDepartmentDto,
@@ -384,7 +389,7 @@ export class ConversationsController {
   }
 
   @Post("bulk-close")
-  @RequirePermissions("conversations.manage")
+  @RequirePermissions("messages.send")
   async bulkClose(
     @Body() dto: BulkCloseConversationsDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -396,7 +401,7 @@ export class ConversationsController {
           archivedAt: null,
           status: { not: ConversationStatus.FECHADA },
         },
-        connectionAccess(current),
+        conversationVisibilityWhere(current),
         { OR: dto.queues.map((queue) => conversationQueueScope(queue)) },
       ],
     };
@@ -535,7 +540,7 @@ export class ConversationsController {
   }
 
   @Patch(":id/status")
-  @RequirePermissions("conversations.manage")
+  @RequireAnyPermission("messages.send", "conversations.assign")
   async updateStatus(
     @Param("id") id: string,
     @Body() dto: UpdateConversationStatusDto,
@@ -543,6 +548,12 @@ export class ConversationsController {
   ) {
     const conversation = await this.findVisibleConversation(id, current);
     const target = parseStatus(dto.status);
+
+    const requiredPermission =
+      target === ConversationStatus.FECHADA ? "messages.send" : "conversations.assign";
+    if (!current.permissions?.includes(requiredPermission)) {
+      throw new ForbiddenException("Permissão insuficiente.");
+    }
 
     assertConversationStatusChange(conversation.status, target);
 
@@ -657,7 +668,7 @@ export class ConversationsController {
   private async visibilityWhere(
     current: AuthenticatedUser,
   ): Promise<Prisma.ConversationWhereInput> {
-    return connectionAccess(current);
+    return conversationVisibilityWhere(current);
   }
 
   private searchWhere(query: ListConversationsQueryDto): Prisma.ConversationWhereInput {

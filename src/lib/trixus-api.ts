@@ -777,6 +777,7 @@ export type OperationalFilters = {
   customerId?: string;
   connectionId?: string;
   contactId?: string;
+  conversationId?: string;
 };
 
 export type ApiOperationalKpi = {
@@ -1235,6 +1236,11 @@ export const crmApi = {
     apiRequest<ApiContact>("/crm/contacts", { method: "POST", body: JSON.stringify(data) }),
   updateContact: (id: string, data: Partial<ContactPayload>) =>
     apiRequest<ApiContact>(`/crm/contacts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  updateContactCustomer: (id: string, customerId: string | null) =>
+    apiRequest<ApiContact>(`/crm/contacts/${id}/customer`, {
+      method: "PATCH",
+      body: JSON.stringify({ customerId }),
+    }),
   deleteContact: (id: string) =>
     apiRequest<ApiContact>(`/crm/contacts/${id}`, { method: "DELETE" }),
   previewContactsFromAgenda: (data: { connectionId?: string | null } = {}) =>
@@ -1269,7 +1275,7 @@ export const crmApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
-  listTags: () => apiRequest<ApiTag[]>("/crm/tags"),
+  listTags: () => apiRequest<ApiTag[]>("/tags"),
   createTag: (data: { name: string; color?: string }) =>
     apiRequest<ApiTag>("/tags", { method: "POST", body: JSON.stringify(data) }),
   updateTag: (id: string, data: { name?: string; color?: string }) =>
@@ -1473,6 +1479,8 @@ export const conversationApi = {
       `/conversations${queryString(params)}`,
     ),
   get: (id: string) => apiRequest<ApiConversation>(`/conversations/${id}`),
+  blockContact: (id: string) =>
+    apiRequest<{ ok: true }>(`/conversations/${id}/contact/block`, { method: "POST" }),
   create: (data: ConversationPayload) =>
     apiRequest<ApiConversation>("/conversations", {
       method: "POST",
@@ -1515,6 +1523,10 @@ export const notificationApi = {
     ),
   markRead: (id: string) =>
     apiRequest<{ ok: true }>(`/notifications/${id}/read`, { method: "PATCH" }),
+  target: (id: string) =>
+    apiRequest<{ conversationId: string; destination: "inbox" | "history" }>(
+      `/notifications/${id}/target`,
+    ),
   markAllRead: () =>
     apiRequest<{ ok: true; updated: number }>("/notifications/read-all", { method: "POST" }),
 };

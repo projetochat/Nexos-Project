@@ -69,3 +69,12 @@ export function dashboardPieLegendItems(
     };
   });
 }
+
+export function dashboardPieLegendValue(
+  item: { total: number; percentageLabel: string },
+  valueMode: DashboardValueMode,
+) {
+  return valueMode === "percentage"
+    ? item.percentageLabel
+    : new Intl.NumberFormat("pt-BR").format(item.total);
+}

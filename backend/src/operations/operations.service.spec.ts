@@ -23,7 +23,12 @@ describe("dashboard week ranges", () => {
       };
       const service = new OperationsService(prisma as never, metrics as never);
       const result = await service.dashboard(
-        { tenantId: "tenant-a", roleKey: "agent", connectionIds: ["vocical"] } as never,
+        {
+          tenantId: "tenant-a",
+          roleKey: "agent",
+          connectionIds: ["vocical"],
+          permissions: ["chat.conversations.view_all_active"],
+        } as never,
         { period },
       );
       expect(result.range).toEqual({ start, end });
@@ -54,6 +59,49 @@ describe("dashboard week ranges", () => {
       );
     },
   );
+});
+
+describe("conversation visibility in operational history", () => {
+  it("limits history to the attendant or unassigned queue without view-all", async () => {
+    const prisma = {
+      tenant: { findUnique: vi.fn().mockResolvedValue({ timezone: "America/Sao_Paulo" }) },
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([]),
+        count: vi.fn().mockResolvedValue(0),
+      },
+      $transaction: vi.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
+    };
+    const service = new OperationsService(prisma as never, {} as never);
+
+    await service.history(
+      {
+        tenantId: "tenant-a",
+        membershipId: "membership-a",
+        roleKey: "agent",
+        connectionIds: ["connection-a"],
+        permissions: [],
+      } as never,
+      { period: "30d" },
+    );
+
+    expect(prisma.conversation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            expect.objectContaining({ tenantId: "tenant-a" }),
+            {
+              AND: [
+                { connectionId: { in: ["connection-a"] } },
+                {
+                  OR: [{ assignedMembershipId: "membership-a" }, { assignedMembershipId: null }],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+  });
 });
 
 describe("dashboard configurable contact data", () => {

@@ -102,6 +102,26 @@ describe("EvolutionClient", () => {
     );
   });
 
+  it("blocks a contact with the Evolution v2 chat contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ success: true }));
+    globalThis.fetch = fetchMock;
+
+    await new EvolutionClient().updateBlockStatus({
+      instanceName: "instance-a",
+      number: "5511999990000",
+      status: "block",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://evolution.local/chat/updateBlockStatus/instance-a",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ apikey: "test-key" }),
+        body: JSON.stringify({ number: "5511999990000", status: "block" }),
+      }),
+    );
+  });
+
   it("registers per-instance webhook with jwt_key and event filters", async () => {
     const fetchMock = vi.fn().mockResolvedValue(response({ ok: true }));
     globalThis.fetch = fetchMock;

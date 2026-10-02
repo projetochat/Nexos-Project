@@ -8,21 +8,18 @@ import {
   Settings,
   ChevronRight,
   PanelLeftClose,
-  Search,
   Bell,
   LogOut,
   ShieldCheck,
   Sparkles,
   Layers3,
-  Command,
   Moon,
   Sun,
   Menu,
   X,
 } from "lucide-react";
 import { LogoMark, Avatar } from "./ui-kit";
-import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
-import { useConnectionStatus } from "@/lib/realtime";
+import { OfflineBanner, TopProgress } from "./feedback";
 import { useTheme } from "./theme-context";
 import { useSession, ROLE_META } from "@/lib/session";
 
@@ -267,7 +264,6 @@ function Topbar({
   onOpenMobileNav: () => void;
 }) {
   const crumbs = useBreadcrumbs();
-  const conn = useConnectionStatus();
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-xl md:gap-3 md:px-6">
       <button
@@ -309,19 +305,6 @@ function Topbar({
         </button>
         <LogoMark size={33} />
         <span className="truncate text-sm font-semibold">Trixus Admin</span>
-      </div>
-
-      <ConnectionPill status={conn} />
-
-      <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-1.5 md:flex md:w-56 xl:w-72">
-        <Search className="h-4 w-4 text-muted-foreground" />
-        <input
-          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          placeholder="Buscar cliente, CNPJ, responsável..."
-        />
-        <kbd className="hidden items-center gap-0.5 rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground lg:inline-flex">
-          <Command className="h-3 w-3" />K
-        </kbd>
       </div>
 
       <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground">

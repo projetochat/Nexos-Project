@@ -1,12 +1,23 @@
-import { Controller, Get, Inject, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Inject,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { IsIn, IsInt, IsOptional, Max, Min } from "class-validator";
 import { Type } from "class-transformer";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PermissionsGuard } from "../auth/permissions.guard";
-import { NotificationStatus, Prisma } from "../generated/prisma";
+import { ConversationStatus, NotificationStatus, Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
+import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
 
 class ListNotificationsQueryDto {
   @IsOptional()
@@ -75,6 +86,45 @@ export class NotificationsController {
       data: { status: "READ", readAt: new Date() },
     });
     return { ok: true };
+  }
+
+  @Get(":id/target")
+  async target(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    const notification = await this.prisma.notification.findFirst({
+      where: { id, tenantId: current.tenantId, membershipId: current.membershipId },
+      select: { entityType: true, entityId: true },
+    });
+    if (!notification?.entityId)
+      throw new NotFoundException("Destino da notificação indisponível.");
+
+    const conversationId =
+      notification.entityType === "conversation"
+        ? notification.entityId
+        : notification.entityType === "lead"
+          ? (
+              await this.prisma.lead.findFirst({
+                where: { id: notification.entityId, tenantId: current.tenantId },
+                select: { conversationId: true },
+              })
+            )?.conversationId
+          : null;
+    if (!conversationId) throw new NotFoundException("Destino da notificação indisponível.");
+
+    const conversation = await this.prisma.conversation.findFirst({
+      where: {
+        AND: [
+          { id: conversationId, tenantId: current.tenantId, archivedAt: null },
+          conversationVisibilityWhere(current),
+        ],
+      },
+      select: { id: true, status: true },
+    });
+    if (!conversation) throw new NotFoundException("Conversa não disponível para este atendente.");
+
+    return {
+      conversationId: conversation.id,
+      destination: conversation.status === ConversationStatus.FECHADA ? "history" : "inbox",
+    };
   }
 
   @Post("read-all")

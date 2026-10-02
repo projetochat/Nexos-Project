@@ -359,7 +359,7 @@ function ClientForm({
             name: initial.name,
             document: initial.document ? maskCnpj(initial.document) : "",
             responsibleName: initial.responsibleName,
-            responsibleEmail: initial.responsibleEmail,
+            responsibleEmail: initial.responsibleEmail.toLocaleLowerCase("en-US"),
             city: initial.city,
             state: initial.state,
             registeredAt: toLocalDateTimeValue(new Date(initial.registeredAt)),
@@ -456,7 +456,9 @@ function ClientForm({
           <Input
             type="email"
             value={form.responsibleEmail}
-            onChange={(event) => update("responsibleEmail", event.target.value)}
+            onChange={(event) =>
+              update("responsibleEmail", event.target.value.toLocaleLowerCase("en-US"))
+            }
             placeholder="exemplo@empresa.com.br"
           />
         </Field>

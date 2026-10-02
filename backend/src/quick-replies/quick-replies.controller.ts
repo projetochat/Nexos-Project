@@ -4,7 +4,6 @@ import {
   ConflictException,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   Inject,
   NotFoundException,
@@ -160,18 +159,7 @@ export class QuickRepliesController {
           }
         : {}),
     };
-    if (query.scope === "catalog" && current.permissions?.includes("chat.quick_replies.update")) {
-      return where;
-    }
-    const allowed = await this.allowedDepartmentIds(current);
-    if (query.departmentId) {
-      if (current.roleKey !== "tenant_admin" && !allowed.includes(query.departmentId)) {
-        throw new ForbiddenException("Departamento fora do escopo operacional do usuário.");
-      }
-      return { ...where, OR: [{ departmentId: null }, { departmentId: query.departmentId }] };
-    }
-    if (current.roleKey === "tenant_admin") return where;
-    return { ...where, OR: [{ departmentId: null }, { departmentId: { in: allowed } }] };
+    return where;
   }
 
   private async resolveDepartmentId(departmentId: string | null, current: AuthenticatedUser) {
@@ -180,21 +168,7 @@ export class QuickRepliesController {
       where: { id: departmentId, tenantId: current.tenantId, active: true },
     });
     if (!department) throw new BadRequestException("Departamento inexistente para este tenant.");
-    if (current.roleKey !== "tenant_admin") {
-      const allowed = await this.allowedDepartmentIds(current);
-      if (!allowed.includes(departmentId)) {
-        throw new ForbiddenException("Departamento fora do escopo operacional do usuário.");
-      }
-    }
     return departmentId;
-  }
-
-  private async allowedDepartmentIds(current: AuthenticatedUser) {
-    const memberships = await this.prisma.departmentMembership.findMany({
-      where: { tenantId: current.tenantId, membershipId: current.membershipId },
-      select: { departmentId: true },
-    });
-    return memberships.map((item) => item.departmentId);
   }
 
   private async findOrThrow(id: string, tenantId: string) {

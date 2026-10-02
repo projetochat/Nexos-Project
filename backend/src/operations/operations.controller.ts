@@ -74,6 +74,10 @@ class OperationalQueryDto {
   contactId?: string;
 
   @IsOptional()
+  @IsString()
+  conversationId?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

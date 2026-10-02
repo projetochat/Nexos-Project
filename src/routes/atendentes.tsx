@@ -569,9 +569,10 @@ export function AtendenteForm({
               ...initial,
               id: undefined,
               nome: `${initial.nome} - Cópia`,
+              email: initial.email.toLocaleLowerCase("en-US"),
               senha: "",
             }
-          : { ...initial, senha: "" }
+          : { ...initial, email: initial.email.toLocaleLowerCase("en-US"), senha: "" }
         : {
             cargo: "Atendente",
             perfilId: undefined,
@@ -777,7 +778,7 @@ export function AtendenteForm({
                   type="email"
                   value={form.email ?? ""}
                   onChange={(e) => {
-                    const email = e.target.value;
+                    const email = e.target.value.toLocaleLowerCase("en-US");
                     setForm({ ...form, email });
                     setErrors((current) => ({
                       ...current,

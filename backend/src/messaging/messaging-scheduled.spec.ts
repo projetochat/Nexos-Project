@@ -71,7 +71,7 @@ function setup(
           metadata: { connectionIds: ["connection-a"] },
           permissions: [
             { permissionId: "chat.agent_name.show" },
-            { permissionId: "chat.audio.send" },
+            { permissionId: "messages.send" },
           ],
         },
       }),
@@ -244,7 +244,7 @@ describe("MessagingOutboundService scheduled messages", () => {
     );
   });
 
-  it("keeps scheduled audio enabled when the creator retains the audio permission", async () => {
+  it("keeps scheduled audio enabled when the creator retains the send-message permission", async () => {
     const mediaStorage = {
       storeDownloaded: vi.fn().mockResolvedValue({
         objectKey: "tenants/tenant-a/messages/audio",
@@ -261,7 +261,7 @@ describe("MessagingOutboundService scheduled messages", () => {
       role: {
         key: "agent",
         metadata: { connectionIds: ["connection-a"] },
-        permissions: [{ permissionId: "chat.audio.send" }],
+        permissions: [{ permissionId: "messages.send" }],
       },
     });
 

@@ -344,6 +344,9 @@ function LoginPage() {
                 )}
               </button>
             </form>
+            <p className="mt-5 border-t border-slate-200 pt-4 text-center text-[11px] font-semibold tracking-[0.16em] text-slate-400">
+              V 1.0
+            </p>
           </div>
         </div>
       </div>

@@ -140,7 +140,7 @@ export class MessagingConnectionsController {
   }
 
   @Patch(":id/logout")
-  @RequirePermissions("connections.update")
+  @RequirePermissions("connections.delete")
   logout(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     return this.connections.logout(id, current);
   }

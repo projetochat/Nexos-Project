@@ -77,6 +77,8 @@ function Page() {
   } = useQuery({
     queryKey: ["trixus", "departments"],
     queryFn: organizationApi.listDepartments,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
 
   const save = useMutation({

@@ -8,12 +8,10 @@ import {
   Megaphone,
   Settings,
   CircleQuestionMark,
-  Search,
   Bell,
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
-  Command,
   Moon,
   Sun,
   LogOut,
@@ -35,8 +33,7 @@ import {
   CalendarClock,
 } from "lucide-react";
 import { LogoMark, Avatar, Badge } from "./ui-kit";
-import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
-import { useConnectionStatus } from "@/lib/realtime";
+import { OfflineBanner, TopProgress } from "./feedback";
 import { useTheme } from "./theme-context";
 import {
   canAccessTenantRoute,
@@ -57,6 +54,7 @@ import { currentAppSurface, platformAppOrigin } from "@/lib/app-surface";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { useInstanceAccessUpdates } from "@/lib/realtime/hooks";
 import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
+import { toast } from "sonner";
 
 /* ============================================================
    Trixus · App Shell (Painel Administrativo da Empresa)
@@ -602,7 +600,6 @@ function Topbar({
   onOpenMobileNav: () => void;
 }) {
   const crumbs = useBreadcrumbs();
-  const conn = useConnectionStatus();
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-xl md:gap-3 md:px-6">
       <button
@@ -649,19 +646,6 @@ function Topbar({
         <span className="truncate text-sm font-semibold">Trixus</span>
       </div>
 
-      <ConnectionPill status={conn} />
-
-      <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-1.5 transition focus-within:border-primary md:flex md:w-64 xl:w-80">
-        <Search className="h-4 w-4 text-muted-foreground" />
-        <input
-          className="topbar-search-input w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          placeholder="Buscar…"
-        />
-        <kbd className="hidden items-center gap-0.5 rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground lg:inline-flex">
-          <Command className="h-3 w-3" />K
-        </kbd>
-      </div>
-
       <NotificationsButton />
 
       <UserMenu />
@@ -671,6 +655,7 @@ function Topbar({
 
 function NotificationsButton({ compact = false }: { compact?: boolean }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const user = useSession((s) => s.user);
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
@@ -754,8 +739,31 @@ function NotificationsButton({ compact = false }: { compact?: boolean }) {
                   key={item.id}
                   type="button"
                   onClick={async () => {
-                    await notificationApi.markRead(item.id);
-                    await qc.invalidateQueries({ queryKey: ["trixus", "notifications"] });
+                    setOpen(false);
+                    try {
+                      const [target] = await Promise.all([
+                        notificationApi.target(item.id),
+                        notificationApi.markRead(item.id),
+                      ]);
+                      await qc.invalidateQueries({ queryKey: ["trixus", "notifications"] });
+                      if (target.destination === "history") {
+                        navigate({
+                          to: "/historico",
+                          search: { conversationId: target.conversationId },
+                        });
+                      } else {
+                        navigate({
+                          to: "/inbox/$conversationId",
+                          params: { conversationId: target.conversationId },
+                        });
+                      }
+                    } catch (error) {
+                      await qc.invalidateQueries({ queryKey: ["trixus", "notifications"] });
+                      toast.error(
+                        (error as Error).message ||
+                          "Esta conversa não está disponível para o seu perfil.",
+                      );
+                    }
                   }}
                   className="w-full rounded-lg px-2 py-2 text-left transition hover:bg-surface-2"
                 >
@@ -994,7 +1002,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   if (!authorized) return null;
   return (
-    <div className="flex h-dvh overflow-hidden bg-background text-foreground">
+    <div className="flex h-screen h-dvh min-h-screen min-h-dvh overflow-hidden bg-background text-foreground">
       <TopProgress active={isNavigating} />
       <Sidebar collapsed={collapsed} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -1021,7 +1029,7 @@ export function AppShellFull({ children }: { children: React.ReactNode }) {
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   if (!authorized) return null;
   return (
-    <div className="flex h-dvh overflow-hidden bg-background text-foreground">
+    <div className="flex h-screen h-dvh min-h-screen min-h-dvh overflow-hidden bg-background text-foreground">
       <TopProgress active={isNavigating} />
       <Sidebar collapsed={collapsed} />
       <div className="flex min-w-0 flex-1 flex-col">

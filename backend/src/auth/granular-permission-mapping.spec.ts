@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CampaignsController } from "../campaigns/campaigns.controller";
 import { TicketsController } from "../tickets/tickets.controller";
-import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from "./permissions.decorator";
+import { PERMISSIONS_KEY } from "./permissions.decorator";
 
 function metadata(controller: object, method: string, key: string) {
   const handler = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(controller), method)?.value;
@@ -22,10 +22,7 @@ describe("mapeamento CRUD de campanhas e chamados", () => {
   it("usa update para as mutações de chamados e separa a geração pelo Chat", () => {
     const controller = new TicketsController({} as never);
 
-    expect(metadata(controller, "create", ANY_PERMISSIONS_KEY)).toEqual([
-      "tickets.create",
-      "chat.tickets.create",
-    ]);
+    expect(metadata(controller, "create", PERMISSIONS_KEY)).toEqual(["tickets.create"]);
     for (const method of [
       "update",
       "updateStatus",
@@ -38,16 +35,14 @@ describe("mapeamento CRUD de campanhas e chamados", () => {
     }
   });
 
-  it("restringe a permissão do Chat a chamados originados de conversa", () => {
+  it("usa a permissão canônica para chamados com ou sem conversa", () => {
     const service = { create: () => ({ id: "ticket-a" }) };
     const controller = new TicketsController(service as never);
-    const chatActor = { permissions: ["chat.tickets.create"] };
+    const actor = { permissions: ["tickets.create"] };
 
-    expect(() => controller.create({} as never, chatActor as never)).toThrow(
-      "exige que o chamado seja originado de uma conversa",
-    );
+    expect(controller.create({} as never, actor as never)).toEqual({ id: "ticket-a" });
     expect(
-      controller.create({ conversationId: "conversation-a" } as never, chatActor as never),
+      controller.create({ conversationId: "conversation-a" } as never, actor as never),
     ).toEqual({ id: "ticket-a" });
   });
 });

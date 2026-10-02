@@ -5,6 +5,7 @@ import {
   ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Inject,
   NotFoundException,
@@ -28,7 +29,7 @@ import {
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
+import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import {
   ContactCompanyRole,
@@ -285,7 +286,7 @@ export class CrmController {
       data: {
         tenantId: current.tenantId,
         name: dto.name.trim(),
-        email: cleanNullable(dto.email),
+        email: normalizeNullableEmail(dto.email),
         phone: cleanNullable(dto.phone),
         notes: cleanNullable(dto.notes),
         responsibleContactName: cleanNullable(dto.responsibleContactName),
@@ -309,7 +310,7 @@ export class CrmController {
       where: { id },
       data: {
         name: dto.name?.trim(),
-        email: nullableUpdate(dto.email),
+        email: normalizeEmailUpdate(dto.email),
         phone: nullableUpdate(dto.phone),
         notes: nullableUpdate(dto.notes),
         responsibleContactName: nullableUpdate(dto.responsibleContactName),
@@ -722,7 +723,7 @@ export class CrmController {
             dto.contactDepartmentId === undefined ? undefined : links.contactDepartmentId,
           contactProfileId: dto.contactProfileId === undefined ? undefined : links.contactProfileId,
           departmentName: dto.contactDepartmentId === undefined ? undefined : links.departmentName,
-          email: nullableUpdate(dto.email),
+          email: normalizeEmailUpdate(dto.email),
           instance: dto.instanceIds === undefined ? undefined : links.instance,
           instanceIds: dto.instanceIds === undefined ? undefined : links.instanceIds,
         },
@@ -1189,7 +1190,7 @@ export class CrmController {
   }
 
   @Post("contacts")
-  @RequireAnyPermission("contacts.create", "chat.contacts.create")
+  @RequirePermissions("contacts.create")
   async createContact(@Body() dto: CreateContactDto, @CurrentUser() current: AuthenticatedUser) {
     await this.entitlements.assertTenantOperational(current.tenantId);
     await this.entitlements.assertWithinLimit(
@@ -1248,7 +1249,7 @@ export class CrmController {
             name: dto.name.trim(),
             phone: dto.phone.trim(),
             normalizedPhone,
-            email: cleanNullable(dto.email),
+            email: normalizeNullableEmail(dto.email),
             avatarUrl: cleanNullable(dto.avatarUrl),
             customerId: links.customerId,
             departmentId: links.departmentId,
@@ -1276,7 +1277,7 @@ export class CrmController {
             name: dto.name.trim(),
             phone: dto.phone.trim(),
             normalizedPhone,
-            email: cleanNullable(dto.email),
+            email: normalizeNullableEmail(dto.email),
             avatarUrl: cleanNullable(dto.avatarUrl),
             customerId: links.customerId,
             departmentId: links.departmentId,
@@ -1309,13 +1310,20 @@ export class CrmController {
   }
 
   @Patch("contacts/:id")
-  @RequireAnyPermission("contacts.update", "chat.contacts.edit")
+  @RequirePermissions("contacts.update")
   async updateContact(
     @Param("id") id: string,
     @Body() dto: UpdateContactDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const currentContact = await this.findContactOrThrow(id, current.tenantId);
+    if (
+      dto.customerId !== undefined &&
+      dto.customerId !== currentContact.customerId &&
+      !current.permissions?.includes("chat.customer_link.edit")
+    ) {
+      throw new ForbiddenException("Permissão insuficiente para alterar o cliente vinculado.");
+    }
     const currentGroupIdentity = currentContact.normalizedPhone.startsWith("group:")
       ? currentContact.normalizedPhone
       : null;
@@ -1371,7 +1379,7 @@ export class CrmController {
                 : currentGroupIdentity
                   ? currentGroupIdentity
                   : (groupContactIdentityFromPhone(dto.phone) ?? normalizePhone(dto.phone)),
-            email: nullableUpdate(dto.email),
+            email: normalizeEmailUpdate(dto.email),
             avatarUrl: nullableUpdate(dto.avatarUrl),
             customerId: dto.customerId === undefined ? undefined : links.customerId,
             departmentId: dto.departmentId === undefined ? undefined : links.departmentId,
@@ -1406,6 +1414,39 @@ export class CrmController {
     }
   }
 
+  @Patch("contacts/:id/customer")
+  @RequirePermissions("chat.customer_link.edit")
+  async updateContactCustomer(
+    @Param("id") id: string,
+    @Body() dto: { customerId?: string | null },
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    await this.findContactOrThrow(id, current.tenantId);
+    let customerId: string | null = null;
+    if (dto.customerId) {
+      const customer = await this.prisma.customer.findFirst({
+        where: { id: dto.customerId, tenantId: current.tenantId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!customer) throw new BadRequestException("Cliente inexistente para esta organização.");
+      customerId = customer.id;
+    }
+    const contact = await this.prisma.contact.update({
+      where: { tenantId_id: { tenantId: current.tenantId, id } },
+      data: { customerId },
+      include: contactInclude,
+    });
+    const serialized = this.serializeContact(contact, {
+      includeAdditionalFields: this.canReadAdditionalFields(current),
+    });
+    this.realtime.publishContactUpdated({
+      tenantId: current.tenantId,
+      contactId: contact.id,
+      contact: serialized,
+    });
+    return serialized;
+  }
+
   @Delete("contacts/:id")
   @RequirePermissions("contacts.delete")
   async deleteContact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
@@ -1421,7 +1462,7 @@ export class CrmController {
   }
 
   @Get("tags")
-  @RequirePermissions("contacts.read")
+  @RequirePermissions("chat.tags.read")
   async listTags(@CurrentUser() current: AuthenticatedUser) {
     const tags = await this.prisma.tag.findMany({
       where: { tenantId: current.tenantId, archivedAt: null },
@@ -2277,6 +2318,10 @@ function cleanNullable(value?: string | null) {
   return value.trim() || null;
 }
 
+export function normalizeNullableEmail(value?: string | null) {
+  return cleanNullable(value)?.toLocaleLowerCase("en-US") ?? null;
+}
+
 function normalizeSearchText(value: string) {
   return value
     .normalize("NFD")
@@ -2375,6 +2420,11 @@ function normalizeCatalogName(value: string) {
 function nullableUpdate(value?: string | null) {
   if (value === undefined) return undefined;
   return cleanNullable(value);
+}
+
+function normalizeEmailUpdate(value?: string | null) {
+  if (value === undefined) return undefined;
+  return normalizeNullableEmail(value);
 }
 
 function roleLabel(role: ContactCompanyRole | null) {

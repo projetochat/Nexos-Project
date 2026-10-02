@@ -47,8 +47,8 @@ export function useChatPerms(): ChatPerms {
   const has = (...required: string[]) =>
     required.some((permission) => permissions?.includes(permission)) ?? false;
   return {
-    pode_editar_contato: has("chat.contacts.edit", "contacts.update"),
-    pode_editar_vinculo_cliente: has("chat.customer_link.edit", "contacts.update"),
+    pode_editar_contato: has("contacts.update"),
+    pode_editar_vinculo_cliente: has("chat.customer_link.edit"),
     pode_usar_etiquetas: has("chat.tags.use"),
     pode_criar_etiquetas: has("chat.tags.create"),
     pode_editar_etiquetas: has("chat.tags.update"),
@@ -61,7 +61,7 @@ export function useChatPerms(): ChatPerms {
     editar_mensagem: has("chat.messages.edit"),
     acessa_mensagens_rapidas: has("chat.quick_replies.read"),
     bloquear_contatos: has("chat.contacts.block"),
-    enviar_audio: has("chat.audio.send"),
+    enviar_audio: has("messages.send"),
     mostrar_nome_atendente: has("chat.agent_name.show"),
     visualiza_todas_conversas_ativas: has("chat.conversations.view_all_active"),
   };

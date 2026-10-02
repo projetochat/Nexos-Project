@@ -28,22 +28,18 @@ const PERMISSION_GROUP_LABELS: Record<string, string> = {
 function permissionLabel(permission: string) {
   const specificLabels: Record<string, string> = {
     "conversations.read": "Ver conversas",
-    "conversations.assign": "Atribuir conversas",
+    "conversations.assign": "Transferir conversas",
     "conversations.manage": "Gerenciar conversas",
     "messages.send": "Enviar mensagens",
-    "chat.contacts.edit": "Editar contato",
-    "chat.contacts.create": "Criar contato",
     "chat.contacts.read": "Ver contatos no chat",
     "chat.contacts.block": "Bloquear contatos",
     "chat.phone.read": "Ver telefone",
     "chat.messages.edit": "Editar mensagens",
     "chat.messages.delete": "Apagar mensagens",
     "chat.agent_name.show": "Assinar mensagem",
-    "chat.audio.send": "Enviar áudio",
     "chat.customer_link.edit": "Alterar cliente vinculado",
     "chat.tags.use": "Utilizar etiquetas",
-    "chat.conversations.view_all_active": "Ver todas as conversas ativas",
-    "chat.tickets.create": "Gerar chamado",
+    "chat.conversations.view_all_active": "Ver todas as conversas",
     "contacts.additional_fields.read": "Ver campos adicionais",
     "settings.manage": "Configurar",
   };
@@ -68,27 +64,32 @@ function permissionLabel(permission: string) {
     pause: "Pausar",
     cancel: "Cancelar",
     duplicate: "Duplicar",
-    view_all_active: "Ver todas as conversas ativas",
+    view_all_active: "Ver todas as conversas",
   };
   return labels[permission.split(".").at(-1) ?? ""] ?? permission;
 }
 
 function permissionGroupTitle(permission: string) {
-  if (
-    permission === "chat.tickets.create" ||
-    permission === "chat.tags.use" ||
-    permission === "history.read"
-  )
-    return "Chat";
+  if (permission === "history.read") return "Chat";
   if (permission.startsWith("chat.quick_replies.")) return "Mensagens Rápidas";
   if (permission.startsWith("chat.tags.")) return "Etiquetas";
+  if (permission.startsWith("chat.contacts.") || permission === "chat.customer_link.edit")
+    return "Contatos";
   const root = permission.split(".")[0] ?? permission;
   return PERMISSION_GROUP_LABELS[root] ?? "Outras permissões";
 }
 
 function groupedRolePermissions(role: ApiRole) {
   const groups = new Map<string, string[]>();
-  for (const permission of role.permissionIds) {
+  const deprecatedChatPermissions = new Set([
+    "chat.contacts.edit",
+    "chat.contacts.create",
+    "chat.audio.send",
+    "chat.tickets.create",
+  ]);
+  for (const permission of role.permissionIds.filter(
+    (permission) => !deprecatedChatPermissions.has(permission),
+  )) {
     const title = permissionGroupTitle(permission);
     groups.set(title, [...(groups.get(title) ?? []), permission]);
   }

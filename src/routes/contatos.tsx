@@ -1535,7 +1535,7 @@ function ContatosPage() {
                 <Input
                   type="email"
                   value={bulkValue}
-                  onChange={(event) => setBulkValue(event.target.value)}
+                  onChange={(event) => setBulkValue(event.target.value.toLocaleLowerCase("en-US"))}
                   placeholder="email@exemplo.com"
                   className="w-72"
                 />
@@ -1703,7 +1703,9 @@ function ContatosPage() {
                     <Input
                       type="email"
                       value={bulkValue}
-                      onChange={(event) => setBulkValue(event.target.value)}
+                      onChange={(event) =>
+                        setBulkValue(event.target.value.toLocaleLowerCase("en-US"))
+                      }
                       placeholder="email@exemplo.com"
                     />
                   )}
@@ -3068,7 +3070,7 @@ export function ContactFormModal({
         : "",
     );
     setCustomerId(initial?.customer_id ?? "");
-    setEmail(initial?.email ?? "");
+    setEmail((initial?.email ?? "").toLocaleLowerCase("en-US"));
     setAvatarUrl(initial?.avatar_url ?? null);
     setContactDepartmentId(initial?.contactDepartmentId ?? "");
     setContactProfileId(initial?.contactProfileId ?? "");
@@ -3261,7 +3263,7 @@ export function ContactFormModal({
                   <Input
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => setEmail(e.target.value.toLocaleLowerCase("en-US"))}
                     placeholder="email@exemplo.com"
                   />
                   {errors.email && (
@@ -5867,6 +5869,7 @@ function CustomerFormModal({
       initial
         ? {
             ...initial,
+            email: initial.email?.toLocaleLowerCase("en-US"),
             telefone: initial.telefone ? maskBrazilPhone(initial.telefone) : initial.telefone,
           }
         : {},
@@ -5943,7 +5946,9 @@ function CustomerFormModal({
           <Input
             type="email"
             value={form.email ?? ""}
-            onChange={(event) => setForm({ ...form, email: event.target.value })}
+            onChange={(event) =>
+              setForm({ ...form, email: event.target.value.toLocaleLowerCase("en-US") })
+            }
             placeholder="email@exemplo.com"
           />
           {errors.email && (

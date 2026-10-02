@@ -16,12 +16,12 @@ import {
 } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
 import { ConfigModule } from "@nestjs/config";
-import { connectionAccess } from "../auth/connection-access";
+import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PermissionsGuard } from "../auth/permissions.guard";
-import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
+import { RequirePermissions } from "../auth/permissions.decorator";
 import { PrismaService } from "../prisma/prisma.service";
 import { MessageType, Prisma } from "../generated/prisma";
 import {
@@ -80,7 +80,7 @@ export class SchedulesController {
     return rows.sort(compareScheduleOrder).map(serializeSchedule);
   }
   @Post()
-  @RequireAnyPermission("schedules.create", "schedules.update")
+  @RequirePermissions("messages.send")
   async save(@Body() dto: SaveScheduleDto, @CurrentUser() current: AuthenticatedUser) {
     if (
       !dto.title.trim() ||
@@ -94,14 +94,6 @@ export class SchedulesController {
     const existing = await this.prisma.schedule.findUnique({
       where: { tenantId_id: { tenantId: current.tenantId, id: dto.id } },
     });
-    const requiredPermission = existing ? "schedules.update" : "schedules.create";
-    if (
-      current.roleKey !== "tenant_admin" &&
-      Array.isArray(current.permissions) &&
-      !current.permissions.includes(requiredPermission)
-    ) {
-      throw new ForbiddenException("Permissão insuficiente para salvar este agendamento.");
-    }
     if (
       existing?.connectionId &&
       current.roleKey !== "tenant_admin" &&
@@ -175,7 +167,7 @@ export class SchedulesController {
       : MessageType.TEXT;
     if (
       (attachmentType === MessageType.AUDIO || attachmentType === MessageType.VOICE) &&
-      !current.permissions?.includes("chat.audio.send")
+      !current.permissions?.includes("messages.send")
     ) {
       throw new ForbiddenException("Sem permissão para agendar mensagens de áudio.");
     }
@@ -302,10 +294,10 @@ export class SchedulesController {
   private async resolveConversation(conversationId: string, current: AuthenticatedUser) {
     const conversation = await this.prisma.conversation.findFirst({
       where: {
-        id: conversationId,
-        tenantId: current.tenantId,
-        archivedAt: null,
-        ...connectionAccess(current),
+        AND: [
+          { id: conversationId, tenantId: current.tenantId, archivedAt: null },
+          conversationVisibilityWhere(current),
+        ],
       },
       select: { id: true, connectionId: true },
     });
