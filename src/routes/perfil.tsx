@@ -403,6 +403,9 @@ function PerfilPage() {
             )}
           </Card>
         </div>
+        <footer className="mt-6 border-t border-border pt-4 text-center text-[11px] font-semibold tracking-[0.16em] text-muted-foreground">
+          V 1.0
+        </footer>
         {photoCrop.dialog}
         <ProfileCameraModal
           open={cameraOpen}

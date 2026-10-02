@@ -22,6 +22,7 @@ import type {
 import { DASHBOARD_CHART_MARGIN, DASHBOARD_CHART_TEXT_COLOR } from "@/lib/dashboard-chart-layout";
 import {
   dashboardPieLegendItems,
+  dashboardPieLegendValue,
   normalizeDashboardData,
   type DashboardVisualDatum,
 } from "@/lib/dashboard-visual-data";
@@ -192,7 +193,11 @@ export function DashboardComponentRenderer({
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <DashboardPieLegend data={normalized} besideChart={columns > 1} />
+              <DashboardPieLegend
+                data={normalized}
+                besideChart={columns > 1}
+                valueMode={valueMode}
+              />
             </div>
           )}
 
@@ -249,9 +254,11 @@ export function DashboardComponentRenderer({
 function DashboardPieLegend({
   data,
   besideChart,
+  valueMode,
 }: {
   data: Array<DashboardVisualDatum & { valor: number; cor: string }>;
   besideChart: boolean;
+  valueMode: DashboardValueMode;
 }) {
   const items = dashboardPieLegendItems(data);
 
@@ -273,7 +280,9 @@ function DashboardPieLegend({
             <span className="truncate text-muted-foreground" title={item.nome}>
               {item.nome}
             </span>
-            <span className="font-mono font-semibold text-foreground">{item.percentageLabel}</span>
+            <span className="font-mono font-semibold text-foreground">
+              {dashboardPieLegendValue(item, valueMode)}
+            </span>
           </li>
         );
       })}

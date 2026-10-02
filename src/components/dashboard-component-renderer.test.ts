@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { dashboardPieLegendItems, normalizeDashboardData } from "@/lib/dashboard-visual-data";
+import {
+  dashboardPieLegendItems,
+  dashboardPieLegendValue,
+  normalizeDashboardData,
+} from "@/lib/dashboard-visual-data";
 
 describe("normalizeDashboardData", () => {
   it("preserves the source order for line charts", () => {
@@ -47,5 +51,15 @@ describe("dashboardPieLegendItems", () => {
       ["Instagram", "24%"],
       ["Outros", "44%"],
     ]);
+  });
+
+  it("shows absolute totals in quantity mode and percentages only in percentage mode", () => {
+    const [item] = dashboardPieLegendItems([
+      { nome: "Site / Internet", total: 320, valor: 320, cor: "#2563eb" },
+      { nome: "Instagram", total: 680, valor: 680, cor: "#7c3aed" },
+    ]);
+
+    expect(dashboardPieLegendValue(item, "count")).toBe("320");
+    expect(dashboardPieLegendValue(item, "percentage")).toBe("32%");
   });
 });

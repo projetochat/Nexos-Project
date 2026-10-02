@@ -129,18 +129,27 @@ it("filters schedules by an authorized conversation on the server", async () => 
   const controller = new SchedulesController(prisma as never, {} as never);
   const user = {
     tenantId: "tenant-a",
+    membershipId: "membership-a",
     roleKey: "agent",
     connectionIds: ["connection-a"],
+    permissions: [],
   } as never;
 
   await controller.list(user, { conversationId: "conversation-a" });
 
   expect(prisma.conversation.findFirst).toHaveBeenCalledWith({
     where: {
-      id: "conversation-a",
-      tenantId: "tenant-a",
-      archivedAt: null,
-      connectionId: { in: ["connection-a"] },
+      AND: [
+        { id: "conversation-a", tenantId: "tenant-a", archivedAt: null },
+        {
+          AND: [
+            { connectionId: { in: ["connection-a"] } },
+            {
+              OR: [{ assignedMembershipId: "membership-a" }, { assignedMembershipId: null }],
+            },
+          ],
+        },
+      ],
     },
     select: { id: true, connectionId: true },
   });
@@ -429,18 +438,28 @@ it("does not let an agent delete a legacy message schedule from an inaccessible 
   await expect(
     controller.remove(item.id, {
       tenantId: "tenant-a",
+      membershipId: "membership-a",
       roleKey: "agent",
       connectionIds: [],
+      permissions: [],
     } as never),
   ).rejects.toThrow("Conversa não encontrada.");
 
   expect(prisma.conversation.findFirst).toHaveBeenCalledWith(
     expect.objectContaining({
-      where: expect.objectContaining({
-        id: "conversation-hidden",
-        tenantId: "tenant-a",
-        connectionId: { in: [] },
-      }),
+      where: {
+        AND: [
+          { id: "conversation-hidden", tenantId: "tenant-a", archivedAt: null },
+          {
+            AND: [
+              { connectionId: { in: [] } },
+              {
+                OR: [{ assignedMembershipId: "membership-a" }, { assignedMembershipId: null }],
+              },
+            ],
+          },
+        ],
+      },
     }),
   );
   expect(prisma.schedule.deleteMany).not.toHaveBeenCalled();

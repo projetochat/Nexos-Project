@@ -26,6 +26,9 @@ export function MessageActionsMenu({
   onDownload,
   resendRequest = 0,
   openRequest = 0,
+  canEdit = false,
+  canDelete = false,
+  canSend = false,
 }: {
   message: ApiMessage;
   onReply?: () => void;
@@ -33,6 +36,9 @@ export function MessageActionsMenu({
   onDownload: () => Promise<void>;
   resendRequest?: number;
   openRequest?: number;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  canSend?: boolean;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -108,7 +114,7 @@ export function MessageActionsMenu({
           >
             <button
               className={itemClass}
-              disabled={busy || !onReply}
+              disabled={busy || !canSend || !onReply}
               onClick={() => {
                 onReply?.();
                 setOpen(false);
@@ -127,7 +133,7 @@ export function MessageActionsMenu({
             </button>
             <button
               className={itemClass}
-              disabled={busy || !canCopyMessage(message)}
+              disabled={busy || !canSend || !canCopyMessage(message)}
               onClick={() => {
                 setOpen(false);
                 setForward(true);
@@ -140,6 +146,7 @@ export function MessageActionsMenu({
               className={itemClass}
               disabled={
                 busy ||
+                !canSend ||
                 message.sender !== "agent" ||
                 message.status !== "failed" ||
                 !canCopyMessage(message)
@@ -155,7 +162,9 @@ export function MessageActionsMenu({
             <div className="my-1 border-t border-border" />
             <button
               className={itemClass}
-              disabled={busy || message.sender !== "agent" || !!message.deleted_for_everyone}
+              disabled={
+                busy || !canDelete || message.sender !== "agent" || !!message.deleted_for_everyone
+              }
               onClick={() => {
                 setOpen(false);
                 setRemove(true);
@@ -168,6 +177,7 @@ export function MessageActionsMenu({
               className={itemClass}
               disabled={
                 busy ||
+                !canEdit ||
                 message.sender !== "agent" ||
                 (message.type !== "text" &&
                   !(message.type === "image" && !!message.content.trim())) ||
@@ -206,7 +216,7 @@ export function MessageActionsMenu({
                 <button
                   key={emoji}
                   type="button"
-                  disabled={busy}
+                  disabled={busy || !canSend}
                   aria-label={`Reagir com ${emoji}`}
                   className="h-8 w-7 rounded hover:bg-surface-2"
                   onClick={() => void run(() => onReact(emoji))}
@@ -215,6 +225,7 @@ export function MessageActionsMenu({
                 </button>
               ))}
               <MessageReactionPicker
+                disabled={busy || !canSend}
                 onReact={async (emoji) => {
                   await onReact(emoji);
                   setOpen(false);

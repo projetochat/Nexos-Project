@@ -37,6 +37,9 @@ it("opens message actions, handles reply/copy/reaction/download and restricts un
             onReply={reply}
             onReact={react}
             onDownload={download}
+            canEdit
+            canDelete
+            canSend
           />
         </QueryClientProvider>,
       ),
@@ -96,6 +99,9 @@ it("uses the approved destructive copy for deleting an outgoing message", async 
             onReply={vi.fn()}
             onReact={vi.fn().mockResolvedValue(undefined)}
             onDownload={vi.fn().mockResolvedValue(undefined)}
+            canEdit
+            canDelete
+            canSend
           />
         </QueryClientProvider>,
       ),
@@ -146,6 +152,9 @@ it("opens on a context-menu request and allows editing an outgoing image caption
             onReact={vi.fn().mockResolvedValue(undefined)}
             onDownload={vi.fn().mockResolvedValue(undefined)}
             openRequest={1}
+            canEdit
+            canDelete
+            canSend
           />
         </QueryClientProvider>,
       ),

@@ -42,6 +42,8 @@ function Page() {
   const { data: etiquetas = [], isLoading } = useQuery({
     queryKey: tagsQueryKey,
     queryFn: crmApi.listTags,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
 
   const filtered = React.useMemo(() => {

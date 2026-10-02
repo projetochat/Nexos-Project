@@ -1,4 +1,3 @@
-import { connectionAccess } from "../auth/connection-access";
 import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
 import {
   ConversationStatus,
@@ -11,6 +10,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { closedConversationWhere, OperationsMetricsService } from "./operations-metrics.service";
+import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
 
 type OperationalQuery = {
   period?:
@@ -34,6 +34,7 @@ type OperationalQuery = {
   customerId?: string;
   connectionId?: string;
   contactId?: string;
+  conversationId?: string;
   page?: number;
   pageSize?: number;
   format?: "csv" | "xlsx" | "pdf";
@@ -81,7 +82,11 @@ export class OperationsService {
         scopedQuery,
         tenant?.timezone ?? "America/Sao_Paulo",
       ),
-      this.recentConversations(current.tenantId, connectionAccess(current)),
+      this.recentConversations(
+        current.tenantId,
+        conversationVisibilityWhere(current),
+        current.permissions?.includes("chat.phone.read"),
+      ),
     ]);
     return {
       range: serializeRange(range),
@@ -252,7 +257,10 @@ export class OperationsService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
     const where = {
-      AND: [conversationWhere(current.tenantId, query, range), connectionAccess(current)],
+      AND: [
+        conversationWhere(current.tenantId, query, range),
+        conversationVisibilityWhere(current),
+      ],
     };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.conversation.findMany({
@@ -272,7 +280,9 @@ export class OperationsService {
       pageSize,
     });
     return {
-      items: items.map(serializeConversation),
+      items: items.map((conversation) =>
+        serializeConversation(conversation, current.permissions?.includes("chat.phone.read")),
+      ),
       total,
       page,
       pageSize,
@@ -282,7 +292,12 @@ export class OperationsService {
 
   async timeline(current: AuthenticatedUser, conversationId: string) {
     const conversation = await this.prisma.conversation.findFirstOrThrow({
-      where: { id: conversationId, tenantId: current.tenantId, ...connectionAccess(current) },
+      where: {
+        AND: [
+          { id: conversationId, tenantId: current.tenantId },
+          conversationVisibilityWhere(current),
+        ],
+      },
       include: conversationInclude,
     });
     const [lead, messages, tickets] = await Promise.all([
@@ -354,7 +369,10 @@ export class OperationsService {
         : []),
     ].sort((a, b) => a.at.getTime() - b.at.getTime());
     return {
-      conversation: serializeConversation(conversation),
+      conversation: serializeConversation(
+        conversation,
+        current.permissions?.includes("chat.phone.read"),
+      ),
       items: events.map((item) => ({ ...item, at: item.at.toISOString() })),
     };
   }
@@ -707,7 +725,11 @@ export class OperationsService {
     };
   }
 
-  private recentConversations(tenantId: string, scope: Prisma.ConversationWhereInput = {}) {
+  private recentConversations(
+    tenantId: string,
+    scope: Prisma.ConversationWhereInput = {},
+    canViewPhone = false,
+  ) {
     return this.prisma.conversation
       .findMany({
         where: { tenantId, archivedAt: null, ...scope },
@@ -715,7 +737,9 @@ export class OperationsService {
         orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
         take: 7,
       })
-      .then((items) => items.map(serializeConversation));
+      .then((items) =>
+        items.map((conversation) => serializeConversation(conversation, canViewPhone)),
+      );
   }
 }
 
@@ -724,6 +748,14 @@ function conversationWhere(
   query: OperationalQuery,
   range: { start: Date; end: Date },
 ) {
+  if (query.conversationId) {
+    return {
+      tenantId,
+      id: query.conversationId,
+      status: ConversationStatus.FECHADA,
+      archivedAt: null,
+    } satisfies Prisma.ConversationWhereInput;
+  }
   const where: Prisma.ConversationWhereInput = {
     ...closedConversationWhere(tenantId, range),
   };
@@ -769,6 +801,7 @@ function parseConversationStatus(status?: string) {
 
 function serializeConversation(
   conversation: Prisma.ConversationGetPayload<{ include: typeof conversationInclude }>,
+  canViewPhone = false,
 ) {
   return {
     id: conversation.id,
@@ -787,7 +820,7 @@ function serializeConversation(
     contact: {
       id: conversation.contact.id,
       nome: conversation.contact.name,
-      telefone: conversation.contact.phone,
+      telefone: canViewPhone ? conversation.contact.phone : null,
       customer: conversation.contact.customer
         ? {
             id: conversation.contact.customer.id,

@@ -1,6 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
-import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from "../auth/permissions.decorator";
+import { PERMISSIONS_KEY } from "../auth/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { TicketCategory, TicketPriority, TicketStatus } from "../generated/prisma";
 import { TicketsController } from "./tickets.controller";
@@ -101,9 +101,8 @@ describe("TicketsService tenant-wide temporary access policy", () => {
     expect(Reflect.getMetadata(PERMISSIONS_KEY, TicketsController.prototype.list)).toEqual([
       "tickets.read",
     ]);
-    expect(Reflect.getMetadata(ANY_PERMISSIONS_KEY, TicketsController.prototype.create)).toEqual([
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, TicketsController.prototype.create)).toEqual([
       "tickets.create",
-      "chat.tickets.create",
     ]);
   });
 });

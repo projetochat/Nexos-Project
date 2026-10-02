@@ -405,6 +405,7 @@ input.dashboard-date-input::-webkit-date-and-time-value {
   html {
     font-family: var(--font-sans);
     font-feature-settings: "cv11", "ss01", "ss03";
+    min-height: 100%;
   }
 
   body {
@@ -414,6 +415,8 @@ input.dashboard-date-input::-webkit-date-and-time-value {
       "rlig" 1,
       "calt" 1;
     letter-spacing: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
   }
 
   h1 {
@@ -682,4 +685,15 @@ button[aria-label*="Duplicar"]:hover svg,
 
 .login-bank-gothic {
   font-family: "Bank Gothic", "Century Gothic", "Arial Narrow", sans-serif;
+}
+
+.inbox-message-background {
+  background-color: var(--surface-1);
+  background-image: url("/inbox-background-light.png");
+  background-repeat: repeat;
+  background-size: 640px auto;
+}
+
+.dark .inbox-message-background {
+  background-image: url("/inbox-background-dark.png");
 }

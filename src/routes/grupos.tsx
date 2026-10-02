@@ -147,6 +147,7 @@ function ContactPickerPager({
 function GroupsPage() {
   const navigate = useNavigate();
   const permissions = useSession((state) => state.user?.permissions ?? []);
+  const canViewChat = permissions.includes("conversations.read");
   const canCreate = permissions.includes("groups.create");
   const canUpdate = permissions.includes("groups.update");
   const create = useDisclosure();
@@ -361,7 +362,7 @@ function GroupsPage() {
                 <GroupCard
                   key={group.id}
                   group={group}
-                  onOpenChat={() => void openGroupChat(group)}
+                  onOpenChat={canViewChat ? () => void openGroupChat(group) : undefined}
                   onDetail={() => void openGroupDetail(group)}
                   onLeave={canUpdate ? () => setLeavingGroup(group) : undefined}
                 />
@@ -442,7 +443,7 @@ function GroupsPage() {
               current.map((item) => (item.id === updated.id ? updated : item)),
             );
           }}
-          onOpenChat={(group) => void openGroupChat(group)}
+          onOpenChat={canViewChat ? (group) => void openGroupChat(group) : undefined}
           canManage={canUpdate}
         />
         {canUpdate && (
@@ -491,7 +492,7 @@ function GroupCard({
   onLeave,
 }: {
   group: ApiWhatsappGroupSummary;
-  onOpenChat: () => void;
+  onOpenChat?: () => void;
   onDetail: () => void;
   onLeave?: () => void;
 }) {
@@ -528,19 +529,21 @@ function GroupCard({
         )}
       </div>
       <div className="mt-4 flex min-w-0 justify-end gap-1 border-t border-border pt-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          title="Abrir conversa"
-          aria-label="Abrir conversa"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenChat();
-          }}
-          onDoubleClick={(event) => event.stopPropagation()}
-        >
-          <MessageSquareMore className="h-4 w-4" />
-        </Button>
+        {onOpenChat && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Abrir conversa"
+            aria-label="Abrir conversa"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenChat();
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <MessageSquareMore className="h-4 w-4" />
+          </Button>
+        )}
         {onLeave && (
           <Button
             variant="ghost"
@@ -900,7 +903,7 @@ function GroupDetailModal({
   group: ApiWhatsappGroup | null;
   onClose: () => void;
   onGroupChange: (group: ApiWhatsappGroup) => void;
-  onOpenChat: (group: ApiWhatsappGroup) => void;
+  onOpenChat?: (group: ApiWhatsappGroup) => void;
   canManage: boolean;
 }) {
   const [name, setName] = React.useState("");
@@ -1083,9 +1086,11 @@ function GroupDetailModal({
               <Button variant="ghost" size="sm" onClick={onClose} disabled={!!busy}>
                 Cancelar
               </Button>
-              <Button variant="primary" size="sm" onClick={() => onOpenChat(group)}>
-                <MessageSquareMore className="h-3.5 w-3.5" /> Abrir conversa
-              </Button>
+              {onOpenChat && (
+                <Button variant="primary" size="sm" onClick={() => onOpenChat(group)}>
+                  <MessageSquareMore className="h-3.5 w-3.5" /> Abrir conversa
+                </Button>
+              )}
             </div>
           </div>
         ) : null

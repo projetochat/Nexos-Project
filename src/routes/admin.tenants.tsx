@@ -570,7 +570,9 @@ function TenantCredentialsModal({
 
   React.useEffect(() => {
     setResponsibleName(tenant?.responsibleName ?? client?.responsibleName ?? "");
-    setResponsibleEmail(tenant?.responsibleEmail ?? client?.responsibleEmail ?? "");
+    setResponsibleEmail(
+      (tenant?.responsibleEmail ?? client?.responsibleEmail ?? "").toLocaleLowerCase("en-US"),
+    );
     setNewPassword("");
     setPasswordUnlocked(false);
     setShowPassword(false);
@@ -634,7 +636,7 @@ function TenantCredentialsModal({
           <Input
             type="email"
             value={responsibleEmail}
-            onChange={(event) => setResponsibleEmail(event.target.value)}
+            onChange={(event) => setResponsibleEmail(event.target.value.toLocaleLowerCase("en-US"))}
             disabled={saving}
           />
         </Field>

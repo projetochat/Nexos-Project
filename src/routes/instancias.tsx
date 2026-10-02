@@ -398,7 +398,7 @@ function Page() {
                         <RefreshCw className="h-3.5 w-3.5 transition-transform duration-500 group-hover:rotate-[720deg]" />
                       </Button>
                     )}
-                    {canUpdate && (
+                    {canDelete && (
                       <Button
                         variant="ghost"
                         size="sm"

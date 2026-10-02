@@ -47,8 +47,10 @@ const EMOJIS = [
 
 export function MessageReactionPicker({
   onReact,
+  disabled = false,
 }: {
   onReact: (emoji: string | null) => Promise<void>;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -71,6 +73,7 @@ export function MessageReactionPicker({
       <PopoverTrigger asChild>
         <button
           type="button"
+          disabled={disabled}
           aria-label="Mais emojis"
           title="Mais emojis"
           className="inline-flex h-7 w-7 items-center justify-center rounded-full opacity-70 hover:bg-black/10 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"

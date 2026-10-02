@@ -118,8 +118,8 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const perms = useChatPerms();
   const permissions = useSession((state) => state.user?.permissions ?? []);
   const canStartConversation =
-    permissions.includes("conversations.assign") && permissions.includes("contacts.read");
-  const canBulkClose = permissions.includes("conversations.manage");
+    permissions.includes("messages.send") && permissions.includes("contacts.read");
+  const canBulkClose = permissions.includes("messages.send");
   const activeTabs = React.useMemo(
     () => queuePrefs.filter((p) => p.enabled && (perms.visualiza_leads || p.id !== "leads")),
     [queuePrefs, perms.visualiza_leads],
@@ -579,10 +579,8 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   const permissions = user?.permissions ?? [];
   const canStartConversation =
     permissions.includes("conversations.assign") && permissions.includes("contacts.read");
-  const canCreateContact =
-    permissions.includes("chat.contacts.create") || permissions.includes("contacts.create");
-  const canEditContact =
-    permissions.includes("chat.contacts.edit") || permissions.includes("contacts.update");
+  const canCreateContact = permissions.includes("contacts.create");
+  const canEditContact = permissions.includes("contacts.update");
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [q, setQ] = React.useState("");

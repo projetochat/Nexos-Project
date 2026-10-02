@@ -720,7 +720,7 @@ export class PlatformService {
           locale: dto.locale ?? "pt-BR",
           technicalEmail: administratorEmail ?? dto.responsibleEmail?.toLowerCase().trim(),
           responsibleName: nullable(dto.responsibleName),
-          responsibleEmail: nullable(dto.responsibleEmail?.toLowerCase()),
+          responsibleEmail: normalizeNullableEmail(dto.responsibleEmail),
           responsiblePhone: nullable(dto.responsiblePhone),
           responsibleTitle: nullable(dto.responsibleTitle),
           notes: nullable(dto.notes),
@@ -792,10 +792,10 @@ export class PlatformService {
         name: dto.name?.trim(),
         legalName: nullable(dto.legalName),
         displayName: nullable(dto.displayName),
-        billingEmail: nullable(dto.billingEmail),
-        technicalEmail: nullable(dto.technicalEmail),
+        billingEmail: normalizeNullableEmail(dto.billingEmail),
+        technicalEmail: normalizeNullableEmail(dto.technicalEmail),
         responsibleName: nullable(dto.responsibleName),
-        responsibleEmail: nullable(dto.responsibleEmail?.toLowerCase()),
+        responsibleEmail: normalizeNullableEmail(dto.responsibleEmail),
         responsiblePhone: nullable(dto.responsiblePhone),
         responsibleTitle: nullable(dto.responsibleTitle),
         notes: nullable(dto.notes),
@@ -2592,6 +2592,11 @@ function tenantStatusForSubscription(status: string): "TRIAL" | "ACTIVE" | "SUSP
 function nullable(value?: string | null) {
   if (value === undefined) return undefined;
   return value?.trim() || null;
+}
+
+function normalizeNullableEmail(value?: string | null) {
+  if (value === undefined) return undefined;
+  return value?.trim().toLocaleLowerCase("en-US") || null;
 }
 
 function assertBcryptPasswordLength(value: string) {

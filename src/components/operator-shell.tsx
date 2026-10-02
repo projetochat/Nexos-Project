@@ -4,7 +4,6 @@ import {
   Inbox,
   Users,
   Clock,
-  Search,
   Bell,
   User,
   LogOut,
@@ -13,8 +12,7 @@ import {
   Sun,
 } from "lucide-react";
 import { LogoMark, Avatar } from "./ui-kit";
-import { ConnectionPill, OfflineBanner, TopProgress } from "./feedback";
-import { useConnectionStatus } from "@/lib/realtime";
+import { OfflineBanner, TopProgress } from "./feedback";
 import { useTheme } from "./theme-context";
 import { useSession, ROLE_META } from "@/lib/session";
 
@@ -116,7 +114,6 @@ function ThemeModeMenuItem() {
 }
 
 function Topbar() {
-  const conn = useConnectionStatus();
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-xl md:gap-3 md:px-6">
       <div className="flex min-w-0 items-center gap-2">
@@ -130,14 +127,6 @@ function Topbar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        <ConnectionPill status={conn} />
-        <div className="hidden items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-1.5 md:flex md:w-64">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <input
-            className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            placeholder="Buscar conversa ou cliente…"
-          />
-        </div>
         <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground">
           <Bell className="h-4 w-4" />
           <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-primary animate-pulse-ring" />

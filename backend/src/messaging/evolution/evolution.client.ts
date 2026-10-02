@@ -210,6 +210,13 @@ export class EvolutionClient {
     });
   }
 
+  updateBlockStatus(input: { instanceName: string; number: string; status: "block" | "unblock" }) {
+    return this.request<unknown>(`/chat/updateBlockStatus/${input.instanceName}`, {
+      method: "POST",
+      body: { number: input.number, status: input.status },
+    });
+  }
+
   updateMessage(input: { instanceName: string; chat: string; messageId: string; message: string }) {
     const key = { remoteJid: input.chat, fromMe: true, id: input.messageId };
     return this.request<unknown>(`/chat/updateMessage/${input.instanceName}`, {

@@ -32,6 +32,26 @@ describe("chat instance isolation", () => {
     const counts = await buildWhere(current, {}, { omitTab: true });
     expect(counts.AND).toContainEqual({ connectionId: { in: ["vocical"] } });
   });
+  it("limits an attendant without view-all to their conversations and the unassigned queue", async () => {
+    const controller = new ConversationsController(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const where = await controller["buildWhere"](
+      { ...current, permissions: [] },
+      { tab: "ativas" },
+    );
+    expect(where.AND).toContainEqual({
+      AND: [
+        { connectionId: { in: ["vocical"] } },
+        {
+          OR: [{ assignedMembershipId: "member-a" }, { assignedMembershipId: null }],
+        },
+      ],
+    });
+  });
   it("rejects reading messages outside the selected instance", async () => {
     const db = { conversation: { findFirst: vi.fn().mockResolvedValue(null) } };
     const service = Object.create(MessagesService.prototype) as MessagesService;

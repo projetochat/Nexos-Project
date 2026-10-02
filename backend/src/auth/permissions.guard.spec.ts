@@ -139,7 +139,7 @@ describe("profile permission enforcement", () => {
     const guard = new PermissionsGuard(
       {
         getAllAndOverride: (key: string) =>
-          key === "any-permissions" ? ["chat.tickets.create", "tickets.create"] : undefined,
+          key === "any-permissions" ? ["tickets.create"] : undefined,
       } as never,
       prisma as never,
     );

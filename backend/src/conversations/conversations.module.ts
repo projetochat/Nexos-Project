@@ -7,10 +7,16 @@ import { ConversationsController } from "./conversations.controller";
 import { GroupsController } from "./groups.controller";
 import { MessagesController } from "./messages.controller";
 import { MessagesService } from "./messages.service";
+import { ContactActionsController } from "./contact-actions.controller";
 
 @Module({
   imports: [AuthModule, PrismaModule, MessagingModule, RealtimeModule],
-  controllers: [ConversationsController, MessagesController, GroupsController],
+  controllers: [
+    ConversationsController,
+    ContactActionsController,
+    MessagesController,
+    GroupsController,
+  ],
   providers: [MessagesService],
 })
 export class ConversationsModule {}

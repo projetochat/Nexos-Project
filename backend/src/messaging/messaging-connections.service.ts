@@ -38,6 +38,12 @@ import { MessagingHistoryImportService } from "./messaging-history-import.servic
 import { resolveMessageType, validatePolicy } from "./media/messaging-media-storage.service";
 import type { QuickReplyAttachmentDto } from "../quick-replies/dto/quick-reply-message.dto";
 
+function jsonObject(value: Prisma.JsonValue | null | undefined): Record<string, Prisma.JsonValue> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, Prisma.JsonValue>)
+    : {};
+}
+
 @Injectable()
 export class MessagingConnectionsService {
   private readonly logger = new Logger(MessagingConnectionsService.name);
@@ -168,22 +174,47 @@ export class MessagingConnectionsService {
 
     let connection: Awaited<ReturnType<PrismaService["messagingConnection"]["create"]>>;
     try {
-      connection = await this.prisma.messagingConnection.create({
-        data: {
-          tenantId: current.tenantId,
-          name: displayName,
-          color: normalizeColor(dto.color),
-          providerType: MessagingProviderType.EVOLUTION,
-          status: translateInitialStatus(
-            response.instance?.status ?? response.instance?.connectionStatus,
-          ),
-          externalReference: instanceName,
-          serviceEnabled: dto.serviceEnabled ?? true,
-          importHistoryEnabled,
-          importHistoryStartDate: importHistoryEnabled ? importHistoryStartDate : null,
-          importGroupsEnabled,
-          importGroupsStartDate: importGroupsEnabled ? importGroupsStartDate : null,
-        },
+      connection = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.messagingConnection.create({
+          data: {
+            tenantId: current.tenantId,
+            name: displayName,
+            color: normalizeColor(dto.color),
+            providerType: MessagingProviderType.EVOLUTION,
+            status: translateInitialStatus(
+              response.instance?.status ?? response.instance?.connectionStatus,
+            ),
+            externalReference: instanceName,
+            serviceEnabled: dto.serviceEnabled ?? true,
+            importHistoryEnabled,
+            importHistoryStartDate: importHistoryEnabled ? importHistoryStartDate : null,
+            importGroupsEnabled,
+            importGroupsStartDate: importGroupsEnabled ? importGroupsStartDate : null,
+          },
+        });
+
+        // O administrador não possui escopo limitado. Para perfis comuns, a criação e
+        // a liberação da nova instância formam uma única alteração transacional.
+        if (current.roleKey !== "tenant_admin") {
+          const role = await tx.role.findFirstOrThrow({
+            where: { id: current.roleId, tenantId: current.tenantId },
+            select: { metadata: true },
+          });
+          const metadata = jsonObject(role.metadata);
+          const connectionIds = Array.isArray(metadata.connectionIds)
+            ? metadata.connectionIds.filter((id): id is string => typeof id === "string")
+            : [];
+          await tx.role.update({
+            where: { tenantId_id: { tenantId: current.tenantId, id: current.roleId } },
+            data: {
+              metadata: {
+                ...metadata,
+                connectionIds: [...new Set([...connectionIds, created.id])],
+              },
+            },
+          });
+        }
+        return created;
       });
     } catch (error) {
       await this.evolution.deleteInstance(instanceName).catch((cleanupError) => {

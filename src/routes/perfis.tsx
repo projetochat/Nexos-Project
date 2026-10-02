@@ -95,16 +95,6 @@ const PERMISSION_GROUPS: Array<{
         description: "Permite visualizar as conversas.",
       },
       {
-        id: "chat.contacts.edit",
-        label: "Editar contato",
-        description: "Permite editar os contatos.",
-      },
-      {
-        id: "chat.contacts.create",
-        label: "Criar contato",
-        description: "Permite criar contatos.",
-      },
-      {
         id: "messages.send",
         label: "Enviar mensagens",
         description: "Permite enviar mensagens para os contatos.",
@@ -125,29 +115,19 @@ const PERMISSION_GROUPS: Array<{
         description: "Apresentar o nome do atendente nas mensagens enviadas.",
       },
       {
-        id: "chat.audio.send",
-        label: "Enviar áudio",
-        description: "Permite enviar mensagens de áudio.",
-      },
-      {
-        id: "chat.tickets.create",
-        label: "Gerar chamado",
-        description: "Permite gerar chamados a partir da conversa.",
-      },
-      {
         id: "history.read",
         label: "Ver histórico de conversas",
         description: "Permite visualizar o histórico de conversas.",
       },
       {
         id: "conversations.assign",
-        label: "Atribuir conversas",
-        description: "Permite atribuir conversas para outros atendentes.",
+        label: "Transferir conversas",
+        description: "Permite transferir conversa para fila, atendente ou departamento.",
       },
       {
         id: "conversations.manage",
         label: "Gerenciar conversas",
-        description: "Permite alterar o estado e encerrar conversas.",
+        description: "Permite executar operações administrativas em conversas.",
       },
       {
         id: "chat.contacts.read",
@@ -160,24 +140,9 @@ const PERMISSION_GROUPS: Array<{
         description: "Permite visualizar o telefone dos contatos no chat.",
       },
       {
-        id: "chat.customer_link.edit",
-        label: "Alterar cliente vinculado",
-        description: "Permite alterar o cliente vinculado à conversa.",
-      },
-      {
-        id: "chat.tags.use",
-        label: "Utilizar etiquetas",
-        description: "Permite atribuir ou remover etiquetas nas conversas.",
-      },
-      {
-        id: "chat.contacts.block",
-        label: "Bloquear contatos",
-        description: "Permite bloquear contatos a partir do chat.",
-      },
-      {
         id: "chat.conversations.view_all_active",
-        label: "Ver todas as conversas ativas",
-        description: "Permite visualizar conversas ativas de outros atendentes.",
+        label: "Ver todas as conversas",
+        description: "Permite visualizar conversas de outros atendentes.",
       },
     ],
   },
@@ -197,6 +162,16 @@ const PERMISSION_GROUPS: Array<{
         description: "Permite editar contatos.",
       },
       { id: "contacts.delete", label: "Excluir", description: "Permite excluir os contatos." },
+      {
+        id: "chat.customer_link.edit",
+        label: "Alterar cliente vinculado",
+        description: "Permite alterar o cliente vinculado à conversa.",
+      },
+      {
+        id: "chat.contacts.block",
+        label: "Bloquear contatos",
+        description: "Permite bloquear contatos a partir do chat.",
+      },
       {
         id: "contacts.additional_fields.read",
         label: "Ver campos adicionais",
@@ -304,7 +279,23 @@ const PERMISSION_GROUPS: Array<{
       { id: read, label: "Ver", description: `Permite visualizar ${resource}.` },
       { id: create, label: "Criar", description: `Permite criar ${resource}.` },
       { id: update, label: "Editar", description: `Permite editar ${resource}.` },
-      { id: remove, label: "Excluir", description: `Permite excluir ${resource}.` },
+      {
+        id: remove,
+        label: "Excluir",
+        description:
+          title === "Instâncias"
+            ? "Permite excluir/desconectar instâncias."
+            : `Permite excluir ${resource}.`,
+      },
+      ...(title === "Etiquetas"
+        ? [
+            {
+              id: "chat.tags.use",
+              label: "Utilizar",
+              description: "Permite atribuir ou remover etiquetas nas conversas.",
+            },
+          ]
+        : []),
     ],
   })),
   {
@@ -446,10 +437,6 @@ function Page() {
         (group) =>
           (group.title !== "Campanhas" || enabledModules.campaigns) &&
           (group.title !== "Chamados" || enabledModules.tickets),
-      ).map((group) =>
-        enabledModules.tickets
-          ? group
-          : { ...group, items: group.items.filter((item) => item.id !== "chat.tickets.create") },
       ),
     [enabledModules.campaigns, enabledModules.tickets],
   );
@@ -921,7 +908,7 @@ function PerfilForm({
             : "Criar Perfil de Acesso"
       }
       size="xl"
-      className="sm:max-w-[68rem]"
+      className="sm:max-w-[51rem]"
       footer={
         <div className="flex w-full items-center justify-between gap-4">
           <EntityFormLog

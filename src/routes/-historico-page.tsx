@@ -77,10 +77,11 @@ function loadHistoryFilters(storageKey: string): HistoryFiltersMemory {
   }
 }
 
-export function HistoricoPage() {
+export function HistoricoPage({ initialConversationId }: { initialConversationId?: string }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const user = useSession((state) => state.user);
+  const canViewPhone = user?.permissions?.includes("chat.phone.read") ?? false;
   const filtersStorageKey = `trixus.history.filters.${user?.id ?? "anonymous"}`;
   const [search, setSearch] = React.useState(() => loadHistoryFilters(filtersStorageKey).search);
   const [reportFilters, setReportFilters] = React.useState<OperationalReportFilters>(
@@ -88,8 +89,21 @@ export function HistoricoPage() {
   );
   const [loadedFiltersStorageKey, setLoadedFiltersStorageKey] = React.useState(filtersStorageKey);
   const [page, setPage] = React.useState(1);
-  const [selectedId, setActiveId] = React.useState<string | null>(null);
+  const [selectedId, setActiveId] = React.useState<string | null>(initialConversationId ?? null);
   const [panelOpen, setPanelOpen] = React.useState(false);
+
+  const clearConversationDeepLink = React.useCallback(
+    (options: { clearSelection?: boolean } = {}) => {
+      if (options.clearSelection) setActiveId(null);
+      if (!initialConversationId) return;
+      void navigate({
+        to: "/historico",
+        search: { conversationId: undefined },
+        replace: true,
+      });
+    },
+    [initialConversationId, navigate],
+  );
 
   React.useEffect(() => {
     const saved = loadHistoryFilters(filtersStorageKey);
@@ -118,9 +132,14 @@ export function HistoricoPage() {
       q: search.trim() || undefined,
       page,
       pageSize: PAGE_SIZE,
+      ...(initialConversationId ? { conversationId: initialConversationId } : {}),
     }),
-    [page, reportFilters, search],
+    [initialConversationId, page, reportFilters, search],
   );
+
+  React.useEffect(() => {
+    if (initialConversationId) setActiveId(initialConversationId);
+  }, [initialConversationId]);
 
   const history = useQuery({
     queryKey: ["operations", "history", filters],
@@ -196,11 +215,13 @@ export function HistoricoPage() {
           className={`${selectedId ? "hidden lg:flex" : ""} shrink-0`}
           value={reportFilters}
           onChange={(patch) => {
+            clearConversationDeepLink({ clearSelection: true });
             setReportFilters((current) => ({ ...current, ...patch }));
             setPage(1);
           }}
           showDepartment={false}
           onClear={() => {
+            clearConversationDeepLink({ clearSelection: true });
             setSearch("");
             setReportFilters(defaultHistoryFilters());
             setPage(1);
@@ -208,6 +229,7 @@ export function HistoricoPage() {
           search={{
             value: search,
             onChange: (value) => {
+              clearConversationDeepLink({ clearSelection: true });
               setSearch(value);
               setPage(1);
             },
@@ -239,6 +261,9 @@ export function HistoricoPage() {
                       type="button"
                       onClick={() => {
                         setActiveId(conversation.id);
+                        if (conversation.id !== initialConversationId) {
+                          clearConversationDeepLink();
+                        }
                         setPanelOpen(false);
                       }}
                       aria-pressed={selected}
@@ -255,7 +280,7 @@ export function HistoricoPage() {
                           <ConversationListTimestamp value={conversation.last_message_at} />
                         </div>
                         <p className="truncate text-[11px] text-muted-foreground">
-                          {conversation.contact?.telefone
+                          {canViewPhone && conversation.contact?.telefone
                             ? maskBrazilPhone(conversation.contact.telefone)
                             : ""}
                         </p>
@@ -311,6 +336,7 @@ export function HistoricoPage() {
                       aria-label="Voltar para a lista do histórico"
                       onClick={() => {
                         setActiveId(null);
+                        clearConversationDeepLink();
                         setPanelOpen(false);
                       }}
                     >
@@ -331,7 +357,9 @@ export function HistoricoPage() {
                           </p>
                         </div>
                         <p className="truncate text-[11px] text-muted-foreground">
-                          {active.contact?.telefone ? maskBrazilPhone(active.contact.telefone) : ""}
+                          {canViewPhone && active.contact?.telefone
+                            ? maskBrazilPhone(active.contact.telefone)
+                            : ""}
                           {active.protocolo ? ` - #${active.protocolo}` : ""}
                           {active.department?.nome ? ` - ${active.department.nome}` : ""}
                           {active.agent?.nome ? ` - ${active.agent.nome}` : ""}
@@ -351,7 +379,7 @@ export function HistoricoPage() {
                     </Button>
                   </header>
 
-                  <div className="min-h-0 flex-1 overflow-y-auto bg-surface-1/40 px-2 py-6">
+                  <div className="inbox-message-background min-h-0 flex-1 overflow-y-auto px-2 py-6">
                     <div className="w-full">
                       <div className="space-y-4">
                         {messages.hasNextPage && (

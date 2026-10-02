@@ -31,8 +31,8 @@ vi.mock("@/lib/session", () => ({
         permissions: [
           "conversations.assign",
           "contacts.read",
-          "chat.contacts.create",
-          "chat.contacts.edit",
+          "contacts.create",
+          "contacts.update",
         ],
       },
     }),

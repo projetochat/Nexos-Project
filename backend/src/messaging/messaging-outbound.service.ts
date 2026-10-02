@@ -1,4 +1,5 @@
-import { connectionAccess, roleConnectionIds } from "../auth/connection-access";
+import { roleConnectionIds } from "../auth/connection-access";
+import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
 import { effectivePermissions } from "../auth/effective-permissions";
 import {
   assertMessagingServiceEnabled,
@@ -526,7 +527,7 @@ export class MessagingOutboundService {
       messageType = resolveMessageType(input.attachment.mimeType, "");
       if (
         (messageType === MessageType.VOICE || messageType === MessageType.AUDIO) &&
-        !authorPermissions.includes("chat.audio.send")
+        !authorPermissions.includes("messages.send")
       ) {
         throw new ScheduledMessagePermanentError(
           "O criador não possui permissão para enviar mensagens de áudio.",
@@ -690,7 +691,7 @@ export class MessagingOutboundService {
     );
     if (
       (requestedMediaType === MessageType.VOICE || requestedMediaType === MessageType.AUDIO) &&
-      !current.permissions?.includes("chat.audio.send")
+      !current.permissions?.includes("messages.send")
     ) {
       throw new ForbiddenException("Sem permissão para enviar mensagens de áudio.");
     }
@@ -1324,10 +1325,7 @@ export class MessagingOutboundService {
   ) {
     const conversation = await db.conversation.findFirst({
       where: {
-        AND: [
-          { id, tenantId: current.tenantId, archivedAt: null },
-          await this.visibilityWhere(db, current),
-        ],
+        AND: [{ id, tenantId: current.tenantId, archivedAt: null }, this.visibilityWhere(current)],
       },
       include,
     });
@@ -1373,11 +1371,8 @@ export class MessagingOutboundService {
     throw new BadRequestException("Conversa sem connection de mensageria configurada.");
   }
 
-  private async visibilityWhere(
-    db: DbClient,
-    current: AuthenticatedUser,
-  ): Promise<Prisma.ConversationWhereInput> {
-    return connectionAccess(current);
+  private visibilityWhere(current: AuthenticatedUser): Prisma.ConversationWhereInput {
+    return conversationVisibilityWhere(current);
   }
 
   private assertCanSend(conversation: {

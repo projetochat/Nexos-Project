@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   Header,
   HttpCode,
@@ -19,7 +18,7 @@ import type { Request, Response } from "express";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
+import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { CreateTicketCommentDto } from "./dto/create-ticket-comment.dto";
@@ -45,13 +44,8 @@ export class TicketsController {
   }
 
   @Post()
-  @RequireAnyPermission("tickets.create", "chat.tickets.create")
+  @RequirePermissions("tickets.create")
   create(@Body() dto: CreateTicketDto, @CurrentUser() current: AuthenticatedUser) {
-    if (!current.permissions?.includes("tickets.create") && !dto.conversationId) {
-      throw new ForbiddenException(
-        "A permissão Gerar chamado exige que o chamado seja originado de uma conversa.",
-      );
-    }
     return this.ticketsService.create(dto, current);
   }
 

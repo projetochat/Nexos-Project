@@ -21,6 +21,8 @@ const current = {
   tenantId: "tenant-a",
   membershipId: "membership-a",
   role: "tenant_admin",
+  roleId: "role-admin",
+  roleKey: "tenant_admin",
   permissions: [],
   departmentIds: [],
 };
@@ -211,6 +213,39 @@ describe("MessagingConnectionsService", () => {
       instanceName: expect.stringMatching(/^tenant-a-suporte-/),
       webhookUrl: "http://host.docker.internal:3001/api/webhooks/evolution",
       webhookSecret: "secret",
+    });
+  });
+
+  it("adds a newly created instance to the creator access profile atomically", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.create.mockResolvedValue(connection());
+    prisma.role.findFirstOrThrow.mockResolvedValue({
+      metadata: { color: "#2563EB", connectionIds: ["connection-existing"] },
+    });
+    const evolution = {
+      createInstance: vi.fn().mockResolvedValue({ instance: { status: "connecting" } }),
+      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
+      deleteInstance: vi.fn(),
+    };
+
+    await new MessagingConnectionsService(prisma as never, evolution as never).createEvolution(
+      { name: "Suporte" },
+      {
+        ...current,
+        roleId: "role-agent",
+        roleKey: "agent",
+        connectionIds: ["connection-existing"],
+      } as never,
+    );
+
+    expect(prisma.role.update).toHaveBeenCalledWith({
+      where: { tenantId_id: { tenantId: "tenant-a", id: "role-agent" } },
+      data: {
+        metadata: {
+          color: "#2563EB",
+          connectionIds: ["connection-existing", "connection-a"],
+        },
+      },
     });
   });
 
@@ -870,6 +905,7 @@ function prismaMock() {
     campaign: { count: vi.fn().mockResolvedValue(0) },
     campaignRecipient: { count: vi.fn().mockResolvedValue(0) },
     department: { findFirst: vi.fn() },
+    role: { findFirstOrThrow: vi.fn(), update: vi.fn() },
     ticket: { count: vi.fn().mockResolvedValue(0) },
     $transaction: vi.fn(async (callback) => callback(prisma)),
   };

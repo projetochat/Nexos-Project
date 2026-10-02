@@ -36,8 +36,6 @@ export const TENANT_ADMIN_PERMISSIONS = [
   "groups.create",
   "groups.update",
   "history.read",
-  "chat.contacts.edit",
-  "chat.contacts.create",
   "chat.customer_link.edit",
   "chat.tags.use",
   "chat.tags.read",
@@ -78,8 +76,6 @@ export const TENANT_ADMIN_PERMISSIONS = [
   "ai_agents.delete",
   "settings.manage",
   "chat.contacts.block",
-  "chat.audio.send",
-  "chat.tickets.create",
   "chat.agent_name.show",
   "chat.conversations.view_all_active",
 ] as const;

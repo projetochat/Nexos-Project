@@ -25,6 +25,7 @@ import {
   Phone,
   MessageCirclePlus,
   Forward,
+  Ban,
 } from "lucide-react";
 import { toast as systemToast } from "sonner";
 // Notificações desativadas nesta tela — nenhum toast deve aparecer no chat.
@@ -448,7 +449,7 @@ function ConversationPage() {
   const canSendMessages = user?.permissions?.includes("messages.send") ?? false;
   const canAssignConversations = user?.permissions?.includes("conversations.assign") ?? false;
   const canCreateTicket =
-    modules.tickets && (user?.permissions?.includes("chat.tickets.create") ?? false);
+    modules.tickets && (user?.permissions?.includes("tickets.create") ?? false);
   const canSend =
     canSendMessages &&
     ((conv.is_group && !!conv.protocolo && conv.status !== "fechada" && !isStandby) ||
@@ -576,7 +577,7 @@ function ConversationPage() {
                 </Button>
               ) : (
                 <>
-                  {showStart && canAssignConversations && (
+                  {showStart && canSendMessages && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -603,23 +604,28 @@ function ConversationPage() {
                     </Button>
                   )}
 
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="group"
-                    onClick={() => setClosing(true)}
-                    aria-label="Encerrar Atendimento"
-                    title="Encerrar Atendimento"
-                  >
-                    <CircleCheckBig className="h-3.5 w-3.5 transition-colors group-hover:text-destructive" />{" "}
-                    <span className="hidden lg:inline">Encerrar</span>
-                  </Button>
+                  {canSendMessages && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="group"
+                      onClick={() => setClosing(true)}
+                      aria-label="Encerrar Atendimento"
+                      title="Encerrar Atendimento"
+                    >
+                      <CircleCheckBig className="h-3.5 w-3.5 transition-colors group-hover:text-destructive" />{" "}
+                      <span className="hidden lg:inline">Encerrar</span>
+                    </Button>
+                  )}
                 </>
               )}
             </div>
           </header>
 
-          <div ref={scrollRef} className="min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-2 md:py-6">
+          <div
+            ref={scrollRef}
+            className="inbox-message-background min-w-0 flex-1 overflow-y-auto px-1 py-4 md:px-2 md:py-6"
+          >
             <div className="w-full space-y-4">
               {(() => {
                 const hasLifecycleLog = mensagens.some(
@@ -682,6 +688,9 @@ function ConversationPage() {
                   connectionAvatarUrl={conv.connection?.logo_url ?? null}
                   connectionName={conv.connection?.name ?? "WhatsApp"}
                   galleryImages={galleryImages}
+                  canEditMessage={perms.editar_mensagem}
+                  canDeleteMessage={perms.excluir_mensagem}
+                  canSendMessage={canSendMessages}
                   setMessageRef={(node) => {
                     if (node) messageRefs.current.set(m.id, node);
                     else messageRefs.current.delete(m.id);
@@ -731,8 +740,8 @@ function ConversationPage() {
                         : null
               }
               onStart={showStart ? handleAssume : undefined}
-              allowQuickReplies={perms.acessa_mensagens_rapidas}
-              allowAudio={perms.enviar_audio}
+              allowQuickReplies={canSendMessages && perms.acessa_mensagens_rapidas}
+              allowAudio={canSendMessages}
               onTicket={canCreateTicket ? handleGerarChamado : undefined}
               ticketDisabled={gerando || !conv.protocolo || !canCreateTicket}
               mentionOptions={conv.is_group ? mentionOptions : []}
@@ -777,9 +786,26 @@ function ConversationPage() {
         </div>
 
         {conv.contact && panelOpen && (
-          <div className="absolute inset-y-0 right-0 z-20 flex max-w-full 2xl:relative 2xl:inset-auto 2xl:z-auto 2xl:shrink-0">
-            <ContactPanel contactId={conv.contact.id} onClose={() => setPanelOpen(false)} />
-          </div>
+          <>
+            <button
+              type="button"
+              className="absolute inset-0 z-10 cursor-default bg-transparent"
+              aria-label="Fechar informações do contato"
+              onClick={() => setPanelOpen(false)}
+            />
+            <div className="absolute inset-y-0 right-0 z-20 flex max-w-full 2xl:relative 2xl:inset-auto 2xl:shrink-0">
+              <ContactPanel
+                contactId={conv.contact.id}
+                conversationId={conv.id}
+                canBlock={
+                  !conv.is_group &&
+                  conv.connection?.providerType === "evolution" &&
+                  conv.connection.status === "connected"
+                }
+                onClose={() => setPanelOpen(false)}
+              />
+            </div>
+          </>
         )}
       </div>
 
@@ -897,6 +923,9 @@ export function MessageBubble({
   conversationOriginatedAsLead = false,
   customFieldLabels = [],
   galleryImages,
+  canEditMessage = false,
+  canDeleteMessage = false,
+  canSendMessage = false,
   setMessageRef,
 }: {
   m: Message;
@@ -914,6 +943,9 @@ export function MessageBubble({
   conversationOriginatedAsLead?: boolean;
   customFieldLabels?: string[];
   galleryImages: Message[];
+  canEditMessage?: boolean;
+  canDeleteMessage?: boolean;
+  canSendMessage?: boolean;
   setMessageRef?: (node: HTMLDivElement | null) => void;
 }) {
   const qc = useQueryClient();
@@ -1101,6 +1133,9 @@ export function MessageBubble({
             onDownload={() => download()}
             resendRequest={resendRequest}
             openRequest={actionsOpenRequest}
+            canEdit={canEditMessage}
+            canDelete={canDeleteMessage}
+            canSend={canSendMessage}
           />
         )}
         {m.participant?.name && !mine && (
@@ -2635,12 +2670,28 @@ function Composer({
 }
 
 /* -------- Right panel: contact / customer / tags -------- */
-export function ContactPanel({ contactId, onClose }: { contactId: string; onClose: () => void }) {
+export function ContactPanel({
+  contactId,
+  conversationId,
+  canBlock,
+  onClose,
+}: {
+  contactId: string;
+  conversationId?: string;
+  canBlock?: boolean;
+  onClose: () => void;
+}) {
   const perms = useChatPerms();
   const qc = useQueryClient();
   const tagsModal = useDisclosure();
 
   const editModal = useDisclosure();
+  const customerLinkModal = useDisclosure();
+  const [linkedCustomerId, setLinkedCustomerId] = React.useState("");
+  const [savingCustomerLink, setSavingCustomerLink] = React.useState(false);
+  const [confirmingBlock, setConfirmingBlock] = React.useState(false);
+  const [blocking, setBlocking] = React.useState(false);
+  const [blocked, setBlocked] = React.useState(false);
 
   const { data: contact } = useQuery({
     queryKey: ["trixus", "contacts", contactId],
@@ -2649,7 +2700,7 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
   const { data: customersPage } = useQuery({
     queryKey: ["trixus", "customers", "contact-panel"],
     queryFn: () => crmApi.listCustomers({ pageSize: 100 }).then((page) => page.items),
-    enabled: editModal.open,
+    enabled: editModal.open || customerLinkModal.open,
   });
   const { data: contactOptions } = useQuery({
     queryKey: ["trixus", "contacts", "options", "contact-panel"],
@@ -2658,6 +2709,10 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
   const customerId = contact?.customer_id ?? null;
   const customer = contact?.customer ?? null;
   const contactTags = contact?.tags ?? [];
+
+  React.useEffect(() => {
+    if (customerLinkModal.open) setLinkedCustomerId(contact?.customer_id ?? "");
+  }, [contact?.customer_id, customerLinkModal.open]);
 
   const { data: protocolos = [] } = useQuery({
     queryKey: ["trixus", "contact_protocols", contactId],
@@ -2690,209 +2745,305 @@ export function ContactPanel({ contactId, onClose }: { contactId: string; onClos
   );
 
   return (
-    <aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-surface-1 lg:w-[400px]">
-      <div className="border-b border-border p-4">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Contato
-          </p>
-          <div className="flex items-center gap-1">
-            {perms.pode_editar_contato && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={editModal.show}
-                aria-label="Editar contato"
-              >
-                <Pencil className="h-3 w-3" /> Editar
+    <>
+      <aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-surface-1 lg:w-[400px]">
+        <div className="border-b border-border p-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Contato
+            </p>
+            <div className="flex items-center gap-1">
+              {perms.pode_editar_contato && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={editModal.show}
+                  aria-label="Editar contato"
+                >
+                  <Pencil className="h-3 w-3" /> Editar
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={onClose} aria-label="Fechar painel">
+                <X className="h-3.5 w-3.5" />
               </Button>
-            )}
-            <Button variant="ghost" size="sm" onClick={onClose} aria-label="Fechar painel">
-              <X className="h-3.5 w-3.5" />
-            </Button>
+            </div>
           </div>
+
+          <p className="mt-2 truncate text-sm font-semibold">{contact?.nome ?? "—"}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {perms.visualiza_numero
+              ? contact?.telefone
+                ? maskBrazilPhone(contact.telefone)
+                : "—"
+              : "•••"}
+            {contact?.email ? ` - ${contact.email}` : ""}
+          </p>
+
+          <dl className="mt-3 space-y-1 text-[11px]">
+            <div className="flex items-start justify-between gap-2">
+              <dt className="uppercase tracking-wide text-muted-foreground">Instância</dt>
+              <dd className="truncate text-right text-foreground/90">
+                {(contactOptions?.instances ?? [])
+                  .filter(
+                    (instance) =>
+                      contact?.instanceIds?.includes(instance.id) ||
+                      (!!contact?.instancia &&
+                        (instance.value === contact.instancia ||
+                          instance.externalReference === contact.instancia)),
+                  )
+                  .map((instance) => instance.name)
+                  .join(", ") || "—"}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-2">
+              <dt className="uppercase tracking-wide text-muted-foreground">Cliente</dt>
+              <dd className="flex min-w-0 items-center justify-end gap-1.5 truncate text-right text-foreground/90">
+                {customer?.cor && (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: customer.cor }}
+                  />
+                )}
+                <span className="truncate">{customer?.nome ?? "—"}</span>
+                {perms.pode_editar_vinculo_cliente && (
+                  <button
+                    type="button"
+                    className="rounded p-1 text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+                    aria-label="Alterar cliente vinculado"
+                    onClick={customerLinkModal.show}
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                )}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-2">
+              <dt className="uppercase tracking-wide text-muted-foreground">
+                Departamento do Contato
+              </dt>
+              <dd className="truncate text-right text-foreground/90">
+                {contact?.departamento ?? "—"}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-2">
+              <dt className="uppercase tracking-wide text-muted-foreground">Perfil do Contato</dt>
+              <dd className="truncate text-right text-foreground/90">
+                {contact?.nivel_gerencia ?? "—"}
+              </dd>
+            </div>
+          </dl>
         </div>
 
-        <p className="mt-2 truncate text-sm font-semibold">{contact?.nome ?? "—"}</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {perms.visualiza_numero
-            ? contact?.telefone
-              ? maskBrazilPhone(contact.telefone)
-              : "—"
-            : "•••"}
-          {contact?.email ? ` - ${contact.email}` : ""}
-        </p>
-
-        <dl className="mt-3 space-y-1 text-[11px]">
-          <div className="flex items-start justify-between gap-2">
-            <dt className="uppercase tracking-wide text-muted-foreground">Instância</dt>
-            <dd className="truncate text-right text-foreground/90">
-              {(contactOptions?.instances ?? [])
-                .filter(
-                  (instance) =>
-                    contact?.instanceIds?.includes(instance.id) ||
-                    (!!contact?.instancia &&
-                      (instance.value === contact.instancia ||
-                        instance.externalReference === contact.instancia)),
-                )
-                .map((instance) => instance.name)
-                .join(", ") || "—"}
-            </dd>
-          </div>
-          <div className="flex items-start justify-between gap-2">
-            <dt className="uppercase tracking-wide text-muted-foreground">Cliente</dt>
-            <dd className="flex min-w-0 items-center justify-end gap-1.5 truncate text-right text-foreground/90">
-              {customer?.cor && (
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: customer.cor }}
-                />
+        <div className="space-y-4 overflow-y-auto p-4">
+          {perms.bloquear_contatos && canBlock && conversationId && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start text-destructive"
+              disabled={blocking || blocked}
+              onClick={() => setConfirmingBlock(true)}
+            >
+              <Ban className="h-3.5 w-3.5" /> {blocked ? "Contato bloqueado" : "Bloquear contato"}
+            </Button>
+          )}
+          <section>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Etiquetas
+              </p>
+              {perms.pode_usar_etiquetas && (
+                <Button variant="ghost" size="sm" onClick={tagsModal.show}>
+                  <TagIcon className="h-3 w-3" /> Etiquetas
+                </Button>
               )}
-              <span className="truncate">{customer?.nome ?? "—"}</span>
-            </dd>
-          </div>
-          <div className="flex items-start justify-between gap-2">
-            <dt className="uppercase tracking-wide text-muted-foreground">
-              Departamento do Contato
-            </dt>
-            <dd className="truncate text-right text-foreground/90">
-              {contact?.departamento ?? "—"}
-            </dd>
-          </div>
-          <div className="flex items-start justify-between gap-2">
-            <dt className="uppercase tracking-wide text-muted-foreground">Perfil do Contato</dt>
-            <dd className="truncate text-right text-foreground/90">
-              {contact?.nivel_gerencia ?? "—"}
-            </dd>
-          </div>
-        </dl>
-      </div>
-
-      <div className="space-y-4 overflow-y-auto p-4">
-        <section>
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Etiquetas
-            </p>
-            {perms.pode_usar_etiquetas && (
-              <Button variant="ghost" size="sm" onClick={tagsModal.show}>
-                <TagIcon className="h-3 w-3" /> Etiquetas
-              </Button>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {contactTags.map((t) => (
-              <span
-                key={t.id}
-                className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px]"
-                style={{ borderColor: t.cor + "80", color: t.cor, backgroundColor: t.cor + "20" }}
-              >
-                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: t.cor }} />
-                {t.nome}
-              </span>
-            ))}
-            {contactTags.length === 0 && (
-              <p className="text-xs text-muted-foreground">Nenhuma etiqueta.</p>
-            )}
-          </div>
-        </section>
-
-        <section>
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Protocolos
-            </p>
-            <span className="font-mono text-[10px] text-muted-foreground">
-              {protoFilter
-                ? `${filteredProtocolos.length}/${protocolos.length}`
-                : protocolos.length}
-            </span>
-          </div>
-          {protocolos.length > 0 && (
-            <input
-              type="text"
-              value={protoFilter}
-              onChange={(e) => setProtoFilter(e.target.value)}
-              placeholder="Filtrar protocolo…"
-              className="mb-2 w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/60"
-            />
-          )}
-          {protocolos.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Nenhum protocolo registrado.</p>
-          ) : filteredProtocolos.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Nenhum protocolo encontrado.</p>
-          ) : (
-            <ul className="space-y-1.5">
-              {filteredProtocolos.map((p) => (
-                <li key={p.id}>
-                  <Link
-                    to="/inbox/$conversationId"
-                    params={{ conversationId: p.id }}
-                    className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs transition hover:border-primary/50 hover:bg-primary/5"
-                  >
-                    <span className="font-mono text-foreground/90">#{p.protocolo}</span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {new Date(p.created_at).toLocaleTimeString("pt-BR", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}{" "}
-                      · {fmtDate(new Date(p.created_at).getTime())}
-                    </span>
-                  </Link>
-                </li>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {contactTags.map((t) => (
+                <span
+                  key={t.id}
+                  className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px]"
+                  style={{ borderColor: t.cor + "80", color: t.cor, backgroundColor: t.cor + "20" }}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: t.cor }} />
+                  {t.nome}
+                </span>
               ))}
-            </ul>
-          )}
-        </section>
-      </div>
+              {contactTags.length === 0 && (
+                <p className="text-xs text-muted-foreground">Nenhuma etiqueta.</p>
+              )}
+            </div>
+          </section>
 
-      <TagsModal
-        open={tagsModal.open}
-        onClose={tagsModal.hide}
-        contactId={contactId}
-        current={contactTags}
-        canManageCatalog={perms.pode_editar_etiquetas}
-        onChanged={() => qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] })}
-      />
-      {contact && (
-        <ContactFormModal
-          open={editModal.open}
-          onClose={editModal.hide}
-          initial={contact}
-          customers={sortByOptionLabel(customersPage ?? [], (item) => item.nome)}
-          tags={sortByOptionLabel(contactOptions?.tags ?? [], (item) => item.nome)}
-          departments={sortByOptionLabel(contactOptions?.departments ?? [], (item) => item.nome)}
-          profiles={sortByOptionLabel(contactOptions?.profiles ?? [], (item) => item.nome)}
-          instances={sortByOptionLabel(
-            (contactOptions?.instances ?? []).filter((instance) =>
-              isSelectableContactInstanceStatus(instance.status),
-            ),
-            (item) => item.name,
-          )}
-          onCustomerCreated={(customer) => {
-            qc.setQueryData(
-              ["trixus", "customers", "contact-panel"],
-              (current: (typeof customer)[] | undefined) =>
-                sortByOptionLabel([customer, ...(current ?? [])], (item) => item.nome),
-            );
-          }}
-          onDepartmentSaved={() =>
-            qc.invalidateQueries({ queryKey: ["trixus", "contacts", "options", "contact-panel"] })
-          }
-          onProfileSaved={() =>
-            qc.invalidateQueries({ queryKey: ["trixus", "contacts", "options", "contact-panel"] })
-          }
-          onSubmit={async (data) => {
-            await crmApi.updateContact(contactId, contactPayload(data));
-            qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] });
-            qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-            qc.invalidateQueries({ queryKey: ["trixus", "contact_protocols", contactId] });
-            qc.invalidateQueries({ queryKey: ["operations", "history"] });
-            editModal.hide();
-          }}
+          <section>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Protocolos
+              </p>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {protoFilter
+                  ? `${filteredProtocolos.length}/${protocolos.length}`
+                  : protocolos.length}
+              </span>
+            </div>
+            {protocolos.length > 0 && (
+              <input
+                type="text"
+                value={protoFilter}
+                onChange={(e) => setProtoFilter(e.target.value)}
+                placeholder="Filtrar protocolo…"
+                className="mb-2 w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/60"
+              />
+            )}
+            {protocolos.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Nenhum protocolo registrado.</p>
+            ) : filteredProtocolos.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Nenhum protocolo encontrado.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {filteredProtocolos.map((p) => (
+                  <li key={p.id}>
+                    <Link
+                      to="/inbox/$conversationId"
+                      params={{ conversationId: p.id }}
+                      className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs transition hover:border-primary/50 hover:bg-primary/5"
+                    >
+                      <span className="font-mono text-foreground/90">#{p.protocolo}</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {new Date(p.created_at).toLocaleTimeString("pt-BR", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}{" "}
+                        · {fmtDate(new Date(p.created_at).getTime())}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+
+        <TagsModal
+          open={tagsModal.open}
+          onClose={tagsModal.hide}
+          contactId={contactId}
+          current={contactTags}
+          canManageCatalog={perms.pode_editar_etiquetas}
+          onChanged={() => qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] })}
         />
-      )}
-    </aside>
+        {contact && (
+          <ContactFormModal
+            open={editModal.open}
+            onClose={editModal.hide}
+            initial={contact}
+            customers={sortByOptionLabel(customersPage ?? [], (item) => item.nome)}
+            tags={sortByOptionLabel(contactOptions?.tags ?? [], (item) => item.nome)}
+            departments={sortByOptionLabel(contactOptions?.departments ?? [], (item) => item.nome)}
+            profiles={sortByOptionLabel(contactOptions?.profiles ?? [], (item) => item.nome)}
+            instances={sortByOptionLabel(
+              (contactOptions?.instances ?? []).filter((instance) =>
+                isSelectableContactInstanceStatus(instance.status),
+              ),
+              (item) => item.name,
+            )}
+            onCustomerCreated={(customer) => {
+              qc.setQueryData(
+                ["trixus", "customers", "contact-panel"],
+                (current: (typeof customer)[] | undefined) =>
+                  sortByOptionLabel([customer, ...(current ?? [])], (item) => item.nome),
+              );
+            }}
+            onDepartmentSaved={() =>
+              qc.invalidateQueries({ queryKey: ["trixus", "contacts", "options", "contact-panel"] })
+            }
+            onProfileSaved={() =>
+              qc.invalidateQueries({ queryKey: ["trixus", "contacts", "options", "contact-panel"] })
+            }
+            onSubmit={async (data) => {
+              await crmApi.updateContact(contactId, contactPayload(data));
+              qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] });
+              qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+              qc.invalidateQueries({ queryKey: ["trixus", "contact_protocols", contactId] });
+              qc.invalidateQueries({ queryKey: ["operations", "history"] });
+              editModal.hide();
+            }}
+          />
+        )}
+        <Modal
+          open={customerLinkModal.open}
+          onClose={customerLinkModal.hide}
+          title="Alterar cliente vinculado"
+        >
+          <div className="space-y-4">
+            <Field label="Cliente">
+              <Select
+                value={linkedCustomerId}
+                onChange={(event) => setLinkedCustomerId(event.target.value)}
+              >
+                <option value="">- Sem cliente -</option>
+                {sortByOptionLabel(customersPage ?? [], (item) => item.nome).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nome}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                onClick={customerLinkModal.hide}
+                disabled={savingCustomerLink}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                disabled={savingCustomerLink}
+                onClick={() => {
+                  setSavingCustomerLink(true);
+                  void crmApi
+                    .updateContactCustomer(contactId, linkedCustomerId || null)
+                    .then(() => {
+                      void qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] });
+                      void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+                      void qc.invalidateQueries({ queryKey: ["operations", "history"] });
+                      customerLinkModal.hide();
+                      toast.success("Cliente vinculado atualizado");
+                    })
+                    .catch((error) => toast.error((error as Error).message))
+                    .finally(() => setSavingCustomerLink(false));
+                }}
+              >
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      </aside>
+      <ConfirmDialog
+        open={confirmingBlock}
+        title="Bloquear contato?"
+        description="O contato será bloqueado nesta instância do WhatsApp e não poderá enviar novas mensagens para ela."
+        confirmLabel={blocking ? "Bloqueando…" : "Bloquear"}
+        onClose={() => {
+          if (!blocking) setConfirmingBlock(false);
+        }}
+        onConfirm={async () => {
+          if (!conversationId) return;
+          setBlocking(true);
+          try {
+            await conversationApi.blockContact(conversationId);
+            setBlocked(true);
+            setConfirmingBlock(false);
+            systemToast.success("Contato bloqueado no WhatsApp");
+          } catch (error) {
+            systemToast.error((error as Error).message || "Não foi possível bloquear o contato.");
+          } finally {
+            setBlocking(false);
+          }
+        }}
+      />
+    </>
   );
 }
 
@@ -2926,6 +3077,8 @@ function TagsModal({
     queryKey: ["trixus", "tags"],
     queryFn: crmApi.listTags,
     enabled: open,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
   const [creating, setCreating] = React.useState(false);
   const [newName, setNewName] = React.useState("");
