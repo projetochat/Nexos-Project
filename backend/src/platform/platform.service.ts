@@ -859,47 +859,66 @@ export class PlatformService {
     dto: UpdateTenantConfigurationDto,
     current: AuthenticatedUser,
   ) {
-    const existing = await this.prisma.tenant.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        featureOverrides: true,
-        limitOverrides: true,
-        maxUsers: true,
-        maxConnections: true,
-      },
-    });
-    if (!existing) throw new NotFoundException("Tenant não encontrado.");
+    const disabledPermissionIds = [
+      ...(dto.modules?.campaigns === false
+        ? ["campaigns.read", "campaigns.create", "campaigns.update", "campaigns.delete"]
+        : []),
+      ...(dto.modules?.tickets === false
+        ? ["tickets.read", "tickets.create", "tickets.update", "tickets.delete"]
+        : []),
+    ];
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "tenants" WHERE id = ${id} FOR UPDATE`);
+      const existing = await tx.tenant.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          featureOverrides: true,
+          limitOverrides: true,
+          maxUsers: true,
+          maxConnections: true,
+        },
+      });
+      if (!existing) throw new NotFoundException("Tenant não encontrado.");
 
-    const featureOverrides = jsonRecord(existing.featureOverrides);
-    if (dto.modules?.campaigns !== undefined) {
-      featureOverrides.campaigns = dto.modules.campaigns;
-    }
-    if (dto.modules?.tickets !== undefined) featureOverrides.tickets = dto.modules.tickets;
-
-    const limitOverrides = jsonRecord(existing.limitOverrides);
-    let maxUsers = existing.maxUsers;
-    let maxConnections = existing.maxConnections;
-    for (const [key, value] of Object.entries(dto.limits ?? {})) {
-      if (key === "maxUsers") {
-        maxUsers = value == null ? null : Number(value);
-      } else if (key === "maxConnections") {
-        maxConnections = value == null ? null : Number(value);
-      } else if (value == null) {
-        delete limitOverrides[key];
-      } else {
-        limitOverrides[key] = Number(value);
+      const featureOverrides = jsonRecord(existing.featureOverrides);
+      if (dto.modules?.campaigns !== undefined) {
+        featureOverrides.campaigns = dto.modules.campaigns;
       }
-    }
+      if (dto.modules?.tickets !== undefined) featureOverrides.tickets = dto.modules.tickets;
 
-    await this.prisma.tenant.update({
-      where: { id },
-      data: {
-        featureOverrides: featureOverrides as Prisma.InputJsonObject,
-        limitOverrides: limitOverrides as Prisma.InputJsonObject,
-        maxUsers,
-        maxConnections,
-      },
+      const limitOverrides = jsonRecord(existing.limitOverrides);
+      let maxUsers = existing.maxUsers;
+      let maxConnections = existing.maxConnections;
+      for (const [key, value] of Object.entries(dto.limits ?? {})) {
+        if (key === "maxUsers") {
+          maxUsers = value == null ? null : Number(value);
+        } else if (key === "maxConnections") {
+          maxConnections = value == null ? null : Number(value);
+        } else if (value == null) {
+          delete limitOverrides[key];
+        } else {
+          limitOverrides[key] = Number(value);
+        }
+      }
+
+      await tx.tenant.update({
+        where: { id },
+        data: {
+          featureOverrides: featureOverrides as Prisma.InputJsonObject,
+          limitOverrides: limitOverrides as Prisma.InputJsonObject,
+          maxUsers,
+          maxConnections,
+        },
+      });
+      if (disabledPermissionIds.length > 0) {
+        await tx.rolePermission.deleteMany({
+          where: {
+            role: { tenantId: id },
+            permissionId: { in: disabledPermissionIds },
+          },
+        });
+      }
     });
     await this.audit.record({
       actor: current,

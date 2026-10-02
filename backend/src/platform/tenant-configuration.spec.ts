@@ -37,8 +37,14 @@ describe("tenant configuration", () => {
         findUnique: vi.fn().mockResolvedValue(tenant),
         update: vi.fn().mockResolvedValue({ ...tenant, featureOverrides: { campaigns: false } }),
       },
+      rolePermission: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       plan: { update: vi.fn() },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
+      $transaction: vi.fn(),
     };
+    prisma.$transaction.mockImplementation((callback: (client: typeof prisma) => unknown) =>
+      callback(prisma),
+    );
     const audit = { record: vi.fn().mockResolvedValue(undefined) };
     const entitlements = {
       getEntitlements: vi.fn().mockResolvedValue({
@@ -80,7 +86,18 @@ describe("tenant configuration", () => {
         limitOverrides: { maxContacts: 250 },
       }),
     });
+    expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      prisma.tenant.findUnique.mock.invocationCallOrder[0],
+    );
     expect(prisma.plan.update).not.toHaveBeenCalled();
+    expect(prisma.rolePermission.deleteMany).toHaveBeenCalledWith({
+      where: {
+        role: { tenantId: "tenant-a" },
+        permissionId: {
+          in: ["campaigns.read", "campaigns.create", "campaigns.update", "campaigns.delete"],
+        },
+      },
+    });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: "tenant-a", action: "tenant.configuration.updated" }),
     );
@@ -107,7 +124,13 @@ describe("tenant configuration", () => {
           }),
         update: vi.fn().mockResolvedValue({ id: "tenant-a" }),
       },
+      rolePermission: { deleteMany: vi.fn() },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
+      $transaction: vi.fn(),
     };
+    prisma.$transaction.mockImplementation((callback: (client: typeof prisma) => unknown) =>
+      callback(prisma),
+    );
     const entitlements = {
       getEntitlements: vi.fn().mockResolvedValue({
         features: { chat: true, campaigns: true, tickets: true },
@@ -132,5 +155,70 @@ describe("tenant configuration", () => {
     expect(prisma.tenant.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ limitOverrides: {} }) }),
     );
+    expect(prisma.rolePermission.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("removes only module permissions from roles in the disabled tenant", async () => {
+    const tenant = {
+      id: "tenant-a",
+      maxUsers: null,
+      maxConnections: null,
+      featureOverrides: {},
+      limitOverrides: {},
+    };
+    const prisma = {
+      tenant: {
+        findUnique: vi.fn().mockResolvedValue(tenant),
+        update: vi.fn().mockResolvedValue(tenant),
+      },
+      rolePermission: { deleteMany: vi.fn().mockResolvedValue({ count: 8 }) },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
+      $transaction: vi.fn(),
+    };
+    prisma.$transaction.mockImplementation((callback: (client: typeof prisma) => unknown) =>
+      callback(prisma),
+    );
+    const entitlements = {
+      getEntitlements: vi.fn().mockResolvedValue({
+        features: { chat: true, campaigns: false, tickets: false },
+        limits: {},
+      }),
+    };
+    const service = new PlatformService(
+      prisma as never,
+      { record: vi.fn() } as never,
+      entitlements as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.updateTenantConfiguration(
+      "tenant-a",
+      { modules: { campaigns: false, tickets: false } },
+      actor,
+    );
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.rolePermission.deleteMany).toHaveBeenCalledWith({
+      where: {
+        role: { tenantId: "tenant-a" },
+        permissionId: {
+          in: [
+            "campaigns.read",
+            "campaigns.create",
+            "campaigns.update",
+            "campaigns.delete",
+            "tickets.read",
+            "tickets.create",
+            "tickets.update",
+            "tickets.delete",
+          ],
+        },
+      },
+    });
   });
 });

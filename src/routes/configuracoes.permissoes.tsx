@@ -34,7 +34,6 @@ function permissionLabel(permission: string) {
     "chat.messages.edit": "Editar mensagens",
     "chat.messages.delete": "Apagar mensagens",
     "chat.agent_name.show": "Assinar mensagem",
-    "chat.tags.use": "Utilizar etiquetas",
     "chat.conversations.view_all_active": "Ver todas as conversas",
     "contacts.additional_fields.read": "Ver campos adicionais",
     "settings.manage": "Configurar",
@@ -77,6 +76,7 @@ function permissionGroupTitle(permission: string) {
 function groupedRolePermissions(role: ApiRole) {
   const groups = new Map<string, string[]>();
   const deprecatedChatPermissions = new Set([
+    "chat.tags.use",
     "chat.contacts.edit",
     "chat.contacts.create",
     "chat.contacts.read",
@@ -164,10 +164,10 @@ function PermissoesSettings() {
                     </h3>
                   </div>
                   <ul className="grid sm:grid-cols-2">
-                    {group.permissions.map((permission) => (
+                    {group.permissions.map((permission, index) => (
                       <li
                         key={permission}
-                        className="flex min-h-14 items-start gap-3 border-t border-border px-4 py-2.5 sm:[&:nth-child(odd)]:border-r"
+                        className={`flex min-h-14 items-start gap-3 border-t border-border px-4 py-2.5 ${group.permissions.length % 2 === 1 && index === group.permissions.length - 1 ? "sm:col-span-2" : "sm:[&:nth-child(odd)]:border-r"}`}
                       >
                         <Check className="mt-1 h-3.5 w-3.5 shrink-0 text-success" />
                         <div className="min-w-0">

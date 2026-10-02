@@ -36,7 +36,6 @@ export const TENANT_ADMIN_PERMISSIONS = [
   "groups.update",
   "groups.leave",
   "history.read",
-  "chat.tags.use",
   "chat.tags.read",
   "chat.tags.create",
   "chat.tags.update",

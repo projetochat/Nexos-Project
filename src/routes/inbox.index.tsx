@@ -52,6 +52,10 @@ import { useChatPerms } from "@/lib/perms";
 import { useRealtimeInbox } from "@/lib/realtime/hooks";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 import { resolveConnectedContactInstances } from "@/lib/contact-instance-selection";
+import {
+  departmentsForConnection,
+  favoriteDepartmentForConnection,
+} from "@/lib/favorite-department";
 import { refreshInboxData } from "@/lib/refresh-inbox";
 import { DisconnectedInstanceAlerts } from "@/components/disconnected-instance-alerts";
 import { conversationListMetadataLabel } from "@/lib/conversation-list-metadata";
@@ -598,7 +602,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   const savingContact = React.useRef(false);
   const { allConnections: availableConnections, error: connectionsError } =
     useConnectedMessagingConnections({ enabled: open && canStartConversation });
-  const { data: chatDepartments = [] } = useQuery({
+  const { data: chatDepartments = [], isLoading: chatDepartmentsLoading } = useQuery({
     queryKey: ["trixus", "chat-departments"],
     queryFn: organizationApi.listChatDepartments,
     enabled: open && canStartConversation,
@@ -649,7 +653,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   const startConversation = async (
     contact: ApiContact,
     connectionId: string,
-    departmentId: string,
+    departmentId?: string,
   ) => {
     if (!user) return toast.error("Sessão inválida.");
     if (!canStartConversation)
@@ -664,7 +668,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
       const conversation = await conversationApi.create({
         contactId: contact.id,
         connectionId,
-        departmentId,
+        ...(departmentId ? { departmentId } : {}),
         assignToSelf: true,
       });
       setInboxTab("ativas");
@@ -680,6 +684,10 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
   };
 
   const selectContact = (contact: ApiContact) => {
+    if (chatDepartmentsLoading) {
+      toast.info("Carregando departamentos. Tente novamente em instantes.");
+      return;
+    }
     const connectedInstances = resolveConnectedContactInstances(contact, instances);
     if (connectedInstances.length === 0) {
       setSelectedContact(null);
@@ -692,37 +700,20 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
     }
     if (connectedInstances.length === 1) {
       const connectionId = connectedInstances[0].id;
-      const favorite = chatDepartments.find(
-        (department) =>
-          department.connectionIds.includes(connectionId) &&
-          department.favoriteConnectionIds?.includes(connectionId),
-      );
+      const favorite = favoriteDepartmentForConnection(chatDepartments, connectionId);
+      if (favorite) {
+        void startConversation(contact, connectionId);
+        return;
+      }
       setSelectedContact(contact);
       setSelectedConnectionId(connectionId);
-      setSelectedDepartmentId(favorite?.id ?? "");
+      setSelectedDepartmentId("");
       return;
     }
     setSelectedContact(null);
     setSelectedConnectionId("");
     setSelectedDepartmentId("");
     setConnectionChoice({ contact, instances: connectedInstances });
-  };
-
-  const openContactOnDoubleClick = (contact: ApiContact) => {
-    const connectedInstances = resolveConnectedContactInstances(contact, instances);
-    if (connectedInstances.length !== 1) {
-      selectContact(contact);
-      return;
-    }
-    setSelectedContact(contact);
-    setSelectedConnectionId(connectedInstances[0].id);
-    const connectionId = connectedInstances[0].id;
-    const favorite = chatDepartments.find(
-      (department) =>
-        department.connectionIds.includes(connectionId) &&
-        department.favoriteConnectionIds?.includes(connectionId),
-    );
-    if (favorite) void startConversation(contact, connectionId, favorite.id);
   };
 
   const submit = async () => {
@@ -806,7 +797,6 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
                   aria-pressed={selectedContact?.id === contact.id}
                   disabled={!contactOptions || busy}
                   onClick={() => selectContact(contact)}
-                  onDoubleClick={() => openContactOnDoubleClick(contact)}
                   className="flex h-full min-w-0 flex-1 items-center gap-3 px-3 text-left text-sm"
                 >
                   <Avatar name={contact.nome} src={contact.avatar_url} size={30} />
@@ -852,13 +842,13 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
                 onChange={(event) => setSelectedDepartmentId(event.target.value)}
               >
                 <option value="">- Selecione um departamento -</option>
-                {chatDepartments
-                  .filter((department) => department.connectionIds.includes(selectedConnectionId))
-                  .map((department) => (
+                {departmentsForConnection(chatDepartments, selectedConnectionId).map(
+                  (department) => (
                     <option key={department.id} value={department.id}>
                       {department.name}
                     </option>
-                  ))}
+                  ),
+                )}
               </Select>
             </Field>
           )}
@@ -914,15 +904,15 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
               variant="secondary"
               className="w-full justify-start"
               onClick={() => {
+                const favorite = favoriteDepartmentForConnection(chatDepartments, instance.id);
+                if (favorite) {
+                  void startConversation(connectionChoice.contact, instance.id);
+                  setConnectionChoice(null);
+                  return;
+                }
                 setSelectedContact(connectionChoice.contact);
                 setSelectedConnectionId(instance.id);
-                setSelectedDepartmentId(
-                  chatDepartments.find(
-                    (department) =>
-                      department.connectionIds.includes(instance.id) &&
-                      department.favoriteConnectionIds?.includes(instance.id),
-                  )?.id ?? "",
-                );
+                setSelectedDepartmentId("");
                 setConnectionChoice(null);
               }}
             >

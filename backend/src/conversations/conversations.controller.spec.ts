@@ -114,6 +114,71 @@ describe("ConversationsController connection selection", () => {
       controller["resolveDepartmentId"](undefined, current as never, "connection-b"),
     ).rejects.toThrow("Selecione um departamento para iniciar o atendimento.");
   });
+
+  it("uses the valid profile favorite when starting an unassigned passive conversation", async () => {
+    const prisma = {
+      department: { findFirst: vi.fn().mockResolvedValue({ id: "department-favorite" }) },
+    };
+    const controller = new ConversationsController(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const current = {
+      tenantId: "tenant-a",
+      roleKey: "agent",
+      connectionIds: ["connection-a"],
+      chatDepartmentIds: ["department-favorite"],
+      chatScopes: [
+        {
+          connectionId: "connection-a",
+          departmentIds: ["department-favorite"],
+          favoriteDepartmentId: "department-favorite",
+        },
+      ],
+    };
+
+    await expect(
+      controller["resolveAssignedDepartmentId"](undefined, null, "connection-a", current as never),
+    ).resolves.toBe("department-favorite");
+  });
+
+  it("prefers the current favorite over the passive conversation's previous department", async () => {
+    const prisma = {
+      department: {
+        findFirst: vi.fn().mockResolvedValue({ id: "department-favorite" }),
+      },
+    };
+    const controller = new ConversationsController(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const current = {
+      tenantId: "tenant-a",
+      roleKey: "agent",
+      connectionIds: ["connection-a"],
+      chatDepartmentIds: ["department-favorite"],
+      chatScopes: [
+        {
+          connectionId: "connection-a",
+          departmentIds: ["department-favorite"],
+          favoriteDepartmentId: "department-favorite",
+        },
+      ],
+    };
+
+    await expect(
+      controller["resolveAssignedDepartmentId"](
+        undefined,
+        "department-stale",
+        "connection-a",
+        current as never,
+      ),
+    ).resolves.toBe("department-favorite");
+  });
 });
 
 describe("ConversationsController department transfer scope", () => {

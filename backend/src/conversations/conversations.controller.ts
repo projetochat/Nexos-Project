@@ -293,17 +293,24 @@ export class ConversationsController {
       const protocol =
         conversation.protocol ??
         (targetMembershipId ? await this.nextProtocol(tx, current.tenantId) : null);
+      const departmentId = targetMembershipId
+        ? dto.self
+          ? await this.resolveAssignedDepartmentId(
+              dto.departmentId,
+              conversation.departmentId,
+              conversation.connectionId,
+              current,
+            )
+          : await this.resolveTransferDepartmentId(
+              dto.departmentId,
+              conversation.departmentId,
+              conversation.connectionId,
+              current,
+            )
+        : null;
       if (targetMembershipId) {
-        const departmentId = dto.departmentId ?? conversation.departmentId;
         if (dto.self && !departmentId) {
           throw new BadRequestException("Selecione um departamento para iniciar o atendimento.");
-        }
-        if (departmentId && conversation.connectionId) {
-          await this.assertDepartmentForConnection(
-            departmentId,
-            conversation.connectionId,
-            current,
-          );
         }
         await this.assertAssignableMembership(
           tx,
@@ -317,7 +324,7 @@ export class ConversationsController {
         where: { id: conversation.id },
         data: {
           assignedMembershipId: targetMembershipId,
-          departmentId: dto.departmentId ?? undefined,
+          departmentId: targetMembershipId ? (departmentId ?? undefined) : undefined,
           status: targetMembershipId ? ConversationStatus.EM_ANDAMENTO : ConversationStatus.ABERTA,
           protocol,
           lastMessageAt: conversation.lastMessageAt ?? new Date(),
@@ -779,6 +786,52 @@ export class ConversationsController {
       return favorite;
     }
     throw new BadRequestException("Selecione um departamento para iniciar o atendimento.");
+  }
+
+  private async resolveAssignedDepartmentId(
+    requestedDepartmentId: string | null | undefined,
+    existingDepartmentId: string | null | undefined,
+    connectionId: string | null | undefined,
+    current: AuthenticatedUser,
+  ) {
+    if (requestedDepartmentId) {
+      if (connectionId) {
+        await this.assertDepartmentForConnection(requestedDepartmentId, connectionId, current);
+      }
+      return requestedDepartmentId;
+    }
+    if (connectionId) {
+      const favorite = current.chatScopes?.find(
+        (scope) => scope.connectionId === connectionId,
+      )?.favoriteDepartmentId;
+      if (favorite) {
+        await this.assertDepartmentForConnection(favorite, connectionId, current);
+        return favorite;
+      }
+    }
+    if (existingDepartmentId) {
+      if (!connectionId) return existingDepartmentId;
+      try {
+        await this.assertDepartmentForConnection(existingDepartmentId, connectionId, current);
+        return existingDepartmentId;
+      } catch (error) {
+        if (!(error instanceof BadRequestException)) throw error;
+      }
+    }
+    if (!connectionId) return null;
+    return this.resolveDepartmentId(undefined, current, connectionId);
+  }
+
+  private async resolveTransferDepartmentId(
+    requestedDepartmentId: string | null | undefined,
+    existingDepartmentId: string | null | undefined,
+    connectionId: string | null | undefined,
+    current: AuthenticatedUser,
+  ) {
+    if (requestedDepartmentId && connectionId) {
+      await this.assertDepartmentForConnection(requestedDepartmentId, connectionId, current);
+    }
+    return requestedDepartmentId ?? existingDepartmentId ?? null;
   }
 
   private async resolveConversationConnection(

@@ -74,6 +74,10 @@ import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 import {
+  departmentsForConnection,
+  favoriteDepartmentForConnection,
+} from "@/lib/favorite-department";
+import {
   conversationApi,
   crmApi,
   organizationApi,
@@ -412,7 +416,7 @@ function ContatosPage() {
       })),
     [chatConnections],
   );
-  const { data: chatDepartments = [] } = useQuery({
+  const { data: chatDepartments = [], isLoading: chatDepartmentsLoading } = useQuery({
     queryKey: ["trixus", "chat-departments"],
     queryFn: organizationApi.listChatDepartments,
     enabled: canStartConversation,
@@ -720,7 +724,7 @@ function ContatosPage() {
   const startConversation = async (
     contact: Contact,
     connectionId: string,
-    departmentId: string,
+    departmentId?: string,
   ) => {
     if (!canStartConversation) {
       toast.error("Você não possui permissão para iniciar conversas.");
@@ -731,7 +735,7 @@ function ContatosPage() {
       const conversation = await conversationApi.create({
         contactId: contact.id,
         connectionId,
-        departmentId,
+        ...(departmentId ? { departmentId } : {}),
         assignToSelf: true,
       });
       setConversationChoice(null);
@@ -748,6 +752,10 @@ function ContatosPage() {
       toast.error("Você não possui permissão para iniciar conversas.");
       return;
     }
+    if (chatDepartmentsLoading) {
+      toast.info("Carregando departamentos. Tente novamente em instantes.");
+      return;
+    }
     const connectedInstances = resolveContactInstances(contact.instanceIds, chatInstances).filter(
       (instance) => isConnectedInstanceStatus(instance.status),
     );
@@ -757,16 +765,12 @@ function ContatosPage() {
       });
       return;
     }
-    const departmentsFor = (connectionId: string) =>
-      chatDepartments.filter((department) => department.connectionIds.includes(connectionId));
     if (connectedInstances.length === 1) {
       const instance = connectedInstances[0];
-      const departments = departmentsFor(instance.id);
-      const favorite = departments.find((department) =>
-        department.favoriteConnectionIds?.includes(instance.id),
-      );
+      const departments = departmentsForConnection(chatDepartments, instance.id);
+      const favorite = favoriteDepartmentForConnection(chatDepartments, instance.id);
       if (favorite) {
-        void startConversation(contact, instance.id, favorite.id);
+        void startConversation(contact, instance.id);
         return;
       }
       if (departments.length === 0) {
@@ -2181,13 +2185,22 @@ function ContatosPage() {
                   <button
                     key={instance.id}
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
+                      if (!conversationChoice) return;
+                      const favorite = favoriteDepartmentForConnection(
+                        chatDepartments,
+                        instance.id,
+                      );
+                      if (favorite) {
+                        void startConversation(conversationChoice.contact, instance.id);
+                        return;
+                      }
                       setConversationChoice((current) =>
                         current
                           ? { ...current, connectionId: instance.id, departmentId: "" }
                           : current,
-                      )
-                    }
+                      );
+                    }}
                     className={`flex min-h-12 w-full items-center gap-3 rounded-lg border px-4 text-left ${conversationChoice.connectionId === instance.id ? "border-primary bg-primary/5" : "border-border"}`}
                   >
                     <span
@@ -2207,11 +2220,8 @@ function ContatosPage() {
                 <p className="text-xs font-semibold uppercase text-muted-foreground">
                   Departamentos
                 </p>
-                {chatDepartments
-                  .filter((department) =>
-                    department.connectionIds.includes(conversationChoice.connectionId),
-                  )
-                  .map((department) => (
+                {departmentsForConnection(chatDepartments, conversationChoice.connectionId).map(
+                  (department) => (
                     <button
                       key={department.id}
                       type="button"
@@ -2240,7 +2250,8 @@ function ContatosPage() {
                         className={`h-4 w-4 rounded-full border-4 ${conversationChoice.departmentId === department.id ? "border-primary" : "border-muted-foreground/40"}`}
                       />
                     </button>
-                  ))}
+                  ),
+                )}
               </div>
             )}
           </div>

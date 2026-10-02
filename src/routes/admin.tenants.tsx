@@ -225,7 +225,7 @@ function TenantsAdmin() {
                             <MoreVertical className="h-4 w-4" />
                           </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-80">
+                        <DropdownMenuContent align="end" className="w-56">
                           <DropdownMenuItem
                             onSelect={() => setSelectedTenant(tenant)}
                             className="cursor-pointer focus:bg-blue-50 focus:text-blue-700 dark:focus:bg-blue-950/40 dark:focus:text-blue-300"

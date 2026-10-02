@@ -32,6 +32,7 @@ describe("catálogo do Perfil de Acesso", () => {
       "chat.customer_link.edit",
       "chat.contacts.block",
       "conversations.manage",
+      "chat.tags.use",
     ]) {
       expect(catalog, permission).not.toContain(`"${permission}"`);
     }

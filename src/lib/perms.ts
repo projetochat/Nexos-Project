@@ -49,7 +49,7 @@ export function useChatPerms(): ChatPerms {
   return {
     pode_editar_contato: has("contacts.update"),
     pode_editar_vinculo_cliente: has("contacts.update"),
-    pode_usar_etiquetas: has("chat.tags.use"),
+    pode_usar_etiquetas: has("contacts.update"),
     pode_criar_etiquetas: has("chat.tags.create"),
     pode_editar_etiquetas: has("chat.tags.update"),
     pode_criar_respostas_rapidas: has("chat.quick_replies.create"),

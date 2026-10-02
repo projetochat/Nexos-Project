@@ -19,9 +19,10 @@ import { isPermissionKey, PERMISSIONS } from "../auth/permissions.constants";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
-import type { Prisma } from "../generated/prisma";
+import { Prisma } from "../generated/prisma";
 import { roleChatScopes } from "../auth/connection-access";
 import { PrismaService } from "../prisma/prisma.service";
+import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { UpdateRoleDto } from "./dto/update-role.dto";
 
@@ -31,6 +32,8 @@ export class RolesController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RealtimeService) private readonly realtime: RealtimeService,
+    @Inject(PlanEntitlementService)
+    private readonly entitlements?: PlanEntitlementService,
   ) {}
 
   @Get("permissions")
@@ -146,6 +149,10 @@ export class RolesController {
     }
 
     const role = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
+      );
+      await this.assertEnabledModulePermissions(permissionIds, current.tenantId);
       await this.ensureNameAvailable(tx, current.tenantId, name);
       await this.ensurePermissions(tx, permissionIds);
       return tx.role.create({
@@ -193,6 +200,12 @@ export class RolesController {
     }
     await this.assertMetadataScope(dto.metadata, current, existing.metadata);
     const role = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
+      );
+      if (permissionIds) {
+        await this.assertEnabledModulePermissions(permissionIds, current.tenantId);
+      }
       if (dto.name !== undefined) {
         await this.ensureNameAvailable(tx, current.tenantId, dto.name.trim(), existing.id);
       }
@@ -484,6 +497,27 @@ export class RolesController {
     }
   }
 
+  private async assertEnabledModulePermissions(permissionIds: string[], tenantId: string) {
+    if (!this.entitlements) {
+      throw new Error("PlanEntitlementService não foi configurado para RolesController.");
+    }
+    const { features } = await this.entitlements.getEntitlements(tenantId);
+    const disabledModule = (
+      [
+        ["campaigns", features.campaigns, "Campanhas"],
+        ["tickets", features.tickets, "Chamados"],
+      ] as const
+    ).find(
+      ([prefix, enabled]) =>
+        !enabled && permissionIds.some((permissionId) => permissionId.startsWith(`${prefix}.`)),
+    );
+    if (disabledModule) {
+      throw new BadRequestException(
+        `O módulo ${disabledModule[2]} está desabilitado para esta organização.`,
+      );
+    }
+  }
+
   private async ensurePermissions(tx: Prisma.TransactionClient, permissionIds: string[]) {
     await Promise.all(
       [...new Set(permissionIds)].map((permissionId) =>
@@ -559,7 +593,6 @@ const PERMISSION_DEPENDENCIES: Record<string, readonly string[]> = {
     "conversations.assign",
     "messages.send",
     "chat.phone.read",
-    "chat.tags.use",
     "chat.messages.delete",
     "chat.messages.edit",
     "chat.agent_name.show",
@@ -567,7 +600,7 @@ const PERMISSION_DEPENDENCIES: Record<string, readonly string[]> = {
   ],
   "connections.read": ["connections.create", "connections.update", "connections.delete"],
   "groups.read": ["groups.create", "groups.update", "groups.leave"],
-  "chat.tags.read": ["chat.tags.use", "chat.tags.create", "chat.tags.update", "chat.tags.delete"],
+  "chat.tags.read": ["chat.tags.create", "chat.tags.update", "chat.tags.delete"],
   "chat.quick_replies.read": [
     "chat.quick_replies.create",
     "chat.quick_replies.update",

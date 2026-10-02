@@ -51,7 +51,7 @@ export function currentAppSurface(): AppSurface {
 }
 
 export function appTitleForHostname(hostname: string) {
-  return appSurfaceForHostname(hostname) === "platform" ? "Trixus|App" : "Trixus|Chat";
+  return appSurfaceForHostname(hostname) === "platform" ? "Trixus | App" : "Trixus | Chat";
 }
 
 export function loginEndpointForSurface(surface = currentAppSurface()) {
