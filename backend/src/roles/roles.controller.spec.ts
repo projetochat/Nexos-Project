@@ -13,6 +13,27 @@ const current = {
 };
 
 describe("RolesController permission delegation", () => {
+  it("treats a legacy assignment as authority over its canonical replacement", () => {
+    const controller = new RolesController({} as never, {} as never);
+    const assertCanGrantPermissions = (
+      controller as unknown as {
+        assertCanGrantPermissions: (
+          permissionIds: string[],
+          actor: unknown,
+          existingPermissionIds?: string[],
+        ) => void;
+      }
+    ).assertCanGrantPermissions.bind(controller);
+
+    expect(() =>
+      assertCanGrantPermissions(
+        ["messages.send"],
+        { ...current, assignedPermissionIds: ["chat.audio.send"] },
+        [],
+      ),
+    ).not.toThrow();
+  });
+
   it("returns canonical permissions for roles that still contain legacy chat aliases", async () => {
     const prisma = {
       role: {
