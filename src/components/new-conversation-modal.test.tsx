@@ -70,6 +70,22 @@ vi.mock("@/lib/trixus-api", () => ({
     listCustomers: async () => ({ items: [] }),
   },
   conversationApi: { create: (...args: unknown[]) => mocks.create(...args) },
+  organizationApi: {
+    listChatDepartments: async () => [
+      {
+        id: "department-a",
+        name: "Comercial",
+        connectionIds: ["a"],
+        favoriteConnectionIds: ["a"],
+      },
+      {
+        id: "department-b",
+        name: "Suporte",
+        connectionIds: ["b"],
+        favoriteConnectionIds: ["b"],
+      },
+    ],
+  },
   messageApi: { sendText: (...args: unknown[]) => mocks.send(...args) },
 }));
 
@@ -179,6 +195,7 @@ describe("new conversation contact picker", () => {
     expect(mocks.create).toHaveBeenCalledWith({
       contactId: "1",
       connectionId: "b",
+      departmentId: "department-b",
       assignToSelf: true,
     });
   });
@@ -205,6 +222,7 @@ describe("new conversation contact picker", () => {
     expect(mocks.create).toHaveBeenCalledWith({
       contactId: "0",
       connectionId: "a",
+      departmentId: "department-a",
       assignToSelf: true,
     });
     expect(mocks.send).not.toHaveBeenCalled();
@@ -224,6 +242,7 @@ describe("new conversation contact picker", () => {
     expect(mocks.create).toHaveBeenCalledWith({
       contactId: "0",
       connectionId: "a",
+      departmentId: "department-a",
       assignToSelf: true,
     });
     expect(mocks.navigate).toHaveBeenCalledWith({

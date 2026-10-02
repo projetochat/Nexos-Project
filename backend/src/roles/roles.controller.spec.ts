@@ -225,9 +225,24 @@ describe("RolesController permission delegation", () => {
   it("lists only the Chat scopes the profile editor is allowed to delegate", async () => {
     const prisma = {
       messagingConnection: {
-        findMany: vi
-          .fn()
-          .mockResolvedValue([{ id: "connection-a", name: "WhatsApp A", status: "CONNECTED" }]),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "connection-a",
+            name: "WhatsApp A",
+            status: "CONNECTED",
+            departments: [
+              {
+                department: {
+                  id: "department-a",
+                  name: "Atendimento",
+                  description: null,
+                  color: "#3B82F6",
+                  icon: "department",
+                },
+              },
+            ],
+          },
+        ]),
       },
       department: {
         findMany: vi.fn().mockResolvedValue([{ id: "department-a", name: "Atendimento" }]),
@@ -236,7 +251,22 @@ describe("RolesController permission delegation", () => {
     const controller = new RolesController(prisma as never, {} as never);
 
     await expect(controller.scopeOptions(current as never)).resolves.toEqual({
-      connections: [{ id: "connection-a", name: "WhatsApp A", status: "connected" }],
+      connections: [
+        {
+          id: "connection-a",
+          name: "WhatsApp A",
+          status: "connected",
+          departments: [
+            {
+              id: "department-a",
+              name: "Atendimento",
+              description: null,
+              color: "#3B82F6",
+              icon: "department",
+            },
+          ],
+        },
+      ],
       departments: [{ id: "department-a", name: "Atendimento" }],
     });
     expect(prisma.messagingConnection.findMany).toHaveBeenCalledWith(
@@ -252,6 +282,55 @@ describe("RolesController permission delegation", () => {
         where: expect.objectContaining({ id: { in: ["department-a"] } }),
       }),
     );
+  });
+
+  it("rejects a favorite that is not among the allowed departments", async () => {
+    const controller = new RolesController({} as never, {} as never);
+
+    await expect(
+      controller.create(
+        {
+          name: "Atendimento",
+          permissionIds: ["contacts.read"],
+          metadata: {
+            chatScopes: [
+              {
+                connectionId: "connection-a",
+                departmentIds: ["department-a"],
+                favoriteDepartmentId: "department-b",
+              },
+            ],
+          },
+        },
+        current as never,
+      ),
+    ).rejects.toThrow("O departamento favorito precisa estar liberado.");
+  });
+
+  it("rejects a department that is not linked to the selected instance", async () => {
+    const prisma = {
+      departmentConnection: { count: vi.fn().mockResolvedValue(0) },
+    };
+    const controller = new RolesController(prisma as never, {} as never);
+
+    await expect(
+      controller.create(
+        {
+          name: "Atendimento",
+          permissionIds: ["contacts.read"],
+          metadata: {
+            chatScopes: [
+              {
+                connectionId: "connection-a",
+                departmentIds: ["department-a"],
+                favoriteDepartmentId: null,
+              },
+            ],
+          },
+        },
+        current as never,
+      ),
+    ).rejects.toThrow("não está vinculado à instância selecionada");
   });
 
   it("rejects removing a permission the author does not own", async () => {

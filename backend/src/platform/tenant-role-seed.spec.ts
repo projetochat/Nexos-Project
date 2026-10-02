@@ -29,6 +29,7 @@ describe("seedTenantRoles", () => {
     expect(Object.keys(result).sort()).toEqual(["agent", "tenant_admin"]);
     expect(tx.role.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
+        update: expect.not.objectContaining({ metadata: expect.anything() }),
         create: expect.objectContaining({
           key: "agent",
           metadata: { departmentIds: ["department-atendimento"] },

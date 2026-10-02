@@ -24,6 +24,28 @@ vi.mock("@/lib/trixus-api", () => ({
     list: (...args: unknown[]) => mocks.listConversations(...args),
     create: (...args: unknown[]) => mocks.createConversation(...args),
   },
+  connectionsApi: {
+    listChatScope: async () => [
+      { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
+      { id: "b", name: "Instância B", status: "connected", providerType: "evolution" },
+    ],
+  },
+  organizationApi: {
+    listChatDepartments: async () => [
+      {
+        id: "department-a",
+        name: "Comercial",
+        connectionIds: ["a"],
+        favoriteConnectionIds: ["a"],
+      },
+      {
+        id: "department-b",
+        name: "Suporte",
+        connectionIds: ["b"],
+        favoriteConnectionIds: ["b"],
+      },
+    ],
+  },
 }));
 vi.mock("@/lib/copy-message", () => ({
   sendMessageCopy: (...args: unknown[]) => mocks.sendCopy(...args),
@@ -147,6 +169,7 @@ describe("message forwarding contact picker", () => {
     expect(mocks.createConversation).toHaveBeenCalledWith({
       contactId: "multiple",
       connectionId: "b",
+      departmentId: "department-b",
       assignToSelf: true,
     });
     expect(mocks.sendCopy).toHaveBeenCalledWith(

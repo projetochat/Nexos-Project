@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   conversationApi,
   crmApi,
+  organizationApi,
   type ApiContact,
   type ApiContactInstanceOption,
   type ApiMessage,
@@ -10,6 +11,7 @@ import {
 import { sendMessageCopy } from "@/lib/copy-message";
 import { invalidateConversationQueries } from "@/lib/realtime/invalidate-conversation";
 import { resolveConnectedContactInstances } from "@/lib/contact-instance-selection";
+import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 import { Modal } from "./modal";
 import { Avatar, Button, SearchInput } from "./ui-kit";
 
@@ -26,6 +28,7 @@ export function MessageForwardDialog({
   const [selected, setSelected] = useState<{
     contact: ApiContact;
     connectionId: string;
+    departmentId: string;
   } | null>(null);
   const [connectionChoice, setConnectionChoice] = useState<{
     contact: ApiContact;
@@ -33,6 +36,11 @@ export function MessageForwardDialog({
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const { allConnections } = useConnectedMessagingConnections();
+  const { data: chatDepartments = [] } = useQuery({
+    queryKey: ["trixus", "chat-departments"],
+    queryFn: organizationApi.listChatDepartments,
+  });
   const sending = useRef(false);
   const ids = useRef(new Map<string, string>());
   const {
@@ -49,7 +57,11 @@ export function MessageForwardDialog({
     queryFn: crmApi.contactOptions,
   });
   const chooseContact = (contact: ApiContact) => {
-    const instances = resolveConnectedContactInstances(contact, contactOptions?.instances ?? []);
+    const allowedIds = new Set(allConnections.map((connection) => connection.id));
+    const instances = resolveConnectedContactInstances(
+      contact,
+      (contactOptions?.instances ?? []).filter((instance) => allowedIds.has(instance.id)),
+    );
     setError("");
     if (instances.length === 0) {
       setSelected(null);
@@ -57,7 +69,13 @@ export function MessageForwardDialog({
       return;
     }
     if (instances.length === 1) {
-      setSelected({ contact, connectionId: instances[0].id });
+      const connectionId = instances[0].id;
+      const favorite = chatDepartments.find(
+        (department) =>
+          department.connectionIds.includes(connectionId) &&
+          department.favoriteConnectionIds?.includes(connectionId),
+      );
+      setSelected({ contact, connectionId, departmentId: favorite?.id ?? "" });
       return;
     }
     setSelected(null);
@@ -83,6 +101,7 @@ export function MessageForwardDialog({
         (await conversationApi.create({
           contactId: selected.contact.id,
           connectionId: selected.connectionId,
+          departmentId: selected.departmentId,
           assignToSelf: true,
         }));
       if (!ids.current.has(conversation.id)) ids.current.set(conversation.id, crypto.randomUUID());
@@ -110,7 +129,11 @@ export function MessageForwardDialog({
             <Button variant="secondary" disabled={busy} onClick={onClose}>
               Cancelar
             </Button>
-            <Button variant="primary" disabled={busy || !selected} onClick={() => void send()}>
+            <Button
+              variant="primary"
+              disabled={busy || !selected?.departmentId}
+              onClick={() => void send()}
+            >
               {busy ? "Enviando…" : "Encaminhar"}
             </Button>
           </>
@@ -156,6 +179,23 @@ export function MessageForwardDialog({
             <p>Nenhum contato encontrado.</p>
           )}
         </div>
+        {selected && (
+          <div className="mt-3 space-y-2">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Departamento</p>
+            {chatDepartments
+              .filter((department) => department.connectionIds.includes(selected.connectionId))
+              .map((department) => (
+                <button
+                  type="button"
+                  key={department.id}
+                  onClick={() => setSelected({ ...selected, departmentId: department.id })}
+                  className={`flex min-h-11 w-full items-center rounded-lg border px-3 text-left text-sm ${selected.departmentId === department.id ? "border-primary bg-primary/10" : "border-border"}`}
+                >
+                  {department.name}
+                </button>
+              ))}
+          </div>
+        )}
         {(data?.totalPages ?? 0) > 1 && (
           <div className="mt-3 flex items-center justify-between">
             <Button
@@ -210,7 +250,16 @@ export function MessageForwardDialog({
               variant="secondary"
               className="w-full justify-start"
               onClick={() => {
-                setSelected({ contact: connectionChoice.contact, connectionId: instance.id });
+                setSelected({
+                  contact: connectionChoice.contact,
+                  connectionId: instance.id,
+                  departmentId:
+                    chatDepartments.find(
+                      (department) =>
+                        department.connectionIds.includes(instance.id) &&
+                        department.favoriteConnectionIds?.includes(instance.id),
+                    )?.id ?? "",
+                });
                 setConnectionChoice(null);
               }}
             >

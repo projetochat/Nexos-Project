@@ -4,7 +4,9 @@ import {
   connectionIdAccess,
   departmentAccess,
   departmentIdAccess,
+  conversationChatScopeAccess,
   roleChatDepartmentIds,
+  roleChatScopes,
   roleConnectionIds,
 } from "./connection-access";
 
@@ -48,5 +50,50 @@ describe("instance access", () => {
   it("fails closed when a non-administrator has no Chat department scope", () => {
     expect(departmentAccess({ roleKey: "custom" })).toEqual({ departmentId: { in: [] } });
     expect(departmentIdAccess({ roleKey: "custom" })).toEqual({ id: { in: [] } });
+  });
+
+  it("keeps departments paired with their own instance and favorite", () => {
+    const chatScopes = roleChatScopes({
+      key: "agent",
+      metadata: {
+        chatScopes: [
+          {
+            connectionId: "connection-a",
+            departmentIds: ["department-a"],
+            favoriteDepartmentId: "department-a",
+          },
+          {
+            connectionId: "connection-b",
+            departmentIds: ["department-b"],
+            favoriteDepartmentId: null,
+          },
+        ],
+      },
+    });
+
+    expect(chatScopes).toEqual([
+      {
+        connectionId: "connection-a",
+        departmentIds: ["department-a"],
+        favoriteDepartmentId: "department-a",
+      },
+      {
+        connectionId: "connection-b",
+        departmentIds: ["department-b"],
+        favoriteDepartmentId: null,
+      },
+    ]);
+    expect(conversationChatScopeAccess({ roleKey: "agent", chatScopes })).toEqual({
+      OR: [
+        {
+          connectionId: { in: ["connection-a"] },
+          OR: [{ departmentId: { in: ["department-a"] } }, { departmentId: null }],
+        },
+        {
+          connectionId: { in: ["connection-b"] },
+          OR: [{ departmentId: { in: ["department-b"] } }, { departmentId: null }],
+        },
+      ],
+    });
   });
 });

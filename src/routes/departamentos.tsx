@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Network, Copy } from "lucide-react";
+import { Plus, Pencil, Trash2, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -16,9 +16,15 @@ import {
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
-import { organizationApi, type ApiDepartment } from "@/lib/trixus-api";
+import {
+  organizationApi,
+  type ApiDepartment,
+  type DepartmentIcon as DepartmentIconName,
+  type ApiMessagingConnection,
+} from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
+import { DepartmentIcon, DEPARTMENT_ICON_OPTIONS } from "@/components/department-icon";
 
 export const Route = createFileRoute("/departamentos")({ component: Page });
 
@@ -26,6 +32,8 @@ type DepartamentoFormData = {
   name?: string;
   description?: string | null;
   color?: string;
+  icon?: DepartmentIconName;
+  connectionIds: string[];
 };
 
 function normalizeDepartmentName(value: string) {
@@ -80,6 +88,10 @@ function Page() {
     refetchOnMount: "always",
     refetchOnWindowFocus: "always",
   });
+  const { data: connectionOptions = [] } = useQuery({
+    queryKey: ["trixus", "department-connection-options"],
+    queryFn: organizationApi.departmentConnectionOptions,
+  });
 
   const save = useMutation({
     mutationFn: (payload: { id?: string; data: DepartamentoFormData }) =>
@@ -89,6 +101,8 @@ function Page() {
             name: payload.data.name ?? "",
             description: payload.data.description,
             color: payload.data.color,
+            icon: payload.data.icon,
+            connectionIds: payload.data.connectionIds,
           }),
     onSuccess: (data, vars) => {
       const previous = vars.id ? editing : null;
@@ -174,7 +188,7 @@ function Page() {
                       className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
                       style={{ background: d.color }}
                     >
-                      <Network className="h-5 w-5" />
+                      <DepartmentIcon icon={d.icon} />
                     </div>
                     <p className="min-w-0 truncate font-semibold">{d.name}</p>
                   </div>
@@ -229,6 +243,7 @@ function Page() {
           <DepartamentoForm
             open={novo.open}
             departments={departamentos}
+            connections={connectionOptions}
             onClose={novo.hide}
             onSubmit={(data) => save.mutate({ data })}
           />
@@ -239,6 +254,7 @@ function Page() {
             initial={duplicating ?? undefined}
             clone
             departments={departamentos}
+            connections={connectionOptions}
             onClose={() => setDuplicating(null)}
             onSubmit={(data) => save.mutate({ data })}
           />
@@ -248,6 +264,7 @@ function Page() {
             open={!!editing}
             initial={editing ?? undefined}
             departments={departamentos}
+            connections={connectionOptions}
             onClose={() => setEditing(null)}
             onSubmit={(data) => editing && save.mutate({ id: editing.id, data })}
           />
@@ -278,6 +295,7 @@ function DepartamentoForm({
   initial,
   clone = false,
   departments,
+  connections,
 }: {
   open: boolean;
   onClose: () => void;
@@ -285,8 +303,9 @@ function DepartamentoForm({
   initial?: ApiDepartment;
   clone?: boolean;
   departments: ApiDepartment[];
+  connections: Array<Pick<ApiMessagingConnection, "id" | "name" | "status" | "color" | "logoUrl">>;
 }) {
-  const [form, setForm] = React.useState<DepartamentoFormData>({});
+  const [form, setForm] = React.useState<DepartamentoFormData>({ connectionIds: [] });
   const [error, setError] = React.useState("");
   const duplicateNameError = (name: string) => {
     const normalizedName = normalizeDepartmentName(name);
@@ -306,8 +325,10 @@ function DepartamentoForm({
             name: clone ? duplicateDepartmentName(initial.name, departments) : initial.name,
             description: initial.description,
             color: initial.color,
+            icon: initial.icon,
+            connectionIds: initial.connectionIds,
           }
-        : { color: "#3B82F6" },
+        : { color: "#3B82F6", icon: "department", connectionIds: [] },
     );
     setError("");
   }, [clone, departments, initial, open]);
@@ -321,6 +342,10 @@ function DepartamentoForm({
     const duplicateError = duplicateNameError(form.name);
     if (duplicateError) {
       setError(duplicateError);
+      return;
+    }
+    if (connections.length > 0 && form.connectionIds.length === 0) {
+      toast.error("Vincule ao menos uma instância.");
       return;
     }
     onSubmit({ ...form, color: completeHexColor(form.color) });
@@ -380,6 +405,64 @@ function DepartamentoForm({
                 onChange={(e) => setForm({ ...form, color: normalizeHexColor(e.target.value) })}
                 className="min-w-0 flex-1 border-0 bg-transparent uppercase focus:border-0 max-sm:!min-h-0 max-sm:!p-0"
               />
+            </div>
+          </Field>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_13rem]">
+          <Field label="Instâncias">
+            <div className="min-h-11 rounded-lg border border-border bg-surface-1 p-2">
+              {connections.length === 0 ? (
+                <p className="px-1 py-1 text-sm text-muted-foreground">
+                  Nenhuma instância cadastrada.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {connections.map((connection) => {
+                    const selected = form.connectionIds.includes(connection.id);
+                    return (
+                      <button
+                        key={connection.id}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() =>
+                          setForm((current) => ({
+                            ...current,
+                            connectionIds: selected
+                              ? current.connectionIds.filter((id) => id !== connection.id)
+                              : [...current.connectionIds, connection.id],
+                          }))
+                        }
+                        className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-sm transition ${selected ? "border-primary bg-primary/10 text-primary" : "border-border bg-background"}`}
+                      >
+                        <span className="h-2 w-2 rounded-full bg-success" />
+                        {connection.name}
+                        {selected && <Check className="h-3.5 w-3.5" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Field>
+          <Field label="Ícone">
+            <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-surface-1 p-1.5">
+              {DEPARTMENT_ICON_OPTIONS.map((option) => {
+                const Icon = option.icon;
+                const selected = (form.icon ?? "department") === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    title={option.label}
+                    aria-label={option.label}
+                    aria-pressed={selected}
+                    onClick={() => setForm((current) => ({ ...current, icon: option.id }))}
+                    className={`flex min-h-11 items-center justify-center rounded-md border transition ${selected ? "border-primary bg-primary/10 text-primary" : "border-transparent hover:bg-muted"}`}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </button>
+                );
+              })}
             </div>
           </Field>
         </div>

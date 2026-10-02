@@ -705,30 +705,45 @@ model AuthSession {
 }
 
 model Department {
-  id                    String                 @id @default(uuid())
-  tenantId              String
-  name                  String
-  description           String?
-  color                 String                 @default("#3B82F6")
-  active                Boolean                @default(true)
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  members               DepartmentMembership[]
-  contacts              Contact[]
-  conversations         Conversation[]
-  quickReplies          QuickReply[]
-  tickets               Ticket[]
-  leads                 Lead[]
-  notifications         Notification[]
-  automationRules       AutomationRule[]
-  defaultForConnections MessagingConnection[]  @relation("MessagingConnectionDefaultDepartment")
+  id              String                 @id @default(uuid())
+  tenantId        String
+  name            String
+  description     String?
+  color           String                 @default("#3B82F6")
+  icon            String                 @default("department")
+  active          Boolean                @default(true)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members         DepartmentMembership[]
+  contacts        Contact[]
+  conversations   Conversation[]
+  quickReplies    QuickReply[]
+  tickets         Ticket[]
+  leads           Lead[]
+  notifications   Notification[]
+  automationRules AutomationRule[]
+  connections     DepartmentConnection[]
 
   @@unique([tenantId, name])
   @@unique([tenantId, id])
   @@index([tenantId])
   @@index([active])
   @@map("departments")
+}
+
+model DepartmentConnection {
+  tenantId     String
+  departmentId String
+  connectionId String
+  createdAt    DateTime            @default(now())
+  department   Department          @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Cascade)
+  connection   MessagingConnection @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, departmentId, connectionId])
+  @@index([tenantId, connectionId])
+  @@index([tenantId, departmentId])
+  @@map("department_messaging_connections")
 }
 
 model DepartmentMembership {
@@ -1175,7 +1190,6 @@ model MessagingConnection {
   timezone                  String                    @default("America/Sao_Paulo")
   id                        String                    @id @default(uuid())
   tenantId                  String
-  defaultDepartmentId       String?
   name                      String
   color                     String?                   @default("#22c55e")
   logoUrl                   String?
@@ -1206,7 +1220,7 @@ model MessagingConnection {
   createdAt                 DateTime                  @default(now())
   updatedAt                 DateTime                  @updatedAt
   tenant                    Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  defaultDepartment         Department?               @relation("MessagingConnectionDefaultDepartment", fields: [tenantId, defaultDepartmentId], references: [tenantId, id], onDelete: SetNull)
+  departments               DepartmentConnection[]
   conversations             Conversation[]
   messages                  Message[]
   campaigns                 Campaign[]
@@ -1217,7 +1231,6 @@ model MessagingConnection {
   @@index([tenantId, status])
   @@index([tenantId, archivedAt])
   @@index([tenantId, ownerPhoneNormalized])
-  @@index([tenantId, defaultDepartmentId])
   @@map("messaging_connections")
 }
 

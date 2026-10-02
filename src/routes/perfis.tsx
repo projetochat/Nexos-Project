@@ -11,7 +11,7 @@ import {
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, ShieldCheck, Check, Copy, Info } from "lucide-react";
+import { Plus, Pencil, Trash2, ShieldCheck, Check, Copy, Info, Star } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -42,12 +42,15 @@ import {
 export const Route = createFileRoute("/perfis")({
   validateSearch: (search) => ({
     edit: typeof search.edit === "string" ? search.edit : undefined,
-    tab: search.tab === "acessos" || search.tab === "jornada" ? search.tab : undefined,
+    tab:
+      search.tab === "visualizacao" || search.tab === "acessos" || search.tab === "jornada"
+        ? search.tab
+        : undefined,
   }),
   component: Page,
 });
 
-type PerfilTab = "geral" | "acessos" | "jornada";
+type PerfilTab = "geral" | "visualizacao" | "acessos" | "jornada";
 type PermissionTab = "chat" | "administracao" | "chamados";
 type PermissionField = { id: string; label: string; description: string };
 
@@ -390,19 +393,38 @@ type PerfilFormData = {
   permissionIds: string[];
   departmentIds: string[];
   connectionIds: string[];
+  chatScopes: ChatScopeForm[];
   workSchedule: WorkSchedule;
 };
 
 type RoleMetadata = {
   departmentIds?: string[];
   connectionIds?: string[];
+  chatScopes?: ChatScopeForm[];
   workSchedule?: WorkSchedule;
   color?: string;
   language?: string;
   timezone?: string;
 };
 
-type RoleScopeConnection = { id: string; name: string; status: string };
+type ChatScopeForm = {
+  connectionId: string;
+  departmentIds: string[];
+  favoriteDepartmentId: string | null;
+};
+
+type RoleScopeConnection = {
+  id: string;
+  name: string;
+  status: string;
+  departments: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    color: string;
+    icon: string;
+  }>;
+};
 
 function Page() {
   const qc = useQueryClient();
@@ -435,7 +457,6 @@ function Page() {
     queryKey: ["trixus", "role-scope-options"],
     queryFn: organizationApi.roleScopeOptions,
   });
-  const departamentos = scopeOptions?.departments ?? [];
   const connections = scopeOptions?.connections ?? [];
   const { data: memberships = [] } = useQuery({
     queryKey: ["trixus", "users"],
@@ -479,9 +500,16 @@ function Page() {
 
   const save = useMutation({
     mutationFn: async ({ id, data }: { id?: string; data: PerfilFormData }) => {
+      const existingMetadata = id ? items.find((role) => role.id === id)?.metadata : undefined;
       const metadata = {
+        ...(existingMetadata &&
+        typeof existingMetadata === "object" &&
+        !Array.isArray(existingMetadata)
+          ? existingMetadata
+          : {}),
         departmentIds: data.departmentIds,
         connectionIds: data.connectionIds,
+        chatScopes: data.chatScopes,
         workSchedule: data.workSchedule,
         color: data.color,
         language: data.language,
@@ -636,7 +664,6 @@ function Page() {
         <PerfilForm
           open={novo.open}
           roles={items}
-          departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
           grantablePermissionIds={grantablePermissionIds}
           permissionGroups={permissionGroups}
@@ -646,7 +673,6 @@ function Page() {
         <PerfilForm
           open={!!editing}
           roles={items}
-          departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
           grantablePermissionIds={grantablePermissionIds}
           permissionGroups={permissionGroups}
@@ -662,7 +688,6 @@ function Page() {
         <PerfilForm
           open={!!duplicating}
           roles={items}
-          departamentos={departamentos.map((d) => ({ id: d.id, name: d.name }))}
           connections={connections}
           grantablePermissionIds={grantablePermissionIds}
           permissionGroups={permissionGroups}
@@ -698,7 +723,6 @@ function PerfilForm({
   initialTab = "geral",
   clone = false,
   roles,
-  departamentos,
   connections,
   grantablePermissionIds,
   permissionGroups,
@@ -710,7 +734,6 @@ function PerfilForm({
   initialTab?: PerfilTab;
   clone?: boolean;
   roles: ApiRole[];
-  departamentos: { id: string; name: string }[];
   connections: RoleScopeConnection[];
   grantablePermissionIds: string[];
   permissionGroups: typeof PERMISSION_GROUPS;
@@ -724,6 +747,7 @@ function PerfilForm({
     permissionIds: [],
     departmentIds: [],
     connectionIds: [],
+    chatScopes: [],
     workSchedule: defaultWorkSchedule(),
   });
   const [error, setError] = React.useState("");
@@ -760,6 +784,17 @@ function PerfilForm({
               : initial.permissionIds,
             departmentIds: metadata.departmentIds ?? [],
             connectionIds: metadata.connectionIds ?? [],
+            chatScopes:
+              metadata.chatScopes ??
+              (metadata.connectionIds ?? []).map((connectionId) => ({
+                connectionId,
+                departmentIds: (metadata.departmentIds ?? []).filter((departmentId) =>
+                  connections
+                    .find((connection) => connection.id === connectionId)
+                    ?.departments.some((department) => department.id === departmentId),
+                ),
+                favoriteDepartmentId: null,
+              })),
             workSchedule: normalizeWorkSchedule(metadata.workSchedule ?? defaultWorkSchedule()),
           }
         : {
@@ -776,12 +811,13 @@ function PerfilForm({
             ].filter((permissionId) => grantablePermissionIds.includes(permissionId)),
             departmentIds: [],
             connectionIds: [],
+            chatScopes: [],
             workSchedule: defaultWorkSchedule(),
           },
     );
     setError("");
     setActiveTab(initialTab);
-  }, [clone, grantablePermissionIds, initial, initialTab, open, permissionGroups]);
+  }, [clone, connections, grantablePermissionIds, initial, initialTab, open, permissionGroups]);
 
   const submit = () => {
     if (!form.name || form.name.trim().length < 2) {
@@ -841,37 +877,6 @@ function PerfilForm({
     setForm((current) => ({ ...current, permissionIds: result.permissionIds }));
   };
 
-  const toggleDepartment = (id: string, checked: boolean) => {
-    setForm((current) => ({
-      ...current,
-      departmentIds: checked
-        ? Array.from(new Set([...current.departmentIds, id]))
-        : current.departmentIds.filter((departmentId) => departmentId !== id),
-    }));
-  };
-
-  const toggleConnection = (id: string, checked: boolean) => {
-    setForm((current) => ({
-      ...current,
-      connectionIds: checked
-        ? Array.from(new Set([...current.connectionIds, id]))
-        : current.connectionIds.filter((connectionId) => connectionId !== id),
-    }));
-  };
-
-  const toggleMany = (
-    field: "permissionIds" | "departmentIds" | "connectionIds",
-    ids: string[],
-    checked: boolean,
-  ) => {
-    setForm((current) => ({
-      ...current,
-      [field]: checked
-        ? Array.from(new Set([...current[field], ...ids]))
-        : current[field].filter((itemId) => !ids.includes(itemId)),
-    }));
-  };
-
   return (
     <Modal
       open={open}
@@ -918,14 +923,6 @@ function PerfilForm({
 
         {activeTab === "acessos" && (
           <div className="space-y-6">
-            <ScopeSettings
-              form={form}
-              departamentos={departamentos}
-              connections={connections}
-              toggleDepartment={toggleDepartment}
-              toggleConnection={toggleConnection}
-              toggleMany={toggleMany}
-            />
             <PermissionSettings
               form={form}
               permissionGroups={permissionGroups}
@@ -934,6 +931,25 @@ function PerfilForm({
               grantablePermissionIds={grantablePermissionIds}
             />
           </div>
+        )}
+
+        {activeTab === "visualizacao" && (
+          <ScopeSettings
+            form={form}
+            connections={connections}
+            onChange={(chatScopes) => {
+              const connectionIds = chatScopes.map((scope) => scope.connectionId);
+              const departmentIds = [
+                ...new Set(chatScopes.flatMap((scope) => scope.departmentIds)),
+              ];
+              setForm((current) => ({
+                ...current,
+                chatScopes,
+                connectionIds,
+                departmentIds,
+              }));
+            }}
+          />
         )}
 
         {activeTab === "jornada" && (
@@ -956,19 +972,22 @@ function PerfilTabs({
 }) {
   const tabs: Array<{ id: PerfilTab; label: string }> = [
     { id: "geral", label: "Geral" },
+    { id: "visualizacao", label: "Visualização do atendimento" },
     { id: "acessos", label: "Acessos" },
     { id: "jornada", label: "Jornada de Trabalho" },
   ];
 
   return (
-    <div className="flex flex-wrap border-b border-border">
+    <div className="flex flex-nowrap overflow-x-auto border-b border-border" role="tablist">
       {tabs.map((tab) => (
         <button
           key={tab.id}
           type="button"
+          role="tab"
+          aria-selected={active === tab.id}
           onClick={() => onChange(tab.id)}
           className={cn(
-            "border-b-2 px-4 py-2 text-sm transition",
+            "whitespace-nowrap border-b-2 px-4 py-2 text-sm transition",
             active === tab.id
               ? "border-primary text-primary"
               : "border-transparent text-muted-foreground hover:text-foreground",
@@ -1031,22 +1050,12 @@ function GeneralTab({
 
 function ScopeSettings({
   form,
-  departamentos,
   connections,
-  toggleDepartment,
-  toggleConnection,
-  toggleMany,
+  onChange,
 }: {
   form: PerfilFormData;
-  departamentos: { id: string; name: string }[];
   connections: RoleScopeConnection[];
-  toggleDepartment: (id: string, checked: boolean) => void;
-  toggleConnection: (id: string, checked: boolean) => void;
-  toggleMany: (
-    field: "permissionIds" | "departmentIds" | "connectionIds",
-    ids: string[],
-    checked: boolean,
-  ) => void;
+  onChange: (scopes: ChatScopeForm[]) => void;
 }) {
   const sortedConnections = sortByOptionLabel(
     connections.filter(
@@ -1054,16 +1063,43 @@ function ScopeSettings({
     ),
     (connection) => connection.name,
   );
-  const sortedDepartments = sortByOptionLabel(departamentos, (department) => department.name);
-  const connectionIds = sortedConnections.map((connection) => connection.id);
-  const departmentIds = sortedDepartments.map((department) => department.id);
+
+  const scopeFor = (connectionId: string) =>
+    form.chatScopes.find((scope) => scope.connectionId === connectionId);
+  const setConnection = (connection: RoleScopeConnection, checked: boolean) => {
+    if (!checked) {
+      onChange(form.chatScopes.filter((scope) => scope.connectionId !== connection.id));
+      return;
+    }
+    if (scopeFor(connection.id)) return;
+    onChange([
+      ...form.chatScopes,
+      { connectionId: connection.id, departmentIds: [], favoriteDepartmentId: null },
+    ]);
+  };
+  const setDepartments = (connectionId: string, departmentIds: string[]) => {
+    onChange(
+      form.chatScopes.map((scope) =>
+        scope.connectionId === connectionId
+          ? {
+              ...scope,
+              departmentIds,
+              favoriteDepartmentId:
+                scope.favoriteDepartmentId && departmentIds.includes(scope.favoriteDepartmentId)
+                  ? scope.favoriteDepartmentId
+                  : null,
+            }
+          : scope,
+      ),
+    );
+  };
 
   return (
     <section className="space-y-4">
       <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 px-4 py-3 text-sm text-foreground">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" aria-hidden="true" />
         <div>
-          <p className="font-semibold">Escopo do Chat</p>
+          <p className="font-semibold">Instâncias e departamentos</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             Estas seleções definem quais instâncias, departamentos e conversas o perfil pode
             visualizar e operar no Chat. Elas são independentes dos acessos aos módulos de cadastro
@@ -1072,39 +1108,114 @@ function ScopeSettings({
         </div>
       </div>
 
-      <SelectionSection
-        title="Visualização de instância - Chat"
-        ids={connectionIds}
-        selectedIds={form.connectionIds}
-        emptyLabel="Nenhuma instância cadastrada."
-        onToggleAll={(checked) => toggleMany("connectionIds", connectionIds, checked)}
-      >
-        {sortedConnections.map((connection) => (
-          <PermissionSwitch
-            key={connection.id}
-            label={connection.name}
-            checked={form.connectionIds.includes(connection.id)}
-            onChange={(checked) => toggleConnection(connection.id, checked)}
-          />
-        ))}
-      </SelectionSection>
-
-      <SelectionSection
-        title="Visualização de departamento - Chat"
-        ids={departmentIds}
-        selectedIds={form.departmentIds}
-        emptyLabel="Nenhum departamento cadastrado."
-        onToggleAll={(checked) => toggleMany("departmentIds", departmentIds, checked)}
-      >
-        {sortedDepartments.map((department) => (
-          <PermissionSwitch
-            key={department.id}
-            label={department.name}
-            checked={form.departmentIds.includes(department.id)}
-            onChange={(checked) => toggleDepartment(department.id, checked)}
-          />
-        ))}
-      </SelectionSection>
+      {sortedConnections.length === 0 ? (
+        <div className="rounded-xl border border-border p-6 text-center text-sm text-muted-foreground">
+          Nenhuma instância cadastrada.
+        </div>
+      ) : (
+        sortedConnections.map((connection) => {
+          const scope = scopeFor(connection.id);
+          const enabled = !!scope;
+          const departments = sortByOptionLabel(connection.departments, (item) => item.name);
+          const allSelected =
+            enabled &&
+            departments.length > 0 &&
+            departments.every((department) => scope.departmentIds.includes(department.id));
+          return (
+            <div key={connection.id} className="overflow-hidden rounded-xl border border-border">
+              <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 bg-primary/5 px-4 py-3">
+                <strong className="min-w-0 truncate">{connection.name}</strong>
+                <div className="flex flex-wrap items-center gap-4 text-sm">
+                  <label className="flex min-h-11 items-center gap-2">
+                    <span>Acesso à instância</span>
+                    <Switch
+                      checked={enabled}
+                      onCheckedChange={(checked) => setConnection(connection, checked)}
+                    />
+                  </label>
+                  <label className="flex min-h-11 items-center gap-2 border-l border-border pl-4">
+                    <span>Todos os departamentos</span>
+                    <Switch
+                      checked={allSelected}
+                      disabled={!enabled || departments.length === 0}
+                      onCheckedChange={(checked) =>
+                        setDepartments(
+                          connection.id,
+                          checked ? departments.map((department) => department.id) : [],
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+              </div>
+              <div className="space-y-2 p-3 sm:pl-8">
+                {departments.length === 0 ? (
+                  <p className="py-3 text-sm text-muted-foreground">
+                    Nenhum departamento vinculado a esta instância.
+                  </p>
+                ) : (
+                  departments.map((department) => {
+                    const checked = !!scope?.departmentIds.includes(department.id);
+                    const favorite = scope?.favoriteDepartmentId === department.id;
+                    return (
+                      <div
+                        key={department.id}
+                        className={`flex min-h-14 items-center gap-3 rounded-lg border px-3 ${enabled ? "bg-background" : "bg-muted/40 text-muted-foreground"}`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium" title={department.name}>
+                            {department.name}
+                          </p>
+                          {department.description && (
+                            <p className="truncate text-xs text-muted-foreground">
+                              {department.description}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!enabled || !checked}
+                          aria-pressed={favorite}
+                          aria-label={`${favorite ? "Remover" : "Definir"} ${department.name} como departamento principal`}
+                          onClick={() =>
+                            onChange(
+                              form.chatScopes.map((item) =>
+                                item.connectionId === connection.id
+                                  ? {
+                                      ...item,
+                                      favoriteDepartmentId: favorite ? null : department.id,
+                                    }
+                                  : item,
+                              ),
+                            )
+                          }
+                          className="flex h-11 w-11 items-center justify-center rounded-md disabled:opacity-40"
+                        >
+                          <Star
+                            className={`h-5 w-5 ${favorite ? "fill-warning text-warning" : "text-muted-foreground"}`}
+                          />
+                        </button>
+                        <Switch
+                          checked={checked}
+                          disabled={!enabled}
+                          onCheckedChange={(nextChecked) =>
+                            setDepartments(
+                              connection.id,
+                              nextChecked
+                                ? [...new Set([...(scope?.departmentIds ?? []), department.id])]
+                                : (scope?.departmentIds ?? []).filter((id) => id !== department.id),
+                            )
+                          }
+                        />
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          );
+        })
+      )}
     </section>
   );
 }

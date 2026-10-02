@@ -541,12 +541,51 @@ async function seedDemoData() {
     seedMessagingConnection(orbit.id, "ORBIT"),
   ]);
   await Promise.all([
+    prisma.departmentConnection.upsert({
+      where: {
+        tenantId_departmentId_connectionId: {
+          tenantId: acme.id,
+          departmentId: acmeDepartments[0].id,
+          connectionId: acmeConnection.id,
+        },
+      },
+      update: {},
+      create: {
+        tenantId: acme.id,
+        departmentId: acmeDepartments[0].id,
+        connectionId: acmeConnection.id,
+      },
+    }),
+    prisma.departmentConnection.upsert({
+      where: {
+        tenantId_departmentId_connectionId: {
+          tenantId: orbit.id,
+          departmentId: orbitDepartments[0].id,
+          connectionId: orbitConnection.id,
+        },
+      },
+      update: {},
+      create: {
+        tenantId: orbit.id,
+        departmentId: orbitDepartments[0].id,
+        connectionId: orbitConnection.id,
+      },
+    }),
+  ]);
+  await Promise.all([
     prisma.role.updateMany({
       where: { id: { in: [acmeRoles.supervisor.id, acmeRoles.agent.id] } },
       data: {
         metadata: {
           connectionIds: [acmeConnection.id],
           departmentIds: [acmeDepartments[0].id],
+          chatScopes: [
+            {
+              connectionId: acmeConnection.id,
+              departmentIds: [acmeDepartments[0].id],
+              favoriteDepartmentId: acmeDepartments[0].id,
+            },
+          ],
         },
       },
     }),
@@ -556,6 +595,13 @@ async function seedDemoData() {
         metadata: {
           connectionIds: [orbitConnection.id],
           departmentIds: [orbitDepartments[0].id],
+          chatScopes: [
+            {
+              connectionId: orbitConnection.id,
+              departmentIds: [orbitDepartments[0].id],
+              favoriteDepartmentId: orbitDepartments[0].id,
+            },
+          ],
         },
       },
     }),

@@ -1,7 +1,6 @@
 import {
-  connectionAccess,
   connectionIdAccess,
-  departmentAccess,
+  conversationChatScopeAccess,
   departmentIdAccess,
 } from "../auth/connection-access";
 import {
@@ -165,8 +164,7 @@ function groupListWhere(query: ListGroupsQueryDto, current: AuthenticatedUser) {
   const filterWithoutConnection = query.connectionId === EMPTY_GROUP_FILTER_VALUE;
   const filters: Prisma.ConversationWhereInput[] = [
     visibleGroupConnectionWhere,
-    connectionAccess(current),
-    departmentAccess(current),
+    conversationChatScopeAccess(current),
   ];
   if (q) {
     filters.push({
@@ -298,13 +296,11 @@ export class GroupsController {
   async detail(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const group = await this.prisma.conversation.findFirst({
       where: {
+        AND: [visibleGroupConnectionWhere, conversationChatScopeAccess(current)],
         id,
         tenantId: current.tenantId,
         archivedAt: null,
         conversationType: ConversationType.GROUP,
-        ...visibleGroupConnectionWhere,
-        ...connectionAccess(current),
-        ...departmentAccess(current),
       },
       include: groupInclude,
     });
@@ -332,10 +328,7 @@ export class GroupsController {
     if (!connection?.externalReference) {
       throw new BadRequestException("Selecione uma instância WhatsApp conectada.");
     }
-    const departmentId = await this.resolveGroupDepartmentId(
-      connection.defaultDepartmentId,
-      current,
-    );
+    const departmentId = await this.resolveGroupDepartmentId(connection.id, current);
 
     const contacts = await this.prisma.contact.findMany({
       where: {
@@ -697,13 +690,11 @@ export class GroupsController {
   private async resolveManagedGroup(id: string, current: AuthenticatedUser) {
     const group = await this.prisma.conversation.findFirst({
       where: {
+        AND: [visibleGroupConnectionWhere, conversationChatScopeAccess(current)],
         id,
         tenantId: current.tenantId,
         archivedAt: null,
         conversationType: ConversationType.GROUP,
-        ...visibleGroupConnectionWhere,
-        ...connectionAccess(current),
-        ...departmentAccess(current),
       },
       include: groupInclude,
     });
@@ -717,22 +708,22 @@ export class GroupsController {
     return group;
   }
 
-  private async resolveGroupDepartmentId(
-    preferredDepartmentId: string | null,
-    current: AuthenticatedUser,
-  ) {
+  private async resolveGroupDepartmentId(connectionId: string, current: AuthenticatedUser) {
+    const scope = current.chatScopes?.find((item) => item.connectionId === connectionId);
+    const preferredDepartmentId = scope?.favoriteDepartmentId ?? null;
     if (preferredDepartmentId) {
       const preferred = await this.prisma.department.findFirst({
         where: {
           AND: [{ id: preferredDepartmentId }, departmentIdAccess(current)],
           tenantId: current.tenantId,
           active: true,
+          connections: { some: { connectionId } },
         },
         select: { id: true },
       });
       if (preferred) return preferred.id;
       throw new BadRequestException(
-        "O departamento padrão da instância não está disponível para este perfil no Chat.",
+        "O departamento principal não está disponível para este perfil no Chat.",
       );
     }
     const department = await this.prisma.department.findFirst({
@@ -740,6 +731,7 @@ export class GroupsController {
         tenantId: current.tenantId,
         active: true,
         ...departmentIdAccess(current),
+        connections: { some: { connectionId } },
       },
       orderBy: { createdAt: "asc" },
       select: { id: true },
@@ -753,13 +745,11 @@ export class GroupsController {
   private async reloadGroup(id: string, current: AuthenticatedUser) {
     const group = await this.prisma.conversation.findFirst({
       where: {
+        AND: [visibleGroupConnectionWhere, conversationChatScopeAccess(current)],
         id,
         tenantId: current.tenantId,
         archivedAt: null,
         conversationType: ConversationType.GROUP,
-        ...visibleGroupConnectionWhere,
-        ...connectionAccess(current),
-        ...departmentAccess(current),
       },
       include: groupInclude,
     });

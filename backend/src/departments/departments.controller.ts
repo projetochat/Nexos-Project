@@ -39,6 +39,7 @@ export class DepartmentsController {
       where: { tenantId: current.tenantId, active: true },
       orderBy: { name: "asc" },
       include: {
+        connections: { select: { connectionId: true } },
         members: true,
         conversations: {
           where: { status: { not: ConversationStatus.FECHADA }, archivedAt: null },
@@ -70,8 +71,40 @@ export class DepartmentsController {
         ...departmentIdAccess(current),
       },
       orderBy: { name: "asc" },
+      include: { connections: { select: { connectionId: true } } },
     });
-    return departments.map((department) => this.serialize(department));
+    const favoriteByConnection = new Map(
+      (current.chatScopes ?? []).map((scope) => [scope.connectionId, scope.favoriteDepartmentId]),
+    );
+    return departments.map((department) => {
+      const connectionIds = department.connections
+        .map((connection) => connection.connectionId)
+        .filter(
+          (connectionId) =>
+            current.roleKey === "tenant_admin" ||
+            (current.chatScopes ?? []).some(
+              (scope) =>
+                scope.connectionId === connectionId && scope.departmentIds.includes(department.id),
+            ),
+        );
+      return {
+        ...this.serialize(department),
+        connectionIds,
+        favoriteConnectionIds: connectionIds.filter(
+          (connectionId) => favoriteByConnection.get(connectionId) === department.id,
+        ),
+      };
+    });
+  }
+
+  @Get("connection-options")
+  @RequireAnyPermission("departments.read", "departments.create", "departments.update")
+  async connectionOptions(@CurrentUser() current: AuthenticatedUser) {
+    return this.prisma.messagingConnection.findMany({
+      where: { tenantId: current.tenantId, providerType: "EVOLUTION", archivedAt: null },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, status: true, color: true, logoUrl: true },
+    });
   }
 
   @Get(":id")
@@ -90,6 +123,7 @@ export class DepartmentsController {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
       );
+      await this.assertConnections(tx, current.tenantId, dto.connectionIds ?? []);
       const nameMatches = await this.findDepartmentsByNormalizedName(tx, current.tenantId, name);
       const activeMatch = nameMatches.find((department) => department.active);
       if (activeMatch) {
@@ -97,14 +131,24 @@ export class DepartmentsController {
       }
       const inactiveMatch = nameMatches[0];
       if (inactiveMatch) {
+        await tx.departmentConnection.deleteMany({
+          where: { tenantId: current.tenantId, departmentId: inactiveMatch.id },
+        });
         return tx.department.update({
           where: { id: inactiveMatch.id },
           data: {
             name: nameMatches.length === 1 ? name : inactiveMatch.name,
             description: dto.description?.trim() || null,
             color: dto.color ?? "#3B82F6",
+            icon: dto.icon ?? "department",
             active: dto.active ?? true,
+            connections: {
+              create: dto.connectionIds.map((connectionId) => ({
+                connectionId,
+              })),
+            },
           },
+          include: { connections: { select: { connectionId: true } } },
         });
       }
       return tx.department.create({
@@ -113,8 +157,15 @@ export class DepartmentsController {
           name,
           description: dto.description?.trim() || null,
           color: dto.color ?? "#3B82F6",
+          icon: dto.icon ?? "department",
           active: dto.active ?? true,
+          connections: {
+            create: (dto.connectionIds ?? []).map((connectionId) => ({
+              connectionId,
+            })),
+          },
         },
+        include: { connections: { select: { connectionId: true } } },
       });
     });
     return this.serialize(department);
@@ -132,14 +183,30 @@ export class DepartmentsController {
       if (dto.name !== undefined) {
         await this.ensureNameAvailable(tx, current.tenantId, dto.name.trim(), existing.id);
       }
+      if (dto.connectionIds !== undefined) {
+        await this.assertConnections(tx, current.tenantId, dto.connectionIds);
+        await tx.departmentConnection.deleteMany({
+          where: { tenantId: current.tenantId, departmentId: existing.id },
+        });
+      }
       return tx.department.update({
         where: { id },
         data: {
           name: dto.name?.trim(),
           description: dto.description === undefined ? undefined : dto.description.trim() || null,
           color: dto.color,
+          icon: dto.icon,
           active: dto.active,
+          connections:
+            dto.connectionIds === undefined
+              ? undefined
+              : {
+                  create: (dto.connectionIds ?? []).map((connectionId) => ({
+                    connectionId,
+                  })),
+                },
         },
+        include: { connections: { select: { connectionId: true } } },
       });
     });
     return this.serialize(department);
@@ -152,6 +219,7 @@ export class DepartmentsController {
     const department = await this.prisma.department.update({
       where: { id },
       data: { active: false },
+      include: { connections: { select: { connectionId: true } } },
     });
     return this.serialize(department);
   }
@@ -191,7 +259,10 @@ export class DepartmentsController {
   }
 
   private async findDepartmentOrThrow(id: string, tenantId: string) {
-    const department = await this.prisma.department.findFirst({ where: { id, tenantId } });
+    const department = await this.prisma.department.findFirst({
+      where: { id, tenantId },
+      include: { connections: { select: { connectionId: true } } },
+    });
     if (!department) throw new NotFoundException("Departamento não encontrado.");
     return department;
   }
@@ -229,10 +300,12 @@ export class DepartmentsController {
     name: string;
     description: string | null;
     color: string;
+    icon: string;
     active: boolean;
     tenantId: string;
     createdAt: Date;
     updatedAt: Date;
+    connections?: Array<{ connectionId: string }>;
   }) {
     return {
       id: department.id,
@@ -240,10 +313,32 @@ export class DepartmentsController {
       name: department.name,
       description: department.description,
       color: department.color,
+      icon: department.icon,
+      connectionIds: department.connections?.map((connection) => connection.connectionId) ?? [],
       active: department.active,
       createdAt: department.createdAt.toISOString(),
       updatedAt: department.updatedAt.toISOString(),
     };
+  }
+
+  private async assertConnections(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    connectionIds: string[],
+  ) {
+    const uniqueIds = [...new Set(connectionIds)];
+    const availableCount = await tx.messagingConnection.count({
+      where: { tenantId, providerType: "EVOLUTION", archivedAt: null },
+    });
+    if (availableCount > 0 && uniqueIds.length === 0) {
+      throw new BadRequestException("Vincule ao menos uma instância ao departamento.");
+    }
+    const count = await tx.messagingConnection.count({
+      where: { tenantId, id: { in: uniqueIds }, providerType: "EVOLUTION", archivedAt: null },
+    });
+    if (count !== uniqueIds.length) {
+      throw new BadRequestException("Instância inexistente para esta organização.");
+    }
   }
 }
 
