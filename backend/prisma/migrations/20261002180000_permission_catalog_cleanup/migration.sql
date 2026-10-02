@@ -1,5 +1,7 @@
--- Finaliza a substituição das permissões legadas do Perfil de Acesso.
--- As concessões equivalentes são copiadas antes da remoção das origens.
+-- Migra as concessões das permissões legadas do Perfil de Acesso.
+-- As linhas antigas permanecem no catálogo durante a janela de compatibilidade
+-- para permitir rollback da aplicação sem perda de autorização. Elas não são
+-- expostas pela API, que usa o catálogo canônico definido em código.
 
 INSERT INTO "permissions" ("id", "description") VALUES
   ('messages.send', 'Enviar mensagens e executar ações de envio da conversa'),
@@ -41,15 +43,3 @@ SELECT role."id", 'groups.leave'
 FROM "roles" role
 WHERE role."key" = 'tenant_admin'
 ON CONFLICT ("roleId", "permissionId") DO NOTHING;
-
-DELETE FROM "permissions"
-WHERE "id" IN (
-  'chat.audio.send',
-  'chat.contacts.create',
-  'chat.contacts.edit',
-  'chat.tickets.create',
-  'chat.contacts.read',
-  'chat.customer_link.edit',
-  'chat.contacts.block',
-  'conversations.manage'
-);

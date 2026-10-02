@@ -724,14 +724,16 @@ export class GroupsController {
     if (preferredDepartmentId) {
       const preferred = await this.prisma.department.findFirst({
         where: {
-          id: preferredDepartmentId,
+          AND: [{ id: preferredDepartmentId }, departmentIdAccess(current)],
           tenantId: current.tenantId,
           active: true,
-          ...departmentIdAccess(current),
         },
         select: { id: true },
       });
       if (preferred) return preferred.id;
+      throw new BadRequestException(
+        "O departamento padrão da instância não está disponível para este perfil no Chat.",
+      );
     }
     const department = await this.prisma.department.findFirst({
       where: {

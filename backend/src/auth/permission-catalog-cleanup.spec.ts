@@ -22,15 +22,11 @@ const obsoletePermissions = [
 ] as const;
 
 describe("permission catalog cleanup migration", () => {
-  it("copies every obsolete grant before deleting its catalog row", () => {
-    const copyPosition = migration.indexOf('INSERT INTO "role_permissions"');
-    const deletePosition = migration.indexOf('DELETE FROM "permissions"');
-
-    expect(copyPosition).toBeGreaterThan(-1);
-    expect(deletePosition).toBeGreaterThan(copyPosition);
+  it("copies every obsolete grant while keeping catalog rows for rollback compatibility", () => {
+    expect(migration).toContain('INSERT INTO "role_permissions"');
+    expect(migration).not.toContain('DELETE FROM "permissions"');
     for (const permission of obsoletePermissions) {
       expect(migration).toContain(`('${permission}',`);
-      expect(migration.slice(deletePosition)).toContain(`'${permission}'`);
       expect(PERMISSIONS).not.toContain(permission);
     }
   });

@@ -834,10 +834,9 @@ export class ConversationsController {
   private async assertDepartmentInTenant(departmentId: string, current: AuthenticatedUser) {
     const department = await this.prisma.department.findFirst({
       where: {
-        id: departmentId,
         tenantId: current.tenantId,
         active: true,
-        ...departmentIdAccess(current),
+        AND: [{ id: departmentId }, departmentIdAccess(current)],
       },
     });
     if (!department) throw new BadRequestException("Departamento inexistente para este tenant.");
