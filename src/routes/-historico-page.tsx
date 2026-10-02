@@ -5,6 +5,9 @@ import { ChevronLeft, ChevronRight, MessageCirclePlus } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Button } from "@/components/ui-kit";
+import { Modal } from "@/components/modal";
+import { DepartmentIcon } from "@/components/department-icon";
+import { useDisclosure } from "@/hooks/use-disclosure";
 import { DashboardFiltersBar } from "@/components/dashboard-filters";
 import {
   datesForOperationalPeriod,
@@ -13,7 +16,11 @@ import {
 import { conversationTimestamp, num } from "@/lib/format";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import { useSession } from "@/lib/session";
-import { conversationApi, messageApi, operationsApi } from "@/lib/trixus-api";
+import { conversationApi, messageApi, operationsApi, organizationApi } from "@/lib/trixus-api";
+import {
+  departmentsForConnection,
+  favoriteDepartmentForConnection,
+} from "@/lib/favorite-department";
 import { onRealtimeEvent } from "@/lib/realtime/client";
 import { ContactPanel, MessageBubble } from "./inbox.$conversationId";
 import { orderHistoryMessages } from "@/lib/history-message-order";
@@ -171,6 +178,13 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
   );
 
   const active = conversations.find((conversation) => conversation.id === activeId) ?? null;
+  const newConversationDepartmentModal = useDisclosure();
+  const [newConversationDepartmentId, setNewConversationDepartmentId] = React.useState("");
+  const { data: apiDepartments = [], isLoading: departmentsLoading } = useQuery({
+    queryKey: ["trixus", "chat-departments"],
+    queryFn: organizationApi.listChatDepartments,
+    enabled: !!active?.connection_id,
+  });
   const messages = useInfiniteQuery({
     queryKey: ["history-messages", activeId],
     initialPageParam: undefined as string | undefined,
@@ -184,16 +198,28 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
     [messages.data],
   );
 
-  const handleNewConversation = async () => {
+  const handleNewConversation = async (departmentId?: string) => {
     if (!active?.contact_id) return;
+    if (departmentsLoading) return;
+    const favorite = favoriteDepartmentForConnection(apiDepartments, active.connection_id);
+    if (!departmentId && !favorite) {
+      if (departmentsForConnection(apiDepartments, active.connection_id).length === 0) {
+        toast.error("Nenhum departamento liberado para esta instância.");
+        return;
+      }
+      setNewConversationDepartmentId("");
+      newConversationDepartmentModal.show();
+      return;
+    }
     try {
       const created = await conversationApi.create({
         contactId: active.contact_id,
         connectionId: active.connection_id,
-        departmentId: active.department_id,
+        ...(departmentId ? { departmentId } : {}),
         assignToSelf: true,
         firstMessagePreview: active.lastMessagePreview,
       });
+      newConversationDepartmentModal.hide();
       toast.success("Nova conversa iniciada com protocolo oficial");
       navigate({ to: "/inbox/$conversationId", params: { conversationId: created.id } });
     } catch (error) {
@@ -371,7 +397,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                       variant="secondary"
                       size="sm"
                       className="hover:!bg-secondary hover:!text-blue-500"
-                      onClick={handleNewConversation}
+                      onClick={() => void handleNewConversation()}
                       aria-label="Nova conversa"
                       title="Nova conversa"
                     >
@@ -433,6 +459,54 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
             )}
           </section>
         </div>
+        <Modal
+          open={newConversationDepartmentModal.open}
+          onClose={newConversationDepartmentModal.hide}
+          title="Escolher Departamento"
+          description="Selecione o departamento para iniciar uma nova conversa nesta instância."
+          size="sm"
+          footer={
+            <div className="flex w-full justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={newConversationDepartmentModal.hide}>
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!newConversationDepartmentId}
+                onClick={() => void handleNewConversation(newConversationDepartmentId)}
+              >
+                Iniciar conversa
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-2">
+            {departmentsForConnection(apiDepartments, active?.connection_id).map((department) => (
+              <button
+                key={department.id}
+                type="button"
+                onClick={() => setNewConversationDepartmentId(department.id)}
+                className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-4 text-left ${newConversationDepartmentId === department.id ? "border-primary bg-primary/5" : "border-border"}`}
+              >
+                <span
+                  className="flex h-10 w-10 items-center justify-center rounded-lg text-white"
+                  style={{ backgroundColor: department.color }}
+                >
+                  <DepartmentIcon icon={department.icon} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">{department.name}</span>
+                  {department.description && (
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {department.description}
+                    </span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Modal>
       </div>
     </AppShellFull>
   );

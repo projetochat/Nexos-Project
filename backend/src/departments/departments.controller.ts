@@ -39,7 +39,10 @@ export class DepartmentsController {
       where: { tenantId: current.tenantId, active: true },
       orderBy: { name: "asc" },
       include: {
-        connections: { select: { connectionId: true } },
+        connections: {
+          where: { connection: { providerType: "EVOLUTION", archivedAt: null } },
+          select: { connectionId: true },
+        },
         members: true,
         conversations: {
           where: { status: { not: ConversationStatus.FECHADA }, archivedAt: null },
@@ -71,7 +74,12 @@ export class DepartmentsController {
         ...departmentIdAccess(current),
       },
       orderBy: { name: "asc" },
-      include: { connections: { select: { connectionId: true } } },
+      include: {
+        connections: {
+          where: { connection: { providerType: "EVOLUTION", archivedAt: null } },
+          select: { connectionId: true },
+        },
+      },
     });
     const favoriteByConnection = new Map(
       (current.chatScopes ?? []).map((scope) => [scope.connectionId, scope.favoriteDepartmentId]),
@@ -219,7 +227,12 @@ export class DepartmentsController {
     const department = await this.prisma.department.update({
       where: { id },
       data: { active: false },
-      include: { connections: { select: { connectionId: true } } },
+      include: {
+        connections: {
+          where: { connection: { providerType: "EVOLUTION", archivedAt: null } },
+          select: { connectionId: true },
+        },
+      },
     });
     return this.serialize(department);
   }
@@ -261,7 +274,12 @@ export class DepartmentsController {
   private async findDepartmentOrThrow(id: string, tenantId: string) {
     const department = await this.prisma.department.findFirst({
       where: { id, tenantId },
-      include: { connections: { select: { connectionId: true } } },
+      include: {
+        connections: {
+          where: { connection: { providerType: "EVOLUTION", archivedAt: null } },
+          select: { connectionId: true },
+        },
+      },
     });
     if (!department) throw new NotFoundException("Departamento não encontrado.");
     return department;

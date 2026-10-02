@@ -18,6 +18,7 @@ describe("granular permission catalog", () => {
     expect(PERMISSIONS).not.toContain("chat.contacts.block");
     expect(PERMISSIONS).not.toContain("chat.customer_link.edit");
     expect(PERMISSIONS).not.toContain("conversations.manage");
+    expect(PERMISSIONS).not.toContain("chat.tags.use");
     expect(isPermissionKey("users.create")).toBe(true);
     expect(isPermissionKey("users.update")).toBe(true);
     expect(isPermissionKey("users.manage")).toBe(false);

@@ -15,6 +15,7 @@ describe("effectiveSessionPermissions", () => {
     expect(permissions).not.toContain("chat.contacts.read");
     expect(permissions).not.toContain("chat.customer_link.edit");
     expect(permissions).not.toContain("chat.contacts.block");
+    expect(permissions).not.toContain("chat.tags.use");
   });
 
   it("does not elevate a regular user", () => {

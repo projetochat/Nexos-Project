@@ -32,7 +32,6 @@ export const PERMISSIONS = [
   "groups.update",
   "groups.leave",
   "history.read",
-  "chat.tags.use",
   "chat.tags.read",
   "chat.tags.create",
   "chat.tags.update",
@@ -96,7 +95,6 @@ export const AGENT_PERMISSIONS: PermissionKey[] = [
   "chat.agent_name.show",
   "conversations.assign",
   "chat.phone.read",
-  "chat.tags.use",
   "chat.conversations.view_all_active",
   "history.read",
 ];

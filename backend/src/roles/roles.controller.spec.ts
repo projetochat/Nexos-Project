@@ -14,6 +14,22 @@ const current = {
 };
 
 describe("RolesController permission delegation", () => {
+  it("rejects permissions from a tenant module that is disabled", async () => {
+    const controller = new RolesController(
+      {} as never,
+      {} as never,
+      {
+        getEntitlements: vi.fn().mockResolvedValue({
+          features: { chat: true, campaigns: true, tickets: false },
+        }),
+      } as never,
+    );
+
+    await expect(
+      controller["assertEnabledModulePermissions"](["tickets.read", "tickets.create"], "tenant-a"),
+    ).rejects.toThrow("O módulo Chamados está desabilitado para esta organização.");
+  });
+
   it("treats a legacy assignment as authority over its canonical replacement", () => {
     const controller = new RolesController({} as never, {} as never);
     const assertCanGrantPermissions = (
@@ -96,6 +112,7 @@ describe("RolesController permission delegation", () => {
     };
     const createMany = vi.fn();
     const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
       permission: { upsert: vi.fn() },
       rolePermission: { deleteMany: vi.fn(), createMany },
       role: {
@@ -112,7 +129,15 @@ describe("RolesController permission delegation", () => {
       $transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
     };
     const realtime = { publish: vi.fn() };
-    const controller = new RolesController(prisma as never, realtime as never);
+    const controller = new RolesController(
+      prisma as never,
+      realtime as never,
+      {
+        getEntitlements: vi.fn().mockResolvedValue({
+          features: { chat: true, campaigns: true, tickets: true },
+        }),
+      } as never,
+    );
 
     const updated = await controller.update(
       "role-a",

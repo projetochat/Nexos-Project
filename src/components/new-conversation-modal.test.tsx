@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   form: vi.fn(),
   send: vi.fn(),
+  departments: vi.fn(),
 }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => ({}),
@@ -71,20 +72,7 @@ vi.mock("@/lib/trixus-api", () => ({
   },
   conversationApi: { create: (...args: unknown[]) => mocks.create(...args) },
   organizationApi: {
-    listChatDepartments: async () => [
-      {
-        id: "department-a",
-        name: "Comercial",
-        connectionIds: ["a"],
-        favoriteConnectionIds: ["a"],
-      },
-      {
-        id: "department-b",
-        name: "Suporte",
-        connectionIds: ["b"],
-        favoriteConnectionIds: ["b"],
-      },
-    ],
+    listChatDepartments: () => mocks.departments(),
   },
   messageApi: { sendText: (...args: unknown[]) => mocks.send(...args) },
 }));
@@ -134,6 +122,20 @@ beforeEach(() => {
     };
   });
   mocks.create.mockResolvedValue({ id: "conversation" });
+  mocks.departments.mockResolvedValue([
+    {
+      id: "department-a",
+      name: "Comercial",
+      connectionIds: ["a"],
+      favoriteConnectionIds: ["a"],
+    },
+    {
+      id: "department-b",
+      name: "Suporte",
+      connectionIds: ["b"],
+      favoriteConnectionIds: ["b"],
+    },
+  ]);
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -189,13 +191,11 @@ describe("new conversation contact picker", () => {
     expect(document.body.textContent).toContain("Instância B");
     expect(button("Iniciar conversa").disabled).toBe(true);
     await act(async () => button("Instância B").click());
+    await flush();
     expect(document.body.textContent).not.toContain("Escolher Instância");
-    expect(button("Iniciar conversa").disabled).toBe(false);
-    await act(async () => button("Iniciar conversa").click());
     expect(mocks.create).toHaveBeenCalledWith({
       contactId: "1",
       connectionId: "b",
-      departmentId: "department-b",
       assignToSelf: true,
     });
   });
@@ -218,11 +218,10 @@ describe("new conversation contact picker", () => {
     expect(document.querySelector("textarea")).toBeNull();
     expect(document.body.textContent).not.toContain("Contato existente");
     await act(async () => (document.querySelector("ul li button") as HTMLButtonElement).click());
-    await act(async () => button("Iniciar conversa").click());
+    await flush();
     expect(mocks.create).toHaveBeenCalledWith({
       contactId: "0",
       connectionId: "a",
-      departmentId: "department-a",
       assignToSelf: true,
     });
     expect(mocks.send).not.toHaveBeenCalled();
@@ -232,22 +231,51 @@ describe("new conversation contact picker", () => {
     });
     expect(getInboxTab()).toBe("ativas");
   });
-  it("opens a conversation by double-clicking a contact with one connected instance", async () => {
+  it("opens a conversation directly when the selected instance has a favorite department", async () => {
     await mount();
     const contactButton = document.querySelector("ul li button") as HTMLButtonElement;
-    await act(async () => {
-      contactButton.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-    });
+    await act(async () => contactButton.click());
     await flush();
     expect(mocks.create).toHaveBeenCalledWith({
       contactId: "0",
       connectionId: "a",
-      departmentId: "department-a",
       assignToSelf: true,
     });
     expect(mocks.navigate).toHaveBeenCalledWith({
       to: "/inbox/$conversationId",
       params: { conversationId: "conversation" },
+    });
+  });
+
+  it("keeps department selection when the selected instance has no favorite", async () => {
+    mocks.departments.mockResolvedValue([
+      {
+        id: "department-a",
+        name: "Comercial",
+        connectionIds: ["a"],
+        favoriteConnectionIds: [],
+      },
+    ]);
+    await mount();
+
+    await act(async () => (document.querySelector("ul li button") as HTMLButtonElement).click());
+    expect(mocks.create).not.toHaveBeenCalled();
+    const select = document.querySelector("select") as HTMLSelectElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(
+        select,
+        "department-a",
+      );
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => button("Iniciar conversa").click());
+    await flush();
+
+    expect(mocks.create).toHaveBeenCalledWith({
+      contactId: "0",
+      connectionId: "a",
+      departmentId: "department-a",
+      assignToSelf: true,
     });
   });
 });

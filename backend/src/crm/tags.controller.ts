@@ -15,7 +15,7 @@ import {
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequirePermissions } from "../auth/permissions.decorator";
+import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
@@ -31,7 +31,7 @@ export class TagsController {
   ) {}
 
   @Get("tags")
-  @RequirePermissions("chat.tags.read")
+  @RequireAnyPermission("chat.tags.read", "contacts.update")
   async list(@CurrentUser() current: AuthenticatedUser) {
     const tags = await this.prisma.tag.findMany({
       where: { tenantId: current.tenantId, archivedAt: null },
@@ -114,7 +114,7 @@ export class TagsController {
   }
 
   @Post("contacts/:id/tags/:tagId")
-  @RequirePermissions("chat.tags.use")
+  @RequirePermissions("contacts.update")
   async assign(
     @Param("id") contactId: string,
     @Param("tagId") tagId: string,
@@ -137,7 +137,7 @@ export class TagsController {
   }
 
   @Delete("contacts/:id/tags/:tagId")
-  @RequirePermissions("chat.tags.use")
+  @RequirePermissions("contacts.update")
   async remove(
     @Param("id") contactId: string,
     @Param("tagId") tagId: string,

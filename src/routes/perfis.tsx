@@ -268,15 +268,6 @@ const PERMISSION_GROUPS: Array<{
             ? "Permite excluir/desconectar instâncias."
             : `Permite excluir ${resource}.`,
       },
-      ...(title === "Etiquetas"
-        ? [
-            {
-              id: "chat.tags.use",
-              label: "Utilizar",
-              description: "Permite atribuir ou remover etiquetas nas conversas.",
-            },
-          ]
-        : []),
     ],
   })),
   {
@@ -803,12 +794,9 @@ function PerfilForm({
             color: DEFAULT_ROLE_COLOR,
             language: "system",
             timezone: "America/Sao_Paulo",
-            permissionIds: [
-              "departments.read",
-              "contacts.read",
-              "chat.tags.use",
-              "chat.quick_replies.read",
-            ].filter((permissionId) => grantablePermissionIds.includes(permissionId)),
+            permissionIds: ["departments.read", "contacts.read", "chat.quick_replies.read"].filter(
+              (permissionId) => grantablePermissionIds.includes(permissionId),
+            ),
             departmentIds: [],
             connectionIds: [],
             chatScopes: [],
@@ -1095,12 +1083,12 @@ function ScopeSettings({
   };
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-start gap-3 rounded-xl border border-info/30 bg-info/10 px-4 py-3 text-sm text-foreground">
+    <section className="space-y-3">
+      <div className="flex items-start gap-2.5 rounded-xl border border-info/30 bg-info/10 px-3 py-2 text-sm text-foreground">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" aria-hidden="true" />
         <div>
           <p className="font-semibold">Instâncias e departamentos</p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
             Estas seleções definem quais instâncias, departamentos e conversas o perfil pode
             visualizar e operar no Chat. Elas são independentes dos acessos aos módulos de cadastro
             de Instâncias e Departamentos.
@@ -1123,17 +1111,17 @@ function ScopeSettings({
             departments.every((department) => scope.departmentIds.includes(department.id));
           return (
             <div key={connection.id} className="overflow-hidden rounded-xl border border-border">
-              <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 bg-primary/5 px-4 py-3">
+              <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 bg-primary/5 px-3 py-1.5">
                 <strong className="min-w-0 truncate">{connection.name}</strong>
-                <div className="flex flex-wrap items-center gap-4 text-sm">
-                  <label className="flex min-h-11 items-center gap-2">
+                <div className="flex flex-wrap items-center gap-3 text-sm">
+                  <label className="flex min-h-9 items-center gap-2">
                     <span>Acesso à instância</span>
                     <Switch
                       checked={enabled}
                       onCheckedChange={(checked) => setConnection(connection, checked)}
                     />
                   </label>
-                  <label className="flex min-h-11 items-center gap-2 border-l border-border pl-4">
+                  <label className="flex min-h-9 items-center gap-2 border-l border-border pl-3">
                     <span>Todos os departamentos</span>
                     <Switch
                       checked={allSelected}
@@ -1148,7 +1136,7 @@ function ScopeSettings({
                   </label>
                 </div>
               </div>
-              <div className="space-y-2 p-3 sm:pl-8">
+              <div className="space-y-1.5 p-2 sm:pl-6">
                 {departments.length === 0 ? (
                   <p className="py-3 text-sm text-muted-foreground">
                     Nenhum departamento vinculado a esta instância.
@@ -1160,7 +1148,7 @@ function ScopeSettings({
                     return (
                       <div
                         key={department.id}
-                        className={`flex min-h-14 items-center gap-3 rounded-lg border px-3 ${enabled ? "bg-background" : "bg-muted/40 text-muted-foreground"}`}
+                        className={`flex min-h-11 items-center gap-2 rounded-lg border px-3 py-1 ${enabled ? "bg-background" : "bg-muted/40 text-muted-foreground"}`}
                       >
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium" title={department.name}>
@@ -1189,7 +1177,7 @@ function ScopeSettings({
                               ),
                             )
                           }
-                          className="flex h-11 w-11 items-center justify-center rounded-md disabled:opacity-40"
+                          className="flex h-9 w-9 items-center justify-center rounded-md disabled:opacity-40"
                         >
                           <Star
                             className={`h-5 w-5 ${favorite ? "fill-warning text-warning" : "text-muted-foreground"}`}
@@ -1352,12 +1340,13 @@ function PermissionGroupBlock({
       <div className="grid sm:grid-cols-2">
         {group.items.map((permission, index) => {
           const isChild = index > 0;
+          const isLastOddItem = group.items.length % 2 === 1 && index === group.items.length - 1;
           return (
             <div
               key={permission.id}
               className={cn(
                 "border-t border-border",
-                group.items.length === 1 ? "sm:col-span-2" : "sm:[&:nth-child(odd)]:border-r",
+                isLastOddItem ? "sm:col-span-2" : "sm:[&:nth-child(odd)]:border-r",
               )}
             >
               <PermissionSwitch

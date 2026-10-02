@@ -32,6 +32,7 @@ vi.mock("@/lib/trixus-api", () => ({
   operationsApi: { history: api.history, timeline: api.timeline },
   messageApi: { list: api.messages },
   conversationApi: {},
+  organizationApi: { listChatDepartments: vi.fn().mockResolvedValue([]) },
 }));
 import { HistoricoPage } from "../routes/-historico-page";
 it("selects a different conversation on one click and loads its messages without the removed timeline", async () => {

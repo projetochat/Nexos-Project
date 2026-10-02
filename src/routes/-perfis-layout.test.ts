@@ -37,11 +37,23 @@ describe("organização do editor de Perfil de Acesso", () => {
     expect(scopes).toContain("aria-pressed={favorite}");
   });
 
-  it("faz agrupadores com um único acesso ocuparem as duas colunas", () => {
+  it("faz o último acesso de agrupadores ímpares ocupar as duas colunas", () => {
     const permissions = source.slice(source.indexOf("function PermissionGroupBlock"));
 
-    expect(permissions).toContain("group.items.length === 1");
+    expect(permissions).toContain("group.items.length % 2 === 1");
+    expect(permissions).toContain("index === group.items.length - 1");
     expect(permissions).toContain('"sm:col-span-2"');
+  });
+
+  it("usa densidade compacta na visualização do atendimento", () => {
+    const scopes = source.slice(
+      source.indexOf("function ScopeSettings"),
+      source.indexOf("function PermissionSettings"),
+    );
+
+    expect(scopes).toContain("min-h-10");
+    expect(scopes).toContain("min-h-11");
+    expect(scopes).toContain("space-y-1.5");
   });
 
   it("explica como instâncias e departamentos se relacionam com o Chat", () => {

@@ -81,6 +81,10 @@ import {
   type TransferQueue,
 } from "@/lib/conversation-transfer";
 import { getInboxTab, setInboxTab, subscribeInboxTab } from "@/lib/inbox-tab-state";
+import {
+  departmentsForConnection,
+  favoriteDepartmentForConnection,
+} from "@/lib/favorite-department";
 import { ContactFormModal, contactPayload } from "./contatos";
 import { InboxImageViewer } from "@/components/inbox-image-viewer";
 import {
@@ -364,7 +368,7 @@ function ConversationPage() {
     () => mensagens.filter((message) => message.type === "image" && !!message.media_data),
     [mensagens],
   );
-  const { data: apiDepartments = [] } = useQuery({
+  const { data: apiDepartments = [], isLoading: departmentsLoading } = useQuery({
     queryKey: ["trixus", "chat-departments", "conversation-transfer"],
     queryFn: organizationApi.listChatDepartments,
   });
@@ -418,6 +422,9 @@ function ConversationPage() {
   const transferModal = useDisclosure();
   const startDepartmentModal = useDisclosure();
   const [startDepartmentId, setStartDepartmentId] = React.useState("");
+  const [startDepartmentAction, setStartDepartmentAction] = React.useState<
+    "assume" | "new-conversation"
+  >("assume");
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [replyTo, setReplyTo] = React.useState<Message | null>(null);
   const queuePrefs = useQueuePrefs();
@@ -465,8 +472,12 @@ function ConversationPage() {
 
   const handleAssume = async (departmentId?: string) => {
     if (!user) return;
-    if (!conv.protocolo && !departmentId) {
+    if (departmentsLoading) return;
+    const favorite = favoriteDepartmentForConnection(apiDepartments, conv.connection_id);
+    if (!conv.protocolo && !departmentId && !favorite) {
+      if (departmentsForConnection(apiDepartments, conv.connection_id).length === 0) return;
       setStartDepartmentId("");
+      setStartDepartmentAction("assume");
       startDepartmentModal.show();
       return;
     }
@@ -484,13 +495,22 @@ function ConversationPage() {
     }
   };
 
-  const handleNewConversation = async () => {
+  const handleNewConversation = async (departmentId?: string) => {
     if (!user || !conv.contact_id) return;
+    if (departmentsLoading) return;
+    const favorite = favoriteDepartmentForConnection(apiDepartments, conv.connection_id);
+    if (!departmentId && !favorite) {
+      if (departmentsForConnection(apiDepartments, conv.connection_id).length === 0) return;
+      setStartDepartmentId("");
+      setStartDepartmentAction("new-conversation");
+      startDepartmentModal.show();
+      return;
+    }
     try {
       const conversation = await conversationApi.create({
         contactId: conv.contact_id,
         connectionId: conv.connection_id,
-        departmentId: conv.department_id,
+        ...(departmentId ? { departmentId } : {}),
         assignToSelf: true,
         firstMessagePreview: "Nova conversa iniciada pelo atendimento.",
       });
@@ -582,7 +602,7 @@ function ConversationPage() {
                 />
               )}
               {conv.status === "fechada" ? (
-                <Button variant="secondary" size="sm" onClick={handleNewConversation}>
+                <Button variant="secondary" size="sm" onClick={() => void handleNewConversation()}>
                   <MessageCirclePlus className="h-3.5 w-3.5" /> Nova conversa
                 </Button>
               ) : (
@@ -851,7 +871,7 @@ function ConversationPage() {
         open={startDepartmentModal.open}
         onClose={startDepartmentModal.hide}
         title="Escolher Departamento"
-        description={`Departamentos liberados para a instância ${conv.connection?.name ?? "selecionada"}.`}
+        description={`Departamentos: ${conv.connection?.name ?? "selecionada"}.`}
         size="sm"
         footer={
           <div className="flex w-full justify-end gap-2">
@@ -862,9 +882,13 @@ function ConversationPage() {
               variant="primary"
               size="sm"
               disabled={!startDepartmentId}
-              onClick={() => void handleAssume(startDepartmentId)}
+              onClick={() =>
+                void (startDepartmentAction === "assume"
+                  ? handleAssume(startDepartmentId)
+                  : handleNewConversation(startDepartmentId))
+              }
             >
-              Iniciar Atendimento
+              {startDepartmentAction === "assume" ? "Iniciar Atendimento" : "Iniciar conversa"}
             </Button>
           </div>
         }
