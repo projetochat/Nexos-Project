@@ -67,6 +67,8 @@ export class OperationsService {
       ...query,
       allowedConnectionIds:
         current.roleKey === "tenant_admin" ? undefined : (current.connectionIds ?? []),
+      allowedDepartmentIds:
+        current.roleKey === "tenant_admin" ? undefined : (current.chatDepartmentIds ?? []),
     };
     this.logger.log({
       event: "operations.dashboard.query",
@@ -108,6 +110,8 @@ export class OperationsService {
     const range = periodRange(query, "today", tenant?.timezone);
     const allowedConnectionIds =
       current.roleKey === "tenant_admin" ? undefined : (current.connectionIds ?? []);
+    const allowedDepartmentIds =
+      current.roleKey === "tenant_admin" ? undefined : (current.chatDepartmentIds ?? []);
     const contactWhere: Prisma.ContactWhereInput = {
       tenantId: current.tenantId,
       archivedAt: null,
@@ -116,6 +120,7 @@ export class OperationsService {
       ...(query.departmentId ? { departmentId: query.departmentId } : {}),
       ...(query.connectionId ? { instanceIds: { has: query.connectionId } } : {}),
       ...(allowedConnectionIds ? { instanceIds: { hasSome: allowedConnectionIds } } : {}),
+      ...(allowedDepartmentIds ? { departmentId: { in: allowedDepartmentIds } } : {}),
     };
     const groupBy = query.groupBy;
 
@@ -382,6 +387,8 @@ export class OperationsService {
       ...query,
       allowedConnectionIds:
         current.roleKey === "tenant_admin" ? undefined : (current.connectionIds ?? []),
+      allowedDepartmentIds:
+        current.roleKey === "tenant_admin" ? undefined : (current.chatDepartmentIds ?? []),
     };
     const range = periodRange(query, "30d");
     const [snapshot, charts, conversations] = await Promise.all([

@@ -1,4 +1,3 @@
-import { connectionIdAccess } from "../auth/connection-access";
 import {
   BadRequestException,
   Body,
@@ -519,7 +518,6 @@ export class CrmController {
           tenantId: current.tenantId,
           archivedAt: null,
           status: { in: ["CONNECTED", "DISCONNECTED"] },
-          ...connectionIdAccess(current),
         },
         orderBy: { name: "asc" },
         select: {

@@ -93,6 +93,26 @@ describe("GroupsController", () => {
     expect(result).toMatchObject({ synced: 3, participants: 42 });
   });
 
+  it("passes the profile department scope to a non-administrator group sync", async () => {
+    const groupsSync = {
+      sync: vi.fn().mockResolvedValue({ synced: 0, participants: 0 }),
+    };
+    const controller = new GroupsController({} as never, {} as never, groupsSync as never);
+
+    await controller.sync({ connectionId: "connection-a" }, {
+      ...current,
+      roleKey: "agent",
+      connectionIds: ["connection-a"],
+      chatDepartmentIds: ["department-a"],
+    } as never);
+
+    expect(groupsSync.sync).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      departmentIds: ["department-a"],
+    });
+  });
+
   it("returns only the instance fields required by the group filter", async () => {
     const prisma = {
       messagingConnection: {
@@ -166,6 +186,35 @@ describe("GroupsController", () => {
       participantsCount: 1015,
     });
     expect(result.items[0]).not.toHaveProperty("participants");
+  });
+
+  it("applies both instance and department Chat scopes to group lists", async () => {
+    const prisma = {
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([]),
+        count: vi.fn().mockResolvedValue(0),
+      },
+      $transaction: vi.fn().mockResolvedValue([[], 0]),
+    };
+    const controller = new GroupsController(prisma as never, {} as never, {} as never);
+
+    await controller.list({}, {
+      ...current,
+      roleKey: "agent",
+      connectionIds: ["connection-a"],
+      chatDepartmentIds: ["department-a"],
+    } as never);
+
+    expect(prisma.conversation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            { connectionId: { in: ["connection-a"] } },
+            { departmentId: { in: ["department-a"] } },
+          ]),
+        }),
+      }),
+    );
   });
 
   it("preserves participants in the original paginated list contract", async () => {

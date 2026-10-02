@@ -28,6 +28,30 @@ const current = {
 };
 
 describe("MessagingConnectionsService", () => {
+  it("separates the full administrative catalog from the Chat scope", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findMany.mockResolvedValue([connection()]);
+    const service = new MessagingConnectionsService(prisma as never, {} as never);
+
+    await service.list({ ...current, roleKey: "agent", connectionIds: ["connection-a"] } as never);
+    expect(prisma.messagingConnection.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({ id: expect.anything() }),
+      }),
+    );
+
+    await service.listChatScope({
+      ...current,
+      roleKey: "agent",
+      connectionIds: ["connection-a"],
+    } as never);
+    expect(prisma.messagingConnection.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ["connection-a"] } }),
+      }),
+    );
+  });
+
   it("does not depend on the automatic group synchronization service", () => {
     const source = readFileSync(resolve(__dirname, "messaging-connections.service.ts"), "utf8");
 
@@ -216,7 +240,7 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
-  it("adds a newly created instance to the creator access profile atomically", async () => {
+  it("does not add a newly created administrative instance to the creator Chat scope", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.create.mockResolvedValue(connection());
     prisma.role.findFirstOrThrow.mockResolvedValue({
@@ -238,15 +262,7 @@ describe("MessagingConnectionsService", () => {
       } as never,
     );
 
-    expect(prisma.role.update).toHaveBeenCalledWith({
-      where: { tenantId_id: { tenantId: "tenant-a", id: "role-agent" } },
-      data: {
-        metadata: {
-          color: "#2563EB",
-          connectionIds: ["connection-existing", "connection-a"],
-        },
-      },
-    });
+    expect(prisma.role.update).not.toHaveBeenCalled();
   });
 
   it("uses the configured connection limit as the single rule for additional instances", async () => {

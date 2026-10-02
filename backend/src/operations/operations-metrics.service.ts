@@ -17,6 +17,7 @@ export type OperationsMetricFilters = {
   customerId?: string;
   connectionId?: string;
   allowedConnectionIds?: string[];
+  allowedDepartmentIds?: string[];
   contactId?: string;
 };
 
@@ -155,7 +156,7 @@ export class OperationsMetricsService {
         where: {
           tenantId,
           archivedAt: null,
-          ...(filters.allowedConnectionIds
+          ...(filters.allowedConnectionIds || filters.allowedDepartmentIds
             ? { contacts: { some: { conversations: { some: conversationScope } } } }
             : {}),
         },
@@ -164,14 +165,20 @@ export class OperationsMetricsService {
         where: {
           tenantId,
           archivedAt: null,
-          ...(filters.allowedConnectionIds ? { conversations: { some: conversationScope } } : {}),
+          ...(filters.allowedConnectionIds || filters.allowedDepartmentIds
+            ? { conversations: { some: conversationScope } }
+            : {}),
         },
       }),
       this.prisma.department.count({
         where: {
           tenantId,
           active: true,
-          ...(filters.allowedConnectionIds ? { conversations: { some: conversationScope } } : {}),
+          ...(filters.allowedDepartmentIds
+            ? { id: { in: filters.allowedDepartmentIds } }
+            : filters.allowedConnectionIds
+              ? { conversations: { some: conversationScope } }
+              : {}),
         },
       }),
       this.prisma.messagingConnection.count({
@@ -491,8 +498,17 @@ export function closedConversationWhere(tenantId: string, range?: OperationsRang
 function conversationMetricScope(tenantId: string, filters: OperationsMetricFilters) {
   return {
     tenantId,
-    ...(filters.allowedConnectionIds
-      ? { AND: [{ connectionId: { in: filters.allowedConnectionIds } }] }
+    ...(filters.allowedConnectionIds || filters.allowedDepartmentIds
+      ? {
+          AND: [
+            ...(filters.allowedConnectionIds
+              ? [{ connectionId: { in: filters.allowedConnectionIds } }]
+              : []),
+            ...(filters.allowedDepartmentIds
+              ? [{ departmentId: { in: filters.allowedDepartmentIds } }]
+              : []),
+          ],
+        }
       : {}),
     ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),
     ...(filters.assignedMembershipId ? { assignedMembershipId: filters.assignedMembershipId } : {}),
@@ -504,8 +520,21 @@ function conversationMetricScope(tenantId: string, filters: OperationsMetricFilt
 
 function leadMetricScope(tenantId: string, filters: OperationsMetricFilters) {
   return {
-    ...(filters.allowedConnectionIds
-      ? { AND: [{ conversation: { connectionId: { in: filters.allowedConnectionIds } } }] }
+    ...(filters.allowedConnectionIds || filters.allowedDepartmentIds
+      ? {
+          AND: [
+            ...(filters.allowedConnectionIds
+              ? [{ conversation: { connectionId: { in: filters.allowedConnectionIds } } }]
+              : []),
+            ...(filters.allowedDepartmentIds
+              ? [
+                  {
+                    conversation: { departmentId: { in: filters.allowedDepartmentIds } },
+                  },
+                ]
+              : []),
+          ],
+        }
       : {}),
     tenantId,
     ...(filters.departmentId ? { departmentId: filters.departmentId } : {}),

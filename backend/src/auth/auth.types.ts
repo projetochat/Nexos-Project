@@ -30,6 +30,7 @@ export type AuthenticatedUser = {
   permissions?: PermissionKey[];
   assignedPermissionIds?: string[];
   connectionIds?: string[] | null;
+  chatDepartmentIds?: string[] | null;
   iatMs?: number;
   sid?: string;
   impersonationSessionId?: string;

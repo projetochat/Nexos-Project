@@ -1,6 +1,6 @@
 import type { Prisma } from "../generated/prisma";
 import type { AuthenticatedUser } from "../auth/auth.types";
-import { connectionAccess } from "../auth/connection-access";
+import { connectionAccess, departmentAccess } from "../auth/connection-access";
 
 /**
  * Escopo único para listas, detalhes, mensagens e notificações de conversas.
@@ -8,15 +8,21 @@ import { connectionAccess } from "../auth/connection-access";
  * e as conversas atribuídas a ele, mas nunca as de outro atendente.
  */
 export function conversationVisibilityWhere(
-  current: AuthenticatedUser,
+  current: Pick<
+    AuthenticatedUser,
+    "roleKey" | "connectionIds" | "chatDepartmentIds" | "permissions" | "membershipId"
+  >,
 ): Prisma.ConversationWhereInput {
   const instanceScope = connectionAccess(current);
+  const departmentScope = departmentAccess(current);
+  const chatScope = { ...instanceScope, ...departmentScope };
   if (current.permissions?.includes("chat.conversations.view_all_active")) {
-    return instanceScope;
+    return chatScope;
   }
   return {
     AND: [
       instanceScope,
+      ...(Object.keys(departmentScope).length ? [departmentScope] : []),
       {
         OR: [{ assignedMembershipId: current.membershipId }, { assignedMembershipId: null }],
       },

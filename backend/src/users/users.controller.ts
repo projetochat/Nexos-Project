@@ -29,6 +29,7 @@ import type { AuthenticatedUser } from "../auth/auth.types";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { effectivePermissions } from "../auth/effective-permissions";
+import { roleChatDepartmentIds, roleConnectionIds } from "../auth/connection-access";
 import { Prisma } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
@@ -763,16 +764,17 @@ export class UsersController {
     if (forbiddenPermission) {
       throw new ForbiddenException("Você não pode atribuir um perfil com permissões superiores.");
     }
-    const roleConnectionIds = Array.isArray(
-      (role.metadata as { connectionIds?: unknown } | null)?.connectionIds,
-    )
-      ? ((role.metadata as { connectionIds: unknown[] }).connectionIds.filter(
-          (id): id is string => typeof id === "string",
-        ) as string[])
-      : [];
+    const assignedConnectionIds = roleConnectionIds(role) ?? [];
     const allowedConnectionIds = new Set(current.connectionIds ?? []);
-    if (roleConnectionIds.some((id) => !allowedConnectionIds.has(id))) {
+    if (assignedConnectionIds.some((id) => !allowedConnectionIds.has(id))) {
       throw new ForbiddenException("Você não pode atribuir um perfil com instâncias superiores.");
+    }
+    const assignedDepartmentIds = roleChatDepartmentIds(role) ?? [];
+    const allowedDepartmentIds = new Set(current.chatDepartmentIds ?? []);
+    if (assignedDepartmentIds.some((id) => !allowedDepartmentIds.has(id))) {
+      throw new ForbiddenException(
+        "Você não pode atribuir um perfil com departamentos superiores.",
+      );
     }
   }
 

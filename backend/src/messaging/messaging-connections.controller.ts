@@ -13,7 +13,7 @@ import {
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequirePermissions } from "../auth/permissions.decorator";
+import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { CreateEvolutionConnectionDto } from "./dto/create-evolution-connection.dto";
 import { UpdateMessagingConnectionDto } from "./dto/update-messaging-connection.dto";
@@ -32,6 +32,19 @@ export class MessagingConnectionsController {
   @RequirePermissions("connections.read")
   list(@CurrentUser() current: AuthenticatedUser) {
     return this.connections.list(current);
+  }
+
+  @Get("chat-scope")
+  @RequireAnyPermission(
+    "conversations.read",
+    "dashboard.read",
+    "history.read",
+    "contacts.read",
+    "campaigns.read",
+    "tickets.read",
+  )
+  listChatScope(@CurrentUser() current: AuthenticatedUser) {
+    return this.connections.listChatScope(current);
   }
 
   @Get("health/evolution")

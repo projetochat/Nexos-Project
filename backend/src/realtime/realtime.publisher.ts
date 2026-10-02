@@ -125,11 +125,13 @@ export class RealtimePublisher {
     notificationId: string;
     membershipId?: string | null;
     departmentId?: string | null;
+    connectionId?: string | null;
     kind: string;
   }) {
-    this.realtime.publish({ tenantId: input.tenantId }, "notification.created", input);
     if (input.membershipId) {
       this.realtime.publish({ membershipId: input.membershipId }, "notification.created", input);
+    } else {
+      this.realtime.publish({ tenantId: input.tenantId }, "notification.created", input);
     }
   }
 

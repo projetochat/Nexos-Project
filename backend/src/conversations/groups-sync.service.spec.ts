@@ -24,7 +24,10 @@ describe("GroupsSyncService", () => {
     });
     expect(prismaTx.conversation.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ inboxArchivedAt: null }),
+        data: expect.objectContaining({
+          inboxArchivedAt: null,
+          departmentId: "department-a",
+        }),
       }),
     );
     expect(evolution.fetchProfilePictureUrl).not.toHaveBeenCalled();
@@ -94,6 +97,29 @@ describe("GroupsSyncService", () => {
     });
   });
 
+  it("does not mutate a group outside the caller's Chat department scope", async () => {
+    const prisma = prismaMock();
+    prismaTx.conversation.findFirst.mockResolvedValue({
+      id: "conversation-hidden",
+      departmentId: "department-hidden",
+    });
+    const service = new GroupsSyncService(
+      prisma as never,
+      evolutionMock({ imageUrl: null }) as never,
+    );
+
+    const result = await service.sync({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      departmentIds: ["department-a"],
+    });
+
+    expect(result.synced).toBe(0);
+    expect(prismaTx.conversation.update).not.toHaveBeenCalled();
+    expect(prismaTx.conversation.create).not.toHaveBeenCalled();
+    expect(prismaTx.conversationParticipant.upsert).not.toHaveBeenCalled();
+  });
+
   it("reconciles group participant names from saved contacts and the connection owner", async () => {
     const prisma = prismaMock();
     prisma.conversationParticipant.findMany.mockResolvedValue([
@@ -154,6 +180,7 @@ function prismaMock() {
           providerType: MessagingProviderType.EVOLUTION,
           status: MessagingConnectionStatus.CONNECTED,
           externalReference: "instance-a",
+          defaultDepartmentId: null,
           archivedAt: null,
         },
       ]),
@@ -170,6 +197,9 @@ function prismaMock() {
     conversationParticipant: {
       findMany: vi.fn().mockResolvedValue([]),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
+    department: {
+      findFirst: vi.fn().mockResolvedValue({ id: "department-a" }),
     },
     $transaction: vi.fn((input: unknown) => {
       if (typeof input === "function") return input(prismaTx);

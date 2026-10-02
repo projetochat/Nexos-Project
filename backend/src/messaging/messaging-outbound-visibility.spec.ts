@@ -12,6 +12,7 @@ describe("outbound conversation visibility", () => {
         membershipId: "membership-a",
         roleKey: "agent",
         connectionIds: ["connection-a"],
+        chatDepartmentIds: ["department-a"],
         permissions: [],
       } as never),
     ).rejects.toThrow("Conversa não encontrada");
@@ -23,6 +24,7 @@ describe("outbound conversation visibility", () => {
           {
             AND: [
               { connectionId: { in: ["connection-a"] } },
+              { departmentId: { in: ["department-a"] } },
               {
                 OR: [{ assignedMembershipId: "membership-a" }, { assignedMembershipId: null }],
               },

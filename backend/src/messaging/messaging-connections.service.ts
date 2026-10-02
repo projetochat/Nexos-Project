@@ -38,12 +38,6 @@ import { MessagingHistoryImportService } from "./messaging-history-import.servic
 import { resolveMessageType, validatePolicy } from "./media/messaging-media-storage.service";
 import type { QuickReplyAttachmentDto } from "../quick-replies/dto/quick-reply-message.dto";
 
-function jsonObject(value: Prisma.JsonValue | null | undefined): Record<string, Prisma.JsonValue> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, Prisma.JsonValue>)
-    : {};
-}
-
 @Injectable()
 export class MessagingConnectionsService {
   private readonly logger = new Logger(MessagingConnectionsService.name);
@@ -63,6 +57,18 @@ export class MessagingConnectionsService {
   ) {}
 
   async list(current: AuthenticatedUser) {
+    const connections = await this.prisma.messagingConnection.findMany({
+      where: {
+        tenantId: current.tenantId,
+        providerType: MessagingProviderType.EVOLUTION,
+        archivedAt: null,
+      },
+      orderBy: [{ providerType: "asc" }, { createdAt: "asc" }],
+    });
+    return connections.map((connection) => this.serialize(connection));
+  }
+
+  async listChatScope(current: AuthenticatedUser) {
     const connections = await this.prisma.messagingConnection.findMany({
       where: {
         tenantId: current.tenantId,
@@ -193,27 +199,6 @@ export class MessagingConnectionsService {
           },
         });
 
-        // O administrador não possui escopo limitado. Para perfis comuns, a criação e
-        // a liberação da nova instância formam uma única alteração transacional.
-        if (current.roleKey !== "tenant_admin") {
-          const role = await tx.role.findFirstOrThrow({
-            where: { id: current.roleId, tenantId: current.tenantId },
-            select: { metadata: true },
-          });
-          const metadata = jsonObject(role.metadata);
-          const connectionIds = Array.isArray(metadata.connectionIds)
-            ? metadata.connectionIds.filter((id): id is string => typeof id === "string")
-            : [];
-          await tx.role.update({
-            where: { tenantId_id: { tenantId: current.tenantId, id: current.roleId } },
-            data: {
-              metadata: {
-                ...metadata,
-                connectionIds: [...new Set([...connectionIds, created.id])],
-              },
-            },
-          });
-        }
         return created;
       });
     } catch (error) {

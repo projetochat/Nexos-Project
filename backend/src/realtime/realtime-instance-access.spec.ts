@@ -5,7 +5,7 @@ describe("realtime instance access", () => {
   it("checks the current profile before subscriptions and stops access immediately after revocation", async () => {
     const role = {
       key: "agent",
-      metadata: { connectionIds: ["vocical"] },
+      metadata: { connectionIds: ["vocical"], departmentIds: ["department-a"] },
       permissions: [{ permissionId: "conversations.read" }],
     };
     const prisma = {
@@ -17,13 +17,13 @@ describe("realtime instance access", () => {
       },
       impersonationSession: { findFirst: vi.fn() },
       conversation: {
-        findFirst: vi
-          .fn()
-          .mockImplementation(async ({ where }) =>
-            where.connectionId.in.includes("vocical") && where.id === "vocical-chat"
-              ? { id: where.id }
-              : null,
-          ),
+        findFirst: vi.fn().mockImplementation(async ({ where }) => {
+          const serialized = JSON.stringify(where);
+          return serialized.includes('"connectionId":{"in":["vocical"]}') &&
+            where.id === "vocical-chat"
+            ? { id: where.id }
+            : null;
+        }),
       },
     };
     const service = new RealtimeService({} as never, prisma as never);
@@ -55,6 +55,7 @@ describe("realtime instance access", () => {
             metadata: {
               connectionIds:
                 where.id === "allowed" || where.id === "without-permission" ? ["vocical"] : [],
+              departmentIds: ["department-a"],
             },
             permissions:
               where.id === "without-permission" ? [] : [{ permissionId: "conversations.read" }],
@@ -67,7 +68,9 @@ describe("realtime instance access", () => {
         findFirst: vi
           .fn()
           .mockImplementation(async ({ where }) =>
-            where.connectionId.in.includes("vocical") ? { id: where.id } : null,
+            JSON.stringify(where).includes('"connectionId":{"in":["vocical"]}')
+              ? { id: where.id }
+              : null,
           ),
       },
     };

@@ -25,6 +25,8 @@ import { MessagingOutboundService } from "./messaging-outbound.service";
 import { resolveMessageTemplate } from "./message-template";
 import { selectAutomaticReply } from "./automatic-reply";
 import { conversationQueueForNotification } from "../conversations/conversation-queue-scope";
+import { effectivePermissions } from "../auth/effective-permissions";
+import { roleChatDepartmentIds, roleConnectionIds } from "../auth/connection-access";
 
 @Injectable()
 export class MessagingInboundService {
@@ -363,6 +365,7 @@ export class MessagingInboundService {
               tenantId: event.tenantId,
               leadId: lead.id,
               conversationId: conversation.id,
+              connectionId: updatedConversation.connectionId,
               departmentId: updatedConversation.departmentId,
               contactName: contact.name,
             })
@@ -500,6 +503,7 @@ export class MessagingInboundService {
           notificationId: notification.id,
           membershipId: notification.membershipId,
           departmentId: notification.departmentId,
+          connectionId: notification.connectionId,
           kind: notification.kind,
         });
       }
@@ -808,25 +812,40 @@ export class MessagingInboundService {
       tenantId: string;
       leadId: string;
       conversationId: string;
+      connectionId: string | null;
       departmentId: string | null;
       contactName: string;
     },
   ) {
-    const recipients = await tx.tenantMembership.findMany({
+    const candidates = await tx.tenantMembership.findMany({
       where: {
         tenantId: input.tenantId,
         status: "ACTIVE",
         user: { status: "ACTIVE" },
-        OR: [
-          { role: { key: { in: ["tenant_admin", "supervisor"] } } },
-          ...(input.departmentId
-            ? [{ departments: { some: { departmentId: input.departmentId } } }]
-            : []),
-        ],
       },
-      select: { id: true },
-      take: 50,
+      select: {
+        id: true,
+        role: {
+          select: {
+            key: true,
+            metadata: true,
+            permissions: { select: { permissionId: true } },
+          },
+        },
+      },
     });
+    const recipients = candidates
+      .filter(({ role }) => {
+        if (role.key === "tenant_admin") return true;
+        if (!effectivePermissions(role).includes("conversations.read")) return false;
+        if (!input.connectionId || !(roleConnectionIds(role) ?? []).includes(input.connectionId)) {
+          return false;
+        }
+        return Boolean(
+          input.departmentId && (roleChatDepartmentIds(role) ?? []).includes(input.departmentId),
+        );
+      })
+      .slice(0, 50);
     const uniqueRecipients = [...new Set(recipients.map((item) => item.id))];
     if (uniqueRecipients.length === 0) return [];
 
@@ -835,6 +854,7 @@ export class MessagingInboundService {
         tenantId: input.tenantId,
         membershipId,
         departmentId: input.departmentId,
+        connectionId: input.connectionId,
         kind: NotificationKind.LEAD_CREATED,
         title: "Novo lead recebido",
         body: truncatePreview(input.contactName),
@@ -849,7 +869,13 @@ export class MessagingInboundService {
         entityId: input.leadId,
         kind: NotificationKind.LEAD_CREATED,
       },
-      select: { id: true, membershipId: true, departmentId: true, kind: true },
+      select: {
+        id: true,
+        membershipId: true,
+        departmentId: true,
+        connectionId: true,
+        kind: true,
+      },
     });
   }
 

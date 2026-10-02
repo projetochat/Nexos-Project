@@ -392,10 +392,13 @@ function ContatosPage() {
   const [tags, setTags] = React.useState<Tag[]>([]);
   const [departments, setDepartments] = React.useState<ContactCatalog[]>([]);
   const [profiles, setProfiles] = React.useState<ContactCatalog[]>([]);
-  const { allConnections } = useConnectedMessagingConnections();
-  const instances = React.useMemo<ContactInstanceOption[]>(
+  const [instances, setInstances] = React.useState<ContactInstanceOption[]>([]);
+  const { allConnections: chatConnections } = useConnectedMessagingConnections({
+    enabled: canStartConversation,
+  });
+  const chatInstances = React.useMemo<ContactInstanceOption[]>(
     () =>
-      allConnections.map((connection) => ({
+      chatConnections.map((connection) => ({
         id: connection.id,
         value: connectionInstanceValue(connection),
         name: connection.name,
@@ -405,7 +408,7 @@ function ContatosPage() {
         instanceName: connection.name,
         status: connection.status.toUpperCase(),
       })),
-    [allConnections],
+    [chatConnections],
   );
   const [customFieldDefinitions, setCustomFieldDefinitions] = React.useState<ContactCustomField[]>(
     [],
@@ -596,6 +599,7 @@ function ContatosPage() {
         setTags(sortByOptionLabel(options.tags, (tag) => tag.nome));
         setDepartments(sortByOptionLabel(options.departments, (department) => department.nome));
         setProfiles(sortByOptionLabel(options.profiles, (profile) => profile.nome));
+        setInstances(sortByOptionLabel(options.instances, (instance) => instance.name));
         setCustomFieldDefinitions(customFields);
       })
       .catch((error) =>
@@ -730,7 +734,7 @@ function ContatosPage() {
       toast.error("Você não possui permissão para iniciar conversas.");
       return;
     }
-    const connectedInstances = resolveContactInstances(contact.instanceIds, instances).filter(
+    const connectedInstances = resolveContactInstances(contact.instanceIds, chatInstances).filter(
       (instance) => isConnectedInstanceStatus(instance.status),
     );
     if (connectedInstances.length === 0) {

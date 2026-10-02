@@ -2,6 +2,26 @@ import { describe, expect, it, vi } from "vitest";
 import { DepartmentsController } from "./departments.controller";
 
 describe("DepartmentsController", () => {
+  it("lists only profile departments through the Chat catalog", async () => {
+    const prisma = { department: { findMany: vi.fn().mockResolvedValue([]) } };
+    const controller = new DepartmentsController(prisma as never, {} as never);
+
+    await controller.listChatScope({
+      tenantId: "tenant-a",
+      roleKey: "agent",
+      chatDepartmentIds: ["department-a"],
+    } as never);
+
+    expect(prisma.department.findMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        active: true,
+        id: { in: ["department-a"] },
+      },
+      orderBy: { name: "asc" },
+    });
+  });
+
   it("creates departments without applying the removed plan limit", async () => {
     const createdAt = new Date("2026-10-01T12:00:00.000Z");
     const department = {

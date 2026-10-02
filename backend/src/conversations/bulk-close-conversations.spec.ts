@@ -10,6 +10,7 @@ const user = {
   membershipId: "member-a",
   roleKey: "agent",
   connectionIds: ["allowed"],
+  chatDepartmentIds: ["department-a"],
   permissions: [],
 } as AuthenticatedUser;
 function setup(rows: Array<{ id: string; protocol: string | null }>) {
@@ -70,6 +71,7 @@ describe("bulk closing conversations", () => {
           {
             AND: [
               { connectionId: { in: ["allowed"] } },
+              { departmentId: { in: ["department-a"] } },
               {
                 OR: [{ assignedMembershipId: "member-a" }, { assignedMembershipId: null }],
               },

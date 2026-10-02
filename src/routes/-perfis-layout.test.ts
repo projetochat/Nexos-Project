@@ -31,8 +31,8 @@ describe("organização do editor de Perfil de Acesso", () => {
       source.indexOf("function ScopeSettings"),
       source.indexOf("function PermissionSettings"),
     );
-    expect(scopes).toContain('title="Instâncias"');
-    expect(scopes).toContain('title="Departamentos"');
+    expect(scopes).toContain('title="Visualização de instância - Chat"');
+    expect(scopes).toContain('title="Visualização de departamento - Chat"');
     expect(scopes.match(/<PermissionSwitch/g)).toHaveLength(2);
 
     const selection = source.slice(
@@ -59,7 +59,13 @@ describe("organização do editor de Perfil de Acesso", () => {
     );
 
     expect(scopes).toContain("Escopo do Chat");
-    expect(scopes).toContain("Instâncias definem em quais canais");
-    expect(scopes).toContain("não limitam a criação nem");
+    expect(scopes).toContain("quais instâncias, departamentos e conversas");
+    expect(scopes).toContain("independentes dos acessos aos módulos");
+  });
+
+  it("carrega opções de escopo sem depender dos catálogos CRUD", () => {
+    expect(source).toContain("organizationApi.roleScopeOptions");
+    expect(source).toContain('["trixus", "role-scope-options"]');
+    expect(source).not.toContain("queryFn: connectionsApi.list");
   });
 });

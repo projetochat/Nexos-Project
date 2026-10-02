@@ -37,7 +37,7 @@ export function ReportFiltersBar({
   });
   const { data: departments = [] } = useQuery({
     queryKey: ["operations", "filters", "departments"],
-    queryFn: organizationApi.listDepartments,
+    queryFn: organizationApi.listChatDepartments,
   });
   const sortedCustomers = React.useMemo(
     () => sortByOptionLabel(customers?.items ?? [], (customer) => customer.nome),

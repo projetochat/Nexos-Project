@@ -1,4 +1,9 @@
-import { connectionAccess, connectionIdAccess } from "../auth/connection-access";
+import {
+  connectionAccess,
+  connectionIdAccess,
+  departmentAccess,
+  departmentIdAccess,
+} from "../auth/connection-access";
 import {
   BadRequestException,
   Body,
@@ -161,6 +166,7 @@ function groupListWhere(query: ListGroupsQueryDto, current: AuthenticatedUser) {
   const filters: Prisma.ConversationWhereInput[] = [
     visibleGroupConnectionWhere,
     connectionAccess(current),
+    departmentAccess(current),
   ];
   if (q) {
     filters.push({
@@ -298,6 +304,7 @@ export class GroupsController {
         conversationType: ConversationType.GROUP,
         ...visibleGroupConnectionWhere,
         ...connectionAccess(current),
+        ...departmentAccess(current),
       },
       include: groupInclude,
     });
@@ -325,6 +332,10 @@ export class GroupsController {
     if (!connection?.externalReference) {
       throw new BadRequestException("Selecione uma instância WhatsApp conectada.");
     }
+    const departmentId = await this.resolveGroupDepartmentId(
+      connection.defaultDepartmentId,
+      current,
+    );
 
     const contacts = await this.prisma.contact.findMany({
       where: {
@@ -396,6 +407,7 @@ export class GroupsController {
               },
               isGroup: true,
               conversationType: ConversationType.GROUP,
+              departmentId: existingConversation.departmentId ?? departmentId,
               archivedAt: null,
             },
             include: groupInclude,
@@ -408,6 +420,7 @@ export class GroupsController {
               status: ConversationStatus.ABERTA,
               isGroup: true,
               conversationType: ConversationType.GROUP,
+              departmentId,
               externalChatId: groupJid,
               externalGroupId: groupJid,
               groupName: dto.name.trim(),
@@ -665,7 +678,11 @@ export class GroupsController {
       throw new BadRequestException("Instância não permitida pelo perfil.");
     const results = await Promise.all(
       (dto?.connectionId ? [dto.connectionId] : ids).map((connectionId) =>
-        this.groupsSync.sync({ tenantId: current.tenantId, connectionId }),
+        this.groupsSync.sync({
+          tenantId: current.tenantId,
+          connectionId,
+          departmentIds: current.chatDepartmentIds ?? [],
+        }),
       ),
     );
     return results.reduce(
@@ -686,6 +703,7 @@ export class GroupsController {
         conversationType: ConversationType.GROUP,
         ...visibleGroupConnectionWhere,
         ...connectionAccess(current),
+        ...departmentAccess(current),
       },
       include: groupInclude,
     });
@@ -699,6 +717,37 @@ export class GroupsController {
     return group;
   }
 
+  private async resolveGroupDepartmentId(
+    preferredDepartmentId: string | null,
+    current: AuthenticatedUser,
+  ) {
+    if (preferredDepartmentId) {
+      const preferred = await this.prisma.department.findFirst({
+        where: {
+          id: preferredDepartmentId,
+          tenantId: current.tenantId,
+          active: true,
+          ...departmentIdAccess(current),
+        },
+        select: { id: true },
+      });
+      if (preferred) return preferred.id;
+    }
+    const department = await this.prisma.department.findFirst({
+      where: {
+        tenantId: current.tenantId,
+        active: true,
+        ...departmentIdAccess(current),
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    if (!department) {
+      throw new BadRequestException("Selecione um departamento permitido no Chat.");
+    }
+    return department.id;
+  }
+
   private async reloadGroup(id: string, current: AuthenticatedUser) {
     const group = await this.prisma.conversation.findFirst({
       where: {
@@ -708,6 +757,7 @@ export class GroupsController {
         conversationType: ConversationType.GROUP,
         ...visibleGroupConnectionWhere,
         ...connectionAccess(current),
+        ...departmentAccess(current),
       },
       include: groupInclude,
     });

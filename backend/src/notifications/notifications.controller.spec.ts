@@ -10,11 +10,17 @@ const current = {
   roleKey: "agent",
   permissions: ["notifications.read"],
   connectionIds: ["connection-a"],
+  chatDepartmentIds: ["department-a"],
 } as AuthenticatedUser;
 
 function setup() {
   const prisma = {
-    notification: { findFirst: vi.fn() },
+    $transaction: vi.fn((queries: Promise<unknown>[]) => Promise.all(queries)),
+    notification: {
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+    },
     lead: { findFirst: vi.fn() },
     conversation: { findFirst: vi.fn() },
   };
@@ -45,6 +51,7 @@ describe("NotificationsController.target", () => {
           {
             AND: [
               { connectionId: { in: ["connection-a"] } },
+              { departmentId: { in: ["department-a"] } },
               {
                 OR: [{ assignedMembershipId: "membership-a" }, { assignedMembershipId: null }],
               },
@@ -66,6 +73,28 @@ describe("NotificationsController.target", () => {
 
     await expect(controller.target("notification-a", current)).rejects.toBeInstanceOf(
       NotFoundException,
+    );
+  });
+
+  it("filters notification previews by the profile Chat department scope", async () => {
+    const { controller, prisma } = setup();
+
+    await controller.list({}, current);
+
+    expect(prisma.notification.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            {
+              AND: [
+                { entityType: { in: ["conversation", "lead"] } },
+                { connectionId: { in: ["connection-a"] } },
+                { departmentId: { in: ["department-a"] } },
+              ],
+            },
+          ]),
+        }),
+      }),
     );
   });
 });

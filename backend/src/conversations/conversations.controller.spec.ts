@@ -45,4 +45,37 @@ describe("ConversationsController connection selection", () => {
     });
     expect(connection).toBe(selectedConnection);
   });
+
+  it("rejects assigning a conversation to an attendant outside its Chat scope", async () => {
+    const prisma = {
+      tenantMembership: {
+        findFirst: vi.fn().mockResolvedValue({
+          role: {
+            key: "agent",
+            metadata: {
+              connectionIds: ["connection-other"],
+              departmentIds: ["department-other"],
+            },
+          },
+          departments: [],
+        }),
+      },
+    };
+    const controller = new ConversationsController(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      controller["assertAssignableMembership"](
+        prisma as never,
+        "membership-a",
+        "tenant-a",
+        "connection-selected",
+        "department-selected",
+      ),
+    ).rejects.toThrow("O perfil do atendente não permite esta instância no Chat.");
+  });
 });
