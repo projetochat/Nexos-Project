@@ -53,26 +53,44 @@ export class QuickRepliesController {
     const departmentId = await this.resolveDepartmentId(dto.departmentId ?? null, current);
     const normalizedShortcut = normalizeShortcut(dto.shortcut);
     await this.ensureShortcutAvailable(current.tenantId, departmentId, normalizedShortcut);
+    const archived = await this.prisma.quickReply.findFirst({
+      where: {
+        tenantId: current.tenantId,
+        departmentId,
+        normalizedShortcut,
+        archivedAt: { not: null },
+      },
+      select: { id: true },
+    });
+    const data = {
+      title: clean(dto.title),
+      shortcut: normalizeShortcutDisplay(dto.shortcut),
+      normalizedShortcut,
+      content: dto.content.trim(),
+      intervalSeconds: dto.intervalSeconds ?? 0,
+      attachmentFileName: dto.attachmentFileName ?? null,
+      attachmentMimeType: dto.attachmentMimeType ?? null,
+      attachmentSize: dto.attachmentSize ?? null,
+      attachmentDataUrl: dto.attachmentDataUrl ?? null,
+      closeOnSend: dto.closeOnSend ?? false,
+      departmentId,
+    };
     try {
-      const reply = await this.prisma.quickReply.create({
-        data: {
-          tenantId: current.tenantId,
-          title: clean(dto.title),
-          shortcut: normalizeShortcutDisplay(dto.shortcut),
-          normalizedShortcut,
-          content: dto.content.trim(),
-          messages,
-          intervalSeconds: dto.intervalSeconds ?? 0,
-          attachmentFileName: dto.attachmentFileName ?? null,
-          attachmentMimeType: dto.attachmentMimeType ?? null,
-          attachmentSize: dto.attachmentSize ?? null,
-          attachmentDataUrl: dto.attachmentDataUrl ?? null,
-          closeOnSend: dto.closeOnSend ?? false,
-          departmentId,
-          createdByMembershipId: current.membershipId,
-        },
-        include: quickReplyInclude,
-      });
+      const reply = archived
+        ? await this.prisma.quickReply.update({
+            where: { tenantId_id: { tenantId: current.tenantId, id: archived.id } },
+            data: { ...data, messages: messages ?? Prisma.JsonNull, archivedAt: null },
+            include: quickReplyInclude,
+          })
+        : await this.prisma.quickReply.create({
+            data: {
+              tenantId: current.tenantId,
+              ...data,
+              messages,
+              createdByMembershipId: current.membershipId,
+            },
+            include: quickReplyInclude,
+          });
       return serializeQuickReply(reply);
     } catch (error) {
       handleUniqueShortcut(error);

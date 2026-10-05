@@ -1067,16 +1067,39 @@ export class CrmController {
     const name = dto.name?.trim();
     if (!name) throw new BadRequestException("Informe o nome.");
     await this.assertContactCatalogNameAvailable("department", name, current.tenantId);
-    const item = await this.prisma.contactDepartment.create({
-      data: {
-        tenantId: current.tenantId,
-        name,
-        normalizedName: normalizeCatalogName(name),
-        description: cleanNullable(dto.description),
-        color: dto.color || "#3B82F6",
-      },
-    });
-    return this.serializeContactCatalog(item);
+    const normalizedName = normalizeCatalogName(name);
+    try {
+      const archived = await this.prisma.contactDepartment.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          normalizedName,
+          archivedAt: { not: null },
+        },
+      });
+      const item = archived
+        ? await this.prisma.contactDepartment.update({
+            where: { id: archived.id },
+            data: {
+              name,
+              normalizedName,
+              description: cleanNullable(dto.description),
+              color: dto.color || "#3B82F6",
+              archivedAt: null,
+            },
+          })
+        : await this.prisma.contactDepartment.create({
+            data: {
+              tenantId: current.tenantId,
+              name,
+              normalizedName,
+              description: cleanNullable(dto.description),
+              color: dto.color || "#3B82F6",
+            },
+          });
+      return this.serializeContactCatalog(item);
+    } catch (error) {
+      handleContactCatalogUniqueError(error, "department", name);
+    }
   }
 
   @Patch("contact-departments/:id")
@@ -1138,16 +1161,39 @@ export class CrmController {
     const name = dto.name?.trim();
     if (!name) throw new BadRequestException("Informe o nome.");
     await this.assertContactCatalogNameAvailable("profile", name, current.tenantId);
-    const item = await this.prisma.contactProfile.create({
-      data: {
-        tenantId: current.tenantId,
-        name,
-        normalizedName: normalizeCatalogName(name),
-        description: cleanNullable(dto.description),
-        color: dto.color || "#3B82F6",
-      },
-    });
-    return this.serializeContactCatalog(item);
+    const normalizedName = normalizeCatalogName(name);
+    try {
+      const archived = await this.prisma.contactProfile.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          normalizedName,
+          archivedAt: { not: null },
+        },
+      });
+      const item = archived
+        ? await this.prisma.contactProfile.update({
+            where: { id: archived.id },
+            data: {
+              name,
+              normalizedName,
+              description: cleanNullable(dto.description),
+              color: dto.color || "#3B82F6",
+              archivedAt: null,
+            },
+          })
+        : await this.prisma.contactProfile.create({
+            data: {
+              tenantId: current.tenantId,
+              name,
+              normalizedName,
+              description: cleanNullable(dto.description),
+              color: dto.color || "#3B82F6",
+            },
+          });
+      return this.serializeContactCatalog(item);
+    } catch (error) {
+      handleContactCatalogUniqueError(error, "profile", name);
+    }
   }
 
   @Patch("contact-profiles/:id")
@@ -2440,6 +2486,26 @@ function handlePrismaError(error: unknown): never {
     throw new ConflictException({
       code: "CONTACT_ALREADY_EXISTS",
       message: "Já existe um contato ativo com este telefone.",
+    });
+  }
+  throw error;
+}
+
+function handleContactCatalogUniqueError(
+  error: unknown,
+  kind: "department" | "profile",
+  name: string,
+): never {
+  if (isPrismaError(error, "P2002")) {
+    throw new ConflictException({
+      code:
+        kind === "department"
+          ? "CONTACT_DEPARTMENT_ALREADY_EXISTS"
+          : "CONTACT_PROFILE_ALREADY_EXISTS",
+      message:
+        kind === "department"
+          ? `Departamento do Contato "${name}" já existente.`
+          : `Perfil do Contato "${name}" já existente.`,
     });
   }
   throw error;
