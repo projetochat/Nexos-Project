@@ -175,7 +175,9 @@ describe("MessagingInboundService", () => {
       ...connection(),
       welcomeEnabled: true,
       welcomeNewMessage: "Olá {{nome}}, bem-vindo!",
-      welcomeExistingMessage: "Olá novamente {{nome}}!",
+      welcomeExistingMessage:
+        "{{cumprimento}}, novamente {{nome}} da {{empresa}} / {{departamento}}!",
+      timezone: "America/Manaus",
     });
     prisma.message.findFirst.mockResolvedValue(null);
     prisma.contact.findFirst.mockResolvedValue(contact());
@@ -209,14 +211,14 @@ describe("MessagingInboundService", () => {
       sender: { phone: "5511987654321", normalizedPhone: "+5511987654321", displayName: "Douglas" },
       type: MessageType.TEXT,
       content: "Oi",
-      occurredAt: new Date("2026-09-17T19:44:00"),
+      occurredAt: new Date("2026-09-17T15:00:00.000Z"),
     });
 
     expect(outbound.queueAutomatedText).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: "welcome",
         conversationId: "conversation-new",
-        content: "Olá novamente Cliente!",
+        content: "Bom dia, novamente Cliente da Cliente XPTO / Financeiro!",
       }),
     );
   });
@@ -298,7 +300,7 @@ describe("MessagingInboundService", () => {
       welcomeEnabled: true,
       welcomeExistingMessage: "Olá {{nome}}!",
       absenceEnabled: true,
-      absenceMessage: "Estamos ausentes, {{nome}}.",
+      absenceMessage: "Estamos ausentes, {{nome}} da {{cliente}} / {{departamento}}.",
       absenceAttachment: attachment,
       timezone: "America/Sao_Paulo",
       serviceHours: [{ day: "Quinta", active: true, start: "08:00", end: "18:00" }],
@@ -345,7 +347,7 @@ describe("MessagingInboundService", () => {
       expect.objectContaining({
         kind: "absence",
         conversationId: "conversation-absence",
-        content: "Estamos ausentes, Cliente.",
+        content: "Estamos ausentes, Cliente da Cliente XPTO / Financeiro.",
         attachment,
       }),
     );
@@ -1152,6 +1154,9 @@ function contact() {
     name: "Cliente",
     instance: "tenant-a-suporte",
     departmentId: "department-a",
+    contactDepartmentId: "contact-department-a",
+    departmentName: "Legado",
+    customerId: "customer-a",
   };
 }
 
@@ -1184,6 +1189,8 @@ function prismaMock() {
     },
     conversation: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     department: { findFirst: vi.fn().mockResolvedValue({ id: "department-a" }) },
+    contactDepartment: { findFirst: vi.fn().mockResolvedValue({ name: "Financeiro" }) },
+    customer: { findFirst: vi.fn().mockResolvedValue({ name: "Cliente XPTO" }) },
     tenantMembership: {
       findMany: vi.fn().mockResolvedValue([
         {

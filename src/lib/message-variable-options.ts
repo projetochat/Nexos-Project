@@ -7,6 +7,7 @@ export const CONNECTION_MESSAGE_VARIABLES = [
   "{{email}}",
   "{{departamento}}",
   "{{cliente}}",
+  "{{empresa}}",
   "{{instancia}}",
 ];
 
@@ -17,6 +18,7 @@ const CONNECTION_MESSAGE_VARIABLE_DESCRIPTIONS: Record<string, string> = {
   "{{email}}": "E-mail do contato.",
   "{{instancia}}": "Instância da conversa.",
   "{{cliente}}": "Cliente do contato.",
+  "{{empresa}}": "Empresa do contato (equivalente a {{cliente}}).",
   "{{departamento}}": "Departamento do contato.",
 };
 

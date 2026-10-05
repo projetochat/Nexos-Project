@@ -8,6 +8,7 @@ const connection = {
   name: "Atendimento",
   archivedAt: null,
   serviceEnabled: true,
+  timezone: "America/Sao_Paulo",
 };
 const conversation = {
   id: "conversation-a",
@@ -23,7 +24,16 @@ const conversation = {
     phone: "+5511999999999",
     email: "maria@example.com",
     departmentName: "Comercial",
-    customer: { name: "Cliente XPTO" },
+    customer: {
+      tenantId: "tenant-a",
+      name: "Cliente XPTO",
+      archivedAt: null,
+    },
+    contactDepartment: {
+      tenantId: "tenant-a",
+      name: "Financeiro",
+      archivedAt: null,
+    },
     customFieldValues: [{ value: "Premium", field: { label: "Plano" } }],
   },
   connection,
@@ -55,6 +65,7 @@ function setup(
     existing?: ReturnType<typeof message> | null;
     mediaStorage?: object;
     senderDisplayName?: object;
+    timezone?: string;
   } = {},
 ) {
   const tx = {
@@ -82,7 +93,12 @@ function setup(
   };
   const prisma = {
     message: { findFirst: vi.fn().mockResolvedValue(options.existing ?? null) },
-    conversation: { findFirst: vi.fn().mockResolvedValue(conversation) },
+    conversation: {
+      findFirst: vi.fn().mockResolvedValue({
+        ...conversation,
+        connection: { ...connection, timezone: options.timezone ?? connection.timezone },
+      }),
+    },
     schedule: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     tenantMembership: tx.tenantMembership,
     $transaction: vi.fn().mockImplementation(async (callback) => callback(tx)),
@@ -116,7 +132,7 @@ describe("MessagingOutboundService scheduled messages", () => {
         occurrenceAt,
         conversationId: "conversation-a",
         createdByMembershipId: "membership-a",
-        content: "Olá, {{nome}} da {{cliente}} — plano {{plano}} / {{departamento}}",
+        content: "Olá, {{nome}} da {{cliente}} / {{empresa}} — plano {{plano}} / {{departamento}}",
       }),
     ).resolves.toMatchObject({ created: true });
 
@@ -124,7 +140,7 @@ describe("MessagingOutboundService scheduled messages", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           clientMessageId: "schedule:schedule-a:2026-09-27T14:00:00.000Z",
-          content: "Olá, Maria da Cliente XPTO — plano Premium / Vendas",
+          content: "Olá, Maria da Cliente XPTO / Cliente XPTO — plano Premium / Financeiro",
           authorMembershipId: "membership-a",
           status: "QUEUED",
         }),
@@ -170,6 +186,26 @@ describe("MessagingOutboundService scheduled messages", () => {
     expect(tx.message.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ content: "*Ana Atendimento:*\n\nOlá, Maria" }),
+      }),
+    );
+  });
+
+  it("renders the greeting using the conversation connection timezone", async () => {
+    const { service, tx } = setup({ timezone: "America/Manaus" });
+
+    await service.queueScheduledMessage({
+      tenantId: "tenant-a",
+      scheduleId: "schedule-timezone",
+      claimedVersion: 1,
+      occurrenceAt: new Date("2026-09-17T15:00:00.000Z"),
+      conversationId: "conversation-a",
+      createdByMembershipId: "membership-a",
+      content: "{{cumprimento}}, {{nome}}",
+    });
+
+    expect(tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: "Bom dia, Maria" }),
       }),
     );
   });

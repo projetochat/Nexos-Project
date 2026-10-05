@@ -19,7 +19,7 @@ export class UpdateDepartmentDto {
 
   @IsOptional()
   @IsString()
-  description?: string;
+  description?: string | null;
 
   @IsOptional()
   @IsHexColor()

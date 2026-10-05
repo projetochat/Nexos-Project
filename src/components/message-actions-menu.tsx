@@ -11,8 +11,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { messageApi, type ApiMessage } from "@/lib/trixus-api";
 import { canCopyMessage, sendMessageCopy } from "@/lib/copy-message";
+import { copyMessageToClipboard } from "@/lib/message-clipboard";
 import { invalidateConversationQueries } from "@/lib/realtime/invalidate-conversation";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Modal, ConfirmDialog } from "./modal";
@@ -29,6 +31,7 @@ export function MessageActionsMenu({
   canEdit = false,
   canDelete = false,
   canSend = false,
+  onCopyMessage = copyMessageToClipboard,
 }: {
   message: ApiMessage;
   onReply?: () => void;
@@ -39,6 +42,7 @@ export function MessageActionsMenu({
   canEdit?: boolean;
   canDelete?: boolean;
   canSend?: boolean;
+  onCopyMessage?: typeof copyMessageToClipboard;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -86,6 +90,8 @@ export function MessageActionsMenu({
     "flex min-h-10 w-full items-center gap-3 rounded px-3 py-2 text-left text-sm hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40 disabled:cursor-not-allowed";
   const mediaReady =
     !!message.media_data && (!message.media_data.state || message.media_data.state === "ready");
+  const canCopyToClipboard =
+    !!message.content || (message.type === "image" && mediaReady && !message.deleted_for_everyone);
   return (
     <>
       <div className="absolute right-1 top-1 z-10" onClick={(event) => event.stopPropagation()}>
@@ -125,8 +131,17 @@ export function MessageActionsMenu({
             </button>
             <button
               className={itemClass}
-              disabled={busy || !message.content}
-              onClick={() => void run(() => navigator.clipboard.writeText(message.content))}
+              disabled={busy || !canCopyToClipboard}
+              onClick={() =>
+                void run(async () => {
+                  const result = await onCopyMessage(message);
+                  if (result.mode === "text-only" && message.type === "image") {
+                    toast.warning(
+                      "O navegador não permitiu copiar a imagem. Somente o texto foi copiado.",
+                    );
+                  }
+                })
+              }
             >
               <Copy className="h-4 w-4" />
               Copiar

@@ -53,6 +53,9 @@ const conversationInclude = {
   contact: {
     include: {
       customer: true,
+      contactDepartment: {
+        select: { id: true, tenantId: true, name: true, color: true, archivedAt: true },
+      },
       tags: { include: { tag: true }, where: { tag: { archivedAt: null } } },
       customFieldValues: {
         include: { field: true },
@@ -1038,6 +1041,20 @@ export class ConversationsController {
             customer_id: conversation.contact.customerId,
             email: conversation.contact.email,
             departamento: conversation.contact.departmentName,
+            contactDepartmentId:
+              conversation.contact.contactDepartment?.tenantId === conversation.tenantId &&
+              !conversation.contact.contactDepartment.archivedAt
+                ? conversation.contact.contactDepartmentId
+                : null,
+            contactDepartment:
+              conversation.contact.contactDepartment?.tenantId === conversation.tenantId &&
+              !conversation.contact.contactDepartment.archivedAt
+                ? {
+                    id: conversation.contact.contactDepartment.id,
+                    nome: conversation.contact.contactDepartment.name,
+                    cor: conversation.contact.contactDepartment.color,
+                  }
+                : null,
             nivel_gerencia: roleLabel(conversation.contact.companyRole),
             instancia: conversation.contact.instance,
             customer: conversation.contact.customer

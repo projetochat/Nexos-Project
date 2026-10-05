@@ -443,7 +443,10 @@ export class MessagingOutboundService {
       include: {
         contact: {
           include: {
-            customer: { select: { name: true } },
+            customer: { select: { tenantId: true, name: true, archivedAt: true } },
+            contactDepartment: {
+              select: { tenantId: true, name: true, archivedAt: true },
+            },
             customFieldValues: { include: { field: { select: { label: true } } } },
           },
         },
@@ -468,12 +471,21 @@ export class MessagingOutboundService {
       phone: conversation.contact.phone,
       email: conversation.contact.email,
       instance: conversation.connection.name,
-      department: conversation.department?.name ?? conversation.contact.departmentName,
-      customer: conversation.contact.customer?.name,
+      department:
+        conversation.contact.contactDepartment?.tenantId === input.tenantId &&
+        !conversation.contact.contactDepartment.archivedAt
+          ? conversation.contact.contactDepartment.name
+          : conversation.contact.departmentName,
+      customer:
+        conversation.contact.customer?.tenantId === input.tenantId &&
+        !conversation.contact.customer.archivedAt
+          ? conversation.contact.customer.name
+          : null,
       customFields: Object.fromEntries(
         conversation.contact.customFieldValues.map((item) => [item.field.label, item.value]),
       ),
       now: input.occurrenceAt,
+      timezone: conversation.connection.timezone,
     });
     const resolvedContent = templatedContent.trim()
       ? cleanMessageContent(templatedContent)

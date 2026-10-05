@@ -15,8 +15,9 @@ const BASE_VARIABLES = [
   ["{{nome}}", "Nome do contato."],
   ["{{telefone}}", "Telefone do contato."],
   ["{{email}}", "E-mail do contato."],
-  ["{{departamento}}", "Departamento da conversa."],
+  ["{{departamento}}", "Departamento cadastrado do contato."],
   ["{{cliente}}", "Empresa vinculada ao contato."],
+  ["{{empresa}}", "Empresa vinculada ao contato (equivalente a {{cliente}})."],
   ["{{instancia}}", "Instância da conversa."],
 ] as const;
 

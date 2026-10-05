@@ -29,7 +29,7 @@ export class CreateDepartmentDto {
 
   @IsOptional()
   @IsString()
-  description?: string;
+  description?: string | null;
 
   @IsOptional()
   @IsHexColor()

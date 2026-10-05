@@ -393,10 +393,25 @@ export class MessagingInboundService {
                 : storedAutomaticAttachment(connection.absenceAttachment),
             contactExisting: Boolean(existingContact),
             contact,
-            departmentName: updatedConversation.departmentId
+            timezone: connection.timezone,
+            departmentName: contact.contactDepartmentId
               ? ((
-                  await tx.department.findFirst({
-                    where: { id: updatedConversation.departmentId, tenantId: event.tenantId },
+                  await tx.contactDepartment.findFirst({
+                    where: {
+                      id: contact.contactDepartmentId,
+                      tenantId: event.tenantId,
+                      archivedAt: null,
+                    },
+                    select: { name: true },
+                  })
+                )?.name ??
+                contact.departmentName ??
+                null)
+              : (contact.departmentName ?? null),
+            customerName: contact.customerId
+              ? ((
+                  await tx.customer.findFirst({
+                    where: { id: contact.customerId, tenantId: event.tenantId, archivedAt: null },
                     select: { name: true },
                   })
                 )?.name ?? null)
@@ -519,10 +534,12 @@ export class MessagingInboundService {
             email: result.automaticReply.contact.email,
             instance: result.providerInstanceName,
             department: result.automaticReply.departmentName,
+            customer: result.automaticReply.customerName,
             customFields: Object.fromEntries(
               customFieldValues.map((item) => [item.field.label, item.value]),
             ),
             now: event.occurredAt,
+            timezone: result.automaticReply.timezone,
           });
           if (result.automaticReply.attachment) {
             await this.outbound.queueAutomatedMedia({

@@ -25,17 +25,19 @@ type TemplateContext = {
   customer?: string | null;
   customFields?: Record<string, string | number | boolean | null | undefined>;
   now?: Date;
+  timezone?: string | null;
 };
 
 export function resolveMessageTemplate(text: string, context: TemplateContext = {}) {
   const values: Record<string, string> = {
-    cumprimento: greeting(context.now ?? new Date()),
+    cumprimento: greeting(context.now ?? new Date(), context.timezone),
     nome: context.contactName?.trim() ?? "",
     telefone: context.phone?.trim() ?? "",
     email: context.email?.trim() ?? "",
     instancia: context.instance?.trim() ?? "",
     departamento: context.department?.trim() ?? "",
     cliente: context.customer?.trim() ?? "",
+    empresa: context.customer?.trim() ?? "",
   };
   for (const [label, value] of Object.entries(context.customFields ?? {})) {
     const words = normalizeWords(label);
@@ -67,7 +69,25 @@ function normalizeWords(value: string) {
     .filter(Boolean);
 }
 
-function greeting(now: Date) {
-  const hour = now.getHours();
+function greeting(now: Date, timezone?: string | null) {
+  const hour = hourInTimezone(now, timezone);
   return hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+}
+
+function hourInTimezone(now: Date, timezone?: string | null) {
+  const configuredTimezone = timezone?.trim() || "America/Sao_Paulo";
+  try {
+    return formattedHour(now, configuredTimezone);
+  } catch {
+    return formattedHour(now, "America/Sao_Paulo");
+  }
+}
+
+function formattedHour(now: Date, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone,
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  return Number(parts.find((part) => part.type === "hour")?.value ?? 0);
 }

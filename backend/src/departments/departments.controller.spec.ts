@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { validate } from "class-validator";
 import { DepartmentsController } from "./departments.controller";
+import { UpdateDepartmentDto } from "./dto/update-department.dto";
 
 describe("DepartmentsController", () => {
   it("does not expose archived or incompatible instance links in department editing", async () => {
@@ -79,6 +81,51 @@ describe("DepartmentsController", () => {
         }),
       }),
     );
+  });
+
+  it("updates a department whose optional description is null", async () => {
+    const timestamp = new Date("2026-10-05T12:00:00.000Z");
+    const existing = {
+      id: "department-a",
+      tenantId: "tenant-a",
+      name: "Comercial",
+      description: null,
+      color: "#3B82F6",
+      icon: "department",
+      active: true,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      connections: [],
+    };
+    const tx = {
+      department: { update: vi.fn().mockResolvedValue({ ...existing, color: "#10B981" }) },
+    };
+    const prisma = {
+      department: { findFirst: vi.fn().mockResolvedValue(existing) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const controller = new DepartmentsController(prisma as never, {} as never);
+
+    await expect(
+      controller.update("department-a", { description: null, color: "#10B981" }, {
+        tenantId: "tenant-a",
+      } as never),
+    ).resolves.toMatchObject({ description: null, color: "#10B981" });
+
+    expect(tx.department.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "department-a" },
+        data: expect.objectContaining({ description: null, color: "#10B981" }),
+      }),
+    );
+  });
+
+  it("accepts the null description returned by departments without a note", async () => {
+    const dto = new UpdateDepartmentDto();
+    dto.description = null;
+    dto.color = "#10B981";
+
+    await expect(validate(dto)).resolves.toEqual([]);
   });
 
   it("lists only profile departments through the Chat catalog", async () => {

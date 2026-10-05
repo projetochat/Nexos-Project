@@ -201,7 +201,7 @@ export class DepartmentsController {
         where: { id },
         data: {
           name: dto.name?.trim(),
-          description: dto.description === undefined ? undefined : dto.description.trim() || null,
+          description: dto.description === undefined ? undefined : dto.description?.trim() || null,
           color: dto.color,
           icon: dto.icon,
           active: dto.active,

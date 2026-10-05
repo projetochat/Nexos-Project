@@ -6,6 +6,85 @@ import {
 } from "../generated/prisma";
 import { ConversationsController } from "./conversations.controller";
 
+describe("ConversationsController contact variable context", () => {
+  function conversation(contactDepartmentTenantId: string) {
+    const now = new Date("2026-10-05T12:00:00.000Z");
+    return {
+      id: "conversation-a",
+      tenantId: "tenant-a",
+      contactId: "contact-a",
+      connectionId: null,
+      departmentId: null,
+      assignedMembershipId: null,
+      status: ConversationStatus.ABERTA,
+      isGroup: false,
+      createdAt: now,
+      updatedAt: now,
+      lastMessageAt: null,
+      protocol: null,
+      unreadCount: 0,
+      lastMessagePreview: null,
+      inboxArchivedAt: null,
+      lead: null,
+      assignedMembership: null,
+      department: null,
+      connection: null,
+      contact: {
+        id: "contact-a",
+        name: "Ana",
+        phone: "5511999990000",
+        avatarUrl: null,
+        customerId: "customer-a",
+        email: "ana@exemplo.com",
+        departmentName: "Legado",
+        contactDepartmentId: "contact-department-a",
+        contactDepartment: {
+          id: "contact-department-a",
+          tenantId: contactDepartmentTenantId,
+          name: "Financeiro",
+          color: "#123456",
+          archivedAt: null,
+        },
+        companyRole: null,
+        instance: null,
+        customer: null,
+        tags: [],
+        customFieldValues: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+    };
+  }
+
+  it("serializes the registered contact department when it belongs to the conversation tenant", () => {
+    const controller = new ConversationsController(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(controller["serialize"](conversation("tenant-a") as never).contact).toMatchObject({
+      contactDepartmentId: "contact-department-a",
+      contactDepartment: { id: "contact-department-a", nome: "Financeiro", cor: "#123456" },
+    });
+  });
+
+  it("does not expose a contact department relation from another tenant", () => {
+    const controller = new ConversationsController(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(controller["serialize"](conversation("tenant-b") as never).contact).toMatchObject({
+      contactDepartmentId: null,
+      contactDepartment: null,
+    });
+  });
+});
+
 describe("ConversationsController connection selection", () => {
   it("uses the explicitly selected connection instead of another contact instance", async () => {
     const selectedConnection = {

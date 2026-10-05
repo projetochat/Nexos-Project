@@ -73,6 +73,7 @@ import { useChatPerms } from "@/lib/perms";
 import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { resolveMessageVariables, type MessageVariableContext } from "@/lib/message-variables";
+import { messageMediaType, sendMediaQueue, type MessageMediaType } from "@/lib/message-media-queue";
 import { invalidateConversationQueries } from "@/lib/realtime/invalidate-conversation";
 import { startTyping, stopTyping } from "@/lib/realtime/client";
 import {
@@ -749,7 +750,7 @@ function ConversationPage() {
                 email: conv.contact?.email,
                 instance: conv.connection?.name,
                 customer: conv.contact?.customer?.nome,
-                department: conv.department?.nome ?? conv.contact?.departamento,
+                department: conv.contact?.contactDepartment?.nome ?? conv.contact?.departamento,
                 customFields: Object.fromEntries(
                   (conv.contact?.customFieldValues ?? []).map((field) => [
                     field.label,
@@ -1868,12 +1869,17 @@ function Composer({
     disabled &&
     (disabledReason === "lead" || disabledReason === "standby" || disabledReason === "not-mine");
 
-  const [pendingFile, setPendingFile] = React.useState<{
+  type PendingMedia = {
+    id: string;
+    clientMessageId: string;
     file: File;
     previewUrl: string | null;
-    mediaType: "image" | "video" | "document";
+    mediaType: MessageMediaType;
+    carriesContext: boolean;
     sharedContact?: SharedContactSelection["contact"];
-  } | null>(null);
+  };
+  const [pendingFiles, setPendingFiles] = React.useState<PendingMedia[]>([]);
+  const [mediaSending, setMediaSending] = React.useState(false);
   const [showQR, setShowQR] = React.useState(false);
   const [qrFilter, setQrFilter] = React.useState("");
   const [mentionFilter, setMentionFilter] = React.useState<string | null>(null);
@@ -1900,6 +1906,56 @@ function Composer({
   const [showSchedule, setShowSchedule] = React.useState(false);
   const typingActiveRef = React.useRef(false);
   const typingStopTimerRef = React.useRef<number | null>(null);
+
+  const clearPendingFiles = () => {
+    setPendingFiles((current) => {
+      current.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+      return [];
+    });
+  };
+
+  const queueFiles = (files: readonly File[]) => {
+    const additions: PendingMedia[] = files.map((file) => {
+      const mediaType = messageMediaType(file);
+      return {
+        id: crypto.randomUUID(),
+        clientMessageId: crypto.randomUUID(),
+        file,
+        previewUrl:
+          mediaType === "image" || mediaType === "video" ? URL.createObjectURL(file) : null,
+        mediaType,
+        carriesContext: false,
+      };
+    });
+    if (!additions.length) return;
+    setPendingFiles((current) => {
+      const replacingContact = current.some((item) => !!item.sharedContact);
+      if (replacingContact) {
+        current.forEach((item) => {
+          if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+        });
+      }
+      const base = replacingContact ? [] : current;
+      if (!base.length) additions[0]!.carriesContext = true;
+      return [...base, ...additions];
+    });
+  };
+
+  const removePendingFile = (id: string) => {
+    setPendingFiles((current) => {
+      const removed = current.find((item) => item.id === id);
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+      const remaining = current.filter((item) => item.id !== id);
+      if (removed?.carriesContext && remaining[0]) {
+        return remaining.map((item, index) =>
+          index === 0 ? { ...item, carriesContext: true } : item,
+        );
+      }
+      return remaining;
+    });
+  };
 
   const { data: quickReplies = [] } = useQuery({
     queryKey: ["trixus", "quick-replies", "composer"],
@@ -1964,8 +2020,7 @@ function Composer({
       setSequence(draft);
       setSequenceError("");
       setText("");
-      if (pendingFile?.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
-      setPendingFile(null);
+      clearPendingFiles();
     } else {
       quickReplyDrafts.delete(draftKey);
       setSequence(null);
@@ -2082,7 +2137,7 @@ function Composer({
   };
 
   const handleSend = async () => {
-    if (disabled || !authorId || sequenceAbort.current) return;
+    if (disabled || !authorId || sequenceAbort.current || mediaSending) return;
     emitTypingStop();
     if (sequence) {
       await sendQuickReply(sequence);
@@ -2109,26 +2164,46 @@ function Composer({
       }
     }
     t = resolveVariables(t);
-    if (pendingFile) {
+    if (pendingFiles.length) {
+      setMediaSending(true);
+      const snapshot = [...pendingFiles];
+      const sentItems: PendingMedia[] = [];
       try {
-        await messageApi.sendMedia(conversationId, pendingFile.file, {
-          fileName: pendingFile.file.name,
-          mimeType: pendingFile.file.type || "application/octet-stream",
-          mediaType: pendingFile.mediaType,
-          caption: t || null,
-          quotedMessageId: replyTo?.id ?? null,
-        });
-        if (pendingFile.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
-        setPendingFile(null);
+        const result = await sendMediaQueue(
+          snapshot,
+          (pendingFile) =>
+            messageApi.sendMedia(conversationId, pendingFile.file, {
+              fileName: pendingFile.file.name,
+              mimeType: pendingFile.file.type || "application/octet-stream",
+              mediaType: pendingFile.mediaType,
+              caption: pendingFile.carriesContext ? t || null : null,
+              quotedMessageId: pendingFile.carriesContext ? (replyTo?.id ?? null) : null,
+              clientMessageId: pendingFile.clientMessageId,
+            }),
+          (sent) => {
+            sentItems.push(sent);
+            if (sent.previewUrl) URL.revokeObjectURL(sent.previewUrl);
+            setPendingFiles((current) => current.filter((item) => item.id !== sent.id));
+          },
+        );
+        if (sentItems.length) {
+          if (sentItems.some((item) => item.carriesContext)) setText("");
+          void messageApi
+            .markRead(conversationId)
+            .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
+          onSent();
+        }
+        if (result.error) {
+          toast.error((result.error as Error).message);
+          return;
+        }
         setText("");
-        void messageApi
-          .markRead(conversationId)
-          .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
-        onSent();
         return;
       } catch (e) {
         toast.error((e as Error).message);
         return;
+      } finally {
+        setMediaSending(false);
       }
     }
     if (!t) {
@@ -2178,29 +2253,20 @@ function Composer({
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = Array.from(e.clipboardData?.items ?? []);
-    const imageItem = items.find((it) => it.type.startsWith("image/"));
-    if (imageItem) {
+    const imageFiles = items
+      .filter((item) => item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => !!file);
+    if (imageFiles.length) {
       e.preventDefault();
-      const file = imageItem.getAsFile();
-      if (file) {
-        setPendingFile({ file, previewUrl: URL.createObjectURL(file), mediaType: "image" });
-      }
+      queueFiles(imageFiles);
     }
   };
 
   const onFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const mediaType = file.type.startsWith("image/")
-      ? "image"
-      : file.type.startsWith("video/")
-        ? "video"
-        : "document";
-    setPendingFile({
-      file,
-      previewUrl: mediaType === "image" || mediaType === "video" ? URL.createObjectURL(file) : null,
-      mediaType,
-    });
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    queueFiles(files);
     e.target.value = "";
   };
 
@@ -2210,7 +2276,21 @@ function Composer({
     const mimeType = header.match(/^data:([^;]+)/i)?.[1] ?? "image/jpeg";
     const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
     const file = new File([bytes], `camera-${Date.now()}.jpg`, { type: mimeType });
-    setPendingFile({ file, previewUrl: dataUrl, mediaType: "image" });
+    setPendingFiles((current) => {
+      const replacingContact = current.some((item) => !!item.sharedContact);
+      const base = replacingContact ? [] : current;
+      return [
+        ...base,
+        {
+          id: crypto.randomUUID(),
+          clientMessageId: crypto.randomUUID(),
+          file,
+          previewUrl: dataUrl,
+          mediaType: "image",
+          carriesContext: base.length === 0,
+        },
+      ];
+    });
     setShowCamera(false);
   };
 
@@ -2440,54 +2520,63 @@ function Composer({
             )}
           </div>
         )}
-        {pendingFile && (
-          <div className="mb-2 flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card">
-            {pendingFile.sharedContact ? (
-              <Avatar
-                name={pendingFile.sharedContact.nome}
-                src={pendingFile.sharedContact.avatar_url}
-                size={48}
-              />
-            ) : pendingFile.previewUrl ? (
-              pendingFile.mediaType === "video" ? (
-                <video src={pendingFile.previewUrl} className="h-16 w-16 rounded object-cover" />
-              ) : (
-                <img
-                  src={pendingFile.previewUrl}
-                  alt="preview"
-                  className="h-16 w-16 rounded object-cover"
-                />
-              )
-            ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded bg-surface-2">
-                <Paperclip className="h-5 w-5" />
+        {pendingFiles.length > 0 && (
+          <div className="mb-2 max-h-56 space-y-2 overflow-y-auto" aria-label="Anexos selecionados">
+            {pendingFiles.map((pendingFile) => (
+              <div
+                key={pendingFile.id}
+                className="flex items-center gap-3 rounded-lg border border-border bg-card p-2 shadow-card"
+              >
+                {pendingFile.sharedContact ? (
+                  <Avatar
+                    name={pendingFile.sharedContact.nome}
+                    src={pendingFile.sharedContact.avatar_url}
+                    size={48}
+                  />
+                ) : pendingFile.previewUrl ? (
+                  pendingFile.mediaType === "video" ? (
+                    <video
+                      src={pendingFile.previewUrl}
+                      className="h-16 w-16 rounded object-cover"
+                    />
+                  ) : (
+                    <img
+                      src={pendingFile.previewUrl}
+                      alt={`Pré-visualização de ${pendingFile.file.name}`}
+                      className="h-16 w-16 rounded object-cover"
+                    />
+                  )
+                ) : (
+                  <div className="flex h-16 w-16 items-center justify-center rounded bg-surface-2">
+                    <Paperclip className="h-5 w-5" />
+                  </div>
+                )}
+                {pendingFile.sharedContact ? (
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{pendingFile.sharedContact.nome}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {formatBrazilPhoneWithDdi(
+                        pendingFile.sharedContact.normalizedPhone ||
+                          pendingFile.sharedContact.telefone,
+                      )}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                    {pendingFile.file.name}
+                  </p>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Remover ${pendingFile.file.name}`}
+                  disabled={mediaSending}
+                  onClick={() => removePendingFile(pendingFile.id)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
-            )}
-            {pendingFile.sharedContact ? (
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{pendingFile.sharedContact.nome}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {formatBrazilPhoneWithDdi(
-                    pendingFile.sharedContact.normalizedPhone || pendingFile.sharedContact.telefone,
-                  )}
-                </p>
-              </div>
-            ) : (
-              <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                {pendingFile.file.name}
-              </p>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Remover"
-              onClick={() => {
-                if (pendingFile.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
-                setPendingFile(null);
-              }}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            ))}
           </div>
         )}
 
@@ -2507,7 +2596,9 @@ function Composer({
                 key={qr.id}
                 type="button"
                 onClick={() => applyQR(qr)}
-                disabled={sequenceSending || !!sequence || recording || !!pendingAudio}
+                disabled={
+                  mediaSending || sequenceSending || !!sequence || recording || !!pendingAudio
+                }
                 className="flex w-full items-start gap-3 border-b border-border/60 px-3 py-2 text-left hover:bg-surface-1"
               >
                 <span className="font-mono text-xs text-primary">
@@ -2632,7 +2723,14 @@ function Composer({
           >
             <div className="flex items-center gap-0.5">
               <InboxMobileActions
-                disabled={disabled || sequenceSending || !!sequence || recording || !!pendingAudio}
+                disabled={
+                  disabled ||
+                  sequenceSending ||
+                  mediaSending ||
+                  !!sequence ||
+                  recording ||
+                  !!pendingAudio
+                }
                 allowQuickReplies={allowQuickReplies}
                 ticketDisabled={ticketDisabled}
                 onQuickReplies={() => setShowQR((value) => !value)}
@@ -2645,6 +2743,7 @@ function Composer({
               <input
                 ref={fileRef}
                 type="file"
+                multiple
                 accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
                 className="hidden"
                 onChange={onFilePick}
@@ -2668,7 +2767,14 @@ function Composer({
                 }
                 if (e.key === "Escape") setShowQR(false);
               }}
-              disabled={disabled || sequenceSending || !!sequence || recording || !!pendingAudio}
+              disabled={
+                disabled ||
+                sequenceSending ||
+                mediaSending ||
+                !!sequence ||
+                recording ||
+                !!pendingAudio
+              }
               aria-label="Mensagem"
               placeholder={isMobile ? "" : "Digite uma mensagem"}
               title={
@@ -2692,7 +2798,9 @@ function Composer({
                 size="icon"
                 aria-label="Gravar áudio"
                 onClick={() => void startRecording()}
-                disabled={disabled || sequenceSending || !!sequence || !!pendingAudio}
+                disabled={
+                  disabled || sequenceSending || mediaSending || !!sequence || !!pendingAudio
+                }
               >
                 <Mic className="h-4 w-4" />
               </Button>
@@ -2701,16 +2809,16 @@ function Composer({
               variant="primary"
               size="icon"
               onClick={handleSend}
-              disabled={disabled || sequenceSending || recording || !!pendingAudio}
+              disabled={disabled || sequenceSending || mediaSending || recording || !!pendingAudio}
               aria-label={
-                sequenceSending
+                sequenceSending || mediaSending
                   ? "Enviando…"
                   : sequence && (sequence.next > 0 || sequenceError)
                     ? "Continuar envio"
                     : "Enviar mensagem"
               }
               title={
-                sequenceSending
+                sequenceSending || mediaSending
                   ? "Enviando…"
                   : sequence && (sequence.next > 0 || sequenceError)
                     ? "Continuar envio"
@@ -2726,13 +2834,18 @@ function Composer({
             priorityInstances={priorityInstances}
             onClose={() => setShowContacts(false)}
             onSelect={(selection) => {
-              if (pendingFile?.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
-              setPendingFile({
-                file: selection.file,
-                previewUrl: null,
-                mediaType: "document",
-                sharedContact: selection.contact,
-              });
+              clearPendingFiles();
+              setPendingFiles([
+                {
+                  id: crypto.randomUUID(),
+                  clientMessageId: crypto.randomUUID(),
+                  file: selection.file,
+                  previewUrl: null,
+                  mediaType: "document",
+                  carriesContext: true,
+                  sharedContact: selection.contact,
+                },
+              ]);
               setShowContacts(false);
             }}
           />

@@ -5,6 +5,12 @@ describe("chat message variables", () => {
   it("resolves the contato token offered in quick replies", () => {
     expect(resolveMessageVariables("Olá {{contato}}", { contactName: "Ana" })).toBe("Olá Ana");
   });
+
+  it("keeps cliente and empresa as aliases for the registered company", () => {
+    expect(
+      resolveMessageVariables("{{cliente}} / {{empresa}}", { customer: "Empresa Exemplo" }),
+    ).toBe("Empresa Exemplo / Empresa Exemplo");
+  });
   it("replaces every documented variable using the active conversation", () => {
     expect(
       resolveMessageVariables(

@@ -229,9 +229,11 @@ export type ApiContact = {
   avatar_url: string | null;
   customer_id: string | null;
   email: string | null;
+  /** Nome legado; use contactDepartment como fonte canônica do departamento cadastrado. */
   departamento: string | null;
   departmentId: string | null;
   contactDepartmentId: string | null;
+  /** Departamento cadastrado do contato, distinto do departamento operacional da conversa. */
   contactDepartment: Pick<ApiContactCatalog, "id" | "nome" | "cor"> | null;
   contactProfileId: string | null;
   contactProfile: Pick<ApiContactCatalog, "id" | "nome" | "cor"> | null;

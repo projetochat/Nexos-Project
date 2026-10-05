@@ -62,6 +62,7 @@ export function resolveMessageVariables(text: string, context: MessageVariableCo
     email: context.email?.trim() ?? "",
     instancia: context.instance?.trim() ?? "",
     cliente: context.customer?.trim() ?? "",
+    empresa: context.customer?.trim() ?? "",
     departamento: context.department?.trim() ?? "",
   };
 
