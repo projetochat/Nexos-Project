@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   appSurfaceForHostname,
   appTitleForHostname,
@@ -8,6 +8,11 @@ import {
 } from "./app-surface";
 
 describe("app surface routing", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_TRIXUS_PLATFORM_APP_URL", "https://app.trixus.com.br");
+    vi.stubEnv("VITE_TRIXUS_TENANT_APP_URL", "https://chat.trixus.com.br");
+  });
+
   afterEach(() => vi.unstubAllEnvs());
 
   it("keeps localhost on the compatible unified surface", () => {
