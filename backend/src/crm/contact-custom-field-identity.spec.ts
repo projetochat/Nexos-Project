@@ -41,7 +41,10 @@ describe("contact custom field identity", () => {
 
   it("keeps the SQL migration catalog exactly aligned with the canonical runtime catalog", () => {
     const sql = readFileSync(
-      resolve(process.cwd(), "prisma/migrations/20261005210000_contact_custom_field_identity/migration.sql"),
+      resolve(
+        process.cwd(),
+        "prisma/migrations/20261005210000_contact_custom_field_identity/migration.sql",
+      ),
       "utf8",
     );
     expect(sqlArray(sql, "NATIVE_NAMES")).toEqual([...NATIVE_CONTACT_FIELD_NAMES]);

@@ -9,6 +9,8 @@ export default tseslint.config(
   {
     ignores: [
       "**/.continuity/**",
+      "backups/**",
+      "tmp/**",
       "dist",
       "**/dist/**",
       ".output",

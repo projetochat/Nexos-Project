@@ -16,7 +16,9 @@ describe("MessagesService.markRead", () => {
       {} as never,
       realtime as never,
     );
-    vi.spyOn(service, "findVisibleConversation").mockResolvedValue({ id: "conversation-a" } as never);
+    vi.spyOn(service, "findVisibleConversation").mockResolvedValue({
+      id: "conversation-a",
+    } as never);
 
     const result = await service.markRead("conversation-a", {
       tenantId: "tenant-a",

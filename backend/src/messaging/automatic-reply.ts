@@ -103,8 +103,8 @@ function isActiveDay(value: unknown, day: string) {
   return Boolean(
     value &&
     typeof value === "object" &&
-    (value as any).day === day &&
-    (value as any).active === true,
+    (value as { day?: unknown }).day === day &&
+    (value as { active?: unknown }).active === true,
   );
 }
 
