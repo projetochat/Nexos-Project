@@ -1,5 +1,7 @@
 # Trixus - Documentacao Tecnica
 
+> **AVISO DE HISTORICIDADE — auditoria de 2026-10-05:** este arquivo acumula baselines antigas e nao representa necessariamente o comportamento vigente. A fonte central indicada no `AGENTS.md` e as decisoes aprovadas D-003 a D-010 prevalecem. Nao execute comandos, use credenciais de exemplo ou conclua que uma funcionalidade esta pronta sem revalidacao. Consulte [docs/current](./current/README.md), a [matriz completa](./current/DOCUMENT_INVENTORY_2026-10-05.md) e o [mapa de movimentacao](./current/MOVEMENT_MAP_2026-10-05.md).
+
 Esta documentacao descreve a baseline da Sprint 00. O frontend atual e a fonte da verdade para telas, fluxos e comportamento. A arquitetura futura aprovada e a fonte da verdade para backend e infraestrutura.
 
 ## Estado atual do MVP

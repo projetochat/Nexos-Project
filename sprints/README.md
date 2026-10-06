@@ -1,5 +1,7 @@
 # Sprints - Trixus Project
 
+> **AVISO DE HISTORICIDADE — auditoria de 2026-10-05:** os relatorios abaixo preservam o estado observado em cada ciclo. Eles nao representam necessariamente o comportamento vigente, e os status antigos nao certificam producao. A fonte central indicada no `AGENTS.md` e as decisoes aprovadas prevalecem. Consulte a [matriz documental](../docs/current/DOCUMENT_INVENTORY_2026-10-05.md) e o [mapa de movimentacao](../docs/current/MOVEMENT_MAP_2026-10-05.md).
+
 Indice permanente dos relatorios de sprint.
 
 | Sprint | Objetivo                                                     | Status             | Data       | Commit inicial      | Commit final        | Relatorio                                              |
