@@ -208,6 +208,99 @@ describe("MessagingConnectionsService", () => {
     });
   });
 
+  it("reuses an idempotent onboarding connection without creating another provider instance", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    const evolution = {
+      findInstance: vi.fn().mockResolvedValue({ connectionStatus: "connecting" }),
+      connect: vi.fn().mockResolvedValue({ base64: "same-qr" }),
+      createInstance: vi.fn(),
+      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
+    };
+
+    const result = await new MessagingConnectionsService(
+      prisma as never,
+      evolution as never,
+    ).createEvolution(
+      { name: "Suporte", idempotencyKey: "onboarding-instance-a" },
+      current as never,
+    );
+
+    expect(result).toMatchObject({ id: "connection-a", qrCodeBase64: "same-qr" });
+    expect(evolution.createInstance).not.toHaveBeenCalled();
+    expect(prisma.messagingConnection.create).not.toHaveBeenCalled();
+    expect(prisma.$queryRaw).toHaveBeenCalledOnce();
+  });
+
+  it("reconciles an ambiguous provider create failure before persisting once", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(null);
+    prisma.messagingConnection.create.mockResolvedValue(connection());
+    const evolution = {
+      findInstance: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ connectionStatus: "connecting" }),
+      createInstance: vi.fn().mockRejectedValue(new Error("timeout")),
+      connect: vi.fn().mockResolvedValue({ base64: "recovered-qr" }),
+      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
+      deleteInstance: vi.fn(),
+    };
+
+    const result = await new MessagingConnectionsService(
+      prisma as never,
+      evolution as never,
+    ).createEvolution(
+      { name: "Suporte", idempotencyKey: "onboarding-instance-a" },
+      current as never,
+    );
+
+    expect(result).toMatchObject({ qrCodeBase64: "recovered-qr" });
+    expect(prisma.messagingConnection.create).toHaveBeenCalledOnce();
+    expect(evolution.deleteInstance).not.toHaveBeenCalled();
+  });
+
+  it("recovers a database uniqueness race without deleting the shared provider", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(connection());
+    prisma.messagingConnection.create.mockRejectedValue({ code: "P2002" });
+    const evolution = {
+      findInstance: vi.fn().mockResolvedValue(null),
+      createInstance: vi.fn().mockResolvedValue({ instance: { status: "connecting" } }),
+      setWebhook: vi.fn().mockResolvedValue({ ok: true }),
+      deleteInstance: vi.fn(),
+    };
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, evolution as never).createEvolution(
+        { name: "Suporte", idempotencyKey: "onboarding-instance-a" },
+        current as never,
+      ),
+    ).resolves.toMatchObject({ id: "connection-a" });
+    expect(evolution.deleteInstance).not.toHaveBeenCalled();
+  });
+
+  it("rejects reusing an idempotency key with a different instance name", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue({
+      ...connection(),
+      name: "Comercial",
+    });
+    const evolution = { findInstance: vi.fn() };
+
+    await expect(
+      new MessagingConnectionsService(prisma as never, evolution as never).createEvolution(
+        { name: "Suporte", idempotencyKey: "onboarding-instance-a" },
+        current as never,
+      ),
+    ).rejects.toMatchObject({
+      response: { code: "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH" },
+    });
+    expect(evolution.findInstance).not.toHaveBeenCalled();
+  });
+
   it("does not add a newly created administrative instance to the creator Chat scope", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.create.mockResolvedValue(connection());
@@ -891,6 +984,7 @@ function prismaMock() {
     department: { findFirst: vi.fn() },
     role: { findFirstOrThrow: vi.fn(), update: vi.fn() },
     ticket: { count: vi.fn().mockResolvedValue(0) },
+    $queryRaw: vi.fn().mockResolvedValue([{ tenantId: "tenant-a" }]),
     $transaction: vi.fn(async (callback) => callback(prisma)),
   };
   return prisma;

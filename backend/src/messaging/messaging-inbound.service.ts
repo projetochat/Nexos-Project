@@ -22,11 +22,11 @@ import { downloadRemoteMedia } from "./media/remote-media-downloader";
 import { normalizeRemotePhoneCandidates } from "./messaging-identity";
 import { EvolutionClient } from "./evolution/evolution.client";
 import { MessagingOutboundService } from "./messaging-outbound.service";
-import { resolveMessageTemplate } from "./message-template";
 import { selectAutomaticReply } from "./automatic-reply";
 import { conversationQueueForNotification } from "../conversations/conversation-queue-scope";
 import { effectivePermissions } from "../auth/effective-permissions";
 import { roleChatScopes } from "../auth/connection-access";
+import { MESSAGE_CLOCK, type MessageClock, SYSTEM_MESSAGE_CLOCK } from "./message-clock";
 
 @Injectable()
 export class MessagingInboundService {
@@ -42,6 +42,7 @@ export class MessagingInboundService {
     @Optional()
     @Inject(MessagingOutboundService)
     private readonly outbound?: MessagingOutboundService,
+    @Optional() @Inject(MESSAGE_CLOCK) private readonly messageClock?: MessageClock,
   ) {}
 
   async process(
@@ -170,7 +171,7 @@ export class MessagingInboundService {
         historical,
         initialConversationDepartmentId,
       );
-      const conversation = conversationResult.conversation;
+      let conversation = conversationResult.conversation;
       const createdConversation = conversationResult.created;
       const preview = event.content ?? mediaPreview(event.type);
       const quoted = event.quotedProviderMessageId
@@ -228,6 +229,42 @@ export class MessagingInboundService {
       });
       if (options.requireMediaReady && event.media && !downloadedMedia) {
         throw new Error("Mídia retida ainda não disponível para importação.");
+      }
+      const canClearPendingResponse =
+        !historical && event.fromMe && conversation.connectionId === event.connectionId;
+      if (canClearPendingResponse) {
+        await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM "conversations"
+          WHERE id = ${conversation.id} AND "tenantId" = ${event.tenantId}
+          FOR UPDATE`;
+        conversation = await tx.conversation.findUniqueOrThrow({
+          where: { tenantId_id: { tenantId: event.tenantId, id: conversation.id } },
+        });
+      }
+      const latestInboundMessage = canClearPendingResponse
+        ? await tx.message.findFirst({
+            where: {
+              tenantId: event.tenantId,
+              conversationId: conversation.id,
+              direction: MessageDirection.INBOUND,
+            },
+            select: { createdAt: true },
+            orderBy: { createdAt: "desc" },
+          })
+        : null;
+      const clearsPendingResponse =
+        !!latestInboundMessage && event.occurredAt > latestInboundMessage.createdAt;
+      if (clearsPendingResponse) {
+        await tx.message.updateMany({
+          where: {
+            tenantId: event.tenantId,
+            conversationId: conversation.id,
+            direction: MessageDirection.INBOUND,
+            readAt: null,
+            createdAt: { lt: event.occurredAt },
+          },
+          data: { readAt: event.occurredAt },
+        });
       }
       const message = await tx.message.create({
         data: {
@@ -291,19 +328,21 @@ export class MessagingInboundService {
           },
         });
       }
-      const historicalMessageIsOlder =
-        (historical || options.suppressAutomaticReply) &&
-        conversation.lastMessageAt instanceof Date &&
-        conversation.lastMessageAt > event.occurredAt;
+      const messageIsOlder =
+        conversation.lastMessageAt instanceof Date && conversation.lastMessageAt > event.occurredAt;
       const updatedConversation = await tx.conversation.update({
         where: { tenantId_id: { tenantId: event.tenantId, id: conversation.id } },
         include: { lead: { select: { status: true } } },
         data: {
-          unreadCount: event.fromMe || historical ? conversation.unreadCount : { increment: 1 },
-          lastMessagePreview: historicalMessageIsOlder
+          unreadCount: clearsPendingResponse
+            ? 0
+            : event.fromMe || historical
+              ? conversation.unreadCount
+              : { increment: 1 },
+          lastMessagePreview: messageIsOlder
             ? conversation.lastMessagePreview
             : truncatePreview(preview),
-          lastMessageAt: historicalMessageIsOlder ? conversation.lastMessageAt : event.occurredAt,
+          lastMessageAt: messageIsOlder ? conversation.lastMessageAt : event.occurredAt,
           inboxArchivedAt: historical
             ? conversation.inboxArchivedAt
             : isGroup
@@ -363,6 +402,7 @@ export class MessagingInboundService {
               contactName: contact.name,
             })
           : [];
+      const automaticReplyAt = (this.messageClock ?? SYSTEM_MESSAGE_CLOCK).now();
       const automaticReply =
         historical || options.suppressAutomaticReply
           ? null
@@ -378,7 +418,7 @@ export class MessagingInboundService {
               absenceTemplate: connection.absenceMessage,
               serviceHours: connection.serviceHours,
               timezone: connection.timezone,
-              at: event.occurredAt,
+              at: automaticReplyAt,
             });
       const reply = automaticReply
         ? {
@@ -392,6 +432,7 @@ export class MessagingInboundService {
                   )
                 : storedAutomaticAttachment(connection.absenceAttachment),
             contactExisting: Boolean(existingContact),
+            effectiveAt: automaticReplyAt,
             contact,
             timezone: connection.timezone,
             departmentName: contact.contactDepartmentId
@@ -433,6 +474,7 @@ export class MessagingInboundService {
         }),
         notifications,
         unreadCount: updatedConversation.unreadCount,
+        clearsPendingResponse,
         automaticReply: reply,
       };
     });
@@ -515,7 +557,7 @@ export class MessagingInboundService {
           kind: notification.kind,
         });
       }
-      if (!event.fromMe) {
+      if (!event.fromMe || result.clearsPendingResponse) {
         this.realtime?.publishUnreadUpdated({
           tenantId: event.tenantId,
           conversationId: result.message.conversationId,
@@ -525,29 +567,42 @@ export class MessagingInboundService {
       if (result.automaticReply && this.outbound) {
         try {
           const customFieldValues = await this.prisma.contactCustomFieldValue.findMany({
-            where: { tenantId: event.tenantId, contactId: result.contactId! },
-            include: { field: { select: { label: true } } },
+            where: {
+              tenantId: event.tenantId,
+              contactId: result.contactId!,
+              field: { tenantId: event.tenantId, archivedAt: null },
+            },
+            include: {
+              field: {
+                select: { label: true, variableKey: true, type: true, mask: true },
+              },
+            },
           });
-          const content = resolveMessageTemplate(result.automaticReply.template, {
+          const templateContext = {
             contactName: result.automaticReply.contact.name,
             phone: result.automaticReply.contact.phone,
             email: result.automaticReply.contact.email,
             instance: result.providerInstanceName,
             department: result.automaticReply.departmentName,
             customer: result.automaticReply.customerName,
-            customFields: Object.fromEntries(
-              customFieldValues.map((item) => [item.field.label, item.value]),
-            ),
-            now: event.occurredAt,
+            customFieldValues: customFieldValues.map((item) => ({
+              label: item.field.label,
+              variableKey: item.field.variableKey,
+              type: item.field.type,
+              mask: item.field.mask,
+              value: item.value,
+            })),
+            now: result.automaticReply.effectiveAt,
             timezone: result.automaticReply.timezone,
-          });
+          };
           if (result.automaticReply.attachment) {
             await this.outbound.queueAutomatedMedia({
               tenantId: event.tenantId,
               conversationId: result.conversationId,
               connectionId: event.connectionId,
               externalChatId: event.externalChatId,
-              content,
+              content: result.automaticReply.template,
+              templateContext,
               kind: result.automaticReply.kind,
               attachment: result.automaticReply.attachment,
             });
@@ -557,7 +612,8 @@ export class MessagingInboundService {
               conversationId: result.conversationId,
               connectionId: event.connectionId,
               externalChatId: event.externalChatId,
-              content,
+              content: result.automaticReply.template,
+              templateContext,
               kind: result.automaticReply.kind,
             });
           }
@@ -687,13 +743,28 @@ export class MessagingInboundService {
     const exactConnection: Prisma.MessageWhereInput = {
       tenantId: event.tenantId,
       connectionId: event.connectionId,
-      externalMessageId: event.externalMessageId,
+      OR: [
+        { externalMessageId: event.externalMessageId },
+        ...(event.fromMe ? [{ providerMessageId: event.externalMessageId }] : []),
+      ],
     };
     if (!ownerPhoneNormalized) return exactConnection;
     return {
       tenantId: event.tenantId,
-      externalMessageId: event.externalMessageId,
-      OR: [{ connectionId: event.connectionId }, { connection: { is: { ownerPhoneNormalized } } }],
+      AND: [
+        {
+          OR: [
+            { externalMessageId: event.externalMessageId },
+            ...(event.fromMe ? [{ providerMessageId: event.externalMessageId }] : []),
+          ],
+        },
+        {
+          OR: [
+            { connectionId: event.connectionId },
+            { connection: { is: { ownerPhoneNormalized } } },
+          ],
+        },
+      ],
     };
   }
 

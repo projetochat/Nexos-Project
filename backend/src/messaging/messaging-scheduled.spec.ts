@@ -34,7 +34,19 @@ const conversation = {
       name: "Financeiro",
       archivedAt: null,
     },
-    customFieldValues: [{ value: "Premium", field: { label: "Plano" } }],
+    customFieldValues: [
+      {
+        tenantId: "tenant-a",
+        value: "Premium",
+        field: {
+          label: "Plano",
+          variableKey: "plano",
+          type: "TEXT",
+          mask: null,
+          tenantId: "tenant-a",
+        },
+      },
+    ],
   },
   connection,
   department: { name: "Vendas" },
@@ -66,6 +78,7 @@ function setup(
     mediaStorage?: object;
     senderDisplayName?: object;
     timezone?: string;
+    now?: Date;
   } = {},
 ) {
   const tx = {
@@ -116,13 +129,14 @@ function setup(
     undefined,
     realtime as never,
     options.senderDisplayName as never,
+    { now: () => options.now ?? occurrenceAt },
   );
   return { service, prisma, tx, dispatcher, realtime };
 }
 
 describe("MessagingOutboundService scheduled messages", () => {
   it("renders current conversation variables and atomically creates Message, Outbox and schedule link", async () => {
-    const { service, tx, dispatcher } = setup();
+    const { service, prisma, tx, dispatcher } = setup();
 
     await expect(
       service.queueScheduledMessage({
@@ -160,6 +174,23 @@ describe("MessagingOutboundService scheduled messages", () => {
       }),
     );
     expect(dispatcher.dispatchMessage).toHaveBeenCalledWith("message-a");
+    expect(prisma.conversation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId: "tenant-a" }),
+        include: expect.objectContaining({
+          contact: expect.objectContaining({
+            include: expect.objectContaining({
+              customFieldValues: expect.objectContaining({
+                where: {
+                  tenantId: "tenant-a",
+                  field: { tenantId: "tenant-a", archivedAt: null },
+                },
+              }),
+            }),
+          }),
+        }),
+      }),
+    );
   });
 
   it("prefixes the active attendant name using the same display-name rule as normal chat", async () => {
@@ -190,8 +221,11 @@ describe("MessagingOutboundService scheduled messages", () => {
     );
   });
 
-  it("renders the greeting using the conversation connection timezone", async () => {
-    const { service, tx } = setup({ timezone: "America/Manaus" });
+  it("renders the greeting using the connection timezone and injected effective-send clock", async () => {
+    const { service, tx } = setup({
+      timezone: "America/Manaus",
+      now: new Date("2026-09-17T16:00:00.000Z"),
+    });
 
     await service.queueScheduledMessage({
       tenantId: "tenant-a",
@@ -200,12 +234,12 @@ describe("MessagingOutboundService scheduled messages", () => {
       occurrenceAt: new Date("2026-09-17T15:00:00.000Z"),
       conversationId: "conversation-a",
       createdByMembershipId: "membership-a",
-      content: "{{cumprimento}}, {{nome}}",
+      content: "{{saudacao}}, {{nome}}",
     });
 
     expect(tx.message.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ content: "Bom dia, Maria" }),
+        data: expect.objectContaining({ content: "Boa tarde, Maria" }),
       }),
     );
   });

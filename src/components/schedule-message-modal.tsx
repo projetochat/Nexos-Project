@@ -19,7 +19,7 @@ export function ScheduleMessageModal({
   conversationId,
   initialContent,
   identifier,
-  customFieldLabels = [],
+  customFields = [],
   onSaved,
 }: {
   open: boolean;
@@ -27,7 +27,7 @@ export function ScheduleMessageModal({
   conversationId: string;
   initialContent: string;
   identifier: string;
-  customFieldLabels?: string[];
+  customFields?: Array<{ label: string; variableKey: string }>;
   onSaved?: (mode: "create" | "edit") => void | Promise<void>;
 }) {
   const queryClient = useQueryClient();
@@ -61,12 +61,8 @@ export function ScheduleMessageModal({
   }, [open, queryClient]);
 
   const variables = React.useMemo(
-    () =>
-      mergeMessageVariables(
-        CONNECTION_MESSAGE_VARIABLES,
-        customFieldLabels.map((label) => ({ label })),
-      ),
-    [customFieldLabels],
+    () => mergeMessageVariables(CONNECTION_MESSAGE_VARIABLES, customFields),
+    [customFields],
   );
 
   React.useEffect(() => {

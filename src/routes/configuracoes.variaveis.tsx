@@ -4,31 +4,25 @@ import { useQuery } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Card, Button } from "@/components/ui-kit";
-import { crmApi, type ApiContactCustomField } from "@/lib/trixus-api";
+import { crmApi } from "@/lib/trixus-api";
+import {
+  CONNECTION_MESSAGE_VARIABLES,
+  mergeMessageVariables,
+} from "@/lib/message-variable-options";
 
 export const Route = createFileRoute("/configuracoes/variaveis")({
   component: VariablesSettingsPage,
 });
-
-const BASE_VARIABLES = [
-  ["{{cumprimento}}", "Saudação adequada ao horário do envio."],
-  ["{{nome}}", "Nome do contato."],
-  ["{{telefone}}", "Telefone do contato."],
-  ["{{email}}", "E-mail do contato."],
-  ["{{departamento}}", "Departamento cadastrado do contato."],
-  ["{{cliente}}", "Empresa vinculada ao contato."],
-  ["{{empresa}}", "Empresa vinculada ao contato (equivalente a {{cliente}})."],
-  ["{{instancia}}", "Instância da conversa."],
-] as const;
-
-type MessageVariable = { token: string; description: string };
 
 function VariablesSettingsPage() {
   const { data: customFields = [], isLoading: loadingCustomFields } = useQuery({
     queryKey: ["trixus", "contact-custom-fields"],
     queryFn: crmApi.listContactCustomFields,
   });
-  const variables = React.useMemo(() => mergeVariables(customFields), [customFields]);
+  const variables = React.useMemo(
+    () => mergeMessageVariables(CONNECTION_MESSAGE_VARIABLES, customFields),
+    [customFields],
+  );
 
   const copy = async (value: string) => {
     await navigator.clipboard?.writeText(value);
@@ -71,54 +65,4 @@ function VariablesSettingsPage() {
       )}
     </div>
   );
-}
-
-function mergeVariables(customFields: ApiContactCustomField[]) {
-  const variables: MessageVariable[] = BASE_VARIABLES.map(([token, description]) => ({
-    token,
-    description,
-  }));
-  const knownTokens = new Set(variables.map((variable) => variable.token));
-
-  customFields.forEach((field) => {
-    const token = customFieldVariableToken(field.label);
-    if (!token || knownTokens.has(token)) return;
-    knownTokens.add(token);
-    variables.push({ token, description: `Campo adicional: ${field.label}.` });
-  });
-
-  return variables;
-}
-
-const VARIABLE_NAME_STOP_WORDS = new Set([
-  "de",
-  "do",
-  "dos",
-  "da",
-  "das",
-  "o",
-  "a",
-  "os",
-  "as",
-  "um",
-  "uns",
-  "uma",
-  "umas",
-  "e",
-  "ou",
-]);
-
-function customFieldVariableToken(label: string) {
-  const words = label
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .split("_")
-    .filter(Boolean);
-  const meaningfulWords = words.filter((word) => !VARIABLE_NAME_STOP_WORDS.has(word));
-  const key = (meaningfulWords.length ? meaningfulWords : words).join("_");
-  return key ? `{{${key}}}` : null;
 }

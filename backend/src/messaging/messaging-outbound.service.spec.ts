@@ -233,7 +233,8 @@ describe("MessagingOutboundService", () => {
         conversationId: "conversation-a",
         connectionId: "connection-a",
         externalChatId: "5511999999999@s.whatsapp.net",
-        content: "Voltamos em breve.",
+        content: "Voltamos em breve, {{nome}}.",
+        templateContext: { contactName: "Ana" },
         kind: "absence",
         attachment: {
           fileName: "absence.ogg",
@@ -254,7 +255,7 @@ describe("MessagingOutboundService", () => {
         data: expect.objectContaining({
           clientMessageId: "automatic:absence",
           providerStatus: "absence_queued",
-          content: "Voltamos em breve.",
+          content: "Voltamos em breve, Ana.",
         }),
       }),
     );
@@ -298,6 +299,133 @@ describe("MessagingOutboundService", () => {
       }),
     );
     expect(senderName.resolve).toHaveBeenCalled();
+  });
+
+  it("resolves a quick-message template with the instance timezone at enqueue time", async () => {
+    const prisma = prismaMock();
+    const activeConversation = conversation() as any;
+    prisma.conversation.findFirst.mockResolvedValue(activeConversation);
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.create.mockImplementation(async ({ data }) => message({ ...data } as never));
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { now: () => new Date("2026-09-17T15:00:00.000Z") },
+    );
+
+    await service.sendText(
+      "conversation-a",
+      { content: "{{saudacao}}, {{nome}}", clientMessageId: "quick-a" },
+      current as never,
+    );
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: "Boa tarde, Cliente" }),
+      }),
+    );
+    expect(prisma.conversation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "conversation-a", tenantId: "tenant-a" }),
+      }),
+    );
+  });
+
+  it("rejects content that becomes empty or oversized after template expansion", async () => {
+    const prisma = prismaMock();
+    const activeConversation = conversation() as any;
+    activeConversation.contact.customFieldValues = [
+      {
+        value: "x".repeat(4001),
+        field: {
+          label: "Grande",
+          variableKey: "grande",
+          type: "TEXT",
+          mask: null,
+        },
+      },
+    ];
+    prisma.conversation.findFirst.mockResolvedValue(activeConversation);
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { now: () => new Date("2026-09-17T15:00:00.000Z") },
+    );
+
+    await expect(
+      service.sendText("conversation-a", { content: "{{email}}" }, current as never),
+    ).rejects.toThrow("Mensagem vazia");
+    await expect(
+      service.sendText("conversation-a", { content: "{{grande}}" }, current as never),
+    ).rejects.toThrow("excede 4000");
+    expect(prisma.message.create).not.toHaveBeenCalled();
+  });
+
+  it("does not mix variable values or timezone from another tenant instance", async () => {
+    const prisma = prismaMock();
+    const tenantA = conversation() as any;
+    tenantA.contact.name = "Ana";
+    tenantA.connection = connection({ timezone: "America/Sao_Paulo" });
+    const tenantB = conversation() as any;
+    tenantB.id = "conversation-b";
+    tenantB.tenantId = "tenant-b";
+    tenantB.contact.name = "Bruna";
+    tenantB.connection = connection({
+      id: "connection-b",
+      tenantId: "tenant-b",
+      timezone: "Asia/Tokyo",
+    });
+    prisma.conversation.findFirst.mockImplementation(async ({ where }) => {
+      const serialized = JSON.stringify(where);
+      if (serialized.includes("tenant-a") && serialized.includes("conversation-a")) return tenantA;
+      if (serialized.includes("tenant-b") && serialized.includes("conversation-b")) return tenantB;
+      return null;
+    });
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.create.mockImplementation(async ({ data }) => message({ ...data } as never));
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { now: () => new Date("2026-09-17T15:30:00.000Z") },
+    );
+
+    await service.sendText(
+      "conversation-a",
+      { content: "{{saudacao}}, {{nome}}" },
+      current as never,
+    );
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tenantId: "tenant-a",
+          connectionId: "connection-a",
+          content: "Boa tarde, Ana",
+        }),
+      }),
+    );
+    expect(prisma.conversation.findFirst).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId: "tenant-b" }) }),
+    );
   });
 
   it("marks QUEUED messages as SENT after provider acceptance", async () => {
@@ -695,6 +823,10 @@ function connection(overrides = {}) {
     providerType: MessagingProviderType.DEVELOPMENT,
     status: MessagingConnectionStatus.CONNECTED,
     externalReference: "dev-a",
+    name: "Atendimento",
+    timezone: "America/Sao_Paulo",
+    archivedAt: null,
+    serviceEnabled: true,
     ...overrides,
   };
 }
@@ -706,7 +838,17 @@ function conversation() {
     assignedMembershipId: "membership-a",
     status: ConversationStatus.EM_ANDAMENTO,
     connectionId: "connection-a",
-    contact: { phone: "+5511999999999", normalizedPhone: "+5511999999999", name: "Cliente" },
+    contact: {
+      phone: "+5511999999999",
+      normalizedPhone: "+5511999999999",
+      name: "Cliente",
+      email: null,
+      departmentName: null,
+      customer: null,
+      contactDepartment: null,
+      customFieldValues: [],
+    },
+    department: null,
     connection: connection(),
   };
 }

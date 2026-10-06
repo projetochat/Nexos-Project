@@ -1,4 +1,3 @@
-import { customFieldVariableKey } from "@/lib/message-variables";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -30,6 +29,10 @@ import { assertQuickReplySaved, quickReplyMessages } from "@/lib/quick-reply-seq
 import { useChatPerms } from "@/lib/perms";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
+import {
+  CONNECTION_MESSAGE_VARIABLES,
+  mergeMessageVariables,
+} from "@/lib/message-variable-options";
 
 export const Route = createFileRoute("/mensagens-rapidas")({
   component: QuickRepliesPage,
@@ -45,17 +48,6 @@ export const Route = createFileRoute("/mensagens-rapidas")({
 });
 
 const quickRepliesQueryKey = ["trixus", "quick-replies"] as const;
-const MESSAGE_VARIABLES = [
-  ["{{contato}}", "Nome do contato."],
-  ["{{cumprimento}}", "Bom dia, Boa tarde e Boa noite. Será apresentado conforme a hora do dia."],
-  ["{{nome}}", "Nome do Contato."],
-  ["{{telefone}}", "Telefone do Contato."],
-  ["{{email}}", "E-mail do Contato."],
-  ["{{instancia}}", "Instância da conversa."],
-  ["{{cliente}}", "Cliente do Contato."],
-  ["{{departamento}}", "Departamento do Contato."],
-] as const;
-
 function QuickRepliesPage() {
   const qc = useQueryClient();
   const perms = useChatPerms();
@@ -316,10 +308,10 @@ export function QuickReplyEditor({
       .then((fields) => {
         if (active)
           setCustomVariables(
-            fields.flatMap((field) => {
-              const name = customFieldVariableKey(field.label);
-              return name ? [{ name, description: `Campo adicional: ${field.label}.` }] : [];
-            }),
+            mergeMessageVariables([], fields).map(({ token, description }) => ({
+              name: token.slice(2, -2),
+              description,
+            })),
           );
       })
       .catch(() => {
@@ -550,7 +542,9 @@ export function QuickReplyEditor({
                 <MessageVariablesMenu
                   disabled={busy}
                   variables={[
-                    ...MESSAGE_VARIABLES.map(([token, description]) => ({ token, description })),
+                    ...mergeMessageVariables(CONNECTION_MESSAGE_VARIABLES, []).map(
+                      ({ token, description }) => ({ token, description }),
+                    ),
                     ...customVariables.map(({ name, description }) => ({
                       token: `{{${name}}}`,
                       description,

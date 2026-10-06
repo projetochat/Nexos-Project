@@ -8,6 +8,11 @@ export class UpdateTagDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(240)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(20)
   @Matches(/^#[0-9a-fA-F]{6}$/)
   color?: string;

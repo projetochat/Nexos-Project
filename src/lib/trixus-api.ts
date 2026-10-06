@@ -73,6 +73,29 @@ export type TrixusHealth = {
   timestamp: string;
 };
 
+export type ApiTenantOnboardingChecklist = {
+  instanceConnected: boolean;
+  activeDepartment: boolean;
+  administratorProfile: boolean;
+  activeAdministrator: boolean;
+  quickRepliesReviewed: boolean;
+  tagsReviewed: boolean;
+};
+
+export type ApiTenantOnboardingStatus = {
+  required: boolean;
+  status: "not_required" | "pending" | "completed";
+  progress: {
+    currentStep: number;
+    maxCompletedStep: number;
+    totalSteps: 8;
+  };
+  version: number | null;
+  canManage: boolean;
+  message: string | null;
+  checklist: ApiTenantOnboardingChecklist;
+};
+
 export class TrixusApiError extends Error {
   constructor(
     message: string,
@@ -174,6 +197,7 @@ export type ApiCustomer = {
 export type ApiTag = {
   id: string;
   nome: string;
+  descricao?: string | null;
   cor: string;
   archivedAt?: string | null;
   createdAt?: string;
@@ -197,6 +221,7 @@ export type ApiContactCustomField = {
   id: string;
   tenantId: string;
   label: string;
+  variableKey: string;
   type: "text" | "number" | "checkbox" | "list" | "date";
   required: boolean;
   mask: string | null;
@@ -243,7 +268,14 @@ export type ApiContact = {
   customer: Pick<ApiCustomer, "id" | "nome" | "cor"> | null;
   tags: ApiTag[];
   customFields: Record<string, string>;
-  customFieldValues?: Array<{ fieldId: string; label: string; type: string; value: string | null }>;
+  customFieldValues?: Array<{
+    fieldId: string;
+    label: string;
+    variableKey: string;
+    type: string;
+    mask: string | null;
+    value: string | null;
+  }>;
   createdAt?: string;
   updatedAt?: string;
   lifecycle?: "created" | "restored";
@@ -307,6 +339,7 @@ export type ApiConversation = {
     providerType: "development" | "evolution" | "meta_cloud";
     status: "disconnected" | "connecting" | "connected" | "error";
     externalReference: string | null;
+    timezone: string;
     color: string | null;
     logo_url: string | null;
   } | null;
@@ -1238,6 +1271,20 @@ export const organizationApi = {
     ),
 };
 
+export const onboardingApi = {
+  status: () => apiRequest<ApiTenantOnboardingStatus>("/onboarding/status"),
+  progress: (data: { currentStep: number; maxCompletedStep: number; version: number }) =>
+    apiRequest<ApiTenantOnboardingStatus>("/onboarding/progress", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  complete: (version: number) =>
+    apiRequest<ApiTenantOnboardingStatus>("/onboarding/complete", {
+      method: "POST",
+      body: JSON.stringify({ version }),
+    }),
+};
+
 export const crmApi = {
   listCustomers: (params: ListParams = {}) =>
     apiRequest<PaginatedResponse<ApiCustomer>>(`/crm/customers${queryString(params)}`),
@@ -1317,9 +1364,9 @@ export const crmApi = {
       body: JSON.stringify(data),
     }),
   listTags: () => apiRequest<ApiTag[]>("/tags"),
-  createTag: (data: { name: string; color?: string }) =>
+  createTag: (data: { name: string; description?: string; color?: string }) =>
     apiRequest<ApiTag>("/tags", { method: "POST", body: JSON.stringify(data) }),
-  updateTag: (id: string, data: { name?: string; color?: string }) =>
+  updateTag: (id: string, data: { name?: string; description?: string; color?: string }) =>
     apiRequest<ApiTag>(`/tags/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   archiveTag: (id: string) => apiRequest<ApiTag>(`/tags/${id}`, { method: "DELETE" }),
   assignContactTag: (contactId: string, tagId: string) =>
@@ -1745,6 +1792,7 @@ export const connectionsApi = {
   listChatScope: () => apiRequest<ApiMessagingConnection[]>("/messaging/connections/chat-scope"),
   createEvolution: (data: {
     name: string;
+    idempotencyKey?: string;
     color?: string;
     instanceName?: string;
     serviceEnabled?: boolean;
@@ -2852,6 +2900,9 @@ async function authErrorFromResponse(response: Response) {
 }
 
 function trixusMessageFromCode(code?: string) {
+  if (code === "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS") {
+    return "Já existe um campo com este nome. Informe um nome diferente.";
+  }
   if (code === "PLAN_LIMIT_USERS_REACHED") {
     return "Número máximo de atendentes atingido";
   }

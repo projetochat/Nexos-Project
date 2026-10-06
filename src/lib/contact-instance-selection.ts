@@ -13,10 +13,10 @@ export function resolveConnectedContactInstances(
   const values = [...(contact.instanceIds ?? []), contact.instancia].filter(
     (value): value is string => Boolean(value),
   );
+  const candidates = values.length > 0 ? values.map((value) => byKey.get(value)) : instances;
   return Array.from(
     new Map(
-      values
-        .map((value) => byKey.get(value))
+      candidates
         .filter(
           (instance): instance is ApiContactInstanceOption =>
             instance?.status?.toUpperCase() === "CONNECTED",

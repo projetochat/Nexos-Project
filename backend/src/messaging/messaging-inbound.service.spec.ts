@@ -201,6 +201,7 @@ describe("MessagingInboundService", () => {
       undefined,
       undefined,
       outbound as never,
+      { now: () => new Date("2026-09-17T15:00:00.000Z") },
     ).process({
       tenantId: "tenant-a",
       connectionId: "connection-a",
@@ -218,7 +219,13 @@ describe("MessagingInboundService", () => {
       expect.objectContaining({
         kind: "welcome",
         conversationId: "conversation-new",
-        content: "Bom dia, novamente Cliente da Cliente XPTO / Financeiro!",
+        content: "{{cumprimento}}, novamente {{nome}} da {{empresa}} / {{departamento}}!",
+        templateContext: expect.objectContaining({
+          contactName: "Cliente",
+          customer: "Cliente XPTO",
+          department: "Financeiro",
+          timezone: "America/Manaus",
+        }),
       }),
     );
   });
@@ -263,6 +270,7 @@ describe("MessagingInboundService", () => {
       undefined,
       undefined,
       outbound as never,
+      { now: () => new Date("2026-09-18T19:44:00.000Z") },
     ).process({
       tenantId: "tenant-a",
       connectionId: "connection-a",
@@ -280,7 +288,8 @@ describe("MessagingInboundService", () => {
       expect.objectContaining({
         kind: "welcome",
         conversationId: "conversation-media",
-        content: "Olá novamente Cliente!",
+        content: "Olá novamente {{nome}}!",
+        templateContext: expect.objectContaining({ contactName: "Cliente" }),
         attachment,
       }),
     );
@@ -300,7 +309,7 @@ describe("MessagingInboundService", () => {
       welcomeEnabled: true,
       welcomeExistingMessage: "Olá {{nome}}!",
       absenceEnabled: true,
-      absenceMessage: "Estamos ausentes, {{nome}} da {{cliente}} / {{departamento}}.",
+      absenceMessage: "{{saudacao}}. Estamos ausentes, {{nome}} da {{cliente}} / {{departamento}}.",
       absenceAttachment: attachment,
       timezone: "America/Sao_Paulo",
       serviceHours: [{ day: "Quinta", active: true, start: "08:00", end: "18:00" }],
@@ -330,6 +339,7 @@ describe("MessagingInboundService", () => {
       undefined,
       undefined,
       outbound as never,
+      { now: () => new Date("2026-09-17T22:00:00.000Z") },
     ).process({
       tenantId: "tenant-a",
       connectionId: "connection-a",
@@ -347,7 +357,13 @@ describe("MessagingInboundService", () => {
       expect.objectContaining({
         kind: "absence",
         conversationId: "conversation-absence",
-        content: "Estamos ausentes, Cliente da Cliente XPTO / Financeiro.",
+        content: "{{saudacao}}. Estamos ausentes, {{nome}} da {{cliente}} / {{departamento}}.",
+        templateContext: expect.objectContaining({
+          contactName: "Cliente",
+          customer: "Cliente XPTO",
+          department: "Financeiro",
+          timezone: "America/Sao_Paulo",
+        }),
         attachment,
       }),
     );
@@ -662,6 +678,150 @@ describe("MessagingInboundService", () => {
     expect(prisma.conversation.update).not.toHaveBeenCalled();
   });
 
+  it("treats a provider id already persisted by Trixus as an echo without clearing pending replies", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue({
+      id: "campaign-message",
+      conversationId: "conversation-a",
+      providerMessageId: "campaign-provider-id",
+      campaignId: "campaign-a",
+      clientMessageId: "campaign:recipient-a",
+    });
+
+    const result = await new MessagingInboundService(prisma as never).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "campaign-provider-id",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: true,
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+      type: MessageType.TEXT,
+      content: "Campanha",
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(result.duplicate).toBe(true);
+    expect(prisma.message.findFirst).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        AND: [
+          {
+            OR: [
+              { externalMessageId: "campaign-provider-id" },
+              { providerMessageId: "campaign-provider-id" },
+            ],
+          },
+          {
+            OR: [
+              { connectionId: "connection-a" },
+              { connection: { is: { ownerPhoneNormalized: "+5511888888888" } } },
+            ],
+          },
+        ],
+      },
+    });
+    expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(prisma.message.updateMany).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
+  });
+
+  it("does not treat an automatic-message echo as a human reply", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue({
+      id: "automatic-message",
+      conversationId: "conversation-a",
+      providerMessageId: "automatic-provider-id",
+      clientMessageId: "automatic:welcome",
+      providerStatus: "welcome_queued",
+    });
+
+    const result = await new MessagingInboundService(prisma as never).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "automatic-provider-id",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: true,
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+      type: MessageType.TEXT,
+      content: "Boas-vindas",
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(result.duplicate).toBe(true);
+    expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(prisma.message.updateMany).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a webhook tenant/instance mismatch before resolving or updating a conversation", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(null);
+
+    await expect(
+      new MessagingInboundService(prisma as never).process({
+        tenantId: "tenant-other",
+        connectionId: "connection-a",
+        externalMessageId: "cross-scope-outbound",
+        externalChatId: "5511987654321@s.whatsapp.net",
+        conversationType: "DIRECT",
+        fromMe: true,
+        sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+        type: MessageType.TEXT,
+        content: "Escopo incorreto",
+        occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+      }),
+    ).rejects.toThrow("Messaging connection not found for tenant.");
+
+    expect(prisma.messagingConnection.findFirst).toHaveBeenCalledWith({
+      where: { id: "connection-a", tenantId: "tenant-other" },
+    });
+    expect(prisma.conversation.findFirst).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).not.toHaveBeenCalled();
+  });
+
+  it("does not clear a conversation reused from another connection with the same owner", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValueOnce(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(conversation({ connectionId: "connection-other", unreadCount: 2 }));
+    prisma.message.create.mockResolvedValue({
+      id: "cross-instance-outbound",
+      conversationId: "conversation-a",
+      direction: MessageDirection.OUTBOUND,
+      status: MessageStatus.SENT,
+      createdAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+    prisma.conversation.update.mockResolvedValue(
+      conversation({ connectionId: "connection-other", unreadCount: 2 }),
+    );
+
+    await new MessagingInboundService(prisma as never).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "cross-instance-outbound",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: true,
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+      type: MessageType.TEXT,
+      content: "Resposta em outra instância",
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(prisma.message.updateMany).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ unreadCount: 2 }) }),
+    );
+  });
+
   it("puts an existing contact in the queue when the previous conversation is closed", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
@@ -906,6 +1066,168 @@ describe("MessagingInboundService", () => {
     );
   });
 
+  it("clears a pending reply for a new WhatsApp outbound message after the latest inbound", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ createdAt: new Date("2026-08-03T11:55:00.000Z") });
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(conversation({ unreadCount: 2 }));
+    prisma.conversation.findUniqueOrThrow.mockResolvedValue(conversation({ unreadCount: 2 }));
+    prisma.message.create.mockResolvedValue({
+      id: "external-outbound",
+      conversationId: "conversation-a",
+      direction: MessageDirection.OUTBOUND,
+      status: MessageStatus.SENT,
+      createdAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+    prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 0 }));
+    const realtime = {
+      publishMessageCreated: vi.fn(),
+      publishConversationUpdated: vi.fn(),
+      publishUnreadUpdated: vi.fn(),
+    };
+
+    await new MessagingInboundService(prisma as never, undefined, realtime as never).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "phone-outbound-1",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: true,
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+      type: MessageType.TEXT,
+      content: "Resposta pelo WhatsApp",
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(prisma.message.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        conversationId: "conversation-a",
+        direction: MessageDirection.INBOUND,
+        readAt: null,
+        createdAt: { lt: new Date("2026-08-03T12:00:00.000Z") },
+      },
+      data: { readAt: new Date("2026-08-03T12:00:00.000Z") },
+    });
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ unreadCount: 0 }) }),
+    );
+    const createdMessage = prisma.message.create.mock.calls.find(
+      ([input]) => input.data.direction === MessageDirection.OUTBOUND,
+    )?.[0].data;
+    expect(createdMessage).toMatchObject({ direction: MessageDirection.OUTBOUND });
+    expect(createdMessage).not.toHaveProperty("authorMembershipId");
+    expect(realtime.publishUnreadUpdated).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      conversationId: "conversation-a",
+      unreadCount: 0,
+    });
+  });
+
+  it("does not clear pending replies for an out-of-order WhatsApp outbound message", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ createdAt: new Date("2026-08-03T12:05:00.000Z") });
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(
+      conversation({
+        unreadCount: 2,
+        lastMessagePreview: "Entrada mais recente",
+        lastMessageAt: new Date("2026-08-03T12:05:00.000Z"),
+      }),
+    );
+    prisma.conversation.findUniqueOrThrow.mockResolvedValue(
+      conversation({
+        unreadCount: 2,
+        lastMessagePreview: "Entrada mais recente",
+        lastMessageAt: new Date("2026-08-03T12:05:00.000Z"),
+      }),
+    );
+    prisma.message.create.mockResolvedValue({
+      id: "old-external-outbound",
+      conversationId: "conversation-a",
+      direction: MessageDirection.OUTBOUND,
+      status: MessageStatus.SENT,
+      createdAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+    prisma.conversation.update.mockResolvedValue(
+      conversation({
+        unreadCount: 2,
+        lastMessagePreview: "Entrada mais recente",
+        lastMessageAt: new Date("2026-08-03T12:05:00.000Z"),
+      }),
+    );
+
+    await new MessagingInboundService(prisma as never).process({
+      tenantId: "tenant-a",
+      connectionId: "connection-a",
+      externalMessageId: "phone-outbound-old",
+      externalChatId: "5511987654321@s.whatsapp.net",
+      conversationType: "DIRECT",
+      fromMe: true,
+      sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+      type: MessageType.TEXT,
+      content: "Resposta antiga",
+      occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(prisma.message.updateMany).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          unreadCount: 2,
+          lastMessagePreview: "Entrada mais recente",
+          lastMessageAt: new Date("2026-08-03T12:05:00.000Z"),
+        }),
+      }),
+    );
+  });
+
+  it("does not clear pending replies while importing outbound history", async () => {
+    const prisma = prismaMock();
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.contact.findFirst.mockResolvedValue(contact());
+    prisma.contact.update.mockResolvedValue(contact());
+    prisma.conversation.findFirst.mockResolvedValue(conversation({ unreadCount: 2 }));
+    prisma.message.create.mockResolvedValue({
+      id: "historical-outbound",
+      conversationId: "conversation-a",
+      direction: MessageDirection.OUTBOUND,
+      status: MessageStatus.SENT,
+      createdAt: new Date("2026-08-03T12:00:00.000Z"),
+    });
+    prisma.conversation.update.mockResolvedValue(conversation({ unreadCount: 2 }));
+
+    await new MessagingInboundService(prisma as never).process(
+      {
+        tenantId: "tenant-a",
+        connectionId: "connection-a",
+        externalMessageId: "historical-outbound-1",
+        externalChatId: "5511987654321@s.whatsapp.net",
+        conversationType: "DIRECT",
+        fromMe: true,
+        sender: { phone: "5511987654321", normalizedPhone: "+5511987654321" },
+        type: MessageType.TEXT,
+        content: "Histórico antigo",
+        occurredAt: new Date("2026-08-03T12:00:00.000Z"),
+      },
+      { historical: true },
+    );
+
+    expect(prisma.message.updateMany).not.toHaveBeenCalled();
+    expect(prisma.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ unreadCount: 2 }) }),
+    );
+  });
+
   it("does not block inbound messages while looking up WhatsApp profile pictures", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
@@ -1142,6 +1464,7 @@ function connection() {
     tenantId: "tenant-a",
     externalReference: "tenant-a-suporte",
     ownerPhoneNormalized: "+5511888888888",
+    timezone: "America/Sao_Paulo",
   };
 }
 
@@ -1179,7 +1502,7 @@ function prismaMock() {
   const prisma = {
     $queryRaw: vi.fn().mockResolvedValue([{ serviceEnabled: true }]),
     messagingConnection: { findFirst: vi.fn() },
-    message: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+    message: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     contact: {
       findFirst: vi.fn(),
       update: vi.fn(),
@@ -1187,7 +1510,12 @@ function prismaMock() {
       create: vi.fn(),
       upsert: vi.fn(),
     },
-    conversation: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+    conversation: {
+      findFirst: vi.fn(),
+      findUniqueOrThrow: vi.fn().mockResolvedValue(conversation()),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
     department: { findFirst: vi.fn().mockResolvedValue({ id: "department-a" }) },
     contactDepartment: { findFirst: vi.fn().mockResolvedValue({ name: "Financeiro" }) },
     customer: { findFirst: vi.fn().mockResolvedValue({ name: "Cliente XPTO" }) },

@@ -55,6 +55,7 @@ import { onRealtimeEvent } from "@/lib/realtime/client";
 import { useInstanceAccessUpdates } from "@/lib/realtime/hooks";
 import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
 import { toast } from "sonner";
+import { TenantOnboardingBoundary } from "./tenant-onboarding-boundary";
 
 /* ============================================================
    Trixus · App Shell (Painel Administrativo da Empresa)
@@ -1002,22 +1003,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   if (!authorized) return null;
   return (
-    <div className="flex h-screen h-dvh min-h-screen min-h-dvh overflow-hidden bg-background text-foreground">
-      <TopProgress active={isNavigating} />
-      <Sidebar collapsed={collapsed} />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <ImpersonationBanner />
-        <OfflineBanner />
-        <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
-        <main
-          key={pathname}
-          className="min-w-0 flex-1 overflow-y-auto overscroll-contain animate-fade-in-soft"
-        >
-          {children}
-        </main>
-        <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+    <TenantOnboardingBoundary>
+      <div className="flex h-screen h-dvh min-h-screen min-h-dvh overflow-hidden bg-background text-foreground">
+        <TopProgress active={isNavigating} />
+        <Sidebar collapsed={collapsed} />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <ImpersonationBanner />
+          <OfflineBanner />
+          <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
+          <main
+            key={pathname}
+            className="min-w-0 flex-1 overflow-y-auto overscroll-contain animate-fade-in-soft"
+          >
+            {children}
+          </main>
+          <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+        </div>
       </div>
-    </div>
+    </TenantOnboardingBoundary>
   );
 }
 
@@ -1029,17 +1032,19 @@ export function AppShellFull({ children }: { children: React.ReactNode }) {
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   if (!authorized) return null;
   return (
-    <div className="flex h-screen h-dvh min-h-screen min-h-dvh overflow-hidden bg-background text-foreground">
-      <TopProgress active={isNavigating} />
-      <Sidebar collapsed={collapsed} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <ImpersonationBanner />
-        <OfflineBanner />
-        <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
-        <main className="min-w-0 flex-1 overflow-hidden animate-fade-in-soft">{children}</main>
-        <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+    <TenantOnboardingBoundary>
+      <div className="flex h-screen h-dvh min-h-screen min-h-dvh overflow-hidden bg-background text-foreground">
+        <TopProgress active={isNavigating} />
+        <Sidebar collapsed={collapsed} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <ImpersonationBanner />
+          <OfflineBanner />
+          <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
+          <main className="min-w-0 flex-1 overflow-hidden animate-fade-in-soft">{children}</main>
+          <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+        </div>
       </div>
-    </div>
+    </TenantOnboardingBoundary>
   );
 }
 

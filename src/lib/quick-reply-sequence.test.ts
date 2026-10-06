@@ -60,6 +60,27 @@ describe("quick reply sequences", () => {
     );
 
     expect(sequence.items.map((item) => item.text)).toEqual(["Olá, Ana", "Instância: Comercial"]);
+    expect(sequence.items.map((item) => item.templateText)).toEqual([
+      "Olá, {{nome}}",
+      "Instância: {{instancia}}",
+    ]);
+  });
+
+  it("keeps the raw template so each item is resolved by the backend at effective send", async () => {
+    const sequence = createSequence(
+      reply({ messages: [{ text: "{{saudacao}}" }] }),
+      () => "Bom dia",
+    );
+    const sent: string[] = [];
+    await sendSequence(sequence, new AbortController().signal, {
+      send: async (item) => {
+        sent.push(item.templateText ?? item.text);
+        return { id: item.clientMessageId, status: "sent" };
+      },
+      get: async (id) => ({ id, status: "sent" }),
+      progress: () => {},
+    });
+    expect(sent).toEqual(["{{saudacao}}"]);
   });
 
   it("waits for provider confirmation before sending the next text or file", async () => {

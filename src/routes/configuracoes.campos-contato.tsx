@@ -20,7 +20,13 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { crmApi, type ApiContactCustomField } from "@/lib/trixus-api";
+import { crmApi, TrixusApiError, type ApiContactCustomField } from "@/lib/trixus-api";
+import {
+  isNativeContactFieldName,
+  NATIVE_MESSAGE_VARIABLE_KEYS,
+  normalizeCustomFieldName,
+  previewCustomFieldVariableKey,
+} from "@/lib/message-variables";
 import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
 
@@ -69,6 +75,7 @@ const NUMBER_SYMBOL_OPTIONS: Array<{ value: NumberSymbol; label: string }> = [
 const RESERVED_CONTACT_TAB = "Geral";
 const RESERVED_CONTACT_GROUP = "Dados do contato";
 const DEFAULT_CONTACT_CUSTOM_TAB = "Dados Adicionais";
+const FIELD_NAME_CONFLICT_MESSAGE = "Já existe um campo com este nome. Informe um nome diferente.";
 
 function ContactFieldsSettings() {
   const permissions = useSession((state) => state.user?.permissions ?? []);
@@ -132,13 +139,9 @@ function ContactFieldsSettings() {
     );
     if (duplicate) {
       toast.error("Falha ao salvar campo", {
-        description: (
-          <span>
-            Campo Adicional "<strong>{payload.label}</strong>" já existente.
-          </span>
-        ),
+        description: FIELD_NAME_CONFLICT_MESSAGE,
       });
-      return;
+      return FIELD_NAME_CONFLICT_MESSAGE;
     }
     try {
       if (editing) {
@@ -152,7 +155,14 @@ function ContactFieldsSettings() {
       setDuplicating(null);
       await load();
     } catch (error) {
-      toast.error("Falha ao salvar campo", { description: (error as Error).message });
+      const message =
+        error instanceof TrixusApiError && error.code === "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS"
+          ? FIELD_NAME_CONFLICT_MESSAGE
+          : (error as Error).message;
+      toast.error("Falha ao salvar campo", { description: message });
+      return error instanceof TrixusApiError && error.code === "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS"
+        ? FIELD_NAME_CONFLICT_MESSAGE
+        : undefined;
     }
   };
 
@@ -536,7 +546,7 @@ function ContactFieldFormModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: FieldForm) => void | Promise<void>;
+  onSubmit: (data: FieldForm) => void | string | Promise<void | string>;
   initial?: ApiContactCustomField;
   clone?: boolean;
   fields: ApiContactCustomField[];
@@ -544,24 +554,35 @@ function ContactFieldFormModal({
   const isMobile = useIsMobile();
   const [form, setForm] = React.useState<FieldForm>(emptyFieldForm());
   const [labelError, setLabelError] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
   const duplicateLabelError = (label: string) => {
     const normalizedLabel = normalizeFieldName(label);
     if (!normalizedLabel) return "";
+    const technicalKey = previewCustomFieldVariableKey(label);
+    if (
+      isNativeContactFieldName(label) ||
+      (NATIVE_MESSAGE_VARIABLE_KEYS as readonly string[]).includes(technicalKey)
+    ) {
+      return FIELD_NAME_CONFLICT_MESSAGE;
+    }
     return fields.some(
       (field) =>
         field.id !== (initial && !clone ? initial.id : undefined) &&
-        normalizeFieldName(field.label) === normalizedLabel,
+        (normalizeFieldName(field.label) === normalizedLabel ||
+          ((!initial || clone) && field.variableKey === technicalKey)),
     )
-      ? "Já existe um campo adicional com este nome."
+      ? FIELD_NAME_CONFLICT_MESSAGE
       : "";
   };
   React.useEffect(() => {
     if (!open) return;
     setForm(initial ? fieldToForm(initial, clone) : emptyFieldForm());
     setLabelError("");
+    setSaving(false);
   }, [clone, initial, open]);
 
-  const save = () => {
+  const save = async () => {
+    if (saving) return;
     if (form.label.trim().length < 2) {
       toast.error("Informe o nome do campo.");
       return;
@@ -587,20 +608,31 @@ function ContactFieldFormModal({
       toast.error("Informe as opções da lista.");
       return;
     }
-    void onSubmit(form);
+    setSaving(true);
+    try {
+      const serverError = await onSubmit(form);
+      if (serverError) setLabelError(serverError);
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const technicalKey =
+    initial && !clone ? initial.variableKey : previewCustomFieldVariableKey(form.label);
 
   return (
     <Modal
       open={open}
       onClose={onClose}
+      dismissible={!saving}
+      closeOnBackdrop={!saving}
       title={initial && !clone ? "Editar Campo" : clone ? "Duplicar Campo" : "Novo Campo"}
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button variant="primary" size="sm" onClick={save}>
+          <Button variant="primary" size="sm" onClick={() => void save()} disabled={saving}>
             Salvar
           </Button>
         </>
@@ -616,6 +648,9 @@ function ContactFieldFormModal({
             }}
             aria-invalid={!!labelError}
           />
+        </Field>
+        <Field label="Variável técnica">
+          <Input value={technicalKey ? `{{${technicalKey}}}` : ""} readOnly />
         </Field>
         <div className="grid grid-cols-[minmax(0,1fr)_8rem] gap-3">
           <Field label="Tipo *">
@@ -893,7 +928,7 @@ function uniqueLabels(values: string[]) {
 }
 
 function normalizeFieldName(value: string) {
-  return value.trim().replace(/\s+/g, " ").toLowerCase();
+  return normalizeCustomFieldName(value);
 }
 
 function clampInteger(value: string | number, min: number, max: number) {

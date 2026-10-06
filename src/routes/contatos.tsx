@@ -1,6 +1,10 @@
 import { customFieldFormat, formatCustomField, customFieldError } from "@/lib/custom-field-formats";
 import { InfoTooltip } from "@/components/info-tooltip";
-import { DepartmentIcon } from "@/components/department-icon";
+import {
+  ActiveConversationOrchestrator,
+  type ActiveConversationRequest,
+} from "@/components/active-conversation-orchestrator";
+import { canStartActiveConversation } from "@/lib/active-conversation-permissions";
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -69,18 +73,10 @@ import {
   Textarea,
 } from "@/components/ui-kit";
 import { isValidEmail, maskBrazilPhone, onlyDigits } from "@/lib/input-masks";
-import { connectionInstanceValue } from "@/lib/connection-options";
 import { useSession } from "@/lib/session";
 import { sortByOptionLabel } from "@/lib/sort-options";
-import { useConnectedMessagingConnections } from "@/lib/use-connected-messaging-connections";
 import {
-  departmentsForConnection,
-  favoriteDepartmentForConnection,
-} from "@/lib/favorite-department";
-import {
-  conversationApi,
   crmApi,
-  organizationApi,
   type ApiAgendaImportContact,
   type ApiAgendaImportIgnoredContact,
   type ApiContact,
@@ -391,7 +387,7 @@ function ContatosPage() {
   const canDeleteContacts = user?.permissions?.includes("contacts.delete") ?? false;
   const canReadAdditionalFields =
     user?.permissions?.includes("contacts.additional_fields.read") ?? false;
-  const canStartConversation = user?.permissions?.includes("conversations.assign") ?? false;
+  const canStartConversation = canStartActiveConversation(user?.permissions);
   const filtersStorageKey = `trixus.contacts.filters.${user?.id ?? "anonymous"}`;
   const [contacts, setContacts] = React.useState<Contact[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
@@ -399,28 +395,6 @@ function ContatosPage() {
   const [departments, setDepartments] = React.useState<ContactCatalog[]>([]);
   const [profiles, setProfiles] = React.useState<ContactCatalog[]>([]);
   const [instances, setInstances] = React.useState<ContactInstanceOption[]>([]);
-  const { allConnections: chatConnections } = useConnectedMessagingConnections({
-    enabled: canStartConversation,
-  });
-  const chatInstances = React.useMemo<ContactInstanceOption[]>(
-    () =>
-      chatConnections.map((connection) => ({
-        id: connection.id,
-        value: connectionInstanceValue(connection),
-        name: connection.name,
-        color: connection.color ?? null,
-        externalReference: connection.externalReference,
-        ownerPhone: connection.ownerPhone ?? null,
-        instanceName: connection.name,
-        status: connection.status.toUpperCase(),
-      })),
-    [chatConnections],
-  );
-  const { data: chatDepartments = [], isLoading: chatDepartmentsLoading } = useQuery({
-    queryKey: ["trixus", "chat-departments"],
-    queryFn: organizationApi.listChatDepartments,
-    enabled: canStartConversation,
-  });
   const [customFieldDefinitions, setCustomFieldDefinitions] = React.useState<ContactCustomField[]>(
     [],
   );
@@ -480,13 +454,9 @@ function ContatosPage() {
   const [totalPages, setTotalPages] = React.useState(1);
   const [editing, setEditing] = React.useState<Contact | null>(null);
   const [deleting, setDeleting] = React.useState<Contact | null>(null);
-  const [conversationChoice, setConversationChoice] = React.useState<{
-    contact: Contact;
-    instances: ContactInstanceOption[];
-    connectionId: string;
-    departmentId: string;
-  } | null>(null);
-  const [openingConversation, setOpeningConversation] = React.useState(false);
+  const [conversationRequest, setConversationRequest] =
+    React.useState<ActiveConversationRequest | null>(null);
+  const conversationRequestKey = React.useRef(0);
   const create = useDisclosure();
   const visibleInstances = React.useMemo(
     () =>
@@ -721,76 +691,13 @@ function ContatosPage() {
     ? customFieldDefinitions.find((field) => field.id === bulkMode.slice("custom:".length))
     : undefined;
 
-  const startConversation = async (
-    contact: Contact,
-    connectionId: string,
-    departmentId?: string,
-  ) => {
-    if (!canStartConversation) {
-      toast.error("Você não possui permissão para iniciar conversas.");
-      return;
-    }
-    setOpeningConversation(true);
-    try {
-      const conversation = await conversationApi.create({
-        contactId: contact.id,
-        connectionId,
-        ...(departmentId ? { departmentId } : {}),
-        assignToSelf: true,
-      });
-      setConversationChoice(null);
-      navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
-    } catch (e) {
-      toast.error("Falha ao abrir conversa", { description: (e as Error).message });
-    } finally {
-      setOpeningConversation(false);
-    }
-  };
-
   const openConversation = (contact: Contact) => {
     if (!canStartConversation) {
       toast.error("Você não possui permissão para iniciar conversas.");
       return;
     }
-    if (chatDepartmentsLoading) {
-      toast.info("Carregando departamentos. Tente novamente em instantes.");
-      return;
-    }
-    const connectedInstances = resolveContactInstances(contact.instanceIds, chatInstances).filter(
-      (instance) => isConnectedInstanceStatus(instance.status),
-    );
-    if (connectedInstances.length === 0) {
-      toast.error("Nenhuma instância conectada", {
-        description: "Vincule uma instância conectada ao contato para iniciar a conversa.",
-      });
-      return;
-    }
-    if (connectedInstances.length === 1) {
-      const instance = connectedInstances[0];
-      const departments = departmentsForConnection(chatDepartments, instance.id);
-      const favorite = favoriteDepartmentForConnection(chatDepartments, instance.id);
-      if (favorite) {
-        void startConversation(contact, instance.id);
-        return;
-      }
-      if (departments.length === 0) {
-        toast.error("Nenhum departamento liberado para esta instância.");
-        return;
-      }
-      setConversationChoice({
-        contact,
-        instances: connectedInstances,
-        connectionId: instance.id,
-        departmentId: "",
-      });
-      return;
-    }
-    setConversationChoice({
-      contact,
-      instances: connectedInstances,
-      connectionId: "",
-      departmentId: "",
-    });
+    conversationRequestKey.current += 1;
+    setConversationRequest({ key: conversationRequestKey.current, contact });
   };
 
   const exportContacts = async (format: "csv" | "xlsx" = "csv") => {
@@ -2131,131 +2038,10 @@ function ContatosPage() {
             }}
           />
         )}
-        <Modal
-          open={!!conversationChoice}
-          onClose={() => !openingConversation && setConversationChoice(null)}
-          title={
-            conversationChoice?.instances.length === 1
-              ? "Escolher Departamento"
-              : "Escolher Instância e Departamento"
-          }
-          description={
-            conversationChoice
-              ? `Selecione a instância e o departamento para iniciar a conversa com ${conversationChoice.contact.nome}.`
-              : undefined
-          }
-          size="md"
-          footer={
-            <div className="flex w-full justify-end gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setConversationChoice(null)}
-                disabled={openingConversation}
-              >
-                Cancelar
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={
-                  openingConversation ||
-                  !conversationChoice?.connectionId ||
-                  !conversationChoice.departmentId
-                }
-                onClick={() =>
-                  conversationChoice &&
-                  void startConversation(
-                    conversationChoice.contact,
-                    conversationChoice.connectionId,
-                    conversationChoice.departmentId,
-                  )
-                }
-              >
-                Iniciar Atendimento
-              </Button>
-            </div>
-          }
-        >
-          <div className="space-y-4">
-            {(conversationChoice?.instances.length ?? 0) > 1 && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">Instâncias</p>
-                {conversationChoice?.instances.map((instance) => (
-                  <button
-                    key={instance.id}
-                    type="button"
-                    onClick={() => {
-                      if (!conversationChoice) return;
-                      const favorite = favoriteDepartmentForConnection(
-                        chatDepartments,
-                        instance.id,
-                      );
-                      if (favorite) {
-                        void startConversation(conversationChoice.contact, instance.id);
-                        return;
-                      }
-                      setConversationChoice((current) =>
-                        current
-                          ? { ...current, connectionId: instance.id, departmentId: "" }
-                          : current,
-                      );
-                    }}
-                    className={`flex min-h-12 w-full items-center gap-3 rounded-lg border px-4 text-left ${conversationChoice.connectionId === instance.id ? "border-primary bg-primary/5" : "border-border"}`}
-                  >
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: instance.color ?? "#22c55e" }}
-                    />
-                    <span className="flex-1 font-medium">{instance.name}</span>
-                    <span
-                      className={`h-4 w-4 rounded-full border-4 ${conversationChoice.connectionId === instance.id ? "border-primary" : "border-muted-foreground/40"}`}
-                    />
-                  </button>
-                ))}
-              </div>
-            )}
-            {conversationChoice?.connectionId && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">
-                  Departamentos
-                </p>
-                {departmentsForConnection(chatDepartments, conversationChoice.connectionId).map(
-                  (department) => (
-                    <button
-                      key={department.id}
-                      type="button"
-                      onClick={() =>
-                        setConversationChoice((current) =>
-                          current ? { ...current, departmentId: department.id } : current,
-                        )
-                      }
-                      className={`flex min-h-14 w-full items-center gap-3 rounded-lg border px-4 text-left ${conversationChoice.departmentId === department.id ? "border-primary bg-primary/5" : "border-border"}`}
-                    >
-                      <span
-                        className="flex h-10 w-10 items-center justify-center rounded-lg text-white"
-                        style={{ backgroundColor: department.color }}
-                      >
-                        <DepartmentIcon icon={department.icon} />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-semibold">{department.name}</span>
-                        {department.description && (
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {department.description}
-                          </span>
-                        )}
-                      </span>
-                      <span
-                        className={`h-4 w-4 rounded-full border-4 ${conversationChoice.departmentId === department.id ? "border-primary" : "border-muted-foreground/40"}`}
-                      />
-                    </button>
-                  ),
-                )}
-              </div>
-            )}
-          </div>
-        </Modal>
+        <ActiveConversationOrchestrator
+          request={conversationRequest}
+          onCancel={() => setConversationRequest(null)}
+        />
         {canCreateContacts && (
           <ImportContactsModal
             open={importModal.open}

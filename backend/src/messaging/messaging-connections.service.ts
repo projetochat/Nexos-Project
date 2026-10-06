@@ -3,6 +3,7 @@ import { connectionReference } from "./connection-reference";
 import { connectionIdAccess } from "../auth/connection-access";
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   Logger,
@@ -16,6 +17,7 @@ import {
   MessagingHistoryImportKind,
   MessageDirection,
   MessageType,
+  MessagingConnection,
   MessagingConnectionStatus,
   MessagingProviderType,
   Prisma,
@@ -129,7 +131,7 @@ export class MessagingConnectionsService {
     if (displayName.length < 2) {
       throw new BadRequestException("Informe um nome válido para a instância.");
     }
-    await this.assertNameAvailable(current.tenantId, displayName);
+    if (!dto.idempotencyKey) await this.assertNameAvailable(current.tenantId, displayName);
     const importHistoryEnabled = dto.importHistoryEnabled === true;
     const importHistoryStartDate = parseImportStartDate(dto.importHistoryStartDate);
     const importGroupsEnabled = dto.importGroupsEnabled === true;
@@ -155,6 +157,18 @@ export class MessagingConnectionsService {
     const config = evolutionConfigFromEnv();
     if (!assertEvolutionConfigured(config)) {
       throw new BadRequestException("Evolution API não configurada.");
+    }
+
+    if (dto.idempotencyKey) {
+      return this.createEvolutionIdempotent(
+        dto,
+        current,
+        displayName,
+        importHistoryEnabled,
+        importHistoryStartDate,
+        importGroupsEnabled,
+        importGroupsStartDate,
+      );
     }
 
     const instanceName = cleanInstanceName(displayName, current.tenantId, { unique: true });
@@ -224,6 +238,167 @@ export class MessagingConnectionsService {
       ...this.serialize(connection),
       qrCodeBase64: evolutionQrBase64(response),
     };
+  }
+
+  private async createEvolutionIdempotent(
+    dto: CreateEvolutionConnectionDto,
+    current: AuthenticatedUser,
+    displayName: string,
+    importHistoryEnabled: boolean,
+    importHistoryStartDate: Date | null,
+    importGroupsEnabled: boolean,
+    importGroupsStartDate: Date | null,
+  ) {
+    const instanceName = cleanInstanceName(displayName, current.tenantId, {
+      idempotencyKey: dto.idempotencyKey,
+    });
+    let result: {
+      connection: MessagingConnection;
+      response: Awaited<ReturnType<EvolutionClient["createInstance"]>>;
+    };
+    try {
+      result = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(
+          Prisma.sql`
+          SELECT "tenantId"
+          FROM "tenant_onboarding_states"
+          WHERE "tenantId" = ${current.tenantId}
+          FOR UPDATE
+        `,
+        );
+        const existing = await tx.messagingConnection.findFirst({
+          where: {
+            tenantId: current.tenantId,
+            providerType: MessagingProviderType.EVOLUTION,
+            externalReference: instanceName,
+            archivedAt: null,
+          },
+        });
+        if (existing) {
+          this.assertIdempotentPayload(existing.name, displayName);
+          const recovered = await this.ensureIdempotentProvider(instanceName, existing.status);
+          await this.ensureWebhookConfiguredSafely(instanceName, existing.id);
+          const providerStatus = translateInitialStatus(
+            recovered.response.instance?.status ?? recovered.response.instance?.connectionStatus,
+          );
+          const connection =
+            providerStatus === existing.status
+              ? existing
+              : await tx.messagingConnection.update({
+                  where: { tenantId_id: { tenantId: current.tenantId, id: existing.id } },
+                  data: { status: providerStatus },
+                });
+          return { connection, response: recovered.response };
+        }
+
+        const recovered = await this.ensureIdempotentProvider(instanceName);
+        await this.ensureWebhookConfiguredSafely(instanceName, "pending-create");
+        const data = {
+          tenantId: current.tenantId,
+          name: displayName,
+          color: normalizeColor(dto.color),
+          providerType: MessagingProviderType.EVOLUTION,
+          status: translateInitialStatus(
+            recovered.response.instance?.status ?? recovered.response.instance?.connectionStatus,
+          ),
+          externalReference: instanceName,
+          serviceEnabled: dto.serviceEnabled ?? true,
+          importHistoryEnabled,
+          importHistoryStartDate: importHistoryEnabled ? importHistoryStartDate : null,
+          importGroupsEnabled,
+          importGroupsStartDate: importGroupsEnabled ? importGroupsStartDate : null,
+        };
+        try {
+          const connection = await tx.messagingConnection.create({ data });
+          return { connection, response: recovered.response };
+        } catch (error) {
+          // A violação de unicidade aborta a transação no PostgreSQL. A
+          // reconciliação precisa ocorrer fora dela e jamais pode apagar uma
+          // instância que pode pertencer à requisição concorrente vencedora.
+          if (!isUniqueConstraintError(error) && recovered.createdByThisRequest) {
+            await Promise.resolve(this.evolution.deleteInstance(instanceName)).catch(
+              () => undefined,
+            );
+          }
+          throw error;
+        }
+      });
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const raced = await this.prisma.messagingConnection.findFirst({
+        where: {
+          tenantId: current.tenantId,
+          providerType: MessagingProviderType.EVOLUTION,
+          externalReference: instanceName,
+          archivedAt: null,
+        },
+      });
+      if (!raced) throw error;
+      this.assertIdempotentPayload(raced.name, displayName);
+      const recovered = await this.ensureIdempotentProvider(instanceName, raced.status);
+      await this.ensureWebhookConfiguredSafely(instanceName, raced.id);
+      result = { connection: raced, response: recovered.response };
+    }
+
+    this.realtime?.publishConnectionStatusUpdated({
+      tenantId: result.connection.tenantId,
+      connectionId: result.connection.id,
+      status: result.connection.status.toLowerCase(),
+      updatedAt: result.connection.updatedAt,
+    });
+    void this.historyImport?.enqueueForConnection(result.connection);
+    return {
+      ...this.serialize(result.connection),
+      qrCodeBase64: evolutionQrBase64(result.response),
+    };
+  }
+
+  private assertIdempotentPayload(existingName: string, requestedName: string) {
+    if (
+      existingName.trim().toLocaleLowerCase("pt-BR") !== requestedName.toLocaleLowerCase("pt-BR")
+    ) {
+      throw new ConflictException({
+        code: "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH",
+        message: "Esta chave de idempotência já foi utilizada com outro nome de instância.",
+      });
+    }
+  }
+
+  private async ensureIdempotentProvider(
+    instanceName: string,
+    localStatus?: MessagingConnectionStatus,
+  ): Promise<{
+    response: Awaited<ReturnType<EvolutionClient["createInstance"]>>;
+    createdByThisRequest: boolean;
+  }> {
+    const provider = await this.evolution.findInstance(instanceName);
+    if (provider) {
+      if (localStatus === MessagingConnectionStatus.CONNECTED) {
+        return {
+          response: { instance: provider },
+          createdByThisRequest: false,
+        } as never;
+      }
+      return {
+        response: await this.evolution.connect(instanceName),
+        createdByThisRequest: false,
+      };
+    }
+    try {
+      return {
+        response: await this.evolution.createInstance({ instanceName }),
+        createdByThisRequest: true,
+      };
+    } catch (error) {
+      const reconciled = await this.evolution.findInstance(instanceName).catch(() => null);
+      if (!reconciled) {
+        throw providerUnavailableForUi(error, "Não foi possível criar a instância na Evolution.");
+      }
+      return {
+        response: await this.evolution.connect(instanceName),
+        createdByThisRequest: false,
+      };
+    }
   }
 
   async status(id: string, current: AuthenticatedUser) {
@@ -1139,7 +1314,7 @@ function translateInitialStatus(value: string | null | undefined) {
 export function cleanInstanceName(
   value: string,
   tenantId: string,
-  options: { unique?: boolean } = {},
+  options: { unique?: boolean; idempotencyKey?: string } = {},
 ) {
   const base = value
     .trim()
@@ -1150,6 +1325,13 @@ export function cleanInstanceName(
     .replace(/^-+|-+$/g, "")
     .slice(0, 50);
   if (!base) throw new BadRequestException("Nome da instance inválido.");
+  if (options.idempotencyKey) {
+    const fingerprint = createHash("sha256")
+      .update(`${tenantId}:${options.idempotencyKey}`)
+      .digest("hex")
+      .slice(0, 16);
+    return `${tenantId.slice(0, 8)}-onboarding-${fingerprint}`;
+  }
   if (options.unique) return `${tenantId.slice(0, 8)}-${base}-${randomUUID().slice(0, 8)}`;
   return `${tenantId.slice(0, 8)}-${base}`;
 }
@@ -1176,7 +1358,10 @@ function duplicateConnectionNameError() {
 }
 
 function isUniqueConstraintError(error: unknown) {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+  return (
+    (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") ||
+    (typeof error === "object" && error !== null && "code" in error && error.code === "P2002")
+  );
 }
 
 function cleanOptionalText(value: string | null | undefined) {

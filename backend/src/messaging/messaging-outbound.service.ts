@@ -61,8 +61,10 @@ import { EvolutionClient } from "./evolution/evolution.client";
 import { EvolutionOutboundPayloadFactory } from "./evolution/evolution-outbound-payload.factory";
 import { normalizeEvolutionRecipient } from "./evolution/evolution-recipient.normalizer";
 import { SenderDisplayNameService } from "./sender-display-name.service";
-import { resolveMessageTemplate } from "./message-template";
+import { resolveMessageTemplate, type TemplateContext } from "./message-template";
 import { outboundMessageOrigin } from "./message-origin";
+import { MESSAGE_CLOCK, type MessageClock, SYSTEM_MESSAGE_CLOCK } from "./message-clock";
+import { InvalidMessageTimezoneError } from "./message-local-time";
 
 const messageInclude = {
   authorMembership: {
@@ -143,6 +145,7 @@ export class MessagingOutboundService {
     @Optional()
     @Inject(SenderDisplayNameService)
     private readonly senderDisplayName?: SenderDisplayNameService,
+    @Optional() @Inject(MESSAGE_CLOCK) private readonly messageClock?: MessageClock,
   ) {}
 
   async sendText(conversationId: string, dto: SendMessageDto, current: AuthenticatedUser) {
@@ -152,6 +155,7 @@ export class MessagingOutboundService {
       connection: true,
     });
     this.assertCanSend(conversation);
+    const effectiveAt = this.now();
 
     const prepared: PreparedOutbound = await this.prisma.$transaction(async (tx) => {
       if (dto.clientMessageId) {
@@ -167,7 +171,13 @@ export class MessagingOutboundService {
       }
 
       const connection = await this.resolveConnection(tx, current.tenantId, conversation);
-      const content = await this.prepareOutboundText(tx, originalContent, conversation, current);
+      const content = await this.prepareOutboundText(
+        tx,
+        originalContent,
+        conversation,
+        current,
+        effectiveAt,
+      );
       const quoted = dto.quotedMessageId
         ? await this.resolveQuotedMessage(tx, {
             tenantId: current.tenantId,
@@ -241,9 +251,12 @@ export class MessagingOutboundService {
     connectionId: string;
     externalChatId: string;
     content: string;
+    templateContext?: TemplateContext;
     kind: "welcome" | "absence";
   }) {
-    const content = cleanMessageContent(input.content);
+    const content = cleanMessageContent(
+      resolveMessageTemplate(input.content, input.templateContext ?? {}),
+    );
     const prepared: PreparedOutbound = await this.prisma.$transaction(async (tx) => {
       const clientMessageId = `automatic:${input.kind}`;
       const existing = await tx.message.findFirst({
@@ -322,6 +335,7 @@ export class MessagingOutboundService {
     connectionId: string;
     externalChatId: string;
     content: string;
+    templateContext?: TemplateContext;
     kind: "welcome" | "absence";
     attachment: { fileName: string; mimeType: string; size: number; dataUrl: string };
   }) {
@@ -348,7 +362,9 @@ export class MessagingOutboundService {
       fileName: input.attachment.fileName,
       messageType,
     });
-    const caption = cleanMessageContent(input.content);
+    const caption = cleanMessageContent(
+      resolveMessageTemplate(input.content, input.templateContext ?? {}),
+    );
     const now = new Date();
     const preview = mediaPreview(messageType, caption, stored.fileName);
     const message = await this.prisma.$transaction(async (tx) => {
@@ -447,7 +463,23 @@ export class MessagingOutboundService {
             contactDepartment: {
               select: { tenantId: true, name: true, archivedAt: true },
             },
-            customFieldValues: { include: { field: { select: { label: true } } } },
+            customFieldValues: {
+              where: {
+                tenantId: input.tenantId,
+                field: { tenantId: input.tenantId, archivedAt: null },
+              },
+              include: {
+                field: {
+                  select: {
+                    label: true,
+                    variableKey: true,
+                    type: true,
+                    mask: true,
+                    tenantId: true,
+                  },
+                },
+              },
+            },
           },
         },
         connection: true,
@@ -466,27 +498,44 @@ export class MessagingOutboundService {
       throw new ScheduledMessagePermanentError("Instância indisponível para o agendamento.");
     }
     assertMessagingServiceEnabled(conversation.connection);
-    const templatedContent = resolveMessageTemplate(input.content, {
-      contactName: conversation.contact.name,
-      phone: conversation.contact.phone,
-      email: conversation.contact.email,
-      instance: conversation.connection.name,
-      department:
-        conversation.contact.contactDepartment?.tenantId === input.tenantId &&
-        !conversation.contact.contactDepartment.archivedAt
-          ? conversation.contact.contactDepartment.name
-          : conversation.contact.departmentName,
-      customer:
-        conversation.contact.customer?.tenantId === input.tenantId &&
-        !conversation.contact.customer.archivedAt
-          ? conversation.contact.customer.name
-          : null,
-      customFields: Object.fromEntries(
-        conversation.contact.customFieldValues.map((item) => [item.field.label, item.value]),
-      ),
-      now: input.occurrenceAt,
-      timezone: conversation.connection.timezone,
-    });
+    const effectiveAt = this.now();
+    let templatedContent: string;
+    try {
+      templatedContent = resolveMessageTemplate(input.content, {
+        contactName: conversation.contact.name,
+        phone: conversation.contact.phone,
+        email: conversation.contact.email,
+        instance: conversation.connection.name,
+        department:
+          conversation.contact.contactDepartment?.tenantId === input.tenantId &&
+          !conversation.contact.contactDepartment.archivedAt
+            ? conversation.contact.contactDepartment.name
+            : conversation.contact.departmentName,
+        customer:
+          conversation.contact.customer?.tenantId === input.tenantId &&
+          !conversation.contact.customer.archivedAt
+            ? conversation.contact.customer.name
+            : null,
+        customFieldValues: conversation.contact.customFieldValues
+          .filter(
+            (item) => item.tenantId === input.tenantId && item.field.tenantId === input.tenantId,
+          )
+          .map((item) => ({
+            label: item.field.label,
+            variableKey: item.field.variableKey,
+            type: item.field.type,
+            mask: item.field.mask,
+            value: item.value,
+          })),
+        now: effectiveAt,
+        timezone: conversation.connection.timezone,
+      });
+    } catch (error) {
+      if (error instanceof InvalidMessageTimezoneError) {
+        throw new ScheduledMessagePermanentError(error.message);
+      }
+      throw error;
+    }
     const resolvedContent = templatedContent.trim()
       ? cleanMessageContent(templatedContent)
       : input.attachment
@@ -724,8 +773,9 @@ export class MessagingOutboundService {
         if (existing) return { message: existing, dispatch: false };
       }
       const connection = await this.resolveConnection(tx, current.tenantId, conversation);
+      const effectiveAt = this.now();
       const caption = stored.caption
-        ? await this.prepareOutboundText(tx, stored.caption, conversation, current)
+        ? await this.prepareOutboundText(tx, stored.caption, conversation, current, effectiveAt)
         : stored.caption;
       const quoted = quotedMessageId
         ? await this.resolveQuotedMessage(tx, {
@@ -1429,15 +1479,99 @@ export class MessagingOutboundService {
   private async prepareOutboundText(
     tx: Prisma.TransactionClient,
     content: string,
-    conversation: { protocol?: string | null },
+    conversation: { id: string; protocol?: string | null },
     current: AuthenticatedUser,
+    effectiveAt: Date,
   ) {
-    if (!current.permissions?.includes("chat.agent_name.show")) return content;
+    const resolvedContent = cleanMessageContent(
+      await this.resolveConversationTemplate(
+        tx,
+        conversation.id,
+        current.tenantId,
+        content,
+        effectiveAt,
+      ),
+    );
+    if (!current.permissions?.includes("chat.agent_name.show")) return resolvedContent;
     const agentName = this.senderDisplayName
       ? await this.senderDisplayName.resolve(tx, current)
       : null;
-    if (!agentName) return content;
-    return cleanMessageContent(`*${agentName}:*\n\n${content}`);
+    if (!agentName) return resolvedContent;
+    return cleanMessageContent(`*${agentName}:*\n\n${resolvedContent}`);
+  }
+
+  private async resolveConversationTemplate(
+    tx: Prisma.TransactionClient,
+    conversationId: string,
+    tenantId: string,
+    content: string,
+    effectiveAt: Date,
+  ) {
+    const conversation = await tx.conversation.findFirst({
+      where: { id: conversationId, tenantId, archivedAt: null },
+      select: {
+        contact: {
+          select: {
+            name: true,
+            phone: true,
+            email: true,
+            departmentName: true,
+            customer: { select: { tenantId: true, name: true, archivedAt: true } },
+            contactDepartment: {
+              select: { tenantId: true, name: true, archivedAt: true },
+            },
+            customFieldValues: {
+              where: { tenantId, field: { tenantId, archivedAt: null } },
+              select: {
+                value: true,
+                field: {
+                  select: { label: true, variableKey: true, type: true, mask: true },
+                },
+              },
+            },
+          },
+        },
+        connection: { select: { name: true, timezone: true } },
+        department: { select: { name: true } },
+      },
+    });
+    if (!conversation) return content;
+    try {
+      return resolveMessageTemplate(content, {
+        contactName: conversation.contact.name,
+        phone: conversation.contact.phone,
+        email: conversation.contact.email,
+        instance: conversation.connection?.name,
+        department:
+          conversation.contact.contactDepartment?.tenantId === tenantId &&
+          !conversation.contact.contactDepartment.archivedAt
+            ? conversation.contact.contactDepartment.name
+            : (conversation.department?.name ?? conversation.contact.departmentName),
+        customer:
+          conversation.contact.customer?.tenantId === tenantId &&
+          !conversation.contact.customer.archivedAt
+            ? conversation.contact.customer.name
+            : null,
+        customFieldValues: conversation.contact.customFieldValues.map((item) => ({
+          label: item.field.label,
+          variableKey: item.field.variableKey,
+          type: item.field.type,
+          mask: item.field.mask,
+          value: item.value,
+        })),
+        now: effectiveAt,
+        timezone: conversation.connection?.timezone,
+      });
+    } catch (error) {
+      if (error instanceof InvalidMessageTimezoneError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
+  }
+
+  private now() {
+    return (this.messageClock ?? SYSTEM_MESSAGE_CLOCK).now();
   }
 
   private async prepareScheduledOutboundText(

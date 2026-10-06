@@ -1,5 +1,7 @@
 export type AutomaticReplyKind = "welcome" | "absence";
 
+import { InvalidMessageTimezoneError, localDateTimeParts } from "./message-local-time";
+
 type AutomaticReplyInput = {
   createdConversation: boolean;
   isGroup: boolean;
@@ -23,6 +25,13 @@ export function selectAutomaticReply(input: AutomaticReplyInput): {
 } | null {
   if (!input.createdConversation || input.isGroup || input.fromMe) return null;
 
+  try {
+    localDayAndMinutes(input.at, input.timezone);
+  } catch (error) {
+    if (error instanceof InvalidMessageTimezoneError) return null;
+    throw error;
+  }
+
   const absenceShouldSend =
     input.absenceEnabled &&
     hasText(input.absenceTemplate) &&
@@ -40,17 +49,24 @@ export function isWithinServiceHours(
   timezone: string | null | undefined,
   at: Date,
 ) {
-  const local = localDayAndMinutes(at, timezone ?? "America/Sao_Paulo");
-  if (!local) return false;
+  const local = localDayAndMinutes(at, timezone);
   const rows = Array.isArray(serviceHours) ? serviceHours : [];
-  return rows.some((value) => {
-    if (!value || typeof value !== "object") return false;
-    const row = value as Record<string, unknown>;
-    if (row.day !== local.day || row.active !== true) return false;
-    return periodsFor(row).some(
-      (period) => local.minutes >= period.start && local.minutes < period.end,
-    );
-  });
+  const current = rows.find((value) => isActiveDay(value, local.day));
+  const previous = rows.find((value) => isActiveDay(value, previousDay(local.day)));
+  return (
+    (current
+      ? periodsFor(current as Record<string, unknown>).some((period) =>
+          period.end > period.start
+            ? local.minutes >= period.start && local.minutes < period.end
+            : local.minutes >= period.start,
+        )
+      : false) ||
+    (previous
+      ? periodsFor(previous as Record<string, unknown>).some(
+          (period) => period.end < period.start && local.minutes < period.end,
+        )
+      : false)
+  );
 }
 
 function periodsFor(row: Record<string, unknown>) {
@@ -60,42 +76,42 @@ function periodsFor(row: Record<string, unknown>) {
     const period = value as Record<string, unknown>;
     const start = minutesOf(period.start);
     const end = minutesOf(period.end);
-    return start !== null && end !== null && end > start ? [{ start, end }] : [];
+    return start !== null && end !== null && end !== start ? [{ start, end }] : [];
   });
 }
 
-function localDayAndMinutes(at: Date, timezone: string) {
-  try {
-    const weekday = new Intl.DateTimeFormat("pt-BR", { weekday: "long", timeZone: timezone })
-      .format(at)
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace("-feira", "");
-    const day =
-      {
-        segunda: "Segunda",
-        terca: "Terça",
-        quarta: "Quarta",
-        quinta: "Quinta",
-        sexta: "Sexta",
-        sabado: "Sábado",
-        domingo: "Domingo",
-      }[weekday] ?? null;
-    if (!day) return null;
-    const parts = new Intl.DateTimeFormat("en-GB", {
-      timeZone: timezone,
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    }).formatToParts(at);
-    const hour = Number(parts.find((part) => part.type === "hour")?.value);
-    const minute = Number(parts.find((part) => part.type === "minute")?.value);
-    return Number.isInteger(hour) && Number.isInteger(minute)
-      ? { day, minutes: hour * 60 + minute }
-      : null;
-  } catch {
-    return null;
+function localDayAndMinutes(at: Date, timezone: string | null | undefined) {
+  const local = localDateTimeParts(at, timezone);
+  const day = (
+    {
+      Mon: "Segunda",
+      Tue: "Terça",
+      Wed: "Quarta",
+      Thu: "Quinta",
+      Fri: "Sexta",
+      Sat: "Sábado",
+      Sun: "Domingo",
+    } as Record<string, string>
+  )[local.weekday];
+  if (!day || !Number.isInteger(local.hour) || !Number.isInteger(local.minute)) {
+    throw new Error("Nao foi possivel converter o horario local da instancia.");
   }
+  return { day, minutes: local.hour * 60 + local.minute };
+}
+
+function isActiveDay(value: unknown, day: string) {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    (value as any).day === day &&
+    (value as any).active === true,
+  );
+}
+
+function previousDay(day: string) {
+  const days = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
+  const index = days.indexOf(day);
+  return days[(index + days.length - 1) % days.length];
 }
 
 function minutesOf(value: unknown) {

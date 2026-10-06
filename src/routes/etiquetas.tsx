@@ -4,7 +4,15 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
-import { Button, Card, Field, Input, SectionHeader, SearchInput } from "@/components/ui-kit";
+import {
+  Button,
+  Card,
+  Field,
+  Input,
+  SectionHeader,
+  SearchInput,
+  Textarea,
+} from "@/components/ui-kit";
 import { ConfirmDialog, Modal } from "@/components/modal";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { num } from "@/lib/format";
@@ -92,6 +100,11 @@ function Page() {
                 <p className="truncate text-sm font-bold" title={etiqueta.nome}>
                   {etiqueta.nome}
                 </p>
+                {etiqueta.descricao && (
+                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                    {etiqueta.descricao}
+                  </p>
+                )}
               </div>
               {(canCreateCatalog || canUpdateCatalog || canDeleteCatalog) && (
                 <div className="flex shrink-0 items-center gap-1">
@@ -248,7 +261,7 @@ function DeleteLinkedContactCatalogMessage({ name }: { name?: string | null }) {
   );
 }
 
-function EtiquetaForm({
+export function EtiquetaForm({
   open,
   onClose,
   onSubmit,
@@ -258,12 +271,13 @@ function EtiquetaForm({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: { name: string; color?: string }) => Promise<void>;
+  onSubmit: (data: { name: string; description?: string; color?: string }) => Promise<void>;
   initial?: ApiTag;
   clone?: boolean;
   tags: ApiTag[];
 }) {
   const [name, setName] = React.useState("");
+  const [description, setDescription] = React.useState("");
   const [color, setColor] = React.useState("#3B82F6");
   const [busy, setBusy] = React.useState(false);
   const [nameError, setNameError] = React.useState("");
@@ -281,6 +295,7 @@ function EtiquetaForm({
 
   React.useEffect(() => {
     setName(initial ? (clone ? `${initial.nome} - Cópia` : initial.nome) : "");
+    setDescription(initial?.descricao ?? "");
     setColor(initial?.cor ?? "#3B82F6");
     setNameError("");
   }, [clone, initial, open]);
@@ -294,7 +309,11 @@ function EtiquetaForm({
     }
     setBusy(true);
     try {
-      await onSubmit({ name: name.trim(), color: completeHexColor(color) });
+      await onSubmit({
+        name: name.trim(),
+        description: description.trim(),
+        color: completeHexColor(color),
+      });
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -355,6 +374,15 @@ function EtiquetaForm({
           </div>
         </Field>
       </div>
+      <Field label="Descrição">
+        <Textarea
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          maxLength={240}
+          rows={3}
+          placeholder="Como esta etiqueta será utilizada"
+        />
+      </Field>
     </Modal>
   );
 }

@@ -58,6 +58,7 @@ const conversationInclude = {
       },
       tags: { include: { tag: true }, where: { tag: { archivedAt: null } } },
       customFieldValues: {
+        where: { field: { archivedAt: null } },
         include: { field: true },
       },
     },
@@ -142,25 +143,35 @@ export class ConversationsController {
   @Post()
   @RequirePermissions("messages.send")
   async create(@Body() dto: CreateConversationDto, @CurrentUser() current: AuthenticatedUser) {
-    const contact = await this.prisma.contact.findFirst({
-      where: { id: dto.contactId, tenantId: current.tenantId, archivedAt: null },
-    });
-    if (!contact) throw new BadRequestException("Contato inexistente para este tenant.");
-
-    const connection = await this.resolveConversationConnection(dto.connectionId, current, contact);
     const assignToSelf = dto.assignToSelf ?? false;
-    if (assignToSelf && !connection) {
-      throw new BadRequestException(
-        "Nenhuma instância WhatsApp conectada para iniciar a conversa.",
-      );
-    }
-    const departmentId = connection
-      ? await this.resolveDepartmentId(dto.departmentId, current, connection.id)
-      : null;
     const status = assignToSelf ? ConversationStatus.EM_ANDAMENTO : ConversationStatus.ABERTA;
     const now = new Date();
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // Serializa tentativas para o mesmo contato sem exigir migração ou confiar no frontend.
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM "contacts" WHERE id = ${dto.contactId} AND "tenantId" = ${current.tenantId} FOR UPDATE`,
+      );
+      const contact = await tx.contact.findFirst({
+        where: { id: dto.contactId, tenantId: current.tenantId, archivedAt: null },
+      });
+      if (!contact) throw new BadRequestException("Contato inexistente para este tenant.");
+
+      const connection = await this.resolveConversationConnection(
+        dto.connectionId,
+        current,
+        contact,
+        tx,
+      );
+      if (assignToSelf && !connection) {
+        throw new BadRequestException(
+          "Nenhuma instância WhatsApp conectada para iniciar a conversa.",
+        );
+      }
+      const departmentId = connection
+        ? await this.resolveDepartmentId(dto.departmentId, current, connection.id, tx)
+        : null;
+
       const existing = await tx.conversation.findFirst({
         where: {
           tenantId: current.tenantId,
@@ -210,6 +221,15 @@ export class ConversationsController {
         return { conversation: updated, created: false, updated: true };
       }
 
+      if (assignToSelf) {
+        await this.assertAssignableMembership(
+          tx,
+          current.membershipId,
+          current.tenantId,
+          connection?.id ?? null,
+          departmentId,
+        );
+      }
       const protocol = assignToSelf ? await this.nextProtocol(tx, current.tenantId) : null;
       const created = await tx.conversation.create({
         data: {
@@ -776,16 +796,17 @@ export class ConversationsController {
     departmentId: string | null | undefined,
     current: AuthenticatedUser,
     connectionId: string,
+    db: Pick<Prisma.TransactionClient, "department"> = this.prisma,
   ) {
     if (departmentId) {
-      await this.assertDepartmentForConnection(departmentId, connectionId, current);
+      await this.assertDepartmentForConnection(departmentId, connectionId, current, db);
       return departmentId;
     }
     const favorite = current.chatScopes?.find(
       (scope) => scope.connectionId === connectionId,
     )?.favoriteDepartmentId;
     if (favorite) {
-      await this.assertDepartmentForConnection(favorite, connectionId, current);
+      await this.assertDepartmentForConnection(favorite, connectionId, current, db);
       return favorite;
     }
     throw new BadRequestException("Selecione um departamento para iniciar o atendimento.");
@@ -841,13 +862,14 @@ export class ConversationsController {
     connectionId: string | null | undefined,
     current: AuthenticatedUser,
     contact?: { instance: string | null; instanceIds: string[] },
+    db: Pick<Prisma.TransactionClient, "messagingConnection"> = this.prisma,
   ) {
     // An explicit choice made in the UI must always win.  Including the
     // contact's other instances in this query made `findFirst` return the
     // oldest connection instead of the selected one, which in turn reopened
     // the conversation from a different WhatsApp instance.
     if (connectionId) {
-      const selectedConnection = await this.prisma.messagingConnection.findFirst({
+      const selectedConnection = await db.messagingConnection.findFirst({
         where: {
           AND: [{ id: connectionId }, connectionIdAccess(current)],
           tenantId: current.tenantId,
@@ -874,7 +896,7 @@ export class ConversationsController {
     const connectionKeys = uniqueValues([...(contact?.instanceIds ?? []), contact?.instance]);
 
     const connection = connectionKeys.length
-      ? await this.prisma.messagingConnection.findFirst({
+      ? await db.messagingConnection.findFirst({
           where: {
             tenantId: current.tenantId,
             archivedAt: null,
@@ -921,8 +943,9 @@ export class ConversationsController {
     departmentId: string,
     connectionId: string,
     current: AuthenticatedUser,
+    db: Pick<Prisma.TransactionClient, "department"> = this.prisma,
   ) {
-    const department = await this.prisma.department.findFirst({
+    const department = await db.department.findFirst({
       where: {
         tenantId: current.tenantId,
         active: true,
@@ -1008,6 +1031,11 @@ export class ConversationsController {
   }
 
   private serialize(conversation: ConversationWithRelations) {
+    const customFieldValues =
+      conversation.contact?.customFieldValues.filter(
+        (item) =>
+          item.tenantId === conversation.tenantId && item.field.tenantId === conversation.tenantId,
+      ) ?? [];
     return {
       id: conversation.id,
       tenantId: conversation.tenantId,
@@ -1074,15 +1102,14 @@ export class ConversationsController {
               cor: item.tag.color,
             })),
             customFields: Object.fromEntries(
-              conversation.contact.customFieldValues.map((item) => [
-                item.fieldId,
-                item.value ?? "",
-              ]),
+              customFieldValues.map((item) => [item.fieldId, item.value ?? ""]),
             ),
-            customFieldValues: conversation.contact.customFieldValues.map((item) => ({
+            customFieldValues: customFieldValues.map((item) => ({
               fieldId: item.fieldId,
               label: item.field.label,
+              variableKey: item.field.variableKey,
               type: item.field.type.toLowerCase(),
+              mask: item.field.mask,
               value: item.value,
             })),
             createdAt: conversation.contact.createdAt,
@@ -1114,6 +1141,7 @@ export class ConversationsController {
             providerType: conversation.connection.providerType.toLowerCase(),
             status: conversation.connection.status.toLowerCase(),
             externalReference: conversation.connection.externalReference,
+            timezone: conversation.connection.timezone,
             color: conversation.connection.color,
             logo_url: conversation.connection.logoUrl,
           }

@@ -117,19 +117,19 @@ describe("service hours editor", () => {
           input.dispatchEvent(new Event("input", { bubbles: true }));
         });
       };
-      for (const value of ["18:00", "19:00", "1900"]) {
-        await type(start, value);
-        const alert = host.querySelector('[role="alert"]');
-        expect(alert?.textContent).toContain("maior que a inicial");
-        expect(alert?.closest("td")?.colSpan).toBe(3);
-        expect(start.getAttribute("aria-invalid")).toBe("true");
-        expect(end.getAttribute("aria-invalid")).toBe("true");
-      }
+      await type(start, "18:00");
+      const equalAlert = host.querySelector('[role="alert"]');
+      expect(equalAlert?.textContent).toContain("diferentes");
+      expect(equalAlert?.closest("td")?.colSpan).toBe(3);
+      expect(start.getAttribute("aria-invalid")).toBe("true");
+      expect(end.getAttribute("aria-invalid")).toBe("true");
+      await type(start, "19:00");
+      expect(host.querySelector('[role="alert"]')).toBeNull();
       await type(end, "20:00");
       expect(host.querySelector('[role="alert"]')).toBeNull();
       expect(start.getAttribute("aria-invalid")).toBe("false");
       await type(end, "07:00");
-      expect(host.querySelector('[role="alert"]')).not.toBeNull();
+      expect(host.querySelector('[role="alert"]')).toBeNull();
       await act(async () =>
         host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
       );
@@ -425,14 +425,16 @@ describe("service hours editor", () => {
       host.remove();
     }
   });
-  it("rejects equal or earlier ends", () => {
+  it("accepts overnight periods and rejects equal endpoints", () => {
     expect(
       serviceHoursError([{ day: "Segunda", active: true, start: "08:00", end: "18:00" }]),
     ).toBe("");
-    for (const end of ["08:00", "07:00"])
-      expect(serviceHoursError([{ day: "Segunda", active: true, start: "08:00", end }])).toContain(
-        "maior que a inicial",
-      );
+    expect(
+      serviceHoursError([{ day: "Segunda", active: true, start: "22:00", end: "02:00" }]),
+    ).toBe("");
+    expect(
+      serviceHoursError([{ day: "Segunda", active: true, start: "08:00", end: "08:00" }]),
+    ).toContain("diferentes");
   });
   it("compares saved periods by value instead of JSON property order", () => {
     const expected = [

@@ -35,6 +35,11 @@ enum TenantStatus {
   TERMINATED
 }
 
+enum TenantOnboardingStatus {
+  PENDING
+  COMPLETED
+}
+
 enum PlatformClientStatus {
   ACTIVE
   SUSPENDED
@@ -396,9 +401,26 @@ model Tenant {
   notifications               Notification[]
   automationRules             AutomationRule[]
   platformClient              PlatformClient?
+  onboarding                  TenantOnboarding?
 
   @@index([status])
   @@map("tenants")
+}
+
+model TenantOnboarding {
+  tenantId         String                   @id
+  status           TenantOnboardingStatus   @default(PENDING)
+  currentStep      Int                      @default(1)
+  maxCompletedStep Int                      @default(0)
+  version           Int                      @default(1)
+  startedAt        DateTime                 @default(now())
+  completedAt      DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  tenant           Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status, updatedAt])
+  @@map("tenant_onboarding_states")
 }
 
 model PlatformClient {
@@ -912,6 +934,7 @@ model ContactCustomField {
   tenantId       String
   label          String
   normalizedName String
+  variableKey    String
   type           ContactCustomFieldType
   required       Boolean                   @default(false)
   mask           String?
@@ -927,6 +950,7 @@ model ContactCustomField {
   values         ContactCustomFieldValue[]
 
   @@unique([tenantId, normalizedName])
+  @@unique([tenantId, variableKey])
   @@index([tenantId, archivedAt, position])
   @@map("contact_custom_fields")
 }
@@ -952,6 +976,7 @@ model Tag {
   tenantId       String
   name           String
   normalizedName String
+  description    String?
   color          String       @default("#3B82F6")
   archivedAt     DateTime?
   createdAt      DateTime     @default(now())

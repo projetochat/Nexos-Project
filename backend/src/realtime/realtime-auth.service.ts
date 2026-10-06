@@ -4,13 +4,15 @@ import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { JwtPayload } from "../auth/auth.types";
 import { effectivePermissions } from "../auth/effective-permissions";
+import { Prisma } from "../generated/prisma";
 
 export type RealtimeAuthCode =
   | "REALTIME_TOKEN_MISSING"
   | "REALTIME_TOKEN_INVALID"
   | "REALTIME_TOKEN_EXPIRED"
   | "REALTIME_USER_INACTIVE"
-  | "REALTIME_MEMBERSHIP_INACTIVE";
+  | "REALTIME_MEMBERSHIP_INACTIVE"
+  | "REALTIME_ONBOARDING_PENDING";
 
 export class RealtimeAuthError extends Error {
   constructor(readonly code: RealtimeAuthCode) {
@@ -105,6 +107,7 @@ export class RealtimeAuthService {
       });
       if (!session) throw new RealtimeAuthError("REALTIME_TOKEN_INVALID");
     }
+    await this.assertOnboardingCompleted(membership.tenantId);
 
     return {
       userId: membership.userId,
@@ -151,6 +154,7 @@ export class RealtimeAuthService {
       select: { tenant: { select: { authRevokedAt: true } } },
     });
     if (!membership) throw new RealtimeAuthError("REALTIME_MEMBERSHIP_INACTIVE");
+    await this.assertOnboardingCompleted(context.tenantId);
     if (
       membership.tenant.authRevokedAt &&
       context.iatMs &&
@@ -193,6 +197,20 @@ export class RealtimeAuthService {
       select: { id: true },
     });
     if (!session) throw new RealtimeAuthError("REALTIME_TOKEN_INVALID");
+  }
+
+  private async assertOnboardingCompleted(tenantId: string) {
+    const [state] = await this.prisma.$queryRaw<Array<{ status: string }>>(
+      Prisma.sql`
+        SELECT "status"::text AS "status"
+        FROM "tenant_onboarding_states"
+        WHERE "tenantId" = ${tenantId}
+        LIMIT 1
+      `,
+    );
+    if (state?.status === "PENDING") {
+      throw new RealtimeAuthError("REALTIME_ONBOARDING_PENDING");
+    }
   }
 
   private assertNotExpired(exp?: number) {

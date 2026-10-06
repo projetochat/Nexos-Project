@@ -59,8 +59,8 @@ export function validateServiceHours(rows: ServiceHoursDto[]) {
       ) {
         throw new BadRequestException(`Informe horários válidos em ${row.day}.`);
       }
-      if (period.end! <= period.start!)
-        throw new BadRequestException(`O fim deve ser maior que o início em ${row.day}.`);
+      if (period.end! === period.start!)
+        throw new BadRequestException(`O início e o fim devem ser diferentes em ${row.day}.`);
     }
   }
   return SERVICE_DAYS.map((day) => {

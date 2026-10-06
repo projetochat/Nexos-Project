@@ -58,6 +58,12 @@ import {
   groupContactIdentityFromPhone,
   normalizePhone,
 } from "./phone-normalization";
+import {
+  contactCustomFieldVariableKey,
+  isNativeContactFieldName,
+  isNativeMessageVariableKey,
+  normalizeContactCustomFieldName,
+} from "./contact-custom-field-identity";
 
 class ContactCatalogDto {
   @IsOptional()
@@ -203,7 +209,10 @@ const contactInclude = {
   contactDepartment: { select: { id: true, name: true, color: true } },
   contactProfile: { select: { id: true, name: true, color: true } },
   tags: { include: { tag: true } },
-  customFieldValues: { include: { field: true } },
+  customFieldValues: {
+    where: { field: { archivedAt: null } },
+    include: { field: true },
+  },
 } satisfies Prisma.ContactInclude;
 
 const agendaImportedContactSelect = {
@@ -576,34 +585,25 @@ export class CrmController {
   ) {
     const data = this.prepareContactCustomField(dto);
     await this.assertContactCustomFieldNameAvailable(data.label!, current.tenantId);
-    await this.prisma.contactCustomField.updateMany({
-      where: {
-        tenantId: current.tenantId,
-        normalizedName: data.normalizedName!,
-        archivedAt: { not: null },
-      },
-      data: { normalizedName: `${data.normalizedName}__archived__${Date.now()}` },
-    });
     const lastField = await this.prisma.contactCustomField.findFirst({
       where: { tenantId: current.tenantId, archivedAt: null },
       orderBy: { position: "desc" },
       select: { position: true },
     });
     const position = (lastField?.position ?? -1) + 1;
-    const field = await this.prisma.contactCustomField.create({
-      data: {
-        tenantId: current.tenantId,
-        label: data.label!,
-        normalizedName: data.normalizedName!,
-        type: data.type!,
-        required: data.required ?? false,
-        mask: data.mask,
-        note: data.note,
-        tabName: data.tabName!,
-        groupName: data.groupName!,
-        options: data.options,
-        position,
-      },
+    const field = await this.createContactCustomFieldWithConflictMapping({
+      tenantId: current.tenantId,
+      label: data.label!,
+      normalizedName: data.normalizedName!,
+      variableKey: data.variableKey!,
+      type: data.type!,
+      required: data.required ?? false,
+      mask: data.mask,
+      note: data.note,
+      tabName: data.tabName!,
+      groupName: data.groupName!,
+      options: data.options,
+      position,
     });
     return this.serializeContactCustomField(field);
   }
@@ -645,10 +645,16 @@ export class CrmController {
     await this.findContactCustomFieldOrThrow(id, current.tenantId);
     if (dto.label)
       await this.assertContactCustomFieldNameAvailable(dto.label, current.tenantId, id);
-    const field = await this.prisma.contactCustomField.update({
-      where: { id },
-      data: this.prepareContactCustomField(dto, true),
-    });
+    let field;
+    try {
+      field = await this.prisma.contactCustomField.update({
+        where: { id },
+        data: this.prepareContactCustomField(dto, true),
+      });
+    } catch (error) {
+      this.rethrowContactCustomFieldUniqueConflict(error);
+      throw error;
+    }
     return this.serializeContactCustomField(field);
   }
 
@@ -658,12 +664,11 @@ export class CrmController {
     @Param("id") id: string,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    const currentField = await this.findContactCustomFieldOrThrow(id, current.tenantId);
+    await this.findContactCustomFieldOrThrow(id, current.tenantId);
     const field = await this.prisma.contactCustomField.update({
       where: { id },
       data: {
         archivedAt: new Date(),
-        normalizedName: `${currentField.normalizedName}__archived__${Date.now()}`,
       },
     });
     return this.serializeContactCustomField(field);
@@ -1933,26 +1938,31 @@ export class CrmController {
     tenantId: string,
     ignoreId?: string,
   ) {
-    const cleanLabel = label.trim().replace(/\s+/g, " ");
+    const cleanLabel = label.normalize("NFKC").trim().replace(/\s+/gu, " ");
+    const variableKey = contactCustomFieldVariableKey(cleanLabel);
+    if (
+      !variableKey ||
+      isNativeContactFieldName(cleanLabel) ||
+      isNativeMessageVariableKey(variableKey)
+    ) {
+      this.throwContactCustomFieldConflict();
+    }
     const duplicate = await this.prisma.contactCustomField.findFirst({
       where: {
         tenantId,
-        archivedAt: null,
-        normalizedName: normalizeCatalogName(cleanLabel),
+        OR: [
+          { normalizedName: normalizeContactCustomFieldName(cleanLabel) },
+          ...(!ignoreId ? [{ variableKey }] : []),
+        ],
         ...(ignoreId ? { id: { not: ignoreId } } : {}),
       },
       select: { id: true },
     });
-    if (duplicate) {
-      throw new ConflictException({
-        code: "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS",
-        message: `Campo Adicional "${cleanLabel}" já existente.`,
-      });
-    }
+    if (duplicate) this.throwContactCustomFieldConflict();
   }
 
   private prepareContactCustomField(dto: ContactCustomFieldDto, partial = false) {
-    const label = dto.label?.trim();
+    const label = dto.label?.normalize("NFKC").trim().replace(/\s+/gu, " ");
     if (!partial && !label) throw new BadRequestException("Informe o nome do campo.");
     const type = dto.type
       ? parseContactCustomFieldType(dto.type)
@@ -1979,7 +1989,8 @@ export class CrmController {
     }
     return {
       label: label || undefined,
-      normalizedName: label ? normalizeCatalogName(label) : undefined,
+      normalizedName: label ? normalizeContactCustomFieldName(label) : undefined,
+      variableKey: !partial && label ? contactCustomFieldVariableKey(label) : undefined,
       type,
       required: dto.required,
       mask:
@@ -2004,6 +2015,30 @@ export class CrmController {
     });
     if (!field) throw new NotFoundException("Campo adicional não encontrado.");
     return field;
+  }
+
+  private async createContactCustomFieldWithConflictMapping(
+    data: Prisma.ContactCustomFieldUncheckedCreateInput,
+  ) {
+    try {
+      return await this.prisma.contactCustomField.create({ data });
+    } catch (error) {
+      this.rethrowContactCustomFieldUniqueConflict(error);
+      throw error;
+    }
+  }
+
+  private rethrowContactCustomFieldUniqueConflict(error: unknown): never | void {
+    if ((error as { code?: string } | null)?.code === "P2002") {
+      this.throwContactCustomFieldConflict();
+    }
+  }
+
+  private throwContactCustomFieldConflict(): never {
+    throw new ConflictException({
+      code: "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS",
+      message: "Já existe um campo com este nome. Informe um nome diferente.",
+    });
   }
 
   private async resolveInstanceFilterKeys(instance: string, tenantId: string) {
@@ -2089,6 +2124,7 @@ export class CrmController {
     id: string;
     tenantId: string;
     label: string;
+    variableKey: string;
     type: ContactCustomFieldType;
     required: boolean;
     mask: string | null;
@@ -2105,6 +2141,7 @@ export class CrmController {
       id: field.id,
       tenantId: field.tenantId,
       label: field.label,
+      variableKey: field.variableKey,
       type: field.type.toLowerCase(),
       required: field.required,
       mask: field.mask,
@@ -2146,6 +2183,9 @@ export class CrmController {
       includeAdditionalFields?: boolean;
     },
   ) {
+    const customFieldValues = contact.customFieldValues.filter(
+      (item) => item.tenantId === contact.tenantId && item.field.tenantId === contact.tenantId,
+    );
     const instanceIds = contact.instanceIds.length
       ? contact.instanceIds
       : contact.instance
@@ -2187,17 +2227,19 @@ export class CrmController {
       tags: contact.tags.map((item) => this.serializeTag(item.tag)),
       customFields: meta?.includeAdditionalFields
         ? Object.fromEntries(
-            contact.customFieldValues.map((item) => [
+            customFieldValues.map((item) => [
               item.fieldId,
               sanitizeContactCustomFieldValueForOutput(item.field, item.value),
             ]),
           )
         : {},
       customFieldValues: meta?.includeAdditionalFields
-        ? contact.customFieldValues.map((item) => ({
+        ? customFieldValues.map((item) => ({
             fieldId: item.fieldId,
             label: item.field.label,
+            variableKey: item.field.variableKey,
             type: item.field.type,
+            mask: item.field.mask,
             value: sanitizeContactCustomFieldValueForOutput(item.field, item.value),
           }))
         : [],

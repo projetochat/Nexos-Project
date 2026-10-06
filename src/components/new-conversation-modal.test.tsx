@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   form: vi.fn(),
   send: vi.fn(),
   departments: vi.fn(),
+  role: "operator",
 }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => ({}),
@@ -28,9 +29,10 @@ vi.mock("@/lib/session", () => ({
         id: "user",
         nome: "Usuário de teste",
         email: "user@trixus.test",
-        role: "operator",
+        role: mocks.role,
         permissions: [
           "conversations.assign",
+          "messages.send",
           "contacts.read",
           "contacts.create",
           "contacts.update",
@@ -105,6 +107,7 @@ async function mount() {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.role = "operator";
   setInboxTab("fila");
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   container = document.createElement("div");
@@ -186,16 +189,17 @@ describe("new conversation contact picker", () => {
       "ul li > button[aria-pressed]",
     );
     await act(async () => contactButtons[1].click());
+    await flush();
     expect(document.body.textContent).toContain("Escolher Instância");
     expect(document.body.textContent).toContain("Instância A");
     expect(document.body.textContent).toContain("Instância B");
-    expect(button("Iniciar conversa").disabled).toBe(true);
     await act(async () => button("Instância B").click());
     await flush();
     expect(document.body.textContent).not.toContain("Escolher Instância");
     expect(mocks.create).toHaveBeenCalledWith({
       contactId: "1",
       connectionId: "b",
+      departmentId: "department-b",
       assignToSelf: true,
     });
   });
@@ -211,7 +215,7 @@ describe("new conversation contact picker", () => {
       ).click(),
     );
     expect(mocks.form.mock.lastCall?.[0].initial.id).toBe("0");
-    expect(button("Iniciar conversa").disabled).toBe(true);
+    expect(mocks.create).not.toHaveBeenCalled();
   });
   it("starts a conversation without requiring or sending a first message", async () => {
     await mount();
@@ -222,6 +226,7 @@ describe("new conversation contact picker", () => {
     expect(mocks.create).toHaveBeenCalledWith({
       contactId: "0",
       connectionId: "a",
+      departmentId: "department-a",
       assignToSelf: true,
     });
     expect(mocks.send).not.toHaveBeenCalled();
@@ -239,6 +244,7 @@ describe("new conversation contact picker", () => {
     expect(mocks.create).toHaveBeenCalledWith({
       contactId: "0",
       connectionId: "a",
+      departmentId: "department-a",
       assignToSelf: true,
     });
     expect(mocks.navigate).toHaveBeenCalledWith({
@@ -259,15 +265,9 @@ describe("new conversation contact picker", () => {
     await mount();
 
     await act(async () => (document.querySelector("ul li button") as HTMLButtonElement).click());
+    await flush();
     expect(mocks.create).not.toHaveBeenCalled();
-    const select = document.querySelector("select") as HTMLSelectElement;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(
-        select,
-        "department-a",
-      );
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await act(async () => button("Comercial").click());
     await act(async () => button("Iniciar conversa").click());
     await flush();
 
@@ -277,5 +277,79 @@ describe("new conversation contact picker", () => {
       departmentId: "department-a",
       assignToSelf: true,
     });
+  });
+
+  it("requires the tenant administrator to choose a department even when a favorite is exposed", async () => {
+    mocks.role = "admin";
+    await mount();
+
+    await act(async () => (document.querySelector("ul li button") as HTMLButtonElement).click());
+    await flush();
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Escolher Departamento");
+    await act(async () => button("Comercial").click());
+    await act(async () => button("Iniciar conversa").click());
+    await flush();
+    expect(mocks.create).toHaveBeenCalledWith({
+      contactId: "0",
+      connectionId: "a",
+      departmentId: "department-a",
+      assignToSelf: true,
+    });
+  });
+
+  it("requires the tenant administrator to choose a department after choosing among multiple instances", async () => {
+    mocks.role = "admin";
+    await mount();
+    const contactButtons = document.querySelectorAll<HTMLButtonElement>(
+      "ul li > button[aria-pressed]",
+    );
+
+    await act(async () => contactButtons[1].click());
+    await flush();
+    await act(async () => button("Instância B").click());
+    await flush();
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Escolher Departamento");
+    expect(document.body.textContent).toContain("Suporte");
+  });
+
+  it("ignores a stale favorite that is no longer linked and opens the permitted department picker", async () => {
+    mocks.departments.mockResolvedValue([
+      {
+        id: "department-stale",
+        name: "Antigo",
+        connectionIds: ["b"],
+        favoriteConnectionIds: ["a"],
+      },
+      {
+        id: "department-a",
+        name: "Comercial",
+        connectionIds: ["a"],
+        favoriteConnectionIds: [],
+      },
+    ]);
+    await mount();
+
+    await act(async () => (document.querySelector("ul li button") as HTMLButtonElement).click());
+    await flush();
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Escolher Departamento");
+    expect(document.body.textContent).toContain("Comercial");
+    expect(document.body.textContent).not.toContain("Antigo");
+  });
+
+  it("does not create when the selected instance has no permitted department", async () => {
+    mocks.departments.mockResolvedValue([]);
+    await mount();
+
+    await act(async () => (document.querySelector("ul li button") as HTMLButtonElement).click());
+    await flush();
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain("Escolher Departamento");
   });
 });

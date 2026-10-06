@@ -57,6 +57,7 @@ export class TagsController {
         data: {
           name: clean(dto.name),
           normalizedName: normalizeName(dto.name),
+          description: cleanOptional(dto.description),
           color: dto.color ?? archived.color,
           archivedAt: null,
         },
@@ -69,6 +70,7 @@ export class TagsController {
           tenantId: current.tenantId,
           name: clean(dto.name),
           normalizedName: normalizeName(dto.name),
+          description: cleanOptional(dto.description),
           color: dto.color ?? "#3B82F6",
         },
       });
@@ -93,6 +95,7 @@ export class TagsController {
         data: {
           name: dto.name ? clean(dto.name) : undefined,
           normalizedName: dto.name ? normalizeName(dto.name) : undefined,
+          description: dto.description === undefined ? undefined : cleanOptional(dto.description),
           color: dto.color,
         },
       });
@@ -204,6 +207,10 @@ function clean(value: string) {
   return value.trim().replace(/\s+/g, " ");
 }
 
+function cleanOptional(value: string | undefined) {
+  return value === undefined ? undefined : clean(value) || null;
+}
+
 function normalizeName(value: string) {
   const normalized = clean(value).toLowerCase();
   if (!normalized) throw new BadRequestException("Nome de etiqueta inválido.");
@@ -213,6 +220,7 @@ function normalizeName(value: string) {
 function serializeTag(tag: {
   id: string;
   name: string;
+  description: string | null;
   color: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -220,6 +228,7 @@ function serializeTag(tag: {
   return {
     id: tag.id,
     nome: tag.name,
+    descricao: tag.description,
     cor: tag.color,
     createdAt: tag.createdAt,
     updatedAt: tag.updatedAt,

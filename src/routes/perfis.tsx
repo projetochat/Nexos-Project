@@ -375,7 +375,7 @@ function defaultWorkSchedule(): WorkSchedule {
   return { noSchedule: true, days };
 }
 
-type PerfilFormData = {
+export type PerfilFormData = {
   name: string;
   description: string;
   color: string;
@@ -706,7 +706,7 @@ function Page() {
   );
 }
 
-function PerfilForm({
+export function PerfilForm({
   open,
   onClose,
   onSubmit,
@@ -949,6 +949,12 @@ function PerfilForm({
       </div>
     </Modal>
   );
+}
+
+export function OnboardingPerfilForm(
+  props: Omit<React.ComponentProps<typeof PerfilForm>, "permissionGroups">,
+) {
+  return <PerfilForm {...props} permissionGroups={PERMISSION_GROUPS} />;
 }
 
 function PerfilTabs({

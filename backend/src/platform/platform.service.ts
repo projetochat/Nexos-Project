@@ -26,6 +26,7 @@ import { MessagingOutboundQueue } from "../queue/messaging-outbound.queue";
 import { RealtimeService } from "../realtime/realtime.service";
 import { FileStorageProvider } from "../tickets/storage/file-storage.provider";
 import { seedTenantRoles } from "./tenant-role-seed";
+import { initializeTenantOnboarding } from "../onboarding/onboarding.persistence";
 import { PlatformAuditService } from "./platform-audit.service";
 import {
   coerceFeatures,
@@ -730,6 +731,7 @@ export class PlatformService {
         },
       });
       const roles = await seedTenantRoles(tx, tenant.id);
+      await initializeTenantOnboarding(tx, tenant.id);
       let membership: { id: string } | null = null;
       if (dto.admin && administratorEmail && passwordHash) {
         const user = await tx.user.upsert({
@@ -1704,6 +1706,7 @@ export class PlatformService {
           },
         });
         const roles = await seedTenantRoles(tx, created.id);
+        await initializeTenantOnboarding(tx, created.id);
         const administratorEmail = refreshedClient.responsibleEmail.toLowerCase().trim();
         const existingAdministrator = await tx.user.findUnique({
           where: { email: administratorEmail },

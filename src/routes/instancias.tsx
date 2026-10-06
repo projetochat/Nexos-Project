@@ -983,7 +983,7 @@ Seja bem-vindo(a)
 
 Poderia informar seu nome para iniciarmos o atendimento?`;
 
-const EXISTING_CONTACT_MESSAGE_PLACEHOLDER = `{{cumprimento}} *{{nome}}*!
+const EXISTING_CONTACT_MESSAGE_PLACEHOLDER = `{{saudacao}} *{{nome}}*!
 Tudo bem?
 
 Já identificamos você na nossa base, informe seu problema que logo iremos te atender.`;

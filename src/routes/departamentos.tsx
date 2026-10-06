@@ -28,7 +28,7 @@ import { DepartmentIcon, DEPARTMENT_ICON_OPTIONS } from "@/components/department
 
 export const Route = createFileRoute("/departamentos")({ component: Page });
 
-type DepartamentoFormData = {
+export type DepartamentoFormData = {
   name?: string;
   description?: string | null;
   color?: string;
@@ -288,7 +288,7 @@ function Page() {
   );
 }
 
-function DepartamentoForm({
+export function DepartamentoForm({
   open,
   onClose,
   onSubmit,

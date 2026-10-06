@@ -55,7 +55,7 @@ export function serviceHoursError(
     for (const period of periods) {
       if (!time.test(period.start) || !time.test(period.end))
         return `Informe horários válidos em ${row.day}`;
-      if (period.end <= period.start) return "Hora final deve ser maior que a inicial.";
+      if (period.end === period.start) return "Hora inicial e final devem ser diferentes.";
     }
   }
   return "";

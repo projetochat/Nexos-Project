@@ -41,7 +41,12 @@ export function quickReplyMessages(reply: ApiQuickReply): QuickReplyMessage[] {
   ];
 }
 
-export type SequenceItem = QuickReplyMessage & { clientMessageId: string; messageId?: string };
+export type SequenceItem = QuickReplyMessage & {
+  clientMessageId: string;
+  messageId?: string;
+  /** Raw template is resolved by the backend when this individual item is enqueued. */
+  templateText?: string;
+};
 export type SequenceDraft = {
   items: SequenceItem[];
   next: number;
@@ -55,6 +60,7 @@ export function createSequence(
     items: quickReplyMessages(reply).map((item) => ({
       ...item,
       text: resolveText(item.text),
+      templateText: item.text,
       clientMessageId: crypto.randomUUID(),
     })),
     next: 0,

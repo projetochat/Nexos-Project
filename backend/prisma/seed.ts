@@ -105,7 +105,7 @@ const HOMOLOGATION_QUICK_REPLIES = [
     title: "Atendimento inicial",
     shortcut: "ola",
     content:
-      "{{cumprimento}} *{{nome}}*,\nTudo bem?\n\nBem vindo ao atendimento inicial do *Suporte Trixus*.\n\nNosso horário de funcionamento é de Segunda a Sexta:\n\n- 08:00h às 12:00h\n- 13:30h às 18:00h\n- Fuso horário de São Paulo (GMT-3)\n\nComo deseja o atendimento?",
+      "{{saudacao}} *{{nome}}*,\nTudo bem?\n\nBem vindo ao atendimento inicial do *Suporte Trixus*.\n\nNosso horário de funcionamento é de Segunda a Sexta:\n\n- 08:00h às 12:00h\n- 13:30h às 18:00h\n- Fuso horário de São Paulo (GMT-3)\n\nComo deseja o atendimento?",
     closeOnSend: false,
   },
 ] as const;

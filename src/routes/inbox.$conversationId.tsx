@@ -749,14 +749,16 @@ function ConversationPage() {
                 phone: conv.contact?.telefone,
                 email: conv.contact?.email,
                 instance: conv.connection?.name,
+                timezone: conv.connection?.timezone,
                 customer: conv.contact?.customer?.nome,
                 department: conv.contact?.contactDepartment?.nome ?? conv.contact?.departamento,
                 customFields: Object.fromEntries(
                   (conv.contact?.customFieldValues ?? []).map((field) => [
-                    field.label,
+                    field.variableKey,
                     field.value,
                   ]),
                 ),
+                customFieldValues: conv.contact?.customFieldValues ?? [],
               }}
               disabled={!canSend}
               disabledReason={
@@ -1864,6 +1866,7 @@ function Composer({
 }) {
   const qc = useQueryClient();
   const [text, setText] = React.useState("");
+  const [pendingVariableTemplate, setPendingVariableTemplate] = React.useState<string | null>(null);
   const isMobile = useIsMobile();
   const composerProtected =
     disabled &&
@@ -2007,7 +2010,7 @@ function Composer({
   }, [quickReplies, qrFilter]);
 
   const resolveVariables = React.useCallback(
-    (value: string) => resolveMessageVariables(value, variableContext),
+    (value: string) => resolveMessageVariables(value, { ...variableContext, now: new Date() }),
     [variableContext],
   );
 
@@ -2020,11 +2023,14 @@ function Composer({
       setSequence(draft);
       setSequenceError("");
       setText("");
+      setPendingVariableTemplate(null);
       clearPendingFiles();
     } else {
       quickReplyDrafts.delete(draftKey);
       setSequence(null);
-      setText(resolveVariables(items[0]?.text ?? qr.texto));
+      const template = items[0]?.text ?? qr.texto;
+      setPendingVariableTemplate(template);
+      setText(resolveVariables(template));
     }
     setPendingCloseAfter(!!qr.close_on_send);
     setShowQR(false);
@@ -2051,6 +2057,7 @@ function Composer({
       return `${prefix}@${mentionToken(mention.label, mention.phone)} `;
     });
     setText(`${replaced}${afterCursor}`);
+    setPendingVariableTemplate(null);
     setMentionFilter(null);
     setTimeout(() => textareaRef.current?.focus(), 0);
   };
@@ -2078,7 +2085,7 @@ function Composer({
           if (!item.attachment)
             return messageApi.sendText(
               conversationId,
-              item.text,
+              item.templateText ?? item.text,
               item.clientMessageId,
               replyTo?.id ?? null,
             );
@@ -2096,7 +2103,7 @@ function Composer({
             fileName: attachment.fileName,
             mimeType: attachment.mimeType,
             mediaType,
-            caption: item.text || null,
+            caption: (item.templateText ?? item.text) || null,
             clientMessageId: item.clientMessageId,
             quotedMessageId: replyTo?.id ?? null,
           });
@@ -2112,6 +2119,7 @@ function Composer({
       quickReplyDrafts.delete(draftKey);
       setSequence(null);
       setText("");
+      setPendingVariableTemplate(null);
       setPendingCloseAfter(false);
       setShowQR(false);
       setQrFilter("");
@@ -2143,7 +2151,7 @@ function Composer({
       await sendQuickReply(sequence);
       return;
     }
-    let t = text.trim();
+    let t = (pendingVariableTemplate ?? text).trim();
     let closeAfter = pendingCloseAfter;
     // Expand quick reply shortcut like "/bd" → full text
     if (allowQuickReplies && t.startsWith("/")) {
@@ -2156,14 +2164,14 @@ function Composer({
         if (items.length > 1 || items[0]?.attachment) {
           setShowQR(false);
           setText("");
+          setPendingVariableTemplate(null);
           await sendQuickReply(createSequence(match, resolveVariables));
           return;
         }
-        t = resolveVariables(items[0]?.text ?? match.texto);
+        t = items[0]?.text ?? match.texto;
         closeAfter = closeAfter || !!match.close_on_send;
       }
     }
-    t = resolveVariables(t);
     if (pendingFiles.length) {
       setMediaSending(true);
       const snapshot = [...pendingFiles];
@@ -2188,6 +2196,7 @@ function Composer({
         );
         if (sentItems.length) {
           if (sentItems.some((item) => item.carriesContext)) setText("");
+          if (sentItems.some((item) => item.carriesContext)) setPendingVariableTemplate(null);
           void messageApi
             .markRead(conversationId)
             .then(() => qc.invalidateQueries({ queryKey: ["trixus", "conversations"] }));
@@ -2198,6 +2207,7 @@ function Composer({
           return;
         }
         setText("");
+        setPendingVariableTemplate(null);
         return;
       } catch (e) {
         toast.error((e as Error).message);
@@ -2213,6 +2223,7 @@ function Composer({
     try {
       await messageApi.sendText(conversationId, t, crypto.randomUUID(), replyTo?.id ?? null);
       setText("");
+      setPendingVariableTemplate(null);
       setShowQR(false);
       setQrFilter("");
       setPendingCloseAfter(false);
@@ -2755,6 +2766,7 @@ function Composer({
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
+                setPendingVariableTemplate(null);
                 emitTypingStart();
                 if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
                 typingStopTimerRef.current = window.setTimeout(emitTypingStop, 2500);
@@ -2854,11 +2866,16 @@ function Composer({
           open={showSchedule}
           onClose={() => setShowSchedule(false)}
           conversationId={conversationId}
-          initialContent={text}
+          initialContent={pendingVariableTemplate ?? text}
           identifier={`composer-${conversationId}-${Date.now()}`}
-          customFieldLabels={Object.keys(variableContext.customFields ?? {})}
+          customFields={(variableContext.customFieldValues ?? [])
+            .filter((field) => Boolean(field.variableKey?.trim()))
+            .map((field) => ({ label: field.label, variableKey: field.variableKey! }))}
           onSaved={(mode) => {
-            if (mode === "create") setText("");
+            if (mode === "create") {
+              setText("");
+              setPendingVariableTemplate(null);
+            }
           }}
         />
       </div>

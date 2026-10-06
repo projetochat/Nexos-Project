@@ -82,7 +82,7 @@ it("reuses the rich editor, custom variables and a saved attachment while editin
             conversationId="conversation-1"
             initialContent="Mensagem inicial"
             identifier="composer-1"
-            customFieldLabels={["Código do cliente"]}
+            customFields={[{ label: "Código do cliente", variableKey: "codigo_cliente" }]}
           />
         </QueryClientProvider>,
       ),
@@ -96,6 +96,11 @@ it("reuses the rich editor, custom variables and a saved attachment while editin
     const variables = document.querySelector<HTMLButtonElement>('[aria-label="Inserir variável"]')!;
     await React.act(async () => variables.click());
     expect(document.body.textContent).toContain("{{codigo_cliente}}");
+    expect(
+      document.querySelector(
+        '[aria-label*="Inserir variável {{codigo_cliente}}: Campo adicional: Código do cliente."]',
+      ),
+    ).not.toBeNull();
 
     const edit = document.querySelector<HTMLButtonElement>('[aria-label="Editar agendamento"]')!;
     await React.act(async () => edit.click());
