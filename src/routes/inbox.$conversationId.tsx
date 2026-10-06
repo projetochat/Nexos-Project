@@ -67,6 +67,7 @@ import {
   type SequenceDraft,
 } from "@/lib/quick-reply-sequence";
 import { useSession } from "@/lib/session";
+import { conversationAuthorizationScope } from "@/lib/conversation-query-authorization";
 import { conversationTimestamp, fmtDate, fmtLogStamp } from "@/lib/format";
 import { useQueuePrefs } from "@/lib/queue-prefs";
 import { useChatPerms } from "@/lib/perms";
@@ -317,6 +318,7 @@ function ConversationPage() {
   const { conversationId } = Route.useParams();
   const inboxTab = React.useSyncExternalStore(subscribeInboxTab, getInboxTab, getInboxTab);
   const user = useSession((s) => s.user);
+  const conversationScope = conversationAuthorizationScope(user);
   const entitlements = useTenantEntitlements();
   const modules = tenantModules(entitlements.data?.features);
   const qc = useQueryClient();
@@ -327,7 +329,7 @@ function ConversationPage() {
     error: conversationError,
     isLoading: conversationLoading,
   } = useQuery({
-    queryKey: ["trixus", "conversations", conversationId],
+    queryKey: ["trixus", "conversations", conversationId, conversationScope],
     queryFn: () => conversationApi.get(conversationId),
     retry: (failureCount, error) =>
       !(error instanceof TrixusApiError && error.status === 404) && failureCount < 3,
@@ -2902,6 +2904,8 @@ export function ContactPanel({
   onClose: () => void;
 }) {
   const perms = useChatPerms();
+  const user = useSession((state) => state.user);
+  const conversationScope = conversationAuthorizationScope(user);
   const qc = useQueryClient();
   const tagsModal = useDisclosure();
 
@@ -2914,7 +2918,7 @@ export function ContactPanel({
   const [blocked, setBlocked] = React.useState(false);
 
   const { data: contact } = useQuery({
-    queryKey: ["trixus", "contacts", contactId],
+    queryKey: ["trixus", "contacts", contactId, conversationScope],
     queryFn: () => crmApi.getContact(contactId),
   });
   const { data: customersPage } = useQuery({

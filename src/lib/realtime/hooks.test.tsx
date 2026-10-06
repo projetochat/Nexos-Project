@@ -177,6 +177,54 @@ describe("useRealtimeInbox render stability", () => {
     );
     client.clear();
   });
+
+  it("invalidates only authorized endpoint caches for a neutral contact.updated event", async () => {
+    vi.stubEnv("VITE_TRIXUS_REALTIME_ENABLED", "true");
+    localStorage.setItem("trixus.api.accessToken", "access");
+    const { useSession } = await import("@/lib/session");
+    const { useInstanceAccessUpdates } = await import("./hooks");
+    useSession.setState({ user: user(), hydrated: true });
+    const client = new QueryClient();
+    client.setQueryData(["trixus", "contacts", "contact-a"], { id: "contact-a" });
+    client.setQueryData(["trixus", "conversations", "scope"], { items: [] });
+    client.setQueryData(["operations", "history", "scope"], { items: [] });
+    client.setQueryData(["trixus", "contact_protocols", "contact-a"], []);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    function Probe() {
+      useInstanceAccessUpdates();
+      return null;
+    }
+    try {
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <Probe />
+          </QueryClientProvider>,
+        ),
+      );
+      await act(async () =>
+        lastSocket?.on.mock.calls.find(([name]) => name === "contact.updated")?.[1]({
+          eventId: "contact-event",
+          event: "contact.updated",
+          version: 1,
+          occurredAt: new Date().toISOString(),
+          data: { contactId: "contact-a" },
+        }),
+      );
+      expect(client.getQueryState(["trixus", "contacts", "contact-a"])?.isInvalidated).toBe(true);
+      expect(client.getQueryState(["trixus", "conversations", "scope"])?.isInvalidated).toBe(true);
+      expect(client.getQueryState(["operations", "history", "scope"])?.isInvalidated).toBe(true);
+      expect(
+        client.getQueryState(["trixus", "contact_protocols", "contact-a"])?.isInvalidated,
+      ).toBe(true);
+    } finally {
+      await act(async () => root.unmount());
+      client.clear();
+      host.remove();
+    }
+  });
 });
 
 function user(): SessionUser {

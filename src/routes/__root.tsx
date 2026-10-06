@@ -8,7 +8,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
@@ -16,6 +16,12 @@ import { FAVICON_HREF } from "../lib/favicon";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { ThemeProvider } from "../components/theme-provider";
 import { appTitleForHostname, surfaceRedirect } from "../lib/app-surface";
+import { useSession } from "@/lib/session";
+import {
+  clearStaleConversationAuthorizationCache,
+  conversationAuthorizationScope,
+} from "@/lib/conversation-query-authorization";
+import { disconnectRealtime } from "@/lib/realtime/client";
 
 function NotFoundComponent() {
   return (
@@ -163,6 +169,7 @@ function RootComponent() {
       <ThemeProvider>
         <HostSurfaceGate>
           <SessionHydrator />
+          <SessionAuthorizationBoundary queryClient={queryClient} />
           <Outlet />
           <Toaster
             position="top-right"
@@ -178,6 +185,24 @@ function RootComponent() {
       </ThemeProvider>
     </QueryClientProvider>
   );
+}
+
+function SessionAuthorizationBoundary({ queryClient }: { queryClient: QueryClient }) {
+  const user = useSession((state) => state.user);
+  const impersonating = useSession((state) => state.impersonating);
+  const scope = conversationAuthorizationScope(user);
+  const fingerprint = `${scope}:${impersonating?.sessionId ?? "direct"}`;
+  const previousFingerprint = useRef<string | null>(null);
+
+  useEffect(() => {
+    const previous = previousFingerprint.current;
+    previousFingerprint.current = fingerprint;
+    if (previous === null || previous === fingerprint) return;
+    disconnectRealtime();
+    void clearStaleConversationAuthorizationCache(queryClient, scope);
+  }, [fingerprint, queryClient, scope]);
+
+  return null;
 }
 
 function HostSurfaceGate({ children }: { children: ReactNode }) {

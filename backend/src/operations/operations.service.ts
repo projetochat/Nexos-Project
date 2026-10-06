@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+} from "@nestjs/common";
 import {
   ConversationStatus,
   LeadStatus,
@@ -9,6 +15,10 @@ import {
 } from "../generated/prisma";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AuthenticatedUser } from "../auth/auth.types";
+import {
+  canReadContactAdditionalFields,
+  projectContactAdditionalFields,
+} from "../auth/contact-additional-fields-access";
 import { closedConversationWhere, OperationsMetricsService } from "./operations-metrics.service";
 import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
 
@@ -41,7 +51,15 @@ type OperationalQuery = {
 };
 
 const conversationInclude = {
-  contact: { include: { customer: true } },
+  contact: {
+    include: {
+      customer: true,
+      customFieldValues: {
+        where: { field: { archivedAt: null } },
+        include: { field: true },
+      },
+    },
+  },
   department: true,
   assignedMembership: { include: { user: { select: { id: true, name: true, email: true } } } },
   connection: true,
@@ -84,11 +102,7 @@ export class OperationsService {
         scopedQuery,
         tenant?.timezone ?? "America/Sao_Paulo",
       ),
-      this.recentConversations(
-        current.tenantId,
-        conversationVisibilityWhere(current),
-        current.permissions?.includes("chat.phone.read"),
-      ),
+      this.recentConversations(current.tenantId, conversationVisibilityWhere(current), current),
     ]);
     return {
       range: serializeRange(range),
@@ -125,6 +139,9 @@ export class OperationsService {
     const groupBy = query.groupBy;
 
     if (groupBy.startsWith("custom:")) {
+      if (!canReadContactAdditionalFields(current)) {
+        throw new ForbiddenException("Sem permissão para consultar campos adicionais.");
+      }
       const fieldId = groupBy.slice("custom:".length);
       const field = await this.prisma.contactCustomField.findFirst({
         where: { id: fieldId, tenantId: current.tenantId, archivedAt: null },
@@ -285,9 +302,7 @@ export class OperationsService {
       pageSize,
     });
     return {
-      items: items.map((conversation) =>
-        serializeConversation(conversation, current.permissions?.includes("chat.phone.read")),
-      ),
+      items: items.map((conversation) => serializeConversation(conversation, current)),
       total,
       page,
       pageSize,
@@ -374,10 +389,7 @@ export class OperationsService {
         : []),
     ].sort((a, b) => a.at.getTime() - b.at.getTime());
     return {
-      conversation: serializeConversation(
-        conversation,
-        current.permissions?.includes("chat.phone.read"),
-      ),
+      conversation: serializeConversation(conversation, current),
       items: events.map((item) => ({ ...item, at: item.at.toISOString() })),
     };
   }
@@ -734,8 +746,8 @@ export class OperationsService {
 
   private recentConversations(
     tenantId: string,
-    scope: Prisma.ConversationWhereInput = {},
-    canViewPhone = false,
+    scope: Prisma.ConversationWhereInput,
+    current: AuthenticatedUser,
   ) {
     return this.prisma.conversation
       .findMany({
@@ -744,9 +756,7 @@ export class OperationsService {
         orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
         take: 7,
       })
-      .then((items) =>
-        items.map((conversation) => serializeConversation(conversation, canViewPhone)),
-      );
+      .then((items) => items.map((conversation) => serializeConversation(conversation, current)));
   }
 }
 
@@ -808,8 +818,15 @@ function parseConversationStatus(status?: string) {
 
 function serializeConversation(
   conversation: Prisma.ConversationGetPayload<{ include: typeof conversationInclude }>,
-  canViewPhone = false,
+  current: Pick<AuthenticatedUser, "roleKey" | "permissions">,
 ) {
+  const canViewPhone = current.permissions?.includes("chat.phone.read") === true;
+  const additionalFields = projectContactAdditionalFields(
+    conversation.tenantId,
+    conversation.contact.customFieldValues,
+    current,
+    { serializeType: (type) => type.toLowerCase() },
+  );
   return {
     id: conversation.id,
     tenantId: conversation.tenantId,
@@ -835,6 +852,7 @@ function serializeConversation(
             cor: conversation.contact.customer.color,
           }
         : null,
+      ...additionalFields,
     },
     department: conversation.department
       ? {

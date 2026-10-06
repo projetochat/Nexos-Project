@@ -20,6 +20,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { AuthenticatedUser } from "../auth/auth.types";
+import { projectContactAdditionalFields } from "../auth/contact-additional-fields-access";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
@@ -120,7 +121,7 @@ export class ConversationsController {
 
     return {
       ...paginated(
-        items.map((conversation) => this.serialize(conversation)),
+        items.map((conversation) => this.serialize(conversation, current)),
         total,
         page,
         pageSize,
@@ -137,7 +138,7 @@ export class ConversationsController {
       tenantId: current.tenantId,
       contacts: conversation.contact ? [conversation.contact] : [],
     });
-    return this.serialize(conversation);
+    return this.serialize(conversation, current);
   }
 
   @Post()
@@ -277,17 +278,15 @@ export class ConversationsController {
       this.realtime.publishConversationCreated({
         tenantId: current.tenantId,
         conversationId: result.conversation.id,
-        conversation: this.serialize(result.conversation),
       });
     } else if (result.updated) {
       this.realtime.publishConversationUpdated({
         tenantId: current.tenantId,
         conversationId: result.conversation.id,
-        conversation: this.serialize(result.conversation),
         reason: "assignment.updated",
       });
     }
-    return this.serialize(result.conversation);
+    return this.serialize(result.conversation, current);
   }
 
   @Patch(":id/assignee")
@@ -380,11 +379,10 @@ export class ConversationsController {
     this.realtime.publishConversationUpdated({
       tenantId: current.tenantId,
       conversationId: updated.id,
-      conversation: this.serialize(updated),
       reason: "assignment.updated",
     });
 
-    return this.serialize(updated);
+    return this.serialize(updated, current);
   }
 
   @Patch(":id/department")
@@ -445,10 +443,9 @@ export class ConversationsController {
     this.realtime.publishConversationUpdated({
       tenantId: current.tenantId,
       conversationId: updated.id,
-      conversation: this.serialize(updated),
       reason: "department.updated",
     });
-    return this.serialize(updated);
+    return this.serialize(updated, current);
   }
 
   @Post("bulk-close")
@@ -676,7 +673,6 @@ export class ConversationsController {
     this.realtime.publishConversationUpdated({
       tenantId: current.tenantId,
       conversationId: updated.id,
-      conversation: this.serialize(updated),
       reason: "status.updated",
     });
     if (conversation.assignedMembershipId !== updated.assignedMembershipId) {
@@ -690,7 +686,7 @@ export class ConversationsController {
       });
     }
 
-    return this.serialize(updated);
+    return this.serialize(updated, current);
   }
 
   private async buildWhere(
@@ -1030,12 +1026,13 @@ export class ConversationsController {
     );
   }
 
-  private serialize(conversation: ConversationWithRelations) {
-    const customFieldValues =
-      conversation.contact?.customFieldValues.filter(
-        (item) =>
-          item.tenantId === conversation.tenantId && item.field.tenantId === conversation.tenantId,
-      ) ?? [];
+  private serialize(conversation: ConversationWithRelations, current: AuthenticatedUser) {
+    const additionalFields = projectContactAdditionalFields(
+      conversation.tenantId,
+      conversation.contact?.customFieldValues ?? [],
+      current,
+      { serializeType: (type) => type.toLowerCase() },
+    );
     return {
       id: conversation.id,
       tenantId: conversation.tenantId,
@@ -1101,17 +1098,7 @@ export class ConversationsController {
               nome: item.tag.name,
               cor: item.tag.color,
             })),
-            customFields: Object.fromEntries(
-              customFieldValues.map((item) => [item.fieldId, item.value ?? ""]),
-            ),
-            customFieldValues: customFieldValues.map((item) => ({
-              fieldId: item.fieldId,
-              label: item.field.label,
-              variableKey: item.field.variableKey,
-              type: item.field.type.toLowerCase(),
-              mask: item.field.mask,
-              value: item.value,
-            })),
+            ...additionalFields,
             createdAt: conversation.contact.createdAt,
             updatedAt: conversation.contact.updatedAt,
           }

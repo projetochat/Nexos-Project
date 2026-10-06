@@ -31,6 +31,7 @@ import {
   type ActiveConversationRequest,
 } from "@/components/active-conversation-orchestrator";
 import { canStartActiveConversation } from "@/lib/active-conversation-permissions";
+import { conversationAuthorizationScope } from "@/lib/conversation-query-authorization";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -119,7 +120,9 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const bulkClose = useDisclosure();
   const queuePrefs = useQueuePrefs();
   const perms = useChatPerms();
-  const permissions = useSession((state) => state.user?.permissions ?? []);
+  const user = useSession((state) => state.user);
+  const permissions = user?.permissions ?? [];
+  const conversationScope = conversationAuthorizationScope(user);
   const canStartConversation =
     permissions.includes("messages.send") && permissions.includes("contacts.read");
   const canBulkClose = permissions.includes("messages.send");
@@ -163,9 +166,10 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
       [
         "trixus",
         "conversations",
+        conversationScope,
         { tab, source, onlyUnread, query, selectedCliente, selectedInstancia },
       ] as const,
-    [onlyUnread, query, selectedCliente, selectedInstancia, source, tab],
+    [conversationScope, onlyUnread, query, selectedCliente, selectedInstancia, source, tab],
   );
   const { data: conversationsPage, isLoading } = useQuery({
     queryKey: conversationListQueryKey,

@@ -7,6 +7,8 @@ import {
 import { ConversationsController } from "./conversations.controller";
 
 describe("ConversationsController contact variable context", () => {
+  const current = (permissions: string[] = []) =>
+    ({ tenantId: "tenant-a", roleKey: "agent", permissions }) as never;
   function conversation(contactDepartmentTenantId: string) {
     const now = new Date("2026-10-05T12:00:00.000Z");
     return {
@@ -64,7 +66,9 @@ describe("ConversationsController contact variable context", () => {
       {} as never,
     );
 
-    expect(controller["serialize"](conversation("tenant-a") as never).contact).toMatchObject({
+    expect(
+      controller["serialize"](conversation("tenant-a") as never, current()).contact,
+    ).toMatchObject({
       contactDepartmentId: "contact-department-a",
       contactDepartment: { id: "contact-department-a", nome: "Financeiro", cor: "#123456" },
     });
@@ -78,7 +82,9 @@ describe("ConversationsController contact variable context", () => {
       {} as never,
     );
 
-    expect(controller["serialize"](conversation("tenant-b") as never).contact).toMatchObject({
+    expect(
+      controller["serialize"](conversation("tenant-b") as never, current()).contact,
+    ).toMatchObject({
       contactDepartmentId: null,
       contactDepartment: null,
     });
@@ -124,7 +130,9 @@ describe("ConversationsController contact variable context", () => {
       },
     };
 
-    expect(controller["serialize"](value)).toMatchObject({
+    expect(
+      controller["serialize"](value, current(["contacts.additional_fields.read"])),
+    ).toMatchObject({
       connection: { id: "connection-a", timezone: "America/Manaus" },
       contact: {
         customFieldValues: [
@@ -138,6 +146,103 @@ describe("ConversationsController contact variable context", () => {
         ],
       },
     });
+  });
+
+  it("does not return additional-field keys without the specific permission", () => {
+    const controller = new ConversationsController(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const base = conversation("tenant-a");
+    const value = {
+      ...base,
+      contact: {
+        ...base.contact,
+        customFieldValues: [
+          {
+            tenantId: "tenant-a",
+            fieldId: "field-a",
+            value: "segredo",
+            field: {
+              tenantId: "tenant-a",
+              label: "Código",
+              variableKey: "codigo",
+              type: "TEXT",
+              mask: null,
+            },
+          },
+        ],
+      },
+    };
+
+    for (const permissions of [["conversations.read"], ["contacts.read", "conversations.read"]]) {
+      const serialized = controller["serialize"](value, current(permissions));
+      expect(serialized.contact).not.toHaveProperty("customFields");
+      expect(serialized.contact).not.toHaveProperty("customFieldValues");
+      expect(JSON.stringify(serialized)).not.toContain("variableKey");
+      expect(JSON.stringify(serialized)).not.toContain("segredo");
+    }
+  });
+
+  it("applies the same authorization to list and detail endpoints", async () => {
+    const base = conversation("tenant-a");
+    const value = {
+      ...base,
+      contact: {
+        ...base.contact,
+        customFieldValues: [
+          {
+            tenantId: "tenant-a",
+            fieldId: "field-a",
+            value: "segredo",
+            field: {
+              tenantId: "tenant-a",
+              label: "Código",
+              variableKey: "codigo",
+              type: "TEXT",
+              mask: null,
+            },
+          },
+        ],
+      },
+    };
+    const prisma = {
+      conversation: {
+        findMany: vi.fn().mockResolvedValue([value]),
+        findFirst: vi.fn().mockResolvedValue(value),
+        count: vi.fn().mockResolvedValue(1),
+      },
+      $transaction: vi.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
+    };
+    const controller = new ConversationsController(
+      prisma as never,
+      {} as never,
+      {} as never,
+      { enqueueMissing: vi.fn() } as never,
+    );
+
+    const listed = await controller.list({} as never, current(["conversations.read"]));
+    expect(listed.items[0].contact).not.toHaveProperty("customFields");
+    expect(listed.items[0].contact).not.toHaveProperty("customFieldValues");
+    expect(JSON.stringify(listed)).not.toContain("variableKey");
+
+    const detailed = await controller.detail(
+      "conversation-a",
+      current(["contacts.additional_fields.read"]),
+    );
+    expect(detailed.contact?.customFieldValues).toEqual([
+      expect.objectContaining({ variableKey: "codigo", value: "segredo" }),
+    ]);
+
+    const adminDetail = await controller.detail("conversation-a", {
+      tenantId: "tenant-a",
+      roleKey: "tenant_admin",
+      permissions: ["conversations.read"],
+    } as never);
+    expect(adminDetail.contact).not.toHaveProperty("customFields");
+    expect(adminDetail.contact).not.toHaveProperty("customFieldValues");
   });
 });
 

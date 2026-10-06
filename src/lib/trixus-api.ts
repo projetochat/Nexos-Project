@@ -267,7 +267,7 @@ export type ApiContact = {
   instanceIds: string[];
   customer: Pick<ApiCustomer, "id" | "nome" | "cor"> | null;
   tags: ApiTag[];
-  customFields: Record<string, string>;
+  customFields?: Record<string, string>;
   customFieldValues?: Array<{
     fieldId: string;
     label: string;

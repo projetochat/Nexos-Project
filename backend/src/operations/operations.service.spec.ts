@@ -115,9 +115,118 @@ describe("conversation visibility in operational history", () => {
       }),
     );
   });
+
+  it.each([
+    [[], false],
+    [["contacts.additional_fields.read"], true],
+  ] as const)(
+    "applies additional-field permission in history for %j",
+    async (permissions, allowed) => {
+      const now = new Date("2026-10-06T12:00:00.000Z");
+      const conversation = {
+        id: "conversation-a",
+        tenantId: "tenant-a",
+        contactId: "contact-a",
+        departmentId: null,
+        assignedMembershipId: null,
+        status: "FECHADA",
+        protocol: "000001",
+        createdAt: now,
+        updatedAt: now,
+        closedAt: now,
+        lastMessageAt: now,
+        lastMessagePreview: "Encerrada",
+        unreadCount: 0,
+        contact: {
+          id: "contact-a",
+          name: "Ana",
+          phone: "5511999990000",
+          customer: null,
+          customFieldValues: [
+            {
+              tenantId: "tenant-a",
+              fieldId: "field-a",
+              value: "segredo",
+              field: {
+                tenantId: "tenant-a",
+                label: "Código",
+                variableKey: "codigo",
+                type: "TEXT",
+                mask: null,
+              },
+            },
+            {
+              tenantId: "tenant-b",
+              fieldId: "field-b",
+              value: "outra-tenant",
+              field: {
+                tenantId: "tenant-b",
+                label: "Código B",
+                variableKey: "codigo_b",
+                type: "TEXT",
+                mask: null,
+              },
+            },
+          ],
+        },
+        department: null,
+        assignedMembership: null,
+        connection: null,
+      };
+      const prisma = {
+        tenant: { findUnique: vi.fn().mockResolvedValue({ timezone: "America/Sao_Paulo" }) },
+        conversation: {
+          findMany: vi.fn().mockResolvedValue([conversation]),
+          count: vi.fn().mockResolvedValue(1),
+        },
+        $transaction: vi.fn(async (queries: Promise<unknown>[]) => Promise.all(queries)),
+      };
+      const service = new OperationsService(prisma as never, {} as never);
+
+      const result = await service.history(
+        {
+          tenantId: "tenant-a",
+          membershipId: "membership-a",
+          roleKey: "agent",
+          connectionIds: [],
+          chatDepartmentIds: [],
+          permissions: [...permissions],
+        } as never,
+        { period: "30d" },
+      );
+      const serialized = result.items[0].contact as Record<string, unknown>;
+      if (!allowed) {
+        expect(serialized).not.toHaveProperty("customFields");
+        expect(serialized).not.toHaveProperty("customFieldValues");
+        expect(JSON.stringify(result)).not.toContain("variableKey");
+      } else {
+        expect(serialized.customFields).toEqual({ "field-a": "segredo" });
+        expect(serialized.customFieldValues).toEqual([
+          expect.objectContaining({ variableKey: "codigo", value: "segredo" }),
+        ]);
+        expect(JSON.stringify(result)).not.toContain("codigo_b");
+      }
+    },
+  );
 });
 
 describe("dashboard configurable contact data", () => {
+  it("rejects custom-field grouping without the specific permission", async () => {
+    const prisma = {
+      tenant: { findUnique: vi.fn().mockResolvedValue({ timezone: "America/Sao_Paulo" }) },
+      contactCustomField: { findFirst: vi.fn() },
+    };
+    const service = new OperationsService(prisma as never, {} as never);
+
+    await expect(
+      service.dashboardComponentData(
+        { tenantId: "tenant-a", roleKey: "agent", permissions: ["contacts.read"] } as never,
+        { period: "today", groupBy: "custom:field-a" },
+      ),
+    ).rejects.toThrow("Sem permissão para consultar campos adicionais.");
+    expect(prisma.contactCustomField.findFirst).not.toHaveBeenCalled();
+  });
+
   it("groups only tenant-scoped contacts allowed by the dashboard filters", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-28T15:00:00.000Z"));
@@ -177,10 +286,17 @@ describe("dashboard configurable contact data", () => {
     const service = new OperationsService(prisma as never, {} as never);
 
     await expect(
-      service.dashboardComponentData({ tenantId: "tenant-a", roleKey: "tenant_admin" } as never, {
-        period: "today",
-        groupBy: "custom:field-from-another-tenant",
-      }),
+      service.dashboardComponentData(
+        {
+          tenantId: "tenant-a",
+          roleKey: "tenant_admin",
+          permissions: ["contacts.additional_fields.read"],
+        } as never,
+        {
+          period: "today",
+          groupBy: "custom:field-from-another-tenant",
+        },
+      ),
     ).rejects.toThrow("Campo personalizado inválido.");
   });
 
@@ -199,7 +315,11 @@ describe("dashboard configurable contact data", () => {
     const service = new OperationsService(prisma as never, {} as never);
 
     const result = await service.dashboardComponentData(
-      { tenantId: "tenant-a", roleKey: "tenant_admin" } as never,
+      {
+        tenantId: "tenant-a",
+        roleKey: "tenant_admin",
+        permissions: ["contacts.additional_fields.read"],
+      } as never,
       { period: "today", groupBy: "custom:field-a" },
     );
 

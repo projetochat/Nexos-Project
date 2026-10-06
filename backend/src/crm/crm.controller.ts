@@ -27,6 +27,7 @@ import {
 } from "class-validator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
+import { projectContactAdditionalFields } from "../auth/contact-additional-fields-access";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
@@ -41,7 +42,6 @@ import { PrismaService } from "../prisma/prisma.service";
 import {
   isHtmlContactCustomField,
   sanitizeContactCustomFieldHtml,
-  sanitizeContactCustomFieldValueForOutput,
 } from "./contact-custom-field-html";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { RealtimePublisher } from "../realtime/realtime.publisher";
@@ -367,7 +367,7 @@ export class CrmController {
     });
     return contacts.map((contact) =>
       this.serializeContact(contact, {
-        includeAdditionalFields: this.canReadAdditionalFields(current),
+        additionalFieldsViewer: current,
       }),
     );
   }
@@ -427,7 +427,7 @@ export class CrmController {
       return paginated(
         items.map((contact) =>
           this.serializeContact(contact, {
-            includeAdditionalFields: this.canReadAdditionalFields(current),
+            additionalFieldsViewer: current,
           }),
         ),
         total,
@@ -455,7 +455,7 @@ export class CrmController {
     return paginated(
       items.map((contact) =>
         this.serializeContact(contact, {
-          includeAdditionalFields: this.canReadAdditionalFields(current),
+          additionalFieldsViewer: current,
         }),
       ),
       total,
@@ -578,7 +578,7 @@ export class CrmController {
   }
 
   @Post("contact-custom-fields")
-  @RequirePermissions("contacts.create")
+  @RequirePermissions("contacts.create", "contacts.additional_fields.read")
   async createContactCustomField(
     @Body() dto: ContactCustomFieldDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -609,7 +609,7 @@ export class CrmController {
   }
 
   @Patch("contact-custom-fields/reorder")
-  @RequirePermissions("contacts.update")
+  @RequirePermissions("contacts.update", "contacts.additional_fields.read")
   async reorderContactCustomFields(
     @Body() dto: ReorderContactCustomFieldsDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -636,7 +636,7 @@ export class CrmController {
   }
 
   @Patch("contact-custom-fields/:id")
-  @RequirePermissions("contacts.update")
+  @RequirePermissions("contacts.update", "contacts.additional_fields.read")
   async updateContactCustomField(
     @Param("id") id: string,
     @Body() dto: ContactCustomFieldDto,
@@ -659,7 +659,7 @@ export class CrmController {
   }
 
   @Delete("contact-custom-fields/:id")
-  @RequirePermissions("contacts.delete")
+  @RequirePermissions("contacts.delete", "contacts.additional_fields.read")
   async deleteContactCustomField(
     @Param("id") id: string,
     @CurrentUser() current: AuthenticatedUser,
@@ -764,7 +764,7 @@ export class CrmController {
   async findContact(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const contact = await this.findContactOrThrow(id, current.tenantId);
     return this.serializeContact(contact, {
-      includeAdditionalFields: this.canReadAdditionalFields(current),
+      additionalFieldsViewer: current,
     });
   }
 
@@ -1268,7 +1268,7 @@ export class CrmController {
             include: contactInclude,
           });
           return this.serializeContact(contact, {
-            includeAdditionalFields: this.canReadAdditionalFields(current),
+            additionalFieldsViewer: current,
           });
         }
       }
@@ -1315,7 +1315,7 @@ export class CrmController {
       });
       return this.serializeContact(contact, {
         lifecycle: "restored",
-        includeAdditionalFields: this.canReadAdditionalFields(current),
+        additionalFieldsViewer: current,
       });
     }
     try {
@@ -1351,7 +1351,7 @@ export class CrmController {
       });
       return this.serializeContact(contact, {
         lifecycle: "created",
-        includeAdditionalFields: this.canReadAdditionalFields(current),
+        additionalFieldsViewer: current,
       });
     } catch (error) {
       handlePrismaError(error);
@@ -1451,12 +1451,9 @@ export class CrmController {
       this.realtime.publishContactUpdated({
         tenantId: current.tenantId,
         contactId: contact.id,
-        contact: this.serializeContact(contact, {
-          includeAdditionalFields: this.canReadAdditionalFields(current),
-        }),
       });
       return this.serializeContact(contact, {
-        includeAdditionalFields: this.canReadAdditionalFields(current),
+        additionalFieldsViewer: current,
       });
     } catch (error) {
       handlePrismaError(error);
@@ -1486,12 +1483,11 @@ export class CrmController {
       include: contactInclude,
     });
     const serialized = this.serializeContact(contact, {
-      includeAdditionalFields: this.canReadAdditionalFields(current),
+      additionalFieldsViewer: current,
     });
     this.realtime.publishContactUpdated({
       tenantId: current.tenantId,
       contactId: contact.id,
-      contact: serialized,
     });
     return serialized;
   }
@@ -1506,7 +1502,7 @@ export class CrmController {
       include: contactInclude,
     });
     return this.serializeContact(contact, {
-      includeAdditionalFields: this.canReadAdditionalFields(current),
+      additionalFieldsViewer: current,
     });
   }
 
@@ -2180,7 +2176,7 @@ export class CrmController {
     contact: Prisma.ContactGetPayload<{ include: typeof contactInclude }>,
     meta?: {
       lifecycle?: "created" | "restored";
-      includeAdditionalFields?: boolean;
+      additionalFieldsViewer?: Pick<AuthenticatedUser, "roleKey" | "permissions">;
     },
   ) {
     const customFieldValues = contact.customFieldValues.filter(
@@ -2225,35 +2221,15 @@ export class CrmController {
         ? { id: contact.customer.id, nome: contact.customer.name, cor: contact.customer.color }
         : null,
       tags: contact.tags.map((item) => this.serializeTag(item.tag)),
-      customFields: meta?.includeAdditionalFields
-        ? Object.fromEntries(
-            customFieldValues.map((item) => [
-              item.fieldId,
-              sanitizeContactCustomFieldValueForOutput(item.field, item.value),
-            ]),
-          )
-        : {},
-      customFieldValues: meta?.includeAdditionalFields
-        ? customFieldValues.map((item) => ({
-            fieldId: item.fieldId,
-            label: item.field.label,
-            variableKey: item.field.variableKey,
-            type: item.field.type,
-            mask: item.field.mask,
-            value: sanitizeContactCustomFieldValueForOutput(item.field, item.value),
-          }))
-        : [],
+      ...projectContactAdditionalFields(
+        contact.tenantId,
+        customFieldValues,
+        meta?.additionalFieldsViewer ?? { roleKey: "", permissions: [] },
+      ),
       lifecycle: meta?.lifecycle,
       createdAt: contact.createdAt,
       updatedAt: contact.updatedAt,
     };
-  }
-
-  private canReadAdditionalFields(current: AuthenticatedUser) {
-    return (
-      current.roleKey === "tenant_admin" ||
-      current.permissions?.includes("contacts.additional_fields.read") === true
-    );
   }
 
   private serializeContactCatalog(item: {

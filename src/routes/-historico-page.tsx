@@ -10,6 +10,7 @@ import {
   type ActiveConversationRequest,
 } from "@/components/active-conversation-orchestrator";
 import { canStartActiveConversation } from "@/lib/active-conversation-permissions";
+import { conversationAuthorizationScope } from "@/lib/conversation-query-authorization";
 import { DashboardFiltersBar } from "@/components/dashboard-filters";
 import {
   datesForOperationalPeriod,
@@ -86,6 +87,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const user = useSession((state) => state.user);
+  const conversationScope = conversationAuthorizationScope(user);
   const canStartConversation = canStartActiveConversation(user?.permissions);
   const canViewPhone = user?.permissions?.includes("chat.phone.read") ?? false;
   const filtersStorageKey = `trixus.history.filters.${user?.id ?? "anonymous"}`;
@@ -148,7 +150,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
   }, [initialConversationId]);
 
   const history = useQuery({
-    queryKey: ["operations", "history", filters],
+    queryKey: ["operations", "history", conversationScope, filters],
     queryFn: () => operationsApi.history(filters),
   });
   const conversations = React.useMemo(() => history.data?.items ?? [], [history.data?.items]);
@@ -162,11 +164,7 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
   React.useEffect(
     () =>
       onRealtimeEvent((event) => {
-        if (
-          event.event.startsWith("message.") ||
-          event.event.startsWith("conversation.") ||
-          event.event === "contact.updated"
-        ) {
+        if (event.event.startsWith("message.") || event.event.startsWith("conversation.")) {
           queryClient.invalidateQueries({ queryKey: ["operations", "history"] });
           if (activeId) {
             queryClient.invalidateQueries({ queryKey: ["history-messages", activeId] });

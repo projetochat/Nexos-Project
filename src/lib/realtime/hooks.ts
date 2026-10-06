@@ -28,10 +28,23 @@ export function useInstanceAccessUpdates(connect = true) {
   React.useEffect(() => {
     if (user && connect) void connectRealtime();
     return onRealtimeEvent((event) => {
-      if (event.event !== "instance-access.updated") return;
-      void hydrateSession().finally(() => {
-        void queryClient.cancelQueries().then(() => queryClient.resetQueries());
-      });
+      if (event.event === "instance-access.updated") {
+        void hydrateSession().finally(() => {
+          void queryClient.cancelQueries().then(() => queryClient.resetQueries());
+        });
+        return;
+      }
+      if (event.event === "contact.updated" || event.event === "contact.tags.updated") {
+        const data = event.data as { contactId?: string };
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "contacts"] });
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+        void queryClient.invalidateQueries({ queryKey: ["operations", "history"] });
+        if (data.contactId) {
+          void queryClient.invalidateQueries({
+            queryKey: ["trixus", "contact_protocols", data.contactId],
+          });
+        }
+      }
     });
   }, [connect, queryClient, user]);
 }
@@ -89,16 +102,6 @@ export function useRealtimeInbox(conversationId?: string | null) {
         void queryClient.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
         void queryClient.invalidateQueries({ queryKey: ["trixus", "chat-messaging-connections"] });
         void queryClient.invalidateQueries({ queryKey: ["trixus", "role-scope-options"] });
-      }
-      if (event.event === "contact.updated" || event.event === "contact.tags.updated") {
-        const data = event.data as { contactId?: string };
-        if (data.contactId) {
-          void queryClient.invalidateQueries({ queryKey: ["trixus", "contacts", data.contactId] });
-          void queryClient.invalidateQueries({
-            queryKey: ["trixus", "contact_protocols", data.contactId],
-          });
-          void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-        }
       }
     });
   }, [queryClient, user?.id]);
