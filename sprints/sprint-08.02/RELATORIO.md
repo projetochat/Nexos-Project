@@ -1,5 +1,9 @@
 # SPRINT 08.02 - RELATORIO FINAL
 
+> **HISTORICO — NAO EXECUTAR:** comandos Prisma deste relatorio registram um
+> ensaio antigo. Migracoes atuais usam exclusivamente o wrapper documentado em
+> `docs/PRODUCTION-AUTOMATION.md`.
+
 ## 1. Status
 
 Sprint corretiva implementada localmente para reset deterministico do banco de homologacao, seed minimo operacionalmente vazio e ciclo de vida de Contact com soft delete + restore.
@@ -97,7 +101,7 @@ Banco oficial criado e validado: `trixus_0802`.
 Variaveis oficiais:
 
 ```text
-DATABASE_URL=postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public
+DATABASE_URL=postgresql://trixus:change-me@localhost:5432/trixus_0802?schema=public
 REDIS_URL=redis://localhost:6379
 TRIXUS_QUEUE_ENABLED=true
 TRIXUS_QUEUE_WORKER_ENABLED=true

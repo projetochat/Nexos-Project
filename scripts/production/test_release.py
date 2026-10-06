@@ -129,40 +129,203 @@ class ReleaseTest(unittest.TestCase):
     def test_backup_failure_restarts_existing_apps_without_migration(self):
         with tempfile.TemporaryDirectory() as folder:
             commands = []
+            marker = Path(folder) / 'recovery-required'
             def run(args, **kwargs):
                 commands.append(args)
                 if 'pg_dump' in ' '.join(args):
                     raise CheckError('backup failed')
                 return ''
-            with patch.object(release, 'command', side_effect=run), self.assertRaises(CheckError):
-                release.publish(config(), {'backend': 'sha256:old', 'frontend': 'sha256:old2'}, {}, SHA, Path(folder))
+            with patch.object(release, 'command', side_effect=run), \
+                 patch.object(release, 'healthy_apps'), \
+                 patch.object(release, 'check_protected'), \
+                 patch.object(release.subprocess, 'run') as process, self.assertRaises(CheckError):
+                process.return_value.returncode = 1
+                release.publish(config(), {'backend': 'sha256:old', 'frontend': 'sha256:old2'},
+                                {}, SHA, Path(folder), marker)
             previous = json.loads((Path(folder) / 'previous-compose.json').read_text())
             self.assertEqual(previous['services']['backend']['mem_limit'], '768m')
             self.assertEqual(previous['services']['backend']['memswap_limit'], '768m')
             self.assertEqual(previous['services']['backend']['cap_drop'], ['ALL'])
             self.assertTrue(any('start' in command for command in commands))
-            self.assertFalse(any('prisma:migrate:deploy' in command for command in commands))
+            self.assertFalse(any('prisma:migrate:deploy' in command and '--preflight-only' not in command
+                                 for command in commands))
 
     def test_migration_failure_never_starts_old_app_or_restores_database(self):
         with tempfile.TemporaryDirectory() as folder:
             commands = []
+            marker = Path(folder) / 'recovery-required'
             def run(args, **kwargs):
                 commands.append(args)
                 if 'pg_dump' in ' '.join(args):
                     kwargs['output'].write(b'dump')
                 if '/usr/bin/tar' in args and '-cf' in args:
                     Path(args[args.index('-cf') + 1]).write_bytes(b'storage')
-                if 'prisma:migrate:deploy' in args:
+                if 'prisma:migrate:deploy' in args and '--preflight-only' not in args:
                     raise CheckError('migration failed')
                 return ''
             with patch.object(release, 'command', side_effect=run), \
                  patch.object(release, 'check_protected'), \
                  patch.object(release.subprocess, 'run') as process, self.assertRaises(CheckError):
                 process.return_value.returncode = 1
-                release.publish(config(), {'backend': 'sha256:old', 'frontend': 'sha256:old2'}, {}, SHA, Path(folder))
+                release.publish(config(), {'backend': 'sha256:old', 'frontend': 'sha256:old2'},
+                                {}, SHA, Path(folder), marker)
             self.assertFalse(any('start' in command or 'up' in command for command in commands))
             self.assertTrue(any('stop' in command for command in commands))
+            self.assertEqual(marker.read_text().strip(), str(Path(folder)))
             self.assertEqual((Path(folder) / 'status.txt').read_text().strip(), 'RECUPERACAO_MANUAL_NECESSARIA')
+
+    def test_initial_migration_preflight_fails_without_downtime_or_marker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            commands = []
+            marker = Path(folder) / 'recovery-required'
+
+            def run(args, **kwargs):
+                commands.append(args)
+                if '--preflight-only' in args:
+                    raise CheckError('preflight failed')
+                return ''
+
+            with patch.object(release, 'command', side_effect=run), \
+                 patch.object(release.subprocess, 'run') as process, self.assertRaises(CheckError):
+                process.return_value.returncode = 1
+                release.publish(config(), {'backend': 'sha256:old', 'frontend': 'sha256:old2'},
+                                {}, SHA, Path(folder), recovery_marker=marker)
+
+            self.assertFalse(marker.exists())
+            self.assertFalse(any('stop' in command or 'start' in command for command in commands))
+            self.assertFalse(any('pg_dump' in ' '.join(command) for command in commands))
+            self.assertFalse(any('prisma:migrate:deploy' in command and '--preflight-only' not in command
+                                 for command in commands))
+            self.assertEqual((Path(folder) / 'status.txt').read_text().strip(),
+                             'PREFLIGHT_REPROVADO_SEM_INDISPONIBILIDADE')
+
+    def test_second_preflight_failure_restarts_apps_and_clears_marker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            commands = []
+            marker = Path(folder) / 'recovery-required'
+            preflights = 0
+
+            def run(args, **kwargs):
+                nonlocal preflights
+                commands.append(args)
+                if '--preflight-only' in args:
+                    preflights += 1
+                    if preflights == 2:
+                        raise CheckError('drift after maintenance')
+                if 'pg_dump' in ' '.join(args):
+                    kwargs['output'].write(b'dump')
+                if '/usr/bin/tar' in args and '-cf' in args:
+                    Path(args[args.index('-cf') + 1]).write_bytes(b'storage')
+                return ''
+
+            with patch.object(release, 'command', side_effect=run), \
+                 patch.object(release, 'healthy_apps'), \
+                 patch.object(release, 'check_protected'), \
+                 patch.object(release.subprocess, 'run') as process, self.assertRaises(CheckError):
+                process.return_value.returncode = 1
+                release.publish(config(), {'backend': 'sha256:old', 'frontend': 'sha256:old2'},
+                                {}, SHA, Path(folder), recovery_marker=marker)
+
+            self.assertEqual(preflights, 2)
+            self.assertFalse(marker.exists())
+            self.assertTrue(any('stop' in command for command in commands))
+            self.assertTrue(any('start' in command for command in commands))
+            self.assertFalse(any('prisma:migrate:deploy' in command and '--preflight-only' not in command
+                                 for command in commands))
+            self.assertEqual((Path(folder) / 'status.txt').read_text().strip(),
+                             'FALHA_ANTES_DA_MIGRACAO_APLICACAO_ANTERIOR_REINICIADA')
+
+    def test_failed_restart_health_preserves_recovery_marker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            marker = Path(folder) / 'recovery-required'
+            preflights = 0
+
+            def run(args, **kwargs):
+                nonlocal preflights
+                if '--preflight-only' in args:
+                    preflights += 1
+                    if preflights == 2:
+                        raise CheckError('drift after maintenance')
+                if 'pg_dump' in ' '.join(args):
+                    kwargs['output'].write(b'dump')
+                if '/usr/bin/tar' in args and '-cf' in args:
+                    Path(args[args.index('-cf') + 1]).write_bytes(b'storage')
+                return ''
+
+            with patch.object(release, 'command', side_effect=run), \
+                 patch.object(release, 'healthy_apps', side_effect=CheckError('unhealthy')), \
+                 patch.object(release, 'check_protected'), \
+                 patch.object(release.subprocess, 'run') as process, self.assertRaises(CheckError):
+                process.return_value.returncode = 1
+                release.publish(config(), {'backend': 'sha256:old', 'frontend': 'sha256:old2'},
+                                {}, SHA, Path(folder), marker)
+
+            self.assertEqual(marker.read_text().strip(), str(Path(folder)))
+
+    def test_cleanup_failure_does_not_prevent_healthy_restart(self):
+        with tempfile.TemporaryDirectory() as folder:
+            commands = []
+            marker = Path(folder) / 'recovery-required'
+            preflights = 0
+
+            def run(args, **kwargs):
+                nonlocal preflights
+                commands.append(args)
+                if '--preflight-only' in args:
+                    preflights += 1
+                    if preflights == 2:
+                        raise CheckError('drift after maintenance')
+                if 'pg_dump' in ' '.join(args):
+                    kwargs['output'].write(b'dump')
+                if '/usr/bin/tar' in args and '-cf' in args:
+                    Path(args[args.index('-cf') + 1]).write_bytes(b'storage')
+                return ''
+
+            with patch.object(release, 'command', side_effect=run), \
+                 patch.object(release, 'healthy_apps') as healthy, \
+                 patch.object(release, 'check_protected'), \
+                 patch.object(release.subprocess, 'run', side_effect=CheckError('inspect failed')), \
+                 self.assertRaises(CheckError):
+                release.publish(config(), {'backend': 'sha256:old', 'frontend': 'sha256:old2'},
+                                {}, SHA, Path(folder), marker)
+
+            self.assertTrue(any('start' in command for command in commands))
+            healthy.assert_called_once_with(release.BASE)
+            self.assertEqual(marker.read_text().strip(), str(Path(folder)))
+            self.assertEqual((Path(folder) / 'status.txt').read_text().strip(),
+                             'APLICACAO_ANTERIOR_SAUDAVEL_LIMPEZA_MANUAL_NECESSARIA')
+
+    def test_release_orders_both_preflights_before_migration_application(self):
+        with tempfile.TemporaryDirectory() as folder:
+            commands = []
+            marker = Path(folder) / 'recovery-required'
+
+            def run(args, **kwargs):
+                commands.append(args)
+                if 'pg_dump' in ' '.join(args):
+                    kwargs['output'].write(b'dump')
+                if '/usr/bin/tar' in args and '-cf' in args:
+                    Path(args[args.index('-cf') + 1]).write_bytes(b'storage')
+                return ''
+
+            with patch.object(release, 'command', side_effect=run), \
+                 patch.object(release, 'check_protected'), \
+                 patch.object(release, 'healthy_apps'), \
+                 patch.object(release, 'STATE', Path(folder)):
+                release.publish(config(), {'backend': 'sha256:old', 'frontend': 'sha256:old2'},
+                                {}, SHA, Path(folder), recovery_marker=marker)
+
+            first_preflight = next(index for index, args in enumerate(commands)
+                                   if '--preflight-only' in args)
+            stop = next(index for index, args in enumerate(commands) if 'stop' in args)
+            second_preflight = next(index for index, args in enumerate(commands[first_preflight + 1:],
+                                      first_preflight + 1) if '--preflight-only' in args)
+            apply = next(index for index, args in enumerate(commands)
+                         if 'prisma:migrate:deploy' in args and '--preflight-only' not in args)
+            self.assertLess(first_preflight, stop)
+            self.assertLess(stop, second_preflight)
+            self.assertLess(second_preflight, apply)
+            self.assertFalse(marker.exists())
 
     def test_healthy_apps_uses_only_loopback_and_checks_trixus_identity(self):
         calls = []

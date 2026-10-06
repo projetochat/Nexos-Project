@@ -1,5 +1,9 @@
 # Sprint 10 - Inbox Domain Consolidation & Legacy Runtime Removal
 
+> **HISTORICO — NAO EXECUTAR:** comandos Prisma deste relatorio registram um
+> ensaio antigo. Migracoes atuais usam exclusivamente o wrapper documentado em
+> `docs/PRODUCTION-AUTOMATION.md`.
+
 Data: 2026-08-03
 
 ## Objetivo

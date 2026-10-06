@@ -103,9 +103,12 @@ const gates = bunAvailable
       ["backend:build:copy-prisma", process.execPath, ["backend/scripts/copy-prisma-client.mjs"]],
       [
         "backend:test-db:migrate",
-        backendBin("prisma"),
-        ["migrate", "deploy", "--schema", "backend/prisma/schema.prisma"],
-        { env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL } },
+        process.execPath,
+        ["scripts/migrate-deploy-safe.mjs"],
+        {
+          cwd: resolve(root, "backend"),
+          env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL },
+        },
       ],
       ["backend:test", backendBin("vitest"), ["run"], { cwd: resolve(root, "backend") }],
       ["redis:queue-smoke", process.execPath, ["backend/scripts/verify-redis-queue.mjs"]],

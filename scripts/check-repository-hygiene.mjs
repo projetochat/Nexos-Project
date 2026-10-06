@@ -85,7 +85,7 @@ const credentialFixtureHashes = new Map([
     "scripts/production/install.sh",
     "7a290c786aa9c8dca63fdea55f0223393d373044b406a7a53e1fbe2b725eeb01",
   ],
-  ["scripts/verify.mjs", "cd0ef5707a6db8f748250ba4ca176f4ce45cbd46c9fc22c87e36c6af16811d50"],
+  ["scripts/verify.mjs", "9ecf2161c8c55d0bf5c960441506578b04fda142d696e5b5747b833b64f2f2dc"],
   [
     "sprints/rc-sprint-15-2/hotfix-outbound-worker/RELATORIO.md",
     "107325f260e4bf882e8368af0cefb295191bfd30399091482e0a7453ccbc9ea1",

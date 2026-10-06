@@ -1,5 +1,10 @@
 # Deploy e Operacao
 
+> **CAMINHO OPERACIONAL VIGENTE (06/10/2026):** publicacao e migracoes devem
+> seguir [PRODUCTION-AUTOMATION.md](./PRODUCTION-AUTOMATION.md). Nunca execute
+> `prisma migrate deploy` diretamente; use somente o alias
+> `bun run backend:prisma:migrate:deploy`, que preserva o preflight.
+
 ## Build
 
 ```bash
@@ -119,7 +124,7 @@ GET http://localhost:3001/api/messaging/connections/health/evolution
 Cleanup explicito de fake/orphan connections de testes:
 
 ```powershell
-$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus?schema=public"
+$env:DATABASE_URL="postgresql://trixus:change-me@localhost:5432/trixus?schema=public"
 node backend/scripts/cleanup-messaging-connections.mjs --yes
 ```
 
@@ -179,10 +184,10 @@ Banco definitivo do recorte organizacional:
 
 ```powershell
 cd "C:\Users\Rabel\Downloads\Trixus Project"
-$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus?schema=public"
+$env:DATABASE_URL="postgresql://trixus:change-me@localhost:5432/trixus?schema=public"
 docker compose up -d postgres
 bun run backend:prisma:generate
-bun --cwd backend prisma migrate deploy --schema prisma/schema.prisma
+bun run backend:prisma:migrate:deploy
 bun run backend:prisma:seed
 ```
 
@@ -237,7 +242,7 @@ bun backend/scripts/verify-redis-queue.mjs
 Banco recomendado para a corretiva:
 
 ```powershell
-$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public"
+$env:DATABASE_URL="postgresql://trixus:change-me@localhost:5432/trixus_0801?schema=public"
 $env:REDIS_URL="redis://localhost:6379"
 $env:TRIXUS_QUEUE_ENABLED="true"
 $env:TRIXUS_QUEUE_WORKER_ENABLED="true"
@@ -268,7 +273,7 @@ bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao --confir
 Reset e somente local/homologacao. Nunca execute contra producao.
 
 ```powershell
-$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
+$env:DATABASE_URL="postgresql://trixus:change-me@localhost:5432/trixus_0802?schema=public"
 bun run --cwd backend reset:homologation -- --confirm
 ```
 
@@ -292,17 +297,17 @@ Variaveis oficiais:
 
 ```powershell
 $env:VITE_TRIXUS_API_URL="http://localhost:3001/api"
-$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
+$env:DATABASE_URL="postgresql://trixus:change-me@localhost:5432/trixus_0802?schema=public"
 $env:REDIS_URL="redis://localhost:6379"
 $env:SEED_MODE="homologation"
 $env:SEED_ADMIN_EMAIL="admin@trixus.app"
-$env:SEED_ADMIN_PASSWORD="demo1234"
-$env:JWT_SECRET="use-um-secret-forte"
-$env:JWT_REFRESH_SECRET="use-outro-secret-forte"
+$env:SEED_ADMIN_PASSWORD="change-me"
+$env:JWT_SECRET="change-me"
+$env:JWT_REFRESH_SECRET="change-me"
 $env:FRONTEND_ORIGIN="http://localhost:5173"
 ```
 
-`SEED_ADMIN_PASSWORD=demo1234` e apenas para local/homologacao. Nao use defaults em producao.
+`SEED_ADMIN_PASSWORD=change-me` e apenas um placeholder local. Nao use defaults em producao.
 
 Smoke oficial de login:
 
@@ -318,7 +323,7 @@ Variaveis obrigatorias para inbound real:
 
 ```powershell
 $env:EVOLUTION_WEBHOOK_PUBLIC_URL="http://host.docker.internal:3001/api/webhooks/evolution"
-$env:EVOLUTION_WEBHOOK_SECRET="use-um-secret-forte"
+$env:EVOLUTION_WEBHOOK_SECRET="change-me"
 ```
 
 `ensureWebhookConfigured(instanceName)` registra `enabled=true`, URL, eventos Evolution e header
@@ -357,9 +362,9 @@ O seed idempotente de homologacao pode ser executado sem reset para garantir Adm
 ```powershell
 $env:SEED_MODE="homologation"
 $env:SEED_ADMIN_EMAIL="admin@trixus.app"
-$env:SEED_ADMIN_PASSWORD="demo1234"
+$env:SEED_ADMIN_PASSWORD="change-me"
 $env:SEED_AGENT_EMAIL="atendente@trixus.app"
-$env:SEED_AGENT_PASSWORD="demo1234"
+$env:SEED_AGENT_PASSWORD="change-me"
 bun --cwd backend prisma db seed
 ```
 
@@ -368,7 +373,7 @@ bun --cwd backend prisma db seed
 Smoke oficial de startup backend em homologacao preservada:
 
 ```powershell
-$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
+$env:DATABASE_URL="postgresql://trixus:change-me@localhost:5432/trixus_0802?schema=public"
 $env:REDIS_URL="redis://localhost:6379"
 $env:TRIXUS_QUEUE_ENABLED="true"
 $env:TRIXUS_QUEUE_WORKER_ENABLED="true"
@@ -420,7 +425,7 @@ cliente.
 Homologacao fisica preservada usa `trixus_0802`; regressao automatizada ampla usa `trixus_0801`.
 
 ```powershell
-$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public"
+$env:DATABASE_URL="postgresql://trixus:change-me@localhost:5432/trixus_0801?schema=public"
 $env:REDIS_URL="redis://localhost:6379"
 bun run verify
 ```

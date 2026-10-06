@@ -1,5 +1,9 @@
 # SPRINT 11 — RELATORIO FINAL
 
+> **HISTORICO — NAO EXECUTAR:** comandos Prisma deste relatorio registram um
+> ensaio antigo. Migracoes atuais usam exclusivamente o wrapper documentado em
+> `docs/PRODUCTION-AUTOMATION.md`.
+
 ## 1. Status
 
 Sprint 11 implementada tecnicamente em modo backend/frontend/documentacao, com gate fisico pendente.

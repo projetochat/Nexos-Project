@@ -1,5 +1,10 @@
 # Banco de Dados
 
+> **HISTORICO — NAO EXECUTAR (06/10/2026):** referencias a `prisma migrate
+> deploy` neste documento descrevem ensaios antigos. O unico caminho operacional
+> vigente e o wrapper documentado em
+> [PRODUCTION-AUTOMATION.md](./PRODUCTION-AUTOMATION.md).
+
 ## Estado atual de persistencia
 
 IMPLEMENTADO NO MVP: migrations Supabase/Postgres em `supabase/migrations` com tabelas operacionais, RLS, triggers e seeds.
@@ -324,7 +329,7 @@ O seed Prisma agora e minimo por padrao: tenant `homologacao`, admin, membership
 Cleanup seguro:
 
 ```powershell
-$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0801?schema=public"
+$env:DATABASE_URL="postgresql://trixus:change-me@localhost:5432/trixus_0801?schema=public"
 bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao
 bun --cwd backend run cleanup:homologation -- --tenant-slug homologacao --confirm
 ```
@@ -336,7 +341,7 @@ O script e dry-run por padrao, tenant-scoped, nao remove usuarios/memberships/de
 O fluxo oficial para recuperar homologacao e reconstruir o banco, nao limpar manualmente pela UI:
 
 ```powershell
-$env:DATABASE_URL="postgresql://trixus:trixus_dev_password@localhost:5432/trixus_0802?schema=public"
+$env:DATABASE_URL="postgresql://trixus:change-me@localhost:5432/trixus_0802?schema=public"
 bun run --cwd backend reset:homologation -- --confirm
 ```
 

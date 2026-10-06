@@ -110,10 +110,10 @@ jobs:
           set -Eeuo pipefail
           test "$(docker image inspect "trixus-pr/backend:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
           test "$(docker image inspect "trixus-pr/migrate:$GITHUB_SHA" --format '{{.Config.User}}')" = bun
+          test "$(docker image inspect "trixus-pr/migrate:$GITHUB_SHA" --format '{{json .Config.Cmd}}')" = '["bun","run","prisma:migrate:deploy","--help"]'
           docker run --rm --entrypoint sh "trixus-pr/backend:$GITHUB_SHA" \
             -c 'command -v node && test -s /app/backend/dist/src/main.js'
-          docker run --rm --entrypoint bun "trixus-pr/migrate:$GITHUB_SHA" \
-            run prisma:migrate:deploy --help
+          docker run --rm "trixus-pr/migrate:$GITHUB_SHA"
           docker run --rm --entrypoint sh "trixus-pr/frontend:$GITHUB_SHA" \
             -c 'command -v bun && test -s /app/.output/server/index.mjs'
 
@@ -163,8 +163,8 @@ jobs:
           set -Eeuo pipefail
           docker run --rm --entrypoint sh "trixus-release/backend:$GITHUB_SHA" \
             -c 'command -v node && test -s /app/backend/dist/src/main.js'
-          docker run --rm --entrypoint bun "trixus-release/migrate:$GITHUB_SHA" \
-            run prisma:migrate:deploy --help
+          test "$(docker image inspect "trixus-release/migrate:$GITHUB_SHA" --format '{{json .Config.Cmd}}')" = '["bun","run","prisma:migrate:deploy","--help"]'
+          docker run --rm "trixus-release/migrate:$GITHUB_SHA"
           docker run --rm --entrypoint sh "trixus-release/frontend:$GITHUB_SHA" \
             -c 'command -v bun && test -s /app/.output/server/index.mjs'
       - name: Package images and checksums

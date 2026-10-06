@@ -1,0 +1,10 @@
+{
+  "contactCustomFieldIdentity": [
+    {
+      "legacyChecksum": "9ff6347fc38618491c8465bc91440381de81e8d2f06bc15d1f32cfd5c8850fef",
+      "currentChecksum": "6ead95d4c8a68bf662ca67cc8d2c97b1b1dde04581f5a5d42051d9067ef318fb",
+      "forwardMigration": "20261006030000_reconcile_contact_custom_field_identity",
+      "forwardChecksum": "bde512d7624acd765e0ac723b94d8bcce22995e37bd64e0d8e107a679136c4c7"
+    }
+  ]
+}

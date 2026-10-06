@@ -17,7 +17,7 @@
     "backend:test": "bun run --cwd backend test",
     "backend:prisma:generate": "node --env-file=.env backend/node_modules/prisma/build/index.js generate --schema backend/prisma/schema.prisma",
     "backend:prisma:migrate": "node --env-file=.env backend/node_modules/prisma/build/index.js migrate dev --schema backend/prisma/schema.prisma",
-    "backend:prisma:migrate:deploy": "node --env-file=.env backend/scripts/migrate-deploy-safe.mjs",
+    "backend:prisma:migrate:deploy": "node --env-file-if-exists=.env backend/scripts/migrate-deploy-safe.mjs",
     "backend:prisma:migrate:status": "node --env-file=.env backend/node_modules/prisma/build/index.js migrate status --schema backend/prisma/schema.prisma",
     "backend:prisma:seed": "node --env-file=.env backend/node_modules/tsx/dist/cli.mjs backend/prisma/seed.ts",
     "backend:reset:homologation": "node --env-file=.env backend/scripts/reset-homologation.mjs",

@@ -81,24 +81,30 @@ exigindo novo disparo manual na main. Para impedir novas publicacoes, renomear
    e nomes alternativos para impedir sobrescrita de tags da infraestrutura.
 3. Verifica disco para importacao, backup e reserva de 2 GiB. Importa imagens;
    nao compila na VPS nem remove imagens antigas.
-4. Registra imagens/configuracao anteriores. Para apenas frontend/backend.
-   Faz pg_dump custom, verifica catalogo com pg_restore, copia anexos e grava
-   checksums. Backups root-only em `/var/lib/trixus-production/releases`.
-5. Executa somente `bun run prisma:migrate:deploy` no container temporario.
-   Sem seed/reset/db push. O Compose vem da configuracao local confiavel;
-   nenhum script ou Compose remoto e executado como root.
-6. Sobe frontend/backend com `--no-deps --no-build --pull never`. Limites:
+4. Executa `bun run prisma:migrate:deploy --preflight-only` no container
+   temporario enquanto frontend/backend continuam disponíveis. Checksum,
+   historico, catalogo, dados ou colisoes divergentes abortam sem manutencao.
+5. Somente depois do primeiro preflight aprovado, registra o marcador de
+   recuperacao, para frontend/backend, gera o dump custom, verifica o catalogo
+   com pg_restore, copia anexos e grava checksums. Backups root-only ficam em
+   `/var/lib/trixus-production/releases`.
+6. Reexecuta o mesmo preflight imediatamente antes da aplicacao. Se essa
+   revalidacao falhar, religa a aplicacao anterior, remove apenas o marcador da
+   release corrente e nao executa DDL. Depois da segunda aprovacao, executa
+   explicitamente `bun run prisma:migrate:deploy`; a imagem de migracao, por
+   padrao, mostra ajuda e nunca aplica no boot. Sem seed/reset/db push.
+7. Sobe frontend/backend com `--no-deps --no-build --pull never`. Limites:
    backend 768 MiB, frontend/migrate 512 MiB, uma CPU cada, 256 processos,
    sem capabilities e sem escalada de privilegios.
-7. Confere a identidade e a saude da API e do frontend exclusivamente pelas
+8. Confere a identidade e a saude da API e do frontend exclusivamente pelas
    portas loopback validadas do Trixus. O GLPI recebe somente uma requisicao de
    leitura para confirmar disponibilidade; nenhum dominio publico do Trixus e
    presumido pelo executor. Confirma que containers de infraestrutura mantiveram
    o mesmo inicio de execucao e grava `DEPLOY_OK` e a release atual.
-8. Aguarda ao menos 30 segundos de estabilizacao, exigindo os mesmos IDs de
+9. Aguarda ao menos 30 segundos de estabilizacao, exigindo os mesmos IDs de
    containers, estado `running/healthy`, nenhuma reinicializacao e nova resposta
    valida da API e do frontend antes de confirmar o deploy.
-9. Somente depois do deploy confirmado e da remocao de `recovery-required`,
+10. Somente depois do deploy confirmado e da remocao de `recovery-required`,
    conserva as duas releases mais recentes e quaisquer releases apontadas por
    `current.txt` ou `recovery-required`. Links simbolicos, arquivos e caminhos
    inesperados nunca sao seguidos nem excluidos. Falha nessa limpeza gera aviso,
@@ -134,6 +140,11 @@ do GLPI exige outra VPS.
   somente apos sucesso confirmado. A mesma etapa remove sem `--force` apenas as
   tags Docker exatas pertencentes a essas releases; nao existe `prune` global.
   Revisar disco; novas releases bloqueiam se faltar espaco.
+
+O procedimento verificavel para a migracao de identidade de Campos Adicionais,
+incluindo checksum divergente, historico incompleto, estrutura parcial, restore
+integral e reconciliacao forward, esta em
+[MIGRATION-RECOVERY-CONTACT-CUSTOM-FIELD-20261006.md](./MIGRATION-RECOVERY-CONTACT-CUSTOM-FIELD-20261006.md).
 
 Infraestrutura, variaveis novas, volumes e portas exigem revisao local.
 Atualizacoes comuns de codigo e migrations sao automatizadas.

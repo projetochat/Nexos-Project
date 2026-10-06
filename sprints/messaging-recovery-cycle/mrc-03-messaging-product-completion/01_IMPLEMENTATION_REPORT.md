@@ -1,5 +1,9 @@
 # MRC-03 - Messaging Product Completion
 
+> **HISTORICO — NAO EXECUTAR:** comandos Prisma deste relatorio registram um
+> ensaio antigo. Migracoes atuais usam exclusivamente o wrapper documentado em
+> `docs/PRODUCTION-AUTOMATION.md`.
+
 Data: 2026-08-12
 
 ## Objetivo

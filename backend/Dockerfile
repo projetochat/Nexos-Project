@@ -15,7 +15,8 @@ FROM build AS migrate
 
 WORKDIR /app/backend
 USER bun
-CMD ["bun", "run", "prisma:migrate:deploy"]
+# Safe by default: release.py must opt in explicitly after two read-only preflights.
+CMD ["bun", "run", "prisma:migrate:deploy", "--help"]
 
 FROM oven/bun:1.3.14-alpine AS runtime
 

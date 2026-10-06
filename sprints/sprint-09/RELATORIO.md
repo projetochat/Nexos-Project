@@ -1,5 +1,9 @@
 # TRIXUS PROJECT - SPRINT 09
 
+> **HISTORICO — NAO EXECUTAR:** comandos Prisma deste relatorio registram um
+> ensaio antigo. Migracoes atuais usam exclusivamente o wrapper documentado em
+> `docs/PRODUCTION-AUTOMATION.md`.
+
 ## Realtime Messaging, Presence & Live Inbox
 
 Data: 2026-08-03
