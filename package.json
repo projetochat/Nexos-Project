@@ -9,8 +9,10 @@
   ],
   "scripts": {
     "dev": "node node_modules/vite/bin/vite.js",
+    "dev:logged": "node scripts/run-with-rotating-log.mjs frontend-dev -- node node_modules/vite/bin/vite.js",
     "build": "vite build",
     "backend:dev": "node scripts/ensure-prisma-client.mjs && node --env-file=.env backend/node_modules/tsx/dist/cli.mjs watch --tsconfig backend/tsconfig.json backend/src/main.ts",
+    "backend:dev:logged": "node scripts/run-with-rotating-log.mjs backend-dev -- bun run backend:dev",
     "backend:build": "bun run --cwd backend build",
     "backend:test": "bun run --cwd backend test",
     "backend:prisma:generate": "node --env-file=.env backend/node_modules/prisma/build/index.js generate --schema backend/prisma/schema.prisma",
@@ -37,6 +39,12 @@
     "test:operational-runtime": "vitest run src/lib/operational-runtime-rules.test.ts",
     "test:security": "vitest run src/lib/sanitize-html.test.ts src/lib/ticket-editor-dom.test.ts src/components/ticket-rich-text-editor.test.tsx --environment jsdom",
     "typecheck": "tsc --noEmit",
+    "hygiene:check": "node scripts/check-repository-hygiene.mjs --staged",
+    "hygiene:check:tracked": "node scripts/check-repository-hygiene.mjs --tracked",
+    "hygiene:preview": "node scripts/cleanup-local-artifacts.mjs --all --prune-logs",
+    "hygiene:clean": "node scripts/cleanup-local-artifacts.mjs --all --prune-logs --apply",
+    "logs:prune": "node scripts/cleanup-local-artifacts.mjs --prune-logs",
+    "logs:prune:apply": "node scripts/cleanup-local-artifacts.mjs --prune-logs --apply",
     "verify": "node scripts/verify.mjs",
     "format": "prettier --write ."
   },
