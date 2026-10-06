@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import {
+  clearAuthorizationCache,
   clearStaleConversationAuthorizationCache,
   conversationAuthorizationScope,
 } from "./conversation-query-authorization";
@@ -59,5 +60,17 @@ describe("conversation authorization cache", () => {
 
     await clearStaleConversationAuthorizationCache(client, conversationAuthorizationScope(null));
     expect(client.getQueryData(["operations", "history", tenantB])).toBeUndefined();
+  });
+
+  it("clears every cached value immediately on logout or forced authorization refresh", async () => {
+    const client = new QueryClient();
+    client.setQueryData(["trixus", "conversations", "tenant-a"], {
+      contact: { customFields: { secret: "hidden" } },
+    });
+    client.setQueryData(["unrelated"], { staleIdentity: true });
+
+    await clearAuthorizationCache(client);
+
+    expect(client.getQueryCache().getAll()).toHaveLength(0);
   });
 });

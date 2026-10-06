@@ -18,6 +18,7 @@ import { ThemeProvider } from "../components/theme-provider";
 import { appTitleForHostname, surfaceRedirect } from "../lib/app-surface";
 import { useSession } from "@/lib/session";
 import {
+  clearAuthorizationCache,
   clearStaleConversationAuthorizationCache,
   conversationAuthorizationScope,
 } from "@/lib/conversation-query-authorization";
@@ -199,8 +200,12 @@ function SessionAuthorizationBoundary({ queryClient }: { queryClient: QueryClien
     previousFingerprint.current = fingerprint;
     if (previous === null || previous === fingerprint) return;
     disconnectRealtime();
+    if (!user) {
+      void clearAuthorizationCache(queryClient);
+      return;
+    }
     void clearStaleConversationAuthorizationCache(queryClient, scope);
-  }, [fingerprint, queryClient, scope]);
+  }, [fingerprint, queryClient, scope, user]);
 
   return null;
 }

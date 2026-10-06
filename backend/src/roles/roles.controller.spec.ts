@@ -100,6 +100,7 @@ describe("RolesController permission delegation", () => {
       updatedAt: new Date("2026-10-01T12:00:00.000Z"),
       permissions: [
         { permissionId: "conversations.read" },
+        { permissionId: "contacts.additional_fields.read" },
         { permissionId: "chat.audio.send" },
         { permissionId: "chat.contacts.create" },
         { permissionId: "chat.contacts.edit" },
@@ -111,6 +112,7 @@ describe("RolesController permission delegation", () => {
       ],
     };
     const createMany = vi.fn();
+    const revokeSessions = vi.fn().mockResolvedValue({ count: 2 });
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
       permission: { upsert: vi.fn() },
@@ -123,6 +125,10 @@ describe("RolesController permission delegation", () => {
           ),
         })),
       },
+      tenantMembership: {
+        findMany: vi.fn().mockResolvedValue([{ id: "membership-a" }, { id: "membership-b" }]),
+      },
+      authSession: { updateMany: revokeSessions },
     };
     const prisma = {
       role: { findFirst: vi.fn().mockResolvedValue(role) },
@@ -180,6 +186,24 @@ describe("RolesController permission delegation", () => {
       "tickets.create",
       "conversations.assign",
     ]);
+    expect(revokeSessions).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-a",
+        membershipId: { in: ["membership-a", "membership-b"] },
+        revokedAt: null,
+      },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(realtime.publish).toHaveBeenCalledWith(
+      { membershipId: "membership-a" },
+      "authorization.updated",
+      { membershipId: "membership-a", reason: "role.updated" },
+    );
+    expect(realtime.publish).toHaveBeenCalledWith(
+      { membershipId: "membership-b" },
+      "authorization.updated",
+      { membershipId: "membership-b", reason: "role.updated" },
+    );
   });
 
   it("uses the assigned permissions, not the temporarily expanded runtime catalog", async () => {

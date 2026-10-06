@@ -350,13 +350,13 @@ describe("MessagingOutboundService", () => {
 
   it("resolves a quick-message template with the instance timezone at enqueue time", async () => {
     const prisma = prismaMock();
-    const activeConversation = conversation() as any;
-    activeConversation.contact.customFieldValues = [
+    const activeConversation = conversation();
+    prisma.contactCustomFieldValue.findMany.mockResolvedValue([
       {
         value: "Premium",
         field: { label: "Plano", variableKey: "plano", type: "TEXT", mask: null },
       },
-    ];
+    ]);
     prisma.conversation.findFirst.mockResolvedValue(activeConversation);
     prisma.message.findFirst.mockResolvedValue(null);
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
@@ -392,8 +392,8 @@ describe("MessagingOutboundService", () => {
 
   it("rejects content that becomes empty or oversized after template expansion", async () => {
     const prisma = prismaMock();
-    const activeConversation = conversation() as any;
-    activeConversation.contact.customFieldValues = [
+    const activeConversation = conversation();
+    prisma.contactCustomFieldValue.findMany.mockResolvedValue([
       {
         value: "x".repeat(4001),
         field: {
@@ -403,7 +403,7 @@ describe("MessagingOutboundService", () => {
           mask: null,
         },
       },
-    ];
+    ]);
     prisma.conversation.findFirst.mockResolvedValue(activeConversation);
     prisma.message.findFirst.mockResolvedValue(null);
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
@@ -427,12 +427,44 @@ describe("MessagingOutboundService", () => {
     expect(prisma.message.create).not.toHaveBeenCalled();
   });
 
+  it("does not resolve or persist additional-field values without the read permission", async () => {
+    const prisma = prismaMock();
+    prisma.conversation.findFirst.mockResolvedValue(conversation());
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.messagingConnection.findFirst.mockResolvedValue(connection());
+    prisma.contactCustomFieldValue.findMany.mockResolvedValue([
+      {
+        value: "Premium",
+        field: { label: "Plano", variableKey: "plano", type: "TEXT", mask: null },
+      },
+    ]);
+    prisma.message.create.mockImplementation(async ({ data }) => message({ ...data } as never));
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcherMock() as never,
+    );
+
+    await service.sendText(
+      "conversation-a",
+      { content: "Plano: {{plano}}", clientMessageId: "restricted-template" },
+      { ...current, roleKey: "agent", permissions: ["messages.send"] } as never,
+    );
+
+    expect(prisma.contactCustomFieldValue.findMany).not.toHaveBeenCalled();
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: "Plano: {{plano}}" }),
+      }),
+    );
+  });
+
   it("does not mix variable values or timezone from another tenant instance", async () => {
     const prisma = prismaMock();
-    const tenantA = conversation() as any;
+    const tenantA = conversation();
     tenantA.contact.name = "Ana";
     tenantA.connection = connection({ timezone: "America/Sao_Paulo" });
-    const tenantB = conversation() as any;
+    const tenantB = conversation();
     tenantB.id = "conversation-b";
     tenantB.tenantId = "tenant-b";
     tenantB.contact.name = "Bruna";
@@ -843,6 +875,7 @@ describe("MessagingOutboundService", () => {
 function prismaMock() {
   const prisma = {
     conversation: { findFirst: vi.fn(), update: vi.fn() },
+    contactCustomFieldValue: { findMany: vi.fn().mockResolvedValue([]) },
     departmentMembership: { findMany: vi.fn() },
     messagingConnection: { findFirst: vi.fn().mockResolvedValue(connection()) },
     message: {
@@ -892,6 +925,7 @@ function conversation() {
     status: ConversationStatus.EM_ANDAMENTO,
     connectionId: "connection-a",
     contact: {
+      id: "contact-a",
       phone: "+5511999999999",
       normalizedPhone: "+5511999999999",
       name: "Cliente",
@@ -899,7 +933,6 @@ function conversation() {
       departmentName: null,
       customer: null,
       contactDepartment: null,
-      customFieldValues: [],
     },
     department: null,
     connection: connection(),

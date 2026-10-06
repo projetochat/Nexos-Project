@@ -1,6 +1,7 @@
 import { roleConnectionIds } from "../auth/connection-access";
 import { conversationVisibilityWhere } from "../conversations/conversation-visibility";
 import { effectivePermissions } from "../auth/effective-permissions";
+import { canReadContactAdditionalFields } from "../auth/contact-additional-fields-access";
 import {
   assertMessagingServiceEnabled,
   MessagingServicePausedError,
@@ -454,94 +455,6 @@ export class MessagingOutboundService {
       return { created: false, message: this.serialize(existing) };
     }
 
-    const conversation = await this.prisma.conversation.findFirst({
-      where: { id: input.conversationId, tenantId: input.tenantId, archivedAt: null },
-      include: {
-        contact: {
-          include: {
-            customer: { select: { tenantId: true, name: true, archivedAt: true } },
-            contactDepartment: {
-              select: { tenantId: true, name: true, archivedAt: true },
-            },
-            customFieldValues: {
-              where: {
-                tenantId: input.tenantId,
-                field: { tenantId: input.tenantId, archivedAt: null },
-              },
-              include: {
-                field: {
-                  select: {
-                    label: true,
-                    variableKey: true,
-                    type: true,
-                    mask: true,
-                    tenantId: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-        connection: true,
-        department: { select: { name: true } },
-      },
-    });
-    if (!conversation) {
-      throw new ScheduledMessagePermanentError("Conversa não encontrada para o agendamento.");
-    }
-    try {
-      this.assertCanSend(conversation);
-    } catch (error) {
-      throw new ScheduledMessagePermanentError(errorMessage(error));
-    }
-    if (!conversation.connection || conversation.connection.archivedAt) {
-      throw new ScheduledMessagePermanentError("Instância indisponível para o agendamento.");
-    }
-    assertMessagingServiceEnabled(conversation.connection);
-    const effectiveAt = this.now();
-    let templatedContent: string;
-    try {
-      templatedContent = resolveMessageTemplate(input.content, {
-        contactName: conversation.contact.name,
-        phone: conversation.contact.phone,
-        email: conversation.contact.email,
-        instance: conversation.connection.name,
-        department:
-          conversation.contact.contactDepartment?.tenantId === input.tenantId &&
-          !conversation.contact.contactDepartment.archivedAt
-            ? conversation.contact.contactDepartment.name
-            : conversation.contact.departmentName,
-        customer:
-          conversation.contact.customer?.tenantId === input.tenantId &&
-          !conversation.contact.customer.archivedAt
-            ? conversation.contact.customer.name
-            : null,
-        customFieldValues: conversation.contact.customFieldValues
-          .filter(
-            (item) => item.tenantId === input.tenantId && item.field.tenantId === input.tenantId,
-          )
-          .map((item) => ({
-            label: item.field.label,
-            variableKey: item.field.variableKey,
-            type: item.field.type,
-            mask: item.field.mask,
-            value: item.value,
-          })),
-        now: effectiveAt,
-        timezone: conversation.connection.timezone,
-      });
-    } catch (error) {
-      if (error instanceof InvalidMessageTimezoneError) {
-        throw new ScheduledMessagePermanentError(error.message);
-      }
-      throw error;
-    }
-    const resolvedContent = templatedContent.trim()
-      ? cleanMessageContent(templatedContent)
-      : input.attachment
-        ? ""
-        : cleanMessageContent(templatedContent);
-
     const authorMembership = input.createdByMembershipId
       ? await this.prisma.tenantMembership.findFirst({
           where: {
@@ -568,6 +481,111 @@ export class MessagingOutboundService {
       );
     }
     const authorPermissions = authorMembership ? effectivePermissions(authorMembership.role) : [];
+    if (authorMembership && !authorPermissions.includes("messages.send")) {
+      throw new ScheduledMessagePermanentError(
+        "O criador não possui mais permissão para enviar mensagens.",
+      );
+    }
+    const canResolveAdditionalFields = authorMembership
+      ? canReadContactAdditionalFields({
+          roleKey: authorMembership.role.key,
+          permissions: authorPermissions,
+        })
+      : false;
+
+    const conversation = await this.prisma.conversation.findFirst({
+      where: { id: input.conversationId, tenantId: input.tenantId, archivedAt: null },
+      include: {
+        contact: {
+          include: {
+            customer: { select: { tenantId: true, name: true, archivedAt: true } },
+            contactDepartment: {
+              select: { tenantId: true, name: true, archivedAt: true },
+            },
+          },
+        },
+        connection: true,
+        department: { select: { name: true } },
+      },
+    });
+    if (!conversation) {
+      throw new ScheduledMessagePermanentError("Conversa não encontrada para o agendamento.");
+    }
+    try {
+      this.assertCanSend(conversation);
+    } catch (error) {
+      throw new ScheduledMessagePermanentError(errorMessage(error));
+    }
+    if (!conversation.connection || conversation.connection.archivedAt) {
+      throw new ScheduledMessagePermanentError("Instância indisponível para o agendamento.");
+    }
+    assertMessagingServiceEnabled(conversation.connection);
+    const customFieldValues = canResolveAdditionalFields
+      ? await this.prisma.contactCustomFieldValue.findMany({
+          where: {
+            tenantId: input.tenantId,
+            contactId: conversation.contact.id,
+            field: { tenantId: input.tenantId, archivedAt: null },
+          },
+          select: {
+            tenantId: true,
+            value: true,
+            field: {
+              select: {
+                label: true,
+                variableKey: true,
+                type: true,
+                mask: true,
+                tenantId: true,
+              },
+            },
+          },
+        })
+      : [];
+    const effectiveAt = this.now();
+    let templatedContent: string;
+    try {
+      templatedContent = resolveMessageTemplate(input.content, {
+        contactName: conversation.contact.name,
+        phone: conversation.contact.phone,
+        email: conversation.contact.email,
+        instance: conversation.connection.name,
+        department:
+          conversation.contact.contactDepartment?.tenantId === input.tenantId &&
+          !conversation.contact.contactDepartment.archivedAt
+            ? conversation.contact.contactDepartment.name
+            : conversation.contact.departmentName,
+        customer:
+          conversation.contact.customer?.tenantId === input.tenantId &&
+          !conversation.contact.customer.archivedAt
+            ? conversation.contact.customer.name
+            : null,
+        customFieldValues: customFieldValues
+          .filter(
+            (item) => item.tenantId === input.tenantId && item.field.tenantId === input.tenantId,
+          )
+          .map((item) => ({
+            label: item.field.label,
+            variableKey: item.field.variableKey,
+            type: item.field.type,
+            mask: item.field.mask,
+            value: item.value,
+          })),
+        now: effectiveAt,
+        timezone: conversation.connection.timezone,
+      });
+    } catch (error) {
+      if (error instanceof InvalidMessageTimezoneError) {
+        throw new ScheduledMessagePermanentError(error.message);
+      }
+      throw error;
+    }
+    const resolvedContent = templatedContent.trim()
+      ? cleanMessageContent(templatedContent)
+      : input.attachment
+        ? ""
+        : cleanMessageContent(templatedContent);
+
     const allowedConnectionIds = authorMembership ? roleConnectionIds(authorMembership.role) : null;
     if (
       authorMembership &&
@@ -1490,6 +1508,7 @@ export class MessagingOutboundService {
         current.tenantId,
         content,
         effectiveAt,
+        canReadContactAdditionalFields(current),
       ),
     );
     if (!current.permissions?.includes("chat.agent_name.show")) return resolvedContent;
@@ -1506,12 +1525,14 @@ export class MessagingOutboundService {
     tenantId: string,
     content: string,
     effectiveAt: Date,
+    includeAdditionalFields: boolean,
   ) {
     const conversation = await tx.conversation.findFirst({
       where: { id: conversationId, tenantId, archivedAt: null },
       select: {
         contact: {
           select: {
+            id: true,
             name: true,
             phone: true,
             email: true,
@@ -1520,15 +1541,6 @@ export class MessagingOutboundService {
             contactDepartment: {
               select: { tenantId: true, name: true, archivedAt: true },
             },
-            customFieldValues: {
-              where: { tenantId, field: { tenantId, archivedAt: null } },
-              select: {
-                value: true,
-                field: {
-                  select: { label: true, variableKey: true, type: true, mask: true },
-                },
-              },
-            },
           },
         },
         connection: { select: { name: true, timezone: true } },
@@ -1536,6 +1548,21 @@ export class MessagingOutboundService {
       },
     });
     if (!conversation) return content;
+    const customFieldValues = includeAdditionalFields
+      ? await tx.contactCustomFieldValue.findMany({
+          where: {
+            tenantId,
+            contactId: conversation.contact.id,
+            field: { tenantId, archivedAt: null },
+          },
+          select: {
+            value: true,
+            field: {
+              select: { label: true, variableKey: true, type: true, mask: true },
+            },
+          },
+        })
+      : [];
     try {
       return resolveMessageTemplate(content, {
         contactName: conversation.contact.name,
@@ -1552,7 +1579,7 @@ export class MessagingOutboundService {
           !conversation.contact.customer.archivedAt
             ? conversation.contact.customer.name
             : null,
-        customFieldValues: conversation.contact.customFieldValues.map((item) => ({
+        customFieldValues: customFieldValues.map((item) => ({
           label: item.field.label,
           variableKey: item.field.variableKey,
           type: item.field.type,

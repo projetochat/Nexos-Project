@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  Optional,
 } from "@nestjs/common";
 import { createHash, randomBytes } from "crypto";
 import { compare, hash } from "bcryptjs";
@@ -35,6 +36,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { PlanEntitlementService } from "../platform/plan-entitlement.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
+import { RealtimeService } from "../realtime/realtime.service";
 
 class CreateInvitationDto {
   @IsEmail()
@@ -151,6 +153,7 @@ export class UsersController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(PlanEntitlementService) private readonly entitlements: PlanEntitlementService,
+    @Optional() @Inject(RealtimeService) private readonly realtime?: RealtimeService,
   ) {}
 
   @Get("me")
@@ -535,7 +538,7 @@ export class UsersController {
       await this.assertDepartmentsInTenant(dto.departmentIds, current.tenantId);
     const avatarUrl = normalizeAvatarUrl(dto.avatarUrl);
 
-    const membership = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
       );
@@ -552,6 +555,10 @@ export class UsersController {
         (latest.status !== "ACTIVE" && dto.membershipStatus === "ACTIVE") ||
         (latest.user.status === "DISABLED" && dto.status === "ACTIVE");
       if (reactivationOnly && !reactivating) return latest;
+      const authorizationChanged =
+        (dto.roleId !== undefined && dto.roleId !== latest.roleId) ||
+        (dto.membershipStatus !== undefined && dto.membershipStatus !== latest.status) ||
+        (dto.status !== undefined && dto.status !== latest.user.status);
       if (dto.name !== undefined) {
         await this.assertNameAvailable(tx, current.tenantId, dto.name, existing.id);
       }
@@ -593,13 +600,29 @@ export class UsersController {
       if (dto.departmentIds) {
         await this.replaceDepartments(tx, current.tenantId, existing.id, dto.departmentIds);
       }
-      return tx.tenantMembership.findUniqueOrThrow({
+      if (authorizationChanged) {
+        await tx.authSession.updateMany({
+          where:
+            dto.status !== undefined && dto.status !== "ACTIVE"
+              ? { userId: latest.userId, revokedAt: null }
+              : {
+                  tenantId: current.tenantId,
+                  membershipId: existing.id,
+                  revokedAt: null,
+                },
+          data: { revokedAt: new Date() },
+        });
+      }
+      const membership = await tx.tenantMembership.findUniqueOrThrow({
         where: { id: existing.id },
         include: { user: true, role: true, departments: { include: { department: true } } },
       });
+      return { membership, authorizationChanged };
     });
-
-    return this.serializeMembership(membership);
+    if ("authorizationChanged" in result && result.authorizationChanged) {
+      this.publishAuthorizationChanged(existing.id, "membership.updated");
+    }
+    return this.serializeMembership("membership" in result ? result.membership : result);
   }
 
   @Patch("users/:id/activate")
@@ -703,12 +726,35 @@ export class UsersController {
     if (status !== "ACTIVE") {
       this.assertSelfAccessPreserved(membership, { membershipStatus: status }, current);
     }
-    const updated = await this.prisma.tenantMembership.update({
-      where: { id: membership.id },
-      data: { status },
-      include: { user: true, role: true, departments: { include: { department: true } } },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const saved = await tx.tenantMembership.update({
+        where: { id: membership.id },
+        data: { status },
+        include: { user: true, role: true, departments: { include: { department: true } } },
+      });
+      if (status !== membership.status) {
+        await tx.authSession.updateMany({
+          where: {
+            tenantId: current.tenantId,
+            membershipId: membership.id,
+            revokedAt: null,
+          },
+          data: { revokedAt: new Date() },
+        });
+      }
+      return saved;
     });
+    if (status !== membership.status) {
+      this.publishAuthorizationChanged(membership.id, "membership.status.updated");
+    }
     return this.serializeMembership(updated);
+  }
+
+  private publishAuthorizationChanged(membershipId: string, reason: string) {
+    this.realtime?.publish({ membershipId }, "authorization.updated", {
+      membershipId,
+      reason,
+    });
   }
 
   private assertMasterMembershipProtected(membership: { role: { key: string } }) {

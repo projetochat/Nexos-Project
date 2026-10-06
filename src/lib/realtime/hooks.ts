@@ -2,6 +2,7 @@ import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { hydrateSession, useSession } from "@/lib/session";
 import { invalidateConversationQueries } from "./invalidate-conversation";
+import { clearAuthorizationCache } from "@/lib/conversation-query-authorization";
 import {
   shouldNotifyInboxUpdate,
   playInboxNotificationSound,
@@ -28,6 +29,11 @@ export function useInstanceAccessUpdates(connect = true) {
   React.useEffect(() => {
     if (user && connect) void connectRealtime();
     return onRealtimeEvent((event) => {
+      if (event.event === "authorization.updated") {
+        disconnectRealtime();
+        void clearAuthorizationCache(queryClient).then(() => hydrateSession());
+        return;
+      }
       if (event.event === "instance-access.updated") {
         void hydrateSession().finally(() => {
           void queryClient.cancelQueries().then(() => queryClient.resetQueries());

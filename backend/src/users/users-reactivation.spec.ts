@@ -25,6 +25,7 @@ function setup(
     id: "membership-a",
     tenantId: "tenant-a",
     userId: "user-a",
+    roleId: "role-a",
     status: options.status ?? "DISABLED",
     presentationName: null,
     createdAt: new Date(),
@@ -67,6 +68,7 @@ function setup(
   const tx = {
     $queryRaw: vi.fn(),
     user: { update: userUpdate },
+    authSession: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     tenantMembership: {
       findFirst: vi.fn(async (query: { where: { tenantId?: unknown; userId?: string } }) => {
         if (
@@ -85,6 +87,14 @@ function setup(
   };
   const prisma = {
     tenantMembership: { findFirst: vi.fn(async () => structuredClone(state)) },
+    role: {
+      findFirst: vi.fn().mockResolvedValue({
+        id: "role-b",
+        tenantId: "tenant-a",
+        key: "agent",
+        permissions: [{ permissionId: "contacts.read" }],
+      }),
+    },
     $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => {
       draft = structuredClone(state);
       const result = await callback(tx);
@@ -92,10 +102,12 @@ function setup(
       return result;
     }),
   };
+  const realtime = { publish: vi.fn() };
   return {
-    controller: new UsersController(prisma as never, {} as never),
+    controller: new UsersController(prisma as never, {} as never, realtime as never),
     prisma,
     tx,
+    realtime,
     state: () => state,
   };
 }
@@ -122,6 +134,45 @@ describe("atendente reactivation without password", () => {
     expect(response.status).toBe("ACTIVE");
     expect(response.user.status).toBe("ACTIVE");
     expect(test.state().user.passwordHash).toBe(oldHash);
+    expect(test.tx.authSession.updateMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", membershipId: "membership-a", revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(test.realtime.publish).toHaveBeenCalledWith(
+      { membershipId: "membership-a" },
+      "authorization.updated",
+      { membershipId: "membership-a", reason: "membership.updated" },
+    );
+  });
+
+  it("revokes the tenant session and publishes cache invalidation after a role change", async () => {
+    const test = setup({ status: "ACTIVE" });
+    await test.controller.update("membership-a", { roleId: "role-b" }, current);
+
+    expect(test.tx.authSession.updateMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", membershipId: "membership-a", revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(test.realtime.publish).toHaveBeenCalledWith(
+      { membershipId: "membership-a" },
+      "authorization.updated",
+      { membershipId: "membership-a", reason: "membership.updated" },
+    );
+  });
+
+  it("revokes only the affected tenant membership when disabling its link", async () => {
+    const test = setup({ status: "ACTIVE" });
+    await test.controller.deactivate("membership-a", current);
+
+    expect(test.tx.authSession.updateMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", membershipId: "membership-a", revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(test.realtime.publish).toHaveBeenCalledWith(
+      { membershipId: "membership-a" },
+      "authorization.updated",
+      { membershipId: "membership-a", reason: "membership.status.updated" },
+    );
   });
 
   it("reactivates an invited membership without changing the credential", async () => {

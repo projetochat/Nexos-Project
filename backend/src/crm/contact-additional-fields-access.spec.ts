@@ -71,9 +71,7 @@ describe("contact additional fields access", () => {
         permissions: ["contacts.additional_fields.read"],
       }),
     ).toBe(true);
-    expect(canReadContactAdditionalFields({ roleKey: "tenant_admin", permissions: [] })).toBe(
-      true,
-    );
+    expect(canReadContactAdditionalFields({ roleKey: "tenant_admin", permissions: [] })).toBe(true);
     expect(canReadContactAdditionalFields({ roleKey: "agent", permissions: [] })).toBe(false);
     expect(
       controller.serializeContact(contact, {
@@ -226,4 +224,105 @@ describe("contact additional fields access", () => {
       );
     },
   );
+
+  it("preserves hidden additional fields when editing only common contact data", async () => {
+    const update = vi.fn().mockResolvedValue({ ...contact, name: "Nome atualizado" });
+    const upsert = vi.fn();
+    const prisma = {
+      contact: { findFirst: vi.fn().mockResolvedValue(contact), update },
+      contactCustomField: { findMany: vi.fn() },
+      contactCustomFieldValue: { upsert },
+      $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
+    };
+    const realtime = { publishContactUpdated: vi.fn() };
+    const endpoint = new CrmController(
+      prisma as never,
+      realtime as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await endpoint.updateContact(
+      "contact-a",
+      { name: "Nome atualizado", email: "novo@example.com" },
+      {
+        tenantId: "tenant-a",
+        roleKey: "agent",
+        permissions: ["contacts.update"],
+      } as never,
+    );
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ name: "Nome atualizado", email: "novo@example.com" }),
+      }),
+    );
+    expect(prisma.contactCustomField.findMany).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects an explicit additional-field mutation without the specific permission", async () => {
+    const endpoint = new CrmController(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(
+      endpoint.updateContact("contact-a", { customFields: { "field-a": "alterado" } }, {
+        tenantId: "tenant-a",
+        roleKey: "agent",
+        permissions: ["contacts.update"],
+      } as never),
+    ).rejects.toThrow("Permissão de Campos Adicionais");
+  });
+
+  it("updates only explicitly provided fields when authorized", async () => {
+    const upsert = vi.fn().mockResolvedValue({});
+    const prisma = {
+      contact: {
+        findFirst: vi.fn().mockResolvedValue(contact),
+        update: vi.fn().mockResolvedValue(contact),
+      },
+      contactCustomField: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "field-a",
+            tenantId: "tenant-a",
+            label: "Código",
+            type: "TEXT",
+            required: false,
+          },
+        ]),
+      },
+      contactCustomFieldValue: { upsert },
+      $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
+    };
+    const endpoint = new CrmController(
+      prisma as never,
+      { publishContactUpdated: vi.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await endpoint.updateContact("contact-a", { customFields: { "field-a": "alterado" } }, {
+      tenantId: "tenant-a",
+      roleKey: "agent",
+      permissions: ["contacts.update", "contacts.additional_fields.read"],
+    } as never);
+
+    expect(prisma.contactCustomField.findMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", id: { in: ["field-a"] }, archivedAt: null },
+    });
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { contactId_fieldId: { contactId: "contact-a", fieldId: "field-a" } },
+        update: { value: "alterado" },
+      }),
+    );
+  });
 });

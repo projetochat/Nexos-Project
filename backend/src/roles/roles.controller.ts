@@ -199,7 +199,8 @@ export class RolesController {
       );
     }
     await this.assertMetadataScope(dto.metadata, current, existing.metadata);
-    const role = await this.prisma.$transaction(async (tx) => {
+    const authorizationChanged = permissionIds !== undefined || dto.metadata !== undefined;
+    const { role, affectedMembershipIds } = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM "tenants" WHERE id = ${current.tenantId} FOR UPDATE`,
       );
@@ -220,7 +221,7 @@ export class RolesController {
           skipDuplicates: true,
         });
       }
-      return tx.role.update({
+      const role = await tx.role.update({
         where: { id: existing.id },
         data: {
           name: dto.name?.trim(),
@@ -230,7 +231,30 @@ export class RolesController {
         },
         include: { permissions: true },
       });
+      if (!authorizationChanged) return { role, affectedMembershipIds: [] as string[] };
+      const affectedMemberships = await tx.tenantMembership.findMany({
+        where: { tenantId: current.tenantId, roleId: existing.id },
+        select: { id: true },
+      });
+      const affectedMembershipIds = affectedMemberships.map((membership) => membership.id);
+      if (affectedMembershipIds.length > 0) {
+        await tx.authSession.updateMany({
+          where: {
+            tenantId: current.tenantId,
+            membershipId: { in: affectedMembershipIds },
+            revokedAt: null,
+          },
+          data: { revokedAt: new Date() },
+        });
+      }
+      return { role, affectedMembershipIds };
     });
+    for (const membershipId of affectedMembershipIds) {
+      this.realtime.publish({ membershipId }, "authorization.updated", {
+        membershipId,
+        reason: "role.updated",
+      });
+    }
     this.realtime.publish({ tenantId: current.tenantId }, "instance-access.updated", {
       roleId: role.id,
     });

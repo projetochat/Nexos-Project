@@ -20,6 +20,7 @@ const conversation = {
   conversationType: "DIRECT",
   assignedMembershipId: "membership-a",
   contact: {
+    id: "contact-a",
     name: "Maria",
     phone: "+5511999999999",
     email: "maria@example.com",
@@ -34,19 +35,6 @@ const conversation = {
       name: "Financeiro",
       archivedAt: null,
     },
-    customFieldValues: [
-      {
-        tenantId: "tenant-a",
-        value: "Premium",
-        field: {
-          label: "Plano",
-          variableKey: "plano",
-          type: "TEXT",
-          mask: null,
-          tenantId: "tenant-a",
-        },
-      },
-    ],
   },
   connection,
   department: { name: "Vendas" },
@@ -96,6 +84,7 @@ function setup(
           permissions: [
             { permissionId: "chat.agent_name.show" },
             { permissionId: "messages.send" },
+            { permissionId: "contacts.additional_fields.read" },
           ],
         },
       }),
@@ -114,6 +103,21 @@ function setup(
     },
     schedule: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     tenantMembership: tx.tenantMembership,
+    contactCustomFieldValue: {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          tenantId: "tenant-a",
+          value: "Premium",
+          field: {
+            label: "Plano",
+            variableKey: "plano",
+            type: "TEXT",
+            mask: null,
+            tenantId: "tenant-a",
+          },
+        },
+      ]),
+    },
     $transaction: vi.fn().mockImplementation(async (callback) => callback(tx)),
   };
   const dispatcher = { dispatchMessage: vi.fn().mockResolvedValue(true) };
@@ -174,21 +178,42 @@ describe("MessagingOutboundService scheduled messages", () => {
       }),
     );
     expect(dispatcher.dispatchMessage).toHaveBeenCalledWith("message-a");
-    expect(prisma.conversation.findFirst).toHaveBeenCalledWith(
+    expect(prisma.contactCustomFieldValue.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ tenantId: "tenant-a" }),
-        include: expect.objectContaining({
-          contact: expect.objectContaining({
-            include: expect.objectContaining({
-              customFieldValues: expect.objectContaining({
-                where: {
-                  tenantId: "tenant-a",
-                  field: { tenantId: "tenant-a", archivedAt: null },
-                },
-              }),
-            }),
-          }),
-        }),
+        where: {
+          tenantId: "tenant-a",
+          contactId: "contact-a",
+          field: { tenantId: "tenant-a", archivedAt: null },
+        },
+      }),
+    );
+  });
+
+  it("does not resolve additional-field templates after the creator loses read permission", async () => {
+    const { service, prisma, tx } = setup();
+    prisma.tenantMembership.findFirst.mockResolvedValue({
+      id: "membership-a",
+      role: {
+        key: "agent",
+        metadata: { connectionIds: ["connection-a"] },
+        permissions: [{ permissionId: "messages.send" }],
+      },
+    });
+
+    await service.queueScheduledMessage({
+      tenantId: "tenant-a",
+      scheduleId: "schedule-restricted",
+      claimedVersion: 2,
+      occurrenceAt,
+      conversationId: "conversation-a",
+      createdByMembershipId: "membership-a",
+      content: "Plano: {{plano}}",
+    });
+
+    expect(prisma.contactCustomFieldValue.findMany).not.toHaveBeenCalled();
+    expect(tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ content: "Plano: {{plano}}" }),
       }),
     );
   });
@@ -418,7 +443,7 @@ describe("MessagingOutboundService scheduled messages", () => {
       role: {
         key: "agent",
         metadata: { connectionIds: ["connection-other"] },
-        permissions: [],
+        permissions: [{ permissionId: "messages.send" }],
       },
     });
     await expect(

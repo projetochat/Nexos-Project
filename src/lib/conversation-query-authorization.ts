@@ -30,6 +30,11 @@ export async function clearStaleConversationAuthorizationCache(
   queryClient.removeQueries({ predicate });
 }
 
+export async function clearAuthorizationCache(queryClient: QueryClient) {
+  await queryClient.cancelQueries();
+  queryClient.clear();
+}
+
 function containsAdditionalFields(value: unknown, seen = new Set<object>()): boolean {
   if (!value || typeof value !== "object") return false;
   if (seen.has(value)) return false;

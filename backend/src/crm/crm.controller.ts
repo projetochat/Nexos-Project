@@ -27,7 +27,10 @@ import {
 } from "class-validator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
-import { projectContactAdditionalFields } from "../auth/contact-additional-fields-access";
+import {
+  canReadContactAdditionalFields,
+  projectContactAdditionalFields,
+} from "../auth/contact-additional-fields-access";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
@@ -680,6 +683,7 @@ export class CrmController {
     @Body() dto: BulkUpdateContactsDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
+    this.assertCanWriteContactAdditionalFields(dto.customFields, current);
     const allFiltered = dto.allFiltered === true;
     const contactIds = Array.from(new Set(dto.contactIds ?? []));
     if (!allFiltered && !contactIds.length)
@@ -1241,6 +1245,7 @@ export class CrmController {
   @Post("contacts")
   @RequirePermissions("contacts.create")
   async createContact(@Body() dto: CreateContactDto, @CurrentUser() current: AuthenticatedUser) {
+    this.assertCanWriteContactAdditionalFields(dto.customFields, current);
     await this.entitlements.assertTenantOperational(current.tenantId);
     await this.entitlements.assertWithinLimit(
       current.tenantId,
@@ -1365,6 +1370,7 @@ export class CrmController {
     @Body() dto: UpdateContactDto,
     @CurrentUser() current: AuthenticatedUser,
   ) {
+    this.assertCanWriteContactAdditionalFields(dto.customFields, current);
     const currentContact = await this.findContactOrThrow(id, current.tenantId);
     if (
       dto.customerId !== undefined &&
@@ -1411,7 +1417,9 @@ export class CrmController {
             });
           }
         }
-        await this.saveContactCustomFields(tx, current.tenantId, id, dto.customFields);
+        if (dto.customFields !== undefined) {
+          await this.saveProvidedContactCustomFields(tx, current.tenantId, id, dto.customFields);
+        }
         return tx.contact.update({
           where: { id },
           data: {
@@ -2079,6 +2087,17 @@ export class CrmController {
         create: { tenantId, contactId, fieldId: field.id, value },
         update: { value },
       });
+    }
+  }
+
+  private assertCanWriteContactAdditionalFields(
+    values: Record<string, string | number | boolean | null> | undefined,
+    current: Pick<AuthenticatedUser, "roleKey" | "permissions">,
+  ) {
+    if (values !== undefined && !canReadContactAdditionalFields(current)) {
+      throw new ForbiddenException(
+        "Permissão de Campos Adicionais necessária para alterar estes valores.",
+      );
     }
   }
 

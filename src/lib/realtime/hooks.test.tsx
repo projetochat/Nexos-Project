@@ -225,6 +225,54 @@ describe("useRealtimeInbox render stability", () => {
       host.remove();
     }
   });
+
+  it("clears sensitive caches immediately when authorization changes during the session", async () => {
+    vi.stubEnv("VITE_TRIXUS_REALTIME_ENABLED", "true");
+    localStorage.setItem("trixus.api.accessToken", "access");
+    const { useSession } = await import("@/lib/session");
+    const { useInstanceAccessUpdates } = await import("./hooks");
+    useSession.setState({ user: user(), hydrated: true });
+    const client = new QueryClient();
+    client.setQueryData(["trixus", "conversations", "authorized"], {
+      contact: { customFields: { secret: "hidden" } },
+    });
+    client.setQueryData(["unrelated"], { staleIdentity: true });
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    function Probe() {
+      useInstanceAccessUpdates();
+      return null;
+    }
+    try {
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <Probe />
+          </QueryClientProvider>,
+        ),
+      );
+      await act(async () =>
+        lastSocket?.on.mock.calls.find(([name]) => name === "authorization.updated")?.[1]({
+          eventId: "authorization-event",
+          event: "authorization.updated",
+          version: 1,
+          occurredAt: new Date().toISOString(),
+          data: { membershipId: "membership-a", reason: "role.updated" },
+        }),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(client.getQueryCache().getAll()).toHaveLength(0);
+      expect(lastSocket?.disconnect).toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+      client.clear();
+      host.remove();
+    }
+  });
 });
 
 function user(): SessionUser {
