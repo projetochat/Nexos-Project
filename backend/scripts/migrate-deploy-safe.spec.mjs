@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
+  allowPendingReconciliationDuringInspection,
   anonymizeCollisionRows,
   canonicalNormalizedName,
   canonicalVariableKey,
@@ -418,5 +419,11 @@ describe("safe contact custom field migration preflight", () => {
     expect(parseMode(["-h"])).toBe("help");
     expect(parseMode(["--version"])).toBe("version");
     expect(parseMode(["--apply-reviewed-reconciliation"])).toBe("reconcile");
+  });
+
+  it("inspects a reviewed legacy state before deploy refuses manual reconciliation", () => {
+    expect(allowPendingReconciliationDuringInspection("deploy")).toBe(true);
+    expect(allowPendingReconciliationDuringInspection("preflight")).toBe(true);
+    expect(allowPendingReconciliationDuringInspection("reconcile")).toBe(true);
   });
 });

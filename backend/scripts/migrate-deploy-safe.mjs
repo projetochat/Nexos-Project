@@ -839,7 +839,7 @@ async function main() {
 
   const expectedChecksum = await migrationChecksum();
   const initial = await inspectDatabase(expectedChecksum, {
-    allowPendingReconciliation: mode === "preflight" || mode === "reconcile",
+    allowPendingReconciliation: allowPendingReconciliationDuringInspection(mode),
   });
   if (mode === "reconcile" && initial.migrationState !== "RECONCILIATION_PENDING") {
     throw safeError("CONTACT_CUSTOM_FIELD_IDENTITY_RECONCILIATION_NOT_PENDING");
@@ -891,6 +891,10 @@ export function parseMode(args) {
   if (args.length === 1 && args[0] === "--preflight-only") return "preflight";
   if (args.length === 1 && args[0] === "--apply-reviewed-reconciliation") return "reconcile";
   throw safeError("UNSUPPORTED_ARGUMENTS");
+}
+
+export function allowPendingReconciliationDuringInspection(mode) {
+  return mode === "preflight" || mode === "reconcile" || mode === "deploy";
 }
 
 function printHelp() {
