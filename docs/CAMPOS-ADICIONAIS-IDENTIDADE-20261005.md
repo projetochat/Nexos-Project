@@ -20,18 +20,18 @@ Impedir colisões entre campos nativos e Campos Adicionais, manter nomes e chave
 
 As chaves técnicas reservadas são independentes dos textos traduzidos exibidos na interface:
 
-| Chave | Significado |
-| --- | --- |
-| `saudacao` | Saudação calculada no instante e fuso da mensagem |
-| `cumprimento` | Alias compatível de `saudacao` |
-| `contato` | Alias do nome do contato |
-| `nome` | Nome do contato |
-| `telefone` | Telefone do contato |
-| `email` | E-mail do contato |
-| `instancia` | Instância da conversa |
-| `departamento` | Departamento aplicável |
-| `cliente` | Empresa/cliente vinculado |
-| `empresa` | Alias de `cliente` |
+| Chave          | Significado                                       |
+| -------------- | ------------------------------------------------- |
+| `saudacao`     | Saudação calculada no instante e fuso da mensagem |
+| `cumprimento`  | Alias compatível de `saudacao`                    |
+| `contato`      | Alias do nome do contato                          |
+| `nome`         | Nome do contato                                   |
+| `telefone`     | Telefone do contato                               |
+| `email`        | E-mail do contato                                 |
+| `instancia`    | Instância da conversa                             |
+| `departamento` | Departamento aplicável                            |
+| `cliente`      | Empresa/cliente vinculado                         |
+| `empresa`      | Alias de `cliente`                                |
 
 Campos Adicionais não podem usar nenhuma dessas chaves.
 
@@ -72,10 +72,11 @@ Não foi criado fluxo de restauração nesta entrega. Restaurar ou liberar uma i
 `20261005210000_contact_custom_field_identity` é aditiva e não foi executada contra banco corrente.
 
 - Adiciona `variableKey`.
-- Normaliza nomes ativos.
+- Normaliza nomes ativos e arquivados.
 - Mantém o token legado primário dos registros existentes quando possível, para reduzir quebra de mensagens já salvas.
-- Em históricos de arquivamento/recriação, prioriza o campo ativo (ou o arquivado mais antigo quando não há ativo) para conservar o nome normalizado; as demais identidades históricas recebem sufixo determinístico, sem excluir registros. A identidade principal continua reservada.
-- Se houver dois campos ativos que se tornem iguais após NFKC, a migração é interrompida deliberadamente, exigindo revisão dos dados em cópia descartável antes de qualquer aplicação real.
+- O preflight bloqueia colisões de nome normalizado, chave técnica, chave nativa ou chave vazia antes do primeiro DDL. Isso inclui conflitos entre ativos e arquivados.
+- A migração não renomeia, mescla, restaura nem exclui definições automaticamente. Uma colisão exige decisão funcional explícita e nova execução após a correção dos dados em recurso descartável/autorizado.
+- O arquivo inteiro usa transação explícita. O comando de deploy executa um preflight externo antes de chamar o Prisma, evitando também registro falho em `_prisma_migrations` para colisões conhecidas.
 
 ## Verificações executadas
 
@@ -89,20 +90,22 @@ Não foi criado fluxo de restauração nesta entrega. Restaurar ou liberar uma i
 - Suítes adicionais de Saudação, Ausência, envio rápido, mídia e agendamento: 62 testes backend aprovados.
 - Suítes adicionais de edição e sequências de Mensagens Rápidas: 23 testes aprovados.
 
-Cobertura direcionada inclui normalização Unicode, caixa/espaços, chave nativa, campo existente/arquivado, concorrência simulada com `P2002`, tenants distintos, criação, edição com chave imutável, resolução por chave técnica, proteção contra sobrescrita nativa, tipos formatados e uso no modal de agendamento.
+Cobertura direcionada inclui normalização Unicode, caixa/espaços, chave nativa, campo existente/arquivado, concorrência simulada com `P2002`, concorrência real no PostgreSQL descartável, tenants distintos, criação, colisão na edição, edição com chave imutável, resolução por chave técnica em Saudação, Ausência, Mensagens Rápidas e agendamento, proteção contra sobrescrita nativa, tipos formatados e uso no modal de agendamento.
 
 ## Limitações
 
-- Nenhuma migração foi aplicada e nenhum banco foi acessado. A SQL deve ser ensaiada numa cópia descartável com dados representativos antes de promoção.
+- A migração foi ensaiada somente em PostgreSQL 16 descartável com dados sintéticos. Nenhum banco corrente ou produção foi acessado.
 - A transliteração SQL de chaves legadas cobre o alfabeto latino usado atualmente, mas deve ser comparada com a geração NFKD da aplicação no ensaio descartável caso existam labels em outros alfabetos.
-- O teste de concorrência comprova o contrato da aplicação e a presença dos índices no esquema/migração; não substitui um teste de integração PostgreSQL com duas transações reais.
+- A concorrência real foi ensaiada manualmente em PostgreSQL 16 descartável; ela ainda não é executada automaticamente na suíte unitária.
 - Não foi criado fluxo para listar/restaurar campos arquivados.
 - O typecheck amplo que inclui todos os testes do backend continua apresentando erros preexistentes e não relacionados; o `tsconfig.build` passou.
 - Havia alterações simultâneas, fora deste escopo, nos arquivos de mensagens. Elas foram preservadas e integradas; por isso o retorno deve ser seletivo.
 
 ## Backup e retorno
 
-Snapshot anterior: `C:/dev/Trixus/backups/campos-adicionais-20261005-before` (arquivos com hashes SHA-256 registrados na criação).
+Snapshot anterior: `C:/dev/Trixus/backups/campos-adicionais-20261005-before`. Os arquivos foram localizados, mas nenhum manifesto de hashes dessa captura anterior foi encontrado nesta revisão; portanto não se afirma integridade criptográfica retroativa.
+
+Snapshot anterior à correção do candidato NO-GO: `C:/dev/Trixus/backups/campos-adicionais-nogo-20261006-before`.
 
 Retorno antes de qualquer aplicação de migração:
 

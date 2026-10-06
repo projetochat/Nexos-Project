@@ -9,7 +9,7 @@
     "test": "vitest run",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",
-    "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "prisma:migrate:deploy": "bun scripts/migrate-deploy-safe.mjs",
     "prisma:migrate:status": "prisma migrate status --schema prisma/schema.prisma",
     "prisma:seed": "bun prisma/seed.ts",
     "audit:homologation": "node scripts/audit-homologation-data.mjs",

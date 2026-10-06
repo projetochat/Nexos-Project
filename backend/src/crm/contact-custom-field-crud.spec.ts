@@ -152,4 +152,69 @@ describe("contact custom field identity at CRUD boundaries", () => {
     );
     expect(result.variableKey).toBe("codigo");
   });
+
+  it("blocks an edited label that collides after Unicode normalization before writing", async () => {
+    const existing = createdField({
+      tenantId: "a",
+      label: "Referência",
+      normalizedName: "referência",
+      variableKey: "referencia",
+      type: "TEXT",
+    });
+    const update = vi.fn();
+    const findFirst = vi
+      .fn()
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce({ id: "another-field" });
+    const controller = controllerWith({ contactCustomField: { findFirst, update } });
+
+    await expect(
+      controller.updateContactCustomField(
+        existing.id,
+        { label: "  Ａ   interno  ", type: "text" },
+        current("a"),
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        code: "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS",
+        message: "Já existe um campo com este nome. Informe um nome diferente.",
+      },
+    });
+    expect(findFirst).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: "a",
+          id: { not: existing.id },
+          OR: [{ normalizedName: "a interno" }],
+        }),
+      }),
+    );
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("maps an edit unique-index race to the same form conflict contract", async () => {
+    const existing = createdField({
+      tenantId: "a",
+      label: "Referência",
+      normalizedName: "referência",
+      variableKey: "referencia",
+      type: "TEXT",
+    });
+    const update = vi.fn().mockRejectedValue({ code: "P2002" });
+    const findFirst = vi.fn().mockResolvedValueOnce(existing).mockResolvedValueOnce(null);
+    const controller = controllerWith({ contactCustomField: { findFirst, update } });
+
+    await expect(
+      controller.updateContactCustomField(
+        existing.id,
+        { label: "Referência interna", type: "text" },
+        current("a"),
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        code: "CONTACT_CUSTOM_FIELD_ALREADY_EXISTS",
+        message: "Já existe um campo com este nome. Informe um nome diferente.",
+      },
+    });
+  });
 });

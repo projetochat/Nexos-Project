@@ -200,7 +200,49 @@ describe("MessagingOutboundService", () => {
     expect(dispatcher.dispatchMessage).toHaveBeenCalledWith("message-a");
   });
 
-  it("queues absence media with its own idempotency key and outbox event", async () => {
+  it("resolves an additional field through the central resolver in a welcome text", async () => {
+    const prisma = prismaMock();
+    const dispatcher = dispatcherMock();
+    prisma.message.findFirst.mockResolvedValue(null);
+    prisma.message.create.mockResolvedValue({
+      ...message(),
+      clientMessageId: "automatic:welcome",
+      providerStatus: "welcome_queued",
+    });
+    const service = new MessagingOutboundService(
+      prisma as never,
+      registryMock() as never,
+      dispatcher as never,
+    );
+
+    await expect(
+      service.queueAutomatedText({
+        tenantId: "tenant-a",
+        conversationId: "conversation-a",
+        connectionId: "connection-a",
+        externalChatId: "5511999999999@s.whatsapp.net",
+        content: "Bem-vinda, {{nome}}. Plano: {{plano}}.",
+        templateContext: {
+          contactName: "Ana",
+          customFieldValues: [
+            { label: "Plano", variableKey: "plano", type: "TEXT", value: "Premium" },
+          ],
+        },
+        kind: "welcome",
+      }),
+    ).resolves.toMatchObject({ created: true });
+
+    expect(prisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          clientMessageId: "automatic:welcome",
+          content: "Bem-vinda, Ana. Plano: Premium.",
+        }),
+      }),
+    );
+  });
+
+  it("queues absence media with its own idempotency key and resolves an additional field", async () => {
     const prisma = prismaMock();
     const dispatcher = dispatcherMock();
     const mediaStorage = {
@@ -233,8 +275,13 @@ describe("MessagingOutboundService", () => {
         conversationId: "conversation-a",
         connectionId: "connection-a",
         externalChatId: "5511999999999@s.whatsapp.net",
-        content: "Voltamos em breve, {{nome}}.",
-        templateContext: { contactName: "Ana" },
+        content: "Voltamos em breve, {{nome}} do plano {{plano}}.",
+        templateContext: {
+          contactName: "Ana",
+          customFieldValues: [
+            { label: "Plano", variableKey: "plano", type: "TEXT", value: "Premium" },
+          ],
+        },
         kind: "absence",
         attachment: {
           fileName: "absence.ogg",
@@ -255,7 +302,7 @@ describe("MessagingOutboundService", () => {
         data: expect.objectContaining({
           clientMessageId: "automatic:absence",
           providerStatus: "absence_queued",
-          content: "Voltamos em breve, Ana.",
+          content: "Voltamos em breve, Ana do plano Premium.",
         }),
       }),
     );
@@ -304,6 +351,12 @@ describe("MessagingOutboundService", () => {
   it("resolves a quick-message template with the instance timezone at enqueue time", async () => {
     const prisma = prismaMock();
     const activeConversation = conversation() as any;
+    activeConversation.contact.customFieldValues = [
+      {
+        value: "Premium",
+        field: { label: "Plano", variableKey: "plano", type: "TEXT", mask: null },
+      },
+    ];
     prisma.conversation.findFirst.mockResolvedValue(activeConversation);
     prisma.message.findFirst.mockResolvedValue(null);
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
@@ -321,13 +374,13 @@ describe("MessagingOutboundService", () => {
 
     await service.sendText(
       "conversation-a",
-      { content: "{{saudacao}}, {{nome}}", clientMessageId: "quick-a" },
+      { content: "{{saudacao}}, {{nome}} — {{plano}}", clientMessageId: "quick-a" },
       current as never,
     );
 
     expect(prisma.message.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ content: "Boa tarde, Cliente" }),
+        data: expect.objectContaining({ content: "Boa tarde, Cliente — Premium" }),
       }),
     );
     expect(prisma.conversation.findFirst).toHaveBeenCalledWith(

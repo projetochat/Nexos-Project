@@ -179,6 +179,12 @@ describe("MessagingInboundService", () => {
         "{{cumprimento}}, novamente {{nome}} da {{empresa}} / {{departamento}}!",
       timezone: "America/Manaus",
     });
+    prisma.contactCustomFieldValue.findMany.mockResolvedValue([
+      {
+        value: "Premium",
+        field: { label: "Plano", variableKey: "plano", type: "TEXT", mask: null },
+      },
+    ]);
     prisma.message.findFirst.mockResolvedValue(null);
     prisma.contact.findFirst.mockResolvedValue(contact());
     prisma.contact.update.mockResolvedValue(contact());
@@ -225,6 +231,9 @@ describe("MessagingInboundService", () => {
           customer: "Cliente XPTO",
           department: "Financeiro",
           timezone: "America/Manaus",
+          customFieldValues: [
+            { label: "Plano", variableKey: "plano", type: "TEXT", mask: null, value: "Premium" },
+          ],
         }),
       }),
     );
@@ -314,6 +323,12 @@ describe("MessagingInboundService", () => {
       timezone: "America/Sao_Paulo",
       serviceHours: [{ day: "Quinta", active: true, start: "08:00", end: "18:00" }],
     });
+    prisma.contactCustomFieldValue.findMany.mockResolvedValue([
+      {
+        value: "Premium",
+        field: { label: "Plano", variableKey: "plano", type: "TEXT", mask: null },
+      },
+    ]);
     prisma.message.findFirst.mockResolvedValue(null);
     prisma.contact.findFirst.mockResolvedValue(contact());
     prisma.contact.update.mockResolvedValue(contact());
@@ -363,6 +378,9 @@ describe("MessagingInboundService", () => {
           customer: "Cliente XPTO",
           department: "Financeiro",
           timezone: "America/Sao_Paulo",
+          customFieldValues: [
+            { label: "Plano", variableKey: "plano", type: "TEXT", mask: null, value: "Premium" },
+          ],
         }),
         attachment,
       }),

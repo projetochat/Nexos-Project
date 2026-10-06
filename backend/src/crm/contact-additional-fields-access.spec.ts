@@ -41,9 +41,16 @@ describe("contact additional fields access", () => {
     tags: [],
     customFieldValues: [
       {
+        tenantId: "tenant-a",
         fieldId: "field-a",
         value: "segredo",
-        field: { label: "Código", type: "TEXT" },
+        field: {
+          tenantId: "tenant-a",
+          label: "Código",
+          variableKey: "codigo",
+          type: "TEXT",
+          mask: null,
+        },
       },
     ],
     createdAt: new Date(),
@@ -69,6 +76,55 @@ describe("contact additional fields access", () => {
     );
     expect(controller.serializeContact(contact, { includeAdditionalFields: true })).toMatchObject({
       customFields: { "field-a": "segredo" },
+      customFieldValues: [
+        expect.objectContaining({ fieldId: "field-a", variableKey: "codigo", value: "segredo" }),
+      ],
     });
+  });
+
+  it("keeps values from another tenant hidden even for an authorized user", () => {
+    const foreignValue = {
+      ...contact,
+      customFieldValues: [
+        { ...contact.customFieldValues[0], tenantId: "tenant-b" },
+        {
+          ...contact.customFieldValues[0],
+          fieldId: "field-b",
+          field: { ...contact.customFieldValues[0].field, tenantId: "tenant-b" },
+        },
+      ],
+    };
+
+    expect(
+      controller.serializeContact(foreignValue, { includeAdditionalFields: true }),
+    ).toMatchObject({ customFields: {}, customFieldValues: [] });
+  });
+
+  it("returns only the values that belong to each authorized tenant", () => {
+    const tenantBContact = {
+      ...contact,
+      id: "contact-b",
+      tenantId: "tenant-b",
+      customFieldValues: [
+        {
+          ...contact.customFieldValues[0],
+          tenantId: "tenant-b",
+          fieldId: "field-b",
+          value: "tenant-b-value",
+          field: {
+            ...contact.customFieldValues[0].field,
+            tenantId: "tenant-b",
+            variableKey: "codigo_b",
+          },
+        },
+      ],
+    };
+
+    expect(controller.serializeContact(contact, { includeAdditionalFields: true })).toMatchObject({
+      customFields: { "field-a": "segredo" },
+    });
+    expect(
+      controller.serializeContact(tenantBContact, { includeAdditionalFields: true }),
+    ).toMatchObject({ customFields: { "field-b": "tenant-b-value" } });
   });
 });
