@@ -3,7 +3,32 @@ BEGIN;
 -- This migration has not been applied outside disposable resources. Keep every preflight check
 -- before the first DDL so a known collision cannot leave a partial column, index or data rewrite.
 DO $$
+DECLARE
+  -- CONTACT_CUSTOM_FIELD_NATIVE_NAMES_START
+  native_names CONSTANT text[] := ARRAY[
+    'nome','whatsapp','telefone','e-mail','email','instância','instâncias','empresa',
+    'empresa do contato','cliente','departamento','departamento do contato','perfil',
+    'perfil do contato','etiqueta','etiquetas'
+  ];
+  -- CONTACT_CUSTOM_FIELD_NATIVE_NAMES_END
+  -- CONTACT_CUSTOM_FIELD_RESERVED_KEYS_START
+  native_keys CONSTANT text[] := ARRAY[
+    'cumprimento','saudacao','contato','nome','telefone','email','instancia','departamento',
+    'cliente','empresa','whatsapp','perfil','etiqueta','mail','instancias','empresa_contato',
+    'departamento_contato','perfil_contato','etiquetas'
+  ];
+  -- CONTACT_CUSTOM_FIELD_RESERVED_KEYS_END
 BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM "contact_custom_fields"
+    WHERE lower(regexp_replace(normalize(trim("label"), NFKC), '\s+', ' ', 'g')) = ANY(native_names)
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23505',
+      MESSAGE = 'CONTACT_CUSTOM_FIELD_NATIVE_NAME_COLLISION';
+  END IF;
+
   IF EXISTS (
     SELECT 1
     FROM "contact_custom_fields"
@@ -58,10 +83,7 @@ BEGIN
     GROUP BY "tenantId", candidate_key
     HAVING
       candidate_key = ''
-      OR candidate_key IN (
-        'cumprimento','saudacao','contato','nome','telefone','email',
-        'instancia','departamento','cliente','empresa'
-      )
+      OR candidate_key = ANY(native_keys)
       OR count(*) > 1
   ) THEN
     RAISE EXCEPTION USING

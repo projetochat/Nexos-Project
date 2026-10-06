@@ -1,3 +1,14 @@
+import {
+  canonicalContactFieldVariableKey,
+  CONTACT_CUSTOM_FIELD_VARIABLE_KEY_STOP_WORDS,
+  NATIVE_CONTACT_FIELD_NAMES,
+  NATIVE_MESSAGE_VARIABLE_KEYS,
+  NATIVE_RESERVED_VARIABLE_KEYS,
+  normalizeCanonicalContactFieldName,
+} from "../../backend/src/crm/contact-custom-field-catalog";
+
+export { NATIVE_CONTACT_FIELD_NAMES, NATIVE_MESSAGE_VARIABLE_KEYS };
+
 export type MessageVariableField = {
   label: string;
   variableKey?: string | null;
@@ -19,59 +30,12 @@ export type MessageVariableContext = {
   timezone?: string | null;
 };
 
-const VARIABLE_NAME_STOP_WORDS = new Set([
-  "de",
-  "do",
-  "dos",
-  "da",
-  "das",
-  "o",
-  "a",
-  "os",
-  "as",
-  "um",
-  "uns",
-  "uma",
-  "umas",
-  "e",
-  "ou",
-]);
-
-export const NATIVE_MESSAGE_VARIABLE_KEYS = [
-  "cumprimento",
-  "saudacao",
-  "contato",
-  "nome",
-  "telefone",
-  "email",
-  "instancia",
-  "departamento",
-  "cliente",
-  "empresa",
-] as const;
-export const NATIVE_CONTACT_FIELD_NAMES = [
-  "nome",
-  "whatsapp",
-  "telefone",
-  "e-mail",
-  "email",
-  "instância",
-  "instâncias",
-  "empresa",
-  "empresa do contato",
-  "cliente",
-  "departamento",
-  "departamento do contato",
-  "perfil",
-  "perfil do contato",
-  "etiqueta",
-  "etiquetas",
-] as const;
-const NATIVE_MESSAGE_VARIABLE_KEY_SET = new Set<string>(NATIVE_MESSAGE_VARIABLE_KEYS);
+const VARIABLE_NAME_STOP_WORDS = new Set<string>(CONTACT_CUSTOM_FIELD_VARIABLE_KEY_STOP_WORDS);
+const NATIVE_MESSAGE_VARIABLE_KEY_SET = new Set<string>(NATIVE_RESERVED_VARIABLE_KEYS);
 const NATIVE_CONTACT_FIELD_NAME_SET = new Set<string>(NATIVE_CONTACT_FIELD_NAMES);
 
 export function normalizeCustomFieldName(value: string) {
-  return value.normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("pt-BR");
+  return normalizeCanonicalContactFieldName(value);
 }
 
 export function isNativeContactFieldName(value: string) {
@@ -84,9 +48,7 @@ export function previewCustomFieldVariableKey(label: string) {
 }
 
 export function customFieldVariableKey(label: string) {
-  const words = normalizedVariableWords(label);
-  const meaningfulWords = words.filter((word) => !VARIABLE_NAME_STOP_WORDS.has(word));
-  return (meaningfulWords.length ? meaningfulWords : words).join("_");
+  return canonicalContactFieldVariableKey(label);
 }
 
 function normalizedVariableWords(label: string) {
@@ -112,6 +74,7 @@ export function resolveMessageVariables(text: string, context: MessageVariableCo
     contato: context.contactName?.trim() ?? "",
     nome: context.contactName?.trim() ?? "",
     telefone: context.phone?.trim() ?? "",
+    whatsapp: context.phone?.trim() ?? "",
     email: context.email?.trim() ?? "",
     instancia: context.instance?.trim() ?? "",
     cliente: context.customer?.trim() ?? "",

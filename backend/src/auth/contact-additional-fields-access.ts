@@ -6,7 +6,10 @@ export const CONTACT_ADDITIONAL_FIELDS_READ_PERMISSION = "contacts.additional_fi
 export function canReadContactAdditionalFields(
   current: Pick<AuthenticatedUser, "roleKey" | "permissions">,
 ) {
-  return current.permissions?.includes(CONTACT_ADDITIONAL_FIELDS_READ_PERMISSION) === true;
+  return (
+    current.roleKey === "tenant_admin" ||
+    current.permissions?.includes(CONTACT_ADDITIONAL_FIELDS_READ_PERMISSION) === true
+  );
 }
 
 type ContactAdditionalFieldSource = {

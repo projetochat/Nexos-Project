@@ -241,8 +241,9 @@ describe("ConversationsController contact variable context", () => {
       roleKey: "tenant_admin",
       permissions: ["conversations.read"],
     } as never);
-    expect(adminDetail.contact).not.toHaveProperty("customFields");
-    expect(adminDetail.contact).not.toHaveProperty("customFieldValues");
+    expect(adminDetail.contact?.customFieldValues).toEqual([
+      expect.objectContaining({ variableKey: "codigo", value: "segredo" }),
+    ]);
   });
 });
 

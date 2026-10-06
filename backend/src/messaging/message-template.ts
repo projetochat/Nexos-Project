@@ -1,34 +1,11 @@
 import { formatInstantInTimezone, localDateTimeParts } from "./message-local-time";
+import {
+  CONTACT_CUSTOM_FIELD_VARIABLE_KEY_STOP_WORDS,
+  NATIVE_RESERVED_VARIABLE_KEYS,
+} from "../crm/contact-custom-field-catalog";
 
-const NATIVE_VARIABLE_KEYS = new Set([
-  "cumprimento",
-  "saudacao",
-  "contato",
-  "nome",
-  "telefone",
-  "email",
-  "instancia",
-  "departamento",
-  "cliente",
-  "empresa",
-]);
-const LEGACY_STOP_WORDS = new Set([
-  "de",
-  "do",
-  "dos",
-  "da",
-  "das",
-  "o",
-  "a",
-  "os",
-  "as",
-  "um",
-  "uns",
-  "uma",
-  "umas",
-  "e",
-  "ou",
-]);
+const NATIVE_VARIABLE_KEYS = new Set<string>(NATIVE_RESERVED_VARIABLE_KEYS);
+const LEGACY_STOP_WORDS = new Set<string>(CONTACT_CUSTOM_FIELD_VARIABLE_KEY_STOP_WORDS);
 
 export type TemplateCustomField = {
   label?: string | null;
@@ -69,6 +46,7 @@ export function resolveMessageTemplate(text: string, context: TemplateContext = 
     contato: context.contactName?.trim() ?? "",
     nome: context.contactName?.trim() ?? "",
     telefone: context.phone?.trim() ?? "",
+    whatsapp: context.phone?.trim() ?? "",
     email: context.email?.trim() ?? "",
     instancia: context.instance?.trim() ?? "",
     departamento: context.department?.trim() ?? "",

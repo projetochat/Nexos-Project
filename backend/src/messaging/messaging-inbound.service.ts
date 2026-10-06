@@ -537,7 +537,6 @@ export class MessagingInboundService {
         this.realtime?.publishContactUpdated({
           tenantId: event.tenantId,
           contactId: result.contactId,
-          contact: { id: result.contactId },
         });
       }
       if (result.leadId) {

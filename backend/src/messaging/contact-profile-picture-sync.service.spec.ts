@@ -49,7 +49,6 @@ describe("ContactProfilePictureSyncService", () => {
     expect(realtime.publishContactUpdated).toHaveBeenCalledWith({
       tenantId: "tenant-a",
       contactId: "contact-a",
-      contact: { id: "contact-a", avatar_url: "https://whatsapp.test/douglas.jpg" },
     });
     expect(synced.get("contact-a")).toBe("https://whatsapp.test/douglas.jpg");
   });

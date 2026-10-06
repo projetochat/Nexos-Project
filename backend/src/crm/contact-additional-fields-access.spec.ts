@@ -72,7 +72,7 @@ describe("contact additional fields access", () => {
       }),
     ).toBe(true);
     expect(canReadContactAdditionalFields({ roleKey: "tenant_admin", permissions: [] })).toBe(
-      false,
+      true,
     );
     expect(canReadContactAdditionalFields({ roleKey: "agent", permissions: [] })).toBe(false);
     expect(

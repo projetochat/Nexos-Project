@@ -1,11 +1,22 @@
 import { createHash, randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "../src/generated/prisma/index.js";
 
 const MIGRATION_NAME = "20261005210000_contact_custom_field_identity";
 const backendDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const migrationFile = resolve(
+  backendDir,
+  "prisma",
+  "migrations",
+  MIGRATION_NAME,
+  "migration.sql",
+);
+const migrationSql = readFileSync(migrationFile, "utf8");
+const nativeKeys = migrationCatalogArray(migrationSql, "RESERVED_KEYS");
+const nativeNames = migrationCatalogArray(migrationSql, "NATIVE_NAMES");
 
 const collisionReportQuery = `
 WITH generated AS (
@@ -67,16 +78,26 @@ WITH generated AS (
   LEFT JOIN value_counts ON value_counts."fieldId" = identities."id"
   GROUP BY identities."tenantId", identities.normalized_name
   HAVING count(*) > 1
+), native_name_collisions AS (
+  SELECT
+    identities."tenantId" AS tenant_id,
+    identities.normalized_name AS conflicting_key,
+    'native_name'::text AS collision_type,
+    count(*)::int AS definition_count,
+    count(*) FILTER (WHERE identities."archivedAt" IS NULL)::int AS active_count,
+    count(*) FILTER (WHERE identities."archivedAt" IS NOT NULL)::int AS archived_count,
+    COALESCE(sum(value_counts.value_count), 0)::int AS value_count
+  FROM identities
+  LEFT JOIN value_counts ON value_counts."fieldId" = identities."id"
+  WHERE identities.normalized_name = ANY($2::text[])
+  GROUP BY identities."tenantId", identities.normalized_name
 ), technical_collisions AS (
   SELECT
     identities."tenantId" AS tenant_id,
     identities.candidate_key AS conflicting_key,
     CASE
       WHEN identities.candidate_key = '' THEN 'empty_key'
-      WHEN identities.candidate_key IN (
-        'cumprimento','saudacao','contato','nome','telefone','email',
-        'instancia','departamento','cliente','empresa'
-      ) THEN 'native_key'
+      WHEN identities.candidate_key = ANY($1::text[]) THEN 'native_key'
       ELSE 'variable_key'
     END::text AS collision_type,
     count(*)::int AS definition_count,
@@ -88,13 +109,12 @@ WITH generated AS (
   GROUP BY identities."tenantId", identities.candidate_key
   HAVING
     identities.candidate_key = ''
-    OR identities.candidate_key IN (
-      'cumprimento','saudacao','contato','nome','telefone','email',
-      'instancia','departamento','cliente','empresa'
-    )
+    OR identities.candidate_key = ANY($1::text[])
     OR count(*) > 1
 )
 SELECT * FROM normalized_collisions
+UNION ALL
+SELECT * FROM native_name_collisions
 UNION ALL
 SELECT * FROM technical_collisions
 ORDER BY tenant_id, collision_type, conflicting_key
@@ -147,7 +167,7 @@ export async function inspectContactCustomFieldIdentity(prisma) {
   if (migrationFinished) return { collisions: [], migrationFinished: true };
 
   return {
-    collisions: await prisma.$queryRawUnsafe(collisionReportQuery),
+    collisions: await prisma.$queryRawUnsafe(collisionReportQuery, nativeKeys, nativeNames),
     migrationFinished: false,
   };
 }
@@ -190,8 +210,16 @@ function digest(salt, value) {
   return createHash("sha256").update(salt).update("\0").update(value).digest("hex");
 }
 
+function migrationCatalogArray(sql, marker) {
+  const block = new RegExp(
+    `CONTACT_CUSTOM_FIELD_${marker}_START([\\s\\S]*?)CONTACT_CUSTOM_FIELD_${marker}_END`,
+  ).exec(sql)?.[1];
+  if (!block) throw new Error(`CONTACT_CUSTOM_FIELD_${marker}_MISSING`);
+  return Array.from(block.matchAll(/'([^']+)'/g), (match) => match[1]);
+}
+
 function safeAlternatives(collisionType) {
-  if (collisionType === "native_key") {
+  if (collisionType === "native_key" || collisionType === "native_name") {
     return ["Renomear explicitamente o campo adicional para não usar uma chave nativa."];
   }
   if (collisionType === "empty_key") {
