@@ -366,6 +366,18 @@ def publish(config, old, protected, sha, release_dir, recovery_marker):
                           '--name', container_name, 'migrate',
                           'bun', 'run', 'prisma:migrate:deploy', *wrapper_args]
 
+    def migration_preflight(container_name):
+        output = command(migrate_command(container_name, '--preflight-only'), timeout=600)
+        try:
+            result = json.loads(output)
+        except (TypeError, ValueError) as error:
+            raise CheckError('Resposta invalida do preflight de migracao') from error
+        require(result.get('code') == 'CONTACT_CUSTOM_FIELD_IDENTITY_PREFLIGHT_OK',
+                'Resposta inesperada do preflight de migracao')
+        require(isinstance(result.get('reconciliationRequired'), bool),
+                'Preflight sem decisao de reconciliacao')
+        return result['reconciliationRequired']
+
     def create_recovery_marker():
         require(not recovery_marker.exists(), 'Recuperacao anterior pendente')
         recovery_marker.write_text(str(release_dir) + '\n')
@@ -396,8 +408,7 @@ def publish(config, old, protected, sha, release_dir, recovery_marker):
     stop_attempted = False
     try:
         stage('PREFLIGHT_MIGRACAO_SEM_INDISPONIBILIDADE')
-        command(migrate_command('trixus-production-migrate-preflight', '--preflight-only'),
-                timeout=600)
+        reconciliation_required = migration_preflight('trixus-production-migrate-preflight')
         create_recovery_marker()
         stage('PARANDO_APENAS_APLICACAO_TRIXUS')
         stop_attempted = True
@@ -420,12 +431,14 @@ def publish(config, old, protected, sha, release_dir, recovery_marker):
         (release_dir / 'backup-checksums.json').write_text(json.dumps(checksums))
         check_protected(protected)
         stage('REVALIDANDO_MIGRACAO_ANTES_DA_APLICACAO')
-        command(migrate_command('trixus-production-migrate-revalidate', '--preflight-only'),
-                timeout=600)
+        revalidated_reconciliation = migration_preflight('trixus-production-migrate-revalidate')
+        require(revalidated_reconciliation == reconciliation_required,
+                'Estado de reconciliacao mudou durante a manutencao')
         stage('MIGRACAO_INICIADA_SEM_ROLLBACK_AUTOMATICO')
         migration_started = True
         # Fixed command: no seed, reset, db push or remote-provided command.
-        command(migrate_command('trixus-production-migrate'), timeout=600)
+        migration_args = ('--apply-reviewed-reconciliation',) if reconciliation_required else ()
+        command(migrate_command('trixus-production-migrate', *migration_args), timeout=600)
         stage('PUBLICANDO_APLICACAO_TRIXUS')
         command(current + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never',
                 '--wait', '--wait-timeout', '180', 'backend', 'frontend'], timeout=240)

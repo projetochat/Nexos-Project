@@ -14,6 +14,7 @@ import {
   nativeKeys,
   nativeNames,
   parseMode,
+  validateFullMigrationHistory,
   validateReconciliationManifest,
   semanticDrift,
   structuralDrift,
@@ -32,6 +33,12 @@ const migrationPath = resolve(
   "migrations",
   "20261005210000_contact_custom_field_identity",
   "migration.sql",
+);
+const reconciliationManifestPath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "prisma",
+  "migration-reconciliations.json",
 );
 const checksum = await migrationChecksum();
 const completed = (value = checksum) => ({
@@ -82,20 +89,69 @@ describe("safe contact custom field migration preflight", () => {
     await expect(migrationChecksum()).resolves.toBe(independentlyCalculated);
   });
 
+  it("records the exact Git blob bytes and SHA-256 shipped by b4d85f7", async () => {
+    const manifest = JSON.parse(await readFile(reconciliationManifestPath, "utf8"));
+    const [entry] = validateReconciliationManifest(manifest);
+    expect(entry).toMatchObject({
+      legacyCommit: "b4d85f7d26f90bbcb071544dbb5115de1ee98a48",
+      legacyGitBlob: "0e1ffd3de8735c1afc12f74bc0751f085af40af0",
+      legacyByteLength: 3654,
+      legacyChecksum: "9ff6347fc38618491c8465bc91440381de81e8d2f06bc15d1f32cfd5c8850fef",
+    });
+  });
+
+  it("rejects checksum drift, incomplete history, rollback and gaps in any prior migration", () => {
+    const migrations = [
+      { name: "20260101000000_first", checksum: "1".repeat(64) },
+      { name: "20260102000000_second", checksum: "2".repeat(64) },
+      { name: "20260103000000_third", checksum: "3".repeat(64) },
+    ];
+    const row = (name, value, overrides = {}) => ({
+      migration_name: name,
+      checksum: value,
+      finished_at: new Date("2026-01-01T00:00:00Z"),
+      rolled_back_at: null,
+      ...overrides,
+    });
+    expect(() =>
+      validateFullMigrationHistory([row(migrations[0].name, "0".repeat(64))], migrations),
+    ).toThrow("MIGRATION_HISTORY_CHECKSUM_MISMATCH");
+    expect(() =>
+      validateFullMigrationHistory(
+        [row(migrations[0].name, migrations[0].checksum, { finished_at: null })],
+        migrations,
+      ),
+    ).toThrow("MIGRATION_HISTORY_INCOMPLETE");
+    expect(() =>
+      validateFullMigrationHistory(
+        [
+          row(migrations[0].name, migrations[0].checksum, {
+            finished_at: null,
+            rolled_back_at: new Date("2026-01-02T00:00:00Z"),
+          }),
+        ],
+        migrations,
+      ),
+    ).toThrow("MIGRATION_HISTORY_ROLLED_BACK");
+    expect(() =>
+      validateFullMigrationHistory([row(migrations[1].name, migrations[1].checksum)], migrations),
+    ).toThrow("MIGRATION_HISTORY_GAP");
+  });
+
   it("rejects unknown migration history in every state", () => {
     const folders = new Set(["20261005210000_contact_custom_field_identity"]);
     for (const row of [completed(), incomplete(), rolledBack()]) {
       expect(
-        hasUnknownMigrationHistory(
-          [{ migration_name: "20990101000000_unknown", ...row }],
-          folders,
-        ),
+        hasUnknownMigrationHistory([{ migration_name: "20990101000000_unknown", ...row }], folders),
       ).toBe(true);
     }
   });
 
   it("accepts only a strict, unique reconciliation manifest", () => {
     const valid = {
+      legacyCommit: "a".repeat(40),
+      legacyGitBlob: "b".repeat(40),
+      legacyByteLength: 3654,
       legacyChecksum: "1".repeat(64),
       currentChecksum: "2".repeat(64),
       forwardMigration: "20261006030000_reconcile_contact_custom_field_identity",

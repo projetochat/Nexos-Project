@@ -1,4 +1,5 @@
 import copy
+import ast
 import hashlib
 import io
 import json
@@ -15,6 +16,13 @@ from preflight import CheckError
 from test_preflight import config
 
 SHA = 'a' * 40
+
+
+def migration_preflight(reconciliation_required=False):
+    return json.dumps({
+        'code': 'CONTACT_CUSTOM_FIELD_IDENTITY_PREFLIGHT_OK',
+        'reconciliationRequired': reconciliation_required,
+    })
 
 
 def make_archive(path, mutate=lambda value: None, extra=None):
@@ -132,6 +140,8 @@ class ReleaseTest(unittest.TestCase):
             marker = Path(folder) / 'recovery-required'
             def run(args, **kwargs):
                 commands.append(args)
+                if '--preflight-only' in args:
+                    return migration_preflight()
                 if 'pg_dump' in ' '.join(args):
                     raise CheckError('backup failed')
                 return ''
@@ -156,6 +166,8 @@ class ReleaseTest(unittest.TestCase):
             marker = Path(folder) / 'recovery-required'
             def run(args, **kwargs):
                 commands.append(args)
+                if '--preflight-only' in args:
+                    return migration_preflight()
                 if 'pg_dump' in ' '.join(args):
                     kwargs['output'].write(b'dump')
                 if '/usr/bin/tar' in args and '-cf' in args:
@@ -212,6 +224,7 @@ class ReleaseTest(unittest.TestCase):
                     preflights += 1
                     if preflights == 2:
                         raise CheckError('drift after maintenance')
+                    return migration_preflight()
                 if 'pg_dump' in ' '.join(args):
                     kwargs['output'].write(b'dump')
                 if '/usr/bin/tar' in args and '-cf' in args:
@@ -246,6 +259,7 @@ class ReleaseTest(unittest.TestCase):
                     preflights += 1
                     if preflights == 2:
                         raise CheckError('drift after maintenance')
+                    return migration_preflight()
                 if 'pg_dump' in ' '.join(args):
                     kwargs['output'].write(b'dump')
                 if '/usr/bin/tar' in args and '-cf' in args:
@@ -275,6 +289,7 @@ class ReleaseTest(unittest.TestCase):
                     preflights += 1
                     if preflights == 2:
                         raise CheckError('drift after maintenance')
+                    return migration_preflight()
                 if 'pg_dump' in ' '.join(args):
                     kwargs['output'].write(b'dump')
                 if '/usr/bin/tar' in args and '-cf' in args:
@@ -302,6 +317,8 @@ class ReleaseTest(unittest.TestCase):
 
             def run(args, **kwargs):
                 commands.append(args)
+                if '--preflight-only' in args:
+                    return migration_preflight()
                 if 'pg_dump' in ' '.join(args):
                     kwargs['output'].write(b'dump')
                 if '/usr/bin/tar' in args and '-cf' in args:
@@ -326,6 +343,42 @@ class ReleaseTest(unittest.TestCase):
             self.assertLess(stop, second_preflight)
             self.assertLess(second_preflight, apply)
             self.assertFalse(marker.exists())
+
+    def test_release_applies_reviewed_reconciliation_under_the_official_locked_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            commands = []
+            marker = Path(folder) / 'recovery-required'
+
+            def run(args, **kwargs):
+                commands.append(args)
+                if '--preflight-only' in args:
+                    return migration_preflight(reconciliation_required=True)
+                if 'pg_dump' in ' '.join(args):
+                    kwargs['output'].write(b'dump')
+                if '/usr/bin/tar' in args and '-cf' in args:
+                    Path(args[args.index('-cf') + 1]).write_bytes(b'storage')
+                return ''
+
+            with patch.object(release, 'command', side_effect=run), \
+                 patch.object(release, 'check_protected'), \
+                 patch.object(release, 'healthy_apps'), \
+                 patch.object(release, 'STATE', Path(folder)):
+                release.publish(config(), {'backend': 'sha256:old', 'frontend': 'sha256:old2'},
+                                {}, SHA, Path(folder), recovery_marker=marker)
+
+            apply = next(args for args in commands
+                         if 'prisma:migrate:deploy' in args and '--preflight-only' not in args)
+            self.assertIn('--apply-reviewed-reconciliation', apply)
+            source = ast.parse(Path(release.__file__).read_text())
+            main = next(node for node in source.body
+                        if isinstance(node, ast.FunctionDef) and node.name == 'main')
+            lock = next(node for node in ast.walk(main)
+                        if isinstance(node, ast.With) and 'release.lock' in ast.unparse(node.items[0].context_expr))
+            calls = [node for node in ast.walk(lock) if isinstance(node, ast.Call)]
+            self.assertTrue(any(isinstance(call.func, ast.Attribute) and call.func.attr == 'flock'
+                                for call in calls))
+            self.assertTrue(any(isinstance(call.func, ast.Name) and call.func.id == 'publish'
+                                for call in calls))
 
     def test_healthy_apps_uses_only_loopback_and_checks_trixus_identity(self):
         calls = []

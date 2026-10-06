@@ -1,6 +1,9 @@
 {
   "contactCustomFieldIdentity": [
     {
+      "legacyCommit": "b4d85f7d26f90bbcb071544dbb5115de1ee98a48",
+      "legacyGitBlob": "0e1ffd3de8735c1afc12f74bc0751f085af40af0",
+      "legacyByteLength": 3654,
       "legacyChecksum": "9ff6347fc38618491c8465bc91440381de81e8d2f06bc15d1f32cfd5c8850fef",
       "currentChecksum": "6ead95d4c8a68bf662ca67cc8d2c97b1b1dde04581f5a5d42051d9067ef318fb",
       "forwardMigration": "20261006030000_reconcile_contact_custom_field_identity",

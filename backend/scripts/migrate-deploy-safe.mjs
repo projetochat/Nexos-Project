@@ -7,13 +7,7 @@ import { fileURLToPath } from "node:url";
 export const MIGRATION_NAME = "20261005210000_contact_custom_field_identity";
 export const WRAPPER_VERSION = "2";
 const backendDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const migrationFile = resolve(
-  backendDir,
-  "prisma",
-  "migrations",
-  MIGRATION_NAME,
-  "migration.sql",
-);
+const migrationFile = resolve(backendDir, "prisma", "migrations", MIGRATION_NAME, "migration.sql");
 const reconciliationManifestFile = resolve(backendDir, "prisma", "migration-reconciliations.json");
 const readFileAsync = promisify(readFile);
 const migrationSql = readFileSync(migrationFile, "utf8");
@@ -197,6 +191,7 @@ async function fileChecksum(path) {
 }
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const SHA1_PATTERN = /^[a-f0-9]{40}$/;
 const MIGRATION_FOLDER_PATTERN = /^\d{14}_[a-z0-9_]+$/;
 
 export function validateReconciliationManifest(manifest) {
@@ -214,10 +209,14 @@ export function validateReconciliationManifest(manifest) {
     const keys = Object.keys(entry ?? {}).sort();
     if (
       keys.join(",") !==
-        "currentChecksum,forwardChecksum,forwardMigration,legacyChecksum" ||
+        "currentChecksum,forwardChecksum,forwardMigration,legacyByteLength,legacyChecksum,legacyCommit,legacyGitBlob" ||
       !SHA256_PATTERN.test(entry.currentChecksum ?? "") ||
       !SHA256_PATTERN.test(entry.legacyChecksum ?? "") ||
       !SHA256_PATTERN.test(entry.forwardChecksum ?? "") ||
+      !SHA1_PATTERN.test(entry.legacyCommit ?? "") ||
+      !SHA1_PATTERN.test(entry.legacyGitBlob ?? "") ||
+      !Number.isSafeInteger(entry.legacyByteLength) ||
+      entry.legacyByteLength <= 0 ||
       !MIGRATION_FOLDER_PATTERN.test(entry.forwardMigration ?? "") ||
       basename(entry.forwardMigration) !== entry.forwardMigration ||
       seenCurrentChecksums.has(entry.currentChecksum) ||
@@ -265,6 +264,105 @@ export async function reviewedReconciliations(expectedChecksum) {
 export function hasUnknownMigrationHistory(rows, folderNames) {
   const folderSet = folderNames instanceof Set ? folderNames : new Set(folderNames);
   return rows.some((row) => !folderSet.has(row.migration_name));
+}
+
+export function validateFullMigrationHistory(rows, migrations, reconciliationPolicy = null) {
+  const migrationNames = migrations.map((migration) => migration.name);
+  if (hasUnknownMigrationHistory(rows, migrationNames)) {
+    throw safeError("MIGRATION_HISTORY_UNKNOWN_ARTIFACT");
+  }
+
+  let pendingSuffixStarted = false;
+  let legacyReconciliation = false;
+  let forwardState = null;
+  for (const migration of migrations) {
+    const historyRows = rows.filter((row) => row.migration_name === migration.name);
+    if (historyRows.some((row) => row.rolled_back_at)) {
+      throw safeError("MIGRATION_HISTORY_ROLLED_BACK", [migration.name]);
+    }
+    if (historyRows.some((row) => !row.finished_at)) {
+      throw safeError("MIGRATION_HISTORY_INCOMPLETE", [migration.name]);
+    }
+    if (historyRows.length > 1) {
+      throw safeError("MIGRATION_HISTORY_AMBIGUOUS", [migration.name]);
+    }
+
+    const row = historyRows[0];
+    if (!row) {
+      pendingSuffixStarted = true;
+      if (migration.name === reconciliationPolicy?.forwardMigration) {
+        forwardState = "NOT_APPLIED";
+      }
+      continue;
+    }
+    if (pendingSuffixStarted) {
+      throw safeError("MIGRATION_HISTORY_GAP", [migration.name]);
+    }
+    if (
+      migration.name === MIGRATION_NAME &&
+      reconciliationPolicy &&
+      row.checksum === reconciliationPolicy.legacyChecksum
+    ) {
+      legacyReconciliation = true;
+      continue;
+    }
+    if (row.checksum !== migration.checksum) {
+      throw safeError("MIGRATION_HISTORY_CHECKSUM_MISMATCH", [migration.name]);
+    }
+    if (migration.name === reconciliationPolicy?.forwardMigration) {
+      forwardState = "COMPLETED_VALID";
+    }
+  }
+
+  if (legacyReconciliation) {
+    if (!reconciliationPolicy) {
+      throw safeError("MIGRATION_HISTORY_CHECKSUM_MISMATCH", [MIGRATION_NAME]);
+    }
+    const forwardIndex = migrationNames.indexOf(reconciliationPolicy.forwardMigration);
+    const targetIndex = migrationNames.indexOf(MIGRATION_NAME);
+    if (forwardIndex <= targetIndex || forwardIndex === -1) {
+      throw safeError("MIGRATION_RECONCILIATION_ORDER_INVALID");
+    }
+    if (!forwardState) {
+      forwardState = "NOT_APPLIED";
+    }
+  }
+
+  return {
+    reconciliationRequired: legacyReconciliation && forwardState === "NOT_APPLIED",
+    reconciliationCompleted: legacyReconciliation && forwardState === "COMPLETED_VALID",
+  };
+}
+
+export async function inspectFullMigrationHistory(prisma, expectedChecksum) {
+  const [presence] = await prisma.$queryRawUnsafe(`
+    SELECT to_regclass('public._prisma_migrations') IS NOT NULL AS history_exists
+  `);
+  if (!presence.history_exists) {
+    return { reconciliationRequired: false, reconciliationCompleted: false };
+  }
+
+  const migrationRoot = resolve(backendDir, "prisma", "migrations");
+  const migrations = await Promise.all(
+    readdirSync(migrationRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+      .map(async (name) => ({
+        name,
+        checksum: await fileChecksum(resolve(migrationRoot, name, "migration.sql")),
+      })),
+  );
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT "migration_name", "checksum", "finished_at", "rolled_back_at"
+     FROM "_prisma_migrations"
+     ORDER BY "migration_name", "started_at", "id"`,
+  );
+  const policies = await reviewedReconciliations(expectedChecksum);
+  if (policies.length > 1) {
+    throw safeError("CONTACT_CUSTOM_FIELD_IDENTITY_RECONCILIATION_MANIFEST_AMBIGUOUS");
+  }
+  return validateFullMigrationHistory(rows, migrations, policies[0] ?? null);
 }
 
 async function migrationRows(prisma, migrationName) {
@@ -440,8 +538,21 @@ export function canonicalVariableKey(value) {
     .split("_")
     .filter(Boolean);
   const stopWords = new Set([
-    "de", "do", "dos", "da", "das", "o", "a", "os", "as",
-    "um", "uns", "uma", "umas", "e", "ou",
+    "de",
+    "do",
+    "dos",
+    "da",
+    "das",
+    "o",
+    "a",
+    "os",
+    "as",
+    "um",
+    "uns",
+    "uma",
+    "umas",
+    "e",
+    "ou",
   ]);
   const meaningful = words.filter((word) => !stopWords.has(word));
   return (meaningful.length > 0 ? meaningful : words).join("_");
@@ -450,7 +561,9 @@ export function canonicalVariableKey(value) {
 function migrationVariableKey(value) {
   const source = "áàâãäåéèêëíìîïóòôõöúùûüçñýÿ";
   const target = "aaaaaaeeeeiiiiooooouuuucnyy";
-  const translations = new Map(Array.from(source, (character, index) => [character, target[index]]));
+  const translations = new Map(
+    Array.from(source, (character, index) => [character, target[index]]),
+  );
   const base = Array.from(value.normalize("NFKC").trim().toLocaleLowerCase("pt-BR"))
     .map((character) => translations.get(character) ?? character)
     .join("")
@@ -458,8 +571,21 @@ function migrationVariableKey(value) {
     .replace(/^_+|_+$/g, "");
   const words = base.split("_").filter(Boolean);
   const stopWords = new Set([
-    "de", "do", "dos", "da", "das", "o", "a", "os", "as",
-    "um", "uns", "uma", "umas", "e", "ou",
+    "de",
+    "do",
+    "dos",
+    "da",
+    "das",
+    "o",
+    "a",
+    "os",
+    "as",
+    "um",
+    "uns",
+    "uma",
+    "umas",
+    "e",
+    "ou",
   ]);
   const meaningful = words.filter((word) => !stopWords.has(word));
   return (meaningful.length > 0 ? meaningful : words).join("_");
@@ -472,9 +598,7 @@ async function applicationSemanticDrift(prisma, applied) {
   let cursor = "";
   while (true) {
     const rows = await prisma.$queryRawUnsafe(
-      `SELECT "id", "tenantId", "label"${
-        applied ? ', "normalizedName", "variableKey"' : ""
-      }
+      `SELECT "id", "tenantId", "label"${applied ? ', "normalizedName", "variableKey"' : ""}
        FROM "contact_custom_fields"
        WHERE "id" > $1
        ORDER BY "id"
@@ -553,10 +677,7 @@ export async function inspectContactCustomFieldIdentity(
       prisma,
       expectedChecksum,
     ));
-    if (
-      forwardState &&
-      !["NOT_APPLIED", "ROLLED_BACK", "COMPLETED_VALID"].includes(forwardState)
-    ) {
+    if (forwardState && !["NOT_APPLIED", "ROLLED_BACK", "COMPLETED_VALID"].includes(forwardState)) {
       throw safeError(`CONTACT_CUSTOM_FIELD_IDENTITY_FORWARD_${forwardState}`);
     }
   }
@@ -691,13 +812,14 @@ async function inspectDatabase(expectedChecksum, options) {
   const { PrismaClient } = await import("../src/generated/prisma/index.js");
   const prisma = new PrismaClient();
   try {
+    const history = await inspectFullMigrationHistory(prisma, expectedChecksum);
     const state = await inspectContactCustomFieldIdentity(prisma, expectedChecksum, options);
     if (state.collisions.length > 0) {
       const error = safeError("CONTACT_CUSTOM_FIELD_IDENTITY_PREFLIGHT_FAILED");
       error.collisionReport = anonymizeCollisionRows(state.collisions);
       throw error;
     }
-    return state;
+    return { ...state, ...history };
   } finally {
     await prisma.$disconnect();
   }
@@ -717,16 +839,16 @@ async function main() {
 
   const expectedChecksum = await migrationChecksum();
   const initial = await inspectDatabase(expectedChecksum, {
-    allowPendingReconciliation: mode === "reconcile",
+    allowPendingReconciliation: mode === "preflight" || mode === "reconcile",
   });
   if (mode === "reconcile" && initial.migrationState !== "RECONCILIATION_PENDING") {
     throw safeError("CONTACT_CUSTOM_FIELD_IDENTITY_RECONCILIATION_NOT_PENDING");
   }
   if (mode === "reconcile") {
-    await assertOnlyReviewedForwardPending(
-      expectedChecksum,
-      initial.reconciliationPolicy,
-    );
+    await assertOnlyReviewedForwardPending(expectedChecksum, initial.reconciliationPolicy);
+  }
+  if (mode === "deploy" && initial.reconciliationRequired) {
+    throw safeError("MIGRATION_RECONCILIATION_REQUIRES_OFFICIAL_RELEASE_EXECUTOR");
   }
   if (mode === "preflight") {
     console.log(
@@ -736,6 +858,7 @@ async function main() {
         state: initial.migrationState,
         forwardState: initial.forwardState,
         checksum: expectedChecksum,
+        reconciliationRequired: initial.reconciliationRequired,
       }),
     );
     return;
