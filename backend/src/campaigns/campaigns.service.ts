@@ -791,6 +791,7 @@ export class CampaignsService {
     let persistedReconciled = 0;
     let blockedAsAmbiguous = 0;
     for (const recipient of recipients) {
+      if (!(await this.campaignModuleEnabled(recipient.tenantId))) continue;
       const message = await this.prisma.message.findFirst({
         where: { tenantId: recipient.tenantId, campaignRecipientId: recipient.id },
         select: { id: true },

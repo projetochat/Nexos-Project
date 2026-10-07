@@ -8,7 +8,7 @@ import { GreetingMessageEditor, ServiceHoursTable } from "../routes/instancias";
 import { sameServiceHours, serviceHoursError } from "./instance-validation";
 
 describe("service hours editor", () => {
-  it("confirms a greeting edit with Enter and preserves Shift+Enter for a new line", async () => {
+  it("keeps Enter and Shift+Enter available for line breaks without saving", async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const onSubmit = vi.fn();
     const host = document.createElement("div");
@@ -34,14 +34,14 @@ describe("service hours editor", () => {
       await act(async () => {
         textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
       });
-      expect(onSubmit).toHaveBeenCalledOnce();
+      expect(onSubmit).not.toHaveBeenCalled();
 
       await act(async () => {
         textarea.dispatchEvent(
           new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true }),
         );
       });
-      expect(onSubmit).toHaveBeenCalledOnce();
+      expect(onSubmit).not.toHaveBeenCalled();
     } finally {
       await act(async () => root.unmount());
       host.remove();

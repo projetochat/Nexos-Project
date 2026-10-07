@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectivePermissions } from "./effective-permissions";
+import { effectivePermissions, moduleAwarePermissions } from "./effective-permissions";
 import { TENANT_ADMIN_PERMISSIONS } from "./permissions.constants";
 
 describe("effectivePermissions", () => {
@@ -20,5 +20,22 @@ describe("effectivePermissions", () => {
         ],
       }),
     ).toEqual(["contacts.read"]);
+  });
+
+  it("removes disabled optional modules from the administrator catalog", async () => {
+    const permissions = await moduleAwarePermissions(
+      {
+        tenantSubscription: {
+          findFirst: async () => ({ featuresSnapshot: { chat: true, campaigns: true, tickets: true } }),
+        },
+      },
+      "tenant-a",
+      { campaigns: false, tickets: false },
+      { key: "tenant_admin", permissions: [] },
+    );
+
+    expect(permissions).toContain("conversations.read");
+    expect(permissions.some((permission) => permission.startsWith("campaigns."))).toBe(false);
+    expect(permissions.some((permission) => permission.startsWith("tickets."))).toBe(false);
   });
 });

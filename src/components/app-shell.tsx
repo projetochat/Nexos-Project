@@ -999,7 +999,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const authorized = useTenantAuthGate();
   const { collapsed, toggle } = useSidebarState();
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isNavigating = useRouterState({ select: (s) => s.isLoading || s.isTransitioning });
   if (!authorized) return null;
   return (
@@ -1011,10 +1010,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <ImpersonationBanner />
           <OfflineBanner />
           <Topbar onToggleSidebar={toggle} onOpenMobileNav={() => setMobileNavOpen(true)} />
-          <main
-            key={pathname}
-            className="min-w-0 flex-1 overflow-y-auto overscroll-contain animate-fade-in-soft"
-          >
+          <main className="min-w-0 flex-1 overflow-y-auto overscroll-contain animate-fade-in-soft">
             {children}
           </main>
           <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />

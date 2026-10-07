@@ -253,7 +253,7 @@ function LoginPage() {
                     id="email"
                     type="email"
                     value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={(event) => setEmail(event.target.value.toLocaleLowerCase("en-US"))}
                     placeholder="email@exemplo.com"
                     autoComplete="email"
                     aria-invalid={Boolean(error)}

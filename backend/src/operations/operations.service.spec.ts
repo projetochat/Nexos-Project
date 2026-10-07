@@ -3,6 +3,47 @@ import { OperationsService } from "./operations.service";
 
 afterEach(() => vi.useRealTimers());
 
+describe("tenant dashboard configuration", () => {
+  it("reads the single configuration owned by the tenant", async () => {
+    const updatedAt = new Date("2026-10-07T00:00:00.000Z");
+    const prisma = {
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValue([{ configuration: { version: 2, components: [] }, updatedAt }]),
+    };
+    const service = new OperationsService(prisma as never, {} as never);
+
+    await expect(
+      service.dashboardConfiguration({ tenantId: "tenant-a" } as never),
+    ).resolves.toEqual({ configuration: { version: 2, components: [] }, updatedAt });
+    expect(prisma.$queryRaw).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a shared component without a title before persistence", async () => {
+    const prisma = { $queryRaw: vi.fn() };
+    const service = new OperationsService(prisma as never, {} as never);
+
+    await expect(
+      service.updateDashboardConfiguration({ tenantId: "tenant-a" } as never, {
+        version: 2,
+        components: [
+          {
+            id: "component-a",
+            title: "",
+            visible: true,
+            visualization: "cards",
+            columns: 1,
+            dataSource: "records",
+            groupBy: "queue",
+            valueMode: "count",
+          },
+        ],
+      }),
+    ).rejects.toThrow("Identificação ou título");
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+});
+
 describe("dashboard week ranges", () => {
   it.each([
     ["week", "2026-09-13T03:00:00.000Z", "2026-09-15T15:00:00.000Z"],
@@ -44,6 +85,10 @@ describe("dashboard week ranges", () => {
           period,
           allowedConnectionIds: ["vocical"],
           allowedDepartmentIds: ["department-a"],
+          conversationAccess: {
+            connectionId: { in: ["vocical"] },
+            departmentId: { in: ["department-a"] },
+          },
         },
       );
       expect(metrics.chartData).toHaveBeenCalledWith(
@@ -53,6 +98,10 @@ describe("dashboard week ranges", () => {
           period,
           allowedConnectionIds: ["vocical"],
           allowedDepartmentIds: ["department-a"],
+          conversationAccess: {
+            connectionId: { in: ["vocical"] },
+            departmentId: { in: ["department-a"] },
+          },
         },
         "America/Sao_Paulo",
       );

@@ -12,6 +12,7 @@ export function requestObservability(request: Request, response: Response, next:
       ? suppliedRequestId
       : randomUUID();
   const startedAt = process.hrtime.bigint();
+  request.headers["x-request-id"] = requestId;
   response.setHeader("x-request-id", requestId);
   response.once("finish", () => {
     const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;

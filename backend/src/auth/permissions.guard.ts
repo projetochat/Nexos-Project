@@ -10,7 +10,7 @@ import { Reflector } from "@nestjs/core";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthenticatedRequest } from "./jwt-auth.guard";
 import { PermissionKey } from "./permissions.constants";
-import { effectivePermissions } from "./effective-permissions";
+import { moduleAwarePermissions } from "./effective-permissions";
 import { roleChatDepartmentIds, roleChatScopes, roleConnectionIds } from "./connection-access";
 import { ANY_PERMISSIONS_KEY, PERMISSIONS_KEY } from "./permissions.decorator";
 
@@ -84,7 +84,12 @@ export class PermissionsGuard implements CanActivate {
       if (!session) throw new UnauthorizedException("Sessão de impersonação expirada.");
     }
 
-    const permissions = effectivePermissions(membership.role);
+    const permissions = await moduleAwarePermissions(
+      this.prisma,
+      membership.tenantId,
+      membership.tenant.featureOverrides,
+      membership.role,
+    );
     const granted = new Set<string>(permissions);
     const allowed = (required ?? []).every((permission) => granted.has(permission));
     const anyAllowed =

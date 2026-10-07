@@ -159,6 +159,68 @@ describe("useRealtimeInbox render stability", () => {
     }
   });
 
+  it("refreshes the conversation list when a pending schedule changes", async () => {
+    vi.stubEnv("VITE_TRIXUS_REALTIME_ENABLED", "true");
+    localStorage.setItem("trixus.api.accessToken", "access");
+    const { useSession } = await import("@/lib/session");
+    const { useRealtimeInbox } = await import("./hooks");
+    useSession.setState({ user: user(), hydrated: true });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    let pending = true;
+    const loadConversations = vi.fn(async () => pending);
+    function Probe() {
+      useRealtimeInbox();
+      const conversations = useQuery({
+        queryKey: ["trixus", "conversations", "list"],
+        queryFn: loadConversations,
+      });
+      return <span>{String(conversations.data)}</span>;
+    }
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const flush = () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    try {
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <Probe />
+          </QueryClientProvider>,
+        ),
+      );
+      await act(async () =>
+        lastSocket?.on.mock.calls.find(([name]) => name === "realtime.ready")?.[1](),
+      );
+      await flush();
+      expect(host.textContent).toBe("true");
+      const previousLoads = loadConversations.mock.calls.length;
+
+      pending = false;
+      await act(async () =>
+        lastSocket?.on.mock.calls.find(([name]) => name === "schedule.updated")?.[1]({
+          eventId: "event-schedule",
+          event: "schedule.updated",
+          version: 1,
+          occurredAt: new Date().toISOString(),
+          data: { scheduleId: "schedule-a" },
+        }),
+      );
+      await flush();
+
+      expect(host.textContent).toBe("false");
+      expect(loadConversations.mock.calls.length).toBeGreaterThan(previousLoads);
+    } finally {
+      await act(async () => root.unmount());
+      client.clear();
+      host.remove();
+    }
+  });
+
   it("refreshes persisted system messages after a local action even with realtime disabled", async () => {
     const { invalidateConversationQueries } = await import("./invalidate-conversation");
     const client = new QueryClient();

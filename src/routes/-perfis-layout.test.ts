@@ -53,7 +53,39 @@ describe("organização do editor de Perfil de Acesso", () => {
 
     expect(scopes).toContain("min-h-10");
     expect(scopes).toContain("min-h-11");
-    expect(scopes).toContain("space-y-1.5");
+    expect(scopes).toContain("grid gap-1.5");
+    expect(scopes).toContain("sm:grid-cols-2");
+  });
+
+  it("move o departamento favorito para o início da lista", () => {
+    const scopes = source.slice(
+      source.indexOf("function ScopeSettings"),
+      source.indexOf("function PermissionSettings"),
+    );
+
+    expect(scopes).toContain("favoriteDepartmentId");
+    expect(scopes).toContain("Number(right.id === favoriteDepartmentId)");
+  });
+
+  it("alinha os três níveis de toggle em uma coluna no mobile", () => {
+    const scopes = source.slice(
+      source.indexOf("function ScopeSettings"),
+      source.indexOf("function PermissionSettings"),
+    );
+
+    expect(scopes).toContain("grid-cols-[minmax(0,1fr)_auto_auto]");
+    expect(scopes).toContain("contents sm:flex");
+    expect(scopes).toContain("grid-cols-[minmax(0,1fr)_2.25rem_2.25rem]");
+  });
+
+  it("restaura os resumos e mantém as ações abaixo da divisória dos cards", () => {
+    expect(source).toContain("function roleScopeCounts");
+    expect(source).toContain("function permissionCatalogSize");
+    expect(source).toContain('label="permissões"');
+    expect(source).toContain("icon={Wifi}");
+    expect(source).toContain("icon={Network}");
+    expect(source).toContain("border-y border-border");
+    expect(source).toContain("!isAdministrator &&");
   });
 
   it("explica como instâncias e departamentos se relacionam com o Chat", () => {

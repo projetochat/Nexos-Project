@@ -11,7 +11,19 @@ import {
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, ShieldCheck, Check, Copy, Info, Star } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  ShieldCheck,
+  Check,
+  Copy,
+  Info,
+  Star,
+  KeyRound,
+  Wifi,
+  Network,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import {
@@ -333,6 +345,24 @@ function roleColor(role: ApiRole) {
   return metadata.color ?? DEFAULT_ROLE_COLOR;
 }
 
+function roleScopeCounts(role: ApiRole) {
+  const metadata = (role.metadata ?? {}) as RoleMetadata;
+  const scopes = metadata.chatScopes ?? [];
+  const connectionIds = new Set([
+    ...(metadata.connectionIds ?? []),
+    ...scopes.map((scope) => scope.connectionId),
+  ]);
+  const departmentIds = new Set([
+    ...(metadata.departmentIds ?? []),
+    ...scopes.flatMap((scope) => scope.departmentIds),
+  ]);
+  return { connections: connectionIds.size, departments: departmentIds.size };
+}
+
+function permissionCatalogSize(groups: typeof PERMISSION_GROUPS) {
+  return new Set(groups.flatMap((group) => group.items.map((permission) => permission.id))).size;
+}
+
 function normalizeRoleName(value: string) {
   return value
     .normalize("NFD")
@@ -586,33 +616,59 @@ function Page() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filtered.map((p) => {
-              const memberCount = memberCountByRoleId[p.id] ?? 0;
               const color = roleColor(p);
               const isAdministrator = isAdministratorRole(p);
+              const scopeCounts = roleScopeCounts(p);
+              const totalPermissions = permissionCatalogSize(permissionGroups);
+              const permissionCount = isAdministrator
+                ? totalPermissions
+                : p.permissionIds.filter((id) =>
+                    permissionGroups.some((group) =>
+                      group.items.some((permission) => permission.id === id),
+                    ),
+                  ).length;
 
               return (
                 <Card
                   key={p.id}
-                  className="min-h-[86px] p-4 transition hover:border-primary/35 hover:bg-surface-1"
+                  className="flex min-h-[166px] flex-col p-4 transition hover:border-primary/35 hover:bg-surface-1"
                 >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div
-                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
-                        style={{ backgroundColor: `${color}24`, color }}
-                      >
-                        <ShieldCheck className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold">{p.name}</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {formatMemberCount(memberCount)}
-                        </p>
-                      </div>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+                      style={{ backgroundColor: `${color}24`, color }}
+                    >
+                      <ShieldCheck className="h-5 w-5" />
                     </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold">{p.name}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {p.description?.trim() || formatMemberCount(memberCountByRoleId[p.id] ?? 0)}
+                      </p>
+                    </div>
+                  </div>
 
+                  <div className="mt-4 grid grid-cols-3 gap-2 border-y border-border py-3">
+                    <RoleMetric
+                      icon={KeyRound}
+                      value={`${num(permissionCount)}/${num(totalPermissions)}`}
+                      label="permissões"
+                    />
+                    <RoleMetric
+                      icon={Wifi}
+                      value={num(scopeCounts.connections)}
+                      label={scopeCounts.connections === 1 ? "instância" : "instâncias"}
+                    />
+                    <RoleMetric
+                      icon={Network}
+                      value={num(scopeCounts.departments)}
+                      label={scopeCounts.departments === 1 ? "departamento" : "departamentos"}
+                    />
+                  </div>
+
+                  <div className="mt-auto flex min-h-11 items-end justify-end pt-3">
                     {!isAdministrator && (canCreateRoles || canUpdateRoles || canDeleteRoles) && (
-                      <div className="flex shrink-0 gap-1">
+                      <div className="flex shrink-0 gap-1.5">
                         {canCreateRoles && (
                           <Button
                             variant="ghost"
@@ -708,6 +764,26 @@ function Page() {
         />
       </PageContainer>
     </AppShell>
+  );
+}
+
+function RoleMetric({
+  icon: Icon,
+  value,
+  label,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  value: string;
+  label: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-2">
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0">
+        <p className="text-sm font-semibold leading-none">{value}</p>
+        <p className="mt-1 truncate text-[11px] text-muted-foreground">{label}</p>
+      </div>
+    </div>
   );
 }
 
@@ -1115,26 +1191,38 @@ function ScopeSettings({
         sortedConnections.map((connection) => {
           const scope = scopeFor(connection.id);
           const enabled = !!scope;
-          const departments = sortByOptionLabel(connection.departments, (item) => item.name);
+          const favoriteDepartmentId = scope?.favoriteDepartmentId ?? null;
+          const departments = sortByOptionLabel(connection.departments, (item) => item.name).sort(
+            (left, right) =>
+              Number(right.id === favoriteDepartmentId) - Number(left.id === favoriteDepartmentId),
+          );
           const allSelected =
             enabled &&
             departments.length > 0 &&
             departments.every((department) => scope.departmentIds.includes(department.id));
           return (
             <div key={connection.id} className="overflow-hidden rounded-xl border border-border">
-              <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 bg-primary/5 px-3 py-1.5">
-                <strong className="min-w-0 truncate">{connection.name}</strong>
-                <div className="flex flex-wrap items-center gap-3 text-sm">
-                  <label className="flex min-h-9 items-center gap-2">
-                    <span>Acesso à instância</span>
+              <div className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 gap-y-1 bg-primary/5 px-3 py-1.5 sm:flex sm:flex-wrap sm:justify-between sm:gap-2">
+                <strong className="col-start-1 row-start-1 min-w-0 truncate">
+                  {connection.name}
+                </strong>
+                <div className="contents text-sm sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+                  <label className="contents sm:flex sm:min-h-9 sm:items-center sm:gap-2">
+                    <span className="col-start-2 row-start-1 whitespace-nowrap sm:col-auto sm:row-auto">
+                      Acesso à instância
+                    </span>
                     <Switch
+                      className="col-start-3 row-start-1 sm:col-auto sm:row-auto"
                       checked={enabled}
                       onCheckedChange={(checked) => setConnection(connection, checked)}
                     />
                   </label>
-                  <label className="flex min-h-9 items-center gap-2 border-l border-border pl-3">
-                    <span>Todos os departamentos</span>
+                  <label className="contents sm:flex sm:min-h-9 sm:items-center sm:gap-2 sm:border-l sm:border-border sm:pl-3">
+                    <span className="col-start-2 row-start-2 whitespace-nowrap sm:col-auto sm:row-auto">
+                      Todos os departamentos
+                    </span>
                     <Switch
+                      className="col-start-3 row-start-2 sm:col-auto sm:row-auto"
                       checked={allSelected}
                       disabled={!enabled || departments.length === 0}
                       onCheckedChange={(checked) =>
@@ -1147,9 +1235,9 @@ function ScopeSettings({
                   </label>
                 </div>
               </div>
-              <div className="space-y-1.5 p-2 sm:pl-6">
+              <div className="grid gap-1.5 p-2 sm:grid-cols-2 sm:pl-6">
                 {departments.length === 0 ? (
-                  <p className="py-3 text-sm text-muted-foreground">
+                  <p className="py-3 text-sm text-muted-foreground sm:col-span-2">
                     Nenhum departamento vinculado a esta instância.
                   </p>
                 ) : (
@@ -1159,7 +1247,7 @@ function ScopeSettings({
                     return (
                       <div
                         key={department.id}
-                        className={`flex min-h-11 items-center gap-2 rounded-lg border px-3 py-1 ${enabled ? "bg-background" : "bg-muted/40 text-muted-foreground"}`}
+                        className={`grid min-h-11 grid-cols-[minmax(0,1fr)_2.25rem_2.25rem] items-center gap-2 rounded-lg border px-3 py-1 ${enabled ? "bg-background" : "bg-muted/40 text-muted-foreground"}`}
                       >
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium" title={department.name}>

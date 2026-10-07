@@ -25,7 +25,7 @@ export function customFieldFormat(field: {
 }
 
 export function formatCustomField(value: string, format: CustomFieldFormat) {
-  if (format === "email") return value.trim();
+  if (format === "email") return value.trim().toLowerCase();
   if (format === "phone")
     return value.trim().startsWith("+") ? value.trim() : maskBrazilPhone(value);
   const digits = onlyDigits(value);

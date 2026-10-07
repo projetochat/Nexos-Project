@@ -19,7 +19,6 @@ export function GreetingMessageEditor({
   showEmoji = false,
   attachmentLayout = "menu",
   onChange,
-  onSubmit,
 }: {
   value: string;
   attachment: QuickReplyAttachment | null;
@@ -59,21 +58,6 @@ export function GreetingMessageEditor({
         maxLength={1000}
         value={value}
         onChange={(event) => onChange(event.target.value, attachment)}
-        onKeyDown={(event) => {
-          if (
-            !onSubmit ||
-            event.key !== "Enter" ||
-            event.shiftKey ||
-            event.altKey ||
-            event.ctrlKey ||
-            event.metaKey ||
-            event.nativeEvent.isComposing
-          ) {
-            return;
-          }
-          event.preventDefault();
-          onSubmit();
-        }}
         disabled={disabled}
         aria-invalid={invalid}
         placeholder={placeholder}

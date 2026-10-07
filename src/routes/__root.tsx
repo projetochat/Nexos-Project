@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Outlet,
   Link,
@@ -15,7 +15,7 @@ import appCss from "../styles.css?url";
 import { FAVICON_HREF } from "../lib/favicon";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { ThemeProvider } from "../components/theme-provider";
-import { appTitleForHostname, surfaceRedirect } from "../lib/app-surface";
+import { appTitleWithUnreadConversations, surfaceRedirect } from "../lib/app-surface";
 import { useSession } from "@/lib/session";
 import {
   clearAuthorizationCache,
@@ -23,6 +23,8 @@ import {
   conversationAuthorizationScope,
 } from "@/lib/conversation-query-authorization";
 import { disconnectRealtime } from "@/lib/realtime/client";
+import { onRealtimeEvent } from "@/lib/realtime/client";
+import { conversationApi } from "@/lib/trixus-api";
 
 function NotFoundComponent() {
   return (
@@ -89,7 +91,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Trixus" },
+      { title: "Trixus | App" },
       {
         name: "description",
         content:
@@ -170,6 +172,7 @@ function RootComponent() {
       <ThemeProvider>
         <HostSurfaceGate>
           <SessionHydrator />
+          <BrowserTitleController />
           <SessionAuthorizationBoundary queryClient={queryClient} />
           <Outlet />
           <Toaster
@@ -186,6 +189,36 @@ function RootComponent() {
       </ThemeProvider>
     </QueryClientProvider>
   );
+}
+
+function BrowserTitleController() {
+  const queryClient = useQueryClient();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const user = useSession((state) => state.user);
+  const canReadConversations = !!user?.permissions?.includes("conversations.read");
+  const unreadConversations = useQuery({
+    queryKey: ["trixus", "conversations", "browser-title-unread"],
+    queryFn: () => conversationApi.list({ onlyUnread: true, pageSize: 1 }),
+    enabled: canReadConversations,
+    refetchInterval: canReadConversations ? 30_000 : false,
+  });
+
+  useEffect(() => {
+    if (!canReadConversations) return;
+    return onRealtimeEvent((event) => {
+      if (event.event.startsWith("message.") || event.event.startsWith("conversation.")) {
+        void queryClient.invalidateQueries({
+          queryKey: ["trixus", "conversations", "browser-title-unread"],
+        });
+      }
+    });
+  }, [canReadConversations, queryClient]);
+
+  useEffect(() => {
+    document.title = appTitleWithUnreadConversations(unreadConversations.data?.total ?? 0);
+  }, [pathname, unreadConversations.data?.total]);
+
+  return null;
 }
 
 function SessionAuthorizationBoundary({ queryClient }: { queryClient: QueryClient }) {
@@ -224,8 +257,5 @@ function HostSurfaceGate({ children }: { children: ReactNode }) {
     }
     setReady(true);
   }, [destination]);
-  useEffect(() => {
-    document.title = appTitleForHostname(window.location.hostname);
-  }, [pathname]);
   return ready && !destination ? children : null;
 }

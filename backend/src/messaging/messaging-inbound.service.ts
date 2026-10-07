@@ -152,7 +152,9 @@ export class MessagingInboundService {
               tenantId: event.tenantId,
               name: isGroup
                 ? (groupDisplayName ?? "Grupo WhatsApp")
-                : (event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone),
+                : event.fromMe
+                  ? event.sender.phone
+                  : (event.metadata?.displayName ?? event.sender.displayName ?? event.sender.phone),
               phone: isGroup ? event.externalChatId : event.sender.phone,
               normalizedPhone: canonicalPhone,
               instance: connection.externalReference,

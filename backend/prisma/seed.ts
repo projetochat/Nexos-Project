@@ -145,9 +145,8 @@ async function main() {
     process.env.SEED_MODE ?? (process.env.SEED_DEMO_DATA === "true" ? "demo" : "platform");
   if (seedMode === "platform") {
     await preparePlatformOnlyDatabase();
-    await seedPermissionCatalog();
     await seedPlatformAdmin();
-    console.info("seedMode=platform-only");
+    console.info("seedMode=platform-user-only");
     return;
   }
   await seedPermissionCatalog();

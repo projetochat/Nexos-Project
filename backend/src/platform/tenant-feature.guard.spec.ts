@@ -39,6 +39,36 @@ describe("TenantFeatureGuard", () => {
     expect(entitlements.assertFeature).toHaveBeenCalledWith("tenant-disabled", "campaigns");
   });
 
+  it.each(["custom", "tenant_admin"])(
+    "rechecks the current entitlement for an existing %s session",
+    async (roleKey) => {
+      const entitlements = {
+        assertFeature: vi.fn().mockRejectedValue(new ForbiddenException()),
+      };
+      const reflector = { getAllAndOverride: vi.fn().mockReturnValue("tickets") };
+      const guard = new TenantFeatureGuard(
+        reflector as unknown as Reflector,
+        entitlements as never,
+      );
+      const context = {
+        getHandler: vi.fn(),
+        getClass: vi.fn(),
+        switchToHttp: () => ({
+          getRequest: () => ({
+            user: {
+              tenantId: "tenant-disabled",
+              roleKey,
+              permissions: ["tickets.read", "tickets.create", "tickets.update", "tickets.delete"],
+            },
+          }),
+        }),
+      };
+
+      await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(entitlements.assertFeature).toHaveBeenCalledWith("tenant-disabled", "tickets");
+    },
+  );
+
   it("does not authorize a tenantless request", async () => {
     const entitlements = { assertFeature: vi.fn() };
     const reflector = { getAllAndOverride: vi.fn().mockReturnValue("tickets") };

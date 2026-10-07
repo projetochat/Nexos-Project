@@ -48,3 +48,7 @@ backend/src/generated/prisma/
 *.njsproj
 *.sln
 *.sw?
+
+# Local development backups
+.codex-backups/
+.task-backups/

@@ -1,11 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { LeadsController } from "./leads.controller";
 
-const current = { tenantId: "t", membershipId: "m", roleKey: "agent", connectionIds: ["c1"] };
+const current = {
+  tenantId: "t",
+  membershipId: "m",
+  roleKey: "agent",
+  connectionIds: ["c1"],
+  chatDepartmentIds: ["d1"],
+};
 type LeadFilter = {
   tenantId: string;
   id?: string;
-  conversation?: { connectionId?: { in: string[] } };
+  conversation?: { AND?: Array<Record<string, unknown>> };
 };
 function fixture() {
   const rows = ["c1", "c2"].map((connectionId, i) => ({
@@ -15,15 +21,42 @@ function fixture() {
     source: "WHATSAPP",
     conversationId: `conv-${i}`,
     contact: { id: "contact", name: "Fictício", phone: "123", customer: null },
-    conversation: { id: `conv-${i}`, connectionId, protocol: "000001", status: "NOVO" },
+    conversation: {
+      id: `conv-${i}`,
+      connectionId,
+      departmentId: "d1",
+      assignedMembershipId: null,
+      protocol: "000001",
+      status: "NOVO",
+    },
     department: null,
     assignedMembership: null,
   }));
-  const matches = (row: (typeof rows)[number], where: LeadFilter) =>
-    row.tenantId === where.tenantId &&
-    (!where.id || row.id === where.id) &&
-    (!where.conversation?.connectionId?.in ||
-      where.conversation.connectionId.in.includes(row.conversation.connectionId));
+  const scopedIds = (value: unknown, key: string): string[] | undefined => {
+    if (!value || typeof value !== "object") return undefined;
+    const record = value as Record<string, unknown>;
+    if (key in record) {
+      const condition = record[key] as { in?: string[] };
+      if (condition && Array.isArray(condition.in)) return condition.in;
+    }
+    for (const nested of Object.values(record)) {
+      const found = Array.isArray(nested)
+        ? nested.map((item) => scopedIds(item, key)).find((item) => item !== undefined)
+        : scopedIds(nested, key);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  const matches = (row: (typeof rows)[number], where: LeadFilter) => {
+    const connectionIds = scopedIds(where.conversation, "connectionId");
+    const departmentIds = scopedIds(where.conversation, "departmentId");
+    return (
+      row.tenantId === where.tenantId &&
+      (!where.id || row.id === where.id) &&
+      (!connectionIds || connectionIds.includes(row.conversation.connectionId)) &&
+      (!departmentIds || departmentIds.includes(row.conversation.departmentId))
+    );
+  };
   const findMany = vi.fn(async ({ where }: { where: LeadFilter }) =>
     rows.filter((row) => matches(row, where)),
   );

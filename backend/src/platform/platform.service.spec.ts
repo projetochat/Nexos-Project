@@ -526,14 +526,14 @@ describe("PlatformService health", () => {
       {
         responsibleName: "  Novo Responsável  ",
         responsibleEmail: "NOVO@example.com",
-        newPassword: "senha-segura",
+        newPassword: "ci-only-password",
       },
       actor(),
     );
 
     const userData = userUpdate.mock.calls[0]?.[0].data;
     expect(userData).toMatchObject({ name: "Novo Responsável", email: "novo@example.com" });
-    await expect(compare("senha-segura", userData.passwordHash)).resolves.toBe(true);
+    await expect(compare("ci-only-password", userData.passwordHash)).resolves.toBe(true);
     expect(membershipUpdate).toHaveBeenCalledWith({
       where: { id: "membership-1" },
       data: { presentationName: "Novo Responsável" },
@@ -560,7 +560,11 @@ describe("PlatformService health", () => {
         responsibleEmail: "novo@example.com",
       }),
     );
-    expect(JSON.stringify(result)).not.toContain("senha-segura");
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: 10_000,
+      timeout: 30_000,
+    });
+    expect(JSON.stringify(result)).not.toContain("ci-only-password");
     expect(JSON.stringify(result)).not.toContain("passwordHash");
   });
 
@@ -679,14 +683,14 @@ describe("PlatformService health", () => {
         {
           responsibleName: "Natã Rabelo",
           responsibleEmail: "nata.rabelo@gmail.com",
-          newPassword: "SenhaInicial@2026",
+          newPassword: "ci-only-password",
         },
         actor(),
       ),
     ).resolves.toMatchObject({ ok: true, responsibleEmail: "nata.rabelo@gmail.com" });
 
     const createdUser = tx.user.create.mock.calls[0]?.[0].data;
-    await expect(compare("SenhaInicial@2026", createdUser.passwordHash)).resolves.toBe(true);
+    await expect(compare("ci-only-password", createdUser.passwordHash)).resolves.toBe(true);
     expect(tx.tenantMembership.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         tenantId: "tenant-1",

@@ -14,7 +14,7 @@ describe("custom contact field formats", () => {
     ["62999990000", "phone", "(62) 99999-0000"],
     ["6233330000", "phone", "(62) 3333-0000"],
     ["+5562999990000", "phone", "+5562999990000"],
-    ["  Ana@example.com  ", "email", "Ana@example.com"],
+    ["  Ana@Example.COM  ", "email", "ana@example.com"],
   ] as const)(
     "formats %s as %s and preserves an already formatted value",
     (raw, format, expected) => {

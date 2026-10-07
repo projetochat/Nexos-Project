@@ -77,6 +77,11 @@ it("preserves formatting, renders media, positions reactions outside and keeps h
   };
   try {
     await render(base);
+    const bubble = host.querySelector('[data-message-id="one"] [tabindex="0"]')!;
+    expect(bubble.className).toContain("md:max-w-[50%]");
+    const timestamp = bubble.querySelector(".font-mono")!;
+    expect(timestamp.className).toContain("whitespace-nowrap");
+    expect(timestamp.querySelector(".block")).toBeNull();
     expect(host.querySelector("strong")?.textContent).toBe("Nome:");
     expect(host.querySelector("em")?.textContent).toBe("Linha 2");
     expect(host.textContent).toContain("\n\nLinha 1\n");

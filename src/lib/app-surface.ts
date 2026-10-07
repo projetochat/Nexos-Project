@@ -50,8 +50,13 @@ export function currentAppSurface(): AppSurface {
   return appSurfaceForHostname(window.location.hostname);
 }
 
-export function appTitleForHostname(hostname: string) {
-  return appSurfaceForHostname(hostname) === "platform" ? "Trixus | App" : "Trixus | Chat";
+export function appTitleForHostname(_hostname: string) {
+  return "Trixus | App";
+}
+
+export function appTitleWithUnreadConversations(unreadConversations: number) {
+  const count = Math.max(0, Math.floor(unreadConversations));
+  return count > 0 ? `(${count}) Trixus | App` : "Trixus | App";
 }
 
 export function loginEndpointForSurface(surface = currentAppSurface()) {

@@ -104,6 +104,9 @@ export function useRealtimeInbox(conversationId?: string | null) {
         const data = event.data as { conversationId?: string };
         void invalidateConversationQueries(queryClient, data.conversationId);
       }
+      if (event.event === "schedule.updated") {
+        void queryClient.invalidateQueries({ queryKey: ["trixus", "conversations"] });
+      }
       if (event.event === "connection.status.updated") {
         void queryClient.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
         void queryClient.invalidateQueries({ queryKey: ["trixus", "chat-messaging-connections"] });

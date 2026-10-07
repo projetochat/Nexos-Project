@@ -3,7 +3,6 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Eye, EyeOff, KeyRound, Lock, LockOpen, MoreVertical, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdminContainer } from "@/components/admin-shell";
-import { DashboardDateInput } from "@/components/dashboard-filters";
 import { Modal } from "@/components/modal";
 import {
   DropdownMenu,
@@ -23,10 +22,8 @@ import {
 } from "@/components/ui-kit";
 import { fmtDate } from "@/lib/format";
 import { Switch } from "@/components/ui/switch";
-import { DASHBOARD_PERIOD_OPTIONS, datesForOperationalPeriod } from "@/lib/operational-filters";
 import {
   platformApi,
-  type OperationalPeriod,
   type PlatformPlan,
   type PlatformTenant,
   type PlatformTenantConfiguration,
@@ -59,10 +56,6 @@ function TenantsAdmin() {
   const [q, setQ] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [planId, setPlanId] = React.useState("");
-  const [period, setPeriod] = React.useState<OperationalPeriod>("today");
-  const initialDates = React.useMemo(() => datesForOperationalPeriod("today"), []);
-  const [dateFrom, setDateFrom] = React.useState(initialDates.start);
-  const [dateTo, setDateTo] = React.useState(initialDates.end);
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(25);
   const [data, setData] = React.useState({
@@ -83,8 +76,6 @@ function TenantsAdmin() {
           q: q || undefined,
           status: status || undefined,
           planId: planId || undefined,
-          dateFrom: dateFrom ? new Date(`${dateFrom}T00:00:00`).toISOString() : undefined,
-          dateTo: dateTo ? new Date(`${dateTo}T23:59:59.999`).toISOString() : undefined,
           page,
           pageSize,
         }),
@@ -96,24 +87,26 @@ function TenantsAdmin() {
           setError(null);
         })
         .catch((reason) => setError((reason as Error).message)),
-    [dateFrom, dateTo, page, pageSize, planId, q, status],
+    [page, pageSize, planId, q, status],
   );
 
   React.useEffect(() => void load(), [load]);
-  React.useEffect(() => setPage(1), [dateFrom, dateTo, pageSize, planId, q, status]);
+  React.useEffect(() => setPage(1), [pageSize, planId, q, status]);
 
   return (
     <AdminContainer>
       <SectionHeader title="Tenants" subtitle="Consulta das tenants cadastradas." />
       <Card className="mb-4">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-          <Field label="Busca">
-            <SearchInput
-              value={q}
-              onChange={setQ}
-              placeholder="Buscar por nome, cliente ou responsável..."
-            />
-          </Field>
+          <div className="xl:col-span-4">
+            <Field label="Busca">
+              <SearchInput
+                value={q}
+                onChange={setQ}
+                placeholder="Buscar por nome, cliente ou responsável..."
+              />
+            </Field>
+          </div>
           <Field label="Plano">
             <Select value={planId} onChange={(event) => setPlanId(event.target.value)}>
               <option value="">Todos</option>
@@ -132,40 +125,6 @@ function TenantsAdmin() {
               <option value="SUSPENDED">Suspenso</option>
               <option value="TERMINATED">Cancelado</option>
             </Select>
-          </Field>
-          <Field label="Período">
-            <Select
-              value={period}
-              onChange={(event) => {
-                const nextPeriod = event.target.value as OperationalPeriod;
-                setPeriod(nextPeriod);
-                if (nextPeriod !== "custom") {
-                  const dates = datesForOperationalPeriod(nextPeriod);
-                  setDateFrom(dates.start);
-                  setDateTo(dates.end);
-                }
-              }}
-            >
-              {DASHBOARD_PERIOD_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Dt. Inicial">
-            <DashboardDateInput
-              value={dateFrom}
-              readOnly={period !== "custom"}
-              onChange={setDateFrom}
-            />
-          </Field>
-          <Field label="Dt. Final">
-            <DashboardDateInput
-              value={dateTo}
-              readOnly={period !== "custom"}
-              onChange={setDateTo}
-            />
           </Field>
         </div>
       </Card>
@@ -566,6 +525,8 @@ function TenantCredentialsModal({
   const [passwordUnlocked, setPasswordUnlocked] = React.useState(false);
   const [showPassword, setShowPassword] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [loadingAdministrator, setLoadingAdministrator] = React.useState(false);
+  const [administratorLoadError, setAdministratorLoadError] = React.useState<string | null>(null);
   const passwordRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -576,10 +537,44 @@ function TenantCredentialsModal({
     setNewPassword("");
     setPasswordUnlocked(false);
     setShowPassword(false);
+    setAdministratorLoadError(null);
+    if (!tenant) {
+      setLoadingAdministrator(false);
+      return;
+    }
+
+    let current = true;
+    setLoadingAdministrator(true);
+    void platformApi
+      .tenant(tenant.id)
+      .then((detail) => {
+        if (!current) return;
+        const administrator = detail.detail.users.find(
+          (membership) => membership.status === "ACTIVE" && membership.role.key === "tenant_admin",
+        );
+        if (administrator) {
+          setResponsibleName(administrator.user.name);
+          setResponsibleEmail(administrator.user.email.toLocaleLowerCase("en-US"));
+        }
+      })
+      .catch((reason) => {
+        if (!current) return;
+        setAdministratorLoadError(
+          (reason as Error).message || "Não foi possível carregar o usuário administrador.",
+        );
+      })
+      .finally(() => {
+        if (current) setLoadingAdministrator(false);
+      });
+
+    return () => {
+      current = false;
+    };
   }, [client?.responsibleEmail, client?.responsibleName, tenant]);
 
   const save = async () => {
     if (!tenant) return;
+    if (loadingAdministrator || administratorLoadError) return;
     const name = responsibleName.trim();
     const email = responsibleEmail.trim().toLowerCase();
     if (!name) return toast.error("Informe o nome do responsável.");
@@ -618,18 +613,26 @@ function TenantCredentialsModal({
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button onClick={() => void save()} disabled={saving}>
+          <Button
+            onClick={() => void save()}
+            disabled={saving || loadingAdministrator || Boolean(administratorLoadError)}
+          >
             {saving ? "Salvando..." : "Salvar"}
           </Button>
         </>
       }
     >
+      {administratorLoadError && (
+        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          {administratorLoadError}
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Nome do responsável *">
           <Input
             value={responsibleName}
             onChange={(event) => setResponsibleName(event.target.value)}
-            disabled={saving}
+            disabled={saving || loadingAdministrator}
           />
         </Field>
         <Field label="E-mail do responsável *">
@@ -637,7 +640,7 @@ function TenantCredentialsModal({
             type="email"
             value={responsibleEmail}
             onChange={(event) => setResponsibleEmail(event.target.value.toLocaleLowerCase("en-US"))}
-            disabled={saving}
+            disabled={saving || loadingAdministrator}
           />
         </Field>
         <Field label={passwordUnlocked ? "Nova senha *" : "Nova senha"}>

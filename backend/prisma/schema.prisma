@@ -402,9 +402,19 @@ model Tenant {
   automationRules             AutomationRule[]
   platformClient              PlatformClient?
   onboarding                  TenantOnboarding?
+  dashboardConfiguration      TenantDashboardConfiguration?
 
   @@index([status])
   @@map("tenants")
+}
+
+model TenantDashboardConfiguration {
+  tenantId      String   @id
+  configuration Json
+  updatedAt     DateTime @updatedAt
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_dashboard_configurations")
 }
 
 model TenantOnboarding {

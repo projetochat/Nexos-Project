@@ -1044,7 +1044,7 @@ describe("MessagingInboundService", () => {
     });
   });
 
-  it("does not replace a contact name when an outbound echo races with contact lookup", async () => {
+  it("does not use the attendant name when an outbound echo creates or updates a contact", async () => {
     const prisma = prismaMock();
     prisma.messagingConnection.findFirst.mockResolvedValue(connection());
     prisma.message.findFirst.mockResolvedValue(null);
@@ -1080,6 +1080,7 @@ describe("MessagingInboundService", () => {
     expect(prisma.contact.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         update: expect.objectContaining({ name: undefined }),
+        create: expect.objectContaining({ name: "5511987654321@s.whatsapp.net" }),
       }),
     );
   });

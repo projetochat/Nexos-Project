@@ -1,11 +1,11 @@
-import { Controller, Get, Inject, Param, Query, Res, UseGuards } from "@nestjs/common";
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { Body, Controller, Get, Inject, Param, Put, Query, Res, UseGuards } from "@nestjs/common";
+import { IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min } from "class-validator";
 import { Type } from "class-transformer";
 import type { Response } from "express";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequirePermissions } from "../auth/permissions.decorator";
+import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { OperationsService } from "./operations.service";
 
@@ -102,6 +102,11 @@ class DashboardComponentQueryDto extends OperationalQueryDto {
   groupBy!: string;
 }
 
+class DashboardConfigurationDto {
+  @IsObject()
+  configuration!: Record<string, unknown>;
+}
+
 @Controller("operations")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class OperationsController {
@@ -111,6 +116,21 @@ export class OperationsController {
   @RequirePermissions("dashboard.read")
   dashboard(@Query() query: OperationalQueryDto, @CurrentUser() current: AuthenticatedUser) {
     return this.operations.dashboard(current, query);
+  }
+
+  @Get("dashboard/configuration")
+  @RequirePermissions("dashboard.read")
+  dashboardConfiguration(@CurrentUser() current: AuthenticatedUser) {
+    return this.operations.dashboardConfiguration(current);
+  }
+
+  @Put("dashboard/configuration")
+  @RequireAnyPermission("dashboard.create", "dashboard.update", "dashboard.delete")
+  updateDashboardConfiguration(
+    @Body() dto: DashboardConfigurationDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.operations.updateDashboardConfiguration(current, dto.configuration);
   }
 
   @Get("dashboard/component-data")

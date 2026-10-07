@@ -1,4 +1,4 @@
-import { effectivePermissions } from "./effective-permissions";
+import { moduleAwarePermissions } from "./effective-permissions";
 import {
   ForbiddenException,
   HttpException,
@@ -267,7 +267,12 @@ export class AuthService {
     user: LoginUserWithMemberships,
     membership: LoginUserWithMemberships["memberships"][number],
   ) {
-    const permissions = effectivePermissions(membership.role);
+    const permissions = await moduleAwarePermissions(
+      this.prisma,
+      membership.tenantId,
+      membership.tenant.featureOverrides,
+      membership.role,
+    );
     const pendingInitialPassword = await this.prisma.userInvitation.findFirst({
       where: {
         tenantId: membership.tenantId,
@@ -711,7 +716,12 @@ export class AuthService {
         role: { include: { permissions: { select: { permissionId: true } } } },
       },
     });
-    const permissions = effectivePermissions(membership.role);
+    const permissions = await moduleAwarePermissions(
+      this.prisma,
+      membership.tenantId,
+      membership.tenant.featureOverrides,
+      membership.role,
+    );
     const sid = await this.createSession({
       userId: membership.userId,
       tenantId: membership.tenantId,
@@ -831,7 +841,12 @@ export class AuthService {
       });
       if (!session) throw new UnauthorizedException("Sessão de impersonação expirada.");
     }
-    const permissions = effectivePermissions(membership.role);
+    const permissions = await moduleAwarePermissions(
+      this.prisma,
+      membership.tenantId,
+      membership.tenant.featureOverrides,
+      membership.role,
+    );
 
     return {
       user: {

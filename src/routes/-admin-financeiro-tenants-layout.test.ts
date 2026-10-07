@@ -57,8 +57,15 @@ describe("Platform Tenants", () => {
     expect(tenantsSource).not.toContain("Novo tenant");
     expect(tenantsSource).not.toContain("createTenant");
     expect(tenantsSource).not.toContain("terminateTenant");
-    expect(tenantsSource).toContain("DASHBOARD_PERIOD_OPTIONS.map");
-    expect(tenantsSource.match(/<DashboardDateInput/g)?.length).toBe(2);
+    expect(tenantsSource).not.toContain("DASHBOARD_PERIOD_OPTIONS.map");
+    expect(tenantsSource).not.toContain("<DashboardDateInput");
+    expect(tenantsSource).not.toContain('label="Período"');
+    expect(tenantsSource).not.toContain('label="Dt. Inicial"');
+    expect(tenantsSource).not.toContain('label="Dt. Final"');
+    expect(tenantsSource).not.toContain("dateFrom:");
+    expect(tenantsSource).not.toContain("dateTo:");
+    expect(tenantsSource).toContain('className="xl:col-span-4"');
+    expect(tenantsSource).toContain('<Field label="Busca">');
     expect(tenantsSource.indexOf("Dt./Hora")).toBeLessThan(
       tenantsSource.indexOf("<th>Status</th>"),
     );

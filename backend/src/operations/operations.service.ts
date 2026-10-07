@@ -74,6 +74,34 @@ export class OperationsService {
     @Inject(OperationsMetricsService) private readonly metrics: OperationsMetricsService,
   ) {}
 
+  async dashboardConfiguration(current: AuthenticatedUser) {
+    const rows = await this.prisma.$queryRaw<Array<{ configuration: unknown; updatedAt: Date }>>(
+      Prisma.sql`SELECT "configuration", "updatedAt"
+        FROM "tenant_dashboard_configurations"
+        WHERE "tenantId" = ${current.tenantId}
+        LIMIT 1`,
+    );
+    return rows[0]
+      ? { configuration: rows[0].configuration, updatedAt: rows[0].updatedAt }
+      : { configuration: null, updatedAt: null };
+  }
+
+  async updateDashboardConfiguration(current: AuthenticatedUser, value: unknown) {
+    const configuration = validateDashboardConfiguration(value);
+    const serialized = JSON.stringify(configuration);
+    const rows = await this.prisma.$queryRaw<Array<{ configuration: unknown; updatedAt: Date }>>(
+      Prisma.sql`INSERT INTO "tenant_dashboard_configurations" ("tenantId", "configuration", "updatedAt")
+        VALUES (${current.tenantId}, ${serialized}::jsonb, NOW())
+        ON CONFLICT ("tenantId") DO UPDATE
+        SET "configuration" = EXCLUDED."configuration", "updatedAt" = NOW()
+        RETURNING "configuration", "updatedAt"`,
+    );
+    return {
+      configuration: rows[0]?.configuration ?? configuration,
+      updatedAt: rows[0]?.updatedAt,
+    };
+  }
+
   async dashboard(current: AuthenticatedUser, query: OperationalQuery) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: current.tenantId },
@@ -83,6 +111,7 @@ export class OperationsService {
     const previous = previousRange(range);
     const scopedQuery = {
       ...query,
+      conversationAccess: conversationVisibilityWhere(current),
       allowedConnectionIds:
         current.roleKey === "tenant_admin" ? undefined : (current.connectionIds ?? []),
       allowedDepartmentIds:
@@ -758,6 +787,71 @@ export class OperationsService {
       })
       .then((items) => items.map((conversation) => serializeConversation(conversation, current)));
   }
+}
+
+const DASHBOARD_VISUALIZATIONS = new Set([
+  "columns",
+  "bars",
+  "line",
+  "pie",
+  "donut",
+  "gauge",
+  "table",
+  "cards",
+]);
+const DASHBOARD_DATA_SOURCES = new Set([
+  "records",
+  "conversations",
+  "messages",
+  "contacts",
+  "activity",
+]);
+
+function validateDashboardConfiguration(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new BadRequestException("Configuração do dashboard inválida.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (candidate.version !== 2 || !Array.isArray(candidate.components)) {
+    throw new BadRequestException("Versão da configuração do dashboard inválida.");
+  }
+  if (candidate.components.length > 100) {
+    throw new BadRequestException("Quantidade de componentes do dashboard excedida.");
+  }
+  const ids = new Set<string>();
+  const components = candidate.components.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new BadRequestException("Componente do dashboard inválido.");
+    }
+    const component = item as Record<string, unknown>;
+    const id = typeof component.id === "string" ? component.id.trim() : "";
+    const title = typeof component.title === "string" ? component.title.trim() : "";
+    if (!id || ids.has(id) || !title || title.length > 120) {
+      throw new BadRequestException("Identificação ou título do componente inválido.");
+    }
+    ids.add(id);
+    if (
+      typeof component.visible !== "boolean" ||
+      !DASHBOARD_VISUALIZATIONS.has(String(component.visualization)) ||
+      ![1, 2, 3, 4].includes(Number(component.columns)) ||
+      !DASHBOARD_DATA_SOURCES.has(String(component.dataSource)) ||
+      typeof component.groupBy !== "string" ||
+      !["count", "percentage"].includes(String(component.valueMode))
+    ) {
+      throw new BadRequestException("Propriedades do componente do dashboard inválidas.");
+    }
+    return {
+      id,
+      title,
+      visible: component.visible,
+      visualization: component.visualization,
+      columns: component.columns,
+      dataSource: component.dataSource,
+      groupBy: component.groupBy,
+      valueMode: component.valueMode,
+    };
+  });
+  return { version: 2, components };
 }
 
 function conversationWhere(

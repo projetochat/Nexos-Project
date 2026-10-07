@@ -172,6 +172,8 @@ describe("tenant configuration", () => {
         update: vi.fn().mockResolvedValue(tenant),
       },
       rolePermission: { deleteMany: vi.fn().mockResolvedValue({ count: 8 }) },
+      campaign: { deleteMany: vi.fn() },
+      ticket: { deleteMany: vi.fn() },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
       $transaction: vi.fn(),
     };
@@ -216,9 +218,192 @@ describe("tenant configuration", () => {
             "tickets.create",
             "tickets.update",
             "tickets.delete",
+            "chat.tickets.create",
           ],
         },
       },
     });
+    expect(prisma.campaign.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.ticket.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("removes canonical and rollback-compatible ticket grants only from the selected tenant", async () => {
+    const tenant = {
+      id: "tenant-a",
+      maxUsers: null,
+      maxConnections: null,
+      featureOverrides: { tickets: true },
+      limitOverrides: {},
+    };
+    const prisma = {
+      tenant: {
+        findUnique: vi.fn().mockResolvedValue(tenant),
+        update: vi.fn().mockResolvedValue(tenant),
+      },
+      rolePermission: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
+      $transaction: vi.fn(),
+    };
+    prisma.$transaction.mockImplementation((callback: (client: typeof prisma) => unknown) =>
+      callback(prisma),
+    );
+    const service = new PlatformService(
+      prisma as never,
+      { record: vi.fn() } as never,
+      {
+        getEntitlements: vi.fn().mockResolvedValue({
+          features: { chat: true, campaigns: true, tickets: false },
+          limits: {},
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.updateTenantConfiguration("tenant-a", { modules: { tickets: false } }, actor);
+
+    expect(prisma.rolePermission.deleteMany).toHaveBeenCalledWith({
+      where: {
+        role: { tenantId: "tenant-a" },
+        permissionId: {
+          in: [
+            "tickets.read",
+            "tickets.create",
+            "tickets.update",
+            "tickets.delete",
+            "chat.tickets.create",
+          ],
+        },
+      },
+    });
+  });
+
+  it("does not restore removed grants when a module is re-enabled", async () => {
+    const tenant = {
+      id: "tenant-a",
+      maxUsers: null,
+      maxConnections: null,
+      featureOverrides: { tickets: false },
+      limitOverrides: {},
+    };
+    const prisma = {
+      tenant: {
+        findUnique: vi.fn().mockResolvedValue(tenant),
+        update: vi.fn().mockResolvedValue(tenant),
+      },
+      rolePermission: {
+        deleteMany: vi.fn(),
+        createMany: vi.fn(),
+      },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
+      $transaction: vi.fn(),
+    };
+    prisma.$transaction.mockImplementation((callback: (client: typeof prisma) => unknown) =>
+      callback(prisma),
+    );
+    const service = new PlatformService(
+      prisma as never,
+      { record: vi.fn() } as never,
+      {
+        getEntitlements: vi.fn().mockResolvedValue({
+          features: { chat: true, campaigns: true, tickets: true },
+          limits: {},
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.updateTenantConfiguration("tenant-a", { modules: { tickets: true } }, actor);
+
+    expect(prisma.rolePermission.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.rolePermission.createMany).not.toHaveBeenCalled();
+  });
+
+  it("does not audit when permission removal fails inside the configuration transaction", async () => {
+    const failure = new Error("permission removal failed");
+    const prisma = {
+      tenant: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "tenant-a",
+          maxUsers: null,
+          maxConnections: null,
+          featureOverrides: { campaigns: true },
+          limitOverrides: {},
+        }),
+        update: vi.fn().mockResolvedValue({ id: "tenant-a" }),
+      },
+      rolePermission: { deleteMany: vi.fn().mockRejectedValue(failure) },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
+      $transaction: vi.fn(),
+    };
+    prisma.$transaction.mockImplementation((callback: (client: typeof prisma) => unknown) =>
+      callback(prisma),
+    );
+    const audit = { record: vi.fn() };
+    const service = new PlatformService(
+      prisma as never,
+      audit as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.updateTenantConfiguration("tenant-a", { modules: { campaigns: false } }, actor),
+    ).rejects.toBe(failure);
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it("does not remove grants or audit when the module update fails", async () => {
+    const failure = new Error("tenant update failed");
+    const prisma = {
+      tenant: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "tenant-a",
+          maxUsers: null,
+          maxConnections: null,
+          featureOverrides: { tickets: true },
+          limitOverrides: {},
+        }),
+        update: vi.fn().mockRejectedValue(failure),
+      },
+      rolePermission: { deleteMany: vi.fn() },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "tenant-a" }]),
+      $transaction: vi.fn(),
+    };
+    prisma.$transaction.mockImplementation((callback: (client: typeof prisma) => unknown) =>
+      callback(prisma),
+    );
+    const audit = { record: vi.fn() };
+    const service = new PlatformService(
+      prisma as never,
+      audit as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.updateTenantConfiguration("tenant-a", { modules: { tickets: false } }, actor),
+    ).rejects.toBe(failure);
+    expect(prisma.rolePermission.deleteMany).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
   });
 });
