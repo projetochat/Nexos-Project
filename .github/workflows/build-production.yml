@@ -44,9 +44,12 @@ jobs:
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 20
     env:
+      NODE_ENV: test
       DATABASE_URL: postgresql://trixus:ci-only-password@127.0.0.1:5432/trixus_1200?schema=public
       TRIXUS_TEST_DATABASE_URL: postgresql://trixus:ci-only-password@127.0.0.1:5432/trixus_1200?schema=public
+      TRIXUS_VERIFY_DISPOSABLE_DATABASE: trixus_1200
       REDIS_URL: redis://127.0.0.1:6379
+      TRIXUS_VERIFY_DISPOSABLE_REDIS: "true"
     steps:
       - uses: actions/checkout@v4
         with:

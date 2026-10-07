@@ -1,21 +1,31 @@
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  assertDisposableVerifyDatabase,
+  assertDisposableVerifyRedis,
+} from "./verify-resource-safety.mjs";
+
+const testDatabase = assertDisposableVerifyDatabase({
+  databaseUrl: process.env.TRIXUS_TEST_DATABASE_URL,
+  nodeEnv: process.env.NODE_ENV,
+  confirmation: process.env.TRIXUS_VERIFY_DISPOSABLE_DATABASE,
+});
+const testRedis = assertDisposableVerifyRedis({
+  redisUrl: process.env.REDIS_URL,
+  nodeEnv: process.env.NODE_ENV,
+  confirmation: process.env.TRIXUS_VERIFY_DISPOSABLE_REDIS,
+});
 
 const env = {
   ...process.env,
-  DATABASE_URL:
-    process.env.DATABASE_URL ??
-    "postgresql://trixus:trixus_dev_password@127.0.0.1:5432/trixus?schema=public",
-  TRIXUS_TEST_DATABASE_URL:
-    process.env.TRIXUS_TEST_DATABASE_URL ??
-    "postgresql://trixus:trixus_dev_password@127.0.0.1:5432/trixus_1200?schema=public",
+  DATABASE_URL: testDatabase.databaseUrl,
+  TRIXUS_TEST_DATABASE_URL: testDatabase.databaseUrl,
+  REDIS_URL: testRedis.redisUrl,
   JWT_SECRET: process.env.JWT_SECRET ?? "local-access-secret-minimum-32-chars",
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? "local-refresh-secret-minimum-32-chars",
-  TRIXUS_PLATFORM_ADMIN_EMAIL:
-    process.env.TRIXUS_PLATFORM_ADMIN_EMAIL ?? "platform@trixus.app",
-  TRIXUS_PLATFORM_ADMIN_PASSWORD:
-    process.env.TRIXUS_PLATFORM_ADMIN_PASSWORD ?? "demo1234",
+  TRIXUS_PLATFORM_ADMIN_EMAIL: process.env.TRIXUS_PLATFORM_ADMIN_EMAIL ?? "platform@trixus.app",
+  TRIXUS_PLATFORM_ADMIN_PASSWORD: process.env.TRIXUS_PLATFORM_ADMIN_PASSWORD ?? "demo1234",
   SEED_MODE: "test",
 };
 
@@ -23,6 +33,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const bunAvailable = hasCommand(bun());
 const gates = bunAvailable
   ? [
+      ["repository:hygiene", bun(), ["run", "hygiene:check:tracked"]],
       ["frontend:typecheck", bunx(), ["tsc", "--noEmit"]],
       ["frontend:lint-baseline", bun(), ["run", "lint"]],
       ["frontend:test", bun(), ["run", "test:frontend"]],
@@ -78,12 +89,31 @@ const gates = bunAvailable
       ["security:xss", bun(), ["run", "test:security"]],
     ]
   : [
+      [
+        "repository:hygiene",
+        process.execPath,
+        ["scripts/check-repository-hygiene.mjs", "--tracked"],
+      ],
       ["frontend:typecheck", bin("tsc"), ["--noEmit"]],
       ["frontend:lint-baseline", process.execPath, ["scripts/check-eslint-baseline.mjs"]],
       [
         "frontend:test",
         bin("vitest"),
-        ["run", "--exclude", ".continuity/**", "--exclude", "tmp/**", "--exclude", "backend/**"],
+        [
+          "run",
+          "--exclude",
+          ".continuity/**",
+          "--exclude",
+          ".codex-backups/**",
+          "--exclude",
+          ".task-backups/**",
+          "--exclude",
+          "tmp/**",
+          "--exclude",
+          "backups/**",
+          "--exclude",
+          "backend/**",
+        ],
       ],
       ["frontend:build", bin("vite"), ["build"]],
       ["inbox:legacy-runtime", process.execPath, ["scripts/check-inbox-legacy-runtime.mjs"]],

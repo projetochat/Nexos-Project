@@ -46,11 +46,7 @@ import {
   type ApiUserMembership,
 } from "@/lib/trixus-api";
 import { signOut, useSession } from "@/lib/session";
-import {
-  ONBOARDING_INSTANCE_IDEMPOTENCY_KEY,
-  canAdvanceOnboardingStep,
-  isOnboardingInstanceNotFound,
-} from "@/lib/onboarding";
+import { canAdvanceOnboardingStep, isOnboardingInstanceNotFound } from "@/lib/onboarding";
 import type { DepartamentoFormData } from "@/routes/departamentos";
 import type { PerfilFormData } from "@/routes/perfis";
 
