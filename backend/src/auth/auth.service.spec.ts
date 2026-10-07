@@ -153,6 +153,7 @@ describe("AuthService session hydration", () => {
     const prisma = {
       user: { findUnique: vi.fn().mockResolvedValue(user) },
       userInvitation: { findFirst: vi.fn().mockResolvedValue({ id: "marker-1" }) },
+      tenantSubscription: { findFirst: vi.fn().mockResolvedValue(null) },
     };
     const jwt = { signAsync: vi.fn().mockResolvedValue("setup-token") };
     const config = { get: vi.fn().mockReturnValue("test-secret-with-at-least-32-characters") };

@@ -2340,6 +2340,7 @@ describe("Trixus API organization and RBAC", () => {
     await request(app.getHttpServer())
       .delete(`/api/messaging/connections/${orbitConnection.id}`)
       .set("Authorization", `Bearer ${acmeToken}`)
+      .send({ confirmation: "REMOVER" })
       .expect(404);
   });
 
@@ -2404,11 +2405,13 @@ describe("Trixus API organization and RBAC", () => {
       await request(app.getHttpServer())
         .delete(`/api/messaging/connections/${connection.id}`)
         .set("Authorization", `Bearer ${agentToken}`)
+        .send({ confirmation: "REMOVER" })
         .expect(403);
 
       await request(app.getHttpServer())
         .delete(`/api/messaging/connections/${connection.id}`)
         .set("Authorization", `Bearer ${adminToken}`)
+        .send({ confirmation: "REMOVER" })
         .expect(200)
         .expect(({ body }) => {
           expect(body).toMatchObject({
@@ -2455,6 +2458,7 @@ describe("Trixus API organization and RBAC", () => {
       await request(app.getHttpServer())
         .delete(`/api/messaging/connections/${connection.id}`)
         .set("Authorization", `Bearer ${adminToken}`)
+        .send({ confirmation: "REMOVER" })
         .expect(200)
         .expect(({ body }) => {
           expect(body.idempotent).toBe(true);

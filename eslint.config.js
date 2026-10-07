@@ -9,6 +9,8 @@ export default tseslint.config(
   {
     ignores: [
       "**/.continuity/**",
+      "**/.codex-backups/**",
+      "**/.task-backups/**",
       "backups/**",
       "tmp/**",
       "dist",

@@ -12,6 +12,10 @@ const env = {
     "postgresql://trixus:trixus_dev_password@127.0.0.1:5432/trixus_1200?schema=public",
   JWT_SECRET: process.env.JWT_SECRET ?? "local-access-secret-minimum-32-chars",
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? "local-refresh-secret-minimum-32-chars",
+  TRIXUS_PLATFORM_ADMIN_EMAIL:
+    process.env.TRIXUS_PLATFORM_ADMIN_EMAIL ?? "platform@trixus.app",
+  TRIXUS_PLATFORM_ADMIN_PASSWORD:
+    process.env.TRIXUS_PLATFORM_ADMIN_PASSWORD ?? "demo1234",
   SEED_MODE: "test",
 };
 
@@ -52,7 +56,24 @@ const gates = bunAvailable
         ["run", "--cwd", "backend", "prisma:migrate:deploy"],
         { env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL } },
       ],
-      ["backend:test", bun(), ["run", "backend:test"]],
+      [
+        "backend:test-db:seed",
+        bun(),
+        ["run", "--cwd", "backend", "prisma:seed"],
+        {
+          env: {
+            ...env,
+            DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL,
+            SEED_MODE: "demo",
+          },
+        },
+      ],
+      [
+        "backend:test",
+        bun(),
+        ["run", "backend:test"],
+        { env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL } },
+      ],
       ["redis:queue-smoke", bun(), ["backend/scripts/verify-redis-queue.mjs"]],
       ["security:xss", bun(), ["run", "test:security"]],
     ]
@@ -110,7 +131,27 @@ const gates = bunAvailable
           env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL },
         },
       ],
-      ["backend:test", backendBin("vitest"), ["run"], { cwd: resolve(root, "backend") }],
+      [
+        "backend:test-db:seed",
+        process.execPath,
+        ["backend/node_modules/tsx/dist/cli.mjs", "backend/prisma/seed.ts"],
+        {
+          env: {
+            ...env,
+            DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL,
+            SEED_MODE: "demo",
+          },
+        },
+      ],
+      [
+        "backend:test",
+        backendBin("vitest"),
+        ["run"],
+        {
+          cwd: resolve(root, "backend"),
+          env: { ...env, DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL },
+        },
+      ],
       ["redis:queue-smoke", process.execPath, ["backend/scripts/verify-redis-queue.mjs"]],
       [
         "security:xss",

@@ -32,7 +32,7 @@ describe("app surface routing", () => {
   });
 
   it("keeps the fixed app title and adds only a positive unread conversation count", () => {
-    expect(appTitleWithUnreadConversations(3)).toBe("Trixus | App");
+    expect(appTitleWithUnreadConversations(3)).toBe("(3) Trixus | App");
     expect(appTitleWithUnreadConversations(0)).toBe("Trixus | App");
     expect(appTitleWithUnreadConversations(-1)).toBe("Trixus | App");
   });

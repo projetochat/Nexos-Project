@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createOnboardingConnectionWithQr } from "@/components/tenant-onboarding-boundary";
+import { createOnboardingConnectionWithQr } from "@/components/tenant-onboarding-connection";
 
 import {
   ONBOARDING_INSTANCE_IDEMPOTENCY_KEY,

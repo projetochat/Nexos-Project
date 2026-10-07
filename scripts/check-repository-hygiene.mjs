@@ -23,7 +23,7 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "backend/src/auth/auth.service.spec.ts",
-    "e30c97aa584bd5fd18cedf0b6c03c6de9df68c5baaa9bb92af4d4ba8a3f88d5e",
+    "c9218f5a22b7c519356da91160956222cf512d97777ffa98941f4ec338460462",
   ],
   [
     "backend/src/config/environment.spec.ts",
@@ -59,7 +59,7 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "backend/test/app.e2e-spec.ts",
-    "93005a0885040854b47247498a5e3c7fd6d507981393ca4e09b7a238532c4f83",
+    "4cdef6550e84881f8799e2441130a20419b599523639057e58f39c9f70de0b2b",
   ],
   [
     "src/lib/trixus-api.test.ts",
@@ -85,7 +85,7 @@ const credentialFixtureHashes = new Map([
     "scripts/production/install.sh",
     "7a290c786aa9c8dca63fdea55f0223393d373044b406a7a53e1fbe2b725eeb01",
   ],
-  ["scripts/verify.mjs", "9ecf2161c8c55d0bf5c960441506578b04fda142d696e5b5747b833b64f2f2dc"],
+  ["scripts/verify.mjs", "9d950703572e0425b68eab4bcf6f671a6889c8eee490ee213c35f3ec49c49fb8"],
   [
     "sprints/rc-sprint-15-2/hotfix-outbound-worker/RELATORIO.md",
     "107325f260e4bf882e8368af0cefb295191bfd30399091482e0a7453ccbc9ea1",

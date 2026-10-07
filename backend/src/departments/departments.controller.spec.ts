@@ -32,10 +32,7 @@ describe("DepartmentsController", () => {
       {} as never,
     );
 
-    await controller.list(
-      { tenantId: "tenant-a" } as never,
-      { connectionId: "connection-a" },
-    );
+    await controller.list({ tenantId: "tenant-a" } as never, { connectionId: "connection-a" });
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({

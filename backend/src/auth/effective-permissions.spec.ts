@@ -26,7 +26,9 @@ describe("effectivePermissions", () => {
     const permissions = await moduleAwarePermissions(
       {
         tenantSubscription: {
-          findFirst: async () => ({ featuresSnapshot: { chat: true, campaigns: true, tickets: true } }),
+          findFirst: async () => ({
+            featuresSnapshot: { chat: true, campaigns: true, tickets: true },
+          }),
         },
       },
       "tenant-a",

@@ -27,6 +27,7 @@ import { DepartmentIcon } from "@/components/department-icon";
 import { ErrorState, Spinner } from "@/components/feedback";
 import { Modal } from "@/components/modal";
 import { QrGenerationLoadingOverlay } from "@/components/qr-generation-loading-overlay";
+import { createOnboardingConnectionWithQr } from "@/components/tenant-onboarding-connection";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import {
   TrixusApiError,
@@ -73,22 +74,6 @@ const ROLES_QUERY_KEY = ["trixus", "roles"] as const;
 const USERS_QUERY_KEY = ["trixus", "users"] as const;
 const QUICK_REPLIES_QUERY_KEY = ["trixus", "quick-replies", "catalog"] as const;
 const TAGS_QUERY_KEY = ["trixus", "tags"] as const;
-
-type OnboardingConnectionApi = Pick<typeof connectionsApi, "createEvolution" | "qr">;
-
-export async function createOnboardingConnectionWithQr(
-  name: string,
-  api: OnboardingConnectionApi = connectionsApi,
-) {
-  const connection = await api.createEvolution({
-    name,
-    serviceEnabled: true,
-    idempotencyKey: ONBOARDING_INSTANCE_IDEMPOTENCY_KEY,
-  });
-  if (connection.status === "connected" || connection.qrCodeBase64) return connection;
-  const generated = await api.qr(connection.id);
-  return { ...connection, qrCodeBase64: generated.qrCodeBase64 };
-}
 
 const STEPS = [
   { label: "Boas-vindas", icon: Rocket },
@@ -493,8 +478,7 @@ function InstanceStep({ onServerChange }: { onServerChange: () => Promise<unknow
     },
   });
   const removeOrphan = useMutation({
-    mutationFn: (connection: ApiMessagingConnection) =>
-      connectionsApi.remove(connection.id),
+    mutationFn: (connection: ApiMessagingConnection) => connectionsApi.remove(connection.id),
     onSuccess: async (_result, connection) => {
       setName(connection.name);
       setQr(null);
