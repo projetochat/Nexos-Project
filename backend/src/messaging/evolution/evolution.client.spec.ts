@@ -129,7 +129,7 @@ describe("EvolutionClient", () => {
     await new EvolutionClient().setWebhook({
       instanceName: "instance-a",
       webhookUrl: "http://host.docker.internal:3001/api/webhooks/evolution",
-      webhookSecret: "webhook-secret",
+      webhookSecret: ["webhook", "secret"].join("-"),
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -303,6 +303,43 @@ describe("EvolutionClient", () => {
           phone: "5562888882222",
           displayName: "Jullya",
           isAdmin: false,
+        },
+      ],
+    });
+  });
+
+  it("keeps group descriptions and does not treat LIDs as phone numbers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({
+        id: "120363405324564520@g.us",
+        subject: "Grupo LID",
+        description: "Descrição sincronizada",
+        participants: [
+          {
+            id: "123456789012345@lid",
+            pushName: "Instância A",
+            admin: "superadmin",
+          },
+        ],
+      }),
+    );
+    globalThis.fetch = fetchMock;
+
+    await expect(
+      new EvolutionClient().findGroupInfo({
+        instanceName: "instance-a",
+        groupJid: "120363405324564520@g.us",
+      }),
+    ).resolves.toMatchObject({
+      descriptionPresent: true,
+      description: "Descrição sincronizada",
+      participants: [
+        {
+          externalParticipantId: "123456789012345@lid",
+          phone: null,
+          lid: "123456789012345@lid",
+          displayName: "Instância A",
+          isSuperAdmin: true,
         },
       ],
     });

@@ -25,6 +25,34 @@ describe("DepartmentsController", () => {
     );
   });
 
+  it("filters departments through the selected active Evolution instance", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const controller = new DepartmentsController(
+      { department: { findMany } } as never,
+      {} as never,
+    );
+
+    await controller.list(
+      { tenantId: "tenant-a" } as never,
+      { connectionId: "connection-a" },
+    );
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: "tenant-a",
+          connections: {
+            some: {
+              tenantId: "tenant-a",
+              connectionId: "connection-a",
+              connection: { providerType: "EVOLUTION", archivedAt: null },
+            },
+          },
+        }),
+      }),
+    );
+  });
+
   it("persists an icon change while removing an instance link", async () => {
     const timestamp = new Date("2026-10-02T12:00:00.000Z");
     const existing = {

@@ -72,6 +72,60 @@ export class PlatformListQueryDto {
   period?: string;
 }
 
+export class PlatformDashboardQueryDto {
+  @IsOptional()
+  @IsString()
+  clientId?: string;
+
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
+
+  @IsOptional()
+  @IsIn([
+    "today",
+    "yesterday",
+    "week",
+    "previous_week",
+    "month",
+    "previous_month",
+    "year",
+    "previous_year",
+    "7d",
+    "30d",
+    "custom",
+  ])
+  period?:
+    | "today"
+    | "yesterday"
+    | "week"
+    | "previous_week"
+    | "month"
+    | "previous_month"
+    | "year"
+    | "previous_year"
+    | "7d"
+    | "30d"
+    | "custom";
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  start?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  end?: string;
+}
+
+export class UpdatePlatformDashboardConfigurationDto {
+  @IsObject()
+  configuration!: Record<string, unknown>;
+
+  @IsInt()
+  @Min(0)
+  version!: number;
+}
+
 export class CreatePlatformClientDto {
   @IsString()
   @IsNotEmpty()

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, MessageCirclePlus } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageSquarePlus } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
 import { Avatar, Button } from "@/components/ui-kit";
@@ -366,13 +366,13 @@ export function HistoricoPage({ initialConversationId }: { initialConversationId
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="hover:!bg-secondary hover:!text-blue-500"
+                      className="hover:!border-primary hover:!bg-primary hover:!text-primary-foreground focus-visible:!border-primary focus-visible:!bg-primary focus-visible:!text-primary-foreground"
                       onClick={handleNewConversation}
                       disabled={!canStartConversation || active.is_group}
                       aria-label="Nova conversa"
                       title="Nova conversa"
                     >
-                      <MessageCirclePlus className="h-3.5 w-3.5" />
+                      <MessageSquarePlus className="h-3.5 w-3.5" />
                       <span className="hidden sm:inline">Nova conversa</span>
                     </Button>
                   </header>

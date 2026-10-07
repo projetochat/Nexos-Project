@@ -36,6 +36,7 @@ import { TimezoneSelect } from "@/components/timezone-select";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { InfoTooltip } from "@/components/info-tooltip";
 import { GreetingMessageEditor } from "@/components/greeting-message-editor";
+import { QrGenerationLoadingOverlay } from "@/components/qr-generation-loading-overlay";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
 import { num } from "@/lib/format";
@@ -70,6 +71,8 @@ const STATUS_TONE: Record<
   disconnected: "destructive",
   removed: "default",
 };
+
+const SHOW_INSTANCE_SERVICE_CONTROLS = false;
 
 function Page() {
   const qc = useQueryClient();
@@ -265,13 +268,7 @@ function Page() {
     onError: (e) => toast.error((e as Error).message),
   });
   const remove = useMutation({
-    mutationFn: ({
-      connection,
-      options,
-    }: {
-      connection: ApiMessagingConnection;
-      options: RemoveConnectionOptions;
-    }) => connectionsApi.remove(connection.id, options),
+    mutationFn: (connection: ApiMessagingConnection) => connectionsApi.remove(connection.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["trixus", "messaging-connections"] });
       qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
@@ -462,7 +459,7 @@ function Page() {
             connection={removing}
             busy={remove.isPending}
             onClose={() => setRemoving(null)}
-            onConfirm={(connection, options) => remove.mutate({ connection, options })}
+            onConfirm={(connection) => remove.mutate(connection)}
           />
         )}
         {canUpdate && (
@@ -663,7 +660,7 @@ function ConnectionForm({
             </Field>
           </div>
 
-          <div className="space-y-3">
+          <div className={SHOW_INSTANCE_SERVICE_CONTROLS ? "space-y-3" : "hidden"}>
             <ImportOption
               label="Ativar Atendimento"
               checked={serviceEnabled}
@@ -681,7 +678,9 @@ function ConnectionForm({
           </div>
 
           <section
-            className="space-y-4 border-t border-border pt-5"
+            className={
+              SHOW_INSTANCE_SERVICE_CONTROLS ? "space-y-4 border-t border-border pt-5" : "hidden"
+            }
             aria-label="Importar mensagens"
           >
             <h3 className="text-base font-semibold">Importar Mensagens</h3>
@@ -720,21 +719,7 @@ function ConnectionForm({
           </section>
         </form>
       </Modal>
-      {busy && typeof document !== "undefined"
-        ? createPortal(
-            <div className="fixed inset-0 z-[280] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
-              <div
-                role="status"
-                aria-live="assertive"
-                className="flex min-w-72 flex-col items-center gap-4 rounded-xl border border-border bg-card px-6 py-7 text-center text-sm font-semibold text-foreground shadow-2xl"
-              >
-                <RefreshCw className="h-7 w-7 animate-spin text-primary" aria-hidden="true" />
-                <span>Aguarde, QR Code está sendo gerado!</span>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      <QrGenerationLoadingOverlay open={busy} />
     </>
   );
 }
@@ -943,10 +928,6 @@ function parseImportDate(value: string) {
     iso: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
   };
 }
-type RemoveConnectionOptions = {
-  removeConversationHistory: boolean;
-};
-
 type ConnectionSettingsFormData = {
   serviceEnabled?: boolean;
   timezone?: string;
@@ -1444,7 +1425,7 @@ function ConnectionSettingsModal({
                   </div>
                 </div>
               </div>
-              <div className="space-y-3">
+              <div className={SHOW_INSTANCE_SERVICE_CONTROLS ? "space-y-3" : "hidden"}>
                 <ImportOption
                   label="Ativar Atendimento"
                   checked={serviceEnabled}
@@ -1462,7 +1443,11 @@ function ConnectionSettingsModal({
                 </InstanceInfoNotice>
               </div>
               <section
-                className="space-y-4 border-t border-border pt-5"
+                className={
+                  SHOW_INSTANCE_SERVICE_CONTROLS
+                    ? "space-y-4 border-t border-border pt-5"
+                    : "hidden"
+                }
                 aria-label="Importar mensagens"
               >
                 <h3 className="text-base font-semibold text-foreground">Importar Mensagens</h3>
@@ -2417,20 +2402,18 @@ function RemoveConnectionModal({
   connection: ApiMessagingConnection | null;
   busy: boolean;
   onClose: () => void;
-  onConfirm: (connection: ApiMessagingConnection, options: RemoveConnectionOptions) => void;
+  onConfirm: (connection: ApiMessagingConnection) => void;
 }) {
-  const [removeConversationHistory, setRemoveConversationHistory] = React.useState(false);
+  const [confirmation, setConfirmation] = React.useState("");
   React.useEffect(() => {
-    if (!connection) {
-      setRemoveConversationHistory(false);
-    }
+    setConfirmation("");
   }, [connection]);
   return (
     <Modal
       open={!!connection}
       onClose={onClose}
       title="Remover Instância?"
-      initialFocus="[data-confirm-action]"
+      initialFocus="[data-remove-confirmation]"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
@@ -2441,9 +2424,8 @@ function RemoveConnectionModal({
             size="sm"
             className="trash-action focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-card"
             data-confirm-action
-            autoFocus
-            onClick={() => connection && onConfirm(connection, { removeConversationHistory })}
-            disabled={busy}
+            onClick={() => connection && onConfirm(connection)}
+            disabled={busy || confirmation !== "REMOVER"}
           >
             <Trash2 className="h-3.5 w-3.5" /> Remover
           </Button>
@@ -2456,20 +2438,22 @@ function RemoveConnectionModal({
             Instância: <strong className="font-semibold">"{connection?.name}"</strong>
           </p>
           <p className="mt-1">
-            A conexão será indisponibilizada para novos envios e campanhas. Se o histórico não for
-            removido, as conversas ativas desta instância serão encerradas e mantidas no histórico.
+            A conexão e todas as conversas vinculadas serão removidas das áreas operacionais. Os
+            contatos serão preservados e o histórico ficará arquivado de forma recuperável.
           </p>
         </div>
         <div className="space-y-2">
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-1 px-3 py-2 text-xs italic">
-            <input
-              type="checkbox"
-              checked={removeConversationHistory}
-              onChange={(event) => setRemoveConversationHistory(event.target.checked)}
-              className="h-4 w-4 accent-primary"
+          <Field label={'Digite "REMOVER" para confirmar'}>
+            <Input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              autoComplete="off"
+              disabled={busy}
+              placeholder="REMOVER"
+              aria-label='Digite "REMOVER" para confirmar'
+              data-remove-confirmation
             />
-            <span className="font-semibold">Remover histórico de conversas</span>
-          </label>
+          </Field>
         </div>
       </div>
     </Modal>

@@ -2,7 +2,7 @@ import * as React from "react";
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  MessageCirclePlus,
+  MessageSquarePlus,
   Plus,
   Inbox as InboxIcon,
   Clock,
@@ -18,6 +18,9 @@ import {
   ChevronLeft,
   ChevronRight,
   MoreVertical,
+  Image as ImageIcon,
+  Mic,
+  CalendarClock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShellFull } from "@/components/app-shell";
@@ -38,7 +41,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { TipoBadge, type TipoInstancia } from "@/components/instancia-tipos";
 import { connectionDisplayLabel, connectionInstanceValue } from "@/lib/connection-options";
 import { maskBrazilPhone } from "@/lib/input-masks";
 import {
@@ -58,6 +60,7 @@ import { compareOptionLabels, sortByOptionLabel } from "@/lib/sort-options";
 import { refreshInboxData } from "@/lib/refresh-inbox";
 import { DisconnectedInstanceAlerts } from "@/components/disconnected-instance-alerts";
 import { conversationListMetadataLabel } from "@/lib/conversation-list-metadata";
+import { conversationPreview } from "@/lib/conversation-preview";
 import {
   getInboxTab,
   setInboxTab,
@@ -125,7 +128,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
   const conversationScope = conversationAuthorizationScope(user);
   const canStartConversation =
     permissions.includes("messages.send") && permissions.includes("contacts.read");
-  const canBulkClose = permissions.includes("messages.send");
+  const canBulkClose = permissions.includes("chat.bulk_actions.execute");
   const activeTabs = React.useMemo(
     () => queuePrefs.filter((p) => p.enabled && (perms.visualiza_leads || p.id !== "leads")),
     [queuePrefs, perms.visualiza_leads],
@@ -301,7 +304,7 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                   title="Nova Conversa"
                   onClick={newConv.show}
                 >
-                  <MessageCirclePlus className="h-4 w-4" />
+                  <MessageSquarePlus className="h-4 w-4" />
                 </Button>
               )}
               {canBulkClose && (
@@ -317,7 +320,12 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onSelect={bulkClose.show}>Fechar Conversas</DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={bulkClose.show}
+                      className="cursor-pointer focus:bg-surface-2 focus:text-foreground data-[highlighted]:bg-surface-2 data-[highlighted]:text-foreground"
+                    >
+                      Fechar Conversas em Massa
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
@@ -463,7 +471,11 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                               </span>
                             )}
                           </p>
-                          <ConversationListTimestamp value={c.last_message_at} unread={u > 0} />
+                          <ConversationListTimestamp
+                            value={c.last_message_at}
+                            unread={u > 0}
+                            hasPendingScheduledMessage={Boolean(c.hasPendingScheduledMessage)}
+                          />
                         </div>
                         {metadataLabel && (
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -471,6 +483,13 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                           </p>
                         )}
                         <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{
+                              backgroundColor: c.connection?.color ?? "var(--muted-foreground)",
+                            }}
+                            aria-hidden="true"
+                          />
                           <span className="truncate">
                             {[
                               instanceLabel || "Sem instância",
@@ -480,13 +499,16 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
                               .filter(Boolean)
                               .join(" - ")}
                           </span>
-                          <TipoBadge tipo={instanceTipo(c)} size={16} />
                         </div>
-                        <p
+                        <div
                           className={`mt-0.5 truncate text-xs ${u > 0 ? "font-medium text-foreground" : "text-muted-foreground"}`}
                         >
-                          {messagePreviewLabel(c.lastMessagePreview)}
-                        </p>
+                          <ConversationMessagePreview
+                            value={c.lastMessagePreview}
+                            type={c.lastMessageType}
+                            durationMs={c.lastMessageDurationMs}
+                          />
+                        </div>
                       </div>
                     </Link>
                   </li>
@@ -518,25 +540,43 @@ export function InboxLayout({ children }: { children: React.ReactNode }) {
 
 export const Route = createFileRoute("/inbox/")({ component: InboxIndex });
 
-function messagePreviewLabel(value: string | null | undefined) {
-  const clean = (value ?? "").trim();
-  if (!clean) return "Sem mensagens";
-  const normalized = clean.toLowerCase();
-  if (normalized.includes("[imagem]") || normalized === "imagem") return "Foto";
-  if (
-    normalized.includes("[audio]") ||
-    normalized.includes("[áudio]") ||
-    normalized === "audio" ||
-    normalized === "áudio"
-  )
-    return "Áudio";
-  if (normalized.includes("[video]") || normalized.includes("[vídeo]")) return "Vídeo";
-  if (normalized.includes("[documento]") || normalized === "documento") return "Documento";
-  if (normalized.includes("[figurinha]") || normalized === "figurinha") return "Figurinha";
-  return clean;
+function ConversationMessagePreview({
+  value,
+  type,
+  durationMs,
+}: {
+  value: string | null | undefined;
+  type?: ApiConversation["lastMessageType"];
+  durationMs?: number | null;
+}) {
+  const preview = conversationPreview(value, type, durationMs);
+  const Icon = preview.kind === "image" ? ImageIcon : preview.kind === "audio" ? Mic : null;
+  return (
+    <span className="inline-flex min-w-0 max-w-full items-center gap-1 align-middle">
+      {Icon && <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />}
+      <span className="truncate">
+        {preview.segments.map((segment, index) =>
+          segment.bold ? (
+            <strong key={index}>{segment.text}</strong>
+          ) : (
+            <React.Fragment key={index}>{segment.text}</React.Fragment>
+          ),
+        )}
+        {preview.duration ? ` ${preview.duration}` : ""}
+      </span>
+    </span>
+  );
 }
 
-function ConversationListTimestamp({ value, unread }: { value: string; unread: boolean }) {
+function ConversationListTimestamp({
+  value,
+  unread,
+  hasPendingScheduledMessage,
+}: {
+  value: string;
+  unread: boolean;
+  hasPendingScheduledMessage: boolean;
+}) {
   const timestamp = conversationTimestamp(new Date(value).getTime());
   return (
     <span
@@ -544,17 +584,14 @@ function ConversationListTimestamp({ value, unread }: { value: string; unread: b
     >
       {timestamp.day && <span className="block">{timestamp.day}</span>}
       <span className="block">{timestamp.time}</span>
+      {hasPendingScheduledMessage && (
+        <CalendarClock
+          className="ml-auto mt-0.5 h-3.5 w-3.5 text-primary"
+          aria-label="Mensagem agendada pendente"
+        />
+      )}
     </span>
   );
-}
-
-function instanceTipo(conversation: ApiConversation): TipoInstancia {
-  const label = `${conversation.connection?.name ?? ""} ${conversation.contact?.instancia ?? ""}`
-    .trim()
-    .toLowerCase();
-  if (label.includes("instagram")) return "instagram";
-  if (label.includes("telegram")) return "telegram";
-  return "whatsapp";
 }
 
 function InboxIndex() {
@@ -653,13 +690,14 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
         open={open}
         onClose={onClose}
         title="Nova Conversa"
+        className="h-[calc(100dvh-1rem)] sm:h-[min(55rem,calc(100dvh-2rem))]"
         footer={
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancelar
           </Button>
         }
       >
-        <div className="space-y-3">
+        <div className="flex h-full min-h-0 flex-col gap-3">
           {canCreateContact && (
             <div className="flex justify-end">
               <Button
@@ -697,7 +735,7 @@ export function NewConversationModal({ open, onClose }: { open: boolean; onClose
           <ul
             aria-label="Contatos"
             aria-busy={loadingContacts}
-            className="overflow-hidden rounded-lg border border-border"
+            className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border"
           >
             {contacts.map((contact) => (
               <li

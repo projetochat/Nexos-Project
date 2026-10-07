@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseFilters,
   UseGuards,
@@ -28,6 +29,7 @@ import {
   InvoiceStatusDto,
   UpdateInvoiceDto,
   PlatformListQueryDto,
+  PlatformDashboardQueryDto,
   ReasonDto,
   StartImpersonationHandoffDto,
   StartImpersonationDto,
@@ -37,6 +39,7 @@ import {
   UpdateSubscriptionDto,
   UpdateTenantAdministratorCredentialsDto,
   UpdateTenantConfigurationDto,
+  UpdatePlatformDashboardConfigurationDto,
 } from "./platform.dto";
 
 @Controller("platform")
@@ -47,8 +50,23 @@ export class PlatformController {
 
   @Get("dashboard")
   @RequirePlatformPermissions("platform.tenants.read")
-  dashboard() {
-    return this.platform.dashboard();
+  dashboard(@Query() query: PlatformDashboardQueryDto) {
+    return this.platform.dashboard(query);
+  }
+
+  @Get("dashboard/configuration")
+  @RequirePlatformPermissions("platform.tenants.read")
+  dashboardConfiguration(@CurrentUser() current: AuthenticatedUser) {
+    return this.platform.dashboardConfiguration(current);
+  }
+
+  @Put("dashboard/configuration")
+  @RequirePlatformPermissions("platform.settings.update")
+  updateDashboardConfiguration(
+    @Body() dto: UpdatePlatformDashboardConfigurationDto,
+    @CurrentUser() current: AuthenticatedUser,
+  ) {
+    return this.platform.updateDashboardConfiguration(dto, current);
   }
 
   @Get("health")

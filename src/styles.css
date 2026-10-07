@@ -593,10 +593,52 @@ button.trash-action:hover svg {
   color: currentColor;
 }
 
+button[title*="Editar"]:hover,
+button[aria-label*="Editar"]:hover {
+  border-color: color-mix(in oklab, var(--color-warning) 45%, var(--border));
+  background-color: color-mix(in oklab, var(--color-warning) 12%, transparent);
+  color: var(--color-warning);
+}
+
+button[title*="Excluir"]:hover,
+button[aria-label*="Excluir"]:hover,
+button[title*="Apagar"]:hover,
+button[aria-label*="Apagar"]:hover,
+button[title*="Remover"]:hover,
+button[aria-label*="Remover"]:hover,
+button[title*="Desabilitar"]:hover,
+button[aria-label*="Desabilitar"]:hover {
+  border-color: color-mix(in oklab, var(--color-destructive) 45%, var(--border));
+  background-color: color-mix(in oklab, var(--color-destructive) 12%, transparent);
+  color: var(--color-destructive);
+}
+
+button[title*="Editar"]:hover svg,
+button[aria-label*="Editar"]:hover svg,
+button[title*="Excluir"]:hover svg,
+button[aria-label*="Excluir"]:hover svg,
+button[title*="Apagar"]:hover svg,
+button[aria-label*="Apagar"]:hover svg,
+button[title*="Remover"]:hover svg,
+button[aria-label*="Remover"]:hover svg,
+button[title*="Desabilitar"]:hover svg,
+button[aria-label*="Desabilitar"]:hover svg {
+  color: currentColor;
+}
+
 button[title*="Abrir conversa"]:hover svg,
 button[aria-label*="Abrir conversa"]:hover svg,
 button[title*="Selecionar"]:hover svg,
 button[aria-label*="Selecionar"]:hover svg {
+  color: currentColor;
+}
+
+button[title*="Abrir conversa"]:hover,
+button[aria-label*="Abrir conversa"]:hover,
+button[title*="Selecionar"]:hover,
+button[aria-label*="Selecionar"]:hover {
+  border-color: color-mix(in oklab, var(--color-primary) 45%, var(--border));
+  background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
   color: var(--color-primary);
 }
 
@@ -604,14 +646,25 @@ button[aria-label*="Selecionar"]:hover svg {
   color: var(--color-primary);
 }
 
+button[title*="Duplicar"],
+button[aria-label*="Duplicar"],
+.duplicate-action-button {
+  border-color: color-mix(in oklab, var(--color-primary) 35%, var(--border));
+  color: var(--color-primary);
+}
+
+button[title*="Duplicar"]:hover,
+button[aria-label*="Duplicar"]:hover,
+.duplicate-action-button:hover {
+  border-color: color-mix(in oklab, var(--color-primary) 55%, var(--border));
+  background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+
 button[title*="Duplicar"]:hover svg,
 button[aria-label*="Duplicar"]:hover svg,
 .duplicate-action-button:hover svg {
-  color: var(--color-success);
-}
-
-.duplicate-action-button:hover {
-  color: var(--color-success);
+  color: currentColor;
 }
 
 /* Variante "revelar no hover" — usada quando a sidebar está recolhida.

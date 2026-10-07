@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner";
 import { AppShell, PageContainer } from "@/components/app-shell";
 import { ConfirmDialog, Modal } from "@/components/modal";
+import { MessageEmojiPicker } from "@/components/message-emoji-picker";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import {
   Avatar,
@@ -34,7 +35,6 @@ import {
   SearchInput,
   SectionHeader,
   Select,
-  Textarea,
 } from "@/components/ui-kit";
 import {
   conversationApi,
@@ -328,8 +328,8 @@ function GroupsPage() {
         />
 
         <Card className="mb-4 p-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)]">
-            <div className="col-span-2 md:col-span-1">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,9rem)] gap-2 sm:gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)]">
+            <div className="min-w-0">
               <Field label="Busca">
                 <SearchInput
                   value={query}
@@ -639,6 +639,7 @@ function CreateGroupModal({
   const [imageDataUrl, setImageDataUrl] = React.useState<string | null>(null);
   const photoCrop = usePhotoCropper(setImageDataUrl, open);
   const imageInputRef = React.useRef<HTMLInputElement | null>(null);
+  const descriptionRef = React.useRef<HTMLTextAreaElement | null>(null);
   const [busy, setBusy] = React.useState(false);
   const picker = useGroupContactPicker(open, availableQuery);
 
@@ -707,6 +708,10 @@ function CreateGroupModal({
     } finally {
       setBusy(false);
     }
+  };
+
+  const insertDescriptionEmoji = (emoji: string) => {
+    insertTextAtCursor(descriptionRef.current, description, emoji, 2000, setDescription);
   };
 
   return (
@@ -879,16 +884,19 @@ function CreateGroupModal({
             />
           </div>
           <Field label="Descrição">
-            <Textarea
+            <textarea
+              ref={descriptionRef}
               rows={6}
               maxLength={2000}
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Escreva uma descrição para o grupo"
+              className="min-h-24 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary"
             />
-            <p className="mt-1 text-right text-xs text-muted-foreground">
-              {description.length}/2000
-            </p>
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <MessageEmojiPicker disabled={busy} onSelect={insertDescriptionEmoji} />
+              <p className="text-right text-xs text-muted-foreground">{description.length}/2000</p>
+            </div>
           </Field>
         </div>
       </Modal>
@@ -923,7 +931,9 @@ function GroupDetailModal({
   const [editingName, setEditingName] = React.useState(false);
   const [editingDescription, setEditingDescription] = React.useState(false);
   const initializedGroupIdRef = React.useRef<string | null>(null);
-  const picker = useGroupContactPicker(!!group, availableQuery);
+  const descriptionRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const canManageGroupParticipants = canManage && Boolean(group?.canManageParticipants);
+  const picker = useGroupContactPicker(!!group && canManageGroupParticipants, availableQuery);
 
   React.useEffect(() => {
     if (!group) {
@@ -1026,6 +1036,10 @@ function GroupDetailModal({
   const cancelDescriptionEdit = () => {
     setDescription(group?.description ?? "");
     setEditingDescription(false);
+  };
+
+  const insertDescriptionEmoji = (emoji: string) => {
+    insertTextAtCursor(descriptionRef.current, description, emoji, 2000, setDescription);
   };
 
   const addParticipant = (contactId: string) => {
@@ -1188,14 +1202,15 @@ function GroupDetailModal({
                     <div className="relative min-w-0">
                       {editingDescription ? (
                         <>
-                          <Textarea
+                          <textarea
+                            ref={descriptionRef}
                             autoFocus
                             rows={3}
                             maxLength={2000}
                             value={description}
                             onChange={(event) => setDescription(event.target.value)}
                             disabled={busy === "description"}
-                            className="min-h-16 pr-9 sm:min-h-20"
+                            className="min-h-16 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 pr-9 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary disabled:opacity-60 sm:min-h-20"
                           />
                           <button
                             type="button"
@@ -1206,6 +1221,12 @@ function GroupDetailModal({
                           >
                             <X className="h-3 w-3" />
                           </button>
+                          <div className="absolute bottom-2 left-2">
+                            <MessageEmojiPicker
+                              disabled={busy === "description"}
+                              onSelect={insertDescriptionEmoji}
+                            />
+                          </div>
                         </>
                       ) : (
                         <p className="min-h-14 break-words whitespace-pre-wrap py-1.5 text-sm text-foreground sm:min-h-20 sm:py-2">
@@ -1250,7 +1271,12 @@ function GroupDetailModal({
                           }
                           setAddingParticipants((current) => !current);
                         }}
-                        disabled={busy === "participants"}
+                        disabled={busy === "participants" || !canManageGroupParticipants}
+                        title={
+                          canManageGroupParticipants
+                            ? undefined
+                            : "A instância não administra este grupo"
+                        }
                       >
                         <UserPlus className="h-3.5 w-3.5" />
                         {addingParticipants && selectedContactIds.length > 0
@@ -1336,6 +1362,7 @@ function GroupDetailModal({
                             {participant.isSuperAdmin ? "Criador" : "Admin"}
                           </Badge>
                         )}
+                        {participant.isCurrentInstance && <Badge tone="default">Meu número</Badge>}
                         {!viewMode && (
                           <div className="flex shrink-0 gap-1">
                             <Button
@@ -1349,7 +1376,12 @@ function GroupDetailModal({
                                   participant.isAdmin ? "demote" : "promote",
                                 )
                               }
-                              disabled={!!busy || participant.isSuperAdmin}
+                              disabled={
+                                !!busy ||
+                                participant.isSuperAdmin ||
+                                participant.isCurrentInstance ||
+                                !canManageGroupParticipants
+                              }
                               className={`h-8 w-8 ${
                                 participant.isAdmin
                                   ? "hover:text-destructive"
@@ -1364,7 +1396,12 @@ function GroupDetailModal({
                               title="Remover participante"
                               aria-label="Remover participante"
                               onClick={() => updateParticipant(participant, "remove")}
-                              disabled={!!busy || participant.isSuperAdmin}
+                              disabled={
+                                !!busy ||
+                                participant.isSuperAdmin ||
+                                participant.isCurrentInstance ||
+                                !canManageGroupParticipants
+                              }
                               className="h-8 w-8"
                             >
                               <UserMinus className="h-3.5 w-3.5" />
@@ -1415,7 +1452,7 @@ function GroupDetailModal({
                             variant="ghost"
                             size="icon"
                             onClick={() => addParticipant(contact.id)}
-                            disabled={!!busy}
+                            disabled={!!busy || !canManageGroupParticipants}
                             title={`Adicionar ${contact.nome}`}
                             aria-label={`Adicionar ${contact.nome}`}
                           >
@@ -1449,7 +1486,8 @@ function GroupDetailModal({
                         className="trash-action h-7 min-h-7 px-2 text-[11px] sm:h-auto sm:min-h-8 sm:px-2.5 sm:text-xs"
                         disabled={
                           !group.participants.some((participant) => !participant.isSuperAdmin) ||
-                          !!busy
+                          !!busy ||
+                          !canManageGroupParticipants
                         }
                         onClick={removeAllParticipants}
                       >
@@ -1487,6 +1525,7 @@ function GroupDetailModal({
                             {participant.isSuperAdmin ? "Criador" : "Admin"}
                           </Badge>
                         )}
+                        {participant.isCurrentInstance && <Badge tone="default">Meu número</Badge>}
                         {canManage && (
                           <Button
                             variant="ghost"
@@ -1501,7 +1540,12 @@ function GroupDetailModal({
                                 participant.isAdmin ? "demote" : "promote",
                               )
                             }
-                            disabled={!!busy || participant.isSuperAdmin}
+                            disabled={
+                              !!busy ||
+                              participant.isSuperAdmin ||
+                              participant.isCurrentInstance ||
+                              !canManageGroupParticipants
+                            }
                             className={`h-8 w-8 sm:h-9 sm:w-9 ${
                               participant.isAdmin ? "hover:text-destructive" : "hover:text-success"
                             }`}
@@ -1517,7 +1561,12 @@ function GroupDetailModal({
                             aria-label="Remover participante"
                             className="trash-action h-8 w-8 sm:h-9 sm:w-9"
                             onClick={() => updateParticipant(participant, "remove")}
-                            disabled={!!busy || participant.isSuperAdmin}
+                            disabled={
+                              !!busy ||
+                              participant.isSuperAdmin ||
+                              participant.isCurrentInstance ||
+                              !canManageGroupParticipants
+                            }
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -1598,4 +1647,25 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }).replace(",", "");
+}
+
+function insertTextAtCursor(
+  textarea: HTMLTextAreaElement | null,
+  currentValue: string,
+  text: string,
+  maxLength: number,
+  onChange: (value: string) => void,
+) {
+  const start = textarea?.selectionStart ?? currentValue.length;
+  const end = textarea?.selectionEnd ?? start;
+  const available = maxLength - (currentValue.length - (end - start));
+  if (available <= 0) return;
+  const inserted = text.slice(0, available);
+  const nextValue = `${currentValue.slice(0, start)}${inserted}${currentValue.slice(end)}`;
+  const cursor = start + inserted.length;
+  onChange(nextValue);
+  requestAnimationFrame(() => {
+    textarea?.focus();
+    textarea?.setSelectionRange(cursor, cursor);
+  });
 }

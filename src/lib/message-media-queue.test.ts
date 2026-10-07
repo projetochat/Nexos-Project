@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { messageMediaType, sendMediaQueue } from "./message-media-queue";
+import { filesFromTransfer, messageMediaType, sendMediaQueue } from "./message-media-queue";
 
 describe("message media queue", () => {
   it("classifies images, videos and documents", () => {
@@ -8,7 +8,17 @@ describe("message media queue", () => {
     expect(messageMediaType({ type: "application/pdf" } as File)).toBe("document");
   });
 
-  it("stops at the first failure and reports only unsent items", async () => {
+  it("extracts every transferred file in its original order", () => {
+    const files = [
+      { name: "photo.png", type: "image/png" },
+      { name: "document.pdf", type: "application/pdf" },
+    ] as File[];
+    expect(filesFromTransfer({ files: files as unknown as FileList, items: [] as never })).toEqual(
+      files,
+    );
+  });
+
+  it("keeps sending after an individual failure and reports only failed items", async () => {
     const send = vi.fn(async (item: string) => {
       if (item === "second") throw new Error("failed");
     });
@@ -18,9 +28,9 @@ describe("message media queue", () => {
       sent.push(item),
     );
 
-    expect(sent).toEqual(["first"]);
-    expect(send.mock.calls.map(([item]) => item)).toEqual(["first", "second"]);
-    expect(result.remaining).toEqual(["second", "third"]);
+    expect(sent).toEqual(["first", "third"]);
+    expect(send.mock.calls.map(([item]) => item)).toEqual(["first", "second", "third"]);
+    expect(result.remaining).toEqual(["second"]);
     expect(result.error).toBeInstanceOf(Error);
   });
 

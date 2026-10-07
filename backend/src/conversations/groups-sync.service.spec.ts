@@ -70,7 +70,7 @@ describe("GroupsSyncService", () => {
       getParticipants: false,
     });
     expect(evolution.findGroupInfo).not.toHaveBeenCalled();
-    expect(prismaTx.conversationParticipant.upsert).not.toHaveBeenCalled();
+    expect(prismaTx.conversationParticipant.create).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       synced: 1,
       participants: 0,
@@ -91,13 +91,13 @@ describe("GroupsSyncService", () => {
         tenantId: "tenant-a",
         conversationId: "conversation-a",
         active: true,
-        externalParticipantId: { notIn: ["5562985125113@s.whatsapp.net"] },
+        id: { notIn: ["participant-a"] },
       },
       data: { active: false },
     });
   });
 
-  it("does not mutate a group outside the caller's Chat department scope", async () => {
+  it("updates an existing tenant group without applying a caller department scope", async () => {
     const prisma = prismaMock();
     prismaTx.conversation.findFirst.mockResolvedValue({
       id: "conversation-hidden",
@@ -111,13 +111,42 @@ describe("GroupsSyncService", () => {
     const result = await service.sync({
       tenantId: "tenant-a",
       connectionId: "connection-a",
-      departmentIds: ["department-a"],
     });
 
-    expect(result.synced).toBe(0);
-    expect(prismaTx.conversation.update).not.toHaveBeenCalled();
+    expect(result.synced).toBe(1);
+    expect(prismaTx.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tenantId_id: { tenantId: "tenant-a", id: "conversation-hidden" } },
+      }),
+    );
     expect(prismaTx.conversation.create).not.toHaveBeenCalled();
-    expect(prismaTx.conversationParticipant.upsert).not.toHaveBeenCalled();
+    expect(prismaTx.conversationParticipant.create).toHaveBeenCalled();
+  });
+
+  it("preserves a saved description when the provider snapshot omits it", async () => {
+    const prisma = prismaMock();
+    prismaTx.conversation.findFirst.mockResolvedValue({
+      id: "conversation-a",
+      departmentId: "department-a",
+      groupMetadataJson: { description: "Descrição local", custom: "preservado" },
+    });
+    const service = new GroupsSyncService(
+      prisma as never,
+      evolutionMock({ imageUrl: null }) as never,
+    );
+
+    await service.sync({ tenantId: "tenant-a", connectionId: "connection-a" });
+
+    expect(prismaTx.conversation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          groupMetadataJson: expect.objectContaining({
+            description: "Descrição local",
+            custom: "preservado",
+          }),
+        }),
+      }),
+    );
   });
 
   it("reconciles group participant names from saved contacts and the connection owner", async () => {
@@ -139,7 +168,7 @@ describe("GroupsSyncService", () => {
     expect(result).toEqual({ checked: 2, updated: 2 });
     expect(prisma.conversationParticipant.updateMany).toHaveBeenCalledWith({
       where: { tenantId: "tenant-a", id: "participant-owner" },
-      data: { displayName: "Você" },
+      data: { displayName: "Instância A" },
     });
     expect(prisma.conversationParticipant.updateMany).toHaveBeenCalledWith({
       where: { tenantId: "tenant-a", id: "participant-contact" },
@@ -158,7 +187,9 @@ const prismaTx = {
     update: vi.fn(),
   },
   conversationParticipant: {
-    upsert: vi.fn(),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
     updateMany: vi.fn(),
   },
 };
@@ -168,7 +199,9 @@ function prismaMock() {
   prismaTx.conversation.findFirst.mockResolvedValue(null);
   prismaTx.conversation.create.mockResolvedValue({ id: "conversation-a" });
   prismaTx.conversation.update.mockResolvedValue({ id: "conversation-a" });
-  prismaTx.conversationParticipant.upsert.mockResolvedValue({ id: "participant-a" });
+  prismaTx.conversationParticipant.findFirst.mockResolvedValue(null);
+  prismaTx.conversationParticipant.create.mockResolvedValue({ id: "participant-a" });
+  prismaTx.conversationParticipant.update.mockResolvedValue({ id: "participant-a" });
   prismaTx.conversationParticipant.updateMany.mockResolvedValue({ count: 1 });
 
   return {
@@ -180,6 +213,9 @@ function prismaMock() {
           providerType: MessagingProviderType.EVOLUTION,
           status: MessagingConnectionStatus.CONNECTED,
           externalReference: "instance-a",
+          name: "Instância A",
+          ownerExternalId: "5562992728679@s.whatsapp.net",
+          ownerPhoneNormalized: "+5562992728679",
           defaultDepartmentId: null,
           archivedAt: null,
         },
@@ -242,7 +278,7 @@ function baseParticipant() {
     externalParticipantId: "5562985125113@s.whatsapp.net",
     displayName: null,
     conversation: {
-      connection: { ownerPhoneNormalized: "+5562992728679" },
+      connection: { name: "Instância A", ownerPhoneNormalized: "+5562992728679" },
     },
   };
 }

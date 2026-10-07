@@ -23,4 +23,10 @@ describe("Gerenciar Grupos performance contract", () => {
     expect(source).toContain("onLeave={canLeave ?");
     expect(source).toContain("{canLeave && (");
   });
+
+  it("does not load the contact picker while a group is open in read-only mode", () => {
+    const source = readFileSync(new URL("./grupos.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("useGroupContactPicker(!!group && canManage, availableQuery)");
+  });
 });

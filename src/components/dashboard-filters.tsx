@@ -18,6 +18,12 @@ import {
 } from "@/lib/operational-filters";
 import { todayDateValue, shouldFillTodayFromShortcut } from "@/lib/date-shortcuts";
 import { sortByOptionLabel } from "@/lib/sort-options";
+import type { PlatformDashboardFilters } from "@/lib/platform-dashboard-api";
+import {
+  platformAvailableTenants,
+  platformClientSelectionPatch,
+  platformTenantSelectionPatch,
+} from "@/lib/platform-dashboard-filters";
 
 export function DashboardFiltersBar({
   value,
@@ -212,32 +218,21 @@ export function DashboardDateInput({
 
   if (!isMobile) {
     return (
-      <div className="relative min-w-0">
-        <Input
-          ref={nativeDateInputRef}
-          type="date"
-          value={value}
-          readOnly={readOnly}
-          aria-readonly={readOnly}
-          onClick={(event) => {
-            if (readOnly) event.preventDefault();
-          }}
-          onChange={(event) => onChange(event.target.value)}
-          className={`${className} pr-9 [&::-webkit-calendar-picker-indicator]:pointer-events-none [&::-webkit-calendar-picker-indicator]:opacity-0`}
-        />
-        <button
-          type="button"
-          disabled={readOnly}
-          title={
-            readOnly ? "Selecione o período personalizado para alterar a data" : "Selecionar data"
-          }
-          aria-label="Selecionar data"
-          onClick={openNativePicker}
-          className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <CalendarDays className="h-4 w-4" strokeWidth={2} />
-        </button>
-      </div>
+      <Input
+        ref={nativeDateInputRef}
+        type="date"
+        value={value}
+        readOnly={readOnly}
+        aria-readonly={readOnly}
+        title={
+          readOnly ? "Selecione o período personalizado para alterar a data" : "Selecionar data"
+        }
+        onClick={(event) => {
+          if (readOnly) event.preventDefault();
+        }}
+        onChange={(event) => onChange(event.target.value)}
+        className={className}
+      />
     );
   }
 
@@ -289,6 +284,132 @@ export function DashboardDateInput({
         className="absolute right-1 top-1/2 z-10 h-8 w-8 -translate-y-1/2 cursor-pointer opacity-0 disabled:cursor-not-allowed"
       />
     </div>
+  );
+}
+
+export function PlatformDashboardFiltersBar({
+  value,
+  clients,
+  tenants,
+  onChange,
+  onClear,
+  className = "mb-3",
+}: {
+  value: PlatformDashboardFilters;
+  clients: Array<{ id: string; name: string; tenantId: string | null }>;
+  tenants: Array<{ id: string; name: string; clientId: string | null; clientName: string | null }>;
+  onChange: (patch: Partial<PlatformDashboardFilters>) => void;
+  onClear: () => void;
+  className?: string;
+}) {
+  const automaticDates = datesForOperationalPeriod(value.period);
+  const isCustom = value.period === "custom";
+  const start = value.start ?? automaticDates.start;
+  const end = value.end ?? automaticDates.end;
+  const showClear = Boolean(value.clientId || value.tenantId || value.period !== "month");
+  const sortedClients = React.useMemo(
+    () => sortByOptionLabel(clients, (client) => client.name),
+    [clients],
+  );
+  const sortedTenants = React.useMemo(
+    () => sortByOptionLabel(tenants, (tenant) => tenant.name),
+    [tenants],
+  );
+  const availableTenants = platformAvailableTenants(sortedTenants, value.clientId);
+
+  return (
+    <Card className={`p-4 ${className}`}>
+      <div
+        className={`grid grid-cols-2 gap-3 ${
+          showClear
+            ? "lg:grid-cols-[1.2fr_1.2fr_1.05fr_0.9fr_0.9fr_auto]"
+            : "lg:grid-cols-[1.2fr_1.2fr_1.05fr_0.9fr_0.9fr]"
+        }`}
+      >
+        <FilterField label="Cliente">
+          <Select
+            value={value.clientId ?? ""}
+            onChange={(event) =>
+              onChange(
+                platformClientSelectionPatch(event.target.value, value.tenantId, sortedTenants),
+              )
+            }
+          >
+            <option value="">Todos os clientes</option>
+            {sortedClients.map((client) => (
+              <option key={client.id} value={client.id}>
+                {client.name}
+              </option>
+            ))}
+          </Select>
+        </FilterField>
+        <FilterField label="Tenant">
+          <Select
+            value={value.tenantId ?? ""}
+            onChange={(event) =>
+              onChange(
+                platformTenantSelectionPatch(event.target.value, value.clientId, sortedTenants),
+              )
+            }
+          >
+            <option value="">Todas as tenants</option>
+            {availableTenants.map((tenant) => (
+              <option key={tenant.id} value={tenant.id}>
+                {tenant.name}
+                {tenant.clientName ? ` — ${tenant.clientName}` : " — Sem cliente"}
+              </option>
+            ))}
+          </Select>
+        </FilterField>
+        <FilterField label="Período">
+          <Select
+            value={value.period}
+            onChange={(event) => {
+              const period = event.target.value as OperationalPeriod;
+              const dates =
+                period === "custom" ? { start, end } : datesForOperationalPeriod(period);
+              onChange({ period, start: dates.start, end: dates.end });
+            }}
+          >
+            {DASHBOARD_PERIOD_OPTIONS.map((period) => (
+              <option key={period.value} value={period.value}>
+                {period.label}
+              </option>
+            ))}
+          </Select>
+        </FilterField>
+        <FilterField label="Dt. Inicial" className="min-w-0">
+          <DashboardDateInput
+            value={start}
+            readOnly={!isCustom}
+            onChange={(date) => onChange({ start: date })}
+          />
+        </FilterField>
+        <FilterField label="Dt. Final" className="min-w-0">
+          <DashboardDateInput
+            value={end}
+            readOnly={!isCustom}
+            onChange={(date) => onChange({ end: date })}
+          />
+        </FilterField>
+        {showClear && (
+          <div className="flex items-end">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={onClear}
+              title="Limpar filtros"
+              aria-label="Limpar filtros"
+              className="min-h-10 gap-2 px-3"
+            >
+              <FilterX className="h-4 w-4" />
+              <span className="hidden xl:inline">Limpar filtros</span>
+            </Button>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
 

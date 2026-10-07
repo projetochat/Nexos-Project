@@ -14,7 +14,6 @@ type GroupSyncInput = {
   tenantId: string;
   connectionId?: string;
   includeParticipants?: boolean;
-  departmentIds?: string[];
 };
 
 type GroupPictureTarget = {
@@ -43,11 +42,7 @@ export class GroupsSyncService implements OnModuleDestroy {
     if (this.pictureDrainTimer) clearTimeout(this.pictureDrainTimer);
   }
 
-  async reconcileGroupParticipantNames(input: {
-    tenantId: string;
-    connectionIds?: string[];
-    departmentIds?: string[];
-  }) {
+  async reconcileGroupParticipantNames(input: { tenantId: string; connectionIds?: string[] }) {
     const participants = await this.prisma.conversationParticipant.findMany({
       where: {
         tenantId: input.tenantId,
@@ -57,7 +52,6 @@ export class GroupsSyncService implements OnModuleDestroy {
           archivedAt: null,
           conversationType: ConversationType.GROUP,
           ...(input.connectionIds ? { connectionId: { in: input.connectionIds } } : {}),
-          ...(input.departmentIds ? { departmentId: { in: input.departmentIds } } : {}),
         },
       },
       select: {
@@ -68,7 +62,7 @@ export class GroupsSyncService implements OnModuleDestroy {
         conversation: {
           select: {
             connection: {
-              select: { ownerPhoneNormalized: true },
+              select: { name: true, ownerPhoneNormalized: true },
             },
           },
         },
@@ -79,6 +73,7 @@ export class GroupsSyncService implements OnModuleDestroy {
     const participantCandidates = participants.map((participant) => ({
       id: participant.id,
       currentName: participant.displayName,
+      ownerName: participant.conversation.connection?.name ?? null,
       ownerPhone: participant.conversation.connection?.ownerPhoneNormalized ?? null,
       candidates: participantPhoneCandidates(participant.phone, participant.externalParticipantId),
     }));
@@ -146,11 +141,7 @@ export class GroupsSyncService implements OnModuleDestroy {
       let connectionFailed = false;
       let connectionSynced = 0;
       try {
-        const departmentId = await this.groupDepartmentId(
-          input.tenantId,
-          connection.id,
-          input.departmentIds,
-        );
+        const departmentId = await this.groupDepartmentId(input.tenantId, connection.id);
         const groups = await this.evolution.fetchGroups({
           instanceName: connection.externalReference,
           getParticipants: includeParticipants,
@@ -166,10 +157,14 @@ export class GroupsSyncService implements OnModuleDestroy {
               : group;
             return this.upsertSyncedGroup(
               input.tenantId,
-              connection.id,
-              connection.externalReference!,
+              {
+                id: connection.id,
+                name: connection.name,
+                externalReference: connection.externalReference!,
+                ownerExternalId: connection.ownerExternalId,
+                ownerPhoneNormalized: connection.ownerPhoneNormalized,
+              },
               departmentId,
-              input.departmentIds,
               detailedGroup,
             );
           },
@@ -227,7 +222,6 @@ export class GroupsSyncService implements OnModuleDestroy {
       const reconciliation = await this.reconcileGroupParticipantNames({
         tenantId: input.tenantId,
         ...(input.connectionId ? { connectionIds: [input.connectionId] } : {}),
-        ...(input.departmentIds ? { departmentIds: input.departmentIds } : {}),
       });
       result.participantNamesUpdated = reconciliation.updated;
     }
@@ -258,6 +252,8 @@ export class GroupsSyncService implements OnModuleDestroy {
         subject: detail.subject ?? detail.name ?? group.subject,
         imageUrl: group.imageUrl ?? detail.imageUrl,
         createdAt: group.createdAt ?? detail.createdAt,
+        descriptionPresent: detail.descriptionPresent || group.descriptionPresent,
+        description: detail.descriptionPresent ? detail.description : group.description,
         participants:
           detailParticipants.length > group.participants.length
             ? detailParticipants
@@ -383,10 +379,14 @@ export class GroupsSyncService implements OnModuleDestroy {
 
   private async upsertSyncedGroup(
     tenantId: string,
-    connectionId: string,
-    instanceName: string,
+    connection: {
+      id: string;
+      name: string;
+      externalReference: string;
+      ownerExternalId: string | null;
+      ownerPhoneNormalized: string | null;
+    },
     departmentId: string | null,
-    allowedDepartmentIds: string[] | undefined,
     group: EvolutionGroupSnapshot,
   ) {
     const now = new Date();
@@ -394,28 +394,11 @@ export class GroupsSyncService implements OnModuleDestroy {
       const existingConversation = await tx.conversation.findFirst({
         where: {
           tenantId,
-          connectionId,
+          connectionId: connection.id,
           externalChatId: group.groupJid,
           conversationType: ConversationType.GROUP,
         },
       });
-      if (
-        allowedDepartmentIds &&
-        (existingConversation
-          ? !existingConversation.departmentId ||
-            !allowedDepartmentIds.includes(existingConversation.departmentId)
-          : !departmentId)
-      ) {
-        return {
-          skipped: true as const,
-          contactId: "",
-          conversationId: "",
-          created: false,
-          participants: 0,
-          inactiveParticipants: 0,
-        };
-      }
-
       const contact = await tx.contact.upsert({
         where: {
           tenantId_normalizedPhone: {
@@ -427,7 +410,7 @@ export class GroupsSyncService implements OnModuleDestroy {
           name: group.subject,
           phone: group.groupJid,
           avatarUrl: group.imageUrl ?? undefined,
-          instance: instanceName,
+          instance: connection.externalReference,
           archivedAt: null,
         },
         create: {
@@ -436,13 +419,18 @@ export class GroupsSyncService implements OnModuleDestroy {
           phone: group.groupJid,
           normalizedPhone: `group:${group.groupJid}`,
           avatarUrl: group.imageUrl ?? undefined,
-          instance: instanceName,
+          instance: connection.externalReference,
         },
       });
 
+      const previousMetadata = groupMetadataObject(existingConversation?.groupMetadataJson);
       const metadata = {
+        ...previousMetadata,
         syncedAt: now.toISOString(),
-        createdAt: group.createdAt?.toISOString() ?? null,
+        createdAt:
+          group.createdAt?.toISOString() ??
+          (typeof previousMetadata.createdAt === "string" ? previousMetadata.createdAt : null),
+        ...(group.descriptionPresent ? { description: group.description ?? "" } : {}),
       };
       const conversation = existingConversation
         ? await tx.conversation.update({
@@ -462,7 +450,7 @@ export class GroupsSyncService implements OnModuleDestroy {
             data: {
               tenantId,
               contactId: contact.id,
-              connectionId,
+              connectionId: connection.id,
               status: ConversationStatus.ABERTA,
               isGroup: true,
               conversationType: ConversationType.GROUP,
@@ -479,34 +467,66 @@ export class GroupsSyncService implements OnModuleDestroy {
       const participants = group.participants.filter(
         (participant) => participant.externalParticipantId,
       );
+      const activeParticipantIds: string[] = [];
       for (const participant of participants) {
-        await tx.conversationParticipant.upsert({
+        const ownerPhoneCandidates = participantPhoneCandidates(connection.ownerPhoneNormalized);
+        const participantCandidates = participantPhoneCandidates(participant.phone);
+        const ownerExternalId = connection.ownerExternalId?.trim().toLowerCase();
+        const isCurrentInstance =
+          Boolean(
+            ownerExternalId &&
+            [participant.externalParticipantId, participant.lid]
+              .filter((value): value is string => Boolean(value))
+              .some((value) => value.trim().toLowerCase() === ownerExternalId),
+          ) || ownerPhoneCandidates.some((candidate) => participantCandidates.includes(candidate));
+        const exactParticipant = await tx.conversationParticipant.findFirst({
           where: {
-            tenantId_conversationId_externalParticipantId: {
-              tenantId,
-              conversationId: conversation.id,
-              externalParticipantId: participant.externalParticipantId,
-            },
-          },
-          update: {
-            phone: participant.phone ?? undefined,
-            displayName: participant.displayName ?? undefined,
-            isAdmin: participant.isAdmin,
-            isSuperAdmin: participant.isSuperAdmin,
-            active: true,
-            lastSeenAt: now,
-          },
-          create: {
             tenantId,
             conversationId: conversation.id,
             externalParticipantId: participant.externalParticipantId,
-            phone: participant.phone,
-            displayName: participant.displayName,
-            isAdmin: participant.isAdmin,
-            isSuperAdmin: participant.isSuperAdmin,
-            lastSeenAt: now,
           },
         });
+        let existingParticipant = exactParticipant;
+        if (!existingParticipant && (participant.lid || participant.phone)) {
+          existingParticipant = await tx.conversationParticipant.findFirst({
+            where: {
+              tenantId,
+              conversationId: conversation.id,
+              OR: [
+                ...(participant.lid ? [{ lid: participant.lid }] : []),
+                ...(participant.phone ? [{ phone: participant.phone }] : []),
+              ],
+            },
+          });
+        }
+        const incomingName = meaningfulParticipantName(participant.displayName);
+        const data = {
+          externalParticipantId: participant.externalParticipantId,
+          phone: existingParticipant?.phone ?? participant.phone ?? undefined,
+          lid: existingParticipant?.lid ?? participant.lid ?? undefined,
+          displayName:
+            (isCurrentInstance ? connection.name : null) ??
+            existingParticipant?.displayName ??
+            incomingName ??
+            undefined,
+          isAdmin: participant.isAdmin,
+          isSuperAdmin: participant.isSuperAdmin,
+          active: true,
+          lastSeenAt: now,
+        };
+        const savedParticipant = existingParticipant
+          ? await tx.conversationParticipant.update({
+              where: { id: existingParticipant.id },
+              data,
+            })
+          : await tx.conversationParticipant.create({
+              data: {
+                tenantId,
+                conversationId: conversation.id,
+                ...data,
+              },
+            });
+        activeParticipantIds.push(savedParticipant.id);
       }
 
       let inactiveParticipants = 0;
@@ -516,9 +536,7 @@ export class GroupsSyncService implements OnModuleDestroy {
             tenantId,
             conversationId: conversation.id,
             active: true,
-            externalParticipantId: {
-              notIn: participants.map((participant) => participant.externalParticipantId),
-            },
+            id: { notIn: activeParticipantIds },
           },
           data: { active: false },
         });
@@ -541,7 +559,7 @@ export class GroupsSyncService implements OnModuleDestroy {
         tenantId,
         contactId: result.contactId,
         conversationId: result.conversationId,
-        instanceName,
+        instanceName: connection.externalReference,
         groupJid: group.groupJid,
       });
     }
@@ -549,17 +567,12 @@ export class GroupsSyncService implements OnModuleDestroy {
     return result;
   }
 
-  private async groupDepartmentId(
-    tenantId: string,
-    connectionId: string,
-    allowedDepartmentIds?: string[],
-  ) {
+  private async groupDepartmentId(tenantId: string, connectionId: string) {
     const department = await this.prisma.department.findFirst({
       where: {
         tenantId,
         active: true,
         connections: { some: { connectionId } },
-        ...(allowedDepartmentIds ? { id: { in: allowedDepartmentIds } } : {}),
       },
       orderBy: { createdAt: "asc" },
       select: { id: true },
@@ -603,6 +616,7 @@ function participantPhoneCandidates(...values: Array<string | null | undefined>)
   const candidates = new Set<string>();
   for (const value of values) {
     if (!value) continue;
+    if (value.toLowerCase().includes("@lid")) continue;
     const raw = value.split("@")[0]?.split(":")[0] ?? value;
     const digits = raw.replace(/\D/g, "");
     if (!digits) continue;
@@ -622,6 +636,7 @@ function participantPhoneCandidates(...values: Array<string | null | undefined>)
 function resolveParticipantDisplayName(
   participant: {
     currentName: string | null;
+    ownerName: string | null;
     ownerPhone: string | null;
     candidates: string[];
   },
@@ -629,10 +644,22 @@ function resolveParticipantDisplayName(
 ) {
   const ownerCandidates = participantPhoneCandidates(participant.ownerPhone);
   if (ownerCandidates.some((candidate) => participant.candidates.includes(candidate)))
-    return "Você";
+    return participant.ownerName;
   for (const candidate of participant.candidates) {
     const contactName = contactByPhone.get(candidate)?.trim();
     if (contactName) return contactName;
   }
   return null;
+}
+
+function meaningfulParticipantName(value: string | null | undefined) {
+  const normalized = value?.trim();
+  if (!normalized || /^\+?[\d\s().-]+$/.test(normalized)) return null;
+  return normalized;
+}
+
+function groupMetadataObject(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }

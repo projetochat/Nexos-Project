@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, Pencil, Trash2 } from "lucide-react";
-import { Button, Field } from "./ui-kit";
+import { Button, Field, Input } from "./ui-kit";
 import { ConfirmDialog, Modal } from "./modal";
 import { GreetingMessageEditor } from "./greeting-message-editor";
 import { schedulesApi, type QuickReplyAttachment } from "@/lib/trixus-api";
@@ -188,11 +188,11 @@ export function ScheduleMessageModal({
             </Field>
             <Field label="Data e horário *">
               <div className="min-w-0 max-w-full overflow-hidden">
-                <input
+                <Input
                   type="datetime-local"
                   value={scheduleAt}
                   onChange={(event) => setScheduleAt(event.target.value)}
-                  className="block w-full min-w-0 max-w-full rounded-lg border border-border bg-card p-2.5 text-sm"
+                  className="block w-full min-w-0 max-w-full bg-card"
                   required
                 />
               </div>

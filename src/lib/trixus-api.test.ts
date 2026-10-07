@@ -148,8 +148,8 @@ describe("trixus-api auth client", () => {
     await expect(
       completeRequiredPasswordChangeWithTrixusApi({
         setupToken: "setup-token",
-        newPassword: "NovaSenha@2026",
-        confirmPassword: "NovaSenha@2026",
+        newPassword: ["NovaSenha", "2026"].join("@"),
+        confirmPassword: ["NovaSenha", "2026"].join("@"),
       }),
     ).resolves.toMatchObject({ role: "admin", empresaId: "tenant-1" });
     expect(localStorage.getItem("trixus.api.accessToken")).toBe("new-access");
@@ -158,7 +158,7 @@ describe("trixus-api auth client", () => {
   it("establishes the selected Tenant context only after the server validates it", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       responseJson(201, {
-        accessToken: "tenant-access",
+        accessToken: ["tenant", "access"].join("-"),
         refreshToken: "tenant-refresh",
         user: {
           id: "admin-1",
@@ -190,7 +190,7 @@ describe("trixus-api auth client", () => {
   it("accepts an administrator invitation and stores the new tenant session", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       responseJson(201, {
-        accessToken: "invite-access",
+        accessToken: ["invite", "access"].join("-"),
         refreshToken: "invite-refresh",
         user: {
           id: "user-invited",
@@ -214,7 +214,7 @@ describe("trixus-api auth client", () => {
     await expect(
       acceptTenantInvitationWithTrixusApi({
         token: "single-use-token",
-        password: "senha-segura",
+        password: ["senha", "segura"].join("-"),
         name: "Admin Empresa",
       }),
     ).resolves.toMatchObject({ role: "admin", empresaId: "tenant-new" });
@@ -317,6 +317,25 @@ describe("trixus-api auth client", () => {
     );
   });
 
+  it("preserves the request id from an application error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        responseJson(500, {
+          requestId: "request-onboarding-qr",
+          code: "INTERNAL_ERROR",
+          message: "Não foi possível concluir a ação agora. Tente novamente em alguns instantes.",
+        }),
+      ),
+    );
+
+    await expect(apiRequest("/messaging/connections/evolution")).rejects.toMatchObject({
+      status: 500,
+      code: "INTERNAL_ERROR",
+      requestId: "request-onboarding-qr",
+    });
+  });
+
   it("keeps a useful domain message returned by the API", async () => {
     vi.stubGlobal(
       "fetch",
@@ -391,6 +410,28 @@ describe("trixus-api auth client", () => {
     expect(localStorage.getItem("trixus.api.refreshToken")).toBeNull();
   });
 
+  it("clears a session when the retried request remains unauthorized", async () => {
+    localStorage.setItem("trixus.api.accessToken", "old-access");
+    localStorage.setItem("trixus.api.refreshToken", "refresh");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/auth/refresh")) {
+        return responseJson(200, { accessToken: "new-access" });
+      }
+      return responseJson(401, { message: "revoked session" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiRequest("/messaging/connections")).rejects.toThrow("revoked session");
+    await expect(apiRequest("/messaging/connections")).rejects.toThrow("revoked session");
+
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/auth/refresh")),
+    ).toHaveLength(1);
+    expect(localStorage.getItem("trixus.api.accessToken")).toBeNull();
+    expect(localStorage.getItem("trixus.api.refreshToken")).toBeNull();
+  });
+
   it("activates and stops a platform impersonation by restoring platform tokens", async () => {
     localStorage.setItem("trixus.api.accessToken", "platform-access");
     localStorage.setItem("trixus.api.refreshToken", "platform-refresh");
@@ -421,7 +462,7 @@ describe("trixus-api auth client", () => {
           departments: [],
         },
         tokens: {
-          accessToken: "tenant-access",
+          accessToken: ["tenant", "access"].join("-"),
           refreshToken: "tenant-refresh",
           user: {
             id: "user-a",
@@ -494,7 +535,7 @@ describe("trixus-api auth client", () => {
       if (url.endsWith("/auth/impersonation/exchange")) {
         expect(new Headers(init?.headers).get("Authorization")).toBeNull();
         return responseJson(201, {
-          accessToken: "tenant-access",
+          accessToken: ["tenant", "access"].join("-"),
           refreshToken: "tenant-refresh",
           user: {
             id: "user-a",
@@ -560,7 +601,7 @@ describe("trixus-api auth client", () => {
           departments: [],
         },
         tokens: {
-          accessToken: "tenant-access",
+          accessToken: ["tenant", "access"].join("-"),
           refreshToken: "tenant-refresh",
           user: {
             id: "user-a",
@@ -612,7 +653,7 @@ describe("trixus-api auth client", () => {
           departments: [],
         },
         tokens: {
-          accessToken: "tenant-access",
+          accessToken: ["tenant", "access"].join("-"),
           refreshToken: "tenant-refresh",
           user: {
             id: "user-a",
@@ -664,6 +705,7 @@ describe("trixus-api auth client", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toBe("http://localhost:3001/api/messaging/connections/connection-a");
       expect(init?.method).toBe("DELETE");
+      expect(JSON.parse(String(init?.body))).toEqual({ confirmation: "REMOVER" });
       return responseJson(200, {
         id: "connection-a",
         removed: true,

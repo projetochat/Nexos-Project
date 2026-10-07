@@ -102,6 +102,7 @@ export class TrixusApiError extends Error {
     readonly status: number,
     readonly code?: string,
     readonly details?: unknown,
+    readonly requestId?: string,
   ) {
     super(message);
     this.name = "TrixusApiError";
@@ -327,6 +328,9 @@ export type ApiConversation = {
   protocolo: string | null;
   unreadCount: number;
   lastMessagePreview: string | null;
+  lastMessageType?: ApiMessage["type"] | null;
+  lastMessageDurationMs?: number | null;
+  hasPendingScheduledMessage?: boolean;
   inbox_archived_at: string | null;
   is_lead: boolean;
   originated_as_lead?: boolean;
@@ -352,6 +356,7 @@ export type ApiWhatsappGroupParticipant = {
   externalParticipantId: string;
   isAdmin: boolean;
   isSuperAdmin: boolean;
+  isCurrentInstance: boolean;
   active: boolean;
   lastSeenAt: string;
 };
@@ -367,6 +372,7 @@ export type ApiWhatsappGroup = {
   createdAt: string;
   updatedAt: string;
   participantsCount: number;
+  canManageParticipants: boolean;
   connection: {
     id: string;
     name: string;
@@ -380,7 +386,10 @@ export type ApiWhatsappGroup = {
   warnings?: string[];
 };
 
-export type ApiWhatsappGroupSummary = Omit<ApiWhatsappGroup, "participants">;
+export type ApiWhatsappGroupSummary = Omit<
+  ApiWhatsappGroup,
+  "participants" | "canManageParticipants"
+>;
 
 export type QuickReplyAttachment = {
   fileName: string;
@@ -871,6 +880,11 @@ export type ApiDashboardComponentData = {
   items: ApiOperationsChartItem[];
 };
 
+export type ApiDashboardConfiguration = {
+  configuration: unknown;
+  updatedAt: string | null;
+};
+
 export type ApiOperationsReport = {
   range: { start: string; end: string };
   kpis: Record<string, number | null>;
@@ -918,6 +932,7 @@ type ListContactsParams = ListParams & {
   department?: string;
   customerId?: string;
   tagId?: string;
+  sortBy?: "name" | "customer" | "instance";
 };
 
 type CustomerPayload = {
@@ -1105,8 +1120,14 @@ async function hydrateWithPlatformToken(stored: StoredImpersonation) {
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response = await fetchTrixus(path, init, true);
-  if (response.status === 401 && canRefresh(path) && (await refreshAccessToken())) {
-    response = await fetchTrixus(path, init, true);
+  if (response.status === 401 && canRefresh(path)) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      response = await fetchTrixus(path, init, true);
+      if (response.status === 401 && !sessionAlreadyCleared) {
+        clearTrixusApiSession();
+      }
+    }
   }
   if (!response.ok) {
     throw await readError(response);
@@ -1156,6 +1177,8 @@ export const organizationApi = {
     }),
   listFinancialPayments: () => apiRequest<ApiFinancialPayment[]>("/company/financial"),
   listDepartments: () => apiRequest<ApiDepartment[]>("/departments"),
+  listDepartmentsByConnection: (params: { connectionId?: string } = {}) =>
+    apiRequest<ApiDepartment[]>(`/departments${queryString(params)}`),
   listChatDepartments: () => apiRequest<ApiDepartment[]>("/departments/chat-scope"),
   departmentConnectionOptions: () =>
     apiRequest<Array<Pick<ApiMessagingConnection, "id" | "name" | "status" | "color" | "logoUrl">>>(
@@ -1567,6 +1590,10 @@ export const conversationApi = {
       `/conversations${queryString(params)}`,
     ),
   get: (id: string) => apiRequest<ApiConversation>(`/conversations/${id}`),
+  transferOptions: (id: string) =>
+    apiRequest<{ membershipIds: string[]; departmentIds: string[] }>(
+      `/conversations/${id}/transfer-options`,
+    ),
   blockContact: (id: string) =>
     apiRequest<{ ok: true }>(`/conversations/${id}/contact/block`, { method: "POST" }),
   create: (data: ConversationPayload) =>
@@ -1755,6 +1782,13 @@ export const operationsApi = {
     apiRequest<ApiDashboardComponentData>(
       `/operations/dashboard/component-data${queryString(params)}`,
     ),
+  dashboardConfiguration: () =>
+    apiRequest<ApiDashboardConfiguration>("/operations/dashboard/configuration"),
+  updateDashboardConfiguration: (configuration: unknown) =>
+    apiRequest<ApiDashboardConfiguration>("/operations/dashboard/configuration", {
+      method: "PUT",
+      body: JSON.stringify({ configuration }),
+    }),
   history: (params: Partial<OperationalFilters> & { page?: number; pageSize?: number } = {}) =>
     apiRequest<PaginatedResponse<ApiConversation>>(
       `/operations/history/conversations${queryString(params)}`,
@@ -1863,7 +1897,7 @@ export const connectionsApi = {
     apiRequest<ApiMessagingConnection>(`/messaging/connections/${id}/logout`, {
       method: "PATCH",
     }),
-  remove: (id: string, options: { removeConversationHistory?: boolean } = {}) =>
+  remove: (id: string) =>
     apiRequest<{
       id: string;
       removed: boolean;
@@ -1872,7 +1906,7 @@ export const connectionsApi = {
       closedChatConversationCount?: number;
     }>(`/messaging/connections/${id}`, {
       method: "DELETE",
-      body: JSON.stringify(options),
+      body: JSON.stringify({ confirmation: "REMOVER" }),
     }),
 };
 
@@ -2866,6 +2900,7 @@ export async function logoutFromTrixusApi() {
 async function readError(response: Response) {
   try {
     const data = (await response.json()) as {
+      requestId?: string;
       code?: string;
       message?: string | string[];
       error?: string;
@@ -2876,10 +2911,29 @@ async function readError(response: Response) {
       trixusMessageFromCode(data.code) ||
       (isHelpfulApiMessage(candidate) && candidate) ||
       apiMessageFromStatus(response.status, data.code);
-    return new TrixusApiError(message, response.status, data.code, data.details);
+    return new TrixusApiError(
+      message,
+      response.status,
+      data.code,
+      data.details,
+      data.requestId ?? response.headers.get("x-request-id") ?? undefined,
+    );
   } catch {
-    return new TrixusApiError(apiMessageFromStatus(response.status), response.status);
+    return new TrixusApiError(
+      apiMessageFromStatus(response.status),
+      response.status,
+      undefined,
+      undefined,
+      response.headers.get("x-request-id") ?? undefined,
+    );
   }
+}
+
+export function apiErrorMessageWithRequestId(error: unknown) {
+  const message = error instanceof Error ? error.message : "Não foi possível concluir a ação.";
+  return error instanceof TrixusApiError && error.requestId
+    ? `${message} (requestId: ${error.requestId})`
+    : message;
 }
 
 async function authErrorFromResponse(response: Response) {

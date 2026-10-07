@@ -592,9 +592,12 @@ function extractGroupInfo(value: unknown): {
   name?: string | null;
   imageUrl?: string | null;
   createdAt?: Date | null;
+  description?: string | null;
+  descriptionPresent?: boolean;
   participants?: Array<{
     externalParticipantId: string;
     phone?: string | null;
+    lid?: string | null;
     displayName?: string | null;
     isAdmin: boolean;
     isSuperAdmin: boolean;
@@ -619,6 +622,7 @@ function extractGroupInfo(value: unknown): {
         stringField(record, "picture") ??
         stringField(record, "imageUrl"),
       createdAt: dateField(record, "creation") ?? dateField(record, "createdAt"),
+      ...groupDescriptionFields(record),
       participants: groupParticipantsFromRecord(record),
     };
   }
@@ -652,9 +656,12 @@ function extractGroups(value: unknown): Array<{
   subject: string;
   imageUrl?: string | null;
   createdAt?: Date | null;
+  description?: string | null;
+  descriptionPresent?: boolean;
   participants: Array<{
     externalParticipantId: string;
     phone?: string | null;
+    lid?: string | null;
     displayName?: string | null;
     isAdmin: boolean;
     isSuperAdmin: boolean;
@@ -789,6 +796,7 @@ function extractGroupSnapshot(value: unknown) {
       stringField(record, "picture") ??
       stringField(record, "imageUrl"),
     createdAt: dateField(record, "creation") ?? dateField(record, "createdAt"),
+    ...groupDescriptionFields(record),
     participants: groupParticipantsFromRecord(record),
   };
 }
@@ -825,9 +833,14 @@ function extractGroupParticipants(value: unknown) {
       const phone = phoneFromParticipant(
         stringField(record, "phone") ?? stringField(record, "number") ?? id,
       );
+      const lid =
+        stringField(record, "lid") ??
+        stringField(record, "participantLid") ??
+        lidFromParticipant(id);
       return {
         externalParticipantId: id,
         phone,
+        lid,
         displayName:
           stringField(record, "name") ??
           stringField(record, "pushName") ??
@@ -850,8 +863,25 @@ function dateField(record: Record<string, unknown>, key: string) {
 }
 
 function phoneFromParticipant(value: string) {
+  if (value.toLowerCase().includes("@lid")) return null;
   const phone = value.split("@")[0]?.split(":")[0]?.replace(/\D/g, "");
   return phone || null;
+}
+
+function lidFromParticipant(value: string) {
+  return value.toLowerCase().includes("@lid") ? value : null;
+}
+
+function groupDescriptionFields(record: Record<string, unknown>) {
+  for (const key of ["description", "desc"] as const) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+    const value = record[key];
+    return {
+      descriptionPresent: true,
+      description: typeof value === "string" ? value : null,
+    };
+  }
+  return { descriptionPresent: false as const };
 }
 
 function extractProfilePictureUrl(value: unknown): string | null {

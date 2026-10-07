@@ -61,6 +61,7 @@ it("zooms with the wheel, drags, transforms and restores the image without chang
   const close = vi.fn();
   const reply = vi.fn();
   const download = vi.fn().mockResolvedValue(undefined);
+  const copy = vi.fn().mockResolvedValue({ mode: "rich" as const });
   try {
     await React.act(() =>
       root.render(
@@ -76,6 +77,7 @@ it("zooms with the wheel, drags, transforms and restores the image without chang
           onClose={close}
           onReply={reply}
           onDownload={download}
+          onCopy={copy}
         />,
       ),
     );
@@ -124,6 +126,8 @@ it("zooms with the wheel, drags, transforms and restores the image without chang
     expect(image.getAttribute("src")).toBe("blob:test-image");
     await click("Baixar imagem");
     expect(download).toHaveBeenCalledOnce();
+    await click("Copiar imagem");
+    expect(copy).toHaveBeenCalledWith(expect.objectContaining({ id: "image1" }));
     await click("Responder");
     expect(reply).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();

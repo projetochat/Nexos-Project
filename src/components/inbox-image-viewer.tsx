@@ -12,12 +12,14 @@ import {
   Forward,
   Reply,
   Download,
+  Copy,
   X,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import { conversationApi, messageApi, type ApiMessage } from "@/lib/trixus-api";
 import { Button, SearchInput } from "@/components/ui-kit";
+import { copyMessageToClipboard } from "@/lib/message-clipboard";
 
 const initialView = { zoom: 1, x: 0, y: 0, rotation: 0, flipX: 1, flipY: 1 };
 
@@ -28,6 +30,7 @@ export function InboxImageViewer({
   onClose,
   onReply,
   onDownload,
+  onCopy = copyMessageToClipboard,
   readOnly = false,
 }: {
   src: string;
@@ -37,6 +40,7 @@ export function InboxImageViewer({
   onClose: () => void;
   onReply?: (message: ApiMessage) => void;
   onDownload: (message: ApiMessage) => Promise<void>;
+  onCopy?: typeof copyMessageToClipboard;
 }) {
   const [view, setView] = React.useState(initialView);
   const [dragging, setDragging] = React.useState(false);
@@ -194,14 +198,24 @@ export function InboxImageViewer({
       setNotice("Imagem encaminhada para envio.");
     });
 
-  const action = (label: string, Icon: typeof ZoomIn, onClick: () => void, disabled = false) => (
+  const action = (
+    label: string,
+    Icon: typeof ZoomIn,
+    onClick: () => void,
+    disabled = false,
+    emphasis: "default" | "copy" = "default",
+  ) => (
     <button
       type="button"
       title={label}
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-30 sm:h-11 sm:w-11"
+      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition focus-visible:outline-none focus-visible:ring-2 disabled:opacity-30 sm:h-11 sm:w-11 ${
+        emphasis === "copy"
+          ? "border-white/30 bg-white/10 text-white/70 hover:border-primary hover:bg-primary hover:text-primary-foreground focus-visible:border-primary focus-visible:bg-primary focus-visible:text-primary-foreground focus-visible:ring-primary"
+          : "border-transparent bg-white/10 text-white hover:bg-white/20 focus-visible:ring-white"
+      }`}
     >
       <Icon className="h-5 w-5" />
     </button>
@@ -278,6 +292,16 @@ export function InboxImageViewer({
                   },
                   busy,
                 )}
+              {action(
+                "Copiar imagem",
+                Copy,
+                () =>
+                  void run(async () => {
+                    await onCopy(activeMessage);
+                  }),
+                busy || !activeMessage.media_data,
+                "copy",
+              )}
               {action(
                 "Baixar imagem",
                 Download,

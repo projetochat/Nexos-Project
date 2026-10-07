@@ -147,7 +147,7 @@ export function dashboardGroupingOptions(
 }
 
 export function createDashboardComponent(id = dashboardComponentId()): DashboardComponentConfig {
-  return component(id, "Novo componente", true, "columns", 1, "conversations", "status", "count");
+  return component(id, "", true, "columns", 1, "conversations", "status", "count");
 }
 
 export function duplicateDashboardComponent(

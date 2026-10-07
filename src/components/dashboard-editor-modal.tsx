@@ -10,8 +10,8 @@ import {
   Info,
   LayoutGrid,
   Plus,
+  Pencil,
   RotateCcw,
-  Settings,
   Table2,
   Trash2,
 } from "lucide-react";
@@ -33,6 +33,7 @@ import {
   restoreNativeDashboardComponents,
   type DashboardComponentConfig,
   type DashboardDataSource,
+  type DashboardGroupingOption,
   type DashboardVisualization,
   type DashboardValueMode,
 } from "@/lib/dashboard-components";
@@ -89,6 +90,11 @@ export function DashboardEditorModal({
   canCreate = true,
   canUpdate = true,
   canDelete = true,
+  sourceOptions = DASHBOARD_SOURCE_OPTIONS,
+  groupingOptions = dashboardGroupingOptions,
+  createComponent = createDashboardComponent,
+  restoreComponents = restoreNativeDashboardComponents,
+  nativeComponentIds,
 }: {
   open: boolean;
   components: DashboardComponentConfig[];
@@ -101,6 +107,14 @@ export function DashboardEditorModal({
   canCreate?: boolean;
   canUpdate?: boolean;
   canDelete?: boolean;
+  sourceOptions?: Array<{ value: DashboardDataSource; label: string }>;
+  groupingOptions?: (
+    source: DashboardDataSource,
+    customFields: Array<{ id: string; label: string }>,
+  ) => DashboardGroupingOption[];
+  createComponent?: () => DashboardComponentConfig;
+  restoreComponents?: (components: DashboardComponentConfig[]) => DashboardComponentConfig[];
+  nativeComponentIds?: ReadonlySet<string>;
 }) {
   const [draft, setDraft] = React.useState(components);
   const [configuring, setConfiguring] = React.useState<DashboardComponentConfig | null>(null);
@@ -108,6 +122,7 @@ export function DashboardEditorModal({
   const [deleting, setDeleting] = React.useState<DashboardComponentConfig | null>(null);
   const [draggingId, setDraggingId] = React.useState<string | null>(null);
   const touchDraggingId = React.useRef<string | null>(null);
+  const protectedComponentIds = nativeComponentIds ?? DEFAULT_DASHBOARD_COMPONENT_IDS;
 
   React.useEffect(() => {
     if (!open) return;
@@ -148,7 +163,7 @@ export function DashboardEditorModal({
   };
 
   const restoreDefaults = () => {
-    apply(restoreNativeDashboardComponents(draft));
+    apply(restoreComponents(draft));
     onClose();
   };
 
@@ -184,7 +199,7 @@ export function DashboardEditorModal({
       >
         {canCreate && (
           <div className="mb-4 flex justify-end">
-            <Button onClick={() => openConfiguration(createDashboardComponent(), true)}>
+            <Button onClick={() => openConfiguration(createComponent(), true)}>
               <Plus className="h-4 w-4" />
               Novo componente
             </Button>
@@ -209,7 +224,7 @@ export function DashboardEditorModal({
                   setDraggingId(null);
                 }}
                 onDragEnd={() => setDraggingId(null)}
-                className={`flex min-h-14 flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-1 px-3 py-2 transition ${
+                className={`flex min-h-14 flex-nowrap items-center gap-1.5 rounded-xl border border-border bg-surface-1 px-2 py-2 transition hover:border-primary/30 hover:bg-surface-2 sm:gap-2 sm:px-3 ${
                   draggingId === component.id ? "opacity-50" : ""
                 }`}
               >
@@ -260,7 +275,7 @@ export function DashboardEditorModal({
                         moveComponent(component.id, 1);
                       }
                     }}
-                    className="flex shrink-0 touch-none cursor-grab items-center gap-2 rounded text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary active:cursor-grabbing"
+                    className="flex shrink-0 touch-none cursor-grab items-center gap-1 rounded text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary active:cursor-grabbing sm:gap-2"
                   >
                     <GripVertical className="h-4 w-4" />
                     <span className="w-5 text-center font-mono text-xs">{index + 1}</span>
@@ -270,32 +285,39 @@ export function DashboardEditorModal({
                     {index + 1}
                   </span>
                 )}
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary sm:h-9 sm:w-9">
                   <Icon className="h-4 w-4" />
                 </div>
 
-                <div className="min-w-[9rem] flex-1">
+                <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">{component.title}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="truncate text-xs text-muted-foreground">
                     {VISUALIZATION_LABELS[component.visualization]} · {component.columns} coluna
                     {component.columns > 1 ? "s" : ""}
                   </p>
                 </div>
 
-                <label className="flex shrink-0 items-center gap-2 text-xs font-medium text-muted-foreground">
+                <div className="flex shrink-0 items-center">
                   <Switch
                     aria-label={`Exibir ${component.title}`}
                     checked={component.visible}
-                    disabled
+                    disabled={!canUpdate}
+                    onCheckedChange={(visible) =>
+                      apply(
+                        draft.map((item) =>
+                          item.id === component.id ? { ...item, visible } : item,
+                        ),
+                      )
+                    }
                   />
-                  Visível
-                </label>
+                </div>
 
-                <div className="ml-auto flex shrink-0 gap-1.5">
+                <div className="ml-auto flex shrink-0 gap-1 max-sm:[&_button]:h-8 max-sm:[&_button]:w-8 sm:gap-1.5">
                   {canCreate && (
                     <IconButton
                       label="Duplicar"
                       ariaLabel={`Duplicar ${component.title}`}
+                      primary
                       onClick={() =>
                         openConfiguration(duplicateDashboardComponent(component), true)
                       }
@@ -303,7 +325,7 @@ export function DashboardEditorModal({
                       <Copy className="h-4 w-4" />
                     </IconButton>
                   )}
-                  {canDelete && !DEFAULT_DASHBOARD_COMPONENT_IDS.has(component.id) && (
+                  {canDelete && !protectedComponentIds.has(component.id) && (
                     <IconButton
                       label="Excluir"
                       ariaLabel={`Excluir ${component.title}`}
@@ -315,11 +337,11 @@ export function DashboardEditorModal({
                   )}
                   {canUpdate && (
                     <IconButton
-                      label="Configurar"
-                      ariaLabel={`Configurar ${component.title}`}
+                      label="Editar"
+                      ariaLabel={`Editar ${component.title}`}
                       onClick={() => openConfiguration(component)}
                     >
-                      <Settings className="h-4 w-4" />
+                      <Pencil className="h-4 w-4" />
                     </IconButton>
                   )}
                 </div>
@@ -340,6 +362,8 @@ export function DashboardEditorModal({
         value={configuring}
         creating={creating}
         customFields={customFields}
+        sourceOptions={sourceOptions}
+        groupingOptions={groupingOptions}
         resolveData={resolveData}
         renderPreview={renderPreview}
         onPreviewConfigChange={onPreviewConfigChange}
@@ -361,7 +385,7 @@ export function DashboardEditorModal({
         confirmLabel="Excluir"
         destructive
         onConfirm={() => {
-          if (deleting && !DEFAULT_DASHBOARD_COMPONENT_IDS.has(deleting.id)) {
+          if (deleting && !protectedComponentIds.has(deleting.id)) {
             apply(draft.filter((item) => item.id !== deleting.id));
           }
           setDeleting(null);
@@ -377,6 +401,8 @@ function DashboardComponentConfigModal({
   value,
   creating,
   customFields,
+  sourceOptions,
+  groupingOptions,
   resolveData,
   renderPreview,
   onPreviewConfigChange,
@@ -387,6 +413,11 @@ function DashboardComponentConfigModal({
   value: DashboardComponentConfig | null;
   creating: boolean;
   customFields: Array<{ id: string; label: string }>;
+  sourceOptions: Array<{ value: DashboardDataSource; label: string }>;
+  groupingOptions: (
+    source: DashboardDataSource,
+    customFields: Array<{ id: string; label: string }>,
+  ) => DashboardGroupingOption[];
   resolveData: (config: DashboardComponentConfig) => DashboardVisualDatum[];
   renderPreview?: (config: DashboardComponentConfig) => React.ReactNode;
   onPreviewConfigChange?: (config: DashboardComponentConfig | null) => void;
@@ -407,17 +438,17 @@ function DashboardComponentConfigModal({
   }, [draft, onPreviewConfigChange, open]);
 
   if (!draft) return null;
-  const groupingOptions = dashboardGroupingOptions(draft.dataSource, customFields);
-  const nativeOptions = groupingOptions.filter((option) => option.section === "native");
-  const customOptions = groupingOptions.filter((option) => option.section === "custom");
-  const groupAvailable = groupingOptions.some((option) => option.value === draft.groupBy);
+  const availableGroupings = groupingOptions(draft.dataSource, customFields);
+  const nativeOptions = availableGroupings.filter((option) => option.section === "native");
+  const customOptions = availableGroupings.filter((option) => option.section === "custom");
+  const groupAvailable = availableGroupings.some((option) => option.value === draft.groupBy);
   const previewData = resolveData(draft);
 
   const patch = (changes: Partial<DashboardComponentConfig>) =>
     setDraft((current) => (current ? { ...current, ...changes } : current));
 
   const chooseSource = (dataSource: DashboardDataSource) => {
-    const firstGroup = dashboardGroupingOptions(dataSource, customFields)[0]?.value ?? "";
+    const firstGroup = groupingOptions(dataSource, customFields)[0]?.value ?? "";
     patch({ dataSource, groupBy: firstGroup, valueMode: "count" });
   };
 
@@ -522,7 +553,7 @@ function DashboardComponentConfigModal({
               value={draft.dataSource}
               onChange={(event) => chooseSource(event.target.value as DashboardDataSource)}
             >
-              {DASHBOARD_SOURCE_OPTIONS.map((source) => (
+              {sourceOptions.map((source) => (
                 <option key={source.value} value={source.value}>
                   {source.label}
                 </option>
@@ -597,12 +628,14 @@ function IconButton({
   label,
   ariaLabel,
   destructive = false,
+  primary = false,
   children,
   onClick,
 }: {
   label: string;
   ariaLabel: string;
   destructive?: boolean;
+  primary?: boolean;
   children: React.ReactNode;
   onClick: () => void;
 }) {
@@ -612,8 +645,12 @@ function IconButton({
       title={label}
       aria-label={ariaLabel}
       onClick={onClick}
-      className={`flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition ${
-        destructive ? "hover:text-destructive" : "hover:text-primary"
+      className={`flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface-1 transition ${
+        destructive
+          ? "text-muted-foreground hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+          : primary
+            ? "text-primary hover:border-primary/40 hover:bg-primary/10"
+            : "text-muted-foreground hover:border-primary/30 hover:bg-muted hover:text-primary"
       }`}
     >
       {children}

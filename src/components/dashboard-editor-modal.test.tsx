@@ -49,15 +49,12 @@ describe("DashboardEditorModal", () => {
     expect(document.body.textContent).toContain("Editar Dashboard");
     expect(document.querySelector('[role="dialog"]')?.className).toContain("sm:max-w-2xl");
     expect(document.body.textContent).toContain("Contadores de registro");
-    expect(document.querySelector('[aria-label="Configurar Contadores de registro"]')).toBeTruthy();
+    expect(document.querySelector('[aria-label="Editar Contadores de registro"]')).toBeTruthy();
     expect(
-      document
-        .querySelector('[aria-label="Configurar Contadores de registro"]')
-        ?.getAttribute("title"),
-    ).toBe("Configurar");
-    expect(document.querySelector(".lucide-settings")).toBeTruthy();
+      document.querySelector('[aria-label="Editar Contadores de registro"]')?.getAttribute("title"),
+    ).toBe("Editar");
+    expect(document.querySelector(".lucide-pencil")).toBeTruthy();
     expect(document.querySelector('[title^="Mover para"]')).toBeNull();
-    expect(document.querySelector('[aria-label^="Editar "]')).toBeNull();
 
     await click(buttonByText("Novo componente"));
 
@@ -107,7 +104,7 @@ describe("DashboardEditorModal", () => {
     expect(next.at(-1).id).not.toBe("messages");
   });
 
-  it("creates a configured component from the dedicated modal", async () => {
+  it("starts a new component with an empty required title", async () => {
     const onChange = vi.fn();
     await act(async () => {
       root.render(
@@ -126,13 +123,8 @@ describe("DashboardEditorModal", () => {
     await click(buttonByText("Donut"));
     await click(buttonByText("Criar"));
 
-    const next = onChange.mock.calls.at(-1)?.[0];
-    expect(next).toHaveLength(DEFAULT_DASHBOARD_COMPONENTS.length + 1);
-    expect(next.at(-1)).toMatchObject({
-      title: "Novo componente",
-      visualization: "donut",
-      visible: true,
-    });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Informe o título do componente.");
   });
 
   it("does not allow deleting default components", async () => {
@@ -152,6 +144,41 @@ describe("DashboardEditorModal", () => {
 
     expect(document.querySelector('[aria-label="Excluir Contadores de registro"]')).toBeNull();
     expect(document.querySelector('[aria-label="Excluir Tráfego de mensagens"]')).toBeNull();
+  });
+
+  it("accepts a platform catalog without exposing tenant-only groupings", async () => {
+    const groupingOptions = vi.fn(() => [
+      { value: "clientVolume", label: "Volume por cliente", section: "native" as const },
+    ]);
+    await act(async () => {
+      root.render(
+        <DashboardEditorModal
+          open
+          components={[]}
+          customFields={[]}
+          sourceOptions={[{ value: "messages", label: "Mensagens" }]}
+          groupingOptions={groupingOptions}
+          createComponent={() => ({
+            id: "platform-new",
+            title: "",
+            visible: true,
+            visualization: "columns",
+            columns: 2,
+            dataSource: "messages",
+            groupBy: "clientVolume",
+            valueMode: "count",
+          })}
+          resolveData={() => []}
+          onChange={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      );
+    });
+
+    await click(buttonByText("Novo componente"));
+    expect(document.body.textContent).toContain("Volume por cliente");
+    expect(document.body.textContent).not.toContain("Direção da mensagem");
+    expect(groupingOptions).toHaveBeenCalledWith("messages", []);
   });
 
   it("requires confirmation before deleting a created component", async () => {
@@ -185,7 +212,7 @@ describe("DashboardEditorModal", () => {
     expect(next.some((component: { id: string }) => component.id === created.id)).toBe(false);
   });
 
-  it("shows visibility as read-only in the component list", async () => {
+  it("changes visibility directly from the component list", async () => {
     const onChange = vi.fn();
     await act(async () => {
       root.render(
@@ -201,10 +228,13 @@ describe("DashboardEditorModal", () => {
     });
 
     const visibility = document.querySelector('[aria-label="Exibir Contadores de registro"]');
-    expect((visibility as HTMLButtonElement | null)?.disabled).toBe(true);
+    expect((visibility as HTMLButtonElement | null)?.disabled).toBe(false);
 
     await click(visibility);
-    expect(onChange).not.toHaveBeenCalled();
+    const next = onChange.mock.calls.at(-1)?.[0];
+    expect(next.find((component: { id: string }) => component.id === "counters")?.visible).toBe(
+      false,
+    );
   });
 
   it("changes visibility only from the component configuration", async () => {
@@ -222,7 +252,7 @@ describe("DashboardEditorModal", () => {
       );
     });
 
-    await click(document.querySelector('[aria-label="Configurar Contadores de registro"]'));
+    await click(document.querySelector('[aria-label="Editar Contadores de registro"]'));
 
     const visibility = document.querySelector(
       '[aria-label="Alterar visibilidade de Contadores de registro"]',
@@ -315,7 +345,7 @@ describe("DashboardEditorModal", () => {
 
     expect(buttonByText("Novo componente")).toBeTruthy();
     expect(document.querySelector('[aria-label^="Duplicar "]')).toBeTruthy();
-    expect(document.querySelector('[aria-label^="Configurar "]')).toBeNull();
+    expect(document.querySelector('[aria-label^="Editar "]')).toBeNull();
     expect(document.querySelector('[aria-label^="Reordenar "]')).toBeNull();
   });
 
@@ -338,7 +368,7 @@ describe("DashboardEditorModal", () => {
 
     expect(document.body.textContent).not.toContain("Novo componente");
     expect(document.querySelector('[aria-label^="Duplicar "]')).toBeNull();
-    expect(document.querySelector('[aria-label^="Configurar "]')).toBeTruthy();
+    expect(document.querySelector('[aria-label^="Editar "]')).toBeTruthy();
     expect(document.querySelector('[aria-label^="Reordenar "]')).toBeTruthy();
   });
 });

@@ -621,6 +621,7 @@ const PERMISSION_DEPENDENCIES: Record<string, readonly string[]> = {
     "chat.messages.edit",
     "chat.agent_name.show",
     "chat.conversations.view_all_active",
+    "chat.bulk_actions.execute",
   ],
   "connections.read": ["connections.create", "connections.update", "connections.delete"],
   "groups.read": ["groups.create", "groups.update", "groups.leave"],

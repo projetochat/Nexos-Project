@@ -15,6 +15,10 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   departments: vi.fn(),
   role: "operator",
+  connections: [
+    { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
+    { id: "b", name: "Instância B", status: "connected", providerType: "evolution" },
+  ],
 }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => ({}),
@@ -45,10 +49,7 @@ vi.mock("@/lib/queue-prefs", () => ({ useQueuePrefs: vi.fn() }));
 vi.mock("@/lib/perms", () => ({ useChatPerms: vi.fn() }));
 vi.mock("@/lib/use-connected-messaging-connections", () => ({
   useConnectedMessagingConnections: () => ({
-    allConnections: [
-      { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
-      { id: "b", name: "Instância B", status: "connected", providerType: "evolution" },
-    ],
+    allConnections: mocks.connections,
   }),
 }));
 vi.mock("../routes/contatos", () => ({
@@ -86,7 +87,7 @@ const records = Array.from({ length: 121 }, (_, i) => ({
   id: String(i),
   nome: i === 120 ? "Douglas" : `Contato ${String(i).padStart(3, "0")}`,
   telefone: "5566999999999",
-  instanceIds: i === 1 ? ["a", "b"] : ["a"],
+  instanceIds: i === 1 ? ["a", "b"] : i === 2 ? [] : ["a"],
 }));
 const button = (text: string) =>
   Array.from(document.querySelectorAll("button")).find((el) => el.textContent?.trim() === text)!;
@@ -108,6 +109,10 @@ async function mount() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.role = "operator";
+  mocks.connections = [
+    { id: "a", name: "Instância A", status: "connected", providerType: "evolution" },
+    { id: "b", name: "Instância B", status: "connected", providerType: "evolution" },
+  ];
   setInboxTab("fila");
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   container = document.createElement("div");
@@ -149,6 +154,12 @@ afterEach(async () => {
 describe("new conversation contact picker", () => {
   it("shows all contacts, searches beyond the first 100 and clears the search", async () => {
     await mount();
+    const dialog = document.querySelector('[role="dialog"]')!;
+    const dialogClassName = dialog.className;
+    const contactList = document.querySelector('ul[aria-label="Contatos"]')!;
+    expect(dialogClassName).toContain("h-[calc(100dvh-1rem)]");
+    expect(contactList.className).toContain("flex-1");
+    expect(contactList.className).toContain("overflow-y-auto");
     expect(document.querySelectorAll("ul li")).toHaveLength(10);
     await act(async () =>
       (
@@ -173,6 +184,7 @@ describe("new conversation contact picker", () => {
     });
     expect(document.querySelectorAll("ul li")).toHaveLength(1);
     expect(document.body.textContent).toContain("Douglas");
+    expect(document.querySelector('[role="dialog"]')?.className).toBe(dialogClassName);
     expect(document.querySelector('[aria-label="Limpar busca"]')).not.toBeNull();
     await act(async () =>
       (document.querySelector('[aria-label="Limpar busca"]') as HTMLButtonElement).click(),
@@ -195,6 +207,47 @@ describe("new conversation contact picker", () => {
     expect(document.body.textContent).toContain("Instância B");
     await act(async () => button("Instância B").click());
     await flush();
+    expect(document.body.textContent).not.toContain("Escolher Instância");
+    expect(mocks.create).toHaveBeenCalledWith({
+      contactId: "1",
+      connectionId: "b",
+      departmentId: "department-b",
+      assignToSelf: true,
+    });
+  });
+  it("does not block a contact without a linked instance and applies the scoped connected catalog", async () => {
+    await mount();
+    const contactButtons = document.querySelectorAll<HTMLButtonElement>(
+      "ul li > button[aria-pressed]",
+    );
+
+    await act(async () => contactButtons[2].click());
+    await flush();
+
+    expect(document.body.textContent).toContain("Escolher Instância");
+    expect(document.body.textContent).toContain("Instância A");
+    expect(document.body.textContent).toContain("Instância B");
+    await act(async () => button("Instância A").click());
+    await flush();
+    expect(mocks.create).toHaveBeenCalledWith({
+      contactId: "2",
+      connectionId: "a",
+      departmentId: "department-a",
+      assignToSelf: true,
+    });
+  });
+  it("applies the profile instance scope before deciding whether the instance modal is needed", async () => {
+    mocks.connections = [
+      { id: "b", name: "Instância B", status: "connected", providerType: "evolution" },
+    ];
+    await mount();
+    const contactButtons = document.querySelectorAll<HTMLButtonElement>(
+      "ul li > button[aria-pressed]",
+    );
+
+    await act(async () => contactButtons[1].click());
+    await flush();
+
     expect(document.body.textContent).not.toContain("Escolher Instância");
     expect(mocks.create).toHaveBeenCalledWith({
       contactId: "1",

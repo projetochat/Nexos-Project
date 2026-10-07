@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check } from "lucide-react";
 import {
   conversationApi,
   crmApi,
@@ -18,13 +19,14 @@ import { Avatar, Button, SearchInput } from "./ui-kit";
 export function MessageForwardDialog({
   message,
   onClose,
+  layerClassName,
 }: {
   message: ApiMessage;
   onClose: () => void;
+  layerClassName?: string;
 }) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<{
     contact: ApiContact;
     connectionId: string;
@@ -45,13 +47,21 @@ export function MessageForwardDialog({
   const ids = useRef(new Map<string, string>());
   const {
     data,
-    isFetching,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
     error: loadError,
     refetch,
-  } = useQuery({
-    queryKey: ["trixus", "contacts", "forward", search, page],
-    queryFn: () => crmApi.listContacts({ q: search.trim() || undefined, page, pageSize: 10 }),
+  } = useInfiniteQuery({
+    queryKey: ["trixus", "contacts", "forward", search.trim()],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) =>
+      crmApi.listContacts({ q: search.trim() || undefined, page: pageParam, pageSize: 20 }),
+    getNextPageParam: (lastPage) =>
+      lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
   });
+  const contacts = data?.pages.flatMap((page) => page.items) ?? [];
   const { data: contactOptions, error: optionsError } = useQuery({
     queryKey: ["trixus", "contacts", "forward-options"],
     queryFn: crmApi.contactOptions,
@@ -119,11 +129,13 @@ export function MessageForwardDialog({
     <>
       <Modal
         open
+        layerClassName={layerClassName}
         onClose={() => {
           if (!busy) onClose();
         }}
         title="Encaminhar mensagem"
         description="Selecione um contato para enviar uma cópia."
+        className="h-[min(44rem,calc(100dvh-1rem))] sm:h-[min(44rem,calc(100dvh-2rem))]"
         footer={
           <>
             <Button variant="secondary" disabled={busy} onClick={onClose}>
@@ -139,96 +151,102 @@ export function MessageForwardDialog({
           </>
         }
       >
-        <SearchInput
-          value={search}
-          onChange={(value) => {
-            setSearch(value);
-            setPage(1);
-            setSelected(null);
-          }}
-          placeholder="Buscar contato"
-        />
-        <div className="mt-3 space-y-1">
-          {isFetching ? (
-            <p role="status">Carregando…</p>
-          ) : loadError || optionsError ? (
-            <div role="alert">
-              Não foi possível carregar os contatos.{" "}
-              <Button onClick={() => void refetch()}>Tentar novamente</Button>
+        <div className="flex h-full min-h-0 flex-col">
+          <SearchInput
+            value={search}
+            onChange={(value) => {
+              setSearch(value);
+              setSelected(null);
+            }}
+            placeholder="Buscar contato"
+          />
+          <div
+            role="radiogroup"
+            aria-label="Contato de destino"
+            className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1"
+            onScroll={(event) => {
+              const list = event.currentTarget;
+              const nearEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+              if (nearEnd && hasNextPage && !isFetchingNextPage) void fetchNextPage();
+            }}
+          >
+            {isLoading ? (
+              <p role="status" className="py-8 text-center text-sm text-muted-foreground">
+                Carregando…
+              </p>
+            ) : loadError || optionsError ? (
+              <div role="alert" className="py-8 text-center text-sm text-muted-foreground">
+                Não foi possível carregar os contatos.{" "}
+                <Button onClick={() => void refetch()}>Tentar novamente</Button>
+              </div>
+            ) : contacts.length ? (
+              contacts.map((contact) => {
+                const active = selected?.contact.id === contact.id;
+                return (
+                  <button
+                    type="button"
+                    role="radio"
+                    key={contact.id}
+                    disabled={busy || !contactOptions}
+                    aria-checked={active}
+                    onClick={() => chooseContact(contact)}
+                    className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition ${active ? "border-primary bg-primary/10" : "border-transparent hover:bg-surface-2"}`}
+                  >
+                    <Avatar name={contact.nome} src={contact.avatar_url} size={32} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{contact.nome}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {contact.telefone}
+                      </span>
+                    </span>
+                    <span
+                      data-forward-selection-indicator
+                      aria-hidden="true"
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition ${active ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/60 bg-transparent"}`}
+                    >
+                      {active && <Check className="h-4 w-4" />}
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <p role="status" className="py-8 text-center text-sm text-muted-foreground">
+                Nenhum contato encontrado.
+              </p>
+            )}
+            {isFetchingNextPage && (
+              <p role="status" className="py-3 text-center text-xs text-muted-foreground">
+                Carregando mais contatos…
+              </p>
+            )}
+          </div>
+          {selected && (
+            <div className="mt-3 max-h-36 shrink-0 space-y-2 overflow-y-auto border-t border-border pt-3">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Departamento</p>
+              {chatDepartments
+                .filter((department) => department.connectionIds.includes(selected.connectionId))
+                .map((department) => (
+                  <button
+                    type="button"
+                    key={department.id}
+                    onClick={() => setSelected({ ...selected, departmentId: department.id })}
+                    className={`flex min-h-11 w-full items-center rounded-lg border px-3 text-left text-sm ${selected.departmentId === department.id ? "border-primary bg-primary/10" : "border-border"}`}
+                  >
+                    {department.name}
+                  </button>
+                ))}
             </div>
-          ) : data?.items.length ? (
-            data.items.map((contact) => (
-              <button
-                type="button"
-                key={contact.id}
-                disabled={busy || !contactOptions}
-                aria-pressed={selected?.contact.id === contact.id}
-                onClick={() => chooseContact(contact)}
-                className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left ${selected?.contact.id === contact.id ? "border-primary bg-primary/10" : "border-transparent hover:bg-surface-2"}`}
-              >
-                <Avatar name={contact.nome} src={contact.avatar_url} size={32} />
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{contact.nome}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {contact.telefone}
-                  </span>
-                </span>
-              </button>
-            ))
-          ) : (
-            <p>Nenhum contato encontrado.</p>
+          )}
+          {error && (
+            <p role="alert" className="mt-3 shrink-0 text-sm text-destructive">
+              {error}
+            </p>
           )}
         </div>
-        {selected && (
-          <div className="mt-3 space-y-2">
-            <p className="text-xs font-semibold uppercase text-muted-foreground">Departamento</p>
-            {chatDepartments
-              .filter((department) => department.connectionIds.includes(selected.connectionId))
-              .map((department) => (
-                <button
-                  type="button"
-                  key={department.id}
-                  onClick={() => setSelected({ ...selected, departmentId: department.id })}
-                  className={`flex min-h-11 w-full items-center rounded-lg border px-3 text-left text-sm ${selected.departmentId === department.id ? "border-primary bg-primary/10" : "border-border"}`}
-                >
-                  {department.name}
-                </button>
-              ))}
-          </div>
-        )}
-        {(data?.totalPages ?? 0) > 1 && (
-          <div className="mt-3 flex items-center justify-between">
-            <Button
-              disabled={busy || isFetching || page === 1}
-              onClick={() => {
-                setPage(page - 1);
-                setSelected(null);
-              }}
-            >
-              Anterior
-            </Button>
-            <span>
-              {page} / {data?.totalPages}
-            </span>
-            <Button
-              disabled={busy || isFetching || page >= (data?.totalPages ?? 1)}
-              onClick={() => {
-                setPage(page + 1);
-                setSelected(null);
-              }}
-            >
-              Próxima
-            </Button>
-          </div>
-        )}
-        {error && (
-          <p role="alert" className="mt-3 text-sm text-destructive">
-            {error}
-          </p>
-        )}
       </Modal>
       <Modal
         open={!!connectionChoice}
+        layerClassName="z-[280]"
         onClose={() => setConnectionChoice(null)}
         title="Escolher Instância"
         description={

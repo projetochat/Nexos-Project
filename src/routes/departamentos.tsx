@@ -12,6 +12,7 @@ import {
   Input,
   Textarea,
   SearchInput,
+  InstanceFilterSelect,
 } from "@/components/ui-kit";
 import { Modal, ConfirmDialog } from "@/components/modal";
 import { useDisclosure } from "@/hooks/use-disclosure";
@@ -24,7 +25,7 @@ import {
 } from "@/lib/trixus-api";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { useSession } from "@/lib/session";
-import { DepartmentIcon, DEPARTMENT_ICON_OPTIONS } from "@/components/department-icon";
+import { DepartmentIcon, DepartmentIconSelect } from "@/components/department-icon";
 
 export const Route = createFileRoute("/departamentos")({ component: Page });
 
@@ -76,6 +77,7 @@ function Page() {
   const [duplicating, setDuplicating] = React.useState<ApiDepartment | null>(null);
   const [deleting, setDeleting] = React.useState<ApiDepartment | null>(null);
   const [query, setQuery] = React.useState("");
+  const [instanceFilter, setInstanceFilter] = React.useState("");
   const novo = useDisclosure();
 
   const {
@@ -83,8 +85,9 @@ function Page() {
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ["trixus", "departments"],
-    queryFn: organizationApi.listDepartments,
+    queryKey: ["trixus", "departments", instanceFilter],
+    queryFn: () =>
+      organizationApi.listDepartmentsByConnection({ connectionId: instanceFilter || undefined }),
     refetchOnMount: "always",
     refetchOnWindowFocus: "always",
   });
@@ -164,9 +167,23 @@ function Page() {
         />
 
         <Card className="mb-4 p-4">
-          <Field label="Busca">
-            <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
-          </Field>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,9rem)] gap-2 sm:gap-3 md:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)]">
+            <Field label="Busca">
+              <SearchInput value={query} onChange={setQuery} placeholder="Buscar departamento..." />
+            </Field>
+            <Field label="Instância">
+              <InstanceFilterSelect
+                value={instanceFilter}
+                onChange={setInstanceFilter}
+                allLabel="Todas"
+                options={connectionOptions.map((connection) => ({
+                  value: connection.id,
+                  label: connection.name,
+                  color: connection.color,
+                }))}
+              />
+            </Field>
+          </div>
         </Card>
 
         {isLoading ? (
@@ -408,8 +425,8 @@ export function DepartamentoForm({
             </div>
           </Field>
         </div>
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_13rem]">
-          <Field label="Instâncias">
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8.5rem]">
+          <Field label="Instâncias *">
             <div className="min-h-11 rounded-lg border border-border bg-surface-1 p-2">
               {connections.length === 0 ? (
                 <p className="px-1 py-1 text-sm text-muted-foreground">
@@ -445,25 +462,10 @@ export function DepartamentoForm({
             </div>
           </Field>
           <Field label="Ícone">
-            <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-surface-1 p-1.5">
-              {DEPARTMENT_ICON_OPTIONS.map((option) => {
-                const Icon = option.icon;
-                const selected = (form.icon ?? "department") === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    title={option.label}
-                    aria-label={option.label}
-                    aria-pressed={selected}
-                    onClick={() => setForm((current) => ({ ...current, icon: option.id }))}
-                    className={`flex min-h-11 items-center justify-center rounded-md border transition ${selected ? "border-primary bg-primary/10 text-primary" : "border-transparent hover:bg-muted"}`}
-                  >
-                    <Icon className="h-5 w-5" />
-                  </button>
-                );
-              })}
-            </div>
+            <DepartmentIconSelect
+              value={form.icon}
+              onChange={(icon) => setForm((current) => ({ ...current, icon }))}
+            />
           </Field>
         </div>
         <Field label="Nota">

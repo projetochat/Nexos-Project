@@ -74,6 +74,11 @@ const conversationInclude = {
     },
   },
   lead: true,
+  messages: {
+    orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }],
+    take: 1,
+    select: { type: true, mediaDurationMs: true },
+  },
 } satisfies Prisma.ConversationInclude;
 
 type ConversationWithRelations = Prisma.ConversationGetPayload<{
@@ -111,6 +116,10 @@ export class ConversationsController {
       this.prisma.conversation.count({ where }),
       this.countTabs(countBase, current),
     ]);
+    const pendingScheduledConversationIds = await this.pendingScheduledConversationIds(
+      items.map((conversation) => conversation.id),
+      current.tenantId,
+    );
 
     this.profilePictures.enqueueMissing({
       tenantId: current.tenantId,
@@ -121,7 +130,10 @@ export class ConversationsController {
 
     return {
       ...paginated(
-        items.map((conversation) => this.serialize(conversation, current)),
+        items.map((conversation) => ({
+          ...this.serialize(conversation, current),
+          hasPendingScheduledMessage: pendingScheduledConversationIds.has(conversation.id),
+        })),
         total,
         page,
         pageSize,
@@ -385,6 +397,49 @@ export class ConversationsController {
     return this.serialize(updated, current);
   }
 
+  @Get(":id/transfer-options")
+  @RequirePermissions("conversations.assign")
+  async transferOptions(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
+    const conversation = await this.findVisibleConversation(id, current);
+    if (!conversation.connectionId) {
+      return { membershipIds: [], departmentIds: [] };
+    }
+
+    const [memberships, departments] = await Promise.all([
+      this.prisma.tenantMembership.findMany({
+        where: {
+          tenantId: current.tenantId,
+          status: MembershipStatus.ACTIVE,
+          user: { status: "ACTIVE" },
+        },
+        select: {
+          id: true,
+          role: { select: { key: true, metadata: true } },
+        },
+      }),
+      this.prisma.department.findMany({
+        where: {
+          tenantId: current.tenantId,
+          active: true,
+          AND: [departmentIdAccess(current)],
+          connections: { some: { connectionId: conversation.connectionId } },
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    return {
+      membershipIds: memberships
+        .filter(
+          (membership) =>
+            membership.role.key === "tenant_admin" ||
+            (roleConnectionIds(membership.role) ?? []).includes(conversation.connectionId!),
+        )
+        .map((membership) => membership.id),
+      departmentIds: departments.map((department) => department.id),
+    };
+  }
+
   @Patch(":id/department")
   @RequirePermissions("conversations.assign")
   async transferDepartment(
@@ -449,7 +504,7 @@ export class ConversationsController {
   }
 
   @Post("bulk-close")
-  @RequirePermissions("messages.send")
+  @RequirePermissions("chat.bulk_actions.execute")
   async bulkClose(
     @Body() dto: BulkCloseConversationsDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -1026,6 +1081,25 @@ export class ConversationsController {
     );
   }
 
+  private async pendingScheduledConversationIds(conversationIds: string[], tenantId: string) {
+    if (conversationIds.length === 0) return new Set<string>();
+    const rows = await this.prisma.$queryRaw<Array<{ conversationId: string | null }>>(
+      Prisma.sql`
+        SELECT "payload"->>'conversationId' AS "conversationId"
+        FROM "schedules"
+        WHERE "tenantId" = ${tenantId}
+          AND "executionStatus" IN ('PENDING', 'CLAIMED', 'QUEUED')
+          AND "completedAt" IS NULL
+          AND "payload"->>'conversationId' IN (${Prisma.join(conversationIds)})
+      `,
+    );
+    return new Set(
+      rows.flatMap((row) =>
+        typeof row.conversationId === "string" && row.conversationId ? [row.conversationId] : [],
+      ),
+    );
+  }
+
   private serialize(conversation: ConversationWithRelations, current: AuthenticatedUser) {
     const additionalFields = projectContactAdditionalFields(
       conversation.tenantId,
@@ -1049,6 +1123,8 @@ export class ConversationsController {
       protocolo: conversation.protocol,
       unreadCount: conversation.unreadCount,
       lastMessagePreview: conversation.lastMessagePreview,
+      lastMessageType: conversation.messages?.[0]?.type.toLowerCase() ?? null,
+      lastMessageDurationMs: conversation.messages?.[0]?.mediaDurationMs ?? null,
       inbox_archived_at: conversation.inboxArchivedAt,
       is_lead:
         !conversation.isGroup &&

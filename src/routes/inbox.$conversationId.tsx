@@ -23,7 +23,7 @@ import {
   ArrowLeft,
   ContactRound,
   Phone,
-  MessageCirclePlus,
+  MessageSquarePlus,
   Forward,
   Ban,
 } from "lucide-react";
@@ -74,7 +74,12 @@ import { useChatPerms } from "@/lib/perms";
 import { tenantModules, useTenantEntitlements } from "@/hooks/use-tenant-entitlements";
 import { sortByOptionLabel } from "@/lib/sort-options";
 import { resolveMessageVariables, type MessageVariableContext } from "@/lib/message-variables";
-import { messageMediaType, sendMediaQueue, type MessageMediaType } from "@/lib/message-media-queue";
+import {
+  filesFromTransfer,
+  messageMediaType,
+  sendMediaQueue,
+  type MessageMediaType,
+} from "@/lib/message-media-queue";
 import { invalidateConversationQueries } from "@/lib/realtime/invalidate-conversation";
 import { startTyping, stopTyping } from "@/lib/realtime/client";
 import {
@@ -93,6 +98,10 @@ import {
   CALL_UNAVAILABLE_MESSAGE,
   ConversationCallButton,
 } from "@/components/conversation-call-button";
+import {
+  ActiveConversationOrchestrator,
+  type ActiveConversationRequest,
+} from "@/components/active-conversation-orchestrator";
 
 export const Route = createFileRoute("/inbox/$conversationId")({ component: ConversationPage });
 
@@ -375,6 +384,19 @@ function ConversationPage() {
     queryKey: ["trixus", "chat-departments", "conversation-transfer"],
     queryFn: organizationApi.listChatDepartments,
   });
+  const { data: transferOptions } = useQuery({
+    queryKey: ["trixus", "conversations", conversationId, "transfer-options"],
+    queryFn: () => conversationApi.transferOptions(conversationId),
+    enabled: !!conv,
+  });
+  const transferableMembershipIds = React.useMemo(
+    () => new Set(transferOptions?.membershipIds ?? []),
+    [transferOptions?.membershipIds],
+  );
+  const transferableDepartmentIds = React.useMemo(
+    () => new Set(transferOptions?.departmentIds ?? []),
+    [transferOptions?.departmentIds],
+  );
   const departments = React.useMemo(
     () =>
       apiDepartments.map((department) => ({
@@ -425,9 +447,9 @@ function ConversationPage() {
   const transferModal = useDisclosure();
   const startDepartmentModal = useDisclosure();
   const [startDepartmentId, setStartDepartmentId] = React.useState("");
-  const [startDepartmentAction, setStartDepartmentAction] = React.useState<
-    "assume" | "new-conversation"
-  >("assume");
+  const [conversationRequest, setConversationRequest] =
+    React.useState<ActiveConversationRequest | null>(null);
+  const conversationRequestKey = React.useRef(0);
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [replyTo, setReplyTo] = React.useState<Message | null>(null);
   const queuePrefs = useQueuePrefs();
@@ -480,7 +502,6 @@ function ConversationPage() {
     if (!conv.protocolo && !departmentId && !favorite) {
       if (departmentsForConnection(apiDepartments, conv.connection_id).length === 0) return;
       setStartDepartmentId("");
-      setStartDepartmentAction("assume");
       startDepartmentModal.show();
       return;
     }
@@ -493,33 +514,6 @@ function ConversationPage() {
       toast.success(
         hadProtocolo || isStandby ? "Conversa retomada" : "Conversa iniciada — protocolo gerado",
       );
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  };
-
-  const handleNewConversation = async (departmentId?: string) => {
-    if (!user || !conv.contact_id) return;
-    if (departmentsLoading) return;
-    const favorite = favoriteDepartmentForConnection(apiDepartments, conv.connection_id);
-    if (!departmentId && !favorite) {
-      if (departmentsForConnection(apiDepartments, conv.connection_id).length === 0) return;
-      setStartDepartmentId("");
-      setStartDepartmentAction("new-conversation");
-      startDepartmentModal.show();
-      return;
-    }
-    try {
-      const conversation = await conversationApi.create({
-        contactId: conv.contact_id,
-        connectionId: conv.connection_id,
-        ...(departmentId ? { departmentId } : {}),
-        assignToSelf: true,
-        firstMessagePreview: "Nova conversa iniciada pelo atendimento.",
-      });
-      void invalidateConversationQueries(qc, conversation.id);
-      toast.success("Nova conversa iniciada — protocolo gerado");
-      navigate({ to: "/inbox/$conversationId", params: { conversationId: conversation.id } });
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -595,6 +589,11 @@ function ConversationPage() {
                     <span>{maskBrazilPhone(conv.contact.telefone)}</span>
                   )}
                 </div>
+                {conv.protocolo && (
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    Protocolo: <span className="font-mono">#{conv.protocolo}</span>
+                  </p>
+                )}
               </div>
             </button>
             <div className="flex shrink-0 flex-wrap items-center gap-1.5">
@@ -605,8 +604,21 @@ function ConversationPage() {
                 />
               )}
               {conv.status === "fechada" ? (
-                <Button variant="secondary" size="sm" onClick={() => void handleNewConversation()}>
-                  <MessageCirclePlus className="h-3.5 w-3.5" /> Nova conversa
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="hover:!border-primary hover:!bg-primary hover:!text-primary-foreground focus-visible:!border-primary focus-visible:!bg-primary focus-visible:!text-primary-foreground"
+                  onClick={() => {
+                    if (!conv.contact || conv.is_group) return;
+                    conversationRequestKey.current += 1;
+                    setConversationRequest({
+                      key: conversationRequestKey.current,
+                      contact: conv.contact,
+                      firstMessagePreview: "Nova conversa iniciada pelo atendimento.",
+                    });
+                  }}
+                >
+                  <MessageSquarePlus className="h-3.5 w-3.5" /> Nova conversa
                 </Button>
               ) : (
                 <>
@@ -614,7 +626,7 @@ function ConversationPage() {
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="group"
+                      className="group hover:!border-emerald-500 hover:!bg-emerald-50 hover:!text-emerald-700 focus-visible:!border-emerald-500 focus-visible:!bg-emerald-50 focus-visible:!text-emerald-700 dark:hover:!bg-emerald-950 dark:hover:!text-emerald-300 dark:focus-visible:!bg-emerald-950 dark:focus-visible:!text-emerald-300"
                       onClick={() => void handleAssume()}
                       aria-label={`${startLabel} Atendimento`}
                       title={`${startLabel} Atendimento`}
@@ -627,7 +639,7 @@ function ConversationPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="group"
+                      className="group hover:!border-amber-500 hover:!bg-amber-50 hover:!text-amber-700 focus-visible:!border-amber-500 focus-visible:!bg-amber-50 focus-visible:!text-amber-700 dark:hover:!bg-amber-950 dark:hover:!text-amber-300 dark:focus-visible:!bg-amber-950 dark:focus-visible:!text-amber-300"
                       onClick={transferModal.show}
                       aria-label="Transferir Atendimento"
                       title="Transferir Atendimento"
@@ -641,7 +653,7 @@ function ConversationPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="group"
+                      className="group hover:!border-destructive hover:!bg-destructive hover:!text-destructive-foreground focus-visible:!border-destructive focus-visible:!bg-destructive focus-visible:!text-destructive-foreground"
                       onClick={() => setClosing(true)}
                       aria-label="Encerrar Atendimento"
                       title="Encerrar Atendimento"
@@ -686,8 +698,8 @@ function ConversationPage() {
                 const isLead = conv.originated_as_lead ?? conv.is_lead;
                 const line = isLead ? "bg-info/40" : "bg-success/40";
                 const pill = isLead
-                  ? "border-info/40 bg-info/10 text-info"
-                  : "border-success/40 bg-success/10 text-success";
+                  ? "border-info/40 bg-blue-50 text-info dark:bg-blue-950"
+                  : "border-success/40 bg-emerald-50 text-success dark:bg-emerald-950";
                 const openingLabel = isLead ? "NOVO LEAD" : "NOVA CONVERSA";
                 const label = `${openingLabel} — ${fmtLogStamp(new Date(conv.created_at).getTime())}`;
                 return (
@@ -847,8 +859,13 @@ function ConversationPage() {
       <TransferModal
         open={transferModal.open}
         onClose={transferModal.hide}
-        agents={agents.filter((a) => a.userId !== conv.agent_id)}
-        departments={departments.filter((d) => d.id !== conv.department_id)}
+        agents={agents.filter(
+          (agent) => agent.userId !== conv.agent_id && transferableMembershipIds.has(agent.id),
+        )}
+        departments={departments.filter(
+          (department) =>
+            department.id !== conv.department_id && transferableDepartmentIds.has(department.id),
+        )}
         currentStatus={currentTransferQueue(conv, inboxTab)}
         onSubmitAgent={async (id) => {
           await conversationApi.assign(conv.id, { membershipId: id });
@@ -887,13 +904,9 @@ function ConversationPage() {
               variant="primary"
               size="sm"
               disabled={!startDepartmentId}
-              onClick={() =>
-                void (startDepartmentAction === "assume"
-                  ? handleAssume(startDepartmentId)
-                  : handleNewConversation(startDepartmentId))
-              }
+              onClick={() => void handleAssume(startDepartmentId)}
             >
-              {startDepartmentAction === "assume" ? "Iniciar Atendimento" : "Iniciar conversa"}
+              Iniciar Atendimento
             </Button>
           </div>
         }
@@ -932,6 +945,10 @@ function ConversationPage() {
             ))}
         </div>
       </Modal>
+      <ActiveConversationOrchestrator
+        request={conversationRequest}
+        onCancel={() => setConversationRequest(null)}
+      />
       <ConfirmDialog
         open={closing}
         title="Encerrar Conversa?"
@@ -966,7 +983,7 @@ function StartedServiceLog({
       <span className="h-0.5 flex-1 bg-success/40" />
       <div
         data-service-start-log
-        className="flex min-w-0 flex-col items-center justify-center rounded-full border border-success/40 bg-success/10 px-4 py-2 text-center text-[10px] font-medium uppercase tracking-widest text-success"
+        className="flex min-w-0 flex-col items-center justify-center rounded-full border border-success/40 bg-emerald-50 px-4 py-2 text-center text-[10px] font-medium uppercase tracking-widest text-success dark:bg-emerald-950"
       >
         <p>ATENDIMENTO INICIADO — {fmtLogStamp(timestamp)}</p>
         <p>
@@ -991,7 +1008,7 @@ function ClosedServiceLog({
       <span className="h-0.5 flex-1 bg-destructive/40" />
       <div
         data-service-closed-log
-        className="flex min-w-0 flex-col items-center justify-center rounded-full border border-destructive/40 bg-destructive/10 px-4 py-2 text-center text-[10px] font-medium uppercase tracking-widest text-destructive"
+        className="flex min-w-0 flex-col items-center justify-center rounded-full border border-destructive/40 bg-red-50 px-4 py-2 text-center text-[10px] font-medium uppercase tracking-widest text-destructive dark:bg-red-950"
       >
         <p>ATENDIMENTO ENCERRADO — {fmtLogStamp(timestamp)}</p>
         <p>ATENDENTE: {attendantName}</p>
@@ -1123,13 +1140,22 @@ export function MessageBubble({
     const tone = isClosing
       ? {
           line: "bg-destructive/40",
-          pill: "border-destructive/40 bg-destructive/10 text-destructive",
+          pill: "border-destructive/40 bg-red-50 text-destructive dark:bg-red-950",
         }
       : isLead || isConversationOpening
-        ? { line: "bg-primary/40", pill: "border-primary/40 bg-primary/10 text-primary" }
+        ? {
+            line: "bg-primary/40",
+            pill: "border-primary/40 bg-blue-50 text-primary dark:bg-blue-950",
+          }
         : isStarted
-          ? { line: "bg-success/40", pill: "border-success/40 bg-success/10 text-success" }
-          : { line: "bg-warning/40", pill: "border-warning/40 bg-warning/10 text-warning" };
+          ? {
+              line: "bg-success/40",
+              pill: "border-success/40 bg-emerald-50 text-success dark:bg-emerald-950",
+            }
+          : {
+              line: "bg-warning/40",
+              pill: "border-warning/40 bg-amber-50 text-warning dark:bg-amber-950",
+            };
     const withLines = isClosing || isLead || isConversationOpening || isStarted;
     const label = (
       isLead ? displayContent.replace(/^nova lead$/i, "Novo Lead") : displayContent
@@ -1214,7 +1240,7 @@ export function MessageBubble({
           )
             event.currentTarget.focus({ preventScroll: true });
         }}
-        className={`group/message relative min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:max-w-[75%] ${
+        className={`group/message relative min-w-0 ${isGroup ? "max-w-[calc(100%-38px)]" : "max-w-[92%]"} text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:max-w-[50%] ${
           isVisualOnly
             ? "rounded-xl bg-transparent p-0 shadow-none"
             : `rounded-2xl px-3 py-2 shadow-card ${mine ? "rounded-br-sm bg-gradient-brand text-white" : "rounded-bl-sm border border-border bg-surface-1"}`
@@ -1234,7 +1260,7 @@ export function MessageBubble({
           />
         )}
         {m.participant?.name && !mine && (
-          <p className="mb-1 text-[11px] font-semibold text-primary">{m.participant.name}</p>
+          <p className="mb-1 text-sm font-semibold text-primary">{m.participant.name}</p>
         )}
         {m.forwarded && (
           <p
@@ -1403,24 +1429,21 @@ export function MessageBubble({
           </p>
         )}
         <div className="mt-1 flex items-center justify-end">
-          <div
-            className={`shrink-0 text-right font-mono text-[10px] leading-4 ${mine ? "text-white/70" : "text-muted-foreground"}`}
+          <span
+            className={`flex shrink-0 items-center justify-end whitespace-nowrap text-right font-mono text-[10px] leading-4 ${mine ? "text-white/70" : "text-muted-foreground"}`}
           >
-            {timestamp.day && <span className="block">{timestamp.day}</span>}
-            <span className="flex items-center justify-end whitespace-nowrap">
-              {timestamp.time}
-              {mine && (
-                <MessageStatusIcon
-                  status={m.status}
-                  onRetry={
-                    !readOnly && m.status === "failed"
-                      ? () => setResendRequest((value) => value + 1)
-                      : undefined
-                  }
-                />
-              )}
-            </span>
-          </div>
+            {timestamp.day ? `${timestamp.day} ${timestamp.time}` : timestamp.time}
+            {mine && (
+              <MessageStatusIcon
+                status={m.status}
+                onRetry={
+                  !readOnly && m.status === "failed"
+                    ? () => setResendRequest((value) => value + 1)
+                    : undefined
+                }
+              />
+            )}
+          </span>
         </div>
       </div>
       {mine && !isAudioMessage && (
@@ -1884,6 +1907,7 @@ function Composer({
     sharedContact?: SharedContactSelection["contact"];
   };
   const [pendingFiles, setPendingFiles] = React.useState<PendingMedia[]>([]);
+  const [draggingFiles, setDraggingFiles] = React.useState(false);
   const [mediaSending, setMediaSending] = React.useState(false);
   const [showQR, setShowQR] = React.useState(false);
   const [qrFilter, setQrFilter] = React.useState("");
@@ -1905,6 +1929,12 @@ function Composer({
     };
   }, []);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  React.useEffect(() => {
+    if (!replyTo?.id) return;
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [replyTo?.id]);
+
   const fileRef = React.useRef<HTMLInputElement>(null);
   const [showCamera, setShowCamera] = React.useState(false);
   const [showContacts, setShowContacts] = React.useState(false);
@@ -1936,15 +1966,8 @@ function Composer({
     });
     if (!additions.length) return;
     setPendingFiles((current) => {
-      const replacingContact = current.some((item) => !!item.sharedContact);
-      if (replacingContact) {
-        current.forEach((item) => {
-          if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-        });
-      }
-      const base = replacingContact ? [] : current;
-      if (!base.length) additions[0]!.carriesContext = true;
-      return [...base, ...additions];
+      if (!current.length) additions[0]!.carriesContext = true;
+      return [...current, ...additions];
     });
   };
 
@@ -2265,15 +2288,32 @@ function Composer({
   React.useEffect(() => emitTypingStop, [emitTypingStop]);
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = Array.from(e.clipboardData?.items ?? []);
-    const imageFiles = items
-      .filter((item) => item.type.startsWith("image/"))
-      .map((item) => item.getAsFile())
-      .filter((file): file is File => !!file);
-    if (imageFiles.length) {
+    const files = filesFromTransfer(e.clipboardData);
+    if (files.length) {
       e.preventDefault();
-      queueFiles(imageFiles);
+      queueFiles(files);
     }
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (disabled || !Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setDraggingFiles(true);
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setDraggingFiles(false);
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    const files = filesFromTransfer(event.dataTransfer);
+    if (!files.length) return;
+    event.preventDefault();
+    setDraggingFiles(false);
+    queueFiles(files);
   };
 
   const onFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2290,17 +2330,15 @@ function Composer({
     const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
     const file = new File([bytes], `camera-${Date.now()}.jpg`, { type: mimeType });
     setPendingFiles((current) => {
-      const replacingContact = current.some((item) => !!item.sharedContact);
-      const base = replacingContact ? [] : current;
       return [
-        ...base,
+        ...current,
         {
           id: crypto.randomUUID(),
           clientMessageId: crypto.randomUUID(),
           file,
           previewUrl: dataUrl,
           mediaType: "image",
-          carriesContext: base.length === 0,
+          carriesContext: current.length === 0,
         },
       ];
     });
@@ -2479,7 +2517,20 @@ function Composer({
   };
 
   return (
-    <div className="border-t border-border bg-surface-1 p-3">
+    <div
+      className={`relative border-t bg-surface-1 p-3 transition-colors ${
+        draggingFiles ? "border-primary bg-primary/5" : "border-border"
+      }`}
+      onDragEnter={handleDragOver}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {draggingFiles && (
+        <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-background/90 text-sm font-medium text-primary">
+          Solte os arquivos para anexar
+        </div>
+      )}
       <div className="w-full">
         {sequence && (
           <div
@@ -2847,18 +2898,18 @@ function Composer({
           <InboxContactPicker
             priorityInstances={priorityInstances}
             onClose={() => setShowContacts(false)}
-            onSelect={(selection) => {
-              clearPendingFiles();
-              setPendingFiles([
-                {
+            onSelect={(selections) => {
+              setPendingFiles((current) => [
+                ...current,
+                ...selections.map((selection, index) => ({
                   id: crypto.randomUUID(),
                   clientMessageId: crypto.randomUUID(),
                   file: selection.file,
                   previewUrl: null,
-                  mediaType: "document",
-                  carriesContext: true,
+                  mediaType: "document" as const,
+                  carriesContext: current.length === 0 && index === 0,
                   sharedContact: selection.contact,
-                },
+                })),
               ]);
               setShowContacts(false);
             }}
@@ -2910,9 +2961,6 @@ export function ContactPanel({
   const tagsModal = useDisclosure();
 
   const editModal = useDisclosure();
-  const customerLinkModal = useDisclosure();
-  const [linkedCustomerId, setLinkedCustomerId] = React.useState("");
-  const [savingCustomerLink, setSavingCustomerLink] = React.useState(false);
   const [confirmingBlock, setConfirmingBlock] = React.useState(false);
   const [blocking, setBlocking] = React.useState(false);
   const [blocked, setBlocked] = React.useState(false);
@@ -2924,7 +2972,7 @@ export function ContactPanel({
   const { data: customersPage } = useQuery({
     queryKey: ["trixus", "customers", "contact-panel"],
     queryFn: () => crmApi.listCustomers({ pageSize: 100 }).then((page) => page.items),
-    enabled: editModal.open || customerLinkModal.open,
+    enabled: editModal.open,
   });
   const { data: contactOptions } = useQuery({
     queryKey: ["trixus", "contacts", "options", "contact-panel"],
@@ -2933,10 +2981,6 @@ export function ContactPanel({
   const customerId = contact?.customer_id ?? null;
   const customer = contact?.customer ?? null;
   const contactTags = contact?.tags ?? [];
-
-  React.useEffect(() => {
-    if (customerLinkModal.open) setLinkedCustomerId(contact?.customer_id ?? "");
-  }, [contact?.customer_id, customerLinkModal.open]);
 
   const { data: protocolos = [] } = useQuery({
     queryKey: ["trixus", "contact_protocols", contactId],
@@ -3029,16 +3073,6 @@ export function ContactPanel({
                   />
                 )}
                 <span className="truncate">{customer?.nome ?? "—"}</span>
-                {perms.pode_editar_vinculo_cliente && (
-                  <button
-                    type="button"
-                    className="rounded p-1 text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-                    aria-label="Alterar cliente vinculado"
-                    onClick={customerLinkModal.show}
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </button>
-                )}
               </dd>
             </div>
             <div className="flex items-start justify-between gap-2">
@@ -3129,7 +3163,12 @@ export function ContactPanel({
                     <Link
                       to="/inbox/$conversationId"
                       params={{ conversationId: p.id }}
-                      className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs transition hover:border-primary/50 hover:bg-primary/5"
+                      aria-current={p.id === conversationId ? "page" : undefined}
+                      className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs transition ${
+                        p.id === conversationId
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border bg-card hover:border-primary/50 hover:bg-primary/5"
+                      }`}
                     >
                       <span className="font-mono text-foreground/90">#{p.protocolo}</span>
                       <span className="shrink-0 text-[10px] text-muted-foreground">
@@ -3152,7 +3191,7 @@ export function ContactPanel({
           onClose={tagsModal.hide}
           contactId={contactId}
           current={contactTags}
-          canManageCatalog={perms.pode_editar_etiquetas}
+          canCreateCatalog={perms.pode_criar_etiquetas}
           onChanged={() => qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] })}
         />
         {contact && (
@@ -3193,56 +3232,6 @@ export function ContactPanel({
             }}
           />
         )}
-        <Modal
-          open={customerLinkModal.open}
-          onClose={customerLinkModal.hide}
-          title="Alterar cliente vinculado"
-        >
-          <div className="space-y-4">
-            <Field label="Cliente">
-              <Select
-                value={linkedCustomerId}
-                onChange={(event) => setLinkedCustomerId(event.target.value)}
-              >
-                <option value="">- Sem cliente -</option>
-                {sortByOptionLabel(customersPage ?? [], (item) => item.nome).map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nome}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="ghost"
-                onClick={customerLinkModal.hide}
-                disabled={savingCustomerLink}
-              >
-                Cancelar
-              </Button>
-              <Button
-                variant="primary"
-                disabled={savingCustomerLink}
-                onClick={() => {
-                  setSavingCustomerLink(true);
-                  void crmApi
-                    .updateContactCustomer(contactId, linkedCustomerId || null)
-                    .then(() => {
-                      void qc.invalidateQueries({ queryKey: ["trixus", "contacts", contactId] });
-                      void qc.invalidateQueries({ queryKey: ["trixus", "conversations"] });
-                      void qc.invalidateQueries({ queryKey: ["operations", "history"] });
-                      customerLinkModal.hide();
-                      toast.success("Cliente vinculado atualizado");
-                    })
-                    .catch((error) => toast.error((error as Error).message))
-                    .finally(() => setSavingCustomerLink(false));
-                }}
-              >
-                Salvar
-              </Button>
-            </div>
-          </div>
-        </Modal>
       </aside>
       <ConfirmDialog
         open={confirmingBlock}
@@ -3286,14 +3275,14 @@ function TagsModal({
   onClose,
   contactId,
   current,
-  canManageCatalog,
+  canCreateCatalog,
   onChanged,
 }: {
   open: boolean;
   onClose: () => void;
   contactId: string;
   current: Tag[];
-  canManageCatalog: boolean;
+  canCreateCatalog: boolean;
   onChanged: () => void;
 }) {
   const qc = useQueryClient();
@@ -3373,11 +3362,11 @@ function TagsModal({
         )}
       </div>
 
-      {canManageCatalog && !creating ? (
+      {canCreateCatalog && !creating ? (
         <Button variant="ghost" size="sm" className="mt-3" onClick={() => setCreating(true)}>
           <Plus className="h-3 w-3" /> Nova etiqueta
         </Button>
-      ) : canManageCatalog && creating ? (
+      ) : canCreateCatalog && creating ? (
         <div className="mt-3 space-y-2 rounded-lg border border-border p-3">
           <Field label="Nome">
             <Input value={newName} onChange={(e) => setNewName(e.target.value)} />

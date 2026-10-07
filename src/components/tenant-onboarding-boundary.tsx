@@ -26,9 +26,11 @@ import { Badge, Button, Card, Field, Input, LogoMark, Select } from "@/component
 import { DepartmentIcon } from "@/components/department-icon";
 import { ErrorState, Spinner } from "@/components/feedback";
 import { Modal } from "@/components/modal";
+import { QrGenerationLoadingOverlay } from "@/components/qr-generation-loading-overlay";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import {
   TrixusApiError,
+  apiErrorMessageWithRequestId,
   connectionsApi,
   crmApi,
   onboardingApi,
@@ -71,6 +73,22 @@ const ROLES_QUERY_KEY = ["trixus", "roles"] as const;
 const USERS_QUERY_KEY = ["trixus", "users"] as const;
 const QUICK_REPLIES_QUERY_KEY = ["trixus", "quick-replies", "catalog"] as const;
 const TAGS_QUERY_KEY = ["trixus", "tags"] as const;
+
+type OnboardingConnectionApi = Pick<typeof connectionsApi, "createEvolution" | "qr">;
+
+export async function createOnboardingConnectionWithQr(
+  name: string,
+  api: OnboardingConnectionApi = connectionsApi,
+) {
+  const connection = await api.createEvolution({
+    name,
+    serviceEnabled: true,
+    idempotencyKey: ONBOARDING_INSTANCE_IDEMPOTENCY_KEY,
+  });
+  if (connection.status === "connected" || connection.qrCodeBase64) return connection;
+  const generated = await api.qr(connection.id);
+  return { ...connection, qrCodeBase64: generated.qrCodeBase64 };
+}
 
 const STEPS = [
   { label: "Boas-vindas", icon: Rocket },
@@ -255,7 +273,7 @@ function TenantOnboardingWizard({ initial }: { initial: ApiTenantOnboardingStatu
               </p>
             </div>
           </div>
-          <ol className="grid grid-cols-4 gap-2 sm:grid-cols-8 lg:grid-cols-1 lg:gap-1.5">
+          <ol className="grid grid-cols-8 gap-0.5 lg:grid-cols-1 lg:gap-1.5">
             {STEPS.map((item, index) => {
               const number = index + 1;
               const complete = number <= state.progress.maxCompletedStep;
@@ -265,7 +283,7 @@ function TenantOnboardingWizard({ initial }: { initial: ApiTenantOnboardingStatu
                 <li
                   key={item.label}
                   aria-current={active ? "step" : undefined}
-                  className={`flex min-w-0 items-center gap-3 rounded-xl p-2 transition lg:px-3 lg:py-2.5 ${
+                  className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-0.5 py-2 text-center transition lg:flex-row lg:gap-3 lg:px-3 lg:py-2.5 lg:text-left ${
                     active
                       ? "bg-primary/10 text-primary"
                       : complete
@@ -285,7 +303,9 @@ function TenantOnboardingWizard({ initial }: { initial: ApiTenantOnboardingStatu
                     {complete && !active ? <Check className="h-4 w-4" /> : number}
                   </span>
                   <Icon className="hidden h-4 w-4 shrink-0 xl:block" />
-                  <span className="hidden truncate text-sm font-medium lg:block">{item.label}</span>
+                  <span className="line-clamp-2 min-h-5 text-[9px] font-medium leading-2.5 lg:min-h-0 lg:truncate lg:text-sm lg:leading-normal">
+                    {item.label}
+                  </span>
                 </li>
               );
             })}
@@ -306,13 +326,20 @@ function TenantOnboardingWizard({ initial }: { initial: ApiTenantOnboardingStatu
             {step === 7 && <TagsStep />}
             {step === 8 && <ConclusionStep checklist={state.checklist} />}
           </div>
-          <div className="mt-8 flex items-center justify-between gap-3 border-t border-border pt-5">
-            <Button variant="outline" onClick={goBack} disabled={step === 1 || saving}>
-              <ArrowLeft className="h-4 w-4" /> Voltar
-            </Button>
+          <div
+            className={`mt-8 flex items-center gap-3 border-t border-border pt-5 ${
+              step === 1 || step === 8 ? "justify-end" : "justify-between"
+            }`}
+          >
+            {step > 1 && step < 8 && (
+              <Button variant="outline" onClick={goBack} disabled={saving}>
+                <ArrowLeft className="h-4 w-4" /> Voltar
+              </Button>
+            )}
             {step < 8 ? (
               <Button
                 size="lg"
+                className={step === 1 ? "w-full sm:w-auto" : undefined}
                 disabled={saving || !canAdvanceOnboardingStep(step, state)}
                 onClick={() => void persistStep(step + 1, step)}
               >
@@ -370,6 +397,8 @@ function InstanceStep({ onServerChange }: { onServerChange: () => Promise<unknow
   const [qr, setQr] = React.useState<string | null>(null);
   const [connectionError, setConnectionError] = React.useState<string | null>(null);
   const [orphanedConnectionId, setOrphanedConnectionId] = React.useState<string | null>(null);
+  const createRequestActive = React.useRef(false);
+  const qrRequestActive = React.useRef(false);
   const selected = visible.find((item) => item.id === selectedId) ?? visible[0];
 
   React.useEffect(() => {
@@ -421,12 +450,7 @@ function InstanceStep({ onServerChange }: { onServerChange: () => Promise<unknow
   }, [onServerChange, orphanedConnectionId, queryClient, selected]);
 
   const create = useMutation({
-    mutationFn: () =>
-      connectionsApi.createEvolution({
-        name: name.trim(),
-        serviceEnabled: true,
-        idempotencyKey: ONBOARDING_INSTANCE_IDEMPOTENCY_KEY,
-      }),
+    mutationFn: () => createOnboardingConnectionWithQr(name.trim()),
     onSuccess: async (connection) => {
       setConnectionError(null);
       setOrphanedConnectionId(null);
@@ -436,8 +460,13 @@ function InstanceStep({ onServerChange }: { onServerChange: () => Promise<unknow
       await onServerChange();
     },
     onError: (error) => {
-      setConnectionError((error as Error).message);
-      toast.error((error as Error).message);
+      const message = apiErrorMessageWithRequestId(error);
+      setConnectionError(message);
+      toast.error(message);
+      void connections.refetch();
+    },
+    onSettled: () => {
+      createRequestActive.current = false;
     },
   });
   const requestQr = useMutation({
@@ -455,14 +484,17 @@ function InstanceStep({ onServerChange }: { onServerChange: () => Promise<unknow
           "A instância não foi encontrada no provedor. Remova este vínculo órfão para recriá-la.",
         );
       } else {
-        setConnectionError((error as Error).message);
+        setConnectionError(apiErrorMessageWithRequestId(error));
       }
-      toast.error((error as Error).message);
+      toast.error(apiErrorMessageWithRequestId(error));
+    },
+    onSettled: () => {
+      qrRequestActive.current = false;
     },
   });
   const removeOrphan = useMutation({
     mutationFn: (connection: ApiMessagingConnection) =>
-      connectionsApi.remove(connection.id, { removeConversationHistory: false }),
+      connectionsApi.remove(connection.id),
     onSuccess: async (_result, connection) => {
       setName(connection.name);
       setQr(null);
@@ -486,6 +518,20 @@ function InstanceStep({ onServerChange }: { onServerChange: () => Promise<unknow
       return;
     removeOrphan.mutate(selected);
   };
+
+  const startCreate = () => {
+    if (createRequestActive.current || create.isPending) return;
+    createRequestActive.current = true;
+    create.mutate();
+  };
+
+  const startQrRequest = (connection: ApiMessagingConnection) => {
+    if (qrRequestActive.current || requestQr.isPending) return;
+    qrRequestActive.current = true;
+    requestQr.mutate(connection);
+  };
+
+  const qrGenerationPending = create.isPending || requestQr.isPending;
 
   return (
     <div className="space-y-5">
@@ -518,7 +564,7 @@ function InstanceStep({ onServerChange }: { onServerChange: () => Promise<unknow
               variant="outline"
               size="sm"
               disabled={!selected || requestQr.isPending}
-              onClick={() => selected && requestQr.mutate(selected)}
+              onClick={() => selected && startQrRequest(selected)}
             >
               <RefreshCw className="h-4 w-4" /> Tentar novamente
             </Button>
@@ -540,14 +586,14 @@ function InstanceStep({ onServerChange }: { onServerChange: () => Promise<unknow
           <Button
             className="mt-4"
             disabled={name.trim().length < 2 || create.isPending}
-            onClick={() => create.mutate()}
+            onClick={startCreate}
           >
             {create.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Wifi className="h-4 w-4" />
             )}
-            Gerar QR Code
+            Avançar <ArrowRight className="h-4 w-4" />
           </Button>
         </Card>
       ) : (
@@ -555,6 +601,7 @@ function InstanceStep({ onServerChange }: { onServerChange: () => Promise<unknow
           <Card>
             <Field label="Instância">
               <Select
+                disabled={qrGenerationPending}
                 value={selected?.id ?? ""}
                 onChange={(event) => {
                   setSelectedId(event.target.value);
@@ -594,10 +641,10 @@ function InstanceStep({ onServerChange }: { onServerChange: () => Promise<unknow
               <Button
                 className="mt-5"
                 disabled={!selected || requestQr.isPending}
-                onClick={() => selected && requestQr.mutate(selected)}
+                onClick={() => selected && startQrRequest(selected)}
               >
                 <RefreshCw className={`h-4 w-4 ${requestQr.isPending ? "animate-spin" : ""}`} />{" "}
-                {qr ? "Gerar novo QR Code" : "Gerar QR Code"}
+                {qr ? "Gerar novo QR Code" : "Avançar"}
               </Button>
             )}
           </Card>
@@ -636,6 +683,24 @@ function InstanceStep({ onServerChange }: { onServerChange: () => Promise<unknow
           </Card>
         </div>
       )}
+      <QrGenerationLoadingOverlay open={qrGenerationPending} />
+      <Modal
+        open={!!qr && selected?.status !== "connected"}
+        onClose={() => setQr(null)}
+        title={`QR Code - ${selected?.name ?? name.trim()}`}
+        size="sm"
+      >
+        <div className="text-center">
+          <img
+            src={qr ?? undefined}
+            alt={`QR Code - ${selected?.name ?? name.trim()}`}
+            className="mx-auto max-h-[70dvh] max-w-full rounded-lg border border-border bg-white p-3"
+          />
+          <p className="mt-3 text-sm text-muted-foreground">
+            Leia o QR Code e aguarde a confirmação efetiva da conexão.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -973,7 +1038,9 @@ function UsersStep({ onServerChange }: { onServerChange: () => Promise<unknown> 
             <Input
               type="email"
               value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, email: e.target.value.toLocaleLowerCase("en-US") })
+              }
             />
           </Field>
           <Field label="Senha *">

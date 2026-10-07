@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { TrixusApiError } from "@/lib/trixus-api";
 import { connectionRemoveErrorMessage } from "@/lib/connection-remove-errors";
 import {
@@ -23,6 +24,14 @@ function connection(overrides: Partial<ApiMessagingConnection>): ApiMessagingCon
 }
 
 describe("instancias removal UX", () => {
+  it("requires the exact confirmation and does not offer history deletion", () => {
+    const source = readFileSync(new URL("./instancias.tsx", import.meta.url), "utf8");
+    expect(source).toContain('confirmation !== "REMOVER"');
+    expect(source).toContain('Digite "REMOVER" para confirmar');
+    expect(source).not.toContain("removeConversationHistory");
+    expect(source).toContain("contatos serão preservados");
+  });
+
   it("shows a specific message for in-use connection conflicts", () => {
     expect(
       connectionRemoveErrorMessage(new TrixusApiError("Conflict", 409, "CONNECTION_IN_USE")),
@@ -70,5 +79,14 @@ describe("nomes de instâncias", () => {
   it("ignora a própria instância durante a edição", () => {
     const connections = [connection({ id: "a", name: "Comercial" })];
     expect(instanceNameAlreadyExists("Comercial", connections, "a")).toBe(false);
+  });
+});
+
+describe("controles temporariamente ocultos", () => {
+  it("mantém atendimento ativo e importação desabilitada na criação sem exibir os controles", () => {
+    const source = readFileSync(new URL("./instancias.tsx", import.meta.url), "utf8");
+    expect(source).toContain("const SHOW_INSTANCE_SERVICE_CONTROLS = false");
+    expect(source).toContain("serviceEnabled,");
+    expect(source).toContain("importHistoryEnabled: serviceEnabled && importHistory");
   });
 });

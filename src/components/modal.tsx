@@ -15,6 +15,7 @@ export function Modal({
   initialFocus,
   closeOnBackdrop = true,
   dismissible = true,
+  layerClassName = "z-[200]",
 }: {
   open: boolean;
   onClose: () => void;
@@ -27,6 +28,7 @@ export function Modal({
   initialFocus?: string;
   closeOnBackdrop?: boolean;
   dismissible?: boolean;
+  layerClassName?: string;
 }) {
   const dialogRef = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
@@ -82,7 +84,7 @@ export function Modal({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4">
+    <div className={`fixed inset-0 flex items-center justify-center p-2 sm:p-4 ${layerClassName}`}>
       <div
         data-modal-backdrop
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -133,6 +135,7 @@ export function ConfirmDialog({
   cancelLabel = "Cancelar",
   destructive,
   accent,
+  layerClassName,
   onConfirm,
   onClose,
 }: {
@@ -143,6 +146,7 @@ export function ConfirmDialog({
   cancelLabel?: string;
   destructive?: boolean;
   accent?: "destructive" | "primary";
+  layerClassName?: string;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -152,6 +156,7 @@ export function ConfirmDialog({
       onClose={onClose}
       title={title}
       size="sm"
+      layerClassName={layerClassName}
       initialFocus={
         destructive || /excluir|remover/i.test(confirmLabel) ? "[data-confirm-action]" : undefined
       }

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const entryPoints = [
   "src/routes/contatos.tsx",
   "src/routes/inbox.index.tsx",
+  "src/routes/inbox.$conversationId.tsx",
   "src/routes/-historico-page.tsx",
 ];
 

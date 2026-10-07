@@ -3,6 +3,7 @@ import {
   DEFAULT_DASHBOARD_COMPONENTS,
   dashboardColumnClass,
   dashboardGroupingOptions,
+  createDashboardComponent,
   duplicateDashboardComponent,
   parseDashboardPreferences,
   reorderDashboardComponents,
@@ -51,6 +52,10 @@ describe("dashboard component preferences", () => {
 
   it("preserves an intentionally empty version 2 dashboard", () => {
     expect(parseDashboardPreferences({ version: 2, components: [] })).toEqual([]);
+  });
+
+  it("starts a new component with an empty mandatory title", () => {
+    expect(createDashboardComponent("new-id")).toMatchObject({ id: "new-id", title: "" });
   });
 
   it("duplicates all settings with an independent id and title", () => {

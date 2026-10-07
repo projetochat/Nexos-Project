@@ -6,6 +6,7 @@ import {
   Cell,
   Line,
   LineChart,
+  LabelList,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -19,7 +20,11 @@ import type {
   DashboardValueMode,
   DashboardVisualization,
 } from "@/lib/dashboard-components";
-import { DASHBOARD_CHART_MARGIN, DASHBOARD_CHART_TEXT_COLOR } from "@/lib/dashboard-chart-layout";
+import {
+  DASHBOARD_CHART_MARGIN,
+  DASHBOARD_CHART_TEXT_COLOR,
+  formatDashboardAxisLabel,
+} from "@/lib/dashboard-chart-layout";
 import {
   dashboardPieLegendItems,
   dashboardPieLegendValue,
@@ -38,6 +43,8 @@ export function DashboardComponentRenderer({
   data,
   compact = false,
   preserveOrder = false,
+  showValues = false,
+  preserveAllItems = false,
 }: {
   title?: string;
   visualization: DashboardVisualization;
@@ -46,10 +53,20 @@ export function DashboardComponentRenderer({
   data: DashboardVisualDatum[];
   compact?: boolean;
   preserveOrder?: boolean;
+  showValues?: boolean;
+  preserveAllItems?: boolean;
 }) {
   const normalized = React.useMemo(
-    () => normalizeDashboardData(data, valueMode, columns, visualization, preserveOrder),
-    [columns, data, preserveOrder, valueMode, visualization],
+    () =>
+      normalizeDashboardData(
+        data,
+        valueMode,
+        columns,
+        visualization,
+        preserveOrder,
+        preserveAllItems,
+      ),
+    [columns, data, preserveAllItems, preserveOrder, valueMode, visualization],
   );
   const height = compact ? 200 : 270;
   const valueSuffix = valueMode === "percentage" ? "%" : "";
@@ -65,12 +82,12 @@ export function DashboardComponentRenderer({
         </div>
       ) : (
         <div
-          className="min-h-0 min-w-0 flex-1"
+          className={`min-w-0 flex-1 ${compact ? "min-h-[200px]" : "min-h-[270px]"}`}
           data-testid={`dashboard-preview-${visualization}`}
           aria-label={`Visualização ${visualization}`}
         >
           {visualization === "columns" && (
-            <ResponsiveContainer width="100%" height={height}>
+            <ResponsiveContainer width="100%" height="100%">
               <BarChart data={normalized} margin={DASHBOARD_CHART_MARGIN}>
                 <CartesianGrid stroke="var(--border)" vertical={false} />
                 <XAxis
@@ -82,6 +99,7 @@ export function DashboardComponentRenderer({
                   angle={normalized.length > 5 ? -30 : 0}
                   textAnchor={normalized.length > 5 ? "end" : "middle"}
                   height={normalized.length > 5 ? 64 : 30}
+                  tickFormatter={formatDashboardAxisLabel}
                 />
                 <YAxis
                   stroke="var(--muted-foreground)"
@@ -96,13 +114,22 @@ export function DashboardComponentRenderer({
                   {normalized.map((item, index) => (
                     <Cell key={`${item.nome}-${index}`} fill={item.cor} />
                   ))}
+                  {showValues && (
+                    <LabelList
+                      dataKey="valor"
+                      position="top"
+                      className="fill-foreground"
+                      fontSize={11}
+                      fontWeight={600}
+                    />
+                  )}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           )}
 
           {visualization === "bars" && (
-            <ResponsiveContainer width="100%" height={height}>
+            <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={normalized}
                 layout="vertical"
@@ -124,6 +151,7 @@ export function DashboardComponentRenderer({
                   tick={{ fill: DASHBOARD_CHART_TEXT_COLOR }}
                   fontSize={10}
                   width={92}
+                  tickFormatter={formatDashboardAxisLabel}
                 />
                 <Tooltip content={<DashboardValueTooltip suffix={valueSuffix} />} />
                 <Bar dataKey="valor" radius={[0, 6, 6, 0]}>

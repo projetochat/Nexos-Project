@@ -4,6 +4,14 @@ import {
   dashboardPieLegendValue,
   normalizeDashboardData,
 } from "@/lib/dashboard-visual-data";
+import { formatDashboardAxisLabel } from "@/lib/dashboard-chart-layout";
+
+describe("formatDashboardAxisLabel", () => {
+  it("preserves the beginning and truncates only the end", () => {
+    expect(formatDashboardAxisLabel("GV/ROBRACON CBA 2/52", 18)).toBe("GV/ROBRACON CBA...");
+    expect(formatDashboardAxisLabel("Interno", 18)).toBe("Interno");
+  });
+});
 
 describe("normalizeDashboardData", () => {
   it("preserves the source order for line charts", () => {

@@ -9,8 +9,10 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
+import { IsOptional, IsUUID } from "class-validator";
 import { CurrentUser } from "../auth/current-user.decorator";
 import type { AuthenticatedUser } from "../auth/auth.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -24,6 +26,12 @@ import { AssignDepartmentMemberDto } from "./dto/assign-department-member.dto";
 import { CreateDepartmentDto } from "./dto/create-department.dto";
 import { UpdateDepartmentDto } from "./dto/update-department.dto";
 
+class ListDepartmentsQueryDto {
+  @IsOptional()
+  @IsUUID()
+  connectionId?: string;
+}
+
 @Controller("departments")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class DepartmentsController {
@@ -34,9 +42,26 @@ export class DepartmentsController {
 
   @Get()
   @RequirePermissions("departments.read")
-  async list(@CurrentUser() current: AuthenticatedUser) {
+  async list(
+    @CurrentUser() current: AuthenticatedUser,
+    @Query() query: ListDepartmentsQueryDto = {},
+  ) {
     const departments = await this.prisma.department.findMany({
-      where: { tenantId: current.tenantId, active: true },
+      where: {
+        tenantId: current.tenantId,
+        active: true,
+        ...(query.connectionId
+          ? {
+              connections: {
+                some: {
+                  tenantId: current.tenantId,
+                  connectionId: query.connectionId,
+                  connection: { providerType: "EVOLUTION", archivedAt: null },
+                },
+              },
+            }
+          : {}),
+      },
       orderBy: { name: "asc" },
       include: {
         connections: {

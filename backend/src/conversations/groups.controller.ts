@@ -1,12 +1,8 @@
 import {
-  connectionIdAccess,
-  conversationChatScopeAccess,
-  departmentIdAccess,
-} from "../auth/connection-access";
-import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Inject,
   Logger,
@@ -162,10 +158,7 @@ function groupListWhere(query: ListGroupsQueryDto, current: AuthenticatedUser) {
   const q = query.q?.trim();
   const qDigits = q?.replace(/\D/g, "") ?? "";
   const filterWithoutConnection = query.connectionId === EMPTY_GROUP_FILTER_VALUE;
-  const filters: Prisma.ConversationWhereInput[] = [
-    visibleGroupConnectionWhere,
-    conversationChatScopeAccess(current),
-  ];
+  const filters: Prisma.ConversationWhereInput[] = [visibleGroupConnectionWhere];
   if (q) {
     filters.push({
       OR: [
@@ -272,7 +265,6 @@ export class GroupsController {
         status: {
           in: [MessagingConnectionStatus.CONNECTED, MessagingConnectionStatus.DISCONNECTED],
         },
-        ...connectionIdAccess(current),
       },
       orderBy: { name: "asc" },
       select: {
@@ -296,7 +288,7 @@ export class GroupsController {
   async detail(@Param("id") id: string, @CurrentUser() current: AuthenticatedUser) {
     const group = await this.prisma.conversation.findFirst({
       where: {
-        AND: [visibleGroupConnectionWhere, conversationChatScopeAccess(current)],
+        AND: [visibleGroupConnectionWhere],
         id,
         tenantId: current.tenantId,
         archivedAt: null,
@@ -314,8 +306,6 @@ export class GroupsController {
     if (dto.participantContactIds.length < 1) {
       throw new BadRequestException("Selecione ao menos um participante.");
     }
-    if (current.roleKey !== "tenant_admin" && !current.connectionIds?.includes(dto.connectionId))
-      throw new BadRequestException("Instância não permitida pelo perfil.");
     const connection = await this.prisma.messagingConnection.findFirst({
       where: {
         id: dto.connectionId,
@@ -328,7 +318,7 @@ export class GroupsController {
     if (!connection?.externalReference) {
       throw new BadRequestException("Selecione uma instância WhatsApp conectada.");
     }
-    const departmentId = await this.resolveGroupDepartmentId(connection.id, current);
+    const departmentId = await this.resolveGroupDepartmentId(connection.id, current.tenantId);
 
     const contacts = await this.prisma.contact.findMany({
       where: {
@@ -451,6 +441,47 @@ export class GroupsController {
         });
       }
 
+      const ownerExternalId = connection.ownerExternalId?.trim() || null;
+      const ownerPhone = onlyDigits(connection.ownerPhoneNormalized ?? "") || null;
+      if (ownerExternalId || ownerPhone) {
+        const existingOwner = await tx.conversationParticipant.findFirst({
+          where: {
+            tenantId: current.tenantId,
+            conversationId: conversation.id,
+            OR: [
+              ...(ownerExternalId
+                ? [{ externalParticipantId: ownerExternalId }, { lid: ownerExternalId }]
+                : []),
+              ...(ownerPhone ? [{ phone: ownerPhone }, { externalParticipantId: ownerPhone }] : []),
+            ],
+          },
+        });
+        const ownerData = {
+          externalParticipantId: ownerExternalId ?? ownerPhone!,
+          phone: ownerPhone,
+          lid: ownerExternalId?.toLowerCase().includes("@lid") ? ownerExternalId : null,
+          displayName: connection.name,
+          isAdmin: true,
+          isSuperAdmin: true,
+          active: true,
+          lastSeenAt: new Date(),
+        };
+        if (existingOwner) {
+          await tx.conversationParticipant.update({
+            where: { id: existingOwner.id },
+            data: ownerData,
+          });
+        } else {
+          await tx.conversationParticipant.create({
+            data: {
+              tenantId: current.tenantId,
+              conversationId: conversation.id,
+              ...ownerData,
+            },
+          });
+        }
+      }
+
       return tx.conversation.findUniqueOrThrow({
         where: { tenantId_id: { tenantId: current.tenantId, id: conversation.id } },
         include: groupInclude,
@@ -544,6 +575,7 @@ export class GroupsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const group = await this.resolveManagedGroup(id, current);
+    assertCanManageGroupParticipants(group);
     if (dto.action === "add") {
       const contactIds = [...new Set(dto.participantContactIds ?? [])];
       if (!contactIds.length) throw new BadRequestException("Selecione ao menos um contato.");
@@ -624,6 +656,7 @@ export class GroupsController {
     @CurrentUser() current: AuthenticatedUser,
   ) {
     const group = await this.resolveManagedGroup(id, current);
+    assertCanManageGroupParticipants(group);
     const participantIds = [...new Set(dto.participantIds)];
     if (!participantIds.length) {
       throw new BadRequestException("Selecione ao menos um participante.");
@@ -664,33 +697,13 @@ export class GroupsController {
   @Post("sync")
   @RequirePermissions("groups.update")
   async sync(@Body() dto: SyncGroupsDto | undefined, @CurrentUser() current: AuthenticatedUser) {
-    if (current.roleKey === "tenant_admin")
-      return this.groupsSync.sync({ tenantId: current.tenantId, connectionId: dto?.connectionId });
-    const ids = current.connectionIds ?? [];
-    if (dto?.connectionId && !ids.includes(dto.connectionId))
-      throw new BadRequestException("Instância não permitida pelo perfil.");
-    const results = await Promise.all(
-      (dto?.connectionId ? [dto.connectionId] : ids).map((connectionId) =>
-        this.groupsSync.sync({
-          tenantId: current.tenantId,
-          connectionId,
-          departmentIds: current.chatDepartmentIds ?? [],
-        }),
-      ),
-    );
-    return results.reduce(
-      (total, result) => ({
-        synced: total.synced + result.synced,
-        participants: total.participants + result.participants,
-      }),
-      { synced: 0, participants: 0 },
-    );
+    return this.groupsSync.sync({ tenantId: current.tenantId, connectionId: dto?.connectionId });
   }
 
   private async resolveManagedGroup(id: string, current: AuthenticatedUser) {
     const group = await this.prisma.conversation.findFirst({
       where: {
-        AND: [visibleGroupConnectionWhere, conversationChatScopeAccess(current)],
+        AND: [visibleGroupConnectionWhere],
         id,
         tenantId: current.tenantId,
         archivedAt: null,
@@ -708,29 +721,11 @@ export class GroupsController {
     return group;
   }
 
-  private async resolveGroupDepartmentId(connectionId: string, current: AuthenticatedUser) {
-    const scope = current.chatScopes?.find((item) => item.connectionId === connectionId);
-    const preferredDepartmentId = scope?.favoriteDepartmentId ?? null;
-    if (preferredDepartmentId) {
-      const preferred = await this.prisma.department.findFirst({
-        where: {
-          AND: [{ id: preferredDepartmentId }, departmentIdAccess(current)],
-          tenantId: current.tenantId,
-          active: true,
-          connections: { some: { connectionId } },
-        },
-        select: { id: true },
-      });
-      if (preferred) return preferred.id;
-      throw new BadRequestException(
-        "O departamento principal não está disponível para este perfil no Chat.",
-      );
-    }
+  private async resolveGroupDepartmentId(connectionId: string, tenantId: string) {
     const department = await this.prisma.department.findFirst({
       where: {
-        tenantId: current.tenantId,
+        tenantId,
         active: true,
-        ...departmentIdAccess(current),
         connections: { some: { connectionId } },
       },
       orderBy: { createdAt: "asc" },
@@ -745,7 +740,7 @@ export class GroupsController {
   private async reloadGroup(id: string, current: AuthenticatedUser) {
     const group = await this.prisma.conversation.findFirst({
       where: {
-        AND: [visibleGroupConnectionWhere, conversationChatScopeAccess(current)],
+        AND: [visibleGroupConnectionWhere],
         id,
         tenantId: current.tenantId,
         archivedAt: null,
@@ -761,6 +756,7 @@ export class GroupsController {
 function serializeGroup(group: GroupConversation) {
   const name = group.groupName || group.contact.name || "Grupo WhatsApp";
   const activeParticipants = group.participants.filter((participant) => participant.active);
+  const canManageParticipants = groupCanManageParticipants(group);
   return {
     id: group.id,
     tenantId: group.tenantId,
@@ -772,6 +768,7 @@ function serializeGroup(group: GroupConversation) {
     createdAt: groupCreatedAt(group),
     updatedAt: group.updatedAt,
     participantsCount: activeParticipants.length,
+    canManageParticipants,
     connection: group.connection
       ? {
           id: group.connection.id,
@@ -788,12 +785,50 @@ function serializeGroup(group: GroupConversation) {
       externalParticipantId: participant.externalParticipantId,
       isAdmin: participant.isAdmin,
       isSuperAdmin: participant.isSuperAdmin,
+      isCurrentInstance: participantMatchesConnection(participant, group.connection),
       active: participant.active,
       lastSeenAt: participant.lastSeenAt,
     })),
     lastMessagePreview: group.lastMessagePreview,
     lastMessageAt: group.lastMessageAt,
   };
+}
+
+function assertCanManageGroupParticipants(group: GroupConversation) {
+  if (groupCanManageParticipants(group)) return;
+  throw new ForbiddenException(
+    "A instância conectada não possui privilégio para gerenciar participantes deste grupo.",
+  );
+}
+
+function groupCanManageParticipants(group: GroupConversation) {
+  return group.participants.some(
+    (participant) =>
+      participant.active &&
+      participantMatchesConnection(participant, group.connection) &&
+      (participant.isAdmin || participant.isSuperAdmin),
+  );
+}
+
+function participantMatchesConnection(
+  participant: GroupConversation["participants"][number],
+  connection: GroupConversation["connection"],
+) {
+  if (!connection) return false;
+  const ownerExternalId = connection.ownerExternalId?.trim().toLowerCase();
+  const participantIds = [participant.externalParticipantId, participant.lid]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.trim().toLowerCase());
+  if (ownerExternalId && participantIds.includes(ownerExternalId)) return true;
+  const ownerPhone = onlyDigits(connection.ownerPhoneNormalized ?? "");
+  if (!ownerPhone) return false;
+  const participantPhone = onlyDigits(
+    participant.phone ??
+      (participant.externalParticipantId.toLowerCase().includes("@lid")
+        ? ""
+        : participant.externalParticipantId),
+  );
+  return participantPhone === ownerPhone;
 }
 
 function serializeGroupSummary(group: GroupConversationSummary) {

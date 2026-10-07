@@ -74,6 +74,7 @@ export const TENANT_ADMIN_PERMISSIONS = [
   "settings.manage",
   "chat.agent_name.show",
   "chat.conversations.view_all_active",
+  "chat.bulk_actions.execute",
 ] as const;
 
 export function effectiveSessionPermissions(

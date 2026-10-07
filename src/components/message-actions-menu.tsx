@@ -88,6 +88,8 @@ export function MessageActionsMenu({
   };
   const itemClass =
     "flex min-h-10 w-full items-center gap-3 rounded px-3 py-2 text-left text-sm hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40 disabled:cursor-not-allowed";
+  const copyItemClass =
+    "flex min-h-10 w-full items-center gap-3 rounded border border-border px-3 py-2 text-left text-sm text-muted-foreground transition hover:border-primary hover:bg-primary hover:text-primary-foreground focus-visible:border-primary focus-visible:bg-primary focus-visible:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40";
   const mediaReady =
     !!message.media_data && (!message.media_data.state || message.media_data.state === "ready");
   const canCopyToClipboard =
@@ -115,7 +117,9 @@ export function MessageActionsMenu({
           <PopoverContent
             align="end"
             side="bottom"
-            className="z-[250] w-64 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto p-1"
+            sideOffset={4}
+            collisionPadding={8}
+            className="z-[260] w-52 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto p-1"
             aria-label="Ações da mensagem"
           >
             <button
@@ -130,7 +134,7 @@ export function MessageActionsMenu({
               Responder
             </button>
             <button
-              className={itemClass}
+              className={copyItemClass}
               disabled={busy || !canCopyToClipboard}
               onClick={() =>
                 void run(async () => {
@@ -255,8 +259,19 @@ export function MessageActionsMenu({
           </PopoverContent>
         </Popover>
       </div>
-      {forward && <MessageForwardDialog message={message} onClose={() => setForward(false)} />}
-      <Modal open={info} onClose={() => setInfo(false)} title="Informações da mensagem">
+      {forward && (
+        <MessageForwardDialog
+          message={message}
+          onClose={() => setForward(false)}
+          layerClassName="z-[270]"
+        />
+      )}
+      <Modal
+        open={info}
+        onClose={() => setInfo(false)}
+        title="Informações da mensagem"
+        layerClassName="z-[270]"
+      >
         <dl className="space-y-3 text-sm">
           {[
             ["Criada", message.created_at],
@@ -274,6 +289,7 @@ export function MessageActionsMenu({
       </Modal>
       <ConfirmDialog
         open={resend}
+        layerClassName="z-[270]"
         onClose={() => {
           if (!running.current) {
             setResend(false);
@@ -302,7 +318,12 @@ export function MessageActionsMenu({
           })
         }
       />
-      <Modal open={edit} onClose={() => !busy && setEdit(false)} title="Editar mensagem">
+      <Modal
+        open={edit}
+        onClose={() => !busy && setEdit(false)}
+        title="Editar mensagem"
+        layerClassName="z-[270]"
+      >
         <form
           className="space-y-3"
           onSubmit={(event) => {
@@ -346,6 +367,7 @@ export function MessageActionsMenu({
       </Modal>
       <ConfirmDialog
         open={remove}
+        layerClassName="z-[270]"
         onClose={() => !busy && setRemove(false)}
         title="Apagar Mensagem"
         description="Deseja realmente apagar a mensagem?"

@@ -162,11 +162,12 @@ export class MessagingConnectionsController {
   @RequirePermissions("connections.delete")
   remove(
     @Param("id") id: string,
-    @Body() dto: { removeConversationHistory?: boolean } | undefined,
+    @Body() dto: { confirmation?: string } | undefined,
     @CurrentUser() current: AuthenticatedUser,
   ) {
-    return this.connections.remove(id, current, {
-      removeConversationHistory: dto?.removeConversationHistory === true,
-    });
+    if (dto?.confirmation !== "REMOVER") {
+      throw new BadRequestException('Digite "REMOVER" para confirmar.');
+    }
+    return this.connections.remove(id, current);
   }
 }

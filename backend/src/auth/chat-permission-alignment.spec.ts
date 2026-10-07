@@ -26,7 +26,9 @@ describe("chat permission alignment", () => {
       {} as never,
     );
     expect(metadata(controller, "create", PERMISSIONS_KEY)).toEqual(["messages.send"]);
-    expect(metadata(controller, "bulkClose", PERMISSIONS_KEY)).toEqual(["messages.send"]);
+    expect(metadata(controller, "bulkClose", PERMISSIONS_KEY)).toEqual([
+      "chat.bulk_actions.execute",
+    ]);
     expect(metadata(controller, "transferDepartment", PERMISSIONS_KEY)).toEqual([
       "conversations.assign",
     ]);

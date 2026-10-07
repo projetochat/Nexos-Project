@@ -130,6 +130,11 @@ const PERMISSION_GROUPS: Array<{
         label: "Ver todas as conversas",
         description: "Permite visualizar conversas de outros atendentes.",
       },
+      {
+        id: "chat.bulk_actions.execute",
+        label: "Executa ações em massa",
+        description: "Permite executar ações que afetam várias conversas.",
+      },
     ],
   },
   {

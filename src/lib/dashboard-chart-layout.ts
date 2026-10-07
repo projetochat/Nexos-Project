@@ -27,3 +27,9 @@ export function messageTrafficSummary(
     { recebidas: 0, enviadas: 0, total: 0, contatos: contactsTotal },
   );
 }
+
+export function formatDashboardAxisLabel(value: unknown, maxLength = 18) {
+  const label = String(value ?? "");
+  if (label.length <= maxLength) return label;
+  return `${label.slice(0, Math.max(1, maxLength - 3)).trimEnd()}...`;
+}

@@ -1,11 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import { createOnboardingConnectionWithQr } from "@/components/tenant-onboarding-boundary";
 
 import {
   ONBOARDING_INSTANCE_IDEMPOTENCY_KEY,
   canAdvanceOnboardingStep,
   isOnboardingInstanceNotFound,
 } from "@/lib/onboarding";
-import { TrixusApiError, type ApiTenantOnboardingStatus } from "@/lib/trixus-api";
+import {
+  TrixusApiError,
+  apiErrorMessageWithRequestId,
+  type ApiTenantOnboardingStatus,
+} from "@/lib/trixus-api";
 
 function status(
   checklist: Partial<ApiTenantOnboardingStatus["checklist"]> = {},
@@ -30,6 +36,38 @@ function status(
 }
 
 describe("onboarding step requirements", () => {
+  it("uses the QR returned by the initial Evolution creation", async () => {
+    const api = {
+      createEvolution: vi.fn().mockResolvedValue({
+        id: "connection-a",
+        status: "connecting",
+        qrCodeBase64: "initial-qr",
+      }),
+      qr: vi.fn(),
+    };
+
+    await expect(createOnboardingConnectionWithQr("Suporte", api as never)).resolves.toMatchObject({
+      qrCodeBase64: "initial-qr",
+    });
+    expect(api.qr).not.toHaveBeenCalled();
+  });
+
+  it("requests a QR after persistence when the initial response has none", async () => {
+    const api = {
+      createEvolution: vi.fn().mockResolvedValue({
+        id: "connection-a",
+        status: "connecting",
+        qrCodeBase64: null,
+      }),
+      qr: vi.fn().mockResolvedValue({ qrCodeBase64: "requested-qr" }),
+    };
+
+    await expect(createOnboardingConnectionWithQr("Suporte", api as never)).resolves.toMatchObject({
+      qrCodeBase64: "requested-qr",
+    });
+    expect(api.qr).toHaveBeenCalledWith("connection-a");
+  });
+
   it("requires server-confirmed records in mandatory steps", () => {
     expect(canAdvanceOnboardingStep(2, status())).toBe(false);
     expect(canAdvanceOnboardingStep(2, status({ instanceConnected: true }))).toBe(true);
@@ -52,5 +90,19 @@ describe("onboarding step requirements", () => {
     expect(isOnboardingInstanceNotFound(new Error("INSTANCE_NOT_FOUND: ausente"))).toBe(true);
     expect(isOnboardingInstanceNotFound(new Error("timeout"))).toBe(false);
     expect(ONBOARDING_INSTANCE_IDEMPOTENCY_KEY).toBe("onboarding-instance");
+  });
+
+  it("shows a request id without exposing internal error details", () => {
+    expect(
+      apiErrorMessageWithRequestId(
+        new TrixusApiError(
+          "Não foi possível concluir a ação agora. Tente novamente em alguns instantes.",
+          500,
+          "INTERNAL_ERROR",
+          undefined,
+          "request-onboarding-qr",
+        ),
+      ),
+    ).toContain("requestId: request-onboarding-qr");
   });
 });

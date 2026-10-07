@@ -45,6 +45,7 @@ export const PERMISSIONS = [
   "chat.quick_replies.delete",
   "chat.agent_name.show",
   "chat.conversations.view_all_active",
+  "chat.bulk_actions.execute",
   "automations.read",
   "automations.create",
   "automations.update",
@@ -96,6 +97,7 @@ export const AGENT_PERMISSIONS: PermissionKey[] = [
   "conversations.assign",
   "chat.phone.read",
   "chat.conversations.view_all_active",
+  "chat.bulk_actions.execute",
   "history.read",
 ];
 

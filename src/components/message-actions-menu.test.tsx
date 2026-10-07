@@ -50,6 +50,8 @@ it("opens message actions, handles reply/copy/reaction/download and restricts un
     const button = (label: string) =>
       [...document.querySelectorAll("button")].find((item) => item.textContent === label)!;
     await open();
+    const actionSurfaces = document.querySelectorAll('[aria-label="Ações da mensagem"]');
+    expect(actionSurfaces.item(actionSurfaces.length - 1).className).toContain("w-52");
     expect(button("Editar").disabled).toBe(true);
     expect(button("Apagar").disabled).toBe(true);
     expect(button("Reenviar").disabled).toBe(true);

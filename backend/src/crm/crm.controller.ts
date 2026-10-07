@@ -32,7 +32,7 @@ import {
   projectContactAdditionalFields,
 } from "../auth/contact-additional-fields-access";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RequirePermissions } from "../auth/permissions.decorator";
+import { RequireAnyPermission, RequirePermissions } from "../auth/permissions.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import {
   ContactCompanyRole,
@@ -383,6 +383,48 @@ export class CrmController {
   ) {
     const { page, pageSize, skip } = pagination(query);
     const where = await this.buildContactListWhere(query, current.tenantId);
+    const orderBy = contactListOrderBy(query.sortBy);
+
+    if (query.sortBy === "instance") {
+      const [orderRows, total, connections] = await this.prisma.$transaction([
+        this.prisma.contact.findMany({
+          where,
+          select: { id: true, name: true, instance: true, instanceIds: true, createdAt: true },
+        }),
+        this.prisma.contact.count({ where }),
+        this.prisma.messagingConnection.findMany({
+          where: { tenantId: current.tenantId, archivedAt: null },
+          select: { id: true, name: true, externalReference: true },
+        }),
+      ]);
+      const pageIds = orderContactIdsByInstance(orderRows, connections).slice(
+        skip,
+        skip + pageSize,
+      );
+      const unorderedItems = pageIds.length
+        ? await this.prisma.contact.findMany({
+            where: { AND: [where, { id: { in: pageIds } }] },
+            include: contactInclude,
+          })
+        : [];
+      const byId = new Map(unorderedItems.map((contact) => [contact.id, contact]));
+      const items = pageIds.flatMap((id) => {
+        const contact = byId.get(id);
+        return contact ? [contact] : [];
+      });
+
+      this.profilePictures.enqueueMissing({ tenantId: current.tenantId, contacts: items });
+      return paginated(
+        items.map((contact) =>
+          this.serializeContact(contact, {
+            additionalFieldsViewer: current,
+          }),
+        ),
+        total,
+        page,
+        pageSize,
+      );
+    }
 
     if (query.priorityInstance?.trim()) {
       const priorityKeys = await this.resolveInstanceFilterKeys(
@@ -407,14 +449,14 @@ export class CrmController {
       const [priorityItems, regularItems] = await this.prisma.$transaction([
         this.prisma.contact.findMany({
           where: priorityWhere,
-          orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+          orderBy,
           skip: prioritySkip,
           take: priorityTake,
           include: contactInclude,
         }),
         this.prisma.contact.findMany({
           where: regularWhere,
-          orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+          orderBy,
           skip: regularSkip,
           take: regularTake,
           include: contactInclude,
@@ -442,7 +484,7 @@ export class CrmController {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.contact.findMany({
         where,
-        orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+        orderBy,
         skip,
         take: pageSize,
         include: contactInclude,
@@ -470,7 +512,7 @@ export class CrmController {
   // Keep this endpoint outside `/contacts/:id`: some router builds resolve dynamic
   // contact routes before nested static paths, treating "picker" as a contact id.
   @Get("group-contact-picker")
-  @RequirePermissions("contacts.read")
+  @RequireAnyPermission("contacts.read", "groups.create", "groups.update")
   async listContactsForGroupPicker(
     @Query() query: PaginationDto,
     @CurrentUser() current: AuthenticatedUser,
@@ -2297,7 +2339,7 @@ function parseContactCustomFieldType(value: string) {
   throw new BadRequestException("Tipo de campo inválido.");
 }
 
-function normalizeContactCustomFieldValue(
+export function normalizeContactCustomFieldValue(
   field: { type: ContactCustomFieldType; mask: string | null },
   raw: string | number | boolean | null | undefined,
 ) {
@@ -2309,8 +2351,21 @@ function normalizeContactCustomFieldValue(
   if (field.type === ContactCustomFieldType.TEXT && isHtmlContactCustomField(field.mask)) {
     return sanitizeContactCustomFieldHtml(value);
   }
+  if (field.type === ContactCustomFieldType.TEXT && isEmailContactCustomField(field.mask)) {
+    return value.toLowerCase();
+  }
   if (!value || field.type !== ContactCustomFieldType.DATE) return value;
   return parseContactCustomDateValue(value, field.mask) ?? value;
+}
+
+function isEmailContactCustomField(mask: string | null) {
+  if (!mask?.trim().startsWith("{")) return false;
+  try {
+    const parsed = JSON.parse(mask) as { custom?: { format?: string } };
+    return parsed.custom?.format === "email";
+  } catch {
+    return false;
+  }
 }
 
 function validContactListValue(field: { mask: string | null; options: string[] }, value: string) {
@@ -2388,6 +2443,60 @@ function pagination(query: PaginationDto) {
     throw new BadRequestException("Tamanho de página inválido.");
   }
   return { page, pageSize, skip: (page - 1) * pageSize };
+}
+
+export function contactListOrderBy(
+  sortBy: ListContactsQueryDto["sortBy"],
+): Prisma.ContactOrderByWithRelationInput[] {
+  if (sortBy === "customer") {
+    return [{ customer: { name: "asc" } }, { name: "asc" }, { createdAt: "desc" }];
+  }
+  return [{ name: "asc" }, { createdAt: "desc" }];
+}
+
+export function orderContactIdsByInstance(
+  contacts: Array<{
+    id: string;
+    name: string;
+    instance: string | null;
+    instanceIds: string[];
+    createdAt: Date;
+  }>,
+  connections: Array<{ id: string; name: string; externalReference: string | null }>,
+) {
+  const labels = new Map<string, string>();
+  for (const connection of connections) {
+    labels.set(connection.id, connection.name);
+    labels.set(connection.name, connection.name);
+    if (connection.externalReference) labels.set(connection.externalReference, connection.name);
+  }
+  const instanceLabel = (contact: (typeof contacts)[number]) => {
+    const candidates = [...contact.instanceIds, contact.instance].filter((value): value is string =>
+      Boolean(value),
+    );
+    return candidates
+      .map((candidate) => labels.get(candidate) ?? candidate)
+      .sort((left, right) =>
+        left.localeCompare(right, "pt-BR", { sensitivity: "base", numeric: true }),
+      )[0];
+  };
+  return [...contacts]
+    .sort((left, right) => {
+      const leftInstance = instanceLabel(left);
+      const rightInstance = instanceLabel(right);
+      if (!leftInstance && rightInstance) return 1;
+      if (leftInstance && !rightInstance) return -1;
+      const instanceOrder = (leftInstance ?? "").localeCompare(rightInstance ?? "", "pt-BR", {
+        sensitivity: "base",
+        numeric: true,
+      });
+      return (
+        instanceOrder ||
+        left.name.localeCompare(right.name, "pt-BR", { sensitivity: "base", numeric: true }) ||
+        right.createdAt.getTime() - left.createdAt.getTime()
+      );
+    })
+    .map((contact) => contact.id);
 }
 
 function paginated<T>(items: T[], total: number, page: number, pageSize: number) {

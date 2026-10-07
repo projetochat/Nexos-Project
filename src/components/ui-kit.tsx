@@ -4,7 +4,7 @@ import {
   shouldFillTodayFromShortcut,
   todayValueForInput,
 } from "@/lib/date-shortcuts";
-import { ChevronDown, Search, X } from "lucide-react";
+import { CalendarDays, ChevronDown, Search, X } from "lucide-react";
 
 /* ============================================================
    Trixus · UI Kit
@@ -202,28 +202,53 @@ export function Badge({
 
 export const Input = React.forwardRef<
   HTMLInputElement,
-  React.InputHTMLAttributes<HTMLInputElement>
->(({ className = "", type, onKeyDown, ...rest }, ref) => (
-  <input
-    ref={ref}
-    type={type}
-    className={`min-h-10 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${className}`}
-    onKeyDown={(event) => {
-      if (
-        (type === "date" || type === "datetime-local") &&
-        shouldFillTodayFromShortcut(event.nativeEvent)
-      ) {
-        event.preventDefault();
-        setNativeInputValue(
-          event.currentTarget,
-          todayValueForInput(type, event.currentTarget.value),
-        );
-      }
-      onKeyDown?.(event);
-    }}
-    {...rest}
-  />
-));
+  React.InputHTMLAttributes<HTMLInputElement> & { "data-date-input"?: string }
+>(({ className = "", type, onKeyDown, ...rest }, ref) => {
+  const isNativeDate = type === "date" || type === "datetime-local";
+  const showsCalendar = isNativeDate || Boolean(rest["data-date-input"]);
+  const input = (
+    <input
+      ref={ref}
+      type={type}
+      className={`min-h-10 w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary ${
+        showsCalendar
+          ? `pr-10 ${
+              isNativeDate
+                ? "[&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-2 [&::-webkit-calendar-picker-indicator]:h-7 [&::-webkit-calendar-picker-indicator]:w-7 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
+                : ""
+            }`
+          : ""
+      } ${className}`}
+      onKeyDown={(event) => {
+        if (
+          (type === "date" || type === "datetime-local") &&
+          shouldFillTodayFromShortcut(event.nativeEvent)
+        ) {
+          event.preventDefault();
+          setNativeInputValue(
+            event.currentTarget,
+            todayValueForInput(type, event.currentTarget.value),
+          );
+        }
+        onKeyDown?.(event);
+      }}
+      {...rest}
+    />
+  );
+
+  if (!showsCalendar) return input;
+
+  return (
+    <span className="relative block min-w-0 w-full">
+      {input}
+      <CalendarDays
+        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+        strokeWidth={2}
+        aria-hidden="true"
+      />
+    </span>
+  );
+});
 
 Input.displayName = "Input";
 
