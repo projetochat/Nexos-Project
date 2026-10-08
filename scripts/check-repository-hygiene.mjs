@@ -14,7 +14,7 @@ const allowedEnvironmentExamples = new Set([
 const allowedSqlRoots = ["backend/prisma/migrations/", "supabase/migrations/"];
 // Reviewed fixtures/examples with intentional dummy credentials. Any content change invalidates the exception.
 const credentialFixtureHashes = new Map([
-  [".env.example", "c0aa41d46e752e5e570f4a6f8049d3a31746806904816fb0f890f26ba9f2be7d"],
+  [".env.example", "4911056da6048a7e8881813e210a4c6173f64c599d7ac5116d2a66e5654866b9"],
   [".env.vps.example", "bc4bb151f98a01a6c5574ea79889613676fc18dae96b03a743d5bbedfdce2e91"],
   ["backend/.env.example", "3d7526619357ed0b31a311ff43ebbc39230d8818fdafcb63f50735626162781a"],
   [
@@ -203,7 +203,8 @@ function containsUndocumentedCredential(text, pattern) {
 function matchesKnownCredentialFixture(filePath, content) {
   const expectedHash = credentialFixtureHashes.get(filePath);
   if (!expectedHash) return false;
-  return createHash("sha256").update(content).digest("hex") === expectedHash;
+  const normalizedContent = content.toString("utf8").replaceAll("\r\n", "\n");
+  return createHash("sha256").update(normalizedContent).digest("hex") === expectedHash;
 }
 
 const modeArgument = process.argv[2] ?? "--staged";
