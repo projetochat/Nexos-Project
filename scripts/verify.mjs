@@ -26,7 +26,7 @@ const env = {
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? "local-refresh-secret-minimum-32-chars",
   TRIXUS_PLATFORM_ADMIN_EMAIL: process.env.TRIXUS_PLATFORM_ADMIN_EMAIL ?? "platform@trixus.app",
   TRIXUS_PLATFORM_ADMIN_PASSWORD: process.env.TRIXUS_PLATFORM_ADMIN_PASSWORD ?? "demo1234",
-  SEED_MODE: "test",
+  TRIXUS_ENVIRONMENT: "staging",
 };
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -70,12 +70,12 @@ const gates = bunAvailable
       [
         "backend:test-db:seed",
         bun(),
-        ["run", "--cwd", "backend", "prisma:seed"],
+        ["run", "--cwd", "backend", "prisma:seed:test-fixtures"],
         {
           env: {
             ...env,
             DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL,
-            SEED_MODE: "demo",
+            TRIXUS_TEST_FIXTURE_MODE: "demo",
           },
         },
       ],
@@ -164,12 +164,12 @@ const gates = bunAvailable
       [
         "backend:test-db:seed",
         process.execPath,
-        ["backend/node_modules/tsx/dist/cli.mjs", "backend/prisma/seed.ts"],
+        ["backend/node_modules/tsx/dist/cli.mjs", "backend/prisma/test-fixtures.ts"],
         {
           env: {
             ...env,
             DATABASE_URL: env.TRIXUS_TEST_DATABASE_URL,
-            SEED_MODE: "demo",
+            TRIXUS_TEST_FIXTURE_MODE: "demo",
           },
         },
       ],

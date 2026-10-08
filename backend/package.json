@@ -12,6 +12,7 @@
     "prisma:migrate:deploy": "bun scripts/migrate-deploy-safe.mjs",
     "prisma:migrate:status": "prisma migrate status --schema prisma/schema.prisma",
     "prisma:seed": "bun prisma/seed.ts",
+    "prisma:seed:test-fixtures": "bun prisma/test-fixtures.ts",
     "audit:homologation": "node scripts/audit-homologation-data.mjs",
     "cleanup:homologation": "node scripts/cleanup-homologation-data.mjs",
     "cleanup:operations": "node scripts/cleanup-operational-residue.mjs",

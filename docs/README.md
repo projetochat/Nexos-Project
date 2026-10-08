@@ -200,10 +200,13 @@ Scripts adicionais:
 | `bun run backend:test`                          | Executa testes e2e da API             |
 | `bun run backend:prisma:generate`               | Gera Prisma Client                    |
 | `bun run backend:prisma:migrate -- --name init` | Aplica migrations locais              |
-| `bun run backend:prisma:seed`                   | Popula seed minimo de homologacao     |
+| `bun run backend:prisma:seed`                   | Garante somente o Platform Admin      |
 | `bun run test:security`                         | Valida sanitizacao XSS do editor rico |
 
-Credenciais locais do seed minimo:
+Politica atual de seed: [`SEED_POLICY.md`](SEED_POLICY.md). Os registros de Sprint abaixo sao
+historicos e foram substituidos pela D-011 em 08/10/2026.
+
+Credenciais locais do antigo seed minimo:
 
 Sprint 08.01: dados demo completos sao opt-in. Use `SEED_DEMO_DATA=true` antes de `bun run backend:prisma:seed` quando precisar de CRM/conversas demo locais.
 

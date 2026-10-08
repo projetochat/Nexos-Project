@@ -14,9 +14,13 @@ const allowedEnvironmentExamples = new Set([
 const allowedSqlRoots = ["backend/prisma/migrations/", "supabase/migrations/"];
 // Reviewed fixtures/examples with intentional dummy credentials. Any content change invalidates the exception.
 const credentialFixtureHashes = new Map([
-  [".env.example", "3634fde45f8ce9e74e069638305085e5e0c3981da04071b6efa5552c31a9a86d"],
-  [".env.vps.example", "404675c714baa0e8c63bbdd55cd52c36609c8e977c9a26878183de7c24ce3632"],
-  ["backend/.env.example", "7ef2394a2c0e02e4c1c78c178f8f37b5da8b1a8d21b9d63d64b5f0f2b0075dec"],
+  [".env.example", "c0aa41d46e752e5e570f4a6f8049d3a31746806904816fb0f890f26ba9f2be7d"],
+  [".env.vps.example", "bc4bb151f98a01a6c5574ea79889613676fc18dae96b03a743d5bbedfdce2e91"],
+  ["backend/.env.example", "3d7526619357ed0b31a311ff43ebbc39230d8818fdafcb63f50735626162781a"],
+  [
+    "backend/prisma/test-fixtures.ts",
+    "6bce9d380ab9b9c3ae3c53b0cf6e8927ff7a1abc59f9299ec910051578c8b0bc",
+  ],
   [
     "backend/src/auth/auth-session.spec.ts",
     "6bd059b6b89541dec2b2190442e4ac1810c8f347999d7f4f07607025632e2c9d",
@@ -27,7 +31,7 @@ const credentialFixtureHashes = new Map([
   ],
   [
     "backend/src/config/environment.spec.ts",
-    "c5ab7b09033b7efbad163e3fc64597e780cd7498349fb6bcbab6c28892c2eb70",
+    "e4542e27909ad0509289355dfbcad5d96cac9e1d6c0db26fe5c847e2ab6a9178",
   ],
   [
     "backend/src/homologation/reset-safety.spec.ts",
@@ -58,8 +62,16 @@ const credentialFixtureHashes = new Map([
     "033da1d3950db0e54338b05676959a36c4b2444f0bbc6dd3c2d9fa19c080186f",
   ],
   [
+    "backend/src/prisma/platform-admin-seed.spec.ts",
+    "e668e747f690b58bea5838f118f607c401154c7f5b0131500351946938d594fc",
+  ],
+  [
+    "backend/src/prisma/prisma.service.spec.ts",
+    "60be4d290b9d3bd96b9c2f92340648ee05d64981fa9dbb9037479d6f36aa842d",
+  ],
+  [
     "backend/test/app.e2e-spec.ts",
-    "4cdef6550e84881f8799e2441130a20419b599523639057e58f39c9f70de0b2b",
+    "da3742c8274eaf9f69889d27018918b751e3bc0196c2ea39c1f10acb469a58af",
   ],
   [
     "src/lib/trixus-api.test.ts",
@@ -74,9 +86,9 @@ const credentialFixtureHashes = new Map([
     "f94973e7fafc577a3f74b4150ed30080716821deafbd5793cf61269bf787fb1c",
   ],
   ["docker-compose.yml", "e1b7487a4272318be6ab9d37615eac4b0d1bfaa534071b8b59f21def6e6906f5"],
-  ["docs/DATABASE.md", "b606076dfc202187f1e3887106852f736092db94ec72d65f52ee30cff06435d6"],
-  ["docs/DEPLOY.md", "810da5b2a8701079191a0666b342ed1e3914cff73ac509bd0b46d80884742f7c"],
-  ["docs/README.md", "77b5ec84df1ce6457804f9eb4bfe319cb090a0efc998509d091d9dad85590752"],
+  ["docs/DATABASE.md", "75c2e773b07153b32f44faef2539fc25399b747d720f0e1d49d2f886cee7e5bb"],
+  ["docs/DEPLOY.md", "e4beba8f0e9f5c4c2cf08601c6498b97490c8114d5195a3ddfe212dec33de171"],
+  ["docs/README.md", "80ac543c48e1f64ca0bab45114240f64687ff3fe3d8753582623b260498badb3"],
   [
     "scripts/production/test_preflight.py",
     "3629b57e429603e7f01225c9ab321428daaccc8bced2931bea71cc6947c2fe78",
@@ -85,7 +97,7 @@ const credentialFixtureHashes = new Map([
     "scripts/production/install.sh",
     "7a290c786aa9c8dca63fdea55f0223393d373044b406a7a53e1fbe2b725eeb01",
   ],
-  ["scripts/verify.mjs", "7e772c53b079c999f971badfc3cacf52d6312e01b5e6ee15dbbb51a1982578f4"],
+  ["scripts/verify.mjs", "6a918f3fc47b0476ad52a8b7fe9c5d16864b7361a3d75e63fa0123ad1858e3b3"],
   [
     "sprints/rc-sprint-15-2/hotfix-outbound-worker/RELATORIO.md",
     "107325f260e4bf882e8368af0cefb295191bfd30399091482e0a7453ccbc9ea1",

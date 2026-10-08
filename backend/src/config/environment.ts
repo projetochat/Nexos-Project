@@ -12,7 +12,10 @@ const REQUIRED_PRODUCTION_VALUES = [
   "RESEND_API_KEY",
   "TRIXUS_EMAIL_FROM",
   "TENANT_ADMIN_PROVISIONING_MODE",
+  "TRIXUS_ENVIRONMENT",
 ] as const;
+
+const TRIXUS_ENVIRONMENTS = ["production", "homologation", "staging"] as const;
 
 export function validateEnvironment(input: Environment): Environment {
   const environment = normalizedEnvironment(input);
@@ -21,6 +24,14 @@ export function validateEnvironment(input: Environment): Environment {
   const errors: string[] = [];
   for (const name of REQUIRED_PRODUCTION_VALUES) {
     if (!environment[name]) errors.push(`${name} is required`);
+  }
+  if (
+    environment.TRIXUS_ENVIRONMENT &&
+    !TRIXUS_ENVIRONMENTS.includes(
+      environment.TRIXUS_ENVIRONMENT as (typeof TRIXUS_ENVIRONMENTS)[number],
+    )
+  ) {
+    errors.push("TRIXUS_ENVIRONMENT must be production, homologation or staging");
   }
 
   validateUrl(environment.DATABASE_URL, "DATABASE_URL", ["postgres:", "postgresql:"], errors);

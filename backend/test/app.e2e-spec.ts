@@ -42,7 +42,7 @@ describe("Trixus API organization and RBAC", () => {
   }
 
   beforeAll(async () => {
-    process.env.SEED_MODE = "test";
+    process.env.TRIXUS_ENVIRONMENT = "staging";
     const testDatabaseUrl = normalizeLocalPostgresUrl(
       process.env.TRIXUS_TEST_DATABASE_URL ??
         "postgresql://trixus:trixus_dev_password@127.0.0.1:5432/trixus_1200?schema=public",

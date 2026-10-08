@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { PrismaClient } from "../src/generated/prisma/index.js";
+import { PlatformRole, PrismaClient } from "../src/generated/prisma/index.js";
 
 const backendDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const rootDir = resolve(backendDir, "..");
@@ -116,8 +116,7 @@ async function main() {
   ]);
   run("bun", ["run", "backend:prisma:generate"]);
   const env = { ...process.env };
-  delete env.SEED_DEMO_DATA;
-  env.SEED_MODE = "homologation";
+  env.TRIXUS_ENVIRONMENT = "homologation";
   run("bun", ["--cwd", "backend", "prisma", "db", "seed"], { env });
 
   const counts = await validateCounts(databaseUrl);
@@ -145,41 +144,36 @@ function run(command, args, options = {}) {
 async function validateCounts(databaseUrl) {
   const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
   try {
-    const tenant = await prisma.tenant.findUniqueOrThrow({ where: { slug: "homologacao" } });
     const counts = {
       tenants: await prisma.tenant.count(),
-      users: await prisma.user.count({ where: { memberships: { some: { tenantId: tenant.id } } } }),
-      memberships: await prisma.tenantMembership.count({ where: { tenantId: tenant.id } }),
-      departments: await prisma.department.count({ where: { tenantId: tenant.id } }),
-      tags: await prisma.tag.count({ where: { tenantId: tenant.id, archivedAt: null } }),
-      customers: await prisma.customer.count({ where: { tenantId: tenant.id, archivedAt: null } }),
-      contactDepartments: await prisma.contactDepartment.count({
-        where: { tenantId: tenant.id, archivedAt: null },
+      users: await prisma.user.count(),
+      platformAdmins: await prisma.user.count({
+        where: { platformRole: PlatformRole.ADMIN },
       }),
-      contactProfiles: await prisma.contactProfile.count({
-        where: { tenantId: tenant.id, archivedAt: null },
-      }),
-      quickReplies: await prisma.quickReply.count({
-        where: { tenantId: tenant.id, archivedAt: null },
-      }),
-      contacts: await prisma.contact.count({ where: { tenantId: tenant.id } }),
-      conversations: await prisma.conversation.count({ where: { tenantId: tenant.id } }),
-      messages: await prisma.message.count({ where: { tenantId: tenant.id } }),
-      messagingConnections: await prisma.messagingConnection.count({
-        where: { tenantId: tenant.id },
-      }),
-      outboxEvents: await prisma.outboxEvent.count({ where: { tenantId: tenant.id } }),
+      memberships: await prisma.tenantMembership.count(),
+      departments: await prisma.department.count(),
+      tags: await prisma.tag.count(),
+      customers: await prisma.customer.count(),
+      contactDepartments: await prisma.contactDepartment.count(),
+      contactProfiles: await prisma.contactProfile.count(),
+      quickReplies: await prisma.quickReply.count(),
+      contacts: await prisma.contact.count(),
+      conversations: await prisma.conversation.count(),
+      messages: await prisma.message.count(),
+      messagingConnections: await prisma.messagingConnection.count(),
+      outboxEvents: await prisma.outboxEvent.count(),
     };
     if (
-      counts.tenants !== 1 ||
-      counts.users !== 5 ||
-      counts.memberships !== 5 ||
-      counts.departments !== 6 ||
-      counts.tags !== 13 ||
-      counts.customers !== 12 ||
-      counts.contactDepartments !== 6 ||
-      counts.contactProfiles !== 5 ||
-      counts.quickReplies !== 6 ||
+      counts.tenants !== 0 ||
+      counts.users !== 1 ||
+      counts.platformAdmins !== 1 ||
+      counts.memberships !== 0 ||
+      counts.departments !== 0 ||
+      counts.tags !== 0 ||
+      counts.customers !== 0 ||
+      counts.contactDepartments !== 0 ||
+      counts.contactProfiles !== 0 ||
+      counts.quickReplies !== 0 ||
       counts.contacts !== 0 ||
       counts.conversations !== 0 ||
       counts.messages !== 0 ||

@@ -66,17 +66,14 @@ jobs:
       - run: bun run --cwd backend prisma:generate
       - name: Prepare fixtures in the disposable test database
         env:
-          SEED_MODE: demo
+          TRIXUS_ENVIRONMENT: staging
+          TRIXUS_TEST_FIXTURE_MODE: demo
           NODE_ENV: test
           TRIXUS_PLATFORM_ADMIN_EMAIL: platform@trixus.app
           TRIXUS_PLATFORM_ADMIN_PASSWORD: demo1234
-          TRIXUS_PLATFORM_SUPPORT_EMAIL: platform-support@trixus.app
-          TRIXUS_PLATFORM_SUPPORT_PASSWORD: demo1234
-          TRIXUS_PLATFORM_READONLY_EMAIL: platform-readonly@trixus.app
-          TRIXUS_PLATFORM_READONLY_PASSWORD: demo1234
         run: |
           bun run --cwd backend prisma:migrate:deploy
-          bun run --cwd backend prisma:seed
+          bun run --cwd backend prisma:seed:test-fixtures
       - name: Validate Compose without production credentials
         env:
           TRIXUS_ENV_FILE: .env.vps.example

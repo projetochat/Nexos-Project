@@ -237,7 +237,15 @@ Smoke local:
 bun backend/scripts/verify-redis-queue.mjs
 ```
 
-## Sprint 08.01 - Homologacao limpa
+## Politica atual de seed — D-011 (08/10/2026)
+
+A seed oficial aceita somente `TRIXUS_ENVIRONMENT=production|homologation|staging` e, nos tres
+casos, apenas cria o Platform Admin quando ele ainda nao existe. Ela nunca recria tenants, usuarios
+de tenant ou dados demo e nunca redefine um administrador existente. Consulte
+[`SEED_POLICY.md`](SEED_POLICY.md). As secoes de Sprint abaixo permanecem como historico e estao
+superadas para operacao de seed.
+
+## Sprint 08.01 - Homologacao limpa (historico)
 
 Banco recomendado para a corretiva:
 

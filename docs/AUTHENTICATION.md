@@ -246,7 +246,11 @@ DEFINITIVO:
 - Refresh automatico em `apiRequest`: se o access token expira e o refresh ainda e valido, o cliente busca novo access token e repete a chamada uma vez.
 - Logout chama `/api/auth/logout`, limpa tokens locais, limpa estado Zustand e sincroniza logout entre abas por `storage`.
 
-Contrato de homologacao:
+> Politica atual: a D-011, documentada em [`SEED_POLICY.md`](SEED_POLICY.md), substituiu os acessos
+> criados por seed descritos abaixo. A seed oficial agora cria somente o Platform Admin e nao cria
+> usuario de tenant para login na aplicacao.
+
+Contrato historico de homologacao:
 
 ```text
 Tenant: homologacao

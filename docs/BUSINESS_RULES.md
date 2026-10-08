@@ -110,7 +110,17 @@ Somente regras comprovadas no codigo.
 - Erros retryable usam BullMQ attempts/backoff; erros terminais marcam `FAILED`.
 - Logs nao devem conter corpo da mensagem, telefone completo, QR, API key, JWT ou secrets.
 
-## Sprint 08.01 - Regras inbound/reconnect
+## D-011 — seed por ambiente (08/10/2026)
+
+- `production`, `homologation` e `staging` executam a mesma seed oficial.
+- A seed cria somente o Platform Admin ausente.
+- Platform Admin existente e preservado; usuario comum nunca e promovido implicitamente.
+- A seed nao cria tenants, planos, usuarios de tenant nem dados operacionais e nao remove dados.
+- Massa demo existe apenas como fixture de teste em banco local descartavel.
+
+Detalhes e pendencia do catalogo de planos: [`SEED_POLICY.md`](SEED_POLICY.md).
+
+## Sprint 08.01 - Regras inbound/reconnect (historico)
 
 - Resposta inbound de um contato ja conhecido reutiliza o Contact canonico do tenant.
 - Resposta inbound em Conversation aberta compativel reutiliza a mesma Conversation.
