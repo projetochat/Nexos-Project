@@ -31,6 +31,16 @@ describe("app surface routing", () => {
     expect(loginEndpointForSurface("tenant")).toBe("/auth/tenant/login");
   });
 
+  it("uses the unified login when Platform and Tenant share the same hostname", () => {
+    vi.stubEnv("VITE_TRIXUS_PLATFORM_APP_URL", "https://hom.trixus.com.br");
+    vi.stubEnv("VITE_TRIXUS_TENANT_APP_URL", "https://hom.trixus.com.br");
+
+    expect(appSurfaceForHostname("hom.trixus.com.br")).toBe("unified");
+    expect(loginEndpointForSurface(appSurfaceForHostname("hom.trixus.com.br"))).toBe("/auth/login");
+    expect(surfaceRedirect({ hostname: "hom.trixus.com.br", pathname: "/admin" })).toBeNull();
+    expect(surfaceRedirect({ hostname: "hom.trixus.com.br", pathname: "/inbox" })).toBeNull();
+  });
+
   it("keeps the fixed app title and adds only a positive unread conversation count", () => {
     expect(appTitleWithUnreadConversations(3)).toBe("(3) Trixus | App");
     expect(appTitleWithUnreadConversations(0)).toBe("Trixus | App");

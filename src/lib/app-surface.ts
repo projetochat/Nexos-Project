@@ -40,8 +40,13 @@ function isLocalHostname(hostname: string) {
 export function appSurfaceForHostname(hostname: string): AppSurface {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (isLocalHostname(normalized)) return "unified";
-  if (normalized === hostnameFromOrigin(platformAppOrigin())) return "platform";
-  if (normalized === hostnameFromOrigin(tenantAppOrigin())) return "tenant";
+
+  const platformHostname = hostnameFromOrigin(platformAppOrigin());
+  const tenantHostname = hostnameFromOrigin(tenantAppOrigin());
+
+  if (normalized === platformHostname && normalized === tenantHostname) return "unified";
+  if (normalized === platformHostname) return "platform";
+  if (normalized === tenantHostname) return "tenant";
   return import.meta.env.VITE_APP_MODE === "production" ? "unknown" : "unified";
 }
 
