@@ -6,6 +6,7 @@ COPY package.json bun.lock ./
 COPY backend/package.json backend/package.json
 RUN bun install --frozen-lockfile
 
+COPY scripts/verify-resource-safety.mjs scripts/verify-resource-safety.d.mts scripts/
 COPY backend backend
 # The checkout can contain TypeScript incremental metadata while dist is excluded
 # from the Docker context. Remove it so a fresh image always emits its artifacts.
