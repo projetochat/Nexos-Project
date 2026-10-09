@@ -14,8 +14,6 @@ ALTER TABLE "tickets"
     ON DELETE SET NULL ("departmentId")
     ON UPDATE CASCADE;
 
-COMMIT;
-
 ALTER TABLE "notifications"
   DROP CONSTRAINT "notifications_tenantId_departmentId_fkey",
   ADD CONSTRAINT "notifications_tenantId_departmentId_fkey"
@@ -23,3 +21,5 @@ ALTER TABLE "notifications"
     REFERENCES "departments"("tenantId", "id")
     ON DELETE SET NULL ("departmentId")
     ON UPDATE CASCADE;
+
+COMMIT;

@@ -206,6 +206,11 @@ describe("department physical deletion", () => {
       /model Notification[\s\S]*department\s+Department\?[\s\S]*onDelete: SetNull/,
     );
     expect(migration).toContain('ON DELETE SET NULL ("departmentId")');
+    expect(migration.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(migration.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(migration.indexOf('ALTER TABLE "notifications"')).toBeLessThan(
+      migration.lastIndexOf("COMMIT;"),
+    );
     expect(frontend).toContain("<DeletionConfirmDialog");
     expect(frontend).toContain("Excluir departamento");
   });
